@@ -5,6 +5,8 @@ import { useAuth } from '../AuthContext';
 import TaskService from '../services/TaskService';
 import SubmissionList from '../components/submissions/SubmissionList';
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
+import TabScrollContainer from '../components/ui/TabScrollContainer';
+import EmptyState from '../components/ui/EmptyState';
 
 export default function SubmissionsView() {
   const { challengeId } = useParams();
@@ -13,7 +15,8 @@ export default function SubmissionsView() {
     selectedChallenge, 
     setSelectedChallengeById, 
     selectedTask, 
-    setSelectedTask 
+    setSelectedTask,
+    confirm
   } = useApp();
 
   const [submissions, setSubmissions] = useState([]);
@@ -179,7 +182,12 @@ export default function SubmissionsView() {
         fetchSubmissions(true);
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to set final submission.");
+        await confirm({
+          title: "Selection Error",
+          message: data.error || "Failed to set final submission.",
+          confirmText: "OK",
+          cancelText: ""
+        });
       }
     } catch (err) {
       console.error(err);
@@ -198,30 +206,32 @@ export default function SubmissionsView() {
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Select Task:
               </span>
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-                {selectedChallenge.tasks.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setSelectedTask(t);
-                      setSelectedSubmission(null);
-                    }}
-                    className={`nav-tab ${selectedTask?.id === t.id ? 'active' : ''}`}
-                    style={{ padding: '4px 12px', fontSize: '0.75rem' }}
-                  >
-                    {t.title}
-                  </button>
-                ))}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <TabScrollContainer>
+                  {selectedChallenge.tasks.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTask(t);
+                        setSelectedSubmission(null);
+                      }}
+                      className={`nav-tab flex-shrink-0 ${selectedTask?.id === t.id ? 'active' : ''}`}
+                      style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                </TabScrollContainer>
               </div>
             </div>
           )}
 
           {selectedTask ? (
-            <div style={{
+            <div key={selectedTask.id} style={{
               display: 'grid',
               gridTemplateColumns: '1fr',
               gap: 24,
-            }} className="lg:grid-cols-[320px_1fr] items-start">
+            }} className="lg:grid-cols-[320px_1fr] items-start animate-fadein">
               
               {/* Left Column: Submissions List */}
               <SubmissionList 
@@ -246,15 +256,11 @@ export default function SubmissionsView() {
 
             </div>
           ) : (
-            <div className="surface empty-state" style={{ minHeight: 200 }}>
-              <p>Please select a task to view submissions.</p>
-            </div>
+            <EmptyState message="Please select a task to view submissions." minHeight={200} />
           )}
         </>
       ) : (
-        <div className="surface empty-state" style={{ minHeight: 200 }}>
-          <p>No competition selected.</p>
-        </div>
+        <EmptyState message="No competition selected." minHeight={200} />
       )}
     </div>
   );
