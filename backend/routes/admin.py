@@ -76,6 +76,9 @@ def register_competitor():
     db.session.add(user)
     db.session.commit()
     
+    from cache_utils import invalidate_leaderboard_cache
+    invalidate_leaderboard_cache(challenge_id)
+    
     return jsonify({
         "message": "Competitor registered successfully.",
         "generated_username": username,
@@ -124,6 +127,10 @@ def delete_user(user_id):
     Submission.query.filter_by(user_id=user_id).delete()
     db.session.delete(user)
     db.session.commit()
+    
+    if user.challenge_id:
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(user.challenge_id)
     
     return jsonify({"message": f"User {user.username} has been deleted successfully."})
 
@@ -260,6 +267,9 @@ def import_competitors_csv():
             })
             
         db.session.commit()
+        
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(int(challenge_id))
         return jsonify({
             "message": f"Successfully imported {len(imported)} competitors.",
             "competitors": imported

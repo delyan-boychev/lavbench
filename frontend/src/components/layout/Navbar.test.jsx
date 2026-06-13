@@ -73,7 +73,7 @@ describe('Navbar Component', () => {
     });
 
     await vi.waitFor(() => {
-      expect(screen.getByText('GPU Cluster Online')).toBeInTheDocument();
+      expect(screen.getByText('Cluster Online')).toBeInTheDocument();
     });
   });
 
@@ -91,7 +91,38 @@ describe('Navbar Component', () => {
     render(<Navbar />);
 
     await vi.waitFor(() => {
-      expect(screen.getByText('GPU Cluster Offline')).toBeInTheDocument();
+      expect(screen.getByText('Cluster Offline')).toBeInTheDocument();
+    });
+  });
+
+  it('opens clusters modal on status button click', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'online',
+        clusters: [
+          { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
+        ]
+      }),
+    });
+
+    render(<Navbar />);
+
+    const statusBtn = screen.getByText('Cluster Online');
+    fireEvent.click(statusBtn);
+
+    expect(screen.getByText('Active Cluster Node Specifications')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('celery@cpu-worker')).toBeInTheDocument();
+      expect(screen.getByText('4 tasks')).toBeInTheDocument();
+      expect(screen.getByText('16 GB')).toBeInTheDocument();
     });
   });
 

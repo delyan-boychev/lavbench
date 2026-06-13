@@ -10,12 +10,24 @@ def get_challenges():
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
+    from cache_utils import get_cached, set_cached
+    
     if user_role == 'competitor':
         user = User.query.get(user_id)
         if not user or not user.challenge_id:
             return jsonify([])
-        challenge = Challenge.query.get(user.challenge_id)
-        return jsonify([challenge.to_dict()] if challenge else [])
+        challenge_id = user.challenge_id
+        cache_key = f"challenge:{challenge_id}"
+        cached_challenge = get_cached(cache_key)
+        if cached_challenge is not None:
+            return jsonify([cached_challenge])
+            
+        challenge = Challenge.query.get(challenge_id)
+        if not challenge:
+            return jsonify([])
+        challenge_dict = challenge.to_dict()
+        set_cached(cache_key, challenge_dict, timeout=600)
+        return jsonify([challenge_dict])
         
     page = request.args.get('page', type=int)
     if page is not None:
@@ -28,8 +40,15 @@ def get_challenges():
             "pages": pagination.pages
         })
         
+    cache_key = "challenges:all"
+    cached_all = get_cached(cache_key)
+    if cached_all is not None:
+        return jsonify(cached_all)
+        
     challenges = Challenge.query.all()
-    return jsonify([c.to_dict() for c in challenges])
+    challenges_list = [c.to_dict() for c in challenges]
+    set_cached(cache_key, challenges_list, timeout=600)
+    return jsonify(challenges_list)
 
 
 @challenges_bp.route('/<int:challenge_id>', methods=['GET'])
@@ -43,8 +62,16 @@ def get_challenge(challenge_id):
         if not user or user.challenge_id != challenge_id:
             return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
             
+    from cache_utils import get_cached, set_cached
+    cache_key = f"challenge:{challenge_id}"
+    cached_challenge = get_cached(cache_key)
+    if cached_challenge is not None:
+        return jsonify(cached_challenge)
+        
     challenge = Challenge.query.get_or_404(challenge_id)
-    return jsonify(challenge.to_dict())
+    challenge_dict = challenge.to_dict()
+    set_cached(cache_key, challenge_dict, timeout=600)
+    return jsonify(challenge_dict)
 
 
 from datetime import datetime
@@ -101,6 +128,9 @@ def create_challenge():
     db.session.add(challenge)
     db.session.commit()
     
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache()
+    
     return jsonify(challenge.to_dict()), 201
 
 
@@ -138,6 +168,11 @@ def update_challenge(challenge_id):
         challenge.freeze_time = parse_datetime(data.get("freeze_time"))
         
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+    invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
+    
     return jsonify(challenge.to_dict())
 
 
@@ -146,13 +181,17 @@ def update_challenge(challenge_id):
 def delete_challenge(challenge_id):
     challenge = Challenge.query.get_or_404(challenge_id)
     
-    # Dissociate users from this competition before deleting to prevent FK violations
     users = User.query.filter_by(challenge_id=challenge_id).all()
     for u in users:
         u.challenge_id = None
         
     db.session.delete(challenge)
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+    invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
+    
     return jsonify({"message": f"Competition '{challenge.title}' and all its associated tasks and submissions have been deleted successfully."})
 
 
@@ -162,6 +201,11 @@ def finalize_challenge(challenge_id):
     challenge = Challenge.query.get_or_404(challenge_id)
     challenge.scores_finalized = True
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+    invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
+    
     return jsonify({
         "message": "Competition finalized! Competitor identities and private scores are now fully revealed to everyone.",
         "challenge": challenge.to_dict()
@@ -174,6 +218,10 @@ def archive_challenge(challenge_id):
     challenge = Challenge.query.get_or_404(challenge_id)
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
     action = "archived" if challenge.is_archived else "restored"
     return jsonify({
         "message": f"Competition has been successfully {action}!",

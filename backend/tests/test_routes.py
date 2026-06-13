@@ -633,6 +633,66 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("Invalid pip requirement line", res.get_json()["error"])
 
+    @patch('cache_utils.delete_cached')
+    @patch('cache_utils.set_cached')
+    @patch('cache_utils.get_cached')
+    def test_cache_invalidation_workflows(self, mock_get, mock_set, mock_delete):
+        """Test cache setting on GET challenge and cache invalidation on task mutations/leaderboard resets."""
+        mock_get.return_value = None
+        
+        # 1. Fetch challenge details: check if set_cached is called
+        competitor_header = self.get_auth_header(self.competitor_token)
+        res = self.client.get(f'/api/challenges/{self.challenge.id}', headers=competitor_header)
+        self.assertEqual(res.status_code, 200)
+        
+        # Verify set_cached is called for challenge:<id>
+        mock_set.assert_any_call(f"challenge:{self.challenge.id}", res.get_json(), timeout=600)
+        
+        # 2. Invalidate leaderboard cache verification
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(self.challenge.id)
+        mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:frozen")
+        mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:unfrozen")
+        
+        # Reset mock call history for deletion
+        mock_delete.reset_mock()
+        
+        # 3. Create a task and verify challenge cache invalidation
+        admin_header = self.get_auth_header(self.admin_token)
+        import io
+        data = {
+            "title": "New Test Task",
+            "baseline_notebook": (io.BytesIO(b'{"cells": []}'), 'baseline.ipynb'),
+            "solution_notebook": (io.BytesIO(b'{"cells": []}'), 'solution.ipynb'),
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/tasks', data=data, headers=admin_header)
+        self.assertEqual(res.status_code, 201)
+        # Verify that create_task invalidates the challenge cache
+        mock_delete.assert_any_call("challenges:all")
+        mock_delete.assert_any_call(f"challenge:{self.challenge.id}")
+        
+        # Reset mock
+        mock_delete.reset_mock()
+        new_task_id = res.get_json()["id"]
+        
+        # 4. Update the task and verify challenge cache invalidation
+        update_data = {
+            "title": "Updated Test Task Title"
+        }
+        res = self.client.put(f'/api/tasks/{new_task_id}', data=update_data, headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+        mock_delete.assert_any_call("challenges:all")
+        mock_delete.assert_any_call(f"challenge:{self.challenge.id}")
+        
+        # Reset mock
+        mock_delete.reset_mock()
+        
+        # 5. Delete the task and verify challenge cache invalidation
+        res = self.client.delete(f'/api/tasks/{new_task_id}', headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+        mock_delete.assert_any_call("challenges:all")
+        mock_delete.assert_any_call(f"challenge:{self.challenge.id}")
+
 if __name__ == '__main__':
     unittest.main()
 

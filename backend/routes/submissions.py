@@ -159,6 +159,10 @@ def select_final_submission(submission_id):
     
     submission.is_final_selection = True
     db.session.commit()
+    
+    from cache_utils import invalidate_leaderboard_cache
+    invalidate_leaderboard_cache(submission.challenge_id)
+    
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)
     

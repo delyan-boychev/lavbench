@@ -344,6 +344,9 @@ def create_task(challenge_id):
     task.files = json.dumps(uploaded_files_meta)
     db.session.commit()
     
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
     # Parse code cells from notebooks
     baseline_cells = []
     if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
@@ -524,17 +527,26 @@ def update_task(task_id):
             
     task.files = json.dumps(current_files)
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(task.challenge_id)
+    
     return jsonify(task.to_dict())
 
 @tasks_bp.route('/tasks/<int:task_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_task(task_id):
     task = Task.query.get_or_404(task_id)
+    challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     import shutil
     shutil.rmtree(task_upload_dir, ignore_errors=True)
     db.session.delete(task)
     db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
     return jsonify({"message": f"Task '{task.title}' has been deleted successfully."})
 
 # --- DOWNLOAD FILE ---
@@ -1035,12 +1047,61 @@ def get_task_submissions_live(task_id):
 def get_worker_status():
     try:
         from tasks import celery
+        import redis
+        import json
+        
         inspect = celery.control.inspect(timeout=1.0)
-        ping_res = inspect.ping()
-        is_online = ping_res is not None and len(ping_res) > 0
-        return jsonify({"status": "online" if is_online else "offline"}), 200
+        pings = inspect.ping() or {}
+        stats = inspect.stats() or {}
+        
+        is_online = pings is not None and len(pings) > 0
+        
+        r = None
+        try:
+            broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+            r = redis.Redis.from_url(broker_url)
+        except Exception:
+            pass
+            
+        clusters = []
+        for worker_name in pings.keys():
+            spec = None
+            if r:
+                try:
+                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    if spec_data:
+                        spec = json.loads(spec_data)
+                except Exception:
+                    pass
+                    
+            if not spec:
+                w_stats = stats.get(worker_name, {}) if stats else {}
+                pool = w_stats.get("pool", {}) if w_stats else {}
+                concurrency = pool.get("max-concurrency", 1) if pool else 1
+                
+                # Resilient numeric conversion (handles MagicMocks in testing)
+                try:
+                    concurrency = int(concurrency)
+                except Exception:
+                    concurrency = 1
+                    
+                has_gpu = "gpu" in worker_name.lower()
+                spec = {
+                    "name": worker_name,
+                    "type": "GPU" if has_gpu else "CPU",
+                    "concurrency": concurrency,
+                    "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
+                    "ram_gb": 16.0 if has_gpu else 8.0,
+                    "vram_gb": 8.0 if has_gpu else "N/A"
+                }
+            clusters.append(spec)
+            
+        return jsonify({
+            "status": "online" if is_online else "offline",
+            "clusters": clusters
+        }), 200
     except Exception as e:
-        return jsonify({"status": "offline", "error": str(e)}), 200
+        return jsonify({"status": "offline", "error": str(e), "clusters": []}), 200
 
 
 @tasks_bp.route('/worker/report/<int:submission_id>', methods=['POST'])
@@ -1075,10 +1136,11 @@ def report_worker_progress(submission_id):
         submission.final_weighted_score_public = data["final_weighted_score_public"]
     if "final_weighted_score_private" in data:
         submission.final_weighted_score_private = data["final_weighted_score_private"]
-    if "gpu_node" in data:
-        submission.gpu_node = data["gpu_node"]
-        
     db.session.commit()
+    
+    if submission.status in ('completed', 'failed'):
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(submission.challenge_id)
     
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)

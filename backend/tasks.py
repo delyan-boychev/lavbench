@@ -526,6 +526,10 @@ def evaluate_submission(self, submission_id, metadata=None):
                     if m_priv is not None:
                         sub.metrics_payload_private = m_priv
                     db.session.commit()
+                    
+                    from cache_utils import invalidate_leaderboard_cache
+                    invalidate_leaderboard_cache(sub.challenge_id)
+                    
                     publish_submissions_update(sub.task_id, sub.user_id)
                     publish_leaderboard_update(sub.task_id)
 
@@ -875,3 +879,74 @@ def evaluate_submission(self, submission_id, metadata=None):
         m_priv=metrics_payload_priv
     )
     return f"Submission {submission_id} evaluated with status {status}"
+
+
+from celery.signals import worker_ready
+
+@worker_ready.connect
+def register_worker_specs(sender, **kwargs):
+    try:
+        import redis
+        import platform
+        broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+        r = redis.Redis.from_url(broker_url)
+        
+        worker_name = getattr(sender, 'hostname', str(sender))
+        cpu_cores = os.cpu_count() or 1
+        
+        ram_gb = 8.0
+        try:
+            if platform.system() == "Linux":
+                with open('/proc/meminfo', 'r') as f:
+                    for line in f:
+                        if "MemTotal" in line:
+                            ram_kb = int(line.split()[1])
+                            ram_gb = round(ram_kb / (1024 * 1024), 1)
+                            break
+            elif platform.system() == "Darwin":
+                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+                ram_gb = round(total_bytes / (1024**3), 1)
+        except Exception:
+            pass
+            
+        gpu_id = os.environ.get("WORKER_GPU_ID", None)
+        has_gpu = gpu_id is not None or "gpu" in worker_name.lower()
+        gpu_type = "N/A"
+        vram_gb = "N/A"
+        
+        if has_gpu:
+            gpu_type = "NVIDIA GPU"
+            try:
+                gpu_name_out = subprocess.check_output(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]).decode("utf-8").strip()
+                if gpu_name_out:
+                    gpu_type = gpu_name_out.split('\n')[0]
+                vram_out = subprocess.check_output(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]).decode("utf-8").strip()
+                if vram_out:
+                    vram_mb = int(vram_out.split('\n')[0])
+                    vram_gb = round(vram_mb / 1024, 1)
+            except Exception:
+                gpu_type = "NVIDIA GPU"
+                vram_gb = 8.0
+                
+        concurrency = 1
+        try:
+            if hasattr(sender, 'concurrency'):
+                concurrency = sender.concurrency
+        except Exception:
+            pass
+            
+        spec = {
+            "name": worker_name,
+            "type": "GPU" if has_gpu else "CPU",
+            "concurrency": concurrency,
+            "cpu_cores": cpu_cores,
+            "gpu_type": gpu_type,
+            "ram_gb": ram_gb,
+            "vram_gb": vram_gb,
+            "last_seen": time.time()
+        }
+        r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
+        print(f"[NAI Worker] Specs registered successfully: {spec}")
+    except Exception as e:
+        print(f"[NAI Worker] Failed to register specs: {e}")
+
