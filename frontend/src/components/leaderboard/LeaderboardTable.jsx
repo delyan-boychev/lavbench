@@ -416,7 +416,13 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
         </div>
         {/* Only JURY (not admin) can finalize */}
         {isJury && !isFinalized && challenge && (
-          <Button variant="secondary" size="sm" onClick={() => setIsFinalizeModalOpen(true)}>
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            onClick={() => setIsFinalizeModalOpen(true)}
+            disabled={challenge.stages && challenge.stages.some(st => !st.is_finalized)}
+            title={challenge.stages && challenge.stages.some(st => !st.is_finalized) ? "All stages must be finalized first" : ""}
+          >
             Finalize & Reveal Identities
           </Button>
         )}

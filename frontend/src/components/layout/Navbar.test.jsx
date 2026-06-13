@@ -232,4 +232,168 @@ describe('Navbar Component', () => {
       expect(screen.getByText('This is a test note.')).toBeInTheDocument();
     });
   });
+
+  it('renders countdown timer in green when time remaining is > 30 minutes', async () => {
+    const mockChallenge = {
+      id: 1,
+      title: 'Challenge Alpha',
+      stages: [
+        {
+          id: 10,
+          title: 'Stage 1',
+          stage_number: 1,
+          start_time: '2026-06-13T10:00:00Z',
+          end_time: '2026-06-13T12:00:00Z',
+          is_finalized: false,
+        }
+      ]
+    };
+    
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    useApp.mockReturnValue({
+      theme: 'dark',
+      toggleTheme: mockToggleTheme,
+      showToast: mockShowToast,
+      selectedChallenge: mockChallenge,
+    });
+
+    const mockSystemTime = new Date('2026-06-13T11:00:00Z').getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+
+    render(<Navbar />);
+
+    const timer = screen.getByTitle('Time remaining in Stage 1');
+    expect(timer).toBeInTheDocument();
+    expect(timer).toHaveStyle({ color: '#10b981' });
+    expect(timer).toHaveTextContent('Stage 1 left: 01:00:00');
+    expect(timer).not.toHaveClass('animate-flash-red');
+  });
+
+  it('renders countdown timer in yellow when time remaining is <= 30 minutes and > 15 minutes', async () => {
+    const mockChallenge = {
+      id: 1,
+      title: 'Challenge Alpha',
+      stages: [
+        {
+          id: 10,
+          title: 'Stage 1',
+          stage_number: 1,
+          start_time: '2026-06-13T10:00:00Z',
+          end_time: '2026-06-13T12:00:00Z',
+          is_finalized: false,
+        }
+      ]
+    };
+    
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    useApp.mockReturnValue({
+      theme: 'dark',
+      toggleTheme: mockToggleTheme,
+      showToast: mockShowToast,
+      selectedChallenge: mockChallenge,
+    });
+
+    const mockSystemTime = new Date('2026-06-13T11:40:00Z').getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+
+    render(<Navbar />);
+
+    const timer = screen.getByTitle('Time remaining in Stage 1');
+    expect(timer).toBeInTheDocument();
+    expect(timer).toHaveStyle({ color: '#f59e0b' });
+    expect(timer).toHaveTextContent('Stage 1 left: 00:20:00');
+    expect(timer).not.toHaveClass('animate-flash-red');
+  });
+
+  it('renders countdown timer in red when time remaining is <= 15 minutes and > 5 minutes', async () => {
+    const mockChallenge = {
+      id: 1,
+      title: 'Challenge Alpha',
+      stages: [
+        {
+          id: 10,
+          title: 'Stage 1',
+          stage_number: 1,
+          start_time: '2026-06-13T10:00:00Z',
+          end_time: '2026-06-13T12:00:00Z',
+          is_finalized: false,
+        }
+      ]
+    };
+    
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    useApp.mockReturnValue({
+      theme: 'dark',
+      toggleTheme: mockToggleTheme,
+      showToast: mockShowToast,
+      selectedChallenge: mockChallenge,
+    });
+
+    const mockSystemTime = new Date('2026-06-13T11:50:00Z').getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+
+    render(<Navbar />);
+
+    const timer = screen.getByTitle('Time remaining in Stage 1');
+    expect(timer).toBeInTheDocument();
+    expect(timer).toHaveStyle({ color: '#ef4444' });
+    expect(timer).toHaveTextContent('Stage 1 left: 00:10:00');
+    expect(timer).not.toHaveClass('animate-flash-red');
+  });
+
+  it('renders countdown timer in red and flashing when time remaining is <= 5 minutes', async () => {
+    const mockChallenge = {
+      id: 1,
+      title: 'Challenge Alpha',
+      stages: [
+        {
+          id: 10,
+          title: 'Stage 1',
+          stage_number: 1,
+          start_time: '2026-06-13T10:00:00Z',
+          end_time: '2026-06-13T12:00:00Z',
+          is_finalized: false,
+        }
+      ]
+    };
+    
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    useApp.mockReturnValue({
+      theme: 'dark',
+      toggleTheme: mockToggleTheme,
+      showToast: mockShowToast,
+      selectedChallenge: mockChallenge,
+    });
+
+    const mockSystemTime = new Date('2026-06-13T11:57:00Z').getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+
+    render(<Navbar />);
+
+    const timer = screen.getByTitle('Time remaining in Stage 1');
+    expect(timer).toBeInTheDocument();
+    expect(timer).toHaveStyle({ color: '#ef4444' });
+    expect(timer).toHaveTextContent('Stage 1 left: 00:03:00');
+    expect(timer).toHaveClass('animate-flash-red');
+  });
 });

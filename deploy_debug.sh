@@ -30,7 +30,7 @@ fi
 source venv/bin/activate
 
 echo "--> Installing Python dependencies..."
-pip install -q -r backend/requirements.txt
+pip install -r backend/requirements.txt
 echo "    Python packages verified."
 
 # 2. Ensure PostgreSQL is active (Fallback to Docker if not native)

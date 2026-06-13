@@ -11,7 +11,6 @@ export default function Login() {
 
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
-  const [isAdminLogin, setIsAdminLogin] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -58,50 +57,24 @@ export default function Login() {
         )}
 
         <form onSubmit={handleAuth} className="flex flex-col gap-4">
-          <div className="mb-2.5">
-            <ToggleField
-              id="admin-login-check"
-              checked={isAdminLogin}
-              onChange={(e) => {
-                setIsAdminLogin(e.target.checked);
-                setAuthEmail('');
-                setAuthPassword('');
-                setAuthError('');
-              }}
-              label="Sign In as Administrator (Requires Master Key)"
-            />
-          </div>
-
           <InputField
-            label={isAdminLogin ? "Admin Username" : "Username or Email Address"}
+            label="Username or Email Address"
             value={authEmail}
             onChange={(e) => setAuthEmail(e.target.value)}
-            placeholder={isAdminLogin ? "admin_xxxxxx" : "comp_ali_lov_3812 or jury@competition.ai"}
+            placeholder="comp_ali_lov_3812, jury, or admin_..."
             required
             disabled={loading}
           />
 
-          {isAdminLogin ? (
-            <InputField
-              label="Master Admin Key"
-              type="password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              placeholder="admin_key_..."
-              required
-              disabled={loading}
-            />
-          ) : (
-            <InputField
-              label="Password"
-              type="password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              disabled={loading}
-            />
-          )}
+          <InputField
+            label="Password"
+            type="password"
+            value={authPassword}
+            onChange={(e) => setAuthPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            disabled={loading}
+          />
 
           <Button type="submit" variant="primary" className="w-full mt-2" disabled={loading}>
             {loading ? "Signing In..." : "Sign In"}

@@ -7,6 +7,7 @@ const TaskService = {
   submit:         (id, cells)          => api.post(`/tasks/${id}/submit`, { selected_cells: cells }),
   getSubmissions: (id, page, perPage = 10) => api.get(`/tasks/${id}/submissions${page ? `?page=${page}&per_page=${perPage}` : ''}`),
   getLeaderboard: (id)                 => api.get(`/tasks/${id}/leaderboard`),
+  getSubmissionDetail: (submissionId)  => api.get(`/submissions/${submissionId}`),
   // Returns a direct URL string for anchor-based file downloads (streamed)
   getDownloadUrl: (taskId, filename)   => `/api/tasks/${taskId}/download/${encodeURIComponent(filename)}`,
 };

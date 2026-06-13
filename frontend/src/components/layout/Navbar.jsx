@@ -27,7 +27,7 @@ function MoonIcon() {
 
 export default function Navbar() {
   const { currentUser, logout, token } = useAuth();
-  const { theme, toggleTheme, showToast } = useApp();
+  const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const [workerStatus, setWorkerStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -36,6 +36,90 @@ export default function Navbar() {
   const [docContent, setDocContent] = React.useState('');
   const [docLoading, setDocLoading] = React.useState(false);
   const [docError, setDocError] = React.useState(null);
+  const [nowMs, setNowMs] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const activeStage = React.useMemo(() => {
+    if (!selectedChallenge?.stages) return null;
+    const now = nowMs;
+    return selectedChallenge.stages.find(st => {
+      const start = new Date(st.start_time).getTime();
+      const end = new Date(st.end_time).getTime();
+      return now >= start && now <= end && !st.is_finalized;
+    });
+  }, [selectedChallenge, nowMs]);
+
+  const timeRemainingMs = React.useMemo(() => {
+    const now = nowMs;
+    if (activeStage) {
+      return new Date(activeStage.end_time).getTime() - now;
+    }
+    if (selectedChallenge?.end_time) {
+      const start = new Date(selectedChallenge.start_time).getTime();
+      const end = new Date(selectedChallenge.end_time).getTime();
+      if (now >= start && now <= end && !selectedChallenge.scores_finalized) {
+        return end - now;
+      }
+    }
+    return null;
+  }, [activeStage, selectedChallenge, nowMs]);
+
+  const renderNavbarTimer = () => {
+    if (timeRemainingMs === null) return null;
+    
+    let color = '#10b981'; // Green
+    let isFlashing = false;
+    
+    const minutesLeft = timeRemainingMs / 60000;
+    if (minutesLeft <= 5) {
+      color = '#ef4444'; // Red
+      isFlashing = true;
+    } else if (minutesLeft <= 15) {
+      color = '#ef4444'; // Red
+    } else if (minutesLeft <= 30) {
+      color = '#f59e0b'; // Yellow
+    }
+    
+    const totalSecs = Math.ceil(Math.max(0, timeRemainingMs) / 1000);
+    const hours = Math.floor(totalSecs / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const seconds = totalSecs % 60;
+    
+    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const labelStr = activeStage ? `Stage ${activeStage.stage_number} left` : 'Time left';
+    
+    return (
+      <div 
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 12px',
+          background: 'rgba(30, 41, 59, 0.5)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          color: color,
+          userSelect: 'none',
+          transition: 'all 0.2s ease',
+        }}
+        className={isFlashing ? 'animate-flash-red' : ''}
+        title={activeStage ? `Time remaining in Stage ${activeStage.stage_number}` : 'Time remaining in competition'}
+      >
+        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{labelStr}: {timeStr}</span>
+      </div>
+    );
+  };
 
   const docTabs = React.useMemo(() => {
     const tabs = [{ id: 'student', label: 'Student Guide' }];
@@ -139,6 +223,7 @@ export default function Navbar() {
 
         {/* Center: Cluster status & Docs */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {renderNavbarTimer()}
           <button 
             onClick={() => setIsModalOpen(prev => !prev)}
             style={{

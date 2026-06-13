@@ -24,3 +24,15 @@ class Config:
     
     # Hugging Face Settings
     HF_CACHE_DIR = os.environ.get("HF_CACHE_DIR", os.path.join(os.path.abspath(os.path.dirname(__file__)), "hf_cache"))
+    
+    # SQLAlchemy connection pool settings (only for PostgreSQL)
+    SQLALCHEMY_ENGINE_OPTIONS = {}
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_size': 30,
+            'pool_timeout': 30,
+            'max_overflow': 60
+        }
+    
+    # Grace period (seconds) for submissions after the official deadline
+    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))

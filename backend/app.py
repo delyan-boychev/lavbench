@@ -88,7 +88,44 @@ def seed_database():
             db.session.commit()
         except Exception:
             db.session.rollback()
-    
+
+    # Ensure stage_id column exists on tasks table
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stage_id INTEGER"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN stage_id INTEGER"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Ensure is_frozen column exists on challenges table
+    try:
+        db.session.execute(db.text("ALTER TABLE challenges ADD COLUMN IF NOT EXISTS is_frozen BOOLEAN DEFAULT FALSE"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE challenges ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Ensure code_storage_path and log_storage_path columns exist on submissions table
+    for col in ('code_storage_path', 'log_storage_path'):
+        try:
+            db.session.execute(db.text(f"ALTER TABLE submissions ADD COLUMN IF NOT EXISTS {col} VARCHAR(512)"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            try:
+                db.session.execute(db.text(f"ALTER TABLE submissions ADD COLUMN {col} VARCHAR(512)"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
     # Check if we already have challenges
     if Challenge.query.first():
         return

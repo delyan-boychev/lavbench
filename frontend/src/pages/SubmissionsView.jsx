@@ -27,6 +27,7 @@ export default function SubmissionsView() {
   const [submissionsPage, setSubmissionsPage] = useState(1);
   const [submissionsPages, setSubmissionsPages] = useState(1);
   const [submissionsTotal, setSubmissionsTotal] = useState(0);
+  const [nowMs, setNowMs] = useState(Date.now());
 
   useEffect(() => {
     if (challengeId) {
@@ -40,6 +41,14 @@ export default function SubmissionsView() {
       setSelectedTask(selectedChallenge.tasks[0]);
     }
   }, [selectedChallenge, selectedTask, setSelectedTask]);
+
+  // Tick timer every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchSubmissions = async (silent = false, pageToFetch = submissionsPage) => {
     if (!selectedTask) {
@@ -59,7 +68,7 @@ export default function SubmissionsView() {
           setSelectedSubmission(prev => {
             if (!prev) return null;
             const updated = data.items.find(s => s.id === prev.id);
-            return updated || prev;
+            return updated ? { ...prev, ...updated } : prev;
           });
         } else {
           const arr = data || [];
@@ -70,7 +79,7 @@ export default function SubmissionsView() {
           setSelectedSubmission(prev => {
             if (!prev) return null;
             const updated = arr.find(s => s.id === prev.id);
-            return updated || prev;
+            return updated ? { ...prev, ...updated } : prev;
           });
         }
       }
@@ -111,7 +120,7 @@ export default function SubmissionsView() {
             setSelectedSubmission(prev => {
               if (!prev) return null;
               const updated = data.items.find(s => s.id === prev.id);
-              return updated || prev;
+              return updated ? { ...prev, ...updated } : prev;
             });
           } else {
             const arr = data || [];
@@ -122,7 +131,7 @@ export default function SubmissionsView() {
             setSelectedSubmission(prev => {
               if (!prev) return null;
               const updated = arr.find(s => s.id === prev.id);
-              return updated || prev;
+              return updated ? { ...prev, ...updated } : prev;
             });
           }
         }
@@ -196,6 +205,91 @@ export default function SubmissionsView() {
     }
   };
 
+  const handleSelectSubmission = async (sub) => {
+    if (!sub) {
+      setSelectedSubmission(null);
+      return;
+    }
+    setSelectedSubmission(sub);
+    try {
+      const res = await TaskService.getSubmissionDetail(sub.id);
+      if (res.ok) {
+        setSelectedSubmission(prev => prev && prev.id === sub.id ? { ...prev, ...res.data } : prev);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const stage = selectedChallenge?.stages?.find(s => s.id === selectedTask?.stage_id);
+  
+  let finalSelectDeadline = null;
+  let hasRunningPreDeadline = false;
+
+  if (stage) {
+    const stageEndTimeMs = new Date(stage.end_time).getTime();
+    finalSelectDeadline = stageEndTimeMs + 300000;
+    if (submissions && submissions.length > 0) {
+      for (const sub of submissions) {
+        const createdAtMs = new Date(sub.created_at).getTime();
+        if (createdAtMs <= stageEndTimeMs) {
+          if (sub.executed_at) {
+            const executedAtMs = new Date(sub.executed_at).getTime();
+            const tSelect = executedAtMs + 300000;
+            if (tSelect > finalSelectDeadline) {
+              finalSelectDeadline = tSelect;
+            }
+          } else if (sub.status === 'queued' || sub.status === 'running') {
+            hasRunningPreDeadline = true;
+          }
+        }
+      }
+    }
+  }
+
+  const isSelectionDisabled = stage 
+    ? (!hasRunningPreDeadline && finalSelectDeadline !== null && nowMs > finalSelectDeadline)
+    : false;
+
+  const isSubmissionAfterDeadline = stage && selectedSubmission 
+    ? new Date(selectedSubmission.created_at).getTime() > new Date(stage.end_time).getTime()
+    : false;
+
+  const renderTimer = () => {
+    if (!stage) return null;
+    let timerText = '';
+    let isExpired = false;
+
+    if (hasRunningPreDeadline) {
+      timerText = 'Waiting for running pre-deadline submissions to complete evaluation...';
+    } else if (finalSelectDeadline) {
+      const diff = finalSelectDeadline - nowMs;
+      if (diff <= 0) {
+        timerText = 'Selection closed';
+        isExpired = true;
+      } else {
+        const min = Math.floor(diff / 60000);
+        const sec = Math.floor((diff % 60000) / 1000);
+        timerText = `Time remaining to select final: ${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+      }
+    }
+
+    return (
+      <div style={{
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        color: isExpired ? 'var(--danger)' : 'var(--warning)',
+        background: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+        border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
+        borderRadius: 'var(--radius-md)',
+        padding: '10px 14px',
+        textAlign: 'center',
+      }}>
+        {timerText}
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
       {selectedChallenge ? (
@@ -227,33 +321,38 @@ export default function SubmissionsView() {
           )}
 
           {selectedTask ? (
-            <div key={selectedTask.id} style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr',
-              gap: 24,
-            }} className="lg:grid-cols-[320px_1fr] items-start animate-fadein">
-              
-              {/* Left Column: Submissions List */}
-              <SubmissionList 
-                submissions={submissions}
-                selected={selectedSubmission}
-                onSelect={setSelectedSubmission}
-                loading={loading}
-                page={submissionsPage}
-                pages={submissionsPages}
-                total={submissionsTotal}
-                perPage={10}
-                onPageChange={setSubmissionsPage}
-              />
+            <div key={selectedTask.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {renderTimer()}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                gap: 24,
+              }} className="lg:grid-cols-[320px_1fr] items-start animate-fadein">
+                
+                {/* Left Column: Submissions List */}
+                <SubmissionList 
+                  submissions={submissions}
+                  selected={selectedSubmission}
+                  onSelect={handleSelectSubmission}
+                  loading={loading}
+                  page={submissionsPage}
+                  pages={submissionsPages}
+                  total={submissionsTotal}
+                  perPage={10}
+                  onPageChange={setSubmissionsPage}
+                />
 
-              {/* Right Column: Submission Viewer */}
-              <SubmissionViewer 
-                submission={selectedSubmission}
-                currentUser={currentUser}
-                onSelectFinal={handleSelectFinal}
-                selectingFinal={selectingFinal}
-              />
+                {/* Right Column: Submission Viewer */}
+                <SubmissionViewer 
+                  submission={selectedSubmission}
+                  currentUser={currentUser}
+                  onSelectFinal={handleSelectFinal}
+                  selectingFinal={selectingFinal}
+                  isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
+                  isSubmissionAfterDeadline={isSubmissionAfterDeadline}
+                />
 
+              </div>
             </div>
           ) : (
             <EmptyState message="Please select a task to view submissions." minHeight={200} />

@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 from cryptography.fernet import Fernet
+import uuid
 
 db = SQLAlchemy()
 
@@ -176,15 +177,34 @@ class Challenge(db.Model):
     scores_finalized = db.Column(db.Boolean, default=False)
     start_time = db.Column(db.DateTime, nullable=True)
     end_time = db.Column(db.DateTime, nullable=True)
-    freeze_time = db.Column(db.DateTime, nullable=True)
+    is_frozen = db.Column(db.Boolean, default=False, nullable=False)
     double_blind = db.Column(db.Boolean, default=True, nullable=False)
     reveal_public_scores = db.Column(db.Boolean, default=True, nullable=False)
     reveal_private_scores = db.Column(db.Boolean, default=True, nullable=False)
     reveal_points = db.Column(db.Boolean, default=True, nullable=False)
+    timezone = db.Column(db.String(50), nullable=False, default='UTC')
     
     tasks = db.relationship('Task', backref='challenge', lazy=True, cascade="all, delete-orphan")
     submissions = db.relationship('Submission', backref='challenge', lazy=True, cascade="all, delete-orphan")
+    stages = db.relationship('Stage', backref='challenge', lazy=True, cascade="all, delete-orphan", order_by="Stage.stage_number")
     
+    @property
+    def computed_status(self):
+        if self.is_archived:
+            return "archived"
+        if self.scores_finalized:
+            return "finalized"
+        
+        now = datetime.utcnow()
+        if self.start_time and now < self.start_time:
+            return "not_started"
+        if self.is_frozen:
+            return "frozen"
+        if self.end_time and now > self.end_time:
+            return "ended"
+        
+        return "active"
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -206,9 +226,45 @@ class Challenge(db.Model):
             "reveal_points": self.reveal_points,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
-            "freeze_time": self.freeze_time.isoformat() if self.freeze_time else None,
+            "is_frozen": self.is_frozen,
             "double_blind": self.double_blind,
-            "tasks": [t.to_dict() for t in self.tasks]
+            "timezone": self.timezone,
+            "status": self.computed_status,
+            "tasks": [t.to_dict() for t in self.tasks],
+            "stages": [s.to_dict() for s in self.stages],
+            "num_tasks": len(self.tasks)
+        }
+
+class Stage(db.Model):
+    __tablename__ = 'stages'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    stage_number = db.Column(db.Integer, nullable=False, default=1)
+    title = db.Column(db.String(255), nullable=False)
+    
+    start_time = db.Column(db.DateTime, nullable=False)
+    end_time = db.Column(db.DateTime, nullable=False)
+    
+    is_finalized = db.Column(db.Boolean, default=False, nullable=False)
+    finalize_type = db.Column(db.String(50), nullable=True) # "internal" or "visible"
+    reveal_public = db.Column(db.Boolean, default=True, nullable=False)
+    reveal_private = db.Column(db.Boolean, default=False, nullable=False)
+    reveal_points = db.Column(db.Boolean, default=False, nullable=False)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "challenge_id": self.challenge_id,
+            "stage_number": self.stage_number,
+            "title": self.title,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "is_finalized": self.is_finalized,
+            "finalize_type": self.finalize_type,
+            "reveal_public": self.reveal_public,
+            "reveal_private": self.reveal_private,
+            "reveal_points": self.reveal_points
         }
 
 class Task(db.Model):
@@ -216,6 +272,7 @@ class Task(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
     
@@ -301,11 +358,16 @@ class Task(db.Model):
             "hf_eval_repo": self.hf_eval_repo,
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
-            "submission_period_hours": self.submission_period_hours
+            "submission_period_hours": self.submission_period_hours,
+            "stage_id": self.stage_id
         }
 
 class Submission(db.Model):
     __tablename__ = 'submissions'
+    
+    __table_args__ = (
+        db.Index('idx_sub_user_task', 'user_id', 'task_id', 'challenge_id'),
+    )
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -314,11 +376,13 @@ class Submission(db.Model):
     
     status = db.Column(db.String(50), default='queued')
     detailed_status = db.Column(db.String(100), default='queued')
-    code_cells = db.Column(db.Text, nullable=False)
+    
+    # Lightweight storage path pointers instead of heavy text columns
+    code_storage_path = db.Column(db.String(512), nullable=True)
+    log_storage_path = db.Column(db.String(512), nullable=True)
     
     public_score = db.Column(db.Float, nullable=True)
     private_score = db.Column(db.Float, nullable=True)
-    logs = db.Column(db.Text, nullable=True)
     gpu_node = db.Column(db.String(255), nullable=True)
     execution_time_ms = db.Column(db.Integer, nullable=True)
     
@@ -334,9 +398,63 @@ class Submission(db.Model):
     is_final_selection = db.Column(db.Boolean, default=False)
     is_disqualified = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(255), nullable=True)
-    plagiarism_score = db.Column(db.Float, nullable=True)
-    llm_probability = db.Column(db.Float, nullable=True)
     
+    @property
+    def code_cells(self):
+        if hasattr(self, '_cached_code_cells') and self._cached_code_cells is not None:
+            return self._cached_code_cells
+        if self.code_storage_path and os.path.exists(self.code_storage_path):
+            try:
+                with open(self.code_storage_path, 'r', encoding='utf-8') as f:
+                    self._cached_code_cells = f.read()
+                    return self._cached_code_cells
+            except Exception:
+                pass
+        return "[]"
+
+    @code_cells.setter
+    def code_cells(self, value):
+        self._cached_code_cells = value
+        try:
+            from config import Config
+            submissions_dir = os.path.join(Config.UPLOAD_FOLDER, "submissions")
+            os.makedirs(submissions_dir, exist_ok=True)
+            if not self.code_storage_path:
+                filename = f"submission_{uuid.uuid4().hex}.json"
+                self.code_storage_path = os.path.join(submissions_dir, filename)
+            with open(self.code_storage_path, 'w', encoding='utf-8') as f:
+                f.write(value)
+        except Exception as e:
+            print(f"Error saving code_cells to file: {e}")
+
+    @property
+    def logs(self):
+        if hasattr(self, '_cached_logs') and self._cached_logs is not None:
+            return self._cached_logs
+        if self.log_storage_path and os.path.exists(self.log_storage_path):
+            try:
+                with open(self.log_storage_path, 'r', encoding='utf-8') as f:
+                    self._cached_logs = f.read()
+                    return self._cached_logs
+            except Exception:
+                pass
+        return ""
+
+    @logs.setter
+    def logs(self, value):
+        self._cached_logs = value
+        try:
+            from config import Config
+            logs_dir = os.path.join(Config.UPLOAD_FOLDER, "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            if not self.log_storage_path:
+                filename = f"log_{uuid.uuid4().hex}.txt"
+                self.log_storage_path = os.path.join(logs_dir, filename)
+            with open(self.log_storage_path, 'w', encoding='utf-8') as f:
+                f.write(value or "")
+        except Exception as e:
+            print(f"Error saving logs to file: {e}")
+
     def to_dict(self, view_role='competitor', current_user_id=None):
         finalized = self.challenge.scores_finalized if self.challenge else False
         double_blind = self.challenge.double_blind if self.challenge else True
@@ -385,7 +503,42 @@ class Submission(db.Model):
             "final_weighted_score_private": self.final_weighted_score_private if show_private_score else None,
             "is_final_selection": self.is_final_selection,
             "is_disqualified": self.is_disqualified,
-            "celery_task_id": self.celery_task_id,
-            "plagiarism_score": self.plagiarism_score,
-            "llm_probability": self.llm_probability
+            "celery_task_id": self.celery_task_id
+        }
+
+    def to_dict_light(self, view_role='competitor', current_user_id=None):
+        res = self.to_dict(view_role=view_role, current_user_id=current_user_id)
+        res.pop("code_cells", None)
+        res.pop("logs", None)
+        return res
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
+    old_score = db.Column(db.Integer, nullable=True)
+    new_score = db.Column(db.Integer, nullable=True)
+    reason = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    admin = db.relationship('User', foreign_keys=[admin_id])
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+    task = db.relationship('Task')
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "admin_id": self.admin_id,
+            "admin_username": self.admin.username if self.admin else None,
+            "target_user_id": self.target_user_id,
+            "target_user_username": self.target_user.username if self.target_user else None,
+            "task_id": self.task_id,
+            "task_title": self.task.title if self.task else None,
+            "old_score": self.old_score,
+            "new_score": self.new_score,
+            "reason": self.reason,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None
         }

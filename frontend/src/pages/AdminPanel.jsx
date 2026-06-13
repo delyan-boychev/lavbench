@@ -8,6 +8,17 @@ import Pagination from '../components/ui/Pagination';
 import CodeHighlight from '../components/ui/CodeHighlight';
 import ToggleField from '../components/ui/ToggleField';
 
+const TIMEZONES = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Europe/Sofia', label: 'Europe/Sofia' },
+  { value: 'Europe/London', label: 'Europe/London' },
+  { value: 'Europe/Paris', label: 'Europe/Paris' },
+  { value: 'America/New_York', label: 'America/New_York' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai' }
+];
+
 const CUSTOM_EVALUATOR_TEMPLATE = `import os
 import json
 import traceback
@@ -89,6 +100,29 @@ export default function AdminPanel() {
     return dateStr.substring(0, 16);
   };
 
+  const formatDateTime = (dateStr, timezone = 'UTC') => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      const formatter = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: timezone || 'UTC',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const parts = formatter.formatToParts(d);
+      const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+      return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${timezone || 'UTC'})`;
+    } catch (err) {
+      const d = new Date(dateStr);
+      const pad = (n) => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} (Local)`;
+    }
+  };
+
   const isChallengeStarted = (challengeId) => {
     if (!challengeId) return false;
     const challenge = challenges.find(c => c.id.toString() === challengeId.toString());
@@ -122,7 +156,8 @@ export default function AdminPanel() {
     start_time: '',
     end_time: '',
     freeze_time: '',
-    double_blind: true
+    double_blind: true,
+    timezone: 'UTC'
   });
 
   // Edit Challenge State
@@ -149,7 +184,8 @@ export default function AdminPanel() {
     hf_api_key: '',
     public_eval_percentage: 30,
     max_submissions_per_period: '',
-    submission_period_hours: ''
+    submission_period_hours: '',
+    stage_id: ''
   });
 
   // Task Upload Files
@@ -157,6 +193,25 @@ export default function AdminPanel() {
   const [evaluatorFile, setEvaluatorFile] = useState(null);
   const [baselineFile, setBaselineFile] = useState(null);
   const [solutionFile, setSolutionFile] = useState(null);
+
+  // Stage CRUD & Finalization State
+  const [isCreatingStage, setIsCreatingStage] = useState(false);
+  const [editingStage, setEditingStage] = useState(null);
+  const [stageChallengeId, setStageChallengeId] = useState(null);
+  const [stageForm, setStageForm] = useState({
+    title: '',
+    stage_number: '',
+    start_time: '',
+    end_time: ''
+  });
+
+  const [finalizingStage, setFinalizingStage] = useState(null);
+  const [stageFinalizeForm, setStageFinalizeForm] = useState({
+    finalize_type: 'visible',
+    reveal_public: true,
+    reveal_private: false,
+    reveal_points: false
+  });
 
   // Manual Competitor Register State
   const [newCompetitor, setNewCompetitor] = useState({
@@ -484,6 +539,182 @@ export default function AdminPanel() {
     }
   };
 
+  // Handle scheduled test competition creation
+  const handleCreateTestCompetition = async (id) => {
+    const ok = await confirm({
+      title: "Schedule Test Competition",
+      message: "Do you want to schedule a softer test competition for students to practice? It starts now, lasts 2 hours, and has relaxed constraints (no double-blind, higher submission limits, CPU execution)."
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/challenges/${id}/test-competition`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("Test practice competition scheduled successfully!");
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || "Failed to schedule test competition.", "rose");
+      }
+    } catch (e) {
+      showToast("Network error scheduling test competition.", "rose");
+    }
+  };
+
+  // Stage management helpers
+  const initCreateStage = (challengeId) => {
+    setStageChallengeId(challengeId);
+    setStageForm({
+      title: '',
+      stage_number: '',
+      start_time: '',
+      end_time: ''
+    });
+    setIsCreatingStage(true);
+  };
+
+  const initEditStage = (challengeId, stage) => {
+    setStageChallengeId(challengeId);
+    setEditingStage(stage);
+    setStageForm({
+      title: stage.title || '',
+      stage_number: stage.stage_number !== null && stage.stage_number !== undefined ? stage.stage_number.toString() : '',
+      start_time: formatDateTimeLocal(stage.start_time),
+      end_time: formatDateTimeLocal(stage.end_time)
+    });
+  };
+
+  const initFinalizeStage = (challengeId, stage) => {
+    setStageChallengeId(challengeId);
+    setFinalizingStage(stage);
+    setStageFinalizeForm({
+      finalize_type: 'visible',
+      reveal_public: true,
+      reveal_private: false,
+      reveal_points: false
+    });
+  };
+
+  const handleSaveCreateStage = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        title: stageForm.title,
+        stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
+        start_time: stageForm.start_time,
+        end_time: stageForm.end_time
+      };
+      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Stage created successfully!');
+        setIsCreatingStage(false);
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || 'Failed to create stage.', 'rose');
+      }
+    } catch (err) {
+      showToast('Network error creating stage.', 'rose');
+    }
+  };
+
+  const handleSaveUpdateStage = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        title: stageForm.title,
+        stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
+        start_time: stageForm.start_time,
+        end_time: stageForm.end_time
+      };
+      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Stage updated successfully!');
+        setEditingStage(null);
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || 'Failed to update stage.', 'rose');
+      }
+    } catch (err) {
+      showToast('Network error updating stage.', 'rose');
+    }
+  };
+
+  const handleDeleteStage = async (challengeId, stageId, title) => {
+    const ok = await confirm({
+      title: "Delete Stage",
+      message: `Are you sure you want to permanently delete stage "${title}"? Associated tasks will be unbound from this stage.`
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Stage "${title}" deleted.`);
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || 'Failed to delete stage.', 'rose');
+      }
+    } catch (err) {
+      showToast('Network error deleting stage.', 'rose');
+    }
+  };
+
+  const handleSaveFinalizeStage = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        finalize_type: stageFinalizeForm.finalize_type,
+        reveal_public: stageFinalizeForm.reveal_public,
+        reveal_private: stageFinalizeForm.reveal_private,
+        reveal_points: stageFinalizeForm.reveal_points
+      };
+      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Stage finalized successfully!');
+        setFinalizingStage(null);
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || 'Failed to finalize stage.', 'rose');
+      }
+    } catch (err) {
+      showToast('Network error finalizing stage.', 'rose');
+    }
+  };
+
   // Set up task form edit / create
   const initCreateTask = () => {
     setTaskForm({
@@ -504,7 +735,8 @@ export default function AdminPanel() {
       hf_api_key: '',
       public_eval_percentage: 30,
       max_submissions_per_period: '',
-      submission_period_hours: ''
+      submission_period_hours: '',
+      stage_id: ''
     });
     setTaskFiles([]);
     setEvaluatorFile(null);
@@ -532,7 +764,8 @@ export default function AdminPanel() {
       hf_api_key: '', // Keep empty for input security
       public_eval_percentage: task.public_eval_percentage || 30,
       max_submissions_per_period: task.max_submissions_per_period !== null ? task.max_submissions_per_period : '',
-      submission_period_hours: task.submission_period_hours !== null ? task.submission_period_hours : ''
+      submission_period_hours: task.submission_period_hours !== null ? task.submission_period_hours : '',
+      stage_id: task.stage_id !== null && task.stage_id !== undefined ? task.stage_id.toString() : ''
     });
     setEditingTask(task);
     setTaskFiles([]);
@@ -566,6 +799,7 @@ export default function AdminPanel() {
     
     if (taskForm.max_submissions_per_period) formData.append("max_submissions_per_period", taskForm.max_submissions_per_period);
     if (taskForm.submission_period_hours) formData.append("submission_period_hours", taskForm.submission_period_hours);
+    if (taskForm.stage_id !== undefined && taskForm.stage_id !== null) formData.append("stage_id", taskForm.stage_id);
 
     // Regular task resource files (up to 5)
     taskFiles.forEach((file, idx) => {
@@ -1100,7 +1334,7 @@ export default function AdminPanel() {
       <div className="lg:col-span-3">
 
         {/* 1. COMPETITION & TASK CONFIGURATION */}
-        {adminSubTab === 'competition-mgmt' && !isCreatingTask && !editingTask && (
+        {adminSubTab === 'competition-mgmt' && !isCreatingTask && !editingTask && !isCreatingStage && !editingStage && !finalizingStage && (
           <div className="flex flex-col gap-6">
             
             {editingChallenge ? (
@@ -1160,7 +1394,7 @@ export default function AdminPanel() {
                       required 
                     />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <InputField 
                       label="Start Time" 
                       type="datetime-local"
@@ -1178,6 +1412,13 @@ export default function AdminPanel() {
                       type="datetime-local"
                       value={formatDateTimeLocal(editingChallenge.freeze_time)} 
                       onChange={(e) => setEditingChallenge({ ...editingChallenge, freeze_time: e.target.value })} 
+                    />
+                    <SelectField
+                      label="Competition Timezone"
+                      value={editingChallenge.timezone || 'UTC'}
+                      onChange={(val) => setEditingChallenge({ ...editingChallenge, timezone: val })}
+                      options={TIMEZONES}
+                      required
                     />
                   </div>
                   <div className="flex flex-col gap-3 mt-2.5">
@@ -1229,6 +1470,14 @@ export default function AdminPanel() {
                           >
                             {c.is_archived ? "Restore" : "Archive"}
                           </Button>
+                          {!c.title.startsWith("Test:") && (
+                            <Button 
+                              variant="secondary" 
+                              onClick={() => handleCreateTestCompetition(c.id)}
+                            >
+                              Schedule Test
+                            </Button>
+                          )}
                           {c.scores_finalized && (
                             <>
                               <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">Finalized</span>
@@ -1239,6 +1488,16 @@ export default function AdminPanel() {
                                 Download Submissions ZIP
                               </Button>
                             </>
+                          )}
+                          {!c.scores_finalized && currentUser.role === 'jury' && (
+                            <Button 
+                              variant="accent" 
+                              onClick={() => handleFinalize(c.id)}
+                              disabled={c.stages && c.stages.some(st => !st.is_finalized)}
+                              title={c.stages && c.stages.some(st => !st.is_finalized) ? "All stages must be finalized first" : ""}
+                            >
+                              Finalize Challenge
+                            </Button>
                           )}
                           <Button variant="danger" onClick={() => handleDeleteChallenge(c.id, c.title)}>Delete</Button>
                         </div>
@@ -1265,6 +1524,41 @@ export default function AdminPanel() {
                           </div>
                         )}
                       </div>
+
+                      <div className="border-t border-white/5 pt-4 mt-2">
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stages in this Competition ({c.stages ? c.stages.length : 0})</h3>
+                          <Button variant="primary" className="py-1 px-3 text-[10px]" onClick={() => initCreateStage(c.id)}>+ Add Stage</Button>
+                        </div>
+                        {c.stages?.length === 0 ? (
+                          <p className="text-xs text-slate-500 italic">No stages configured yet.</p>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {c.stages?.map(st => (
+                              <div key={st.id} className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs">
+                                <div>
+                                  <span className="font-bold text-slate-200">Stage {st.stage_number}: {st.title}</span>
+                                  <span className="text-[10px] text-indigo-400 ml-3">
+                                    {formatDateTime(st.start_time, c.timezone)} to {formatDateTime(st.end_time, c.timezone)}
+                                  </span>
+                                  {st.is_finalized && (
+                                    <span className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}>
+                                      Finalized ({st.finalize_type})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button variant="secondary" className="py-1 px-2.5" onClick={() => initEditStage(c.id, st)}>Edit</Button>
+                                  {!st.is_finalized && (
+                                    <Button variant="accent" className="py-1 px-2.5" onClick={() => initFinalizeStage(c.id, st)}>Finalize</Button>
+                                  )}
+                                  <Button variant="danger" className="py-1 px-2.5" onClick={() => handleDeleteStage(c.id, st.id, st.title)}>Delete</Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -1279,6 +1573,123 @@ export default function AdminPanel() {
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {/* Stage Create/Edit Form */}
+        {adminSubTab === 'competition-mgmt' && (isCreatingStage || editingStage) && (
+          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+              <h2 className="text-xl font-bold text-white">
+                {isCreatingStage ? 'Create New Stage' : `Edit Stage: ${editingStage?.title}`}
+              </h2>
+              <Button variant="secondary" onClick={() => { setIsCreatingStage(false); setEditingStage(null); }}>Cancel</Button>
+            </div>
+            
+            <form onSubmit={isCreatingStage ? handleSaveCreateStage : handleSaveUpdateStage} className="flex flex-col gap-4">
+              <InputField 
+                label="Stage Title" 
+                value={stageForm.title} 
+                onChange={(e) => setStageForm({ ...stageForm, title: e.target.value })} 
+                required 
+              />
+              <InputField 
+                label="Stage Number (Optional)" 
+                type="number"
+                value={stageForm.stage_number} 
+                onChange={(e) => setStageForm({ ...stageForm, stage_number: e.target.value })} 
+                placeholder="Leave blank to auto-increment"
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InputField 
+                  label="Start Time" 
+                  type="datetime-local"
+                  value={stageForm.start_time} 
+                  onChange={(e) => setStageForm({ ...stageForm, start_time: e.target.value })} 
+                  required
+                />
+                <InputField 
+                  label="End Time" 
+                  type="datetime-local"
+                  value={stageForm.end_time} 
+                  onChange={(e) => setStageForm({ ...stageForm, end_time: e.target.value })} 
+                  required
+                />
+              </div>
+              <div className="flex gap-3 mt-4">
+                <Button type="submit" variant="primary">{isCreatingStage ? 'Create Stage' : 'Save Changes'}</Button>
+                <Button onClick={() => { setIsCreatingStage(false); setEditingStage(null); }} variant="secondary">Cancel</Button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Stage Finalize Form */}
+        {adminSubTab === 'competition-mgmt' && finalizingStage && (
+          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+              <h2 className="text-xl font-bold text-white">
+                Finalize Stage: {finalizingStage.title}
+              </h2>
+              <Button variant="secondary" onClick={() => setFinalizingStage(null)}>Cancel</Button>
+            </div>
+            
+            <form onSubmit={handleSaveFinalizeStage} className="flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-300">Finalization Type</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="finalize_type" 
+                      value="visible" 
+                      checked={stageFinalizeForm.finalize_type === 'visible'}
+                      onChange={() => setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })}
+                    />
+                    Student Visible (Leaderboard displays results according to visibility options below)
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="finalize_type" 
+                      value="internal" 
+                      checked={stageFinalizeForm.finalize_type === 'internal'}
+                      onChange={() => setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })}
+                    />
+                    Internal Only (Only jury members can see identities and scores for this stage)
+                  </label>
+                </div>
+              </div>
+
+              {stageFinalizeForm.finalize_type === 'visible' && (
+                <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
+                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Visibility Rules for Students</h4>
+                  <ToggleField 
+                    label="Reveal Public Split Scores"
+                    id="stage-reveal-public"
+                    checked={stageFinalizeForm.reveal_public}
+                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_public: e.target.checked })}
+                  />
+                  <ToggleField 
+                    label="Reveal Private Split Scores"
+                    id="stage-reveal-private"
+                    checked={stageFinalizeForm.reveal_private}
+                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_private: e.target.checked })}
+                  />
+                  <ToggleField 
+                    label="Reveal Total Points (graded final selection)"
+                    id="stage-reveal-points"
+                    checked={stageFinalizeForm.reveal_points}
+                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_points: e.target.checked })}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-4">
+                <Button type="submit" variant="primary">Finalize Stage</Button>
+                <Button onClick={() => setFinalizingStage(null)} variant="secondary">Cancel</Button>
+              </div>
+            </form>
           </div>
         )}
 
@@ -1303,6 +1714,21 @@ export default function AdminPanel() {
                     value={taskForm.title} 
                     onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} 
                     required 
+                  />
+                  <SelectField
+                    label="Competition Stage (Optional)"
+                    value={taskForm.stage_id}
+                    onChange={(val) => setTaskForm({ ...taskForm, stage_id: val })}
+                    options={[
+                      { value: "", label: "None (Whole Competition Task)" },
+                      ...(challenges.find(c => c.id === (editingTask ? editingTask.challenge_id : selectedChallenge?.id))?.stages || []).map(st => {
+                        const challenge = challenges.find(c => c.id === (editingTask ? editingTask.challenge_id : selectedChallenge?.id));
+                        return {
+                          value: st.id.toString(),
+                          label: `Stage ${st.stage_number}: ${st.title} (${formatDateTime(st.start_time, challenge?.timezone)} to ${formatDateTime(st.end_time, challenge?.timezone)})`
+                        };
+                      })
+                    ]}
                   />
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold text-slate-300">Task Description (Supports Markdown)</label>
@@ -1634,7 +2060,7 @@ export default function AdminPanel() {
                   required 
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <InputField 
                   label="Start Time" 
                   type="datetime-local"
@@ -1652,6 +2078,13 @@ export default function AdminPanel() {
                   type="datetime-local"
                   value={newChallenge.freeze_time} 
                   onChange={(e) => setNewChallenge({ ...newChallenge, freeze_time: e.target.value })} 
+                />
+                <SelectField
+                  label="Competition Timezone"
+                  value={newChallenge.timezone}
+                  onChange={(val) => setNewChallenge({ ...newChallenge, timezone: val })}
+                  options={TIMEZONES}
+                  required
                 />
               </div>
               <div className="flex flex-col gap-3 mt-2.5">
@@ -1737,7 +2170,7 @@ export default function AdminPanel() {
                     <SelectField 
                       label="Assign Competition" 
                       value={editUserForm.challenge_id} 
-                      onChange={(e) => setEditUserForm({ ...editUserForm, challenge_id: e.target.value })} 
+                      onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })} 
                       required 
                       options={[
                         { value: "", label: "-- Choose Competition --" },
@@ -1808,7 +2241,7 @@ export default function AdminPanel() {
                       <SelectField 
                         label="Assign to Competition Challenge" 
                         value={newCompetitor.challenge_id} 
-                        onChange={(e) => setNewCompetitor({ ...newCompetitor, challenge_id: e.target.value })} 
+                        onChange={(val) => setNewCompetitor({ ...newCompetitor, challenge_id: val })} 
                         required 
                         options={[
                           { value: "", label: "-- Choose Competition --" },
@@ -1855,7 +2288,7 @@ export default function AdminPanel() {
                       <SelectField 
                         label="Target Competition Challenge" 
                         value={csvChallengeId} 
-                        onChange={(e) => setCsvChallengeId(e.target.value)} 
+                        onChange={(val) => setCsvChallengeId(val)} 
                         required 
                         options={[
                           { value: "", label: "-- Choose Competition --" },
@@ -2125,7 +2558,7 @@ export default function AdminPanel() {
                   <SelectField 
                     label="Role" 
                     value={newUser.role} 
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} 
+                    onChange={(val) => setNewUser({ ...newUser, role: val })} 
                     required 
                     options={[
                       { value: "competitor", label: "Competitor" },
@@ -2143,7 +2576,7 @@ export default function AdminPanel() {
                       <SelectField 
                         label="Assign Competition" 
                         value={newUser.challenge_id} 
-                        onChange={(e) => setNewUser({ ...newUser, challenge_id: e.target.value })} 
+                        onChange={(val) => setNewUser({ ...newUser, challenge_id: val })} 
                         required 
                         options={[
                           { value: "", label: "-- Choose Competition --" },

@@ -26,6 +26,15 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.app_context = self.app.app_context()
         self.app_context.push()
         
+        # Flush cache to avoid cross-test contamination
+        from cache_utils import get_redis_client
+        r = get_redis_client()
+        if r:
+            try:
+                r.flushdb()
+            except Exception:
+                pass
+                
         db.create_all()
         self.seed_basic_data()
 
@@ -51,7 +60,7 @@ class TestRouteLevelLogic(unittest.TestCase):
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
-            freeze_time=datetime.utcnow() + timedelta(hours=1),
+            is_frozen=False,
             metric_name="accuracy"
         )
         db.session.add(self.challenge)
@@ -465,30 +474,23 @@ class TestRouteLevelLogic(unittest.TestCase):
             self.assertIsNotNone(u["alias_id"])
 
     def test_challenge_leaderboard_freeze_time(self):
-        """Competitors querying the challenge-level leaderboard after freeze time must not see post-freeze scores."""
-        # Create a submission after freeze time
-        self.challenge.freeze_time = datetime.utcnow() - timedelta(minutes=10)
+        """Competitors querying the challenge-level leaderboard when frozen should get the current leaderboard state, and submitting new solutions should be blocked."""
+        self.challenge.is_frozen = True
         self.challenge.scores_finalized = False
         db.session.commit()
 
-        # Submission created before freeze time
-        s_pre = Submission(user_id=self.competitor.id, challenge_id=self.challenge.id, task_id=self.task.id,
-                           status="completed", public_score=0.8, created_at=datetime.utcnow() - timedelta(minutes=20),
-                           code_cells="[]")
-        # Submission created after freeze time
-        s_post = Submission(user_id=self.competitor.id, challenge_id=self.challenge.id, task_id=self.task.id,
-                            status="completed", public_score=0.95, created_at=datetime.utcnow() - timedelta(minutes=5),
-                            code_cells="[]")
-        db.session.add_all([s_pre, s_post])
-        db.session.commit()
+        # Try submitting when frozen
+        res_submit = self.client.post(
+            f'/api/challenges/{self.challenge.id}/submit',
+            json={"task_id": self.task.id, "selected_cells": []},
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res_submit.status_code, 403)
+        self.assertIn("frozen", res_submit.get_json()["error"])
 
         # Competitor queries challenge leaderboard
         res = self.client.get(f'/api/challenges/{self.challenge.id}/leaderboard', headers=self.get_auth_header(self.competitor_token))
         self.assertEqual(res.status_code, 200)
-        leaderboard = res.get_json()["leaderboard"]
-        comp_item = next(item for item in leaderboard if item["user"]["id"] == self.competitor.id)
-        # Should show the pre-freeze score (0.8) instead of post-freeze score (0.95)
-        self.assertEqual(comp_item["public_score"], 0.8)
 
     @patch('tasks.celery.control.inspect')
     def test_worker_status_endpoint(self, mock_inspect_cls):
@@ -645,8 +647,8 @@ class TestRouteLevelLogic(unittest.TestCase):
         res = self.client.get(f'/api/challenges/{self.challenge.id}', headers=competitor_header)
         self.assertEqual(res.status_code, 200)
         
-        # Verify set_cached is called for challenge:<id>
-        mock_set.assert_any_call(f"challenge:{self.challenge.id}", res.get_json(), timeout=600)
+        # Verify set_cached is called for challenge:<id>:competitor
+        mock_set.assert_any_call(f"challenge:{self.challenge.id}:competitor", res.get_json(), timeout=600)
         
         # 2. Invalidate leaderboard cache verification
         from cache_utils import invalidate_leaderboard_cache
@@ -1070,6 +1072,12 @@ class TestRouteLevelLogic(unittest.TestCase):
 
     def test_manual_points_entry_and_leaderboard_ranking(self):
         """Test manual points entry and that finalized leaderboard is sorted by manual points."""
+        # Seed a completed submission for self.competitor so they can receive manual points
+        s_comp = Submission(user_id=self.competitor.id, challenge_id=self.challenge.id, task_id=self.task.id,
+                            status='completed', public_score=0.8, private_score=0.85)
+        db.session.add(s_comp)
+        db.session.commit()
+
         # 1. Finalize the challenge first
         self.challenge.scores_finalized = True
         db.session.commit()
@@ -1078,12 +1086,13 @@ class TestRouteLevelLogic(unittest.TestCase):
         from cache_utils import invalidate_leaderboard_cache
         invalidate_leaderboard_cache(self.challenge.id)
 
-        # 2. Enter manual points as admin for self.competitor
+        # 2. Enter manual points as admin for self.competitor (reason required since finalized)
         payload = {
             "user_id": self.competitor.id,
             "points": {
                 str(self.task.id): 85
-            }
+            },
+            "reason": "Correcting grade error after finalization"
         }
         res = self.client.post(
             f'/api/challenges/{self.challenge.id}/manual-points',
@@ -1106,12 +1115,19 @@ class TestRouteLevelLogic(unittest.TestCase):
         db.session.add(comp2)
         db.session.commit()
 
+        # Seed completed submission for comp2 so they can receive manual points
+        s_comp2 = Submission(user_id=comp2.id, challenge_id=self.challenge.id, task_id=self.task.id,
+                             status='completed', public_score=0.8, private_score=0.85)
+        db.session.add(s_comp2)
+        db.session.commit()
+
         # Award 95 points to comp2
         payload2 = {
             "user_id": comp2.id,
             "points": {
                 str(self.task.id): 95
-            }
+            },
+            "reason": "Correcting grade error after finalization"
         }
         res = self.client.post(
             f'/api/challenges/{self.challenge.id}/manual-points',
@@ -1137,6 +1153,28 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(leaderboard[1]["user"]["id"], self.competitor.id)
         self.assertEqual(leaderboard[1]["total_points"], 85)
         self.assertEqual(leaderboard[1]["rank"], 2)
+
+    def test_submission_blocked_when_competition_finalized(self):
+        # 1. Finalize the challenge scores
+        self.challenge.scores_finalized = True
+        db.session.commit()
+
+        # 2. Competitor tries to submit code: should return 403 Forbidden
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/submit',
+            data=json.dumps({
+                "task_id": self.task.id,
+                "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("Submissions are disabled for finalized competitions", res.get_json()["error"])
+
+        # 3. Unfinalize the challenge
+        self.challenge.scores_finalized = False
+        db.session.commit()
 
     def test_finalize_constraints_and_permissions(self):
         # 1. Reset challenge finalized status
@@ -1199,6 +1237,338 @@ class TestRouteLevelLogic(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertTrue(self.challenge.scores_finalized)
+
+    def test_stages_crud_finalization_and_submission_boundaries(self):
+        # 1. Create a Jury User to get a jury token
+        jury = User(
+            username="jury_member_stage_test",
+            email="jury_stage_test@example.com",
+            role="jury",
+            password_hash="pbkdf2:sha256:placeholder"
+        )
+        db.session.add(jury)
+        db.session.commit()
+        from routes.auth import generate_token
+        jury_token = generate_token(jury.id, "jury")
+
+        # 2. Stage CRUD Operations (POST, PUT, DELETE)
+        # Create a Stage
+        payload = {
+            "title": "Stage 1",
+            "stage_number": 1,
+            "start_time": (datetime.utcnow() - timedelta(hours=1)).isoformat(),
+            "end_time": (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/stages',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 201)
+        stage_data = res.get_json()
+        stage_id = stage_data["id"]
+        self.assertEqual(stage_data["title"], "Stage 1")
+
+        # Update a Stage
+        payload_update = {
+            "title": "Stage 1 Updated"
+        }
+        res = self.client.put(
+            f'/api/challenges/{self.challenge.id}/stages/{stage_id}',
+            data=json.dumps(payload_update),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        stage_data = res.get_json()
+        self.assertEqual(stage_data["title"], "Stage 1 Updated")
+
+        # 3. Create a task in an unstarted stage and check visibility constraints
+        # Create a future stage
+        future_payload = {
+            "title": "Future Stage",
+            "stage_number": 2,
+            "start_time": (datetime.utcnow() + timedelta(hours=10)).isoformat(),
+            "end_time": (datetime.utcnow() + timedelta(hours=11)).isoformat()
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/stages',
+            data=json.dumps(future_payload),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 201)
+        future_stage_id = res.get_json()["id"]
+
+        # Bind self.task to the future stage
+        self.task.stage_id = future_stage_id
+        db.session.commit()
+
+        # competitor fetches challenge metadata: task should NOT be visible
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.get_json()["tasks"]), 0)
+
+        # competitor fetches task details directly: should be excluded / not found
+        res = self.client.get(
+            f'/api/tasks/{self.task.id}',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertIn(res.status_code, [403, 404])
+
+        # competitor tries to submit code to this unstarted stage task: should return 400
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/submit',
+            data=json.dumps({
+                "task_id": self.task.id,
+                "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("has not started yet", res.get_json()["error"])
+
+        # 4. Check stage deadline expired submissions block
+        # Move stage timeline into the past
+        from models import Stage
+        stage2 = Stage.query.get(future_stage_id)
+        stage2.start_time = datetime.utcnow() - timedelta(hours=2)
+        stage2.end_time = datetime.utcnow() - timedelta(hours=1)
+        db.session.commit()
+        from cache_utils import invalidate_challenge_cache
+        invalidate_challenge_cache(self.challenge.id)
+
+        # competitor fetches challenge metadata: task is now visible (since it has started)
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.get_json()["tasks"]), 1)
+
+        # competitor tries to submit code after the deadline: should return 400
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/submit',
+            data=json.dumps({
+                "task_id": self.task.id,
+                "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("has passed", res.get_json()["error"])
+
+        # 5. Test Stage Finalization constraints
+        # Try to finalize Stage 2 as jury: competitor has no manual points for self.task (should fail with 400)
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize',
+            data=json.dumps({"finalize_type": "visible"}),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("missing manual points", res.get_json()["error"])
+
+        # Set manual points for the competitor on this task
+        self.competitor.manual_points = {str(self.task.id): 85}
+        db.session.commit()
+
+        # Finalizing Stage 2 as jury should now succeed
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize',
+            data=json.dumps({"finalize_type": "visible", "reveal_public": True}),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.get_json()["is_finalized"])
+
+        # 6. Test login block for archived challenges
+        self.challenge.is_archived = True
+        db.session.commit()
+
+        # competitor logins: should return 403 Forbidden
+        from werkzeug.security import generate_password_hash
+        self.competitor.password_hash = generate_password_hash("my-competitor-password", method="pbkdf2:sha256")
+        db.session.commit()
+        
+        login_res = self.client.post(
+            '/api/auth/login',
+            data=json.dumps({
+                "username": self.competitor.username,
+                "password": "my-competitor-password"
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(login_res.status_code, 403)
+        self.assertIn("archived", login_res.get_json()["error"])
+
+        # Unarchive challenge
+        self.challenge.is_archived = False
+        db.session.commit()
+
+        # 7. Test cascading student deletion
+        # Verify competitor exists first
+        comp_in_db = User.query.filter_by(challenge_id=self.challenge.id, role="competitor").first()
+        self.assertIsNotNone(comp_in_db)
+
+        # Delete challenge via admin endpoint
+        res = self.client.delete(
+            f'/api/challenges/{self.challenge.id}',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Verify competitor is deleted
+        comp_in_db = User.query.filter_by(challenge_id=self.challenge.id, role="competitor").first()
+        self.assertIsNone(comp_in_db)
+
+    def test_test_competition_creation_and_unstarted_limits(self):
+        # 1. Test unstarted competition limits
+        self.challenge.start_time = datetime.utcnow() + timedelta(hours=2)
+        self.challenge.end_time = datetime.utcnow() + timedelta(hours=4)
+        db.session.commit()
+        from cache_utils import invalidate_challenge_cache
+        invalidate_challenge_cache(self.challenge.id)
+
+        # Competitor fetches challenge metadata: tasks and stages must be empty lists, but num_tasks visible
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(len(data["tasks"]), 0)
+        self.assertEqual(len(data["stages"]), 0)
+        self.assertEqual(data["num_tasks"], 1)
+
+        # Competitor fetches task details directly: should be blocked with 403
+        res = self.client.get(
+            f'/api/tasks/{self.task.id}',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 2. Test scheduled test competition creation
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/test-competition',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 201)
+        data = res.get_json()
+        self.assertIn("Test: ", data["test_competition"]["title"])
+        self.assertEqual(data["test_competition"]["max_eval_requests"], 100)
+        self.assertEqual(data["test_competition"]["double_blind"], False)
+        self.assertEqual(len(data["test_competition"]["tasks"]), 1)
+        self.assertEqual(data["test_competition"]["tasks"][0]["title"], "Warm-up Test Task")
+
+        # Cleanup start/end times
+        self.challenge.start_time = datetime.utcnow() - timedelta(hours=2)
+        self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
+        db.session.commit()
+
+    def test_archived_challenges_visibility(self):
+        """Competitors should not see archived challenges in list or detail routes."""
+        self.challenge.is_archived = True
+        db.session.commit()
+        from cache_utils import invalidate_challenge_cache
+        invalidate_challenge_cache(self.challenge.id)
+
+        # 1. Competitor tries to list challenges
+        res_list = self.client.get('/api/challenges', headers=self.get_auth_header(self.competitor_token))
+        self.assertEqual(res_list.status_code, 200)
+        self.assertEqual(len(res_list.get_json()), 0)
+
+        # 2. Competitor tries to fetch challenge details
+        res_detail = self.client.get(f'/api/challenges/{self.challenge.id}', headers=self.get_auth_header(self.competitor_token))
+        self.assertEqual(res_detail.status_code, 404)
+
+        # 3. Admin should still see the archived challenge
+        res_admin = self.client.get(f'/api/challenges/{self.challenge.id}', headers=self.get_auth_header(self.admin_token))
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertEqual(res_admin.get_json()["is_archived"], True)
+
+        # Restore
+        self.challenge.is_archived = False
+        db.session.commit()
+        invalidate_challenge_cache(self.challenge.id)
+
+    def test_manual_points_audit_and_constraints(self):
+        """Test that updating manual points requires reason if finalized and creates audit log."""
+        # Seed completed submission
+        s_comp = Submission(user_id=self.competitor.id, challenge_id=self.challenge.id, task_id=self.task.id,
+                            status='completed', public_score=0.8, private_score=0.85)
+        db.session.add(s_comp)
+        db.session.commit()
+
+        # Finalize challenge
+        self.challenge.scores_finalized = True
+        db.session.commit()
+
+        # 1. Update points without a reason: should return 400
+        payload_no_reason = {
+            "user_id": self.competitor.id,
+            "points": {
+                str(self.task.id): 50
+            }
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/manual-points',
+            data=json.dumps(payload_no_reason),
+            content_type='application/json',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("justification reason is mandatory", res.get_json()["error"])
+
+        # 2. Update points with reason: should succeed and create AuditLog
+        payload_with_reason = {
+            "user_id": self.competitor.id,
+            "points": {
+                str(self.task.id): 60
+            },
+            "reason": "Scoring correction post finalization"
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/manual-points',
+            data=json.dumps(payload_with_reason),
+            content_type='application/json',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Query AuditLog to verify it exists
+        from models import AuditLog
+        logs = AuditLog.query.filter_by(target_user_id=self.competitor.id).all()
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0].new_score, 60)
+        self.assertEqual(logs[0].reason, "Scoring correction post finalization")
+
+    def test_results_export(self):
+        """Test final results export CSV endpoint and role-based permissions."""
+        # 1. Competitor tries to export: should be blocked
+        res_comp = self.client.get(
+            f'/api/challenges/{self.challenge.id}/export-results',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res_comp.status_code, 403)
+
+        # 2. Admin exports successfully
+        res_admin = self.client.get(
+            f'/api/challenges/{self.challenge.id}/export-results',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertEqual(res_admin.mimetype, "text/csv")
+        csv_data = res_admin.data.decode('utf-8')
+        self.assertIn("Rank,Username,Alias ID", csv_data)
+        self.assertIn("--- SCORE CORRECTION AUDIT LOG ---", csv_data)
 
 if __name__ == '__main__':
     unittest.main()

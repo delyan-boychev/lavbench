@@ -95,16 +95,41 @@ export default function CompetitionBar() {
           <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
             Competition
           </span>
-          <CustomSelect
-            options={challenges.map(c => ({
-              value: c.id,
-              label: `${c.title}${c.is_archived ? ' (Archived)' : ''}`
-            }))}
-            value={selectedChallenge?.id || ''}
-            onChange={handleChallengeChange}
-            placeholder="No competitions"
-            size="sm"
-          />
+          {currentUser?.role === 'competitor' ? (
+            <div 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: 'rgb(129, 140, 248)',
+                userSelect: 'none',
+              }}
+              title="Your assigned competition"
+              data-testid="student-competition-label"
+            >
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2zm-7 2h14v2a7 7 0 01-14 0V9z" />
+              </svg>
+              <span>{selectedChallenge ? selectedChallenge.title : 'No Competition Assigned'}</span>
+            </div>
+          ) : (
+            <CustomSelect
+              options={challenges.map(c => ({
+                value: c.id,
+                label: `${c.title}${c.is_archived ? ' (Archived)' : ''}`
+              }))}
+              value={selectedChallenge?.id || ''}
+              onChange={handleChallengeChange}
+              placeholder="No competitions"
+              size="sm"
+            />
+          )}
           {selectedChallenge?.is_archived && (
             <span className="pill pill-muted">Archived</span>
           )}

@@ -61,4 +61,36 @@ describe('ChallengeOverview Component', () => {
     expect(screen.getByText('8 GB')).toBeInTheDocument();
     expect(screen.getByText('GPU Cluster')).toBeInTheDocument();
   });
+
+  it('renders start/end dates and stage dates in the correct timezone', () => {
+    const challenge = {
+      title: 'Timezone Challenge',
+      description: 'Check dates and times.',
+      is_archived: false,
+      max_eval_requests: 5,
+      ram_limit_mb: 2048,
+      time_limit_sec: 30,
+      gpu_required: false,
+      start_time: '2026-06-13T18:00:00Z',
+      end_time: '2026-06-14T18:00:00Z',
+      timezone: 'Europe/Sofia',
+      stages: [
+        {
+          id: 1,
+          stage_number: 1,
+          title: 'Stage One',
+          start_time: '2026-06-13T18:00:00Z',
+          end_time: '2026-06-13T20:00:00Z',
+          is_finalized: false,
+        }
+      ]
+    };
+
+    render(<ChallengeOverview challenge={challenge} />);
+
+    // In Europe/Sofia (UTC+3 in June), 18:00 UTC is 21:00 Sofia time
+    expect(screen.getAllByText(/2026-06-13 21:00 \(Europe\/Sofia\)/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/2026-06-14 21:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
+    expect(screen.getByText(/to 2026-06-13 23:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
+  });
 });

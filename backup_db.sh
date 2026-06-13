@@ -59,6 +59,28 @@ else
     fi
 fi
 
+# Package uploads directory and combine with DB backup
+echo "--> Packaging uploads directory..."
+UPLOADS_DIR="/Users/delyan-boychev/nai-webplatform/backend/uploads"
+UPLOADS_TAR="$BACKUP_DIR/uploads_${TIMESTAMP}.tar.gz"
+if [ -d "$UPLOADS_DIR" ]; then
+    tar -czf "$UPLOADS_TAR" -C "/Users/delyan-boychev/nai-webplatform/backend" uploads
+fi
+
+PACKAGE_FILE="$BACKUP_DIR/backup_${TIMESTAMP}.tar.gz"
+echo "--> Combining database and uploads into $PACKAGE_FILE..."
+if [ -f "$UPLOADS_TAR" ]; then
+    tar -czf "$PACKAGE_FILE" -C "$BACKUP_DIR" $(basename "$BACKUP_FILE") $(basename "$UPLOADS_TAR")
+    rm "$BACKUP_FILE"
+    rm "$UPLOADS_TAR"
+else
+    tar -czf "$PACKAGE_FILE" -C "$BACKUP_DIR" $(basename "$BACKUP_FILE")
+    rm "$BACKUP_FILE"
+fi
+
+BACKUP_FILE="$PACKAGE_FILE"
+
+
 # Encrypt the backup file at rest using AES-256-CBC
 KEY_PASS=${SECRET_KEY:-"nai-super-secret-key-1337"}
 ENCRYPTED_FILE="${BACKUP_FILE}.enc"
@@ -73,8 +95,12 @@ else
     echo "    [WARNING] Failed to encrypt backup file. Leaving plaintext backup."
 fi
 
-# Clean up backups older than 30 days
-echo "--> Cleaning up old backups..."
-find "$BACKUP_DIR" -type f -mtime +30 -name "backup_*" -delete
-echo "    Cleanup finished. Keeping last 30 days of database states."
+# Clean up backups keeping only the 5 most recent ones
+echo "--> Enforcing retention policy: keeping only the 5 most recent backups..."
+cd "$BACKUP_DIR" || exit
+ls -t backup_* 2>/dev/null | tail -n +6 | while read -r old_backup; do
+    echo "    Deleting old backup: $old_backup"
+    rm "$old_backup"
+done
+echo "    Cleanup finished. Kept the 5 most recent backups."
 echo "============================================="

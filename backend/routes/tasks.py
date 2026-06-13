@@ -20,6 +20,21 @@ def check_competitor_access(user_id, challenge_id):
         return False
     return True
 
+def check_task_started(task, user_role, user_id):
+    if user_role == 'competitor':
+        if not check_competitor_access(user_id, task.challenge_id):
+            return False
+        challenge = task.challenge
+        if challenge and challenge.start_time:
+            if datetime.utcnow() < challenge.start_time:
+                return False
+        if task.stage_id:
+            from models import Stage
+            stage = Stage.query.get(task.stage_id)
+            if stage and datetime.utcnow() < stage.start_time:
+                return False
+    return True
+
 def to_bool(val):
     if val is None:
         return None
@@ -180,10 +195,9 @@ def get_task(task_id):
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     
-    if user_role == 'competitor':
-        if not check_competitor_access(user_id, task.challenge_id):
-            return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
-            
+    if not check_task_started(task, user_role, user_id):
+        return jsonify({"error": "Access denied or task not available yet."}), 403
+        
     return jsonify(task.to_dict())
 
 @tasks_bp.route('/challenges/<int:challenge_id>/tasks', methods=['POST'])
@@ -254,9 +268,16 @@ def create_task(challenge_id):
     public_eval_percentage = to_int(request.form.get("public_eval_percentage")) or 30
     max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
     submission_period_hours = to_int(request.form.get("submission_period_hours"))
-    
+    stage_id = to_int(request.form.get("stage_id"))
+    if stage_id:
+        from models import Stage
+        st = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first()
+        if not st:
+            return jsonify({"error": "Invalid stage_id for this challenge."}), 400
+            
     task = Task(
         challenge_id=challenge_id,
+        stage_id=stage_id,
         title=title,
         description=description,
         ram_limit_mb=ram_limit_mb,
@@ -452,6 +473,16 @@ def update_task(task_id):
         task.max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
     if "submission_period_hours" in request.form:
         task.submission_period_hours = to_int(request.form.get("submission_period_hours"))
+    if "stage_id" in request.form:
+        stage_id_val = to_int(request.form.get("stage_id"))
+        if stage_id_val:
+            from models import Stage
+            st = Stage.query.filter_by(id=stage_id_val, challenge_id=task.challenge_id).first()
+            if not st:
+                return jsonify({"error": "Invalid stage_id for this challenge."}), 400
+            task.stage_id = stage_id_val
+        else:
+            task.stage_id = None
         
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     os.makedirs(task_upload_dir, exist_ok=True)
@@ -559,8 +590,8 @@ def download_task_file(task_id, filename):
     user_id = request.user["user_id"]
     
     if user_role == 'competitor':
-        if not check_competitor_access(user_id, task.challenge_id):
-            return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
+        if not check_task_started(task, user_role, user_id):
+            return jsonify({"error": "Access denied or task not available yet."}), 403
             
     try:
         files_meta = json.loads(task.files)
@@ -604,11 +635,23 @@ def submit_task_code(task_id):
         if not check_competitor_access(user_id, task.challenge_id):
             return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
             
+        if challenge.scores_finalized:
+            return jsonify({"error": "Submissions are disabled for finalized competitions."}), 403
+            
         now = datetime.utcnow()
-        if challenge.start_time and now < challenge.start_time:
-            return jsonify({"error": "This competition has not started yet."}), 400
-        if challenge.end_time and now > challenge.end_time:
-            return jsonify({"error": "This competition has ended and no longer accepts submissions."}), 400
+        if task.stage_id:
+            from models import Stage
+            stage = Stage.query.get(task.stage_id)
+            if stage:
+                if now < stage.start_time:
+                    return jsonify({"error": f"The stage '{stage.title}' has not started yet."}), 400
+                if now > stage.end_time:
+                    return jsonify({"error": f"The deadline for the stage '{stage.title}' has passed."}), 400
+        else:
+            if challenge.start_time and now < challenge.start_time:
+                return jsonify({"error": "This competition has not started yet."}), 400
+            if challenge.end_time and now > challenge.end_time:
+                return jsonify({"error": "This competition has ended and no longer accepts submissions."}), 400
             
     data = request.json or {}
     selected_cells = data.get("selected_cells")
@@ -751,8 +794,11 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
         return {"error": "Task not found."}
         
     if user_role == 'competitor':
-        if not check_competitor_access(user_id, task.challenge_id):
-            return {"error": "Access denied. You are not registered for this competition."}
+        if not check_task_started(task, user_role, user_id):
+            return {"error": "Access denied or task not available yet."}
+        challenge = task.challenge
+        if challenge and challenge.scores_finalized:
+            return {"error": "Access denied. Submissions are hidden for finalized competitions."}
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
         query = Submission.query.filter_by(task_id=task_id)
@@ -760,14 +806,14 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
     if page is not None:
         pagination = query.order_by(Submission.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
         return {
-            "items": [s.to_dict(view_role=user_role, current_user_id=user_id) for s in pagination.items],
+            "items": [s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items],
             "total": pagination.total,
             "page": pagination.page,
             "pages": pagination.pages
         }
         
     submissions = query.order_by(Submission.created_at.desc()).all()
-    return [s.to_dict(view_role=user_role, current_user_id=user_id) for s in submissions]
+    return [s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in submissions]
 
 @tasks_bp.route('/tasks/<int:task_id>/submissions', methods=['GET'])
 @login_required
@@ -789,16 +835,17 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
     challenge = task.challenge
     
     if user_role == 'competitor':
-        if not check_competitor_access(current_user_id, task.challenge_id):
-            return {"error": "Access denied. You are not registered for this competition."}
+        if not check_task_started(task, user_role, current_user_id):
+            return {"error": "Access denied or task not available yet."}
             
     all_completed = Submission.query.filter_by(
         task_id=task_id,
         status='completed'
     ).all()
     
-    if user_role == 'competitor' and challenge.freeze_time and datetime.utcnow() >= challenge.freeze_time and not challenge.scores_finalized:
-        all_completed = [s for s in all_completed if s.created_at < challenge.freeze_time]
+    if user_role == 'competitor' and challenge.is_frozen and not challenge.scores_finalized:
+        # Under manual freeze, new submissions are blocked. The leaderboard displays the current state.
+        pass
     
     is_lower_better = False
     if task.metrics_config:
@@ -897,8 +944,6 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
                 "is_final_selection": False,
                 "is_disqualified": False,
                 "celery_task_id": None,
-                "plagiarism_score": None,
-                "llm_probability": None,
                 "has_submitted": False
             }
         leaderboard_entries.append(entry_dict)
@@ -965,6 +1010,10 @@ def get_task_leaderboard(task_id):
 def get_task_leaderboard_live(task_id):
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
+    if user_role == 'competitor':
+        task = Task.query.get(task_id)
+        if not task or not check_task_started(task, user_role, current_user_id):
+            return jsonify({"error": "Access denied or task not available yet."}), 403
     
     def event_generator():
         with current_app.app_context():
@@ -1004,6 +1053,13 @@ def get_task_submissions_live(task_id):
     page = request.args.get('page', type=int)
     per_page = request.args.get('per_page', 10, type=int)
     
+    if user_role == 'competitor':
+        task = Task.query.get(task_id)
+        if not task or not check_task_started(task, user_role, current_user_id):
+            return jsonify({"error": "Access denied or task not available yet."}), 403
+        if task.challenge and task.challenge.scores_finalized:
+            return jsonify({"error": "Access denied. Submissions are hidden for finalized competitions."}), 403
+            
     def event_generator():
         with current_app.app_context():
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
@@ -1150,10 +1206,6 @@ def report_worker_progress(submission_id):
     if "final_weighted_score_private" in data:
         submission.final_weighted_score_private = data["final_weighted_score_private"]
     db.session.commit()
-    
-    if submission.status in ('completed', 'failed'):
-        from cache_utils import invalidate_leaderboard_cache
-        invalidate_leaderboard_cache(submission.challenge_id)
     
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)

@@ -43,6 +43,16 @@ celery.conf.update(
     enable_utc=True,
     task_queue_max_priority=10,
     task_default_priority=5,
+    beat_schedule={
+        'recalculate-leaderboards-every-15-seconds': {
+            'task': 'tasks.recalculate_all_leaderboards',
+            'schedule': 15.0,
+        },
+        'run-automated-backup-every-10-minutes': {
+            'task': 'tasks.run_automated_backup',
+            'schedule': 600.0,
+        },
+    }
 )
 
 import requests
@@ -409,7 +419,7 @@ if __name__ == "__main__":
 """
 
 
-@celery.task(bind=True, autoretry_for=(RuntimeError,), retry_backoff=True, max_retries=3)
+@celery.task(bind=True)
 def evaluate_submission(self, submission_id, metadata=None):
     """
     Executes a submission in a sandboxed sub-process or docker environment.
@@ -494,6 +504,8 @@ def evaluate_submission(self, submission_id, metadata=None):
 
     # 2. Define status callback helper
     def update_status(status_val, detailed_val, logs_list=None, pub_score=None, priv_score=None, time_ms=None, m_pub=None, m_priv=None):
+        if status_val == 'running' and detailed_val != 'running':
+            return
         if metadata:
             logs_str = "\n".join(logs_list) if logs_list is not None else None
             success = report_status_to_server(
@@ -533,14 +545,11 @@ def evaluate_submission(self, submission_id, metadata=None):
                         sub.metrics_payload_private = m_priv
                     db.session.commit()
                     
-                    from cache_utils import invalidate_leaderboard_cache
-                    invalidate_leaderboard_cache(sub.challenge_id)
-                    
                     publish_submissions_update(sub.task_id, sub.user_id)
                     publish_leaderboard_update(sub.task_id)
 
     # 3. Start evaluation execution
-    update_status('running', 'building_env')
+    update_status('running', 'running')
 
     # Extract user code
     try:
@@ -666,7 +675,13 @@ def evaluate_submission(self, submission_id, metadata=None):
     except:
         pass
 
-    if docker_available and task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
+    if not docker_available:
+        logs.append("Error: Docker is not available on the worker node. Execution blocked for security.")
+        update_status('failed', 'failed', logs_list=logs)
+        report_status_to_server(metadata, 'failed', 'failed', logs=logs)
+        return
+
+    if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
         base_image = task.base_docker_image or "python:3.10-slim"
         
         # Calculate a stable config hash to make builds fast!
@@ -685,7 +700,6 @@ def evaluate_submission(self, submission_id, metadata=None):
             
         if image_exists:
             logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build step for speed.")
-            docker_available = True
         else:
             logs.append("Docker sandbox available. Building custom task image...")
             dockerfile_lines = [f"FROM {base_image}"]
@@ -719,22 +733,11 @@ def evaluate_submission(self, submission_id, metadata=None):
             if build_res.returncode != 0:
                 logs.append("Docker build failed! Stderr:")
                 logs.append(build_res.stderr)
-                logs.append("Falling back to local host python execution.")
-                docker_available = False
+                update_status('failed', 'failed', logs_list=logs)
+                report_status_to_server(metadata, 'failed', 'failed', logs=logs)
+                return
             else:
                 logs.append("Docker image built successfully.")
-    else:
-        if task and task.pip_requirements:
-            logs.append("Docker not available or not required. Installing pip requirements on host...")
-            req_path = os.path.join(temp_dir, "requirements.txt")
-            with open(req_path, "w") as rf:
-                rf.write(task.pip_requirements)
-            pip_res = subprocess.run(["pip", "install", "-r", req_path], capture_output=True, text=True)
-            if pip_res.returncode != 0:
-                logs.append("Warning: Host pip installation had errors:")
-                logs.append(pip_res.stderr)
-            else:
-                logs.append("Pip requirements installed successfully on host.")
 
     # Update status: Running Inference
     update_status('running', 'running_inference', logs_list=logs)
@@ -744,76 +747,62 @@ def evaluate_submission(self, submission_id, metadata=None):
     stdout, stderr = "", ""
     process_timeout = False
 
-    if docker_available:
-        base_image = task.base_docker_image or "python:3.10-slim"
-        import hashlib
-        config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
-        config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
-        image_tag = f"nai_task_{task.id}_{config_hash}".lower() if (task and (task.base_docker_image or task.apt_packages or task.pip_requirements)) else "python:3.10-slim"
+    base_image = task.base_docker_image or "python:3.10-slim"
+    import hashlib
+    config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
+    config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
+    image_tag = f"nai_task_{task.id}_{config_hash}".lower() if (task and (task.base_docker_image or task.apt_packages or task.pip_requirements)) else "python:3.10-slim"
+    
+    hf_cache_mount = []
+    if hf_cache_dir and os.path.exists(hf_cache_dir):
+        hf_cache_mount = ["-v", f"{hf_cache_dir}:/hf_cache"]
         
-        hf_cache_mount = []
-        if hf_cache_dir and os.path.exists(hf_cache_dir):
-            hf_cache_mount = ["-v", f"{hf_cache_dir}:/hf_cache"]
-            
-        ram_limit = 8192
-        if task and task.ram_limit_mb is not None:
-            ram_limit = task.ram_limit_mb
-        elif challenge and challenge.ram_limit_mb is not None:
-            ram_limit = challenge.ram_limit_mb
-            
-        gpu_args = []
-        gpu_required = False
-        if task and task.gpu_required is not None:
-            gpu_required = task.gpu_required
-        elif challenge and challenge.gpu_required is not None:
-            gpu_required = challenge.gpu_required
-            
-        if gpu_required:
-            gpu_id = os.environ.get("WORKER_GPU_ID", None)
-            if gpu_id is not None:
-                gpu_args = ["--gpus", f"device={gpu_id}", "-e", f"CUDA_VISIBLE_DEVICES={gpu_id}"]
-            else:
-                gpu_args = ["--gpus", "all"]
-                
-        cmd = [
-            "docker", "run", "--rm",
-            "--network", "none",
-            "--pids-limit", "64",
-            "--tmpfs", "/tmp",
-            "-m", f"{ram_limit}m",
-            "-v", f"{temp_dir}:/app",
-            "-w", "/app",
-        ] + gpu_args + hf_cache_mount + [
-            "-e", "HF_HOME=/hf_cache",
-            "-e", "HF_DATASETS_CACHE=/hf_cache",
-            image_tag, "python", exec_file
-        ]
+    ram_limit = 8192
+    if task and task.ram_limit_mb is not None:
+        ram_limit = task.ram_limit_mb
+    elif challenge and challenge.ram_limit_mb is not None:
+        ram_limit = challenge.ram_limit_mb
         
-        logs.append(f"Executing sandbox command: {' '.join(cmd)}")
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = proc.communicate(timeout=time_limit)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            subprocess.run(["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"], capture_output=True)
-            process_timeout = True
-        except Exception as exc:
-            logs.append(f"Failed to execute Docker command: {exc}")
-            stderr = str(exc)
-    else:
-        import sys
-        cmd = [sys.executable, os.path.join(temp_dir, exec_file)]
-        logs.append(f"Executing host fallback command: {' '.join(cmd)}")
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=temp_dir)
-            stdout, stderr = proc.communicate(timeout=time_limit)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            process_timeout = True
-        except Exception as exc:
-            logs.append(f"Failed to execute host command: {exc}")
-            stderr = str(exc)
+    gpu_args = []
+    gpu_required = False
+    if task and task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge and challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+        
+    if gpu_required:
+        gpu_id = os.environ.get("WORKER_GPU_ID", None)
+        if gpu_id is not None:
+            gpu_args = ["--gpus", f"device={gpu_id}", "-e", f"CUDA_VISIBLE_DEVICES={gpu_id}"]
+        else:
+            gpu_args = ["--gpus", "all"]
             
+    cmd = [
+        "docker", "run", "--rm",
+        "--network", "none",
+        "--pids-limit", "64",
+        "--tmpfs", "/tmp",
+        "-m", f"{ram_limit}m",
+        "-v", f"{temp_dir}:/app",
+        "-w", "/app",
+    ] + gpu_args + hf_cache_mount + [
+        "-e", "HF_HOME=/hf_cache",
+        "-e", "HF_DATASETS_CACHE=/hf_cache",
+        image_tag, "python", exec_file
+    ]
+    
+    logs.append(f"Executing sandbox command: {' '.join(cmd)}")
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = proc.communicate(timeout=time_limit)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        subprocess.run(["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"], capture_output=True)
+        process_timeout = True
+    except Exception as exc:
+        logs.append(f"Failed to execute Docker command: {exc}")
+        stderr = str(exc)
+        
     end_wall_time = time.time()
 
     # Update status: Evaluating
@@ -985,4 +974,42 @@ def register_worker_specs(sender, **kwargs):
         print(f"[NAI Worker] Specs registered successfully: {spec}")
     except Exception as e:
         print(f"[NAI Worker] Failed to register specs: {e}")
+
+
+@celery.task
+def recalculate_all_leaderboards():
+    """
+    Periodically recalculates and caches leaderboards for all active challenges
+    to avoid synchronous cache invalidation and rebuild spikes.
+    """
+    if RUNNING_AS_WORKER:
+        return
+    from routes.leaderboard import build_and_cache_leaderboard
+    with app.app_context():
+        # Get active or recent challenges
+        active_challenges = Challenge.query.filter_by(is_archived=False).all()
+        for challenge in active_challenges:
+            # Rebuild both frozen and unfrozen versions to keep both warm!
+            build_and_cache_leaderboard(challenge.id, is_frozen_view=False)
+            if challenge.is_frozen:
+                build_and_cache_leaderboard(challenge.id, is_frozen_view=True)
+
+
+@celery.task
+def run_automated_backup():
+    """
+    Triggers the automated database and uploads backup script.
+    """
+    if RUNNING_AS_WORKER:
+        return
+    import subprocess
+    script_path = "/Users/delyan-boychev/nai-webplatform/backup_db.sh"
+    try:
+        res = subprocess.run(["bash", script_path], capture_output=True, text=True)
+        if res.returncode != 0:
+            print(f"[NAI Backup] Automated backup script failed: {res.stderr}")
+        else:
+            print("[NAI Backup] Automated backup completed successfully.")
+    except Exception as e:
+        print(f"[NAI Backup] Error running automated backup script: {e}")
 

@@ -18,7 +18,10 @@ export default function NotebookSubmit({ task, challenge }) {
   const [submitting, setSubmitting] = useState(false);
 
   const isCompetitor = currentUser?.role === 'competitor';
-  const isClosed = !challenge?.is_active || challenge?.is_archived;
+  const stage = challenge?.stages?.find(s => s.id === task?.stage_id);
+  const stageEnded = stage ? new Date() > new Date(stage.end_time) : false;
+  const challengeEnded = !stage && challenge?.end_time && new Date() > new Date(challenge.end_time);
+  const isClosed = !challenge?.is_active || challenge?.is_archived || challenge?.scores_finalized || challengeEnded || stageEnded;
 
   // Admin/Jury: show info panel only
   if (!isCompetitor) {
@@ -41,13 +44,19 @@ export default function NotebookSubmit({ task, challenge }) {
   }
 
   if (isClosed) {
+    const isFinalized = challenge?.scores_finalized;
     return (
       <div className="surface" style={{ padding: '22px 26px' }}>
         <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 6 }}>
-          Competition Closed
+          {stageEnded ? 'Stage Submission Closed' : isFinalized ? 'Competition Finalized' : 'Competition Closed'}
         </h3>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-          This competition is no longer accepting submissions.
+          {stageEnded 
+            ? `The deadline for stage "${stage.title}" has passed.`
+            : isFinalized 
+            ? 'This competition has been finalized. Submissions are disabled.'
+            : 'This competition is no longer accepting submissions.'
+          }
         </p>
       </div>
     );

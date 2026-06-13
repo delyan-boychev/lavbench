@@ -8,7 +8,9 @@ export default function SubmissionViewer({
   submission, 
   currentUser, 
   onSelectFinal,
-  selectingFinal = false 
+  selectingFinal = false,
+  isSelectionDisabled = false,
+  isSubmissionAfterDeadline = false
 }) {
   if (!submission) {
     return (
@@ -91,10 +93,18 @@ export default function SubmissionViewer({
             <ToggleField
               id={`final-check-${submission.id}`}
               checked={submission.is_final_selection}
-              disabled={selectingFinal || submission.is_final_selection}
+              disabled={selectingFinal || submission.is_final_selection || isSelectionDisabled}
               onChange={() => onSelectFinal && onSelectFinal(submission.id)}
               label={submission.is_final_selection ? "This is your selected final submission for this task." : "Select as final submission (enforces anti-overfitting rules)."}
             />
+            {isSelectionDisabled && !submission.is_final_selection && (
+              <p className="text-[10px] text-rose-400 mt-1.5 font-semibold">
+                {isSubmissionAfterDeadline 
+                  ? "Cannot select a submission created after the stage deadline." 
+                  : "The final selection window for this stage has closed."
+                }
+              </p>
+            )}
           </div>
         )}
 
@@ -123,8 +133,6 @@ export default function SubmissionViewer({
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
               <div><strong>Celery Task ID:</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || "None"}</span></div>
               <div><strong>Execution Time:</strong> {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : "—"}</div>
-              <div><strong>Plagiarism Score:</strong> {submission.plagiarism_score != null ? `${(submission.plagiarism_score * 100).toFixed(1)}%` : "N/A"}</div>
-              <div><strong>AI Code Probability:</strong> {submission.llm_probability != null ? `${(submission.llm_probability * 100).toFixed(1)}%` : "N/A"}</div>
             </div>
           </div>
         )}

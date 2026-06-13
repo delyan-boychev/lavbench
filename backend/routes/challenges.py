@@ -4,6 +4,46 @@ from auth_utils import login_required, role_required
 
 challenges_bp = Blueprint('challenges', __name__)
 
+from datetime import datetime
+
+def filter_challenge_for_competitor(challenge_dict):
+    challenge_dict = dict(challenge_dict)
+    now = datetime.utcnow()
+    
+    comp_start = None
+    if challenge_dict.get("start_time"):
+        try:
+            comp_start = datetime.fromisoformat(challenge_dict["start_time"].replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            comp_start = None
+            
+    if comp_start and now < comp_start:
+        challenge_dict["tasks"] = []
+        challenge_dict["stages"] = []
+    else:
+        filtered_tasks = []
+        for t in challenge_dict.get("tasks", []):
+            if not t.get("stage_id"):
+                filtered_tasks.append(t)
+            else:
+                from models import Stage
+                stage = Stage.query.get(t["stage_id"])
+                if stage and now >= stage.start_time:
+                    filtered_tasks.append(t)
+        challenge_dict["tasks"] = filtered_tasks
+        
+        filtered_stages = []
+        for s in challenge_dict.get("stages", []):
+            try:
+                st_start = datetime.fromisoformat(s["start_time"].replace('Z', '+00:00')).replace(tzinfo=None)
+            except Exception:
+                st_start = None
+            if not st_start or now >= st_start:
+                filtered_stages.append(s)
+        challenge_dict["stages"] = filtered_stages
+        
+    return challenge_dict
+
 @challenges_bp.route('', methods=['GET'])
 @login_required
 def get_challenges():
@@ -17,17 +57,20 @@ def get_challenges():
         if not user or not user.challenge_id:
             return jsonify([])
         challenge_id = user.challenge_id
-        cache_key = f"challenge:{challenge_id}"
+        
+        challenge = Challenge.query.get(challenge_id)
+        if not challenge or challenge.is_archived:
+            return jsonify([])
+            
+        cache_key = f"challenge:{challenge_id}:competitor"
         cached_challenge = get_cached(cache_key)
         if cached_challenge is not None:
             return jsonify([cached_challenge])
             
-        challenge = Challenge.query.get(challenge_id)
-        if not challenge:
-            return jsonify([])
         challenge_dict = challenge.to_dict()
-        set_cached(cache_key, challenge_dict, timeout=600)
-        return jsonify([challenge_dict])
+        filtered = filter_challenge_for_competitor(challenge_dict)
+        set_cached(cache_key, filtered, timeout=600)
+        return jsonify([filtered])
         
     page = request.args.get('page', type=int)
     if page is not None:
@@ -62,15 +105,34 @@ def get_challenge(challenge_id):
         if not user or user.challenge_id != challenge_id:
             return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
             
+        challenge = Challenge.query.get(challenge_id)
+        if not challenge or challenge.is_archived:
+            return jsonify({"error": "Challenge not found."}), 404
+            
     from cache_utils import get_cached, set_cached
-    cache_key = f"challenge:{challenge_id}"
-    cached_challenge = get_cached(cache_key)
-    if cached_challenge is not None:
-        return jsonify(cached_challenge)
+    
+    if user_role == 'competitor':
+        cache_key = f"challenge:{challenge_id}:competitor"
+        cached_challenge = get_cached(cache_key)
+        if cached_challenge is not None:
+            challenge_dict = cached_challenge
+        else:
+            challenge = Challenge.query.get(challenge_id)
+            if not challenge or challenge.is_archived:
+                return jsonify({"error": "Challenge not found."}), 404
+            challenge_dict = challenge.to_dict()
+            challenge_dict = filter_challenge_for_competitor(challenge_dict)
+            set_cached(cache_key, challenge_dict, timeout=600)
+    else:
+        cache_key = f"challenge:{challenge_id}"
+        cached_challenge = get_cached(cache_key)
+        if cached_challenge is not None:
+            challenge_dict = cached_challenge
+        else:
+            challenge = Challenge.query.get_or_404(challenge_id)
+            challenge_dict = challenge.to_dict()
+            set_cached(cache_key, challenge_dict, timeout=600)
         
-    challenge = Challenge.query.get_or_404(challenge_id)
-    challenge_dict = challenge.to_dict()
-    set_cached(cache_key, challenge_dict, timeout=600)
     return jsonify(challenge_dict)
 
 
@@ -114,7 +176,9 @@ def create_challenge():
     
     start_time = parse_datetime(data.get("start_time"))
     end_time = parse_datetime(data.get("end_time"))
-    freeze_time = parse_datetime(data.get("freeze_time"))
+    is_frozen = bool(data.get("is_frozen", False))
+    
+    timezone = data.get("timezone", "UTC")
     
     if not title:
         return jsonify({"error": "Competition title is required."}), 400
@@ -128,8 +192,9 @@ def create_challenge():
         gpu_required=gpu_required,
         start_time=start_time,
         end_time=end_time,
-        freeze_time=freeze_time,
-        double_blind=double_blind
+        is_frozen=is_frozen,
+        double_blind=double_blind,
+        timezone=timezone
     )
     db.session.add(challenge)
     db.session.commit()
@@ -170,10 +235,12 @@ def update_challenge(challenge_id):
         challenge.start_time = parse_datetime(data.get("start_time"))
     if "end_time" in data:
         challenge.end_time = parse_datetime(data.get("end_time"))
-    if "freeze_time" in data:
-        challenge.freeze_time = parse_datetime(data.get("freeze_time"))
+    if "is_frozen" in data:
+        challenge.is_frozen = bool(data.get("is_frozen"))
     if "double_blind" in data:
         challenge.double_blind = bool(data.get("double_blind"))
+    if "timezone" in data:
+        challenge.timezone = data.get("timezone")
         
     db.session.commit()
     
@@ -191,8 +258,11 @@ def delete_challenge(challenge_id):
     
     users = User.query.filter_by(challenge_id=challenge_id).all()
     for u in users:
-        u.challenge_id = None
-        
+        if u.role == 'competitor':
+            db.session.delete(u)
+        else:
+            u.challenge_id = None
+         
     db.session.delete(challenge)
     db.session.commit()
     
@@ -265,3 +335,348 @@ def archive_challenge(challenge_id):
         "message": f"Competition has been successfully {action}!",
         "challenge": challenge.to_dict()
     })
+
+
+@challenges_bp.route('/<int:challenge_id>/stages', methods=['POST'])
+@role_required(['admin', 'jury'])
+def create_stage(challenge_id):
+    challenge = Challenge.query.get_or_404(challenge_id)
+    data = request.json or {}
+    
+    title = data.get("title")
+    stage_number = data.get("stage_number")
+    start_time_str = data.get("start_time")
+    end_time_str = data.get("end_time")
+    
+    if not title or not start_time_str or not end_time_str:
+        return jsonify({"error": "Missing title, start_time or end_time."}), 400
+        
+    start_time = parse_datetime(start_time_str)
+    end_time = parse_datetime(end_time_str)
+    
+    if not start_time or not end_time:
+        return jsonify({"error": "Invalid date format."}), 400
+        
+    if not stage_number:
+        # Auto-increment stage number
+        from models import Stage
+        max_num = db.session.query(db.func.max(Stage.stage_number)).filter_by(challenge_id=challenge_id).scalar() or 0
+        stage_number = max_num + 1
+        
+    from models import Stage
+    stage = Stage(
+        challenge_id=challenge_id,
+        stage_number=stage_number,
+        title=title,
+        start_time=start_time,
+        end_time=end_time
+    )
+    
+    db.session.add(stage)
+    db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
+    return jsonify(stage.to_dict()), 201
+
+
+@challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['PUT'])
+@role_required(['admin', 'jury'])
+def update_stage(challenge_id, stage_id):
+    challenge = Challenge.query.get_or_404(challenge_id)
+    from models import Stage
+    stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    data = request.json or {}
+    
+    if "title" in data:
+        stage.title = data["title"]
+    if "stage_number" in data:
+        stage.stage_number = data["stage_number"]
+    if "start_time" in data:
+        t = parse_datetime(data["start_time"])
+        if t:
+            stage.start_time = t
+    if "end_time" in data:
+        t = parse_datetime(data["end_time"])
+        if t:
+            stage.end_time = t
+            
+    db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
+    return jsonify(stage.to_dict())
+
+
+@challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['DELETE'])
+@role_required(['admin', 'jury'])
+def delete_stage(challenge_id, stage_id):
+    challenge = Challenge.query.get_or_404(challenge_id)
+    from models import Stage
+    stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    
+    # Nullify stage_id for tasks belonging to this stage
+    from models import Task
+    tasks = Task.query.filter_by(stage_id=stage_id).all()
+    for t in tasks:
+        t.stage_id = None
+        
+    db.session.delete(stage)
+    db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(challenge_id)
+    
+    return jsonify({"message": f"Stage '{stage.title}' has been deleted."})
+
+
+@challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>/finalize', methods=['POST'])
+@role_required(['jury'])
+def finalize_stage(challenge_id, stage_id):
+    challenge = Challenge.query.get_or_404(challenge_id)
+    from models import Stage
+    stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    data = request.json or {}
+    
+    finalize_type = data.get("finalize_type", "visible")
+    if finalize_type not in ("visible", "internal"):
+        return jsonify({"error": "finalize_type must be either 'visible' or 'internal'."}), 400
+        
+    # Check if manual points are entered for all competitors for all tasks in this stage
+    competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+    from models import Task
+    stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
+    
+    for comp in competitors:
+        manual_points_dict = {}
+        if comp.manual_points:
+            if isinstance(comp.manual_points, dict):
+                manual_points_dict = comp.manual_points
+            elif isinstance(comp.manual_points, str):
+                try:
+                    manual_points_dict = json.loads(comp.manual_points)
+                except Exception:
+                    manual_points_dict = {}
+                    
+        for task in stage_tasks:
+            pts = manual_points_dict.get(str(task.id))
+            if pts is None:
+                name_str = comp.username
+                if comp.name:
+                    try:
+                        from auth_utils import decrypt_field
+                        dec_name = decrypt_field(comp.name)
+                        dec_surname = decrypt_field(comp.surname)
+                        name_str = f"{dec_name} {dec_surname}"
+                    except Exception:
+                        pass
+                return jsonify({
+                    "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'."
+                }), 400
+                
+    stage.is_finalized = True
+    stage.finalize_type = finalize_type
+    stage.reveal_public = bool(data.get("reveal_public", True))
+    stage.reveal_private = bool(data.get("reveal_private", False))
+    stage.reveal_points = bool(data.get("reveal_points", False))
+    
+    db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+    invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
+    
+    return jsonify(stage.to_dict())
+
+
+@challenges_bp.route('/<int:challenge_id>/test-competition', methods=['POST'])
+@login_required
+@role_required(['admin', 'jury'])
+def create_scheduled_test_competition(challenge_id):
+    orig = Challenge.query.get_or_404(challenge_id)
+    from models import Task
+    
+    from datetime import timedelta
+    now = datetime.utcnow()
+    end_time = now + timedelta(hours=2)
+    
+    test_title = f"Test: {orig.title} (Warm-up)"
+    test_desc = f"Practice and test environment for: {orig.title}. Relaxed rules for submission connectivity and model testing."
+    
+    test_comp = Challenge(
+        title=test_title,
+        description=test_desc,
+        hf_dataset_path=orig.hf_dataset_path,
+        hf_dataset_config=orig.hf_dataset_config,
+        hf_dataset_split=orig.hf_dataset_split,
+        metric_name=orig.metric_name,
+        max_eval_requests=100,
+        ram_limit_mb=max(orig.ram_limit_mb, 16384),
+        time_limit_sec=max(orig.time_limit_sec, 600),
+        gpu_required=False,
+        is_active=True,
+        start_time=now,
+        end_time=end_time,
+        double_blind=False,
+        timezone=orig.timezone
+    )
+    db.session.add(test_comp)
+    db.session.commit()
+    
+    test_eval_code = """import json
+import sys
+try:
+    import submission_runner
+except Exception as e:
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": "Failed to compile or import student code."}, f)
+    sys.exit(1)
+
+try:
+    if hasattr(submission_runner, 'predict'):
+        func = submission_runner.predict
+    elif hasattr(submission_runner, 'predict_gpu'):
+        func = submission_runner.predict_gpu
+    else:
+        raise AttributeError("Your notebook must define a function (e.g. 'predict' or 'predict_gpu').")
+    
+    res = func(["Test sentence"])
+    with open("eval_results.json", "w") as f:
+        json.dump({
+            "status": "success",
+            "public_score": 1.0,
+            "private_score": 1.0,
+            "metrics_payload_public": {"accuracy": 1.0},
+            "metrics_payload_private": {"accuracy": 1.0},
+            "execution_time_ms": 1
+        }, f)
+except Exception as e:
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": str(e)}, f)
+"""
+
+    test_task = Task(
+        challenge_id=test_comp.id,
+        title="Warm-up Test Task",
+        description="This is a simple warm-up test task. Write a Python function `predict(inputs)` or `predict_gpu(inputs)` that takes a list and returns predictions.",
+        custom_eval_code=test_eval_code,
+        files="[]"
+    )
+    db.session.add(test_task)
+    db.session.commit()
+    
+    from cache_utils import invalidate_challenge_cache
+    invalidate_challenge_cache(orig.id)
+    
+    return jsonify({
+        "message": "Scheduled test competition created successfully!",
+        "test_competition": test_comp.to_dict()
+    }), 201
+
+
+@challenges_bp.route('/<int:challenge_id>/export-results', methods=['GET'])
+@login_required
+@role_required(['admin', 'jury'])
+def export_results(challenge_id):
+    import csv
+    import io
+    from flask import Response
+    from routes.leaderboard import build_and_cache_leaderboard
+    from models import AuditLog, Task
+    
+    challenge = Challenge.query.get_or_404(challenge_id)
+    
+    # Get leaderboard entries
+    leaderboard = build_and_cache_leaderboard(challenge_id) or []
+    
+    # Get all tasks for this challenge
+    tasks = challenge.tasks
+    
+    # Get audit logs for these tasks
+    task_ids = [t.id for t in tasks]
+    if task_ids:
+        audit_logs = AuditLog.query.filter(AuditLog.task_id.in_(task_ids)).order_by(AuditLog.timestamp.asc()).all()
+    else:
+        audit_logs = []
+        
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # 1. Write Header for Results
+    header = [
+        "Rank", "Username", "Alias ID", "Real Name", "Email", "School", "City", "Grade", 
+        "Has Submitted", "Total Points", "Aggregated Public Score", "Aggregated Private Score"
+    ]
+    for task in tasks:
+        header.extend([
+            f"Task '{task.title}' Public Score",
+            f"Task '{task.title}' Private Score",
+            f"Task '{task.title}' Manual Points"
+        ])
+    writer.writerow(header)
+    
+    # 2. Write Competitor Rows
+    for entry in leaderboard:
+        user_data = entry["user"]
+        real_name = f"{user_data.get('name') or ''} {user_data.get('surname') or ''}".strip()
+        
+        # Parse manual points dict safely
+        manual_pts = user_data.get("manual_points") or {}
+        
+        row = [
+            entry["rank"],
+            user_data.get("username"),
+            user_data.get("alias_id"),
+            real_name,
+            user_data.get("email"),
+            user_data.get("school"),
+            user_data.get("city"),
+            user_data.get("grade"),
+            "Yes" if entry["has_submitted"] else "No",
+            entry["total_points"],
+            entry["public_score"] if entry["public_score"] is not None else "N/A",
+            entry["private_score"] if entry["private_score"] is not None else "N/A"
+        ]
+        
+        for task in tasks:
+            task_score = entry["task_scores"].get(str(task.id)) or {}
+            pub = task_score.get("public_score")
+            priv = task_score.get("private_score")
+            m_pts = manual_pts.get(str(task.id), 0)
+            
+            row.extend([
+                pub if pub is not None else "N/A",
+                priv if priv is not None else "N/A",
+                m_pts
+            ])
+            
+        writer.writerow(row)
+        
+    # 3. Add space and section for Audit Logs
+    writer.writerow([])
+    writer.writerow(["--- SCORE CORRECTION AUDIT LOG ---"])
+    writer.writerow(["Timestamp (UTC)", "Admin", "Target Student", "Task", "Old Score", "New Score", "Reason"])
+    
+    for log in audit_logs:
+        admin_user = log.admin.username if log.admin else f"User ID {log.admin_id}"
+        target_user = log.target_user.username if log.target_user else f"User ID {log.target_user_id}"
+        task_title = log.task.title if log.task else f"Task ID {log.task_id}"
+        
+        writer.writerow([
+            log.timestamp.isoformat(),
+            admin_user,
+            target_user,
+            task_title,
+            log.old_score if log.old_score is not None else "None",
+            log.new_score if log.new_score is not None else "None",
+            log.reason
+        ])
+        
+    response = Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": f"attachment; filename=challenge_{challenge_id}_export.csv"}
+    )
+    return response

@@ -20,14 +20,52 @@ class TestCustomEvalValidation(unittest.TestCase):
         self.app_context.push()
         db.create_all()
 
-        # Disable docker version check fallback so we run local sys.executable fallback
-        self.docker_patch = patch('subprocess.run')
+        import subprocess as original_subprocess
+        self.real_run = original_subprocess.run
+
+        # Mock subprocess.run to simulate docker being available and image checks/builds succeeding
+        self.docker_patch = patch('tasks.subprocess.run')
         self.mock_sub_run = self.docker_patch.start()
-        # Return code 1 for docker version check, meaning docker is unavailable
-        self.mock_sub_run.return_value = MagicMock(returncode=1)
+        
+        def run_side_effect(cmd, **kwargs):
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            if 'images' in cmd:
+                mock_res.stdout = ''
+            return mock_res
+        self.mock_sub_run.side_effect = run_side_effect
+
+        # Mock subprocess.Popen to intercept the docker run and run the python code locally for the test
+        self.popen_patch = patch('tasks.subprocess.Popen')
+        self.mock_popen = self.popen_patch.start()
+        
+        def popen_side_effect(cmd, **kwargs):
+            temp_dir = None
+            for i in range(len(cmd)):
+                if cmd[i] == '-v' and i + 1 < len(cmd):
+                    val = cmd[i+1]
+                    if ':/app' in val:
+                        temp_dir = val.split(':/app')[0]
+                        break
+            if temp_dir:
+                exec_file = cmd[-1] # 'evaluator.py' or 'submission_runner.py'
+                evaluator_path = os.path.join(temp_dir, exec_file)
+                if os.path.exists(evaluator_path):
+                    self.popen_patch.stop()
+                    try:
+                        self.real_run([sys.executable, evaluator_path], cwd=temp_dir)
+                    finally:
+                        self.popen_patch.start()
+            
+            proc = MagicMock()
+            proc.communicate.return_value = ("", "")
+            proc.returncode = 0
+            return proc
+        self.mock_popen.side_effect = popen_side_effect
 
     def tearDown(self):
         self.docker_patch.stop()
+        self.popen_patch.stop()
         db.session.remove()
         db.drop_all()
         self.app_context.pop()

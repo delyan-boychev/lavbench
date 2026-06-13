@@ -59,9 +59,6 @@ export const AuthProvider = ({ children }) => {
     setAuthError('');
     try {
       let finalPassword = password || '';
-      if (finalPassword.startsWith('admin_key_')) {
-        finalPassword = finalPassword.trim();
-      }
       const hashedPassword = await hashPassword(finalPassword);
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',

@@ -47,6 +47,7 @@ def invalidate_challenge_cache(challenge_id=None):
     delete_cached("challenges:all")
     if challenge_id:
         delete_cached(f"challenge:{challenge_id}")
+        delete_cached(f"challenge:{challenge_id}:competitor")
 
 def invalidate_leaderboard_cache(challenge_id):
     if challenge_id:

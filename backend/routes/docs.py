@@ -5,10 +5,11 @@ from auth_utils import role_required
 docs_bp = Blueprint('docs', __name__)
 
 def read_doc_file(filename):
+    # Search in the new guides/ directory
     paths = [
-        os.path.join(os.path.dirname(__file__), '..', '..', filename),
-        os.path.join(os.path.dirname(__file__), '..', filename),
-        filename
+        os.path.join(os.path.dirname(__file__), '..', '..', 'guides', filename),
+        os.path.join(os.path.dirname(__file__), '..', 'guides', filename),
+        os.path.join('guides', filename)
     ]
     for p in paths:
         abs_p = os.path.abspath(p)
