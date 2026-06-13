@@ -209,6 +209,7 @@
     "task_files_count": "Task Files ({{count}})",
     "no_task_selected": "No task selected. Select a task from the sidebar to view details and submit.",
     "no_competition_selected": "No competition selected or active. Please contact a jury or administrator.",
+    "no_competition_selected_brief": "No competition selected.",
     "toggle_collapse": "Toggle collapse",
     "expand": "expand",
     "collapse": "collapse",

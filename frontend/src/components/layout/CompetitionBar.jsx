@@ -73,13 +73,13 @@ export default function CompetitionBar() {
 
   return (
     <div style={{
-      background: 'var(--bg-surface)',
+      background: 'var(--bg-bar)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky',
       top: 56,
       zIndex: 90,
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
     }}>
       <div style={{
         maxWidth: 1400,

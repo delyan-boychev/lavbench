@@ -223,13 +223,13 @@ export default function Navbar() {
 
   return (
     <header style={{
-      background: 'var(--bg-surface)',
+      background: 'var(--bg-nav)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky',
       top: 0,
       zIndex: 100,
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
     }}>
       <div style={{
         maxWidth: 1400,

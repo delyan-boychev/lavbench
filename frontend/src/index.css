@@ -26,6 +26,8 @@
   /* Semantic variables for dark theme */
   --bg-base: #0d0e18;
   --bg-surface: var(--color-slate-900);
+  --bg-nav: rgba(13, 14, 24, 0.2);
+  --bg-bar: rgba(13, 14, 24, 0.2);
   --bg-elevated: var(--color-slate-800);
   --bg-hover: var(--color-slate-700);
   --border: var(--color-slate-800);
@@ -60,6 +62,8 @@
   /* Semantic variables for light theme */
   --bg-base: #f8fafc;
   --bg-surface: var(--color-slate-900);
+  --bg-nav: rgba(255, 255, 255, 0.2);
+  --bg-bar: rgba(255, 255, 255, 0.2);
   --bg-elevated: var(--color-slate-800);
   --bg-hover: var(--color-slate-700);
   --border: var(--color-slate-800);
