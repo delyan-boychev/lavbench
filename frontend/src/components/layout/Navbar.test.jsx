@@ -117,12 +117,18 @@ describe('Navbar Component', () => {
     const statusBtn = screen.getByText('Cluster Online');
     fireEvent.click(statusBtn);
 
-    expect(screen.getByText('Active Cluster Node Specifications')).toBeInTheDocument();
+    expect(screen.getByText('Cluster Info & Active Node Specifications')).toBeInTheDocument();
 
     await vi.waitFor(() => {
       expect(screen.getByText('celery@cpu-worker')).toBeInTheDocument();
       expect(screen.getByText('4 tasks')).toBeInTheDocument();
       expect(screen.getByText('16 GB')).toBeInTheDocument();
+    });
+
+    // Click again to close (toggle)
+    fireEvent.click(statusBtn);
+    await vi.waitFor(() => {
+      expect(screen.queryByText('Cluster Info & Active Node Specifications')).not.toBeInTheDocument();
     });
   });
 

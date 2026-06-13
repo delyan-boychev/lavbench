@@ -176,7 +176,7 @@ export default function Navbar() {
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title="Active Cluster Node Specifications"
+        title="Cluster Info & Active Node Specifications"
         size="md"
         footer={(
           <button 
@@ -191,6 +191,31 @@ export default function Navbar() {
           <p className="text-slate-400">
             Real-time specifications of available processing nodes connected to the competition queue.
           </p>
+
+          {/* Cluster Status Summary Info Card */}
+          <div className="bg-slate-950/60 border border-indigo-500/10 p-4 rounded-xl flex flex-col gap-2">
+            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">Cluster Status Summary</h4>
+            <div className="grid grid-cols-2 gap-3 text-slate-300">
+              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                <span className="text-slate-400">System Status:</span>
+                <span className="font-bold text-emerald-400">Active</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                <span className="text-slate-400">Total Nodes:</span>
+                <span className="font-bold text-slate-100">{clusters.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Global Concurrency:</span>
+                <span className="font-bold text-slate-100">
+                  {clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0)} parallel tasks
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Resource Routing:</span>
+                <span className="font-bold text-indigo-400">Automatic (Load Balanced)</span>
+              </div>
+            </div>
+          </div>
           
           {clusters.length === 0 ? (
             <div className="text-center py-8 text-slate-500 italic bg-slate-950/20 border border-white/5 rounded-xl">
