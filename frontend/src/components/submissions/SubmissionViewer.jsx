@@ -17,10 +17,15 @@ export default function SubmissionViewer({
   const { t } = useTranslation();
   const { token } = useAuth();
   const [liveLogs, setLiveLogs] = useState('');
+  const [currentId, setCurrentId] = useState(null);
+
+  if (submission && submission.id !== currentId) {
+    setCurrentId(submission.id);
+    setLiveLogs('');
+  }
 
   useEffect(() => {
     if (!submission || submission.status === 'completed' || submission.status === 'failed') {
-      setLiveLogs('');
       return;
     }
 
@@ -179,22 +184,22 @@ export default function SubmissionViewer({
         )}
 
         {/* Execution Log */}
-        {submission.logs ? (
+        {(submission.logs || liveLogs) ? (
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              {t('submissions.execution_log')}
+              {submission.status === 'completed' || submission.status === 'failed'
+                ? t('submissions.execution_log', 'Execution Log')
+                : t('submissions.execution_log_live', 'Execution Log (Live)')
+              }
             </div>
-            <pre className={`code-panel max-h-[180px] text-xs ${submission.status === 'failed' ? 'text-rose-400' : 'text-slate-200'}`}>
-              {submission.logs}
-            </pre>
-          </div>
-        ) : (submission.status !== 'completed' && submission.status !== 'failed') ? (
-          <div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              {t('submissions.execution_log_live', 'Execution Log (Live)')}
-            </div>
-            <pre className="code-panel max-h-[180px] text-xs text-indigo-300 font-mono">
-              {liveLogs}
+            <pre className={`code-panel max-h-[180px] text-xs font-mono ${
+              submission.status === 'completed' 
+                ? 'text-slate-200' 
+                : submission.status === 'failed' 
+                  ? 'text-rose-400' 
+                  : 'text-indigo-300'
+            }`}>
+              {submission.logs || liveLogs}
             </pre>
           </div>
         ) : null}

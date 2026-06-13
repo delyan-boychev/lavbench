@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import time
 import hashlib
+import threading
 from datetime import datetime
 from celery import Celery
 
@@ -33,6 +34,64 @@ else:
         broker=app.config['CELERY_BROKER_URL'],
         backend=app.config['CELERY_RESULT_BACKEND']
     )
+
+def run_command_streaming(cmd, logs_list, time_limit=None):
+    """
+    Runs a command and streams stdout/stderr lines to logs_list in real-time.
+    Returns (returncode, stdout_str, stderr_str, is_timeout).
+    """
+    stdout_lines = []
+    stderr_lines = []
+    process_timeout = False
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        def read_pipe(pipe, collector, is_err=False):
+            try:
+                for line in iter(pipe.readline, ''):
+                    if not isinstance(line, str):
+                        break
+                    collector.append(line)
+                    clean_line = line.rstrip('\r\n')
+                    if is_err:
+                        logs_list.append(f"[stderr] {clean_line}")
+                    else:
+                        logs_list.append(clean_line)
+            except Exception:
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except:
+                    pass
+
+        t_out = threading.Thread(target=read_pipe, args=(proc.stdout, stdout_lines, False))
+        t_err = threading.Thread(target=read_pipe, args=(proc.stderr, stderr_lines, True))
+        
+        t_out.start()
+        t_err.start()
+        
+        start_wait = time.time()
+        while True:
+            ret = proc.poll()
+            if ret is not None:
+                break
+            if time_limit and (time.time() - start_wait > time_limit):
+                proc.kill()
+                process_timeout = True
+                break
+            time.sleep(0.1)
+            
+        t_out.join(timeout=2.0)
+        t_err.join(timeout=2.0)
+        
+        stdout_str = "".join(stdout_lines)
+        stderr_str = "".join(stderr_lines)
+        return proc.returncode, stdout_str, stderr_str, process_timeout
+    except Exception as exc:
+        logs_list.append(f"Failed to execute command: {exc}")
+        return -1, "", str(exc), False
 
 class StreamingLogList(list):
     def __init__(self, submission_id):
@@ -451,7 +510,8 @@ def evaluate_submission(self, submission_id, metadata=None):
             hf_eval_repo=metadata.get("hf_eval_repo"),
             public_eval_percentage=metadata.get("public_eval_percentage"),
             get_hf_api_key=lambda: metadata.get("hf_token"),
-            evaluator_script_path=None
+            evaluator_script_path=None,
+            custom_eval_code=metadata.get("custom_eval_code")
         )
         challenge = MockModel(
             id=metadata.get("challenge_id"),
@@ -489,7 +549,8 @@ def evaluate_submission(self, submission_id, metadata=None):
                 public_eval_percentage=db_submission.task.public_eval_percentage if db_submission.task else None,
                 get_hf_api_key=lambda: db_submission.task.get_hf_api_key() if db_submission.task else "",
                 evaluator_script_path=db_submission.task.evaluator_script_path if db_submission.task else None,
-                files=db_submission.task.files if db_submission.task else None
+                files=db_submission.task.files if db_submission.task else None,
+                custom_eval_code=db_submission.task.custom_eval_code if (db_submission.task and hasattr(db_submission.task, 'custom_eval_code')) else None
             )
             challenge = MockModel(
                 id=db_submission.challenge.id if db_submission.challenge else None,
@@ -760,10 +821,12 @@ def evaluate_submission(self, submission_id, metadata=None):
                 df.write("\n".join(dockerfile_lines))
                 
             logs.append(f"Building docker image '{image_tag}'...")
-            build_res = subprocess.run(["docker", "build", "-t", image_tag, temp_dir], capture_output=True, text=True)
-            if build_res.returncode != 0:
-                logs.append("Docker build failed! Stderr:")
-                logs.append(build_res.stderr)
+            retcode, stdout, stderr, is_timeout = run_command_streaming(
+                ["docker", "build", "-t", image_tag, temp_dir],
+                logs
+            )
+            if retcode != 0:
+                logs.append(f"Docker build failed with return code {retcode}!")
                 update_status('failed', 'failed', logs_list=logs)
                 report_status_to_server(metadata, 'failed', 'failed', logs=logs)
                 return
@@ -823,16 +886,9 @@ def evaluate_submission(self, submission_id, metadata=None):
     ]
     
     logs.append(f"Executing sandbox command: {' '.join(cmd)}")
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = proc.communicate(timeout=time_limit)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+    retcode, stdout, stderr, process_timeout = run_command_streaming(cmd, logs, time_limit=time_limit)
+    if process_timeout:
         subprocess.run(["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"], capture_output=True)
-        process_timeout = True
-    except Exception as exc:
-        logs.append(f"Failed to execute Docker command: {exc}")
-        stderr = str(exc)
         
     end_wall_time = time.time()
 
@@ -845,10 +901,6 @@ def evaluate_submission(self, submission_id, metadata=None):
     execution_time_ms = 0
     metrics_payload_pub = {}
     metrics_payload_priv = {}
-
-    if stderr:
-        logs.append("Stderr outputs:")
-        logs.append(stderr)
         
     if process_timeout:
         status = 'failed'
@@ -866,14 +918,6 @@ def evaluate_submission(self, submission_id, metadata=None):
                 logs.append(f"Failed to read secure results file 'eval_results.json': {e}")
         else:
             logs.append("Error: Secure evaluation results file 'eval_results.json' was not created.")
-            
-        stdout_clean_lines = []
-        for line in stdout.splitlines():
-            stdout_clean_lines.append(line)
-                
-        if stdout_clean_lines:
-            logs.append("Stdout outputs:")
-            logs.append("\n".join(stdout_clean_lines))
             
         is_schema_valid = True
         if is_custom_eval:

@@ -138,7 +138,7 @@ describe('SubmissionViewer Component', () => {
 
     expect(mockEventSourceInstances.length).toBe(1);
     expect(mockEventSourceInstances[0].url).toContain('/api/submissions/42/logs/live');
-    expect(screen.getByText(/Connecting to live logs/i)).toBeInTheDocument();
+    expect(screen.getByText(/submissions.connecting_live_logs/i)).toBeInTheDocument();
 
     const event = { data: JSON.stringify({ log: 'Building docker sandbox...' }) };
     act(() => {
