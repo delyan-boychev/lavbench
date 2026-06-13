@@ -163,8 +163,11 @@ export default function Navbar() {
       setDocLoading(true);
       setDocError(null);
       try {
-        const res = await fetch(`/api/docs/${activeDocTab}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const res = await fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept-Language': i18n.language || 'en'
+          }
         });
         if (res.ok) {
           const data = await res.json();

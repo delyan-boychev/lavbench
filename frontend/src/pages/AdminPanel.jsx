@@ -1810,13 +1810,13 @@ export default function AdminPanel() {
                     label={t('admin.tasks.base_image')} 
                     value={taskForm.base_docker_image} 
                     onChange={(e) => setTaskForm({ ...taskForm, base_docker_image: e.target.value })} 
-                    placeholder="python:3.10-slim or pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime"
+                    placeholder={t('admin.tasks.base_image_placeholder')}
                   />
                   <InputField 
                     label={t('admin.tasks.apt_packages')} 
                     value={taskForm.apt_packages} 
                     onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })} 
-                    placeholder="libgl1-mesa-glx, ffmpeg, libgomp1"
+                    placeholder={t('admin.tasks.apt_packages_placeholder')}
                   />
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.pip_requirements')}</label>
@@ -1825,7 +1825,7 @@ export default function AdminPanel() {
                       className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-xs font-mono"
                       value={taskForm.pip_requirements} 
                       onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })} 
-                      placeholder="scikit-learn&#10;opencv-python&#10;transformers"
+                      placeholder={t('admin.tasks.pip_requirements_placeholder')}
                     />
                   </div>
                 </div>
@@ -1853,7 +1853,7 @@ export default function AdminPanel() {
                     label={t('admin.tasks.banned_libraries')} 
                     value={taskForm.banned_imports} 
                     onChange={(e) => setTaskForm({ ...taskForm, banned_imports: e.target.value })} 
-                    placeholder="os, sys, subprocess, requests, urllib"
+                    placeholder={t('admin.tasks.banned_libraries_placeholder')}
                   />
                 </div>
               </div>
@@ -1867,13 +1867,13 @@ export default function AdminPanel() {
                       label={t('admin.tasks.public_train_dataset')} 
                       value={taskForm.hf_train_repo} 
                       onChange={(e) => setTaskForm({ ...taskForm, hf_train_repo: e.target.value })} 
-                      placeholder="huggingface-user/my-public-train-set"
+                      placeholder={t('admin.tasks.public_train_dataset_placeholder')}
                     />
                     <InputField 
                       label={t('admin.tasks.private_eval_dataset')} 
                       value={taskForm.hf_eval_repo} 
                       onChange={(e) => setTaskForm({ ...taskForm, hf_eval_repo: e.target.value })} 
-                      placeholder="huggingface-user/my-private-eval-set"
+                      placeholder={t('admin.tasks.private_eval_dataset_placeholder')}
                     />
                   </div>
                   <InputField 
@@ -1881,7 +1881,7 @@ export default function AdminPanel() {
                     type="password"
                     value={taskForm.hf_api_key} 
                     onChange={(e) => setTaskForm({ ...taskForm, hf_api_key: e.target.value })} 
-                    placeholder="hf_xxxxxxxxxxxxxxxxxxxxxx"
+                    placeholder={t('admin.tasks.hf_api_key_placeholder')}
                   />
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-slate-300">
@@ -2001,7 +2001,7 @@ export default function AdminPanel() {
                         return (
                           <div key={f.filename} className="flex justify-between items-center p-2.5 bg-slate-950 border border-white/5 rounded-lg text-xs">
                             <span style={{ textDecoration: isDeleted ? 'line-through' : 'none', color: isDeleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                              {f.filename} ({Math.round(f.size_bytes / 1024)} KB)
+                              {f.filename} ({t('challenge.kb', { count: Math.round(f.size_bytes / 1024) })})
                             </span>
                             <button
                               type="button"
@@ -2196,7 +2196,7 @@ export default function AdminPanel() {
                       type="email"
                       value={editUserForm.email} 
                       onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })} 
-                      placeholder="competitor@competition.ai"
+                      placeholder={t('admin.competitor_reg.email_placeholder')}
                     />
 
                     <SelectField 
@@ -2776,9 +2776,9 @@ export default function AdminPanel() {
                       <span>{t('admin.workers.cores', { count: workerStats.system.cpu_count })}</span>
                     </div>
                     <div className="flex gap-2 font-mono text-[10px] text-indigo-400 font-semibold bg-indigo-500/5 px-3 py-1.5 rounded-lg border border-indigo-500/10">
-                      <span>5m: {workerStats.system.load_avg?.[1]?.toFixed(2) || '0.00'}</span>
+                      <span>{t('admin.workers.load_5m', { value: workerStats.system.load_avg?.[1]?.toFixed(2) || '0.00' })}</span>
                       <span className="text-slate-700">|</span>
-                      <span>15m: {workerStats.system.load_avg?.[2]?.toFixed(2) || '0.00'}</span>
+                      <span>{t('admin.workers.load_15m', { value: workerStats.system.load_avg?.[2]?.toFixed(2) || '0.00' })}</span>
                     </div>
                   </div>
                 </div>
