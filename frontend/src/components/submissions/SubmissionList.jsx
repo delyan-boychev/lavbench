@@ -2,12 +2,8 @@ import React from 'react';
 import Badge from '../ui/Badge';
 import Pagination from '../ui/Pagination';
 import EmptyState from '../ui/EmptyState';
-
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+import { formatLocalizedDate } from '../../utils/formatDate';
+import { useTranslation } from 'react-i18next';
 
 export default function SubmissionList({ 
   submissions, 
@@ -20,9 +16,16 @@ export default function SubmissionList({
   perPage,
   onPageChange
 }) {
+  const { t } = useTranslation();
+
+  const fmtTime = (ts) => {
+    if (!ts) return '—';
+    return formatLocalizedDate(ts);
+  };
+
   if (loading) {
     return (
-      <EmptyState minHeight={200} message="Loading submissions...">
+      <EmptyState minHeight={200} message={t('submissions.loading')}>
         <div className="animate-spin w-5.5 h-5.5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
       </EmptyState>
     );
@@ -32,7 +35,7 @@ export default function SubmissionList({
     return (
       <EmptyState 
         minHeight={200} 
-        message="No submissions found for this task."
+        message={t('submissions.none_found')}
         icon={
           <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
             <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -45,7 +48,7 @@ export default function SubmissionList({
   return (
     <div className="flex flex-col gap-2">
       <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-        Submissions ({total || submissions.length})
+        {t('submissions.title_with_count', { count: total || submissions.length })}
       </div>
       <div className="flex flex-col gap-1.5">
         {submissions.map(sub => {
@@ -80,7 +83,7 @@ export default function SubmissionList({
 
               {sub.user?.alias_id && (
                 <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                  Alias: {sub.user.alias_id}
+                  {t('submissions.alias', { alias: sub.user.alias_id })}
                 </div>
               )}
             </button>
@@ -95,10 +98,9 @@ export default function SubmissionList({
           total={total}
           perPage={perPage}
           onPageChange={onPageChange}
-          itemName="submissions"
+          itemName={t('submissions.pagination_item_name')}
         />
       </div>
     </div>
   );
 }
-

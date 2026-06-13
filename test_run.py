@@ -231,7 +231,7 @@ except Exception as e:
     while time.time() - start_time < 35:
         time.sleep(0.5)
         db.session.expire_all()
-        sub = Submission.query.get(submission.id)
+        sub = db.session.get(Submission, submission.id)
         
         if sub.status != last_status or sub.detailed_status != last_detailed:
             last_status = sub.status
@@ -244,7 +244,7 @@ except Exception as e:
             break
 
     # 10. Print Results & Assertions
-    sub = Submission.query.get(submission.id)
+    sub = db.session.get(Submission, submission.id)
     print_banner("Test Evaluation Results")
     print(f"Final Status:     {sub.status.upper()}")
     print(f"Detailed Status: {sub.detailed_status.upper()}")

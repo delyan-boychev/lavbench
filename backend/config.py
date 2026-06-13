@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337")
+    SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
     
     # Database configuration - PostgreSQL strictly enforced
     SQLALCHEMY_DATABASE_URI = os.environ.get(

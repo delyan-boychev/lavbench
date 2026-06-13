@@ -1,1 +1,68 @@
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
+import mockEnTranslation from '../public/locales/en/translation.json';
+
+function getTranslationValue(key) {
+  const parts = key.split('.');
+  let current = mockEnTranslation;
+  for (const part of parts) {
+    if (current && typeof current === 'object') {
+      current = current[part];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+vi.mock('react-i18next', () => {
+  // Define helper inside or access it since it starts with mock
+  const getTranslationVal = (key, count) => {
+    const lookup = (k) => {
+      const parts = k.split('.');
+      let current = mockEnTranslation;
+      for (const part of parts) {
+        if (current && typeof current === 'object') {
+          current = current[part];
+        } else {
+          return undefined;
+        }
+      }
+      return current;
+    };
+
+    if (count !== undefined) {
+      const suffix = count === 1 ? '_one' : '_other';
+      const val = lookup(key + suffix);
+      if (val !== undefined) return val;
+    }
+    return lookup(key);
+  };
+
+  return {
+    useTranslation: () => ({
+      t: (key, options) => {
+        const count = options && typeof options === 'object' ? options.count : undefined;
+        let value = getTranslationVal(key, count);
+        if (value === undefined) {
+          return key;
+        }
+        if (options && typeof options === 'object') {
+          Object.keys(options).forEach((optKey) => {
+            value = value.replace(new RegExp(`{{${optKey}}}`, 'g'), options[optKey]);
+          });
+        }
+        return value;
+      },
+      i18n: {
+        changeLanguage: vi.fn().mockImplementation(() => Promise.resolve()),
+        language: 'en',
+      },
+    }),
+    initReactI18next: {
+      type: '3rdParty',
+      init: () => {},
+    },
+  };
+});
+

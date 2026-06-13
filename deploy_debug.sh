@@ -22,12 +22,18 @@ echo "============================================="
 
 # 1. Prepare Python Virtual Environment
 echo "--> Setting up Python Virtual Environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
-    echo "    Created virtual environment in 'venv/'"
+if command -v micromamba &> /dev/null && micromamba env list | grep -q "nai_backend"; then
+    echo "--> Micromamba environment 'nai_backend' detected. Initializing shell hook..."
+    eval "$(micromamba shell hook --shell bash)"
+    echo "--> Activating micromamba environment 'nai_backend'..."
+    micromamba activate nai_backend
+else
+    if [ ! -d "venv" ]; then
+        python3 -m venv venv
+        echo "    Created virtual environment in 'venv/'"
+    fi
+    source venv/bin/activate
 fi
-
-source venv/bin/activate
 
 echo "--> Installing Python dependencies..."
 pip install -r backend/requirements.txt

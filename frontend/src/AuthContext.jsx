@@ -72,12 +72,12 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(data.user);
         return { success: true };
       } else {
-        setAuthError(data.error || 'Authentication failed.');
+        setAuthError(data.code ? { code: data.code, error: data.error } : 'auth.failed');
         return { success: false, error: data.error };
       }
     } catch (err) {
-      setAuthError('Unable to reach the server.');
-      return { success: false, error: 'Network error.' };
+      setAuthError('auth.unreachable');
+      return { success: false, error: 'auth.network_error' };
     }
   };
 

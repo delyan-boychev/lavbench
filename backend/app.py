@@ -40,6 +40,69 @@ app = create_app()
 def seed_database():
     db.create_all()
     
+    # Run inline migration for encrypted database fields
+    print("--> Checking for legacy encrypted database fields needing migration...")
+    try:
+        from cryptography.fernet import Fernet
+        import base64
+        import hashlib
+        
+        # Local definition of old cipher suite for one-time migration purposes
+        OLD_SECRET_KEY = "nai-super-secret-key-1337"
+        OLD_DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(OLD_SECRET_KEY.encode()).digest())
+        old_cipher_suite = Fernet(OLD_DERIVED_KEY)
+        
+        from models import User, Task, cipher_suite, encrypt_field
+        
+        def migrate_val(val):
+            if not val:
+                return val
+            try:
+                # Test decryption with new key
+                cipher_suite.decrypt(val.encode())
+                return val # Already using new key
+            except Exception:
+                try:
+                    # Test decryption with old key
+                    dec = old_cipher_suite.decrypt(val.encode()).decode()
+                    # Re-encrypt with new key
+                    return encrypt_field(dec)
+                except Exception:
+                    return val # Failed with both, keep as is
+        
+        users = User.query.all()
+        updated_users = 0
+        for u in users:
+            changed = False
+            for field in ['name', 'surname', 'grade', 'school', 'city']:
+                val = getattr(u, field)
+                if val:
+                    new_val = migrate_val(val)
+                    if new_val != val:
+                        setattr(u, field, new_val)
+                        changed = True
+            if changed:
+                updated_users += 1
+        
+        tasks = Task.query.all()
+        updated_tasks = 0
+        for t in tasks:
+            if t.hf_api_key:
+                new_key = migrate_val(t.hf_api_key)
+                if new_key != t.hf_api_key:
+                    t.hf_api_key = new_key
+                    updated_tasks += 1
+                    
+        if updated_users > 0 or updated_tasks > 0:
+            db.session.commit()
+            print(f"    [OK] Successfully migrated {updated_users} users and {updated_tasks} tasks to the new encryption key.")
+        else:
+            print("    [OK] All database fields are already using the current encryption key.")
+    except Exception as e:
+        db.session.rollback()
+        print(f"    [WARNING] Error during inline encryption key migration: {e}")
+
+    
     # For existing PostgreSQL databases, ensure double_blind column exists
     try:
         db.session.execute(db.text("ALTER TABLE challenges ADD COLUMN IF NOT EXISTS double_blind BOOLEAN DEFAULT TRUE"))

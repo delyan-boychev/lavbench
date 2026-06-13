@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import TaskService from '../services/TaskService';
@@ -9,6 +10,7 @@ import TabScrollContainer from '../components/ui/TabScrollContainer';
 import EmptyState from '../components/ui/EmptyState';
 
 export default function SubmissionsView() {
+  const { t } = useTranslation();
   const { challengeId } = useParams();
   const { currentUser, token } = useAuth();
   const { 
@@ -192,9 +194,9 @@ export default function SubmissionsView() {
       } else {
         const data = await res.json();
         await confirm({
-          title: "Selection Error",
-          message: data.error || "Failed to set final submission.",
-          confirmText: "OK",
+          title: t('submissions.selection_error'),
+          message: data.code ? t(`api.${data.code}`, data.error || t('submissions.select_final_failed')) : (data.error || t('submissions.select_final_failed')),
+          confirmText: t('common.ok'),
           cancelText: ""
         });
       }
@@ -261,16 +263,16 @@ export default function SubmissionsView() {
     let isExpired = false;
 
     if (hasRunningPreDeadline) {
-      timerText = 'Waiting for running pre-deadline submissions to complete evaluation...';
+      timerText = t('submissions.waiting_for_evaluation');
     } else if (finalSelectDeadline) {
       const diff = finalSelectDeadline - nowMs;
       if (diff <= 0) {
-        timerText = 'Selection closed';
+        timerText = t('submissions.selection_closed');
         isExpired = true;
       } else {
         const min = Math.floor(diff / 60000);
         const sec = Math.floor((diff % 60000) / 1000);
-        timerText = `Time remaining to select final: ${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+        timerText = t('submissions.time_remaining_select_final', { time: `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}` });
       }
     }
 
@@ -298,21 +300,21 @@ export default function SubmissionsView() {
           {selectedChallenge.tasks?.length > 1 && (
             <div className="surface" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Select Task:
+                {t('submissions.select_task')}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <TabScrollContainer>
-                  {selectedChallenge.tasks.map(t => (
+                  {selectedChallenge.tasks.map(task => (
                     <button
-                      key={t.id}
+                      key={task.id}
                       onClick={() => {
-                        setSelectedTask(t);
+                        setSelectedTask(task);
                         setSelectedSubmission(null);
                       }}
-                      className={`nav-tab flex-shrink-0 ${selectedTask?.id === t.id ? 'active' : ''}`}
+                      className={`nav-tab flex-shrink-0 ${selectedTask?.id === task.id ? 'active' : ''}`}
                       style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                     >
-                      {t.title}
+                      {task.title}
                     </button>
                   ))}
                 </TabScrollContainer>
@@ -355,11 +357,11 @@ export default function SubmissionsView() {
               </div>
             </div>
           ) : (
-            <EmptyState message="Please select a task to view submissions." minHeight={200} />
+            <EmptyState message={t('submissions.no_task_selected')} minHeight={200} />
           )}
         </>
       ) : (
-        <EmptyState message="No competition selected." minHeight={200} />
+        <EmptyState message={t('submissions.no_competition_selected')} minHeight={200} />
       )}
     </div>
   );

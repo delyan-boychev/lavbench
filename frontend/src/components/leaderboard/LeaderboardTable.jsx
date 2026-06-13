@@ -7,6 +7,7 @@ import Modal from '../ui/Modal';
 import TabScrollContainer from '../ui/TabScrollContainer';
 import ToggleField from '../ui/ToggleField';
 import EmptyState from '../ui/EmptyState';
+import { useTranslation } from 'react-i18next';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -30,6 +31,7 @@ function Row({
 }) {
   const { currentUser } = useAuth();
   const { showToast } = useApp();
+  const { t } = useTranslation();
   const medal = rank <= 3 ? MEDALS[rank - 1] : null;
   const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
   const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isJuryOrAdmin;
@@ -51,7 +53,7 @@ function Row({
 
     const pts = parseInt(rawVal);
     if (isNaN(pts) || pts < 0 || pts > 100) {
-      showToast("Points must be an integer between 0 and 100", "error");
+      showToast(t('leaderboard.save_points_error'), "error");
       return;
     }
 
@@ -63,13 +65,13 @@ function Row({
         }
       });
       if (res.ok) {
-        showToast(`Saved ${pts} pts for ${entry.user.name || entry.user.username}`);
+        showToast(t('leaderboard.save_points_success', { pts, name: entry.user.name || entry.user.username }));
         if (onRefresh) onRefresh();
       } else {
-        showToast(res.data?.error || "Failed to save points", "error");
+        showToast(res.data?.error || t('leaderboard.save_points_failed'), "error");
       }
     } catch (err) {
-      showToast("Error communicating with server", "error");
+      showToast(t('leaderboard.server_error'), "error");
     }
   };
 
@@ -96,7 +98,7 @@ function Row({
           <button 
             onClick={onToggleExpand}
             className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer p-1"
-            title="Toggle details"
+            title={t('leaderboard.toggle_details_tooltip', 'Toggle details')}
           >
             <svg 
               width="14" 
@@ -115,7 +117,7 @@ function Row({
         {/* Rank column */}
         <td className="px-4 py-3 text-center w-12 text-slate-300">
           {medal ? (
-            <span className="text-sm" title={`Rank ${rank}`}>{medal}</span>
+            <span className="text-sm" title={t('leaderboard.rank_tooltip', { rank })}>{medal}</span>
           ) : (
             <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-800/40 border border-slate-700/50 mx-auto">
               <span className="text-xs font-mono font-bold text-slate-400">
@@ -134,7 +136,7 @@ function Row({
                   ? (entry.user.name ? `${entry.user.name} ${entry.user.surname}` : entry.user.username) 
                   : '—'}
               </span>
-              {isCurrentUser && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">You</span>}
+              {isCurrentUser && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">{t('leaderboard.you_badge')}</span>}
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -160,7 +162,7 @@ function Row({
             )}
             {showPointsCols && (
               <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 text-sm">
-                {entry.total_points} pts
+                {t('leaderboard.points_short', { count: entry.total_points })}
               </td>
             )}
           </>
@@ -195,7 +197,7 @@ function Row({
                   />
                 ) : (
                   <span className="text-amber-400">
-                    {entry.user?.manual_points?.[activeTask.id.toString()] ?? 0} pts
+                    {t('leaderboard.points_short', { count: entry.user?.manual_points?.[activeTask.id.toString()] ?? 0 })}
                   </span>
                 )}
               </td>
@@ -211,24 +213,24 @@ function Row({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs animate-fadein">
               {/* Demographics */}
               <div className="flex flex-col gap-2 border-r border-slate-800/40 pr-6 last:border-r-0">
-                <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">Competitor Demographics</h4>
+                <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">{t('leaderboard.competitor_demographics')}</h4>
                 <div className="flex flex-col gap-1.5 text-slate-300">
                   <div>
-                    <span className="text-slate-500 font-medium">Real Name: </span>
+                    <span className="text-slate-500 font-medium">{t('leaderboard.real_name')} </span>
                     <span className="font-semibold text-slate-200">
-                      {showDemographics ? (entry.user.name ? `${entry.user.name} ${entry.user.surname}` : entry.user.username) : <span className="italic text-slate-500">[Anonymous]</span>}
+                      {showDemographics ? (entry.user.name ? `${entry.user.name} ${entry.user.surname}` : entry.user.username) : <span className="italic text-slate-500">{t('leaderboard.anonymous')}</span>}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-medium">School: </span>
+                    <span className="text-slate-500 font-medium">{t('leaderboard.school')} </span>
                     <span className="text-slate-200">{showDemographics && entry.user.school ? entry.user.school : '—'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-medium">Grade: </span>
-                    <span className="text-slate-200">{showDemographics && entry.user.grade ? `${entry.user.grade} grade` : '—'}</span>
+                    <span className="text-slate-500 font-medium">{t('leaderboard.grade')} </span>
+                    <span className="text-slate-200">{showDemographics && entry.user.grade ? t('leaderboard.grade_value', { grade: entry.user.grade }) : '—'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-medium">City: </span>
+                    <span className="text-slate-500 font-medium">{t('leaderboard.city')} </span>
                     <span className="text-slate-200">{showDemographics && entry.user.city ? entry.user.city : '—'}</span>
                   </div>
                 </div>
@@ -236,32 +238,32 @@ function Row({
 
               {/* Task breakdown */}
               <div className="flex flex-col gap-2 border-r border-slate-800/40 pr-6 last:border-r-0 col-span-2">
-                <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">Detailed breakdown per task</h4>
+                <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">{t('leaderboard.detailed_breakdown')}</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 font-sans text-slate-300">
-                  {tasks.map(t => {
-                    const scObj = entry.task_scores?.[t.id.toString()] || {};
-                    const manualPts = entry.user?.manual_points?.[t.id.toString()] ?? 0;
+                  {tasks.map(task => {
+                    const scObj = entry.task_scores?.[task.id.toString()] || {};
+                    const manualPts = entry.user?.manual_points?.[task.id.toString()] ?? 0;
                     return (
-                      <div key={t.id} className="p-3 bg-slate-900/40 border border-slate-800/50 rounded-xl flex flex-col gap-1.5">
-                        <div className="font-bold text-slate-200 truncate max-w-[180px]" title={t.title}>
-                          {t.title}
+                      <div key={task.id} className="p-3 bg-slate-900/40 border border-slate-800/50 rounded-xl flex flex-col gap-1.5">
+                        <div className="font-bold text-slate-200 truncate max-w-[180px]" title={task.title}>
+                          {task.title}
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
-                          {showPublicCols && <div>Pub: <span className="text-indigo-400">{scObj.public_score != null ? scObj.public_score.toFixed(4) : '—'}</span></div>}
-                          {showPrivateCols && <div>Priv: <span className="text-emerald-400">{scObj.private_score != null ? scObj.private_score.toFixed(4) : '—'}</span></div>}
+                          {showPublicCols && <div>{t('leaderboard.public_score_short')} <span className="text-indigo-400">{scObj.public_score != null ? scObj.public_score.toFixed(4) : '—'}</span></div>}
+                          {showPrivateCols && <div>{t('leaderboard.private_score_short')} <span className="text-emerald-400">{scObj.private_score != null ? scObj.private_score.toFixed(4) : '—'}</span></div>}
                         </div>
                         {(showPointsCols || isJuryOrAdmin) && (
                           <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
-                            <span className="text-slate-500">Manual Points:</span>
+                            <span className="text-slate-500">{t('leaderboard.manual_points_label')}</span>
                             {isJuryOrAdmin && !isFinalized ? (
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="number"
                                   min="0"
                                   max="100"
-                                  value={tempPoints[t.id] ?? entry.user?.manual_points?.[t.id.toString()] ?? 0}
-                                  onChange={(e) => handlePointsChange(t.id, e.target.value)}
-                                  onBlur={() => handleSavePoints(t.id)}
+                                  value={tempPoints[task.id] ?? entry.user?.manual_points?.[task.id.toString()] ?? 0}
+                                  onChange={(e) => handlePointsChange(task.id, e.target.value)}
+                                  onBlur={() => handleSavePoints(task.id)}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.target.blur();
@@ -272,7 +274,7 @@ function Row({
                                 <span className="text-[10px] text-slate-500">/ 100</span>
                               </div>
                             ) : (
-                              <span className="text-amber-400 font-bold font-mono">{manualPts} pts</span>
+                              <span className="text-amber-400 font-bold font-mono">{t('leaderboard.points_short', { count: manualPts })}</span>
                             )}
                           </div>
                         )}
@@ -292,6 +294,7 @@ function Row({
 export default function LeaderboardTable({ data, tasks, challenge, loading, onRefresh }) {
   const { currentUser } = useAuth();
   const { showToast, fetchChallenges } = useApp();
+  const { t } = useTranslation();
   const isFinalized = challenge?.scores_finalized;
   const metric = challenge?.metric_name || 'Score';
   const isJury = currentUser?.role === 'jury';
@@ -326,17 +329,17 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
       reveal_points: revealPoints
     });
     if (res.ok) {
-      showToast('Scores finalized — visibility options applied.');
+      showToast(t('leaderboard.scores_finalized_success', 'Scores finalized — visibility options applied.'));
       fetchChallenges();
       if (onRefresh) onRefresh();
     } else {
-      showToast(res.data?.error || 'Finalization failed.', 'error');
+      showToast(res.data?.error || t('leaderboard.finalize_failed', 'Finalization failed.'), 'error');
     }
   };
 
   if (loading) {
     return (
-      <EmptyState minHeight={150} message="Loading leaderboard...">
+      <EmptyState minHeight={150} message={t('leaderboard.loading')}>
         <div className="animate-spin w-6 h-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
       </EmptyState>
     );
@@ -407,11 +410,11 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
       {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-100">Leaderboard</h2>
+          <h2 className="text-lg font-bold text-slate-100">{t('leaderboard.title')}</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Metric: <span className="text-indigo-400 font-semibold">{metric}</span>
-            {' · '}{data.length} participant{data.length !== 1 ? 's' : ''}
-            {isFinalized && <span className="pill pill-success ml-2">Finalized</span>}
+            {t('leaderboard.metric')} <span className="text-indigo-400 font-semibold">{metric}</span>
+            {' · '}{t('leaderboard.participants', { count: data.length })}
+            {isFinalized && <span className="pill pill-success ml-2">{t('leaderboard.finalized')}</span>}
           </p>
         </div>
         {/* Only JURY (not admin) can finalize */}
@@ -421,9 +424,9 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
             size="sm" 
             onClick={() => setIsFinalizeModalOpen(true)}
             disabled={challenge.stages && challenge.stages.some(st => !st.is_finalized)}
-            title={challenge.stages && challenge.stages.some(st => !st.is_finalized) ? "All stages must be finalized first" : ""}
+            title={challenge.stages && challenge.stages.some(st => !st.is_finalized) ? t('leaderboard.finalize_disabled_tooltip') : ""}
           >
-            Finalize & Reveal Identities
+            {t('leaderboard.finalize_button')}
           </Button>
         )}
       </div>
@@ -439,7 +442,7 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
                 : 'text-slate-300 hover:bg-slate-800'
             }`}
           >
-            General Leaderboard
+            {t('leaderboard.general_tab')}
           </button>
           {tasks?.map(task => (
             <button
@@ -462,10 +465,10 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
         {displayData.length === 0 ? (
           <EmptyState
             surface={false}
-            message="No scored submissions yet. Be the first!"
+            message={t('leaderboard.no_submissions')}
             icon={
               <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-                <path strokeLinecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                <path strokeLinecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2m0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             }
           />
@@ -476,19 +479,19 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
                 <tr className="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   <th className="px-4 py-3 text-center w-10"></th>
                   <th className="px-4 py-3 text-center w-12">#</th>
-                  <th className="px-4 py-3 text-left">Participant</th>
+                  <th className="px-4 py-3 text-left">{t('leaderboard.participant_header')}</th>
                   
                   {activeTab === 'general' ? (
                     <>
-                      {showPublicCols && <th className="px-4 py-3 text-right">Summed Public Score</th>}
-                      {showPrivateCols && <th className="px-4 py-3 text-right">Summed Private Score</th>}
-                      {showPointsCols && <th className="px-4 py-3 text-right">Total Points</th>}
+                      {showPublicCols && <th className="px-4 py-3 text-right">{t('leaderboard.summed_public_score')}</th>}
+                      {showPrivateCols && <th className="px-4 py-3 text-right">{t('leaderboard.summed_private_score')}</th>}
+                      {showPointsCols && <th className="px-4 py-3 text-right">{t('leaderboard.total_points')}</th>}
                     </>
                   ) : (
                     <>
-                      {showPublicCols && <th className="px-4 py-3 text-right">Public Score</th>}
-                      {showPrivateCols && <th className="px-4 py-3 text-right">Private Score</th>}
-                      {(showPointsCols || isJuryOrAdmin) && <th className="px-4 py-3 text-right">Manual Points</th>}
+                      {showPublicCols && <th className="px-4 py-3 text-right">{t('leaderboard.public_score')}</th>}
+                      {showPrivateCols && <th className="px-4 py-3 text-right">{t('leaderboard.private_score')}</th>}
+                      {(showPointsCols || isJuryOrAdmin) && <th className="px-4 py-3 text-right">{t('leaderboard.manual_points')}</th>}
                     </>
                   )}
                 </tr>
@@ -524,51 +527,51 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
       <Modal 
         isOpen={isFinalizeModalOpen} 
         onClose={() => setIsFinalizeModalOpen(false)}
-        title="Finalize Competition & Visibility Options"
+        title={t('leaderboard.finalize_modal_title')}
         footer={(
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setIsFinalizeModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleFinalizeSubmit}>Finalize & Reveal</Button>
+            <Button variant="ghost" onClick={() => setIsFinalizeModalOpen(false)}>{t('common.cancel', 'Cancel')}</Button>
+            <Button variant="primary" onClick={handleFinalizeSubmit}>{t('leaderboard.finalize_and_reveal')}</Button>
           </div>
         )}
       >
         <div className="flex flex-col gap-5 text-sm text-slate-300">
           <p>
-            You are finalizing scores for <strong className="text-slate-100">"{challenge?.title}"</strong>. This action will reveal competitor identities and enable manual points grading.
+            {t('leaderboard.finalize_modal_desc', { title: challenge?.title })}
           </p>
           <p className="text-xs text-slate-400">
-            Select which details should be visible to competitors on the leaderboard:
+            {t('leaderboard.finalize_visibility_desc')}
           </p>
           
           <div className="flex flex-col gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800/60">
             <ToggleField 
-              label="Reveal Public Scores"
+              label={t('leaderboard.reveal_public_scores')}
               id="reveal_pub"
               checked={revealPub}
               onChange={(e) => setRevealPub(e.target.checked)}
             />
             <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              Allow competitors to see evaluation public scores.
+              {t('leaderboard.reveal_public_scores_help')}
             </p>
 
             <ToggleField 
-              label="Reveal Private Scores"
+              label={t('leaderboard.reveal_private_scores')}
               id="reveal_priv"
               checked={revealPriv}
               onChange={(e) => setRevealPriv(e.target.checked)}
             />
             <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              Allow competitors to see evaluation private scores inside details.
+              {t('leaderboard.reveal_private_scores_help')}
             </p>
 
             <ToggleField 
-              label="Reveal Manual Points & Aggregates"
+              label={t('leaderboard.reveal_points')}
               id="reveal_pts"
               checked={revealPoints}
               onChange={(e) => setRevealPoints(e.target.checked)}
             />
             <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              Allow competitors to see manually entered points and total points. If disabled along with scores, only the final ranking will be visible.
+              {t('leaderboard.reveal_points_help')}
             </p>
           </div>
         </div>

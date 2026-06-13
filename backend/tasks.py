@@ -460,7 +460,7 @@ def evaluate_submission(self, submission_id, metadata=None):
         )
     else:
         with app.app_context():
-            db_submission = Submission.query.get(submission_id)
+            db_submission = db.session.get(Submission, submission_id)
             if not db_submission:
                 return f"Submission {submission_id} not found."
             task = MockModel(
@@ -525,7 +525,7 @@ def evaluate_submission(self, submission_id, metadata=None):
         else:
             with app.app_context():
                 db.session.expire_all()
-                sub = Submission.query.get(submission_id)
+                sub = db.session.get(Submission, submission_id)
                 if sub:
                     sub.status = status_val
                     sub.detailed_status = detailed_val

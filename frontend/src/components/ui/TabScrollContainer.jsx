@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function TabScrollContainer({ children }) {
+  const { t } = useTranslation();
   const scrollRef = useRef(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
@@ -52,7 +54,7 @@ export default function TabScrollContainer({ children }) {
           type="button"
           onClick={() => scroll('left')}
           className="absolute left-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -ml-3"
-          title="Scroll Left"
+          title={t('common.scroll_left')}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -84,7 +86,7 @@ export default function TabScrollContainer({ children }) {
           type="button"
           onClick={() => scroll('right')}
           className="absolute right-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -mr-3"
-          title="Scroll Right"
+          title={t('common.scroll_right')}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

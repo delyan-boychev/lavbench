@@ -8,7 +8,7 @@ leaderboard_bp = Blueprint('leaderboard', __name__)
 
 def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
     from cache_utils import set_cached
-    challenge = Challenge.query.get(challenge_id)
+    challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return None
         
@@ -209,15 +209,18 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
 @leaderboard_bp.route('/challenges/<int:challenge_id>/leaderboard', methods=['GET'])
 @login_required
 def get_leaderboard(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     
     # Restrict competitors to their registered challenge
     if user_role == 'competitor':
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         if not user or user.challenge_id != challenge_id:
-            return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
+            return jsonify({
+                "error": "Access denied. You are not registered for this competition.",
+                "code": "ERR_NOT_REGISTERED"
+            }), 403
             
     is_mse = (challenge.metric_name or '').lower() in ('mse', 'loss', 'error')
     challenge_finalized = challenge.scores_finalized
@@ -247,7 +250,7 @@ def get_leaderboard(challenge_id):
             if not t.stage_id:
                 visible_tasks.append(t)
             else:
-                stage = Stage.query.get(t.stage_id)
+                stage = db.session.get(Stage, t.stage_id)
                 if stage and now >= stage.start_time:
                     visible_tasks.append(t)
         
@@ -288,7 +291,7 @@ def get_leaderboard(challenge_id):
                 })
                 
                 s_copy = dict(sc_dict)
-                stage = Stage.query.get(t.stage_id) if t.stage_id else None
+                stage = db.session.get(Stage, t.stage_id) if t.stage_id else None
                 
                 # Determine score visibility for this task
                 reveal_task_pub = False
@@ -451,7 +454,7 @@ def get_leaderboard(challenge_id):
 @login_required
 @role_required(['admin', 'jury'])
 def save_manual_points(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     
     data = request.get_json() or {}
     user_id = data.get("user_id")
@@ -459,14 +462,23 @@ def save_manual_points(challenge_id):
     reason = data.get("reason")
     
     if not user_id or not isinstance(points_dict, dict):
-        return jsonify({"error": "Missing user_id or points dictionary."}), 400
+        return jsonify({
+            "error": "Missing user_id or points dictionary.",
+            "code": "ERR_MISSING_FIELDS"
+        }), 400
         
     user = User.query.filter_by(id=user_id, challenge_id=challenge_id).first()
     if not user:
-        return jsonify({"error": "User not found or not registered in this challenge."}), 404
+        return jsonify({
+            "error": "User not found or not registered in this challenge.",
+            "code": "ERR_USER_NOT_FOUND"
+        }), 404
         
     if challenge.scores_finalized and not reason:
-        return jsonify({"error": "A justification reason is mandatory to modify manual points after the competition is finalized."}), 400
+        return jsonify({
+            "error": "A justification reason is mandatory to modify manual points after the competition is finalized.",
+            "code": "ERR_REASON_REQUIRED"
+        }), 400
         
     # Validate points (0-100 integers) and completed submissions count
     validated_points = {}
@@ -475,18 +487,30 @@ def save_manual_points(challenge_id):
         try:
             task_id = int(k)
         except ValueError:
-            return jsonify({"error": f"Invalid task ID: {k}"}), 400
+            return jsonify({
+                "error": f"Invalid task ID: {k}",
+                "code": "ERR_INVALID_TASK_ID"
+            }), 400
             
         if task_id not in tasks:
-            return jsonify({"error": f"Task ID {task_id} does not belong to this challenge."}), 400
+            return jsonify({
+                "error": f"Task ID {task_id} does not belong to this challenge.",
+                "code": "ERR_TASK_NOT_IN_CHALLENGE"
+            }), 400
             
         try:
             pts = int(v)
         except (ValueError, TypeError):
-            return jsonify({"error": f"Points for task {task_id} must be an integer."}), 400
+            return jsonify({
+                "error": f"Points for task {task_id} must be an integer.",
+                "code": "ERR_POINTS_MUST_BE_INT"
+            }), 400
             
         if not (0 <= pts <= 100):
-            return jsonify({"error": f"Points for task {task_id} must be between 0 and 100."}), 400
+            return jsonify({
+                "error": f"Points for task {task_id} must be between 0 and 100.",
+                "code": "ERR_POINTS_OUT_OF_BOUNDS"
+            }), 400
             
         # Check completed submissions count
         completed_count = Submission.query.filter_by(
@@ -495,7 +519,10 @@ def save_manual_points(challenge_id):
             status='completed'
         ).count()
         if completed_count == 0:
-            return jsonify({"error": f"Cannot assign manual points. User {user.username} has no completed submissions for task ID {task_id}."}), 400
+            return jsonify({
+                "error": f"Cannot assign manual points. User {user.username} has no completed submissions for task ID {task_id}.",
+                "code": "ERR_NO_COMPLETED_SUBMISSIONS"
+            }), 400
             
         validated_points[str(task_id)] = pts
         

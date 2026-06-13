@@ -47,28 +47,40 @@ def clear_failures(identifier):
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.json or {}
-    identifier = data.get("email") or data.get("username")
+    username = data.get("username")
     password = data.get("password")
     
-    if not identifier or not password:
-        return jsonify({"error": "Missing username/email or password."}), 400
+    if not username or not password:
+        return jsonify({
+            "error": "Missing username or password.",
+            "code": "ERR_MISSING_CREDENTIALS"
+        }), 400
         
-    if check_rate_limit(identifier):
-        return jsonify({"error": "Too many failed login attempts. Please try again in a minute."}), 429
+    if check_rate_limit(username):
+        return jsonify({
+            "error": "Too many failed login attempts. Please try again in a minute.",
+            "code": "ERR_RATE_LIMIT_EXCEEDED"
+        }), 429
         
-    user = User.query.filter((User.email == identifier) | (User.username == identifier)).first()
+    user = User.query.filter(User.username == username).first()
     
     if not user or not check_password_hash(user.password_hash, password):
-        record_failure(identifier)
-        return jsonify({"error": "Invalid credentials."}), 401
+        record_failure(username)
+        return jsonify({
+            "error": "Invalid credentials.",
+            "code": "ERR_INVALID_CREDENTIALS"
+        }), 401
         
-    clear_failures(identifier)
+    clear_failures(username)
         
     if user.role == 'competitor' and user.challenge_id:
         from models import Challenge
-        challenge = Challenge.query.get(user.challenge_id)
+        challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_archived:
-            return jsonify({"error": "This competition has been archived. Registered students are not allowed to log in."}), 403
+            return jsonify({
+                "error": "This competition has been archived. Registered students are not allowed to log in.",
+                "code": "ERR_COMPETITION_ARCHIVED"
+            }), 403
             
     token = generate_token(user.id, user.role)
     return jsonify({
@@ -80,7 +92,10 @@ def login():
 @auth_bp.route('/me', methods=['GET'])
 @login_required
 def me():
-    user = User.query.get(request.user["user_id"])
+    user = db.session.get(User, request.user["user_id"])
     if not user:
-        return jsonify({"error": "User not found."}), 404
+        return jsonify({
+            "error": "User not found.",
+            "code": "ERR_USER_NOT_FOUND"
+        }), 404
     return jsonify({"user": user.to_dict(current_user_id=user.id)})

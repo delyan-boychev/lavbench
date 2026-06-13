@@ -7,6 +7,7 @@ import Modal from '../ui/Modal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
+import { useTranslation } from 'react-i18next';
 
 function SunIcon() {
   return (
@@ -28,6 +29,7 @@ function MoonIcon() {
 export default function Navbar() {
   const { currentUser, logout, token } = useAuth();
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
+  const { t, i18n } = useTranslation();
   const [workerStatus, setWorkerStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -63,7 +65,8 @@ export default function Navbar() {
     if (selectedChallenge?.end_time) {
       const start = new Date(selectedChallenge.start_time).getTime();
       const end = new Date(selectedChallenge.end_time).getTime();
-      if (now >= start && now <= end && !selectedChallenge.scores_finalized) {
+      const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
+      if (now >= start && now <= (end + graceMs) && !selectedChallenge.scores_finalized) {
         return end - now;
       }
     }
@@ -73,27 +76,47 @@ export default function Navbar() {
   const renderNavbarTimer = () => {
     if (timeRemainingMs === null) return null;
     
+    const graceMs = (selectedChallenge?.deadline_grace_period_seconds || 60) * 1000;
+    const isGracePeriod = timeRemainingMs < 0;
+    
     let color = '#10b981'; // Green
     let isFlashing = false;
     
-    const minutesLeft = timeRemainingMs / 60000;
-    if (minutesLeft <= 5) {
-      color = '#ef4444'; // Red
+    if (isGracePeriod) {
+      color = '#f97316'; // Amber/Orange
       isFlashing = true;
-    } else if (minutesLeft <= 15) {
-      color = '#ef4444'; // Red
-    } else if (minutesLeft <= 30) {
-      color = '#f59e0b'; // Yellow
+    } else {
+      const minutesLeft = timeRemainingMs / 60000;
+      if (minutesLeft <= 5) {
+        color = '#ef4444'; // Red
+        isFlashing = true;
+      } else if (minutesLeft <= 15) {
+        color = '#ef4444'; // Red
+      } else if (minutesLeft <= 30) {
+        color = '#f59e0b'; // Yellow
+      }
     }
     
-    const totalSecs = Math.ceil(Math.max(0, timeRemainingMs) / 1000);
-    const hours = Math.floor(totalSecs / 3600);
-    const minutes = Math.floor((totalSecs % 3600) / 60);
-    const seconds = totalSecs % 60;
+    let timeStr = "";
+    if (isGracePeriod) {
+      const remainingGraceSecs = Math.ceil((graceMs + timeRemainingMs) / 1000);
+      timeStr = `${remainingGraceSecs}s`;
+    } else {
+      const totalSecs = Math.ceil(timeRemainingMs / 1000);
+      const hours = Math.floor(totalSecs / 3600);
+      const minutes = Math.floor((totalSecs % 3600) / 60);
+      const seconds = totalSecs % 60;
+      timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
     
-    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    const labelStr = activeStage ? `Stage ${activeStage.stage_number} left` : 'Time left';
-    
+    const labelStr = isGracePeriod 
+      ? t('nav.grace_period')
+      : (activeStage ? t('nav.stage_time_left', { stage: activeStage.stage_number }) : t('nav.time_left'));
+      
+    const titleStr = isGracePeriod
+      ? t('nav.grace_period_title')
+      : (activeStage ? t('nav.stage_time_left_title', { stage: activeStage.stage_number }) : t('nav.time_left_title'));
+      
     return (
       <div 
         style={{
@@ -101,7 +124,7 @@ export default function Navbar() {
           alignItems: 'center',
           gap: 6,
           padding: '4px 12px',
-          background: 'rgba(30, 41, 59, 0.5)',
+          background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-sm)',
           fontSize: '0.78rem',
@@ -111,7 +134,7 @@ export default function Navbar() {
           transition: 'all 0.2s ease',
         }}
         className={isFlashing ? 'animate-flash-red' : ''}
-        title={activeStage ? `Time remaining in Stage ${activeStage.stage_number}` : 'Time remaining in competition'}
+        title={titleStr}
       >
         <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -122,16 +145,16 @@ export default function Navbar() {
   };
 
   const docTabs = React.useMemo(() => {
-    const tabs = [{ id: 'student', label: 'Student Guide' }];
+    const tabs = [{ id: 'student', label: t('nav.doc_student_guide') }];
     if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
-      tabs.push({ id: 'jury', label: 'Jury Guide' });
+      tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
     }
     if (currentUser?.role === 'admin') {
-      tabs.push({ id: 'admin', label: 'Admin Guide' });
-      tabs.push({ id: 'api-reference', label: 'API Reference' });
+      tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
+      tabs.push({ id: 'api-reference', label: t('nav.doc_api_reference') });
     }
     return tabs;
-  }, [currentUser]);
+  }, [currentUser, t]);
 
   React.useEffect(() => {
     if (!token || !isDocsModalOpen) return;
@@ -148,10 +171,10 @@ export default function Navbar() {
           setDocContent(data.content);
         } else {
           const errData = await res.json();
-          setDocError(errData.error || 'Failed to fetch documentation.');
+          setDocError(errData.code ? t(`api.${errData.code}`, errData.error || t('nav.failed_fetch_docs')) : (errData.error || t('nav.failed_fetch_docs')));
         }
       } catch (err) {
-        setDocError('Failed to fetch documentation due to a network error.');
+        setDocError(t('nav.failed_fetch_docs_network'));
       } finally {
         setDocLoading(false);
       }
@@ -162,7 +185,7 @@ export default function Navbar() {
 
   const handleLogout = () => {
     logout();
-    showToast('Signed out successfully.');
+    showToast(t('nav.signed_out_success'));
   };
 
   React.useEffect(() => {
@@ -200,8 +223,8 @@ export default function Navbar() {
 
   return (
     <header style={{
-      background: 'rgba(9, 10, 15, 0.8)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+      background: 'var(--bg-surface)',
+      borderBottom: '1px solid var(--border)',
       position: 'sticky',
       top: 0,
       zIndex: 100,
@@ -242,7 +265,7 @@ export default function Navbar() {
               transition: 'all 0.2s ease',
             }}
             className="hover:scale-[1.02] active:scale-[0.98] select-none"
-            title="View Available Clusters"
+            title={t('nav.cluster_info_title')}
           >
             <span style={{ 
               position: 'relative',
@@ -255,7 +278,7 @@ export default function Navbar() {
               )}
               <span className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
             </span>
-            Cluster
+            {t('nav.cluster')}
           </button>
 
           {currentUser && (
@@ -271,18 +294,18 @@ export default function Navbar() {
                 borderRadius: 'var(--radius-sm)',
                 fontSize: '0.72rem',
                 fontWeight: 700,
-                color: 'rgb(129, 140, 248)',
+                color: 'var(--accent-border)',
                 cursor: 'pointer',
                 outline: 'none',
                 transition: 'all 0.2s ease',
               }}
               className="hover:scale-[1.02] active:scale-[0.98] select-none"
-              title="System Documentation & Guides"
+              title={t('nav.docs_title')}
             >
               <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
-              Docs
+              {t('nav.docs')}
             </button>
           )}
         </div>
@@ -307,10 +330,33 @@ export default function Navbar() {
             </div>
           )}
 
+          {/* Language Selector Selector */}
+          <button
+            onClick={() => i18n.changeLanguage(i18n.language.startsWith('bg') ? 'en' : 'bg')}
+            title={i18n.language.startsWith('bg') ? 'Switch to English' : 'Премини на български'}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              width: 32, height: 32,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              userSelect: 'none'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+          >
+            {i18n.language.startsWith('bg') ? 'EN' : 'BG'}
+          </button>
+
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? t('nav.switch_light') : t('nav.switch_dark')}
             style={{
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border)',
@@ -332,7 +378,7 @@ export default function Navbar() {
             onClick={handleLogout}
             className="btn btn-secondary btn-sm"
           >
-            Sign out
+            {t('nav.sign_out')}
           </button>
         </div>
       </div>
@@ -340,50 +386,50 @@ export default function Navbar() {
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title="Cluster Info & Active Node Specifications"
+        title={t('nav.cluster_info_title')}
         size="md"
         footer={(
           <button 
             className="btn btn-secondary btn-sm px-4" 
             onClick={() => setIsModalOpen(false)}
           >
-            Close
+            {t('nav.close')}
           </button>
         )}
       >
         <div className="flex flex-col gap-4 text-xs text-left">
           <p className="text-slate-400">
-            Real-time specifications of available processing nodes connected to the competition queue.
+            {t('nav.cluster_info_desc')}
           </p>
 
           {/* Cluster Status Summary Info Card */}
           <div className="bg-slate-950/60 border border-indigo-500/10 p-4 rounded-xl flex flex-col gap-2">
-            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">Cluster Status Summary</h4>
+            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">{t('nav.cluster_status_summary')}</h4>
             <div className="grid grid-cols-2 gap-3 text-slate-300">
               <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">System Status:</span>
-                <span className="font-bold text-emerald-400">Active</span>
+                <span className="text-slate-400">{t('nav.system_status')}</span>
+                <span className="font-bold text-emerald-400">{t('nav.active')}</span>
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">Total Nodes:</span>
+                <span className="text-slate-400">{t('nav.total_nodes')}</span>
                 <span className="font-bold text-slate-100">{clusters.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Global Concurrency:</span>
+                <span className="text-slate-400">{t('nav.global_concurrency')}</span>
                 <span className="font-bold text-slate-100">
-                  {clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0)} parallel tasks
+                  {t('nav.global_parallel_tasks', { count: clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0) })}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Resource Routing:</span>
-                <span className="font-bold text-indigo-400">Automatic (Load Balanced)</span>
+                <span className="text-slate-400">{t('nav.resource_routing')}</span>
+                <span className="font-bold text-indigo-400">{t('nav.auto_load_balanced')}</span>
               </div>
             </div>
           </div>
           
           {clusters.length === 0 ? (
             <div className="text-center py-8 text-slate-500 italic bg-slate-950/20 border border-white/5 rounded-xl">
-              No active processing nodes currently connected.
+              {t('nav.no_nodes_connected')}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
@@ -394,25 +440,25 @@ export default function Navbar() {
                     <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
                       cluster.type === 'GPU' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-300'
                     }`}>
-                      {cluster.type} Node
+                      {t('nav.node_type', { type: cluster.type })}
                     </span>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-slate-300 font-medium">
                     <div className="flex justify-between border-b border-white/5 pb-1">
-                      <span className="text-slate-500 font-semibold">Concurrency:</span>
-                      <span className="font-bold text-slate-200">{cluster.concurrency} tasks</span>
+                      <span className="text-slate-500 font-semibold">{t('nav.concurrency')}</span>
+                      <span className="font-bold text-slate-200">{t('nav.parallel_tasks', { count: cluster.concurrency })}</span>
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
-                      <span className="text-slate-500 font-semibold">RAM Limit:</span>
+                      <span className="text-slate-500 font-semibold">{t('nav.ram_limit')}</span>
                       <span className="font-bold text-slate-200">{cluster.ram_gb} GB</span>
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
-                      <span className="text-slate-500 font-semibold">GPU Model:</span>
+                      <span className="text-slate-500 font-semibold">{t('nav.gpu_model')}</span>
                       <span className="font-bold text-slate-200 truncate max-w-[140px] text-right" title={cluster.gpu_type}>{cluster.gpu_type}</span>
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
-                      <span className="text-slate-500 font-semibold">VRAM Limit:</span>
+                      <span className="text-slate-500 font-semibold">{t('nav.vram_limit')}</span>
                       <span className="font-bold text-slate-200">{cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null ? `${cluster.vram_gb} GB` : 'N/A'}</span>
                     </div>
                   </div>
@@ -427,21 +473,22 @@ export default function Navbar() {
       <Modal
         isOpen={isDocsModalOpen}
         onClose={() => setIsDocsModalOpen(false)}
-        title="Documentation & Guides"
-        size="xl"
+        title={t('nav.docs_title')}
+        size="2xl"
+        bodyScrollable={false}
         footer={(
           <button 
             className="btn btn-secondary btn-sm px-4" 
             onClick={() => setIsDocsModalOpen(false)}
           >
-            Close
+            {t('nav.close')}
           </button>
         )}
       >
-        <div className="flex flex-col gap-4 text-left h-[70vh] md:h-[75vh]">
+        <div className="flex flex-col gap-4 text-left flex-1 min-h-0">
           {/* Tabs header - scrollable horizontally on small viewports */}
           {docTabs.length > 1 && (
-            <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto scrollbar-none whitespace-nowrap">
+            <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto scrollbar-none whitespace-nowrap flex-shrink-0">
               {docTabs.map(tab => (
                 <button
                   key={tab.id}
@@ -459,11 +506,11 @@ export default function Navbar() {
           )}
           
           {/* Scrollable Doc Content Area */}
-          <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin">
+          <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin min-h-0">
             {docLoading ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
                 <div className="animate-spin h-6 w-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
-                <span>Loading documentation...</span>
+                <span>{t('nav.loading_docs')}</span>
               </div>
             ) : docError ? (
               <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center">

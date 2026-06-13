@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import CustomSelect from '../ui/CustomSelect';
+import { useTranslation } from 'react-i18next';
 
 function TabIcon({ name }) {
   const icons = {
@@ -27,6 +28,7 @@ export default function CompetitionBar() {
   const { challenges, selectedChallenge, setSelectedChallengeById } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const isTabActive = (tab) => {
     const path = location.pathname;
@@ -71,8 +73,8 @@ export default function CompetitionBar() {
 
   return (
     <div style={{
-      background: 'rgba(9, 10, 15, 0.8)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+      background: 'var(--bg-surface)',
+      borderBottom: '1px solid var(--border)',
       position: 'sticky',
       top: 56,
       zIndex: 90,
@@ -93,7 +95,7 @@ export default function CompetitionBar() {
         {/* Competition selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
-            Competition
+            {t('nav.competition_label')}
           </span>
           {currentUser?.role === 'competitor' ? (
             <div 
@@ -110,28 +112,28 @@ export default function CompetitionBar() {
                 color: 'rgb(129, 140, 248)',
                 userSelect: 'none',
               }}
-              title="Your assigned competition"
+              title={t('nav.assigned_competition_tooltip')}
               data-testid="student-competition-label"
             >
               <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2zm-7 2h14v2a7 7 0 01-14 0V9z" />
               </svg>
-              <span>{selectedChallenge ? selectedChallenge.title : 'No Competition Assigned'}</span>
+              <span>{selectedChallenge ? selectedChallenge.title : t('nav.no_competition_assigned')}</span>
             </div>
           ) : (
             <CustomSelect
               options={challenges.map(c => ({
                 value: c.id,
-                label: `${c.title}${c.is_archived ? ' (Archived)' : ''}`
+                label: `${c.title}${c.is_archived ? t('nav.archived_suffix') : ''}`
               }))}
               value={selectedChallenge?.id || ''}
               onChange={handleChallengeChange}
-              placeholder="No competitions"
+              placeholder={t('nav.no_competitions_placeholder')}
               size="sm"
             />
           )}
           {selectedChallenge?.is_archived && (
-            <span className="pill pill-muted">Archived</span>
+            <span className="pill pill-muted">{t('nav.archived_pill')}</span>
           )}
         </div>
 
@@ -139,20 +141,20 @@ export default function CompetitionBar() {
         <nav style={{ display: 'flex', gap: 4, overflowX: 'auto', padding: '4px 0' }}>
           <NavLink to={selectedChallenge ? `/challenges/${selectedChallenge.id}` : "/challenges"} end className={getNavTabClass('challenge')} id="tab-challenge">
             <TabIcon name="challenge" />
-            <span>Challenge</span>
+            <span>{t('nav.challenge_tab')}</span>
           </NavLink>
           <NavLink to={selectedChallenge ? `/challenges/${selectedChallenge.id}/leaderboard` : "/leaderboard"} end className={getNavTabClass('leaderboard')} id="tab-leaderboard">
             <TabIcon name="leaderboard" />
-            <span>Leaderboard</span>
+            <span>{t('nav.leaderboard_tab')}</span>
           </NavLink>
           <NavLink to={selectedChallenge ? `/challenges/${selectedChallenge.id}/submissions` : "/submissions"} end className={getNavTabClass('submissions')} id="tab-submissions">
             <TabIcon name="submissions" />
-            <span>Submissions</span>
+            <span>{t('nav.submissions_tab')}</span>
           </NavLink>
           {(currentUser?.role === 'admin' || currentUser?.role === 'jury') && (
             <NavLink to="/admin" className={getNavTabClass('admin')} id="tab-admin">
               <TabIcon name="admin" />
-              <span>Admin Panel</span>
+              <span>{t('nav.admin_panel_tab')}</span>
             </NavLink>
           )}
         </nav>

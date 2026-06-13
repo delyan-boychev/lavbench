@@ -67,7 +67,7 @@ def register_competitor():
     if not challenge_id:
         return jsonify({"error": "challenge_id is required for competitor registration."}), 400
         
-    challenge = Challenge.query.get(challenge_id)
+    challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return jsonify({"error": "Invalid challenge_id."}), 400
         
@@ -177,7 +177,7 @@ def delete_user(user_id):
     if request.user["user_id"] == user_id:
         return jsonify({"error": "You cannot delete your own admin account."}), 400
         
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found."}), 404
         
@@ -217,7 +217,7 @@ def register_user():
     if role == 'competitor':
         if not challenge_id:
             return jsonify({"error": "challenge_id is required for competitor registration."}), 400
-        challenge = Challenge.query.get(challenge_id)
+        challenge = db.session.get(Challenge, challenge_id)
         if not challenge:
             return jsonify({"error": "Invalid challenge_id."}), 400
         # Check if the competition has started
@@ -273,7 +273,7 @@ def import_competitors_csv():
     if not challenge_id:
         return jsonify({"error": "challenge_id is required for importing competitors."}), 400
         
-    challenge = Challenge.query.get(challenge_id)
+    challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return jsonify({"error": "Invalid challenge_id."}), 400
         
@@ -394,7 +394,7 @@ def download_backup():
 @admin_bp.route('/users/<int:user_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
     
     # Check if the competition has started for jury edits
@@ -405,7 +405,7 @@ def update_user(user_id):
             
         # Check current assigned challenge
         if user.challenge_id:
-            challenge = Challenge.query.get(user.challenge_id)
+            challenge = db.session.get(Challenge, user.challenge_id)
             if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
                 return jsonify({"error": "Cannot edit user: The assigned competition has already started."}), 403
     
@@ -428,7 +428,7 @@ def update_user(user_id):
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
         target_challenge_id = int(challenge_id)
         if current_role == 'jury':
-            challenge = Challenge.query.get(target_challenge_id)
+            challenge = db.session.get(Challenge, target_challenge_id)
             if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
                 return jsonify({"error": "Cannot assign user to a competition that has already started."}), 403
         user.challenge_id = target_challenge_id
@@ -473,11 +473,11 @@ def update_user(user_id):
 @admin_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
 @role_required(['admin', 'jury'])
 def reset_user_password(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == 'jury':
         if user.challenge_id:
-            challenge = Challenge.query.get(user.challenge_id)
+            challenge = db.session.get(Challenge, user.challenge_id)
             if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
                 return jsonify({"error": "Cannot reset password: The assigned competition has already started."}), 403
 
@@ -496,7 +496,7 @@ def reset_user_password(user_id):
 @admin_bp.route('/challenges/<int:challenge_id>/reset-all-passwords', methods=['POST'])
 @role_required(['admin', 'jury'])
 def reset_all_challenge_passwords(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == 'jury':
         if challenge.start_time and datetime.utcnow() >= challenge.start_time:
@@ -531,7 +531,7 @@ def reset_all_challenge_passwords(challenge_id):
 @admin_bp.route('/challenges/<int:challenge_id>/download-scores-csv', methods=['GET'])
 @role_required(['admin', 'jury'])
 def download_scores_csv(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return jsonify({"error": "Scores must be finalized before downloading."}), 400
         
@@ -631,7 +631,7 @@ def download_scores_csv(challenge_id):
 @admin_bp.route('/challenges/<int:challenge_id>/download-submissions-zip', methods=['GET'])
 @role_required(['admin', 'jury'])
 def download_submissions_zip(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return jsonify({"error": "Scores must be finalized before downloading submissions."}), 400
         

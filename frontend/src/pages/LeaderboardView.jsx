@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import ChallengeService from '../services/ChallengeService';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
 import EmptyState from '../components/ui/EmptyState';
+import { useTranslation } from 'react-i18next';
 
 export default function LeaderboardView() {
   const { challengeId } = useParams();
@@ -11,6 +12,7 @@ export default function LeaderboardView() {
     selectedChallenge, 
     setSelectedChallengeById 
   } = useApp();
+  const { t } = useTranslation();
 
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -59,7 +61,7 @@ export default function LeaderboardView() {
           onRefresh={() => loadLeaderboard(true)}
         />
       ) : (
-        <EmptyState message="No competition selected." minHeight={200} />
+        <EmptyState message={t('challenge.no_competition_selected_brief')} minHeight={200} />
       )}
     </div>
   );

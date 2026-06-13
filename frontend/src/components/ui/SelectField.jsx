@@ -9,6 +9,7 @@ export default function SelectField({
   className = '',
   required = false,
   disabled = false,
+  placeholder,
 }) {
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
@@ -22,7 +23,7 @@ export default function SelectField({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        placeholder={label ? `Select ${label.toLowerCase()}` : "Select option"}
+        placeholder={placeholder}
       />
     </div>
   );

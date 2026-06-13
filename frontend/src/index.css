@@ -5,20 +5,256 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-:root {
+:root, [data-theme='dark'] {
   color-scheme: dark;
+  
+  /* Dark theme slate colors (default Tailwind slate colors) */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+  
+  --custom-bg-dark: #0d0e18;
+
+  /* Semantic variables for dark theme */
+  --bg-base: #0d0e18;
+  --bg-surface: var(--color-slate-900);
+  --bg-elevated: var(--color-slate-800);
+  --bg-hover: var(--color-slate-700);
+  --border: var(--color-slate-800);
+  --border-hover: var(--color-slate-700);
+  --text-primary: var(--color-slate-50);
+  --text-secondary: var(--color-slate-300);
+  --text-muted: var(--color-slate-500);
+  --accent: var(--color-indigo-500);
+  --accent-soft: rgba(99, 102, 241, 0.15);
+  --accent-border: var(--color-indigo-400);
+  --accent-border-hover: var(--color-indigo-300);
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
+  
+  /* Inverted slate colors for light theme */
+  --color-slate-50: #0f172a;
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #ffffff;
+  --color-slate-950: #f8fafc;
+  
+  --custom-bg-dark: #ffffff;
+
+  /* Semantic variables for light theme */
+  --bg-base: #f8fafc;
+  --bg-surface: var(--color-slate-900);
+  --bg-elevated: var(--color-slate-800);
+  --bg-hover: var(--color-slate-700);
+  --border: var(--color-slate-800);
+  --border-hover: var(--color-slate-700);
+  --text-primary: var(--color-slate-50);
+  --text-secondary: var(--color-slate-300);
+  --text-muted: var(--color-slate-500);
+  --accent: var(--color-indigo-600);
+  --accent-soft: rgba(79, 70, 229, 0.10);
+  --accent-border: var(--color-indigo-600);
+  --accent-border-hover: var(--color-indigo-700);
 }
 
-:root[data-theme='dark'] {
-  color-scheme: dark;
+/* Light mode structural & utility overrides */
+[data-theme='light'] .bg-\[\#0d0e18\]:not([data-theme='dark'] *) {
+  background-color: var(--custom-bg-dark) !important;
+}
+
+[data-theme='light'] .border-white\/5:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .border-white\/10:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .text-white:not([data-theme='dark'] *):not(button):not(button *):not(.btn):not(.btn *):not(.pill):not(.pill *):not(.badge):not(.badge *) {
+  color: var(--color-slate-100) !important;
+}
+
+[data-theme='light'] .hover\:bg-slate-900:hover:not([data-theme='dark'] *) {
+  background-color: var(--color-slate-800) !important;
+}
+
+[data-theme='light'] .hover\:text-white:hover:not([data-theme='dark'] *) {
+  color: var(--color-slate-50) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/95:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/50:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.5) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/50:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/40:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.4) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/80:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/90:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/95:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+[data-theme='light'] .bg-indigo-650\/20:not([data-theme='dark'] *) {
+  background-color: rgba(79, 70, 229, 0.1) !important;
+}
+
+[data-theme='light'] .bg-indigo-600\/10:not([data-theme='dark'] *) {
+  background-color: rgba(79, 70, 229, 0.1) !important;
+}
+
+[data-theme='light'] .bg-emerald-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+[data-theme='light'] .bg-rose-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+[data-theme='light'] .bg-amber-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+[data-theme='light'] .bg-blue-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+
+[data-theme='light'] .bg-purple-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+
+[data-theme='light'] .bg-cyan-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(6, 182, 212, 0.15) !important;
+}
+
+[data-theme='light'] .bg-indigo-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(99, 102, 241, 0.15) !important;
+}
+
+[data-theme='light'] .bg-slate-800\/20:not([data-theme='dark'] *) {
+  background-color: rgba(226, 232, 240, 0.2) !important;
+}
+
+[data-theme='light'] .bg-slate-800\/40:not([data-theme='dark'] *) {
+  background-color: rgba(226, 232, 240, 0.4) !important;
+}
+
+[data-theme='light'] .bg-slate-800\/50:not([data-theme='dark'] *) {
+  background-color: rgba(226, 232, 240, 0.5) !important;
+}
+
+[data-theme='light'] .bg-slate-800\/60:not([data-theme='dark'] *) {
+  background-color: rgba(226, 232, 240, 0.6) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/20:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.2) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/60:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.6) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/20:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.2) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/30:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.3) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/40:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.4) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/60:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.6) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/80:not([data-theme='dark'] *) {
+  background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+[data-theme='light'] .bg-slate-950\/90:not([data-theme='dark'] *) {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+[data-theme='light'] .text-slate-100:not([data-theme='dark'] *) {
+  color: var(--color-slate-100) !important;
+}
+[data-theme='light'] .text-slate-200:not([data-theme='dark'] *) {
+  color: var(--color-slate-200) !important;
+}
+[data-theme='light'] .text-slate-300:not([data-theme='dark'] *) {
+  color: var(--color-slate-300) !important;
+}
+[data-theme='light'] .text-slate-400:not([data-theme='dark'] *) {
+  color: var(--color-slate-400) !important;
+}
+[data-theme='light'] .text-slate-500:not([data-theme='dark'] *) {
+  color: var(--color-slate-500) !important;
+}
+[data-theme='light'] .text-slate-600:not([data-theme='dark'] *) {
+  color: var(--color-slate-600) !important;
+}
+
+[data-theme='light'] .text-indigo-400:not([data-theme='dark'] *) {
+  color: #4f46e5 !important;
+}
+
+[data-theme='light'] .text-indigo-300:not([data-theme='dark'] *) {
+  color: #4338ca !important;
+}
+
+[data-theme='light'] .border-slate-800:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .border-slate-800\/80:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .border-slate-700\/50:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .border-slate-700:not([data-theme='dark'] *) {
+  border-color: var(--color-slate-700) !important;
 }
 
 body {
-  @apply bg-slate-950 text-slate-100 min-h-screen font-sans;
+  @apply bg-slate-950 text-slate-100 min-h-screen font-sans transition-colors duration-200;
 }
 
 /* ─── SCROLLBAR ─────────────────────────────────── */

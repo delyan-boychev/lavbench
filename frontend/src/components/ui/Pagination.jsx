@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import Button from './Button';
 
 export default function Pagination({
@@ -10,6 +11,7 @@ export default function Pagination({
   itemName = 'items',
   className = ''
 }) {
+  const { t } = useTranslation();
   if (pages <= 1 && total === 0) return null;
 
   const startIdx = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -51,10 +53,10 @@ export default function Pagination({
       <div>
         {total > 0 ? (
           <span>
-            Showing <strong className="text-slate-200">{startIdx}-{endIdx}</strong> of <strong className="text-slate-200">{total}</strong> {itemName}
+            {t('common.showing')} <strong className="text-slate-200">{startIdx}-{endIdx}</strong> {t('common.of')} <strong className="text-slate-200">{total}</strong> {itemName}
           </span>
         ) : (
-          <span>Page {page} of {pages}</span>
+          <span>{t('common.page_of', { page, pages })}</span>
         )}
       </div>
 
@@ -66,7 +68,7 @@ export default function Pagination({
           className="btn-sm px-2.5 py-1.5"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          title="Previous Page"
+          title={t('common.prev_page')}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
@@ -108,7 +110,7 @@ export default function Pagination({
           className="btn-sm px-2.5 py-1.5"
           disabled={page >= pages}
           onClick={() => onPageChange(page + 1)}
-          title="Next Page"
+          title={t('common.next_page')}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />

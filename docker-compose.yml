@@ -32,7 +32,7 @@ services:
       - DATABASE_URL=postgresql://nai_user:nai_password@db:5432/nai_competition
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=nai-super-secret-key-1337
+      - SECRET_KEY=nai-super-secret-key-1337-secure-random-length-for-jwt
       - HF_CACHE_DIR=/app/hf_cache
     depends_on:
       - db
@@ -52,7 +52,7 @@ services:
       - DATABASE_URL=postgresql://nai_user:nai_password@db:5432/nai_competition
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SECRET_KEY=nai-super-secret-key-1337
+      - SECRET_KEY=nai-super-secret-key-1337-secure-random-length-for-jwt
       - HF_CACHE_DIR=/app/hf_cache
     depends_on:
       - db

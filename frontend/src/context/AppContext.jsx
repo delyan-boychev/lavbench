@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 
 const AppContext = createContext(null);
@@ -75,10 +76,17 @@ function ConfirmModal({ config }) {
 
 export const AppProvider = ({ children }) => {
   const { token } = useAuth();
+  const { t } = useTranslation();
   const [challenges, setChallenges] = useState([]);
   const [selectedChallenge, setSelectedChallengeState] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('theme') || 'dark';
+    } catch (e) {
+      return 'dark';
+    }
+  });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Custom Confirm/Prompt Modal state
@@ -88,13 +96,13 @@ export const AppProvider = ({ children }) => {
     message: '',
     onConfirm: null,
     onCancel: null,
-    confirmText: 'Yes',
-    cancelText: 'No',
+    confirmText: '',
+    cancelText: '',
     isPrompt: false,
     placeholder: '',
   });
 
-  const confirm = useCallback(({ title, message, confirmText = 'Confirm', cancelText = 'Cancel', isPrompt = false, placeholder = '' }) => {
+  const confirm = useCallback(({ title, message, confirmText = t('common.confirm'), cancelText = t('common.cancel'), isPrompt = false, placeholder = '' }) => {
     return new Promise((resolve) => {
       setConfirmConfig({
         isOpen: true,
@@ -114,12 +122,16 @@ export const AppProvider = ({ children }) => {
         }
       });
     });
-  }, []);
+  }, [t]);
 
   // Apply theme to <html> element
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    try {
+      localStorage.setItem('theme', theme);
+    } catch (e) {
+      // Ignore storage errors
+    }
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');

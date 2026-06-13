@@ -764,7 +764,7 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 202)
         
         sub_id = res.get_json()["submission_id"]
-        submission = Submission.query.get(sub_id)
+        submission = db.session.get(Submission, sub_id)
         self.assertIsNotNone(submission)
         self.assertEqual(submission.task_id, self.task.id)
         self.assertEqual(submission.challenge_id, self.challenge.id)
@@ -1336,7 +1336,7 @@ class TestRouteLevelLogic(unittest.TestCase):
         # 4. Check stage deadline expired submissions block
         # Move stage timeline into the past
         from models import Stage
-        stage2 = Stage.query.get(future_stage_id)
+        stage2 = db.session.get(Stage, future_stage_id)
         stage2.start_time = datetime.utcnow() - timedelta(hours=2)
         stage2.end_time = datetime.utcnow() - timedelta(hours=1)
         db.session.commit()

@@ -1,16 +1,25 @@
 import React from 'react';
 
+const getRawText = (node) => {
+  if (!node) return "";
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(getRawText).join("");
+  if (node.props && node.props.children) return getRawText(node.props.children);
+  return "";
+};
+
+const stringToSlug = (str) => {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // strip punctuation but keep spaces/hyphens
+    .replace(/\s/g, '-')      // replace spaces with hyphens
+    .replace(/^-+|-+$/g, '');  // remove leading/trailing hyphens
+};
+
 export const markdownComponents = {
   blockquote: ({ children }) => {
-    const getRawText = (node) => {
-      if (!node) return "";
-      if (typeof node === 'string') return node;
-      if (typeof node === 'number') return String(node);
-      if (Array.isArray(node)) return node.map(getRawText).join("");
-      if (node.props && node.props.children) return getRawText(node.props.children);
-      return "";
-    };
-    
     const rawText = getRawText(children).trim();
     const alertMatch = rawText.match(/^\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/i);
     
@@ -128,5 +137,35 @@ export const markdownComponents = {
     }
     
     return <blockquote className="border-l-2 border-slate-700 pl-4 my-3 italic text-slate-400">{children}</blockquote>;
+  },
+  h1: ({ children }) => <h1 id={stringToSlug(getRawText(children))}>{children}</h1>,
+  h2: ({ children }) => <h2 id={stringToSlug(getRawText(children))}>{children}</h2>,
+  h3: ({ children }) => <h3 id={stringToSlug(getRawText(children))}>{children}</h3>,
+  h4: ({ children }) => <h4 id={stringToSlug(getRawText(children))}>{children}</h4>,
+  h5: ({ children }) => <h5 id={stringToSlug(getRawText(children))}>{children}</h5>,
+  h6: ({ children }) => <h6 id={stringToSlug(getRawText(children))}>{children}</h6>,
+  a: ({ href, children, ...props }) => {
+    const isInternal = href && href.startsWith('#');
+    const handleClick = (e) => {
+      if (isInternal) {
+        e.preventDefault();
+        const targetId = href.substring(1);
+        const element = document.getElementById(targetId);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    };
+    return (
+      <a 
+        href={href} 
+        onClick={handleClick} 
+        target={isInternal ? undefined : "_blank"} 
+        rel={isInternal ? undefined : "noopener noreferrer"}
+        {...props}
+      >
+        {children}
+      </a>
+    );
   }
 };

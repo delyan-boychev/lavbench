@@ -82,7 +82,7 @@ BACKUP_FILE="$PACKAGE_FILE"
 
 
 # Encrypt the backup file at rest using AES-256-CBC
-KEY_PASS=${SECRET_KEY:-"nai-super-secret-key-1337"}
+KEY_PASS=${SECRET_KEY:-"nai-super-secret-key-1337-secure-random-length-for-jwt"}
 ENCRYPTED_FILE="${BACKUP_FILE}.enc"
 
 echo "--> Encrypting backup file at rest using AES-256-CBC..."

@@ -35,7 +35,7 @@ cp .env.example .env
 
 | Variable | Description | Location / Default |
 | :--- | :--- | :--- |
-| `SECRET_KEY` | Flask API security key | `nai-super-secret-key-1337` |
+| `SECRET_KEY` | Flask API security key | `nai-super-secret-key-1337-secure-random-length-for-jwt` |
 | `FIELD_ENCRYPTION_KEY` | AES key for encrypting competitor demographics | Generated on setup |
 | `DATABASE_URL` | SQLAlchemy database url (PostgreSQL) | `postgresql://nai_user:nai_pass@localhost:5432/nai_competition` |
 | `CELERY_BROKER_URL` | Redis Broker connection string | `redis://localhost:6379/0` |
@@ -73,6 +73,13 @@ If you prefer launching each layer individually:
 2. **Backend Setup**:
    ```bash
    cd backend
+   
+   # Using Micromamba (Recommended):
+   micromamba create -n nai_backend python=3.10 -y
+   micromamba activate nai_backend
+   pip install -r requirements.txt
+   
+   # Or using standard python virtual environment (Python 3.10 recommended):
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
@@ -83,6 +90,15 @@ If you prefer launching each layer individually:
    # Start Flask Dev Server (Port 5001)
    python app.py
    ```
+
+   #### Managing Python Dependencies
+   The backend dependencies are specified in `backend/requirements.in` and compiled into `backend/requirements.txt` using `pip-compile`.
+   * **To modify dependencies**: Edit [backend/requirements.in](./backend/requirements.in).
+   * **To re-compile dependencies**: Run the compile command manually:
+     ```bash
+     micromamba run -n nai_backend pip-compile backend/requirements.in --output-file backend/requirements.txt
+     ```
+
 3. **Celery Worker Setup**:
    With your virtualenv active, run:
    ```bash

@@ -27,7 +27,7 @@ def filter_challenge_for_competitor(challenge_dict):
                 filtered_tasks.append(t)
             else:
                 from models import Stage
-                stage = Stage.query.get(t["stage_id"])
+                stage = db.session.get(Stage, t["stage_id"])
                 if stage and now >= stage.start_time:
                     filtered_tasks.append(t)
         challenge_dict["tasks"] = filtered_tasks
@@ -53,12 +53,12 @@ def get_challenges():
     from cache_utils import get_cached, set_cached
     
     if user_role == 'competitor':
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user or not user.challenge_id:
             return jsonify([])
         challenge_id = user.challenge_id
         
-        challenge = Challenge.query.get(challenge_id)
+        challenge = db.session.get(Challenge, challenge_id)
         if not challenge or challenge.is_archived:
             return jsonify([])
             
@@ -101,13 +101,19 @@ def get_challenge(challenge_id):
     user_role = request.user["role"]
     
     if user_role == 'competitor':
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user or user.challenge_id != challenge_id:
-            return jsonify({"error": "Access denied. You are not registered for this competition."}), 403
+            return jsonify({
+                "error": "Access denied. You are not registered for this competition.",
+                "code": "ERR_NOT_REGISTERED"
+            }), 403
             
-        challenge = Challenge.query.get(challenge_id)
+        challenge = db.session.get(Challenge, challenge_id)
         if not challenge or challenge.is_archived:
-            return jsonify({"error": "Challenge not found."}), 404
+            return jsonify({
+                "error": "Challenge not found.",
+                "code": "ERR_CHALLENGE_NOT_FOUND"
+            }), 404
             
     from cache_utils import get_cached, set_cached
     
@@ -117,9 +123,12 @@ def get_challenge(challenge_id):
         if cached_challenge is not None:
             challenge_dict = cached_challenge
         else:
-            challenge = Challenge.query.get(challenge_id)
+            challenge = db.session.get(Challenge, challenge_id)
             if not challenge or challenge.is_archived:
-                return jsonify({"error": "Challenge not found."}), 404
+                return jsonify({
+                    "error": "Challenge not found.",
+                    "code": "ERR_CHALLENGE_NOT_FOUND"
+                }), 404
             challenge_dict = challenge.to_dict()
             challenge_dict = filter_challenge_for_competitor(challenge_dict)
             set_cached(cache_key, challenge_dict, timeout=600)
@@ -129,7 +138,7 @@ def get_challenge(challenge_id):
         if cached_challenge is not None:
             challenge_dict = cached_challenge
         else:
-            challenge = Challenge.query.get_or_404(challenge_id)
+            challenge = db.get_or_404(Challenge, challenge_id)
             challenge_dict = challenge.to_dict()
             set_cached(cache_key, challenge_dict, timeout=600)
         
@@ -181,7 +190,40 @@ def create_challenge():
     timezone = data.get("timezone", "UTC")
     
     if not title:
-        return jsonify({"error": "Competition title is required."}), 400
+        return jsonify({
+            "error": "Competition title is required.",
+            "code": "ERR_TITLE_REQUIRED"
+        }), 400
+
+    if not start_time or not end_time:
+        return jsonify({
+            "error": "Competition start time and end time are required.",
+            "code": "ERR_DATETIME_REQUIRED"
+        }), 400
+
+    if max_eval_requests is not None and max_eval_requests < 1:
+        return jsonify({
+            "error": "Daily submissions limit must be at least 1.",
+            "code": "ERR_INVALID_LIMITS"
+        }), 400
+
+    if ram_limit_mb is not None and ram_limit_mb < 128:
+        return jsonify({
+            "error": "RAM limit must be at least 128 MB.",
+            "code": "ERR_INVALID_LIMITS"
+        }), 400
+
+    if time_limit_sec is not None and time_limit_sec < 1:
+        return jsonify({
+            "error": "Time limit must be at least 1 second.",
+            "code": "ERR_INVALID_LIMITS"
+        }), 400
+
+    if end_time <= start_time:
+        return jsonify({
+            "error": "End time must be after start time.",
+            "code": "ERR_INVALID_DATES"
+        }), 400
         
     challenge = Challenge(
         title=title,
@@ -208,7 +250,7 @@ def create_challenge():
 @challenges_bp.route('/<int:challenge_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_challenge(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
     
     title = data.get("title")
@@ -223,18 +265,46 @@ def update_challenge(challenge_id):
     if description is not None:
         challenge.description = description
     if max_eval_requests is not None:
-        challenge.max_eval_requests = int(max_eval_requests)
+        val = int(max_eval_requests)
+        if val < 1:
+            return jsonify({"error": "Daily submissions limit must be at least 1.", "code": "ERR_INVALID_LIMITS"}), 400
+        challenge.max_eval_requests = val
     if ram_limit_mb is not None:
-        challenge.ram_limit_mb = int(ram_limit_mb)
+        val = int(ram_limit_mb)
+        if val < 128:
+            return jsonify({"error": "RAM limit must be at least 128 MB.", "code": "ERR_INVALID_LIMITS"}), 400
+        challenge.ram_limit_mb = val
     if time_limit_sec is not None:
-        challenge.time_limit_sec = int(time_limit_sec)
+        val = int(time_limit_sec)
+        if val < 1:
+            return jsonify({"error": "Time limit must be at least 1 second.", "code": "ERR_INVALID_LIMITS"}), 400
+        challenge.time_limit_sec = val
     if gpu_required is not None:
         challenge.gpu_required = bool(gpu_required)
         
     if "start_time" in data:
-        challenge.start_time = parse_datetime(data.get("start_time"))
+        st = parse_datetime(data.get("start_time"))
+        if not st:
+            return jsonify({
+                "error": "Start time is required.",
+                "code": "ERR_DATETIME_REQUIRED"
+            }), 400
+        challenge.start_time = st
     if "end_time" in data:
-        challenge.end_time = parse_datetime(data.get("end_time"))
+        et = parse_datetime(data.get("end_time"))
+        if not et:
+            return jsonify({
+                "error": "End time is required.",
+                "code": "ERR_DATETIME_REQUIRED"
+            }), 400
+        challenge.end_time = et
+        
+    if challenge.end_time <= challenge.start_time:
+        return jsonify({
+            "error": "End time must be after start time.",
+            "code": "ERR_INVALID_DATES"
+        }), 400
+        
     if "is_frozen" in data:
         challenge.is_frozen = bool(data.get("is_frozen"))
     if "double_blind" in data:
@@ -254,7 +324,7 @@ def update_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_challenge(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     
     users = User.query.filter_by(challenge_id=challenge_id).all()
     for u in users:
@@ -276,7 +346,7 @@ def delete_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/finalize', methods=['POST'])
 @role_required(['jury'])
 def finalize_challenge(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
@@ -298,7 +368,8 @@ def finalize_challenge(challenge_id):
             pts = manual_points_dict.get(str(task.id))
             if pts is None:
                 return jsonify({
-                    "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id})."
+                    "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id}).",
+                    "code": "ERR_MISSING_MANUAL_POINTS"
                 }), 400
                 
     # Read reveal options
@@ -323,7 +394,7 @@ def finalize_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/archive', methods=['POST'])
 @role_required(['admin', 'jury'])
 def archive_challenge(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
     
@@ -340,7 +411,7 @@ def archive_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/stages', methods=['POST'])
 @role_required(['admin', 'jury'])
 def create_stage(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
     
     title = data.get("title")
@@ -349,13 +420,19 @@ def create_stage(challenge_id):
     end_time_str = data.get("end_time")
     
     if not title or not start_time_str or not end_time_str:
-        return jsonify({"error": "Missing title, start_time or end_time."}), 400
+        return jsonify({
+            "error": "Missing title, start_time or end_time.",
+            "code": "ERR_MISSING_STAGE_FIELDS"
+        }), 400
         
     start_time = parse_datetime(start_time_str)
     end_time = parse_datetime(end_time_str)
     
     if not start_time or not end_time:
-        return jsonify({"error": "Invalid date format."}), 400
+        return jsonify({
+            "error": "Invalid date format.",
+            "code": "ERR_INVALID_DATE_FORMAT"
+        }), 400
         
     if not stage_number:
         # Auto-increment stage number
@@ -384,7 +461,7 @@ def create_stage(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_stage(challenge_id, stage_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     data = request.json or {}
@@ -413,7 +490,7 @@ def update_stage(challenge_id, stage_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_stage(challenge_id, stage_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     
@@ -435,14 +512,17 @@ def delete_stage(challenge_id, stage_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>/finalize', methods=['POST'])
 @role_required(['jury'])
 def finalize_stage(challenge_id, stage_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     data = request.json or {}
     
     finalize_type = data.get("finalize_type", "visible")
     if finalize_type not in ("visible", "internal"):
-        return jsonify({"error": "finalize_type must be either 'visible' or 'internal'."}), 400
+        return jsonify({
+            "error": "finalize_type must be either 'visible' or 'internal'.",
+            "code": "ERR_INVALID_FINALIZE_TYPE"
+        }), 400
         
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
@@ -473,7 +553,8 @@ def finalize_stage(challenge_id, stage_id):
                     except Exception:
                         pass
                 return jsonify({
-                    "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'."
+                    "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'.",
+                    "code": "ERR_MISSING_MANUAL_POINTS"
                 }), 400
                 
     stage.is_finalized = True
@@ -495,7 +576,7 @@ def finalize_stage(challenge_id, stage_id):
 @login_required
 @role_required(['admin', 'jury'])
 def create_scheduled_test_competition(challenge_id):
-    orig = Challenge.query.get_or_404(challenge_id)
+    orig = db.get_or_404(Challenge, challenge_id)
     from models import Task
     
     from datetime import timedelta
@@ -586,7 +667,7 @@ def export_results(challenge_id):
     from routes.leaderboard import build_and_cache_leaderboard
     from models import AuditLog, Task
     
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     
     # Get leaderboard entries
     leaderboard = build_and_cache_leaderboard(challenge_id) or []

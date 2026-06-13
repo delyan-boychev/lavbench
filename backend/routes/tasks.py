@@ -15,7 +15,7 @@ tasks_bp = Blueprint('tasks', __name__)
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
 
 def check_competitor_access(user_id, challenge_id):
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or user.challenge_id != challenge_id:
         return False
     return True
@@ -30,7 +30,7 @@ def check_task_started(task, user_role, user_id):
                 return False
         if task.stage_id:
             from models import Stage
-            stage = Stage.query.get(task.stage_id)
+            stage = db.session.get(Stage, task.stage_id)
             if stage and datetime.utcnow() < stage.start_time:
                 return False
     return True
@@ -191,19 +191,22 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['GET'])
 @login_required
 def get_task(task_id):
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     
     if not check_task_started(task, user_role, user_id):
-        return jsonify({"error": "Access denied or task not available yet."}), 403
+        return jsonify({
+            "error": "Access denied or task not available yet.",
+            "code": "ERR_NOT_AVAILABLE"
+        }), 403
         
     return jsonify(task.to_dict())
 
 @tasks_bp.route('/challenges/<int:challenge_id>/tasks', methods=['POST'])
 @role_required(['admin', 'jury'])
 def create_task(challenge_id):
-    challenge = Challenge.query.get_or_404(challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
     
     title = request.form.get("title")
     description = request.form.get("description")
@@ -388,7 +391,7 @@ def create_task(challenge_id):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_task(task_id):
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     
     title = request.form.get("title")
     description = request.form.get("description")
@@ -567,7 +570,7 @@ def update_task(task_id):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_task(task_id):
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     import shutil
@@ -585,13 +588,16 @@ def delete_task(task_id):
 @tasks_bp.route('/tasks/<int:task_id>/download/<string:filename>', methods=['GET'])
 @login_required
 def download_task_file(task_id, filename):
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     
     if user_role == 'competitor':
         if not check_task_started(task, user_role, user_id):
-            return jsonify({"error": "Access denied or task not available yet."}), 403
+            return jsonify({
+                "error": "Access denied or task not available yet.",
+                "code": "ERR_NOT_AVAILABLE"
+            }), 403
             
     try:
         files_meta = json.loads(task.files)
@@ -605,7 +611,10 @@ def download_task_file(task_id, filename):
             break
             
     if not saved_name:
-        return jsonify({"error": "File not found in task metadata."}), 404
+        return jsonify({
+            "error": "File not found in task metadata.",
+            "code": "ERR_FILE_NOT_FOUND"
+        }), 404
         
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     return send_from_directory(
@@ -620,7 +629,7 @@ def download_task_file(task_id, filename):
 @tasks_bp.route('/tasks/<int:task_id>/submit', methods=['POST'])
 @login_required
 def submit_task_code(task_id):
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     challenge = task.challenge
     
     if not challenge.is_active:
@@ -641,7 +650,7 @@ def submit_task_code(task_id):
         now = datetime.utcnow()
         if task.stage_id:
             from models import Stage
-            stage = Stage.query.get(task.stage_id)
+            stage = db.session.get(Stage, task.stage_id)
             if stage:
                 if now < stage.start_time:
                     return jsonify({"error": f"The stage '{stage.title}' has not started yet."}), 400
@@ -789,7 +798,7 @@ def submit_task_code(task_id):
     }), 202
 
 def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=10):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
         
@@ -829,7 +838,7 @@ def get_task_submissions(task_id):
     return jsonify(data)
 
 def _get_task_leaderboard_data(task_id, user_role, current_user_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
     challenge = task.challenge
@@ -1011,9 +1020,12 @@ def get_task_leaderboard_live(task_id):
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     if user_role == 'competitor':
-        task = Task.query.get(task_id)
+        task = db.session.get(Task, task_id)
         if not task or not check_task_started(task, user_role, current_user_id):
-            return jsonify({"error": "Access denied or task not available yet."}), 403
+            return jsonify({
+                "error": "Access denied or task not available yet.",
+                "code": "ERR_NOT_AVAILABLE"
+            }), 403
     
     def event_generator():
         with current_app.app_context():
@@ -1054,11 +1066,17 @@ def get_task_submissions_live(task_id):
     per_page = request.args.get('per_page', 10, type=int)
     
     if user_role == 'competitor':
-        task = Task.query.get(task_id)
+        task = db.session.get(Task, task_id)
         if not task or not check_task_started(task, user_role, current_user_id):
-            return jsonify({"error": "Access denied or task not available yet."}), 403
+            return jsonify({
+                "error": "Access denied or task not available yet.",
+                "code": "ERR_NOT_AVAILABLE"
+            }), 403
         if task.challenge and task.challenge.scores_finalized:
-            return jsonify({"error": "Access denied. Submissions are hidden for finalized competitions."}), 403
+            return jsonify({
+                "error": "Access denied. Submissions are hidden for finalized competitions.",
+                "code": "ERR_COMPETITION_FINALIZED"
+            }), 403
             
     def event_generator():
         with current_app.app_context():
@@ -1181,7 +1199,7 @@ def report_worker_progress(submission_id):
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.json or {}
-    submission = Submission.query.get_or_404(submission_id)
+    submission = db.get_or_404(Submission, submission_id)
     
     if "status" in data:
         submission.status = data["status"]
@@ -1220,7 +1238,7 @@ def worker_download_task_file(task_id, filename):
     if not token or token != expected_token:
         return jsonify({"error": "Unauthorized"}), 401
         
-    task = Task.query.get_or_404(task_id)
+    task = db.get_or_404(Task, task_id)
     try:
         files_meta = json.loads(task.files)
     except:

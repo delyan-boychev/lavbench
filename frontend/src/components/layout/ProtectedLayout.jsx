@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../AuthContext';
 import Navbar from './Navbar';
 import CompetitionBar from './CompetitionBar';
 
 export default function ProtectedLayout() {
+  const { t } = useTranslation();
   const { token, authLoading } = useAuth();
   const location = useLocation();
 
@@ -20,7 +22,7 @@ export default function ProtectedLayout() {
             borderTopColor: 'var(--accent)', borderRadius: '50%',
             margin: '0 auto 12px',
           }} />
-          <p style={{ fontSize: '0.8rem' }}>Loading...</p>
+          <p style={{ fontSize: '0.8rem' }}>{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -51,7 +53,7 @@ export default function ProtectedLayout() {
         color: 'var(--text-muted)',
         background: 'var(--bg-surface)',
       }}>
-        © 2026 National AI Competition Platform · All submissions run in isolated GPU sandboxes
+        {t('common.footer')}
       </footer>
     </div>
   );

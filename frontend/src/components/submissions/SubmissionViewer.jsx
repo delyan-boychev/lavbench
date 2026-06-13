@@ -3,6 +3,7 @@ import Badge from '../ui/Badge';
 import CodeHighlight from '../ui/CodeHighlight';
 import EmptyState from '../ui/EmptyState';
 import ToggleField from '../ui/ToggleField';
+import { useTranslation } from 'react-i18next';
 
 export default function SubmissionViewer({ 
   submission, 
@@ -12,11 +13,13 @@ export default function SubmissionViewer({
   isSelectionDisabled = false,
   isSubmissionAfterDeadline = false
 }) {
+  const { t } = useTranslation();
+
   if (!submission) {
     return (
       <EmptyState
         minHeight={300}
-        message="Select a submission to view details."
+        message={t('submissions.select_to_view')}
         icon={
           <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
             <path strokeLinecap="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -48,7 +51,7 @@ export default function SubmissionViewer({
           <div>
             <div className="flex items-center gap-2.5 mb-1">
               <span className="font-mono text-xs text-slate-500">
-                Submission #{submission.id}
+                {t('submissions.submission_id', { id: submission.id })}
               </span>
               <Badge status={submission.status} />
               {submission.detailed_status && submission.detailed_status !== submission.status && (
@@ -56,21 +59,21 @@ export default function SubmissionViewer({
               )}
               {submission.is_final_selection && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400">
-                  ★ FINAL SELECTION
+                  {t('submissions.final_selection_star')}
                 </span>
               )}
             </div>
             
             {submission.user?.alias_id && (
               <span className="text-[11px] text-slate-400 font-mono">
-                Alias: {submission.user?.alias_id}
+                {t('submissions.alias', { alias: submission.user?.alias_id })}
               </span>
             )}
           </div>
           <div className="flex gap-4 items-start">
             {submission.public_score != null && (
               <div className="text-right">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Public Score</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{t('submissions.public_score')}</div>
                 <div className="font-mono text-base font-bold text-indigo-400">
                   {Number(submission.public_score).toFixed(4)}
                 </div>
@@ -78,7 +81,7 @@ export default function SubmissionViewer({
             )}
             {submission.private_score != null && (
               <div className="text-right">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Private Score</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">{t('submissions.private_score')}</div>
                 <div className="font-mono text-base font-bold text-emerald-400">
                   {Number(submission.private_score).toFixed(4)}
                 </div>
@@ -95,13 +98,13 @@ export default function SubmissionViewer({
               checked={submission.is_final_selection}
               disabled={selectingFinal || submission.is_final_selection || isSelectionDisabled}
               onChange={() => onSelectFinal && onSelectFinal(submission.id)}
-              label={submission.is_final_selection ? "This is your selected final submission for this task." : "Select as final submission (enforces anti-overfitting rules)."}
+              label={submission.is_final_selection ? t('submissions.selected_final_help') : t('submissions.select_final_label')}
             />
             {isSelectionDisabled && !submission.is_final_selection && (
               <p className="text-[10px] text-rose-400 mt-1.5 font-semibold">
                 {isSubmissionAfterDeadline 
-                  ? "Cannot select a submission created after the stage deadline." 
-                  : "The final selection window for this stage has closed."
+                  ? t('submissions.cannot_select_late')
+                  : t('submissions.cannot_select_closed')
                 }
               </p>
             )}
@@ -112,14 +115,14 @@ export default function SubmissionViewer({
         {showUserDemographics && (
           <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Competitor Demographics (Jury Unblinded View)
+              {t('submissions.demographics_title')}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
-              <div><strong>Name:</strong> {submission.user.name} {submission.user.surname}</div>
-              <div><strong>Username:</strong> {submission.user.username}</div>
-              {submission.user.grade && <div><strong>Grade:</strong> {submission.user.grade}</div>}
-              {submission.user.school && <div><strong>School:</strong> {submission.user.school}</div>}
-              {submission.user.city && <div><strong>City:</strong> {submission.user.city}</div>}
+              <div><strong>{t('submissions.name')}</strong> {submission.user.name} {submission.user.surname}</div>
+              <div><strong>{t('submissions.username')}</strong> {submission.user.username}</div>
+              {submission.user.grade && <div><strong>{t('submissions.grade')}</strong> {submission.user.grade}</div>}
+              {submission.user.school && <div><strong>{t('submissions.school')}</strong> {submission.user.school}</div>}
+              {submission.user.city && <div><strong>{t('submissions.city')}</strong> {submission.user.city}</div>}
             </div>
           </div>
         )}
@@ -128,11 +131,11 @@ export default function SubmissionViewer({
         {isAdminOrJury && (
           <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Integrity & Execution Audit
+              {t('submissions.integrity_title')}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
-              <div><strong>Celery Task ID:</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || "None"}</span></div>
-              <div><strong>Execution Time:</strong> {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : "—"}</div>
+              <div><strong>{t('submissions.celery_task_id')}</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || "None"}</span></div>
+              <div><strong>{t('submissions.execution_time')}</strong> {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : "—"}</div>
             </div>
           </div>
         )}
@@ -141,7 +144,7 @@ export default function SubmissionViewer({
         {submission.logs && (
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Execution Log
+              {t('submissions.execution_log')}
             </div>
             <pre className={`code-panel max-h-[180px] text-xs ${submission.status === 'failed' ? 'text-rose-400' : 'text-slate-200'}`}>
               {submission.logs}
@@ -154,13 +157,13 @@ export default function SubmissionViewer({
       {cells.length > 0 && (
         <div className="surface p-5">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">
-            Submitted Code ({cells.length} cell{cells.length !== 1 ? 's' : ''})
+            {t('submissions.submitted_code', { count: cells.length })}
           </div>
           <div className="flex flex-col gap-3">
             {cells.map((cell, idx) => (
               <div key={idx}>
                 <div className="text-[10px] text-slate-500 font-mono mb-1">
-                  Cell [{cell.id ?? idx}] — {cell.type || 'code'}
+                  {t('submissions.cell_label', { id: cell.id ?? idx, type: cell.type || 'code' })}
                 </div>
                 <CodeHighlight 
                   code={cell.source || ''} 
@@ -176,4 +179,3 @@ export default function SubmissionViewer({
     </div>
   );
 }
-

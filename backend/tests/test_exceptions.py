@@ -96,12 +96,12 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         # Empty body
         res = self.client.post('/api/auth/login', json={})
         self.assertEqual(res.status_code, 400)
-        self.assertIn("Missing username/email or password", res.json["error"])
+        self.assertIn("Missing username or password", res.json["error"])
 
         # Missing password
         res = self.client.post('/api/auth/login', json={"username": "admin_user"})
         self.assertEqual(res.status_code, 400)
-        self.assertIn("Missing username/email or password", res.json["error"])
+        self.assertIn("Missing username or password", res.json["error"])
 
     def test_login_invalid_credentials(self):
         # Non-existent user
@@ -225,7 +225,13 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         headers = {"Authorization": f"Bearer {token}"}
 
         # 1. Inactive Challenge
-        inactive_challenge = Challenge(title="Inactive", is_active=False, max_eval_requests=5)
+        inactive_challenge = Challenge(
+            title="Inactive",
+            is_active=False,
+            max_eval_requests=5,
+            start_time=datetime.utcnow() - timedelta(hours=1),
+            end_time=datetime.utcnow() + timedelta(hours=1)
+        )
         db.session.add(inactive_challenge)
         db.session.commit()
 
@@ -238,7 +244,14 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         self.assertIn("This challenge is currently inactive", res.json["error"])
 
         # 2. Archived Challenge
-        archived_challenge = Challenge(title="Archived", is_active=True, is_archived=True, max_eval_requests=5)
+        archived_challenge = Challenge(
+            title="Archived",
+            is_active=True,
+            is_archived=True,
+            max_eval_requests=5,
+            start_time=datetime.utcnow() - timedelta(hours=1),
+            end_time=datetime.utcnow() + timedelta(hours=1)
+        )
         db.session.add(archived_challenge)
         db.session.commit()
 

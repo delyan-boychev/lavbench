@@ -13,7 +13,7 @@ db = SQLAlchemy()
 
 # Derive a stable symmetric encryption key from SECRET_KEY
 # This ensures field encryption persists across server restarts
-SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337")
+SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
 DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 cipher_suite = Fernet(DERIVED_KEY)
 
@@ -32,6 +32,7 @@ def decrypt_field(cipher_text):
         return cipher_suite.decrypt(cipher_text.encode()).decode()
     except Exception:
         return "[Decryption Error]"
+
 
 # Lists for pseudonym/displayname generation
 ADJECTIVES = ["Quantum", "Cyber", "Stellar", "Hyper", "Neural", "Shadow", "Alpha", "Zenith", "Vector", "Binary"]
@@ -86,7 +87,7 @@ class User(db.Model):
         double_blind = True
         
         if self.challenge_id:
-            challenge = Challenge.query.get(self.challenge_id)
+            challenge = db.session.get(Challenge, self.challenge_id)
             if challenge:
                 double_blind = challenge.double_blind
                 if challenge.start_time:
@@ -175,8 +176,8 @@ class Challenge(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     is_archived = db.Column(db.Boolean, default=False)
     scores_finalized = db.Column(db.Boolean, default=False)
-    start_time = db.Column(db.DateTime, nullable=True)
-    end_time = db.Column(db.DateTime, nullable=True)
+    start_time = db.Column(db.DateTime, nullable=False)
+    end_time = db.Column(db.DateTime, nullable=False)
     is_frozen = db.Column(db.Boolean, default=False, nullable=False)
     double_blind = db.Column(db.Boolean, default=True, nullable=False)
     reveal_public_scores = db.Column(db.Boolean, default=True, nullable=False)
@@ -206,6 +207,12 @@ class Challenge(db.Model):
         return "active"
 
     def to_dict(self):
+        try:
+            from flask import current_app
+            grace_period = current_app.config.get("DEADLINE_GRACE_PERIOD_SECONDS", 60)
+        except Exception:
+            grace_period = 60
+            
         return {
             "id": self.id,
             "title": self.title,
@@ -232,7 +239,8 @@ class Challenge(db.Model):
             "status": self.computed_status,
             "tasks": [t.to_dict() for t in self.tasks],
             "stages": [s.to_dict() for s in self.stages],
-            "num_tasks": len(self.tasks)
+            "num_tasks": len(self.tasks),
+            "deadline_grace_period_seconds": grace_period
         }
 
 class Stage(db.Model):

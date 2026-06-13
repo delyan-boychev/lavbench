@@ -7,6 +7,7 @@ import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
 import NotebookSubmit from '../components/challenge/NotebookSubmit';
 import EmptyState from '../components/ui/EmptyState';
+import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const { challengeId } = useParams();
@@ -17,6 +18,7 @@ export default function Home() {
     selectedTask, 
     setSelectedTask 
   } = useApp();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (challengeId) {
@@ -62,7 +64,7 @@ export default function Home() {
               ) : (
                 <EmptyState
                   minHeight={200}
-                  message="No task selected. Select a task from the sidebar to view details and submit."
+                  message={t('challenge.no_task_selected')}
                   icon={
                     <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                       <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -77,7 +79,7 @@ export default function Home() {
       ) : (
         <EmptyState
           minHeight={300}
-          message="No competition selected or active. Please contact a jury or administrator."
+          message={t('challenge.no_competition_selected')}
           icon={
             <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
               <path strokeLinecap="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

@@ -5,7 +5,7 @@ from functools import wraps
 from flask import request, jsonify
 
 # JWT Settings
-SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337")
+SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
 
 def generate_token(user_id, role):
     payload = {
