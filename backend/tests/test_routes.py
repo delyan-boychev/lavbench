@@ -191,6 +191,21 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 429)
         self.assertIn("Task limit reached", res.get_json()["error"])
 
+    @patch('tasks.evaluate_submission.apply_async')
+    def test_submit_dictionary_cells(self, mock_celery):
+        """Competitor submissions with notebook cells format (dictionaries) should succeed."""
+        payload = {
+            "selected_cells": [
+                {"id": 0, "type": "code", "source": "# SUBMIT\nprint('hello dict')"},
+                {"id": 1, "type": "code", "source": ["print('hello line 1')\n", "print('hello line 2')"]}
+            ]
+        }
+        res = self.client.post(f'/api/tasks/{self.task.id}/submit', 
+                               headers=self.get_auth_header(self.competitor_token),
+                               json=payload)
+        self.assertEqual(res.status_code, 202)
+        self.assertIn("queued for execution", res.get_json()["message"])
+
     def test_leaderboard_sorting_and_tie_breaking(self):
         """Leaderboard should sort correctly and break ties using execution time (speed)."""
         # Create users for rankings with valid password hashes to satisfy NOT NULL constraints

@@ -212,7 +212,7 @@ def run_evaluation():
         public_time = time.time() - start_time
         
         if len(public_preds) != len(public_labels):
-            raise ValueError(f"predict returned {len(public_preds)} items, but expected {len(public_labels)}.")
+            raise ValueError(f"predict returned {{len(public_preds)}} items, but expected {{len(public_labels)}}.")
             
         # Evaluate Private Split
         private_inputs = private_dataset[input_col]
@@ -241,22 +241,22 @@ def run_evaluation():
         
         # Output results JSON directly to file
         with open("eval_results.json", "w") as f_res:
-            json.dump({
+            json.dump({{
                 "status": "success",
                 "public_score": float(pub_score),
                 "private_score": float(priv_score),
-                "metrics_payload_public": {metric: float(pub_score)},
-                "metrics_payload_private": {metric: float(priv_score)},
+                "metrics_payload_public": {{metric: float(pub_score)}},
+                "metrics_payload_private": {{metric: float(priv_score)}},
                 "execution_time_ms": int((public_time + private_time) * 1000)
-            }, f_res)
+            }}, f_res)
         
     except Exception as e:
         with open("eval_results.json", "w") as f_res:
-            json.dump({
+            json.dump({{
                 "status": "error",
                 "error": str(e),
                 "traceback": traceback.format_exc()
-            }, f_res)
+            }}, f_res)
 
 if __name__ == "__main__":
     run_evaluation()
@@ -340,7 +340,7 @@ def run_evaluation():
         public_time = time.time() - start_time
         
         if len(public_preds) != len(public_labels):
-            raise ValueError(f"predict returned {len(public_preds)} items, but expected {len(public_labels)}.")
+            raise ValueError(f"predict returned {{len(public_preds)}} items, but expected {{len(public_labels)}}.")
             
         # Evaluate Private Split
         private_inputs = private_dataset[input_col]
@@ -351,11 +351,11 @@ def run_evaluation():
         private_time = time.time() - start_time
         
         # Calculate scores
-        # metrics_cfg e.g. {"accuracy": {"weight": 1.0, "higher_is_better": true}}
+        # metrics_cfg e.g. (accuracy: (weight: 1.0, higher_is_better: true))
         metrics_cfg = {metrics_config_str}
         
         if not metrics_cfg:
-            metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
+            metrics_cfg = {{"accuracy": {{"weight": 1.0, "higher_is_better": True}}}}
             
         def eval_metric(metric_name, y_true, y_pred):
             m_name = metric_name.lower()
@@ -368,8 +368,8 @@ def run_evaluation():
             else:
                 return accuracy_score(y_true, y_pred)
                 
-        pub_payload = {}
-        priv_payload = {}
+        pub_payload = {{}}
+        priv_payload = {{}}
         
         pub_weighted = 0.0
         priv_weighted = 0.0
@@ -397,22 +397,22 @@ def run_evaluation():
             
         # Output results JSON directly to file
         with open("eval_results.json", "w") as f_res:
-            json.dump({
+            json.dump({{
                 "status": "success",
                 "public_score": final_pub_score,
                 "private_score": final_priv_score,
                 "metrics_payload_public": pub_payload,
                 "metrics_payload_private": priv_payload,
                 "execution_time_ms": int((public_time + private_time) * 1000)
-            }, f_res)
+            }}, f_res)
         
     except Exception as e:
         with open("eval_results.json", "w") as f_res:
-            json.dump({
+            json.dump({{
                 "status": "error",
                 "error": str(e),
                 "traceback": traceback.format_exc()
-            }, f_res)
+            }}, f_res)
 
 if __name__ == "__main__":
     run_evaluation()
@@ -554,7 +554,19 @@ def evaluate_submission(self, submission_id, metadata=None):
     # Extract user code
     try:
         cells_list = json.loads(submission.code_cells)
-        user_code = "\n\n".join(cells_list)
+        extracted_cells = []
+        for cell in cells_list:
+            if isinstance(cell, dict):
+                source = cell.get("source", "")
+                if isinstance(source, list):
+                    extracted_cells.append("".join(source))
+                else:
+                    extracted_cells.append(str(source))
+            elif isinstance(cell, str):
+                extracted_cells.append(cell)
+            else:
+                extracted_cells.append(str(cell))
+        user_code = "\n\n".join(extracted_cells)
     except Exception as e:
         err_msg = f"Failed to parse code cells JSON: {str(e)}"
         update_status('failed', 'failed', logs_list=[err_msg])

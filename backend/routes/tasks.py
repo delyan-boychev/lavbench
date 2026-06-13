@@ -50,8 +50,26 @@ def to_int(val):
     except ValueError:
         return None
 
+def extract_code_from_cells(cells_list):
+    if not cells_list:
+        return []
+    extracted = []
+    for cell in cells_list:
+        if isinstance(cell, dict):
+            source = cell.get("source", "")
+            if isinstance(source, list):
+                extracted.append("".join(source))
+            else:
+                extracted.append(str(source))
+        elif isinstance(cell, str):
+            extracted.append(cell)
+        else:
+            extracted.append(str(cell))
+    return extracted
+
 def check_execution_rules(task, cells_list):
-    combined_code = "\n".join(cells_list)
+    extracted_cells = extract_code_from_cells(cells_list)
+    combined_code = "\n".join(extracted_cells)
     
     if task.require_submit_tag:
         if "# SUBMIT" not in combined_code:
@@ -150,7 +168,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "submission_id": submission.id,
         "task_id": task.id,
         "challenge_id": challenge.id,
-        "user_code": "\n\n".join(code_cells),
+        "user_code": "\n\n".join(extract_code_from_cells(code_cells)),
         "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
         "gpu_required": gpu_required,
@@ -758,7 +776,7 @@ def submit_task_code(task_id):
         "submission_id": submission.id,
         "task_id": task.id,
         "challenge_id": challenge.id,
-        "user_code": "\n\n".join(selected_cells),
+        "user_code": "\n\n".join(extract_code_from_cells(selected_cells)),
         "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
         "gpu_required": gpu_required,

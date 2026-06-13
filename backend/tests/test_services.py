@@ -102,5 +102,34 @@ class TestServiceSandboxAndPriority(unittest.TestCase):
         self.assertEqual(calculate_submission_priority(1, "admin"), 9)
         self.assertEqual(calculate_submission_priority(2, "jury"), 9)
 
+    def test_evaluation_templates_formatting(self):
+        """Verify that evaluation templates can be formatted without raising KeyError."""
+        from tasks import EVALUATION_TEMPLATE, DEFAULT_EVALUATION_TEMPLATE
+        
+        # Format EVALUATION_TEMPLATE
+        formatted_eval = EVALUATION_TEMPLATE.format(
+            user_code="print('user code')",
+            hf_dataset_path="test_dataset_path",
+            hf_dataset_config="test_config",
+            hf_dataset_split="test",
+            input_col="text",
+            label_col="label",
+            metric_name="accuracy"
+        )
+        self.assertIn("user code", formatted_eval)
+        self.assertIn("test_dataset_path", formatted_eval)
+        
+        # Format DEFAULT_EVALUATION_TEMPLATE
+        formatted_default = DEFAULT_EVALUATION_TEMPLATE.format(
+            user_code="print('user default')",
+            hf_eval_repo="test_repo",
+            hf_token="test_token",
+            public_eval_percentage=30,
+            hf_dataset_split="test",
+            metrics_config_str='{"accuracy": {"weight": 1.0, "higher_is_better": true}}'
+        )
+        self.assertIn("user default", formatted_default)
+        self.assertIn("test_repo", formatted_default)
+
 if __name__ == '__main__':
     unittest.main()
