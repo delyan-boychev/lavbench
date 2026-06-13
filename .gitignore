@@ -73,3 +73,9 @@ docker-compose.*.local.yml
 *.swo
 *.bak
 *~
+
+# NAI Specific Ignores
+admin_credentials.txt
+backend/uploads/
+backend/hf_cache/
+mock_docker_run.log

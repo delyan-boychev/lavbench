@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Container
+  db:
+    image: postgres:15-alpine
+    container_name: nai_db
+    restart: always
+    environment:
+      POSTGRES_USER: nai_user
+      POSTGRES_PASSWORD: nai_password
+      POSTGRES_DB: nai_competition
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # 2. Redis Message Broker for Celery Queue
+  redis:
+    image: redis:alpine
+    container_name: nai_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # 3. Flask API Backend
+  backend:
+    build: ./backend
+    container_name: nai_backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://nai_user:nai_password@db:5432/nai_competition
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=nai-super-secret-key-1337
+      - HF_CACHE_DIR=/app/hf_cache
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "5001:5001"
+    volumes:
+      - hf_cache:/app/hf_cache
+
+  # 4. Celery GPU Worker Node (reuses same python image)
+  celery_worker:
+    build: ./backend
+    container_name: nai_celery_worker
+    restart: always
+    command: celery -A tasks.celery worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://nai_user:nai_password@db:5432/nai_competition
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=nai-super-secret-key-1337
+      - HF_CACHE_DIR=/app/hf_cache
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - hf_cache:/app/hf_cache
+
+  # 5. React Frontend & Nginx Router
+  frontend:
+    build: ./frontend
+    container_name: nai_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  hf_cache:

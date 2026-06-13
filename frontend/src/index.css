@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100 min-h-screen font-sans;
+}
+
+/* ─── SCROLLBAR ─────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-slate-800 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-indigo-500/30; }
+
+/* ─── SURFACE UTILITIES ─────────────────────────── */
+.surface {
+  @apply bg-slate-900 border border-slate-800/80 rounded-xl shadow-md;
+}
+
+.surface-elevated {
+  @apply bg-slate-800/50 border border-slate-700/50 rounded-lg shadow-sm;
+}
+
+.surface-input {
+  @apply bg-slate-950 border border-slate-800/80 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed px-3 py-2;
+}
+
+.btn {
+  @apply px-4 py-2.5 text-xs font-bold rounded-lg transition-all duration-200 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border inline-flex items-center justify-center gap-2;
+}
+
+.btn-primary {
+  @apply bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500/30;
+}
+
+.btn-secondary {
+  @apply bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700/50;
+}
+
+.btn-danger {
+  @apply bg-rose-600 hover:bg-rose-500 text-white border-rose-500/30;
+}
+
+.btn-ghost {
+  @apply bg-transparent hover:bg-slate-800 text-slate-400 hover:text-slate-200 border-transparent shadow-none;
+}
+
+.btn-sm {
+  @apply px-3 py-1.5 text-[10px];
+}
+
+.btn-lg {
+  @apply px-6 py-3.5 text-sm;
+}
+
+.nav-tab {
+  @apply px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors border border-transparent;
+}
+
+.nav-tab.active {
+  @apply bg-indigo-600/10 text-indigo-400 border-indigo-500/30;
+}
+
+.pill {
+  @apply text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none;
+}
+
+.pill-accent { @apply border-indigo-500/30 bg-indigo-500/10 text-indigo-400; }
+.pill-success { @apply border-emerald-500/30 bg-emerald-500/10 text-emerald-400; }
+.pill-warning { @apply border-amber-500/30 bg-amber-500/10 text-amber-400; }
+.pill-danger { @apply border-rose-500/30 bg-rose-500/10 text-rose-400; }
+.pill-info { @apply border-blue-500/30 bg-blue-500/10 text-blue-400; }
+.pill-muted { @apply border-slate-500/30 bg-slate-800 text-slate-400; }
+
+.empty-state {
+  @apply flex flex-col items-center justify-center p-12 text-center text-slate-500 gap-2.5;
+}
+
+.empty-state p {
+  @apply text-xs text-slate-400 max-w-[280px] leading-normal;
+}
+
+.code-panel {
+  @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded-lg p-4 overflow-x-auto text-slate-200 leading-relaxed;
+}
+
+.data-table {
+  @apply w-full border-collapse text-xs;
+}
+
+.data-table th {
+  @apply px-4 py-3 font-semibold text-[10px] uppercase tracking-wider text-slate-400 bg-slate-800/40 border-b border-slate-800 text-left;
+}
+
+.data-table td {
+  @apply px-4 py-3.5 border-b border-slate-800 text-slate-200;
+}
+
+.data-table tbody tr:hover {
+  @apply bg-slate-800/20;
+}
+
+.data-table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.file-drop-zone {
+  @apply border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer transition-colors bg-slate-900/50 hover:bg-indigo-500/5;
+}
+
+.toast {
+  @apply fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-slate-800 p-4 rounded-lg shadow-2xl z-50 transition-all duration-300;
+}
+
+.prose { @apply text-slate-300 leading-relaxed text-sm; }
+.prose h1 { @apply text-lg font-bold mt-6 mb-3 text-slate-100; }
+.prose h2 { @apply text-base font-bold mt-5 mb-2 text-slate-100; }
+.prose h3 { @apply text-sm font-semibold mt-4 mb-2 text-slate-100; }
+.prose p { @apply my-2.5; }
+.prose ul, .prose ol { @apply pl-5 my-2.5 list-disc; }
+.prose li { @apply my-1; }
+.prose code { @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-indigo-400; }
+.prose pre { @apply bg-slate-950 border border-slate-800 rounded-lg p-3 overflow-x-auto my-3; }
+.prose pre code { @apply bg-transparent border-0 p-0 text-slate-200; }
+.prose blockquote { @apply border-l-2 border-slate-700 pl-4 my-3 italic text-slate-400; }
+.prose table { @apply w-full border-collapse my-3 text-xs; }
+.prose th, .prose td { @apply border border-slate-800 p-2.5 text-left; }
+.prose th { @apply bg-slate-800/40 text-slate-100 font-semibold; }
+.prose a { @apply text-indigo-400 hover:text-indigo-300 underline; }
+.prose strong { @apply text-slate-100 font-semibold; }
