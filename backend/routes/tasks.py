@@ -177,7 +177,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
         
-        "is_custom_eval": True if (task.evaluator_script_path and os.path.exists(task.evaluator_script_path)) else False,
+        "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
         "hf_eval_repo": task.hf_eval_repo,
         "hf_token": hf_token,
@@ -188,7 +188,9 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "worker_secret_key": worker_secret_key
     }
     
-    if task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
+    if task.custom_eval_code:
+        metadata["custom_eval_code"] = task.custom_eval_code
+    elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
         try:
             with open(task.evaluator_script_path, "r") as ef:
                 metadata["custom_eval_code"] = ef.read()
@@ -785,7 +787,7 @@ def submit_task_code(task_id):
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
         
-        "is_custom_eval": True if (task.evaluator_script_path and os.path.exists(task.evaluator_script_path)) else False,
+        "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
         "hf_eval_repo": task.hf_eval_repo,
         "hf_token": hf_token,
@@ -796,7 +798,9 @@ def submit_task_code(task_id):
         "worker_secret_key": worker_secret_key
     }
     
-    if task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
+    if task.custom_eval_code:
+        metadata["custom_eval_code"] = task.custom_eval_code
+    elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
         try:
             with open(task.evaluator_script_path, "r") as ef:
                 metadata["custom_eval_code"] = ef.read()

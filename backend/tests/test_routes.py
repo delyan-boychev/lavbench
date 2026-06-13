@@ -206,6 +206,27 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 202)
         self.assertIn("queued for execution", res.get_json()["message"])
 
+    @patch('tasks.evaluate_submission.apply_async')
+    def test_submit_task_with_database_custom_eval(self, mock_celery):
+        """Task submission with database-defined custom_eval_code should trigger custom evaluation."""
+        self.task.custom_eval_code = "print('custom evaluation code')"
+        db.session.commit()
+
+        payload = {"selected_cells": ["# SUBMIT\ndef predict(x): return x"]}
+        res = self.client.post(f'/api/tasks/{self.task.id}/submit', 
+                               headers=self.get_auth_header(self.competitor_token),
+                               json=payload)
+        self.assertEqual(res.status_code, 202)
+        
+        # Verify the celery task was called with correct metadata
+        self.assertTrue(mock_celery.called)
+        called_args, called_kwargs = mock_celery.call_args
+        args = called_kwargs.get("args") or called_args[0]
+        self.assertEqual(len(args), 2)
+        meta_dict = args[1]
+        self.assertTrue(meta_dict.get("is_custom_eval"))
+        self.assertEqual(meta_dict.get("custom_eval_code"), "print('custom evaluation code')")
+
     def test_leaderboard_sorting_and_tie_breaking(self):
         """Leaderboard should sort correctly and break ties using execution time (speed)."""
         # Create users for rankings with valid password hashes to satisfy NOT NULL constraints

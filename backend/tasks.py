@@ -644,7 +644,13 @@ def evaluate_submission(self, submission_id, metadata=None):
                 f.write(run_script_content)
     else:
         if task:
-            if task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
+            if task.custom_eval_code:
+                with open(os.path.join(temp_dir, "evaluator.py"), "w") as f:
+                    f.write(task.custom_eval_code)
+                is_custom_eval = True
+                with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
+                    f.write(user_code)
+            elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
                 import shutil
                 shutil.copy(task.evaluator_script_path, os.path.join(temp_dir, "evaluator.py"))
                 is_custom_eval = True
