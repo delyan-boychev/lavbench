@@ -128,6 +128,7 @@ import os
 import sys
 import json
 import traceback
+import time
 from datasets import load_dataset
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error
 
@@ -228,22 +229,24 @@ def run_evaluation():
         pub_score = calculate_score(public_labels, public_preds)
         priv_score = calculate_score(private_labels, private_preds)
         
-        # Output results JSON
-        print(json.dumps({
-            "status": "success",
-            "public_score": float(pub_score),
-            "private_score": float(priv_score),
-            "metrics_payload_public": {metric: float(pub_score)},
-            "metrics_payload_private": {metric: float(priv_score)},
-            "execution_time_ms": int((public_time + private_time) * 1000)
-        }))
+        # Output results JSON directly to file
+        with open("eval_results.json", "w") as f_res:
+            json.dump({
+                "status": "success",
+                "public_score": float(pub_score),
+                "private_score": float(priv_score),
+                "metrics_payload_public": {metric: float(pub_score)},
+                "metrics_payload_private": {metric: float(priv_score)},
+                "execution_time_ms": int((public_time + private_time) * 1000)
+            }, f_res)
         
     except Exception as e:
-        print(json.dumps({
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }))
+        with open("eval_results.json", "w") as f_res:
+            json.dump({
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }, f_res)
 
 if __name__ == "__main__":
     run_evaluation()
@@ -276,9 +279,9 @@ def run_evaluation():
         
         # Load dataset
         if token:
-            dataset = load_dataset(dataset_path, split="test", token=token)
+            dataset = load_dataset(dataset_path, split="{hf_dataset_split}", token=token)
         else:
-            dataset = load_dataset(dataset_path, split="test")
+            dataset = load_dataset(dataset_path, split="{hf_dataset_split}")
             
         total_len = len(dataset)
         if total_len == 0:
@@ -382,22 +385,24 @@ def run_evaluation():
             final_pub_score = 0.0
             final_priv_score = 0.0
             
-        # Output results JSON
-        print(json.dumps({
-            "status": "success",
-            "public_score": final_pub_score,
-            "private_score": final_priv_score,
-            "metrics_payload_public": pub_payload,
-            "metrics_payload_private": priv_payload,
-            "execution_time_ms": int((public_time + private_time) * 1000)
-        }))
+        # Output results JSON directly to file
+        with open("eval_results.json", "w") as f_res:
+            json.dump({
+                "status": "success",
+                "public_score": final_pub_score,
+                "private_score": final_priv_score,
+                "metrics_payload_public": pub_payload,
+                "metrics_payload_private": priv_payload,
+                "execution_time_ms": int((public_time + private_time) * 1000)
+            }, f_res)
         
     except Exception as e:
-        print(json.dumps({
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }))
+        with open("eval_results.json", "w") as f_res:
+            json.dump({
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }, f_res)
 
 if __name__ == "__main__":
     run_evaluation()
@@ -430,7 +435,8 @@ def evaluate_submission(self, submission_id, metadata=None):
             time_limit_sec=metadata.get("time_limit"),
             ram_limit_mb=metadata.get("ram_limit"),
             gpu_required=metadata.get("gpu_required"),
-            metric_name=metadata.get("metric_name", "accuracy")
+            metric_name=metadata.get("metric_name", "accuracy"),
+            hf_dataset_split=metadata.get("hf_dataset_split", "test")
         )
         submission = MockModel(
             id=submission_id,
@@ -610,7 +616,8 @@ def evaluate_submission(self, submission_id, metadata=None):
                 hf_eval_repo=metadata.get("hf_eval_repo") or "",
                 hf_token=metadata.get("hf_token") or "",
                 public_eval_percentage=metadata.get("public_eval_percentage") or 30,
-                metrics_config_str=metrics_cfg_str
+                metrics_config_str=metrics_cfg_str,
+                hf_dataset_split=challenge.hf_dataset_split or "test"
             )
             with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
                 f.write(run_script_content)
@@ -630,7 +637,8 @@ def evaluate_submission(self, submission_id, metadata=None):
                     hf_eval_repo=task.hf_eval_repo or "",
                     hf_token=hf_token,
                     public_eval_percentage=task.public_eval_percentage or 30,
-                    metrics_config_str=metrics_cfg_str
+                    metrics_config_str=metrics_cfg_str,
+                    hf_dataset_split=challenge.hf_dataset_split or "test"
                 )
                 with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
                     f.write(run_script_content)
@@ -641,7 +649,7 @@ def evaluate_submission(self, submission_id, metadata=None):
                 user_code=user_code,
                 hf_dataset_path=challenge.hf_dataset_path,
                 hf_dataset_config=challenge.hf_dataset_config or "",
-                hf_dataset_split=challenge.hf_dataset_split,
+                hf_dataset_split=challenge.hf_dataset_split or "test",
                 input_col=input_col,
                 label_col=label_col,
                 metric_name=challenge.metric_name
@@ -825,41 +833,69 @@ def evaluate_submission(self, submission_id, metadata=None):
     if process_timeout:
         status = 'failed'
         logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
+        if is_custom_eval:
+            logs.append("Jury Evaluator Error: The custom evaluation script failed to produce a valid results file.")
     else:
         json_output = None
+        results_file_path = os.path.join(temp_dir, "eval_results.json")
+        if os.path.exists(results_file_path):
+            try:
+                with open(results_file_path, "r") as f_res:
+                    json_output = json.load(f_res)
+            except Exception as e:
+                logs.append(f"Failed to read secure results file 'eval_results.json': {e}")
+        else:
+            logs.append("Error: Secure evaluation results file 'eval_results.json' was not created.")
+            
         stdout_clean_lines = []
         for line in stdout.splitlines():
-            if line.strip().startswith('{"status":') or '"public_score"' in line:
-                try:
-                    json_output = json.loads(line)
-                except:
-                    stdout_clean_lines.append(line)
-            else:
-                stdout_clean_lines.append(line)
+            stdout_clean_lines.append(line)
                 
         if stdout_clean_lines:
             logs.append("Stdout outputs:")
             logs.append("\n".join(stdout_clean_lines))
             
-        if json_output:
-            if json_output.get("status") == "success":
-                public_score = json_output.get("public_score")
-                private_score = json_output.get("private_score")
-                execution_time_ms = json_output.get("execution_time_ms")
-                metrics_payload_pub = json_output.get("metrics_payload_public") or {}
-                metrics_payload_priv = json_output.get("metrics_payload_private") or {}
-                
-                if execution_time_ms is None:
-                    execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
-                logs.append("Evaluation completed successfully.")
+        is_schema_valid = True
+        if is_custom_eval:
+            if json_output is None:
+                is_schema_valid = False
+            elif not isinstance(json_output, dict):
+                is_schema_valid = False
+            else:
+                eval_status = json_output.get("status")
+                if eval_status not in ["success", "error"]:
+                    is_schema_valid = False
+                elif eval_status == "success":
+                    pub = json_output.get("public_score")
+                    priv = json_output.get("private_score")
+                    if not (isinstance(pub, (int, float)) and not isinstance(pub, bool)):
+                        is_schema_valid = False
+                    if not (isinstance(priv, (int, float)) and not isinstance(priv, bool)):
+                        is_schema_valid = False
+
+        if is_custom_eval and not is_schema_valid:
+            status = 'failed'
+            logs.append("Jury Evaluator Error: The custom evaluation script failed to produce a valid results file.")
+        else:
+            if json_output:
+                if json_output.get("status") == "success":
+                    public_score = json_output.get("public_score")
+                    private_score = json_output.get("private_score")
+                    execution_time_ms = json_output.get("execution_time_ms")
+                    metrics_payload_pub = json_output.get("metrics_payload_public") or {}
+                    metrics_payload_priv = json_output.get("metrics_payload_private") or {}
+                    
+                    if execution_time_ms is None:
+                        execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
+                    logs.append("Evaluation completed successfully.")
+                else:
+                    status = 'failed'
+                    logs.append(f"Evaluation script returned error: {json_output.get('error')}")
+                    if json_output.get("traceback"):
+                        logs.append(json_output.get("traceback"))
             else:
                 status = 'failed'
-                logs.append(f"Evaluation script returned error: {json_output.get('error')}")
-                if json_output.get("traceback"):
-                    logs.append(json_output.get("traceback"))
-        else:
-            status = 'failed'
-            logs.append("Evaluation failed: No structured JSON output received from script.")
+                logs.append("Evaluation failed: No structured JSON output received from secure results file.")
             
     try:
         import shutil

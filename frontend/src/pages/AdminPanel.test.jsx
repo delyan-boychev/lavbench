@@ -149,4 +149,26 @@ describe('AdminPanel Page - Workers & Resources', () => {
       expect(screen.getByText('Error retrieving system statistics: Database connection failed')).toBeInTheDocument();
     });
   });
+
+  it('displays the custom evaluator template in the create task form', async () => {
+    useApp.mockReturnValue({
+      challenges: [{ id: 1, title: 'Challenge Alpha' }],
+      selectedChallenge: { id: 1, title: 'Challenge Alpha', tasks: [] },
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      fetchChallenges: mockFetchChallenges,
+      showToast: mockShowToast,
+    });
+
+    render(<AdminPanel />);
+
+    // Click "+ Add Task" button
+    const addTaskBtn = screen.getByText('+ Add Task');
+    await act(async () => {
+      fireEvent.click(addTaskBtn);
+    });
+
+    // Check that the template collapsible section is present
+    expect(screen.getByText('Show Custom Evaluator Template (evaluator.py)')).toBeInTheDocument();
+    expect(screen.getByText(/When writing a custom evaluator/)).toBeInTheDocument();
+  });
 });

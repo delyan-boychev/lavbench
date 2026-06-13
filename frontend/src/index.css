@@ -131,3 +131,18 @@ body {
 .prose th { @apply bg-slate-800/40 text-slate-100 font-semibold; }
 .prose a { @apply text-indigo-400 hover:text-indigo-300 underline; }
 .prose strong { @apply text-slate-100 font-semibold; }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadein {
+  animation: fadeIn 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

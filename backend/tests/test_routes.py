@@ -693,6 +693,118 @@ class TestRouteLevelLogic(unittest.TestCase):
         mock_delete.assert_any_call("challenges:all")
         mock_delete.assert_any_call(f"challenge:{self.challenge.id}")
 
+    @patch('tasks.evaluate_submission.delay')
+    def test_challenge_submission_route_and_ast_rule_engine(self, mock_celery):
+        """Test submission route task_id checking and AST pre-execution rule validations."""
+        comp_header = self.get_auth_header(self.competitor_token)
+        
+        # 1. Missing task_id
+        payload = {
+            "selected_cells": ["print('hello')"]
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("task_id is required", res.get_json()["error"])
+        
+        # 2. Invalid task_id (mismatched challenge)
+        payload = {
+            "selected_cells": ["print('hello')"],
+            "task_id": 99999
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Invalid task_id", res.get_json()["error"])
+        
+        # 3. AST Banned Imports check (should fail with 400)
+        self.task.banned_imports = "os,sys,subprocess"
+        db.session.commit()
+        
+        payload = {
+            "selected_cells": ["import os\nprint('hack')"],
+            "task_id": self.task.id
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Import of library 'os' is banned", res.get_json()["error"])
+        
+        # 4. AST Banned Magic Commands check
+        self.task.ban_magic_commands = True
+        self.task.banned_imports = ""
+        db.session.commit()
+        
+        payload = {
+            "selected_cells": ["!pip install requests"],
+            "task_id": self.task.id
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("magic commands", res.get_json()["error"])
+        
+        # 5. AST Required Tag check
+        self.task.ban_magic_commands = False
+        self.task.require_submit_tag = True
+        db.session.commit()
+        
+        payload = {
+            "selected_cells": ["print('hello')"],
+            "task_id": self.task.id
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("missing the required '# SUBMIT' tag", res.get_json()["error"])
+        
+        # 6. Valid submission
+        payload = {
+            "selected_cells": ["# SUBMIT\nprint('hello')"],
+            "task_id": self.task.id
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
+        self.assertEqual(res.status_code, 202)
+        
+        sub_id = res.get_json()["submission_id"]
+        submission = Submission.query.get(sub_id)
+        self.assertIsNotNone(submission)
+        self.assertEqual(submission.task_id, self.task.id)
+        self.assertEqual(submission.challenge_id, self.challenge.id)
+
+    def test_docs_secure_access(self):
+        comp_header = self.get_auth_header(self.competitor_token)
+        jury_token = generate_token(999, "jury")
+        jury_header = self.get_auth_header(jury_token)
+        admin_header = self.get_auth_header(self.admin_token)
+        
+        # 1. Student doc access (all roles)
+        res = self.client.get('/api/docs/student', headers=comp_header)
+        self.assertEqual(res.status_code, 200)
+        res = self.client.get('/api/docs/student', headers=jury_header)
+        self.assertEqual(res.status_code, 200)
+        res = self.client.get('/api/docs/student', headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+        
+        # 2. Jury doc access (Jury & Admin)
+        res = self.client.get('/api/docs/jury', headers=comp_header)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.get('/api/docs/jury', headers=jury_header)
+        self.assertEqual(res.status_code, 200)
+        res = self.client.get('/api/docs/jury', headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+        
+        # 3. Admin doc access (Admin only)
+        res = self.client.get('/api/docs/admin', headers=comp_header)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.get('/api/docs/admin', headers=jury_header)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.get('/api/docs/admin', headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+        
+        # 4. API Reference access (Admin only)
+        res = self.client.get('/api/docs/api-reference', headers=comp_header)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.get('/api/docs/api-reference', headers=jury_header)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.get('/api/docs/api-reference', headers=admin_header)
+        self.assertEqual(res.status_code, 200)
+
 if __name__ == '__main__':
     unittest.main()
 

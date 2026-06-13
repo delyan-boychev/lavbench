@@ -22,6 +22,7 @@ def create_app():
     from routes.submissions import submissions_bp
     from routes.leaderboard import leaderboard_bp
     from routes.tasks import tasks_bp
+    from routes.docs import docs_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
@@ -29,6 +30,7 @@ def create_app():
     app.register_blueprint(submissions_bp, url_prefix='/api')
     app.register_blueprint(leaderboard_bp, url_prefix='/api')
     app.register_blueprint(tasks_bp, url_prefix='/api')
+    app.register_blueprint(docs_bp, url_prefix='/api/docs')
     
     return app
 
@@ -82,9 +84,14 @@ def seed_database():
     # 2. Create Tasks for Challenges
     imdb_eval_code = """import json
 import sys
-import traceback
 
-# Mock evaluation dataset
+try:
+    import submission_runner
+except Exception as e:
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": "Failed to compile or import student code."}, f)
+    sys.exit(1)
+
 test_inputs = [
     "This movie was absolutely wonderful and the acting was top notch!",
     "A complete waste of time. The plot made no sense and it was very boring.",
@@ -95,29 +102,31 @@ test_inputs = [
 test_labels = [1, 0, 1, 0, 1]
 
 try:
-    if 'predict' not in globals():
+    if not hasattr(submission_runner, 'predict'):
         raise AttributeError("Your code must define a function 'predict(inputs_list)' that takes a list of reviews and returns predictions (0 or 1).")
         
-    preds = predict(test_inputs)
+    preds = submission_runner.predict(test_inputs)
     if len(preds) != len(test_labels):
         raise ValueError(f"predict returned {len(preds)} predictions, but expected {len(test_labels)}.")
         
     correct = sum(1 for p, l in zip(preds, test_labels) if p == l)
     acc = correct / len(test_labels)
     
-    # Print structured JSON results
-    print(json.dumps({
-        "status": "success",
-        "public_score": acc,
-        "private_score": acc,
-        "execution_time_ms": 10
-    }))
+    with open("eval_results.json", "w") as f:
+        json.dump({
+            "status": "success",
+            "public_score": float(acc),
+            "private_score": float(acc),
+            "metrics_payload_public": {"accuracy": float(acc)},
+            "metrics_payload_private": {"accuracy": float(acc)},
+            "execution_time_ms": 10
+        }, f)
 except Exception as e:
-    print(json.dumps({
-        "status": "error",
-        "error": str(e),
-        "traceback": traceback.format_exc()
-    }))
+    with open("eval_results.json", "w") as f:
+        json.dump({
+            "status": "error",
+            "error": f"Evaluation failed with {type(e).__name__}"
+        }, f)
 """
 
     task1 = Task(

@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from models import db, Challenge, Submission, User
+from models import db, Challenge, Submission, User, Task
 from auth_utils import login_required
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
@@ -77,9 +77,23 @@ def submit_code(challenge_id):
         
     data = request.json or {}
     selected_cells = data.get("selected_cells")
+    task_id = data.get("task_id")
     
     if not selected_cells or not isinstance(selected_cells, list):
         return jsonify({"error": "selected_cells list is required."}), 400
+        
+    if not task_id:
+        return jsonify({"error": "task_id is required."}), 400
+        
+    task = Task.query.get(task_id)
+    if not task or task.challenge_id != challenge_id:
+        return jsonify({"error": "Invalid task_id for this challenge."}), 400
+        
+    # AST and general rule validation
+    from routes.tasks import check_execution_rules
+    passed, err_msg = check_execution_rules(task, selected_cells)
+    if not passed:
+        return jsonify({"error": err_msg}), 400
         
     # Check rate limit (submissions count today)
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -98,6 +112,7 @@ def submit_code(challenge_id):
     submission = Submission(
         user_id=user_id,
         challenge_id=challenge_id,
+        task_id=task.id,
         status='queued',
         code_cells=json.dumps(selected_cells)
     )

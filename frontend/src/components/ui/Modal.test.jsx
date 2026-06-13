@@ -46,14 +46,14 @@ describe('Modal Component', () => {
 
   it('calls onClose when background overlay is clicked', () => {
     const handleClose = vi.fn();
-    const { container } = render(
+    render(
       <Modal isOpen={true} onClose={handleClose} title="Title">
         <div>Body</div>
       </Modal>
     );
     
-    // The overlay is the outermost div
-    const overlay = container.firstChild;
+    // The overlay is the outermost div in the Portal
+    const overlay = document.body.querySelector('.fixed');
     fireEvent.click(overlay);
     expect(handleClose).toHaveBeenCalledTimes(1);
   });

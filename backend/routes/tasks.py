@@ -296,7 +296,7 @@ def create_task(challenge_id):
     if 'evaluator_script' in request.files:
         f = request.files['evaluator_script']
         if f and f.filename != '':
-            safe_name = "evaluator_" + secure_filename(f.filename)
+            safe_name = "evaluator.py"
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
@@ -459,7 +459,7 @@ def update_task(task_id):
     if 'evaluator_script' in request.files:
         f = request.files['evaluator_script']
         if f and f.filename != '':
-            safe_name = "evaluator_" + secure_filename(f.filename)
+            safe_name = "evaluator.py"
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path

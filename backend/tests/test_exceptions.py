@@ -82,6 +82,14 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         db.session.add(self.unregistered_competitor)
         db.session.commit()
 
+        self.task_a = Task(
+            challenge_id=self.challenge_a.id,
+            title="Task A",
+            description="Task A description"
+        )
+        db.session.add(self.task_a)
+        db.session.commit()
+
     # --- AUTHENTICATION ENDPOINT EXCEPTIONS ---
 
     def test_login_missing_parameters(self):
@@ -287,6 +295,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
             sub = Submission(
                 user_id=self.competitor.id,
                 challenge_id=self.challenge_a.id,
+                task_id=self.task_a.id,
                 status='completed',
                 code_cells="[]",
                 created_at=datetime.utcnow()
@@ -294,7 +303,11 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
             db.session.add(sub)
         db.session.commit()
 
-        res = self.client.post(f'/api/challenges/{self.challenge_a.id}/submit', json={"selected_cells": ["cell_content"]}, headers=headers)
+        res = self.client.post(
+            f'/api/challenges/{self.challenge_a.id}/submit', 
+            json={"selected_cells": ["cell_content"], "task_id": self.task_a.id}, 
+            headers=headers
+        )
         self.assertEqual(res.status_code, 429)
         self.assertIn("Daily limit reached", res.json["error"])
 

@@ -111,4 +111,16 @@ describe('TaskDetail Component', () => {
       expect(window.URL.revokeObjectURL).toHaveBeenCalledWith(mockUrl);
     });
   });
+
+  it('renders jury custom evaluator notice when evaluator_script_path is present', () => {
+    const taskWithCustomEval = {
+      ...taskMock,
+      evaluator_script_path: '/path/to/evaluator.py'
+    };
+
+    render(<TaskDetail task={taskWithCustomEval} token="token-123" />);
+
+    expect(screen.getByText('Jury Custom Evaluator Active')).toBeInTheDocument();
+    expect(screen.getByText(/This task uses a custom evaluator. Please ensure your submission defines the entry-point/)).toBeInTheDocument();
+  });
 });

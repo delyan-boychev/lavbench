@@ -4,6 +4,8 @@ import { useApp } from '../../context/AppContext';
 import Logo from '../ui/Logo';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 function SunIcon() {
   return (
@@ -28,6 +30,50 @@ export default function Navbar() {
   const [workerStatus, setWorkerStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
+  const [activeDocTab, setActiveDocTab] = React.useState('student');
+  const [docContent, setDocContent] = React.useState('');
+  const [docLoading, setDocLoading] = React.useState(false);
+  const [docError, setDocError] = React.useState(null);
+
+  const docTabs = React.useMemo(() => {
+    const tabs = [{ id: 'student', label: 'Student Guide' }];
+    if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
+      tabs.push({ id: 'jury', label: 'Jury Guide' });
+    }
+    if (currentUser?.role === 'admin') {
+      tabs.push({ id: 'admin', label: 'Admin Guide' });
+      tabs.push({ id: 'api-reference', label: 'API Reference' });
+    }
+    return tabs;
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (!token || !isDocsModalOpen) return;
+    
+    const fetchDoc = async () => {
+      setDocLoading(true);
+      setDocError(null);
+      try {
+        const res = await fetch(`/api/docs/${activeDocTab}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDocContent(data.content);
+        } else {
+          const errData = await res.json();
+          setDocError(errData.error || 'Failed to fetch documentation.');
+        }
+      } catch (err) {
+        setDocError('Failed to fetch documentation due to a network error.');
+      } finally {
+        setDocLoading(false);
+      }
+    };
+    
+    fetchDoc();
+  }, [token, isDocsModalOpen, activeDocTab]);
 
   const handleLogout = () => {
     logout();
@@ -65,6 +111,125 @@ export default function Navbar() {
     ? `${currentUser.name} ${currentUser.surname || ''}`.trim()
     : currentUser?.username;
 
+  const markdownComponents = {
+    blockquote: ({ children }) => {
+      const getRawText = (node) => {
+        if (!node) return "";
+        if (typeof node === 'string') return node;
+        if (typeof node === 'number') return String(node);
+        if (Array.isArray(node)) return node.map(getRawText).join("");
+        if (node.props && node.props.children) return getRawText(node.props.children);
+        return "";
+      };
+      
+      const rawText = getRawText(children).trim();
+      const alertMatch = rawText.match(/^\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/i);
+      
+      if (alertMatch) {
+        const type = alertMatch[1].toUpperCase();
+        
+        const styles = {
+          NOTE: {
+            bg: 'rgba(99, 102, 241, 0.05)',
+            border: 'border-l-4 border-l-indigo-500',
+            text: 'text-indigo-400',
+            title: 'Note',
+            icon: (
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <path strokeLinecap="round" d="M12 16v-4m0-4h.01" />
+              </svg>
+            )
+          },
+          IMPORTANT: {
+            bg: 'rgba(139, 92, 246, 0.05)',
+            border: 'border-l-4 border-l-purple-500',
+            text: 'text-purple-400',
+            title: 'Important',
+            icon: (
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499c.195-.39.6-.641 1.03-.641s.836.251 1.03.641l2.52 5.034 5.59.812c.433.063.793.38.93.805.138.427-.002.899-.346 1.206l-4.045 3.945 1.0 5.568c.078.435-.1.874-.46 1.137-.36.262-.84.288-1.228.067L12 18.73l-4.99 2.57c-.388.22-.868.195-1.228-.067-.36-.263-.538-.702-.46-1.137l1.0-5.568-4.045-3.945c-.344-.307-.484-.78-.346-1.206.137-.426.497-.743.93-.805l5.59-.812 2.52-5.034z" />
+              </svg>
+            )
+          },
+          WARNING: {
+            bg: 'rgba(245, 158, 11, 0.05)',
+            border: 'border-l-4 border-l-amber-500',
+            text: 'text-amber-400',
+            title: 'Warning',
+            icon: (
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )
+          },
+          TIP: {
+            bg: 'rgba(16, 185, 129, 0.05)',
+            border: 'border-l-4 border-l-emerald-500',
+            text: 'text-emerald-400',
+            title: 'Tip',
+            icon: (
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            )
+          },
+          CAUTION: {
+            bg: 'rgba(244, 63, 94, 0.05)',
+            border: 'border-l-4 border-l-rose-500',
+            text: 'text-rose-400',
+            title: 'Caution',
+            icon: (
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )
+          }
+        };
+        
+        const config = styles[type] || styles.NOTE;
+        
+        const removeMarker = (node) => {
+          if (!node) return node;
+          if (typeof node === 'string') {
+            return node.replace(/^\s*\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]\s*/i, "");
+          }
+          if (typeof node === 'number') {
+            return String(node);
+          }
+          if (Array.isArray(node)) {
+            if (node.length > 0) {
+              return [removeMarker(node[0]), ...node.slice(1)];
+            }
+            return node;
+          }
+          if (React.isValidElement(node)) {
+            if (node.props && node.props.children) {
+              return React.cloneElement(node, {}, removeMarker(node.props.children));
+            }
+          }
+          return node;
+        };
+        
+        const cleanedChildren = removeMarker(children);
+        
+        return (
+          <div className={`p-3.5 my-4 rounded-r-lg border-y border-r border-white/5 ${config.bg} ${config.border} flex flex-col gap-1`}>
+            <div className={`flex items-center text-[10px] font-bold uppercase tracking-wider ${config.text}`}>
+              {config.icon}
+              {config.title}
+            </div>
+            <div className="text-[12.5px] leading-relaxed text-slate-300">
+              {cleanedChildren}
+            </div>
+          </div>
+        );
+      }
+      
+      return <blockquote className="border-l-2 border-slate-700 pl-4 my-3 italic text-slate-400">{children}</blockquote>;
+    }
+  };
+
   return (
     <header style={{
       background: 'rgba(9, 10, 15, 0.8)',
@@ -88,40 +253,70 @@ export default function Navbar() {
         {/* Left: Logo */}
         <Logo />
 
-        {/* Center: Cluster status */}
-        <button 
-          onClick={() => setIsModalOpen(prev => !prev)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '4px 12px',
-            background: workerStatus === 'online' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-            border: `1px solid ${workerStatus === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '0.72rem',
-            fontWeight: 700,
-            color: workerStatus === 'online' ? '#10b981' : '#ef4444',
-            cursor: 'pointer',
-            outline: 'none',
-            transition: 'all 0.2s ease',
-          }}
-          className="hover:scale-[1.02] active:scale-[0.98] select-none"
-          title="View Available Clusters"
-        >
-          <span style={{ 
-            position: 'relative',
-            display: 'flex',
-            width: 8, 
-            height: 8, 
-          }}>
-            {workerStatus === 'online' && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            )}
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-          </span>
-          {workerStatus === 'online' ? 'Cluster Online' : 'Cluster Offline'}
-        </button>
+        {/* Center: Cluster status & Docs */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button 
+            onClick={() => setIsModalOpen(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 12px',
+              background: workerStatus === 'online' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              border: `1px solid ${workerStatus === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              color: workerStatus === 'online' ? '#10b981' : '#ef4444',
+              cursor: 'pointer',
+              outline: 'none',
+              transition: 'all 0.2s ease',
+            }}
+            className="hover:scale-[1.02] active:scale-[0.98] select-none"
+            title="View Available Clusters"
+          >
+            <span style={{ 
+              position: 'relative',
+              display: 'flex',
+              width: 8, 
+              height: 8, 
+            }}>
+              {workerStatus === 'online' && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+            </span>
+            Cluster
+          </button>
+
+          {currentUser && (
+            <button 
+              onClick={() => setIsDocsModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: 'rgb(129, 140, 248)',
+                cursor: 'pointer',
+                outline: 'none',
+                transition: 'all 0.2s ease',
+              }}
+              className="hover:scale-[1.02] active:scale-[0.98] select-none"
+              title="System Documentation & Guides"
+            >
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              Docs
+            </button>
+          )}
+        </div>
 
         {/* Right: user + controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -256,6 +451,63 @@ export default function Navbar() {
               ))}
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* System Documentation Modal */}
+      <Modal
+        isOpen={isDocsModalOpen}
+        onClose={() => setIsDocsModalOpen(false)}
+        title="Documentation & Guides"
+        size="xl"
+        footer={(
+          <button 
+            className="btn btn-secondary btn-sm px-4" 
+            onClick={() => setIsDocsModalOpen(false)}
+          >
+            Close
+          </button>
+        )}
+      >
+        <div className="flex flex-col gap-4 text-left h-[70vh] md:h-[75vh]">
+          {/* Tabs header - scrollable horizontally on small viewports */}
+          {docTabs.length > 1 && (
+            <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto scrollbar-none whitespace-nowrap">
+              {docTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveDocTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg font-semibold transition-all duration-200 cursor-pointer ${
+                    activeDocTab === tab.id 
+                      ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' 
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {/* Scrollable Doc Content Area */}
+          <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin">
+            {docLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
+                <div className="animate-spin h-6 w-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
+                <span>Loading documentation...</span>
+              </div>
+            ) : docError ? (
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center">
+                {docError}
+              </div>
+            ) : (
+              <div className="prose prose-invert max-w-none text-slate-300">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {docContent}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
     </header>

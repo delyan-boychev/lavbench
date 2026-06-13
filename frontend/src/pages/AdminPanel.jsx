@@ -5,6 +5,66 @@ import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
 import Pagination from '../components/ui/Pagination';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-python';
+import 'prismjs/themes/prism-tomorrow.css';
+
+const CUSTOM_EVALUATOR_TEMPLATE = `import os
+import json
+import traceback
+import time
+
+# 1. SECURE IMPORT
+# The student's notebook cells are saved as 'submission_runner.py'
+try:
+    import submission_runner
+except Exception as e:
+    # Safely catch import errors without leaking sandbox state
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": "Failed to compile or import student code."}, f)
+    exit(1)
+
+def run_evaluation():
+    try:
+        # 2. RUN STUDENT LOGIC
+        # Execute the student's entry point (e.g., predict, generate, or a full pipeline)
+        # Assuming the Jury requested a function named 'run_pipeline':
+        if not hasattr(submission_runner, 'run_pipeline'):
+            raise AttributeError("Your notebook must define the requested entry point function.")
+            
+        student_func = submission_runner.run_pipeline
+
+        start_time = time.time()
+        
+        # Pass whatever data the Jury deems necessary
+        # The student code can handle training, prediction, etc. internally.
+        public_score, private_score = student_func() 
+        
+        execution_time_ms = int((time.time() - start_time) * 1000)
+
+        # 3. WRITE SECURE RESULTS (Do not print to stdout)
+        results = {
+            "status": "success",
+            "public_score": float(public_score),
+            "private_score": float(private_score),
+            "execution_time_ms": execution_time_ms,
+            "metrics_payload_public": {"score": public_score},
+            "metrics_payload_private": {"score": private_score}
+        }
+        
+        with open("eval_results.json", "w") as f:
+            json.dump(results, f)
+            
+    except Exception as e:
+        # 4. PREVENT DATA LEAKAGE
+        # Do NOT write traceback.format_exc() to prevent leaking private dataset values
+        # that might be captured in exception variables.
+        error_type = type(e).__name__
+        with open("eval_results.json", "w") as f:
+            json.dump({"status": "error", "error": f"Evaluation failed with {error_type}"}, f)
+
+if __name__ == "__main__":
+    run_evaluation()`;
 
 export default function AdminPanel() {
   const { token, currentUser } = useAuth();
@@ -17,6 +77,10 @@ export default function AdminPanel() {
   } = useApp();
 
   const API_BASE = '/api';
+
+  const highlightedCode = React.useMemo(() => {
+    return Prism.highlight(CUSTOM_EVALUATOR_TEMPLATE, Prism.languages.python, 'python');
+  }, []);
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -490,7 +554,7 @@ export default function AdminPanel() {
     });
 
     // Special uploads
-    if (evaluatorFile) formData.append("evaluator_script", evaluatorFile);
+    if (evaluatorFile) formData.append("evaluator_script", evaluatorFile, "evaluator.py");
     if (baselineFile) formData.append("baseline_notebook", baselineFile);
     if (solutionFile) formData.append("solution_notebook", solutionFile);
 
@@ -1341,6 +1405,26 @@ export default function AdminPanel() {
                     />
                   </div>
 
+                </div>
+
+                <div className="mt-4 p-4 rounded-lg bg-slate-900/50 border border-white/5 text-xs text-slate-300">
+                  <details className="group">
+                    <summary className="font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center justify-between">
+                      <span>Show Custom Evaluator Template (evaluator.py)</span>
+                      <span className="transition-transform group-open:rotate-180">▼</span>
+                    </summary>
+                    <div className="mt-3 text-slate-400 space-y-2">
+                      <p>
+                        When writing a custom evaluator, your script must import the student submission as <code>submission_runner</code>, evaluate it, and write the final metrics to <code>eval_results.json</code>.
+                      </p>
+                      <pre className="p-3 bg-slate-950 border border-white/5 rounded-lg overflow-x-auto text-[11px] leading-relaxed select-all">
+                        <code 
+                          className="language-python" 
+                          dangerouslySetInnerHTML={{ __html: highlightedCode }} 
+                        />
+                      </pre>
+                    </div>
+                  </details>
                 </div>
               </div>
 

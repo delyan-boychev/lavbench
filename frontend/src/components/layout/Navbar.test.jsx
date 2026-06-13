@@ -73,7 +73,7 @@ describe('Navbar Component', () => {
     });
 
     await vi.waitFor(() => {
-      expect(screen.getByText('Cluster Online')).toBeInTheDocument();
+      expect(screen.getByText('Cluster')).toBeInTheDocument();
     });
   });
 
@@ -91,7 +91,7 @@ describe('Navbar Component', () => {
     render(<Navbar />);
 
     await vi.waitFor(() => {
-      expect(screen.getByText('Cluster Offline')).toBeInTheDocument();
+      expect(screen.getByText('Cluster')).toBeInTheDocument();
     });
   });
 
@@ -114,7 +114,7 @@ describe('Navbar Component', () => {
 
     render(<Navbar />);
 
-    const statusBtn = screen.getByText('Cluster Online');
+    const statusBtn = screen.getByText('Cluster');
     fireEvent.click(statusBtn);
 
     expect(screen.getByText('Cluster Info & Active Node Specifications')).toBeInTheDocument();
@@ -161,5 +161,40 @@ describe('Navbar Component', () => {
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith('Signed out successfully.');
+  });
+
+  it('renders and fetches docs based on role permissions', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (url.includes('/api/docs/student')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            title: 'Student Guide',
+            content: 'Student Guide Content'
+          })
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ status: 'online', clusters: [] })
+      });
+    });
+
+    render(<Navbar />);
+
+    const docsBtn = screen.getByText('Docs');
+    fireEvent.click(docsBtn);
+
+    expect(screen.getByText('Documentation & Guides')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Student Guide Content')).toBeInTheDocument();
+    });
   });
 });
