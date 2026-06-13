@@ -805,6 +805,402 @@ class TestRouteLevelLogic(unittest.TestCase):
         res = self.client.get('/api/docs/api-reference', headers=admin_header)
         self.assertEqual(res.status_code, 200)
 
+    def test_bulgarian_name_transliteration(self):
+        """Registering a competitor with Bulgarian/Cyrillic names should transliterate them properly to standard Latin before username base is calculated."""
+        payload = {
+            "name": "Иван",
+            "surname": "Петров",
+            "grade": "10",
+            "school": "Sofia High",
+            "city": "Sofia",
+            "challenge_id": self.challenge.id
+        }
+        res = self.client.post(
+            '/api/admin/register-competitor',
+            headers=self.get_auth_header(self.admin_token),
+            json=payload
+        )
+        self.assertEqual(res.status_code, 201)
+        data = json.loads(res.data)
+        username = data["generated_username"]
+        self.assertTrue(username.startswith("comp_iva_pet_"))
+
+    def test_csv_import_anonymity_support(self):
+        """Importing a CSV of competitors with anonymity settings (0/1 or true/false) should respect and persist it."""
+        csv_data = (
+            "name,surname,grade,school,city,is_anonymous\n"
+            "Ivan,Petrov,10,Sofia High,Sofia,1\n"
+            "Maria,Georgieva,11,Plovdiv High,Plovdiv,0\n"
+        )
+        import io
+        res = self.client.post(
+            f'/api/admin/import-competitors-csv?challenge_id={self.challenge.id}',
+            headers=self.get_auth_header(self.admin_token),
+            data={
+                'file': (io.BytesIO(csv_data.encode('utf-8')), 'competitors.csv')
+            }
+        )
+        self.assertEqual(res.status_code, 201)
+        data = json.loads(res.data)
+        self.assertEqual(len(data["competitors"]), 2)
+        
+        # Check that database matches the anonymity flag
+        ivan = User.query.filter_by(username=data["competitors"][0]["generated_username"]).first()
+        self.assertIsNotNone(ivan)
+        self.assertTrue(ivan.is_anonymous)
+        
+        maria = User.query.filter_by(username=data["competitors"][1]["generated_username"]).first()
+        self.assertIsNotNone(maria)
+        self.assertFalse(maria.is_anonymous)
+
+    def test_reset_user_password_routes(self):
+        """Test individual password reset endpoint controls."""
+        jury_user = User(
+            username="test_jury_pwd",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Oracle-pwd"
+        )
+        db.session.add(jury_user)
+        db.session.commit()
+        jury_token = generate_token(jury_user.id, jury_user.role)
+
+        # 1. Admin can reset password anytime
+        res = self.client.post(
+            f'/api/admin/users/{self.competitor.id}/reset-password',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertIn("password", data)
+
+        # 2. Jury can reset password before challenge starts
+        self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
+        db.session.commit()
+        res = self.client.post(
+            f'/api/admin/users/{self.competitor.id}/reset-password',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # 3. Jury cannot reset password after challenge starts
+        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        db.session.commit()
+        res = self.client.post(
+            f'/api/admin/users/{self.competitor.id}/reset-password',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_reset_all_challenge_passwords_routes(self):
+        """Test bulk password reset endpoint controls."""
+        jury_user = User(
+            username="test_jury_pwd2",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Oracle-pwd2"
+        )
+        db.session.add(jury_user)
+        db.session.commit()
+        jury_token = generate_token(jury_user.id, jury_user.role)
+
+        # 1. Admin can bulk reset anytime
+        res = self.client.post(
+            f'/api/admin/challenges/{self.challenge.id}/reset-all-passwords',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertIn("reset_accounts", data)
+        self.assertTrue(len(data["reset_accounts"]) > 0)
+
+        # 2. Jury can bulk reset before challenge starts
+        self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
+        db.session.commit()
+        res = self.client.post(
+            f'/api/admin/challenges/{self.challenge.id}/reset-all-passwords',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # 3. Jury cannot bulk reset after challenge starts
+        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        db.session.commit()
+        res = self.client.post(
+            f'/api/admin/challenges/{self.challenge.id}/reset-all-passwords',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_search_competitors_privacy_constraints(self):
+        """Test search privacy constraints for jury vs admin, before and after competition starts."""
+        # Create a jury user and token
+        jury_user = User(
+            username="test_jury_search",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Search-001"
+        )
+        db.session.add(jury_user)
+        db.session.commit()
+        jury_token = generate_token(jury_user.id, jury_user.role)
+
+        # 1. Before challenge starts:
+        # Challenge start_time set to future
+        self.challenge.start_time = datetime.utcnow() + timedelta(hours=2)
+        db.session.commit()
+
+        # Jury search by school "Sofia"
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=Sofia',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # Jury search by username "test_comp"
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=test_comp',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # Jury search by alias "Stellar"
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=Stellar',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # 2. After challenge starts:
+        # Challenge start_time set to past
+        self.challenge.start_time = datetime.utcnow() - timedelta(hours=2)
+        db.session.commit()
+
+        # Jury search by school "Sofia" - should not match the competitor
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=Sofia',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertFalse(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # Jury search by username "test_comp" - should not match
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=test_comp',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertFalse(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # Jury search by alias "Stellar" - SHOULD STILL MATCH (alias search supported everywhere)
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=Stellar',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(any(u["id"] == self.competitor.id for u in data["items"]))
+
+        # 3. Admin search after challenge starts:
+        # Admin search by school "Sofia" - should match (admin is allowed to search by this)
+        res = self.client.get(
+            '/api/admin/users?role=competitor&search=Sofia',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertTrue(any(u["id"] == self.competitor.id for u in data["items"]))
+
+    def test_competitor_anonymity_privacy_constraints(self):
+        """Test anonymity constraints for students requesting anonymity on the leaderboard."""
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(self.challenge.id)
+
+        # Create an anonymous competitor
+        anon_comp = User(
+            username="anon_student",
+            password_hash="pbkdf2:sha256:...",
+            role="competitor",
+            alias_id="Ghost-Rider-777",
+            challenge_id=self.challenge.id,
+            is_anonymous=True
+        )
+        anon_comp.set_demographics("John", "Doe", "11", "Varna High", "Varna")
+        db.session.add(anon_comp)
+        db.session.commit()
+
+        # Let's request the leaderboard as the other competitor (self.competitor)
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}/leaderboard',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        leaderboard = data["leaderboard"]
+        
+        # Find the entry for anon_comp
+        anon_entry = next(e for e in leaderboard if e["user"]["id"] == anon_comp.id)
+        # Should not reveal demographics because anon_comp has is_anonymous=True
+        self.assertNotIn("name", anon_entry["user"])
+        self.assertNotIn("school", anon_entry["user"])
+        self.assertNotIn("city", anon_entry["user"])
+
+        # Request leaderboard as admin
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}/leaderboard',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        leaderboard = data["leaderboard"]
+        
+        anon_entry_admin = next(e for e in leaderboard if e["user"]["id"] == anon_comp.id)
+        # Admin should see everything
+        self.assertEqual(anon_entry_admin["user"]["name"], "John")
+        self.assertEqual(anon_entry_admin["user"]["school"], "Varna High")
+        self.assertEqual(anon_entry_admin["user"]["city"], "Varna")
+
+    def test_manual_points_entry_and_leaderboard_ranking(self):
+        """Test manual points entry and that finalized leaderboard is sorted by manual points."""
+        # 1. Finalize the challenge first
+        self.challenge.scores_finalized = True
+        db.session.commit()
+
+        # Invalidate cache
+        from cache_utils import invalidate_leaderboard_cache
+        invalidate_leaderboard_cache(self.challenge.id)
+
+        # 2. Enter manual points as admin for self.competitor
+        payload = {
+            "user_id": self.competitor.id,
+            "points": {
+                str(self.task.id): 85
+            }
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/manual-points',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.get_json()["manual_points"][str(self.task.id)], 85)
+
+        # 3. Enter manual points as admin for another competitor
+        comp2 = User(
+            username="competitor_two",
+            email="comp2@example.com",
+            role="competitor",
+            password_hash="pbkdf2:sha256:placeholder",
+            challenge_id=self.challenge.id
+        )
+        comp2.set_demographics("Mary", "Jane", "11", "Sofia High", "Sofia")
+        db.session.add(comp2)
+        db.session.commit()
+
+        # Award 95 points to comp2
+        payload2 = {
+            "user_id": comp2.id,
+            "points": {
+                str(self.task.id): 95
+            }
+        }
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/manual-points',
+            data=json.dumps(payload2),
+            content_type='application/json',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # 4. Fetch finalized leaderboard and assert sorting: comp2 should be rank 1 (95 pts)
+        res = self.client.get(
+            f'/api/challenges/{self.challenge.id}/leaderboard',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        leaderboard = data["leaderboard"]
+        
+        self.assertEqual(leaderboard[0]["user"]["id"], comp2.id)
+        self.assertEqual(leaderboard[0]["total_points"], 95)
+        self.assertEqual(leaderboard[0]["rank"], 1)
+
+        self.assertEqual(leaderboard[1]["user"]["id"], self.competitor.id)
+        self.assertEqual(leaderboard[1]["total_points"], 85)
+        self.assertEqual(leaderboard[1]["rank"], 2)
+
+    def test_finalize_constraints_and_permissions(self):
+        # 1. Reset challenge finalized status
+        self.challenge.scores_finalized = False
+        db.session.commit()
+
+        # Generate a jury token (jury is allowed to finalize, but admin is not)
+        jury = User(
+            username="jury_member_test",
+            email="jury_test@example.com",
+            role="jury",
+            password_hash="pbkdf2:sha256:placeholder"
+        )
+        db.session.add(jury)
+        db.session.commit()
+        from routes.auth import generate_token
+        jury_token = generate_token(jury.id, "jury")
+
+        # 2. Try to finalize as admin (should return 403)
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/finalize',
+            data=json.dumps({
+                "reveal_public_scores": True,
+                "reveal_private_scores": True,
+                "reveal_points": True
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(self.admin_token)
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 3. Try to finalize as jury, but self.competitor has no points entered yet (should return 400)
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/finalize',
+            data=json.dumps({
+                "reveal_public_scores": True,
+                "reveal_private_scores": True,
+                "reveal_points": True
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("missing manual points", res.get_json()["error"])
+
+        # 4. Enter points for competitor
+        self.competitor.manual_points = {str(self.task.id): 90}
+        db.session.commit()
+
+        # 5. Finalize as jury (should succeed and return 200)
+        res = self.client.post(
+            f'/api/challenges/{self.challenge.id}/finalize',
+            data=json.dumps({
+                "reveal_public_scores": True,
+                "reveal_private_scores": True,
+                "reveal_points": True
+            }),
+            content_type='application/json',
+            headers=self.get_auth_header(jury_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(self.challenge.scores_finalized)
+
 if __name__ == '__main__':
     unittest.main()
+
 

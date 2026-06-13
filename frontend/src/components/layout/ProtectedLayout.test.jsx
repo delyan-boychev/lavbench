@@ -10,6 +10,7 @@ vi.mock('react-router-dom', () => ({
   Navigate: ({ to, replace }) => (
     <div data-testid="router-navigate" data-to={to} data-replace={replace ? 'true' : 'false'} />
   ),
+  useLocation: () => ({ pathname: '/mock-path' }),
 }));
 
 // Mock AuthContext hook

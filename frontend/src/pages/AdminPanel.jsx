@@ -5,9 +5,8 @@ import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
 import Pagination from '../components/ui/Pagination';
-import Prism from 'prismjs';
-import 'prismjs/components/prism-python';
-import 'prismjs/themes/prism-tomorrow.css';
+import CodeHighlight from '../components/ui/CodeHighlight';
+import ToggleField from '../components/ui/ToggleField';
 
 const CUSTOM_EVALUATOR_TEMPLATE = `import os
 import json
@@ -66,6 +65,7 @@ def run_evaluation():
 if __name__ == "__main__":
     run_evaluation()`;
 
+
 export default function AdminPanel() {
   const { token, currentUser } = useAuth();
   const { 
@@ -73,14 +73,13 @@ export default function AdminPanel() {
     selectedChallenge, 
     setSelectedChallengeById, 
     fetchChallenges, 
-    showToast 
+    showToast,
+    confirm
   } = useApp();
 
   const API_BASE = '/api';
 
-  const highlightedCode = React.useMemo(() => {
-    return Prism.highlight(CUSTOM_EVALUATOR_TEMPLATE, Prism.languages.python, 'python');
-  }, []);
+
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -88,6 +87,13 @@ export default function AdminPanel() {
   const formatDateTimeLocal = (dateStr) => {
     if (!dateStr) return '';
     return dateStr.substring(0, 16);
+  };
+
+  const isChallengeStarted = (challengeId) => {
+    if (!challengeId) return false;
+    const challenge = challenges.find(c => c.id.toString() === challengeId.toString());
+    if (!challenge || !challenge.start_time) return false;
+    return new Date() >= new Date(challenge.start_time);
   };
 
   const formatUptime = (seconds) => {
@@ -115,7 +121,8 @@ export default function AdminPanel() {
     gpu_required: true,
     start_time: '',
     end_time: '',
-    freeze_time: ''
+    freeze_time: '',
+    double_blind: true
   });
 
   // Edit Challenge State
@@ -158,9 +165,12 @@ export default function AdminPanel() {
     grade: '',
     school: '',
     city: '',
-    challenge_id: ''
+    challenge_id: '',
+    is_anonymous: false
   });
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
+  const [resetCredentials, setResetCredentials] = useState(null);
+  const [bulkResetCredentials, setBulkResetCredentials] = useState([]);
 
   // User Management State
   const [allUsers, setAllUsers] = useState([]);
@@ -175,7 +185,8 @@ export default function AdminPanel() {
     grade: '',
     school: '',
     city: '',
-    challenge_id: ''
+    challenge_id: '',
+    is_anonymous: false
   });
   const [generatedUserCredentials, setGeneratedUserCredentials] = useState(null);
 
@@ -190,7 +201,8 @@ export default function AdminPanel() {
     grade: '',
     school: '',
     city: '',
-    challenge_id: ''
+    challenge_id: '',
+    is_anonymous: false
   });
 
   // CSV Import State
@@ -361,7 +373,8 @@ export default function AdminPanel() {
           gpu_required: true,
           start_time: '',
           end_time: '',
-          freeze_time: ''
+          freeze_time: '',
+          double_blind: true
         });
         fetchChallenges();
         fetchPaginatedChallenges();
@@ -403,9 +416,11 @@ export default function AdminPanel() {
 
   // Handle Competition delete
   const handleDeleteChallenge = async (id, title) => {
-    if (!window.confirm(`Are you sure you want to permanently delete competition "${title}"? This deletes all associated tasks, submissions and pseudonyms.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete Competition",
+      message: `Are you sure you want to permanently delete competition "${title}"? This deletes all associated tasks, submissions and pseudonyms.`
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/challenges/${id}`, {
         method: 'DELETE',
@@ -426,7 +441,11 @@ export default function AdminPanel() {
 
   // Handle finalize scores
   const handleFinalize = async (id) => {
-    if (!window.confirm("Finalize scores? This reveals private scores and real names on the leaderboard.")) return;
+    const ok = await confirm({
+      title: "Finalize Scores",
+      message: "Finalize scores? This reveals private scores and real names on the leaderboard."
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/challenges/${id}/finalize`, {
         method: 'POST',
@@ -619,7 +638,11 @@ export default function AdminPanel() {
 
   // Delete Task
   const handleDeleteTask = async (taskId, title) => {
-    if (!window.confirm(`Permanently delete task "${title}"? This deletes all submissions.`)) return;
+    const ok = await confirm({
+      title: "Delete Task",
+      message: `Permanently delete task "${title}"? This deletes all submissions.`
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'DELETE',
@@ -663,7 +686,7 @@ export default function AdminPanel() {
           name: newCompetitor.name,
           surname: newCompetitor.surname
         });
-        setNewCompetitor({ name: '', surname: '', grade: '', school: '', city: '', challenge_id: '' });
+        setNewCompetitor({ name: '', surname: '', grade: '', school: '', city: '', challenge_id: '', is_anonymous: false });
         showToast('Competitor registered!');
         fetchCompetitors();
       } else {
@@ -723,7 +746,8 @@ export default function AdminPanel() {
           grade: '',
           school: '',
           city: '',
-          challenge_id: ''
+          challenge_id: '',
+          is_anonymous: false
         });
         fetchUsers();
       } else {
@@ -736,7 +760,11 @@ export default function AdminPanel() {
 
   // Delete User
   const handleDeleteUser = async (userId, username) => {
-    if (!window.confirm(`Permanently delete user "${username}"? All submissions are deleted.`)) return;
+    const ok = await confirm({
+      title: "Delete User",
+      message: `Permanently delete user "${username}"? All submissions are deleted.`
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
@@ -881,7 +909,8 @@ export default function AdminPanel() {
       grade: user.grade || '',
       school: user.school || '',
       city: user.city || '',
-      challenge_id: user.challenge_id ? user.challenge_id.toString() : ''
+      challenge_id: user.challenge_id ? user.challenge_id.toString() : '',
+      is_anonymous: user.is_anonymous || false
     });
   };
 
@@ -903,7 +932,8 @@ export default function AdminPanel() {
           grade: editUserForm.grade || null,
           school: editUserForm.school || null,
           city: editUserForm.city || null,
-          challenge_id: editUserForm.challenge_id === "" ? "" : parseInt(editUserForm.challenge_id)
+          challenge_id: editUserForm.challenge_id === "" ? "" : parseInt(editUserForm.challenge_id),
+          is_anonymous: editUserForm.is_anonymous
         })
       });
       const data = await res.json();
@@ -920,9 +950,90 @@ export default function AdminPanel() {
     }
   };
 
+  const handleResetUserPassword = async (userId, displayName) => {
+    const ok = await confirm({
+      title: "Reset Password",
+      message: `Are you sure you want to generate a new random password for competitor "${displayName}"?`
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Password reset successfully!');
+        setResetCredentials({ username: data.username, password: data.password });
+        setBulkResetCredentials([]);
+      } else {
+        showToast(data.error || 'Failed to reset password.', 'rose');
+      }
+    } catch {
+      showToast('Network error resetting password.', 'rose');
+    }
+  };
+
+  const handleBulkResetPasswords = async () => {
+    const activeChallenges = challenges.filter(c => currentUser.role === 'admin' || !isChallengeStarted(c.id));
+    if (activeChallenges.length === 0) {
+      showToast('No eligible competitions available to reset passwords.', 'rose');
+      return;
+    }
+    
+    const optionsStr = activeChallenges.map(c => `ID ${c.id}: ${c.title}`).join('\n');
+    const input = await confirm({
+      title: "Bulk Reset Passwords",
+      message: `Enter the Competition ID for which you want to reset ALL competitor passwords:\n\n${optionsStr}`,
+      isPrompt: true,
+      placeholder: "Competition ID"
+    });
+    if (input === null) return;
+    
+    const selectedId = input.trim();
+    const challenge = activeChallenges.find(c => c.id.toString() === selectedId);
+    if (!challenge) {
+      showToast('Invalid Competition ID selected.', 'rose');
+      return;
+    }
+    
+    const ok = await confirm({
+      title: "Confirm Bulk Reset",
+      message: `WARNING: This will generate new random passwords for ALL competitors in "${challenge.title}". The old passwords will stop working immediately. Proceed?`
+    });
+    if (!ok) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Successfully reset passwords for ${data.reset_accounts?.length} competitors!`);
+        setBulkResetCredentials(data.reset_accounts || []);
+        setResetCredentials(null);
+      } else {
+        showToast(data.error || 'Failed to reset passwords.', 'rose');
+      }
+    } catch {
+      showToast('Network error resetting passwords.', 'rose');
+    }
+  };
+
   const filteredUsers = allUsers;
   const fontFilteredCompetitors = competitorsList; // keep simple naming
   const filteredCompetitors = competitorsList;
+
+  const isManualRegisterDisabled = currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
+  const isCSVImportDisabled = currentUser.role === 'jury' && isChallengeStarted(csvChallengeId);
+  const isEditDisabled = currentUser.role === 'jury' && isChallengeStarted(editUserForm.challenge_id);
 
   // Render components
   return (
@@ -1069,15 +1180,19 @@ export default function AdminPanel() {
                       onChange={(e) => setEditingChallenge({ ...editingChallenge, freeze_time: e.target.value })} 
                     />
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <input 
-                      type="checkbox" 
+                  <div className="flex flex-col gap-3 mt-2.5">
+                    <ToggleField 
+                      label="Requires GPU Sandbox Execution"
                       id="edit-gpu"
-                      checked={editingChallenge.gpu_required} 
+                      checked={editingChallenge.gpu_required}
                       onChange={(e) => setEditingChallenge({ ...editingChallenge, gpu_required: e.target.checked })}
-                      className="accent-indigo-600 h-4 w-4"
                     />
-                    <label htmlFor="edit-gpu" className="text-xs font-semibold text-slate-300">Requires GPU Sandbox Execution</label>
+                    <ToggleField 
+                      label="Double-Blind Evaluation"
+                      id="edit-double-blind"
+                      checked={editingChallenge.double_blind !== false}
+                      onChange={(e) => setEditingChallenge({ ...editingChallenge, double_blind: e.target.checked })}
+                    />
                   </div>
                   <div className="flex gap-3 mt-4">
                     <Button type="submit" variant="primary">Save Changes</Button>
@@ -1114,7 +1229,7 @@ export default function AdminPanel() {
                           >
                             {c.is_archived ? "Restore" : "Archive"}
                           </Button>
-                          {c.scores_finalized ? (
+                          {c.scores_finalized && (
                             <>
                               <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">Finalized</span>
                               <Button variant="accent" onClick={() => handleDownloadScores(c.id, c.title)}>
@@ -1124,8 +1239,6 @@ export default function AdminPanel() {
                                 Download Submissions ZIP
                               </Button>
                             </>
-                          ) : (
-                            <Button variant="primary" onClick={() => handleFinalize(c.id)}>Finalize standings</Button>
                           )}
                           <Button variant="danger" onClick={() => handleDeleteChallenge(c.id, c.title)}>Delete</Button>
                         </div>
@@ -1223,14 +1336,12 @@ export default function AdminPanel() {
                     placeholder="300"
                   />
                   <div className="flex items-center gap-2 h-full pt-6">
-                    <input 
-                      type="checkbox" 
-                      id="task-gpu-req" 
-                      checked={taskForm.gpu_required} 
-                      onChange={(e) => setTaskForm({ ...taskForm, gpu_required: e.target.checked })} 
-                      className="accent-indigo-600 h-4 w-4 cursor-pointer"
+                    <ToggleField 
+                      label="Requires GPU Worker Node"
+                      id="task-gpu-req"
+                      checked={taskForm.gpu_required}
+                      onChange={(e) => setTaskForm({ ...taskForm, gpu_required: e.target.checked })}
                     />
-                    <label htmlFor="task-gpu-req" className="text-xs font-semibold text-slate-300 cursor-pointer">Requires GPU Worker Node</label>
                   </div>
                 </div>
               </div>
@@ -1269,26 +1380,18 @@ export default function AdminPanel() {
                 <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">D. AST Code Rule Engine</h3>
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-wrap gap-6">
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="rule-tag"
-                        checked={taskForm.require_submit_tag}
-                        onChange={(e) => setTaskForm({ ...taskForm, require_submit_tag: e.target.checked })}
-                        className="accent-indigo-600 h-4 w-4 cursor-pointer"
-                      />
-                      <label htmlFor="rule-tag" className="text-xs font-semibold text-slate-300 cursor-pointer">Require "# SUBMIT" comment block tag (Score 0 if missing)</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="rule-magic"
-                        checked={taskForm.ban_magic_commands}
-                        onChange={(e) => setTaskForm({ ...taskForm, ban_magic_commands: e.target.checked })}
-                        className="accent-indigo-600 h-4 w-4 cursor-pointer"
-                      />
-                      <label htmlFor="rule-magic" className="text-xs font-semibold text-slate-300 cursor-pointer">Ban Jupyter magic command symbols (!) or (%) (Score 0 if found)</label>
-                    </div>
+                    <ToggleField 
+                      label='Require "# SUBMIT" comment block tag (Score 0 if missing)'
+                      id="rule-tag"
+                      checked={taskForm.require_submit_tag}
+                      onChange={(e) => setTaskForm({ ...taskForm, require_submit_tag: e.target.checked })}
+                    />
+                    <ToggleField 
+                      label="Ban Jupyter magic command symbols (!) or (%) (Score 0 if found)"
+                      id="rule-magic"
+                      checked={taskForm.ban_magic_commands}
+                      onChange={(e) => setTaskForm({ ...taskForm, ban_magic_commands: e.target.checked })}
+                    />
                   </div>
                   <InputField 
                     label="Banned Libraries list (comma-separated, checked via AST imports)" 
@@ -1417,12 +1520,7 @@ export default function AdminPanel() {
                       <p>
                         When writing a custom evaluator, your script must import the student submission as <code>submission_runner</code>, evaluate it, and write the final metrics to <code>eval_results.json</code>.
                       </p>
-                      <pre className="p-3 bg-slate-950 border border-white/5 rounded-lg overflow-x-auto text-[11px] leading-relaxed select-all">
-                        <code 
-                          className="language-python" 
-                          dangerouslySetInnerHTML={{ __html: highlightedCode }} 
-                        />
-                      </pre>
+                      <CodeHighlight code={CUSTOM_EVALUATOR_TEMPLATE} />
                     </div>
                   </details>
                 </div>
@@ -1556,15 +1654,19 @@ export default function AdminPanel() {
                   onChange={(e) => setNewChallenge({ ...newChallenge, freeze_time: e.target.value })} 
                 />
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <input 
-                  type="checkbox" 
-                  id="create-gpu-req" 
+              <div className="flex flex-col gap-3 mt-2.5">
+                <ToggleField 
+                  label="Requires GPU Workers"
+                  id="create-gpu-req"
                   checked={newChallenge.gpu_required}
                   onChange={(e) => setNewChallenge({ ...newChallenge, gpu_required: e.target.checked })}
-                  className="accent-indigo-600 h-4 w-4 cursor-pointer"
                 />
-                <label htmlFor="create-gpu-req" className="text-xs font-semibold text-slate-300 cursor-pointer select-none">Requires GPU Workers</label>
+                <ToggleField 
+                  label="Double-Blind Evaluation"
+                  id="create-double-blind"
+                  checked={newChallenge.double_blind !== false}
+                  onChange={(e) => setNewChallenge({ ...newChallenge, double_blind: e.target.checked })}
+                />
               </div>
               <Button type="submit" variant="primary" className="w-fit mt-4">Create Competition</Button>
             </form>
@@ -1632,14 +1734,6 @@ export default function AdminPanel() {
                       placeholder="competitor@competition.ai"
                     />
 
-                    <InputField 
-                      label="New Password (leave blank to keep current)" 
-                      type="password"
-                      value={editUserForm.password} 
-                      onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })} 
-                      placeholder="••••••••"
-                    />
-
                     <SelectField 
                       label="Assign Competition" 
                       value={editUserForm.challenge_id} 
@@ -1651,8 +1745,22 @@ export default function AdminPanel() {
                       ]}
                     />
 
+                    <div className="mt-2.5">
+                      <ToggleField 
+                        label="Anonymous (Hide name/school/city from other students)"
+                        id="edit-is-anonymous"
+                        checked={editUserForm.is_anonymous}
+                        onChange={(e) => setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })}
+                      />
+                    </div>
+
+                    {isEditDisabled && (
+                      <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
+                        This competition has started. Jury members cannot modify competitors.
+                      </div>
+                    )}
                     <div className="flex gap-2.5 mt-2">
-                      <Button type="submit" variant="primary" className="flex-1">Save Changes</Button>
+                      <Button type="submit" variant="primary" className="flex-1" disabled={isEditDisabled}>Save Changes</Button>
                       <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>Cancel</Button>
                     </div>
                   </form>
@@ -1708,7 +1816,21 @@ export default function AdminPanel() {
                         ]}
                       />
 
-                      <Button type="submit" variant="primary" className="mt-2">Generate Credentials</Button>
+                      <div className="mt-2.5">
+                        <ToggleField 
+                          label="Anonymous (Hide name/school/city from other students)"
+                          id="register-is-anonymous"
+                          checked={newCompetitor.is_anonymous}
+                          onChange={(e) => setNewCompetitor({ ...newCompetitor, is_anonymous: e.target.checked })}
+                        />
+                      </div>
+
+                      {isManualRegisterDisabled && (
+                        <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
+                          This competition has started. Jury members cannot register new competitors.
+                        </div>
+                      )}
+                      <Button type="submit" variant="primary" className="mt-2" disabled={isManualRegisterDisabled}>Generate Credentials</Button>
                     </form>
 
                     {generatedCredentials && (
@@ -1752,7 +1874,12 @@ export default function AdminPanel() {
                         />
                       </div>
 
-                      <Button type="submit" variant="accent" disabled={csvImporting}>
+                      {isCSVImportDisabled && (
+                        <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
+                          This competition has started. Jury members cannot import competitors.
+                        </div>
+                      )}
+                      <Button type="submit" variant="accent" disabled={csvImporting || isCSVImportDisabled}>
                         {csvImporting ? "Importing Bulk Data..." : "Upload & Parse CSV"}
                       </Button>
                     </form>
@@ -1794,13 +1921,77 @@ export default function AdminPanel() {
                   <h2 className="text-lg font-bold text-white">Registered Competitors</h2>
                   <p className="text-slate-400 text-xs">Pseudonym aliases mapped to real user details for unmasking checks.</p>
                 </div>
-                <InputField 
-                  placeholder="Search competitor..." 
-                  value={competitorSearch} 
-                  onChange={(e) => setCompetitorSearch(e.target.value)} 
-                  className="max-w-xs w-full"
-                />
+                <div className="flex items-center gap-3.5 flex-wrap">
+                  {(currentUser.role === 'admin' || challenges.some(c => !isChallengeStarted(c.id))) && (
+                    <Button 
+                      variant="secondary" 
+                      size="sm"
+                      onClick={handleBulkResetPasswords}
+                    >
+                      Reset All Passwords in Challenge
+                    </Button>
+                  )}
+                  <InputField 
+                    placeholder={currentUser.role === 'jury' && selectedChallenge && isChallengeStarted(selectedChallenge.id) ? "Search by alias only..." : "Search competitor..."} 
+                    value={competitorSearch} 
+                    onChange={(e) => setCompetitorSearch(e.target.value)} 
+                    className="max-w-xs w-full"
+                  />
+                </div>
               </div>
+
+              {resetCredentials && (
+                <div className="mb-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5 animate-fadein">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-sm text-indigo-300 font-sans">Password Reset Succeeded!</h3>
+                    <button 
+                      onClick={() => setResetCredentials(null)} 
+                      className="text-xs font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
+                    <div><strong>Account Username:</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{resetCredentials.username}</code></div>
+                    <div><strong>New Generated Password:</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{resetCredentials.password}</code></div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-medium">Please copy these credentials and share them with the student securely.</p>
+                  </div>
+                </div>
+              )}
+
+              {bulkResetCredentials.length > 0 && (
+                <div className="mb-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3 animate-fadein">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-sm text-emerald-400 font-sans">Generated Passwords for {bulkResetCredentials.length} Competitors</h3>
+                    <button 
+                      onClick={() => setBulkResetCredentials([])} 
+                      className="text-xs font-bold text-emerald-400 hover:underline bg-transparent border-0 cursor-pointer"
+                    >
+                      Clear List
+                    </button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto pr-1">
+                    <table className="w-full text-left border-collapse text-[10px]">
+                      <thead>
+                        <tr className="border-b border-white/5 text-slate-400 font-semibold">
+                          <th className="py-1.5">Competitor</th>
+                          <th className="py-1.5">Username</th>
+                          <th className="py-1.5">New Password</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkResetCredentials.map((item, idx) => (
+                          <tr key={idx} className="border-b border-white/5 text-slate-300">
+                            <td className="py-1.5 font-semibold">{item.name} {item.surname}</td>
+                            <td className="py-1.5 font-mono">{item.username}</td>
+                            <td className="py-1.5 font-mono font-bold text-indigo-400">{item.password}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {filteredCompetitors.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs italic">
@@ -1816,24 +2007,43 @@ export default function AdminPanel() {
                         <th>School / Grade</th>
                         <th>City</th>
                         <th>System Username</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
+                        <th className="text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredCompetitors.map(comp => (
                         <tr key={comp.id}>
                           <td className="font-mono font-semibold text-indigo-400">{comp.alias_id}</td>
-                          <td>{comp.name} {comp.surname}</td>
-                          <td>{comp.school || "—"}{comp.grade ? ` (Grade ${comp.grade})` : ""}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <span>{comp.name ? `${comp.name} ${comp.surname || ''}` : <span className="text-slate-500 italic">[Double-Blind]</span>}</span>
+                              {comp.is_anonymous && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 uppercase tracking-wider" title="Requested anonymity from other students">Anon</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>{comp.school ? `${comp.school}${comp.grade ? ` (Grade ${comp.grade})` : ""}` : "—"}</td>
                           <td>{comp.city || "—"}</td>
-                          <td className="font-mono text-slate-400">{comp.username}</td>
+                          <td className="font-mono text-slate-400">{comp.username || <span className="text-slate-500 italic">[Hidden]</span>}</td>
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              onClick={() => initEditUser(comp)}
-                              className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-                            >
-                              Edit
-                            </button>
+                            <div className="flex justify-end gap-3.5">
+                              {(currentUser.role === 'admin' || !isChallengeStarted(comp.challenge_id)) && (
+                                <>
+                                  <button
+                                    onClick={() => initEditUser(comp)}
+                                    className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleResetUserPassword(comp.id, comp.name ? `${comp.name} ${comp.surname}` : comp.alias_id)}
+                                    className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
+                                  >
+                                    Reset PW
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1874,10 +2084,10 @@ export default function AdminPanel() {
         {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
           <div className="flex flex-col gap-8 animate-fadein">
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="flex flex-col gap-8">
               
               {/* Form Register Admin/Jury */}
-              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl lg:col-span-1">
+              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl w-full">
                 <h2 className="text-lg font-bold text-white mb-2">Register User Account</h2>
                 <p className="text-slate-400 text-xs mb-6">Manually register a Jury/Judge or Competitor account.</p>
                 
@@ -1895,13 +2105,6 @@ export default function AdminPanel() {
                     value={newUser.email} 
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} 
                     placeholder="sarah@competition.ai"
-                  />
-                  <InputField 
-                    label="Password (optional, auto-generated if empty)" 
-                    type="password"
-                    value={newUser.password} 
-                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} 
-                    placeholder="••••••••"
                   />
                   
                   <div className="grid grid-cols-2 gap-4">
@@ -1947,6 +2150,15 @@ export default function AdminPanel() {
                           ...challenges.map(c => ({ value: c.id.toString(), label: c.title }))
                         ]}
                       />
+
+                      <div className="mt-2.5">
+                        <ToggleField 
+                          label="Anonymous (Hide name/school/city from other students)"
+                          id="new-user-is-anonymous"
+                          checked={newUser.is_anonymous}
+                          onChange={(e) => setNewUser({ ...newUser, is_anonymous: e.target.checked })}
+                        />
+                      </div>
                     </>
                   )}
 
@@ -1966,7 +2178,7 @@ export default function AdminPanel() {
               </div>
 
               {/* User accounts list */}
-              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl lg:col-span-2">
+              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl w-full">
                 <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
                   <div>
                     <h2 className="text-lg font-bold text-white">System User Accounts</h2>
@@ -1993,14 +2205,21 @@ export default function AdminPanel() {
                           <th>Real Name</th>
                           <th>Role</th>
                           <th>Email Address</th>
-                          <th style={{ textAlign: 'right' }}>Actions</th>
+                          <th className="text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredUsers.map(user => (
                           <tr key={user.id}>
                             <td className="font-mono font-bold text-slate-200">{user.username}</td>
-                            <td>{user.name} {user.surname}</td>
+                            <td>
+                              <div className="flex items-center gap-2">
+                                <span>{user.name} {user.surname}</span>
+                                {user.is_anonymous && (
+                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 uppercase tracking-wider" title="Requested anonymity from other students">Anon</span>
+                                )}
+                              </div>
+                            </td>
                             <td>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${user.role === 'admin' ? 'border-rose-500/30 bg-rose-500/10 text-rose-400' : user.role === 'jury' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-blue-500/30 bg-blue-500/10 text-blue-400'}`}>
                                 {user.role.toUpperCase()}

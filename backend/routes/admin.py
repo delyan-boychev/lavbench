@@ -18,10 +18,23 @@ from auth_utils import role_required
 
 admin_bp = Blueprint('admin', __name__)
 
-# --- HELPERS FOR USER CREATION ---
+def transliterate_bulgarian(text):
+    if not text:
+        return ""
+    mapping = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ж': 'zh',
+        'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n',
+        'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f',
+        'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sht', 'ъ': 'a', 'ь': 'y',
+        'ю': 'yu', 'я': 'ya'
+    }
+    return "".join(mapping.get(c, c) for c in text.lower())
+
 def generate_unique_username(name, surname):
-    norm_name = re.sub(r'[^a-zA-Z0-9]', '', (name or '').lower())
-    norm_surname = re.sub(r'[^a-zA-Z0-9]', '', (surname or '').lower())
+    trans_name = transliterate_bulgarian(name)
+    trans_surname = transliterate_bulgarian(surname)
+    norm_name = re.sub(r'[^a-zA-Z0-9]', '', trans_name)
+    norm_surname = re.sub(r'[^a-zA-Z0-9]', '', trans_surname)
     
     base = f"comp_{norm_name[:3]}_{norm_surname[:3]}"
     if len(base) < 7:
@@ -57,6 +70,11 @@ def register_competitor():
     challenge = Challenge.query.get(challenge_id)
     if not challenge:
         return jsonify({"error": "Invalid challenge_id."}), 400
+        
+    # Check if the competition has started
+    if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+        if request.user["role"] != 'admin':
+            return jsonify({"error": "Jury members cannot register competitors once the competition has started."}), 403
     
     if not name or not surname:
         return jsonify({"error": "Name and Surname are required."}), 400
@@ -101,16 +119,55 @@ def get_users():
         query = query.filter_by(role=role_filter)
     if challenge_id_filter is not None:
         query = query.filter_by(challenge_id=challenge_id_filter)
-    if search_term:
-        term = f"%{search_term.lower()}%"
-        query = query.filter((User.username.ilike(term)) | (User.email.ilike(term)))
         
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    # Fetch all challenges to cache started status
+    challenges = Challenge.query.all()
+    started_challenge_ids = {
+        c.id for c in challenges 
+        if c.start_time and datetime.utcnow() >= c.start_time
+    }
+        
+    all_items = query.all()
+    if search_term:
+        term = search_term.lower()
+        user_role = request.user["role"]
+        filtered_items = []
+        for u in all_items:
+            comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
+            alias_match = term in (u.alias_id or "").lower()
+            
+            if user_role == 'jury' and comp_started:
+                match = alias_match
+            else:
+                dec_name = decrypt_field(u.name) or ""
+                dec_surname = decrypt_field(u.surname) or ""
+                full_name = f"{dec_name} {dec_surname}".lower()
+                dec_school = decrypt_field(u.school) or ""
+                dec_city = decrypt_field(u.city) or ""
+                
+                match = (alias_match or
+                         term in (u.username or "").lower() or
+                         term in (u.email or "").lower() or
+                         term in dec_name.lower() or
+                         term in dec_surname.lower() or
+                         term in full_name or
+                         term in dec_school.lower() or
+                         term in dec_city.lower())
+                         
+            if match:
+                filtered_items.append(u)
+        all_items = filtered_items
+        
+    total = len(all_items)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_items = all_items[start:end]
+    
     return jsonify({
-        "items": [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
-        "total": pagination.total,
-        "page": pagination.page,
-        "pages": pagination.pages
+        "items": [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
+        "total": total,
+        "page": page,
+        "pages": (total + per_page - 1) // per_page if total > 0 else 1
     })
 
 
@@ -163,6 +220,10 @@ def register_user():
         challenge = Challenge.query.get(challenge_id)
         if not challenge:
             return jsonify({"error": "Invalid challenge_id."}), 400
+        # Check if the competition has started
+        if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+            if request.user["role"] != 'admin':
+                return jsonify({"error": "Jury members cannot register competitors once the competition has started."}), 403
             
     is_plain = False
     if not password:
@@ -181,6 +242,7 @@ def register_user():
     grade = data.get("grade")
     school = data.get("school")
     city = data.get("city")
+    is_anon = bool(data.get("is_anonymous", False))
     
     client_hash = hashlib.sha256(password.encode()).hexdigest() if is_plain else password
     user = User(
@@ -189,7 +251,8 @@ def register_user():
         password_hash=generate_password_hash(client_hash, method='pbkdf2:sha256'),
         role=role,
         alias_id=generate_pseudonym(),
-        challenge_id=challenge_id if role == 'competitor' else None
+        challenge_id=challenge_id if role == 'competitor' else None,
+        is_anonymous=is_anon
     )
     user.set_demographics(name, surname, grade, school, city)
     db.session.add(user)
@@ -213,6 +276,11 @@ def import_competitors_csv():
     challenge = Challenge.query.get(challenge_id)
     if not challenge:
         return jsonify({"error": "Invalid challenge_id."}), 400
+        
+    # Check if the competition has started
+    if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+        if request.user["role"] != 'admin':
+            return jsonify({"error": "Jury members cannot import competitors once the competition has started."}), 403
         
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded."}), 400
@@ -246,12 +314,18 @@ def import_competitors_csv():
             password = generate_random_password(8)
             
             client_hash = hashlib.sha256(password.encode()).hexdigest()
+            
+            # Anonymity preference
+            is_anon_str = (row.get("is_anonymous") or row.get("anonymous") or "").strip().lower()
+            is_anon = is_anon_str in ("1", "true", "yes")
+
             user = User(
                 username=username,
                 password_hash=generate_password_hash(client_hash, method='pbkdf2:sha256'),
                 role='competitor',
                 alias_id=generate_pseudonym(),
-                challenge_id=int(challenge_id)
+                challenge_id=int(challenge_id),
+                is_anonymous=is_anon
             )
             user.set_demographics(name, surname, grade, school, city)
             db.session.add(user)
@@ -261,6 +335,7 @@ def import_competitors_csv():
                 "grade": grade,
                 "school": school,
                 "city": city,
+                "is_anonymous": is_anon,
                 "generated_username": username,
                 "generated_password": password,
                 "alias_id": user.alias_id
@@ -344,6 +419,10 @@ def update_user(user_id):
     username = data.get("username")
     challenge_id = data.get("challenge_id")
     password = data.get("password")
+    is_anonymous = data.get("is_anonymous")
+    
+    if is_anonymous is not None:
+        user.is_anonymous = bool(is_anonymous)
     
     # Check new challenge start time if jury is assigning
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
@@ -388,6 +467,64 @@ def update_user(user_id):
     return jsonify({
         "message": "User updated successfully.",
         "user": user.to_dict(view_role=request.user["role"])
+    })
+
+
+@admin_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
+@role_required(['admin', 'jury'])
+def reset_user_password(user_id):
+    user = User.query.get_or_404(user_id)
+    # Check if competition has started and requester is jury
+    if request.user["role"] == 'jury':
+        if user.challenge_id:
+            challenge = Challenge.query.get(user.challenge_id)
+            if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
+                return jsonify({"error": "Cannot reset password: The assigned competition has already started."}), 403
+
+    new_password = generate_random_password(8)
+    client_hash = hashlib.sha256(new_password.encode()).hexdigest()
+    user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
+    db.session.commit()
+
+    return jsonify({
+        "message": f"Password reset successfully for {user.username}.",
+        "username": user.username,
+        "password": new_password
+    })
+
+
+@admin_bp.route('/challenges/<int:challenge_id>/reset-all-passwords', methods=['POST'])
+@role_required(['admin', 'jury'])
+def reset_all_challenge_passwords(challenge_id):
+    challenge = Challenge.query.get_or_404(challenge_id)
+    # Check if competition has started and requester is jury
+    if request.user["role"] == 'jury':
+        if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+            return jsonify({"error": "Cannot reset passwords: The competition has already started."}), 403
+
+    competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+
+    results = []
+    for user in competitors:
+        new_password = generate_random_password(8)
+        client_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
+
+        # Decrypt name/surname for output
+        dec_name = decrypt_field(user.name)
+        dec_surname = decrypt_field(user.surname)
+
+        results.append({
+            "username": user.username,
+            "name": dec_name or "",
+            "surname": dec_surname or "",
+            "password": new_password
+        })
+
+    db.session.commit()
+    return jsonify({
+        "message": f"Reset passwords for {len(competitors)} competitors.",
+        "reset_accounts": results
     })
 
 
@@ -557,11 +694,17 @@ def download_submissions_zip(challenge_id):
                         
                     ipynb_cells = []
                     for c in cells_data:
-                        source_lines = c.get("source", "")
+                        if isinstance(c, dict):
+                            source_lines = c.get("source", "")
+                            cell_type = c.get("type", "code") or c.get("cell_type", "code")
+                        else:
+                            source_lines = str(c)
+                            cell_type = "code"
+                            
                         if isinstance(source_lines, str):
                             source_lines = [line + "\n" for line in source_lines.splitlines()]
                         ipynb_cells.append({
-                            "cell_type": c.get("type", "code"),
+                            "cell_type": cell_type,
                             "execution_count": None,
                             "metadata": {},
                             "outputs": [],

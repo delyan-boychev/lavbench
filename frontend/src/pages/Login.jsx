@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
+import ToggleField from '../components/ui/ToggleField';
 
 export default function Login() {
   const { token, currentUser, login, authError, setAuthError } = useAuth();
@@ -57,10 +58,9 @@ export default function Login() {
         )}
 
         <form onSubmit={handleAuth} className="flex flex-col gap-4">
-          <div className="flex items-center gap-2.5 mb-2">
-            <input 
-              type="checkbox" 
-              id="admin-login-check" 
+          <div className="mb-2.5">
+            <ToggleField
+              id="admin-login-check"
               checked={isAdminLogin}
               onChange={(e) => {
                 setIsAdminLogin(e.target.checked);
@@ -68,11 +68,8 @@ export default function Login() {
                 setAuthPassword('');
                 setAuthError('');
               }}
-              className="accent-indigo-600 h-4 w-4 cursor-pointer"
+              label="Sign In as Administrator (Requires Master Key)"
             />
-            <label htmlFor="admin-login-check" className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
-              Sign In as Administrator (Requires Master Key)
-            </label>
           </div>
 
           <InputField

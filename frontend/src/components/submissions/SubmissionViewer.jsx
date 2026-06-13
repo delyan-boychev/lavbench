@@ -1,5 +1,8 @@
 import React from 'react';
 import Badge from '../ui/Badge';
+import CodeHighlight from '../ui/CodeHighlight';
+import EmptyState from '../ui/EmptyState';
+import ToggleField from '../ui/ToggleField';
 
 export default function SubmissionViewer({ 
   submission, 
@@ -9,12 +12,15 @@ export default function SubmissionViewer({
 }) {
   if (!submission) {
     return (
-      <div className="surface empty-state min-h-[300px]">
-        <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-          <path strokeLinecap="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-        </svg>
-        <p>Select a submission to view details.</p>
-      </div>
+      <EmptyState
+        minHeight={300}
+        message="Select a submission to view details."
+        icon={
+          <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
+            <path strokeLinecap="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
+        }
+      />
     );
   }
 
@@ -81,21 +87,14 @@ export default function SubmissionViewer({
 
         {/* Final Selection Selector for Competitor */}
         {isCompetitor && submission.status === 'completed' && (
-          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg flex items-center gap-2">
-            <input 
-              type="checkbox" 
+          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
+            <ToggleField
               id={`final-check-${submission.id}`}
-              checked={submission.is_final_selection} 
+              checked={submission.is_final_selection}
               disabled={selectingFinal || submission.is_final_selection}
               onChange={() => onSelectFinal && onSelectFinal(submission.id)}
-              className="accent-indigo-500 w-4 h-4 rounded cursor-pointer disabled:cursor-default"
+              label={submission.is_final_selection ? "This is your selected final submission for this task." : "Select as final submission (enforces anti-overfitting rules)."}
             />
-            <label 
-              htmlFor={`final-check-${submission.id}`}
-              className="text-xs font-semibold text-slate-200 cursor-pointer disabled:cursor-default"
-            >
-              {submission.is_final_selection ? "This is your selected final submission for this task." : "Select as final submission (enforces anti-overfitting rules)."}
-            </label>
           </div>
         )}
 
@@ -155,9 +154,12 @@ export default function SubmissionViewer({
                 <div className="text-[10px] text-slate-500 font-mono mb-1">
                   Cell [{cell.id ?? idx}] — {cell.type || 'code'}
                 </div>
-                <pre className="code-panel max-h-[200px] text-xs text-slate-200">
-                  {cell.source || ''}
-                </pre>
+                <CodeHighlight 
+                  code={cell.source || ''} 
+                  language={cell.type === 'code' ? 'python' : 'markdown'} 
+                  wrap={true} 
+                  maxHeight="200px" 
+                />
               </div>
             ))}
           </div>

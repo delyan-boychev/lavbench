@@ -1,14 +1,18 @@
 import React from 'react';
+import EmptyState from '../ui/EmptyState';
 
 export default function TaskSidebar({ tasks, selectedTask, onSelect }) {
   if (!tasks || tasks.length === 0) {
     return (
-      <div className="surface empty-state" style={{ minHeight: 120 }}>
-        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-          <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-        <p>No tasks published yet.</p>
-      </div>
+      <EmptyState 
+        minHeight={120} 
+        message="No tasks published yet."
+        icon={
+          <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        }
+      />
     );
   }
 

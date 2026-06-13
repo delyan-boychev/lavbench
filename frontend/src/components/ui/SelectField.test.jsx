@@ -18,10 +18,9 @@ describe('SelectField Component', () => {
         onChange={() => {}}
       />
     );
-    expect(screen.getByLabelText('Select Option')).toBeInTheDocument();
-    expect(screen.getByRole('combobox')).toHaveValue('option1');
+    expect(screen.getByText('Select Option')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeInTheDocument();
     expect(screen.getByText('Option 1')).toBeInTheDocument();
-    expect(screen.getByText('Option 2')).toBeInTheDocument();
   });
 
   it('renders asterisk when required is true', () => {
@@ -33,14 +32,19 @@ describe('SelectField Component', () => {
     const handleChange = vi.fn();
     render(<SelectField label="Choose" options={options} value="option1" onChange={handleChange} />);
     
-    const select = screen.getByLabelText('Choose');
-    fireEvent.change(select, { target: { value: 'option2' } });
+    // Click button to open dropdown
+    const btn = screen.getByRole('button');
+    fireEvent.click(btn);
     
-    expect(handleChange).toHaveBeenCalledTimes(1);
+    // Click Option 2 in the dropdown menu
+    const option2Btn = screen.getByText('Option 2');
+    fireEvent.click(option2Btn);
+    
+    expect(handleChange).toHaveBeenCalledWith('option2');
   });
 
   it('respects the disabled state', () => {
     render(<SelectField label="Disabled Select" options={options} disabled={true} onChange={() => {}} />);
-    expect(screen.getByLabelText('Disabled Select')).toBeDisabled();
+    expect(screen.getByRole('button')).toBeDisabled();
   });
 });

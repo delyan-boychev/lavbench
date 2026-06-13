@@ -106,6 +106,11 @@ def create_challenge():
     ram_limit_mb = int(data.get("ram_limit_mb", 8192))
     time_limit_sec = int(data.get("time_limit_sec", 300))
     gpu_required = bool(data.get("gpu_required", True))
+    double_blind = data.get("double_blind")
+    if double_blind is None:
+        double_blind = True
+    else:
+        double_blind = bool(double_blind)
     
     start_time = parse_datetime(data.get("start_time"))
     end_time = parse_datetime(data.get("end_time"))
@@ -123,7 +128,8 @@ def create_challenge():
         gpu_required=gpu_required,
         start_time=start_time,
         end_time=end_time,
-        freeze_time=freeze_time
+        freeze_time=freeze_time,
+        double_blind=double_blind
     )
     db.session.add(challenge)
     db.session.commit()
@@ -166,6 +172,8 @@ def update_challenge(challenge_id):
         challenge.end_time = parse_datetime(data.get("end_time"))
     if "freeze_time" in data:
         challenge.freeze_time = parse_datetime(data.get("freeze_time"))
+    if "double_blind" in data:
+        challenge.double_blind = bool(data.get("double_blind"))
         
     db.session.commit()
     
@@ -196,9 +204,39 @@ def delete_challenge(challenge_id):
 
 
 @challenges_bp.route('/<int:challenge_id>/finalize', methods=['POST'])
-@role_required(['admin', 'jury'])
+@role_required(['jury'])
 def finalize_challenge(challenge_id):
     challenge = Challenge.query.get_or_404(challenge_id)
+    
+    # Check if manual points are entered for all competitors for all tasks
+    competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+    tasks = challenge.tasks
+    
+    for comp in competitors:
+        manual_points_dict = {}
+        if comp.manual_points:
+            if isinstance(comp.manual_points, dict):
+                manual_points_dict = comp.manual_points
+            elif isinstance(comp.manual_points, str):
+                try:
+                    import json
+                    manual_points_dict = json.loads(comp.manual_points)
+                except Exception:
+                    manual_points_dict = {}
+        
+        for task in tasks:
+            pts = manual_points_dict.get(str(task.id))
+            if pts is None:
+                return jsonify({
+                    "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id})."
+                }), 400
+                
+    # Read reveal options
+    data = request.get_json() or {}
+    challenge.reveal_public_scores = bool(data.get("reveal_public_scores", True))
+    challenge.reveal_private_scores = bool(data.get("reveal_private_scores", True))
+    challenge.reveal_points = bool(data.get("reveal_points", True))
+    
     challenge.scores_finalized = True
     db.session.commit()
     

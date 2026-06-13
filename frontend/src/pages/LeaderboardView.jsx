@@ -1,21 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../AuthContext';
-import TaskService from '../services/TaskService';
+import ChallengeService from '../services/ChallengeService';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
+import EmptyState from '../components/ui/EmptyState';
 
 export default function LeaderboardView() {
   const { challengeId } = useParams();
-  const { token } = useAuth();
   const { 
     selectedChallenge, 
-    setSelectedChallengeById, 
-    selectedTask, 
-    setSelectedTask 
+    setSelectedChallengeById 
   } = useApp();
 
   const [leaderboardData, setLeaderboardData] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -24,106 +22,44 @@ export default function LeaderboardView() {
     }
   }, [challengeId, setSelectedChallengeById]);
 
-  // Set default selected task if none is selected and tasks are available
-  useEffect(() => {
-    if (selectedChallenge?.tasks?.length > 0 && !selectedTask) {
-      setSelectedTask(selectedChallenge.tasks[0]);
-    }
-  }, [selectedChallenge, selectedTask, setSelectedTask]);
-
-  // Stream leaderboard data via Server-Sent Events (SSE)
-  useEffect(() => {
-    if (!selectedTask) {
-      setLeaderboardData([]);
-      return;
-    }
-
-    setLoading(true);
-
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-    const sseUrl = `/api/tasks/${selectedTask.id}/leaderboard/live${tokenQuery}`;
-    const eventSource = new EventSource(sseUrl);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data && data.leaderboard) {
-          setLeaderboardData(data.leaderboard);
-        }
-        setLoading(false);
-      } catch (err) {
-        console.error("Failed to parse leaderboard SSE data:", err);
+  const loadLeaderboard = async (showLoading = true) => {
+    if (!challengeId) return;
+    if (showLoading) setLoading(true);
+    try {
+      const res = await ChallengeService.getLeaderboard(challengeId);
+      if (res.ok) {
+        setLeaderboardData(res.data.leaderboard || []);
+        setTasks(res.data.tasks || []);
       }
-    };
+    } catch (err) {
+      console.error("Failed to load challenge leaderboard:", err);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
 
-    eventSource.onerror = (err) => {
-      console.error("Leaderboard SSE error, attempting HTTP fallback:", err);
-      eventSource.close();
+  useEffect(() => {
+    loadLeaderboard(true);
 
-      const loadDataFallback = async () => {
-        try {
-          const res = await TaskService.getLeaderboard(selectedTask.id);
-          if (res.ok) {
-            setLeaderboardData(res.data.leaderboard || []);
-          }
-        } catch (fetchErr) {
-          console.error("Fallback leaderboard fetch failed:", fetchErr);
-        } finally {
-          setLoading(false);
-        }
-      };
+    const interval = setInterval(() => {
+      loadLeaderboard(false);
+    }, 15000);
 
-      loadDataFallback();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [selectedTask, token]);
-
+    return () => clearInterval(interval);
+  }, [challengeId]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
       {selectedChallenge ? (
-        <>
-          {/* Task selector if there are multiple tasks */}
-          {selectedChallenge.tasks?.length > 1 && (
-            <div className="surface" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Select Task:
-              </span>
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-                {selectedChallenge.tasks.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setSelectedTask(t)}
-                    className={`nav-tab ${selectedTask?.id === t.id ? 'active' : ''}`}
-                    style={{ padding: '4px 12px', fontSize: '0.75rem' }}
-                  >
-                    {t.title}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {selectedTask ? (
-            <LeaderboardTable 
-              data={leaderboardData} 
-              challenge={selectedChallenge} 
-              loading={loading}
-              onFinalize={() => {}} // Handler is inside LeaderboardTable
-            />
-          ) : (
-            <div className="surface empty-state" style={{ minHeight: 200 }}>
-              <p>Please select a task to view the leaderboard.</p>
-            </div>
-          )}
-        </>
+        <LeaderboardTable 
+          data={leaderboardData} 
+          tasks={tasks}
+          challenge={selectedChallenge} 
+          loading={loading}
+          onRefresh={() => loadLeaderboard(true)}
+        />
       ) : (
-        <div className="surface empty-state" style={{ minHeight: 200 }}>
-          <p>No competition selected.</p>
-        </div>
+        <EmptyState message="No competition selected." minHeight={200} />
       )}
     </div>
   );

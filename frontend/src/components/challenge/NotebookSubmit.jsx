@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import ChallengeService from '../../services/ChallengeService';
 import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
+import CodeHighlight from '../ui/CodeHighlight';
 
 export default function NotebookSubmit({ task, challenge }) {
   const { currentUser, token } = useAuth();
@@ -11,6 +12,7 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState([]);
+  const [collapsedCellIds, setCollapsedCellIds] = useState([]);
   const [fileName, setFileName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -60,13 +62,27 @@ export default function NotebookSubmit({ task, challenge }) {
     }
     setUploading(true);
     setSelectedCellIds([]);
+    setCollapsedCellIds([]);
     setCells([]);
     try {
       const res = await ChallengeService.parseNotebook(challenge.id, file);
       if (res.ok) {
-        setCells(res.data.cells || []);
+        const parsedCells = res.data.cells || [];
+        setCells(parsedCells);
         setFileName(res.data.filename);
-        showToast(`Parsed ${res.data.cells?.length || 0} cells from "${res.data.filename}".`);
+        
+        // Auto-select cells containing "# SUBMIT" tag
+        const submitTagRegex = /#\s*SUBMIT/i;
+        const autoSelectedIds = parsedCells
+          .filter(c => c.type === 'code' && submitTagRegex.test(c.source || ''))
+          .map(c => c.id);
+        
+        if (autoSelectedIds.length > 0) {
+          setSelectedCellIds(autoSelectedIds);
+          showToast(`Parsed ${parsedCells.length} cells. Auto-selected ${autoSelectedIds.length} cell(s) with "# SUBMIT".`);
+        } else {
+          showToast(`Parsed ${parsedCells.length} cells from "${res.data.filename}".`);
+        }
       } else {
         showToast(res.data?.error || 'Failed to parse notebook.', 'error');
       }
@@ -79,6 +95,12 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const toggleCell = (id) => {
     setSelectedCellIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleCollapse = (id) => {
+    setCollapsedCellIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   };
@@ -96,6 +118,7 @@ export default function NotebookSubmit({ task, challenge }) {
         showToast('Submission queued for evaluation!');
         setCells([]);
         setSelectedCellIds([]);
+        setCollapsedCellIds([]);
         setFileName('');
       } else {
         showToast(res.data?.error || 'Submission failed.', 'error');
@@ -164,10 +187,11 @@ export default function NotebookSubmit({ task, challenge }) {
               Select all code
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 500, overflowY: 'auto' }}>
             {cells.map((cell, idx) => {
               const isCode = cell.type === 'code';
               const isSelected = selectedCellIds.includes(cell.id);
+              const isCollapsed = collapsedCellIds.includes(cell.id);
               return (
                 <div
                   key={cell.id}
@@ -183,16 +207,27 @@ export default function NotebookSubmit({ task, challenge }) {
                     transition: 'all 0.12s ease',
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => isCode && toggleCell(cell.id)}
-                    disabled={!isCode}
-                    style={{ marginTop: 2, accentColor: 'var(--accent)', flexShrink: 0 }}
-                    readOnly
-                  />
+                  <label className={`relative inline-flex items-center ${isCode ? 'cursor-pointer' : 'cursor-default'} select-none flex-shrink-0`} style={{ marginTop: 2 }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => isCode && toggleCell(cell.id)}
+                      disabled={!isCode}
+                      className="sr-only peer"
+                      readOnly
+                    />
+                    <div className="relative w-8 h-4.5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-[14px] peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 peer-checked:after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-disabled:opacity-40"></div>
+                  </label>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                    <div 
+                      style={{ 
+                        display: 'flex', 
+                        gap: 8, 
+                        alignItems: 'center', 
+                        marginBottom: 4, 
+                        userSelect: 'none'
+                      }}
+                    >
                       <span style={{
                         fontSize: '0.68rem', fontWeight: 700,
                         color: isCode ? 'var(--accent)' : 'var(--text-muted)',
@@ -200,13 +235,24 @@ export default function NotebookSubmit({ task, challenge }) {
                       }}>
                         [{idx}] {cell.type}
                       </span>
+                      {isCode && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCollapse(cell.id);
+                          }}
+                          className="btn btn-ghost btn-xs text-[10px] py-0 px-1.5 h-auto text-slate-500 hover:text-slate-300"
+                          style={{ minHeight: 'auto', padding: '1px 4px', fontSize: '10px' }}
+                          type="button"
+                          title="Toggle collapse"
+                        >
+                          {isCollapsed ? '▶ expand' : '▼ collapse'}
+                        </button>
+                      )}
                     </div>
-                    <pre className="code-panel" style={{
-                      padding: '6px 10px', fontSize: '0.72rem', maxHeight: 80,
-                      overflow: 'hidden', borderRadius: 'var(--radius-xs)',
-                    }}>
-                      {(cell.source || '').slice(0, 300)}{cell.source?.length > 300 ? '...' : ''}
-                    </pre>
+                    {!isCollapsed && (
+                      <CodeHighlight code={cell.source || ''} wrap={true} />
+                    )}
                   </div>
                 </div>
               );

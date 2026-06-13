@@ -40,6 +40,55 @@ app = create_app()
 def seed_database():
     db.create_all()
     
+    # For existing PostgreSQL databases, ensure double_blind column exists
+    try:
+        db.session.execute(db.text("ALTER TABLE challenges ADD COLUMN IF NOT EXISTS double_blind BOOLEAN DEFAULT TRUE"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE challenges ADD COLUMN double_blind BOOLEAN DEFAULT TRUE"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Ensure reveal_public_scores, reveal_private_scores, reveal_points columns exist
+    for col in ('reveal_public_scores', 'reveal_private_scores', 'reveal_points'):
+        try:
+            db.session.execute(db.text(f"ALTER TABLE challenges ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT TRUE"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            try:
+                db.session.execute(db.text(f"ALTER TABLE challenges ADD COLUMN {col} BOOLEAN DEFAULT TRUE"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+    # Ensure is_anonymous column exists on users table
+    try:
+        db.session.execute(db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_anonymous BOOLEAN DEFAULT FALSE"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE users ADD COLUMN is_anonymous BOOLEAN DEFAULT FALSE"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Ensure manual_points column exists on users table
+    try:
+        db.session.execute(db.text("ALTER TABLE users ADD COLUMN IF NOT EXISTS manual_points TEXT DEFAULT '{}'"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE users ADD COLUMN manual_points TEXT DEFAULT '{}'"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    
     # Check if we already have challenges
     if Challenge.query.first():
         return

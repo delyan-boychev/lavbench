@@ -197,4 +197,39 @@ describe('Navbar Component', () => {
       expect(screen.getByText('Student Guide Content')).toBeInTheDocument();
     });
   });
+
+  it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      token: 'valid-token',
+      logout: mockLogout,
+    });
+
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (url.includes('/api/docs/student')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            title: 'Student Guide',
+            content: '> [!NOTE]\n> This is a test note.'
+          })
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ status: 'online', clusters: [] })
+      });
+    });
+
+    render(<Navbar />);
+
+    const docsBtn = screen.getByText('Docs');
+    fireEvent.click(docsBtn);
+
+    await vi.waitFor(() => {
+      expect(screen.queryByText(/\[!NOTE\]/)).toBeNull();
+      expect(screen.getByText('Note')).toBeInTheDocument();
+      expect(screen.getByText('This is a test note.')).toBeInTheDocument();
+    });
+  });
 });

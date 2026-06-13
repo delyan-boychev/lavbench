@@ -1,6 +1,7 @@
 import React from 'react';
 import Badge from '../ui/Badge';
 import Pagination from '../ui/Pagination';
+import EmptyState from '../ui/EmptyState';
 
 function fmtTime(ts) {
   if (!ts) return '—';
@@ -21,21 +22,23 @@ export default function SubmissionList({
 }) {
   if (loading) {
     return (
-      <div className="surface empty-state min-h-[200px]">
+      <EmptyState minHeight={200} message="Loading submissions...">
         <div className="animate-spin w-5.5 h-5.5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
-        <p>Loading submissions...</p>
-      </div>
+      </EmptyState>
     );
   }
 
   if (!submissions || submissions.length === 0) {
     return (
-      <div className="surface empty-state min-h-[200px]">
-        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-          <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-        <p>No submissions found for this task.</p>
-      </div>
+      <EmptyState 
+        minHeight={200} 
+        message="No submissions found for this task."
+        icon={
+          <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
+            <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        }
+      />
     );
   }
 

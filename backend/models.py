@@ -60,6 +60,8 @@ class User(db.Model):
     role = db.Column(db.String(50), default='competitor')  # competitor, jury, admin
     alias_id = db.Column(db.String(100), unique=True, nullable=False, default=generate_pseudonym)
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True)
+    is_anonymous = db.Column(db.Boolean, default=False, nullable=False)
+    manual_points = db.Column(db.JSON, default=dict, nullable=False)
     
     submissions = db.relationship('Submission', backref='user', lazy=True)
     
@@ -77,32 +79,56 @@ class User(db.Model):
         """
         Locks decrypted demographics for blind jury reviews.
         """
-        # Determine if competition has started
+        # Determine if competition has started and if it is double-blind
         has_started = False
         challenge_finalized = scores_finalized
+        double_blind = True
+        
         if self.challenge_id:
             challenge = Challenge.query.get(self.challenge_id)
             if challenge:
+                double_blind = challenge.double_blind
                 if challenge.start_time:
                     has_started = (datetime.utcnow() >= challenge.start_time)
                 if challenge.scores_finalized:
                     challenge_finalized = True
 
-        # Decrypt / show demographics logic:
-        # Show demographics ONLY if:
-        # 1. Requester is admin
-        # 2. OR the competition has NOT started yet (needed for registration editing before start)
-        # 3. OR the scores are finalized (reveals identities)
-        # 4. OR the viewer is the user themselves (current_user_id == self.id)
         is_self = (current_user_id is not None and current_user_id == self.id)
-        show_details = (view_role == 'admin') or (not has_started) or challenge_finalized or is_self
         
+        if double_blind:
+            # Show demographics ONLY if:
+            # 1. Requester is admin
+            # 2. OR the viewer is jury and challenge has NOT started or scores are finalized
+            # 3. OR the viewer is the user themselves
+            show_details = (view_role == 'admin') or (view_role == 'jury' and (not has_started or challenge_finalized)) or is_self
+        else:
+            # If not double-blind, demographics are always unblinded to everyone
+            show_details = True
+            
+        # BUT if the user is anonymous:
+        # Other students (competitors) are NEVER allowed to see their details.
+        # So if the viewer is a competitor (and not self), we set show_details to False.
+        if self.is_anonymous and view_role == 'competitor' and not is_self:
+            show_details = False
+            
+        manual_pts = {}
+        if self.manual_points:
+            if isinstance(self.manual_points, dict):
+                manual_pts = self.manual_points
+            elif isinstance(self.manual_points, str):
+                try:
+                    manual_pts = json.loads(self.manual_points)
+                except Exception:
+                    manual_pts = {}
+
         if not show_details:
             return {
                 "id": self.id,
                 "alias_id": self.alias_id,
                 "role": self.role,
-                "challenge_id": self.challenge_id
+                "challenge_id": self.challenge_id,
+                "is_anonymous": self.is_anonymous,
+                "manual_points": manual_pts
             }
             
         # Decrypt fields for display to authorized viewers
@@ -123,7 +149,9 @@ class User(db.Model):
             "city": dec_city,
             "role": self.role,
             "alias_id": self.alias_id,
-            "challenge_id": self.challenge_id
+            "challenge_id": self.challenge_id,
+            "is_anonymous": self.is_anonymous,
+            "manual_points": manual_pts
         }
 
 class Challenge(db.Model):
@@ -149,6 +177,10 @@ class Challenge(db.Model):
     start_time = db.Column(db.DateTime, nullable=True)
     end_time = db.Column(db.DateTime, nullable=True)
     freeze_time = db.Column(db.DateTime, nullable=True)
+    double_blind = db.Column(db.Boolean, default=True, nullable=False)
+    reveal_public_scores = db.Column(db.Boolean, default=True, nullable=False)
+    reveal_private_scores = db.Column(db.Boolean, default=True, nullable=False)
+    reveal_points = db.Column(db.Boolean, default=True, nullable=False)
     
     tasks = db.relationship('Task', backref='challenge', lazy=True, cascade="all, delete-orphan")
     submissions = db.relationship('Submission', backref='challenge', lazy=True, cascade="all, delete-orphan")
@@ -169,9 +201,13 @@ class Challenge(db.Model):
             "is_active": self.is_active,
             "is_archived": self.is_archived,
             "scores_finalized": self.scores_finalized,
+            "reveal_public_scores": self.reveal_public_scores,
+            "reveal_private_scores": self.reveal_private_scores,
+            "reveal_points": self.reveal_points,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "freeze_time": self.freeze_time.isoformat() if self.freeze_time else None,
+            "double_blind": self.double_blind,
             "tasks": [t.to_dict() for t in self.tasks]
         }
 
@@ -303,8 +339,9 @@ class Submission(db.Model):
     
     def to_dict(self, view_role='competitor', current_user_id=None):
         finalized = self.challenge.scores_finalized if self.challenge else False
+        double_blind = self.challenge.double_blind if self.challenge else True
         
-        show_owner = (view_role == 'admin') or finalized or (current_user_id == self.user_id)
+        show_owner = (not double_blind) or (view_role == 'admin') or finalized or (current_user_id == self.user_id)
         owner_info = self.user.to_dict(view_role=view_role, scores_finalized=finalized, current_user_id=current_user_id) if self.user else None
         
         if not show_owner and owner_info:

@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { markdownComponents } from '../ui/MarkdownComponents';
 import TaskService from '../../services/TaskService';
 
 function FileCard({ file, taskId, token }) {
@@ -72,7 +73,7 @@ export default function TaskDetail({ task, token }) {
 
         {task.description && (
           <div className="prose">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {task.description}
             </ReactMarkdown>
           </div>

@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import Navbar from './Navbar';
 import CompetitionBar from './CompetitionBar';
 
 export default function ProtectedLayout() {
   const { token, authLoading } = useAuth();
+  const location = useLocation();
 
   if (authLoading) {
     return (
@@ -38,7 +39,9 @@ export default function ProtectedLayout() {
         margin: '0 auto',
         padding: '28px 24px',
       }}>
-        <Outlet />
+        <div key={location.pathname} className="animate-fadein">
+          <Outlet />
+        </div>
       </main>
       <footer style={{
         borderTop: '1px solid var(--border)',
