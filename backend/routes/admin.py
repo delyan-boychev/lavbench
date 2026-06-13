@@ -561,6 +561,16 @@ def download_submissions_zip(challenge_id):
 @admin_bp.route('/workers/stats', methods=['GET'])
 @role_required(['admin', 'jury'])
 def get_detailed_worker_stats():
+    from flask import current_app
+    from cache_utils import get_cached, set_cached
+    
+    is_testing = current_app.config.get("TESTING", False)
+    cache_key = "worker:status:detailed"
+    if not is_testing:
+        cached_val = get_cached(cache_key)
+        if cached_val is not None:
+            return jsonify(cached_val), 200
+
     try:
         import os
         import shutil
@@ -729,11 +739,14 @@ def get_detailed_worker_stats():
                 }
             })
             
-        return jsonify({
+        res_data = {
             "connected_workers_count": len(workers_list),
             "workers": workers_list,
             "system": system_resources
-        }), 200
+        }
+        if not is_testing:
+            set_cached(cache_key, res_data, timeout=10)
+        return jsonify(res_data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

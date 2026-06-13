@@ -1045,6 +1045,16 @@ def get_task_submissions_live(task_id):
 @tasks_bp.route('/worker-status', methods=['GET'])
 @login_required
 def get_worker_status():
+    from flask import current_app
+    from cache_utils import get_cached, set_cached
+    
+    is_testing = current_app.config.get("TESTING", False)
+    cache_key = "worker:status:summary"
+    if not is_testing:
+        cached_val = get_cached(cache_key)
+        if cached_val is not None:
+            return jsonify(cached_val), 200
+
     try:
         from tasks import celery
         import redis
@@ -1096,10 +1106,13 @@ def get_worker_status():
                 }
             clusters.append(spec)
             
-        return jsonify({
+        res_data = {
             "status": "online" if is_online else "offline",
             "clusters": clusters
-        }), 200
+        }
+        if not is_testing:
+            set_cached(cache_key, res_data, timeout=10)
+        return jsonify(res_data), 200
     except Exception as e:
         return jsonify({"status": "offline", "error": str(e), "clusters": []}), 200
 

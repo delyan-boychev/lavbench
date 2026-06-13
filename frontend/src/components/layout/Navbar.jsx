@@ -90,7 +90,7 @@ export default function Navbar() {
 
         {/* Center: Cluster status */}
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => setIsModalOpen(prev => !prev)}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -173,12 +173,19 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Clusters List Modal */}
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         title="Active Cluster Node Specifications"
         size="md"
+        footer={(
+          <button 
+            className="btn btn-secondary btn-sm px-4" 
+            onClick={() => setIsModalOpen(false)}
+          >
+            Close
+          </button>
+        )}
       >
         <div className="flex flex-col gap-4 text-xs text-left">
           <p className="text-slate-400">
