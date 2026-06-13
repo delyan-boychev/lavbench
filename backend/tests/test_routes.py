@@ -507,6 +507,39 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.get_json()["status"], "offline")
 
+    @patch('tasks.celery.control.inspect')
+    def test_detailed_worker_stats_endpoint(self, mock_inspect_cls):
+        """Admin worker stats endpoint should return concurrency and status statistics when online."""
+        mock_inspect = mock_inspect_cls.return_value
+        
+        # Mock responses
+        mock_inspect.ping.return_value = {"celery@gpu-worker-0": {"ok": "pong"}}
+        mock_inspect.stats.return_value = {
+            "celery@gpu-worker-0": {
+                "pid": 12345,
+                "uptime": 3600,
+                "pool": {"max-concurrency": 4},
+                "total": {"evaluate_submission": 12},
+                "broker": {"transport": "redis", "hostname": "localhost", "port": 6379}
+            }
+        }
+        mock_inspect.active.return_value = {"celery@gpu-worker-0": [{"id": "task-uuid-1", "name": "tasks.evaluate_submission"}]}
+        mock_inspect.reserved.return_value = {"celery@gpu-worker-0": []}
+        mock_inspect.registered.return_value = {"celery@gpu-worker-0": ["tasks.evaluate_submission"]}
+        
+        # Competitor role should be rejected (403)
+        res = self.client.get('/api/admin/workers/stats', headers=self.get_auth_header(self.competitor_token))
+        self.assertEqual(res.status_code, 403)
+        
+        # Admin role should succeed (200)
+        res = self.client.get('/api/admin/workers/stats', headers=self.get_auth_header(self.admin_token))
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["connected_workers_count"], 1)
+        self.assertEqual(data["workers"][0]["name"], "celery@gpu-worker-0")
+        self.assertEqual(data["workers"][0]["pool_size"], 4)
+        self.assertEqual(data["workers"][0]["active_tasks_count"], 1)
+
     def test_leaderboard_late_processed_submission_override(self):
         """If competition has ended and the user had late-processed submissions (completed after end_time), the leaderboard should auto-select the best submission instead of honoring manual selections."""
         # Set competition end time in the past

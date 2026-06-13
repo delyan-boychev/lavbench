@@ -547,3 +547,184 @@ def download_submissions_zip(challenge_id):
         headers={"Content-disposition": f"attachment; filename=submissions_challenge_{challenge_id}.zip"}
     )
 
+
+@admin_bp.route('/workers/stats', methods=['GET'])
+@role_required(['admin', 'jury'])
+def get_detailed_worker_stats():
+    try:
+        import os
+        import shutil
+        import platform
+        import subprocess
+        
+        # 1. Collect Host System Resources
+        system_resources = {
+            "cpu_count": os.cpu_count(),
+            "load_avg": [0.0, 0.0, 0.0],
+            "memory": {
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "free_gb": 0.0,
+                "percent_used": 0.0
+            },
+            "disk": {
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "free_gb": 0.0,
+                "percent_used": 0.0
+            },
+            "os": platform.system(),
+            "platform_release": platform.release(),
+            "python_version": platform.python_version()
+        }
+        
+        # Load average
+        try:
+            if hasattr(os, 'getloadavg'):
+                system_resources["load_avg"] = list(os.getloadavg())
+        except Exception:
+            pass
+            
+        # Disk usage
+        try:
+            total, used, free = shutil.disk_usage("/")
+            system_resources["disk"] = {
+                "total_gb": round(total / (1024**3), 2),
+                "used_gb": round(used / (1024**3), 2),
+                "free_gb": round(free / (1024**3), 2),
+                "percent_used": round((used / total) * 100, 1) if total > 0 else 0
+            }
+        except Exception:
+            pass
+            
+        # Memory usage
+        try:
+            if platform.system() == "Linux":
+                if os.path.exists('/proc/meminfo'):
+                    with open('/proc/meminfo', 'r') as f:
+                        lines = f.readlines()
+                    mem_info = {}
+                    for line in lines:
+                        parts = line.split(':')
+                        if len(parts) == 2:
+                            name = parts[0].strip()
+                            val_parts = parts[1].strip().split()
+                            if val_parts:
+                                mem_info[name] = int(val_parts[0])
+                    
+                    total_kb = mem_info.get("MemTotal", 0)
+                    free_kb = mem_info.get("MemFree", 0)
+                    available_kb = mem_info.get("MemAvailable", total_kb - free_kb)
+                    used_kb = total_kb - available_kb
+                    
+                    system_resources["memory"] = {
+                        "total_gb": round(total_kb / (1024**2), 2),
+                        "used_gb": round(used_kb / (1024**2), 2),
+                        "free_gb": round(available_kb / (1024**2), 2),
+                        "percent_used": round((used_kb / total_kb) * 100, 1) if total_kb > 0 else 0
+                    }
+            elif platform.system() == "Darwin":
+                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+                total_gb = total_bytes / (1024**3)
+                
+                vm_stat = subprocess.check_output(["vm_stat"]).decode("utf-8")
+                pages_free = 0
+                pages_active = 0
+                pages_inactive = 0
+                pages_speculative = 0
+                pages_wire = 0
+                page_size = 4096
+                
+                for line in vm_stat.split('\n'):
+                    if "page size of" in line:
+                        try:
+                            page_size = int(line.split("page size of")[1].split("bytes")[0].strip())
+                        except Exception:
+                            pass
+                    elif "Pages free:" in line:
+                        pages_free = int(line.split(":")[1].strip().replace(".", ""))
+                    elif "Pages active:" in line:
+                        pages_active = int(line.split(":")[1].strip().replace(".", ""))
+                    elif "Pages inactive:" in line:
+                        pages_inactive = int(line.split(":")[1].strip().replace(".", ""))
+                    elif "Pages speculative:" in line:
+                        pages_speculative = int(line.split(":")[1].strip().replace(".", ""))
+                    elif "Pages wired down:" in line:
+                        pages_wire = int(line.split(":")[1].strip().replace(".", ""))
+                
+                used_bytes = (pages_active + pages_wire) * page_size
+                free_bytes = (pages_free + pages_speculative + pages_inactive) * page_size
+                
+                system_resources["memory"] = {
+                    "total_gb": round(total_gb, 2),
+                    "used_gb": round(used_bytes / (1024**3), 2),
+                    "free_gb": round(free_bytes / (1024**3), 2),
+                    "percent_used": round((used_bytes / total_bytes) * 100, 1) if total_bytes > 0 else 0
+                }
+        except Exception:
+            pass
+
+        # 2. Collect Celery Worker Statistics
+        from tasks import celery
+        inspect = celery.control.inspect(timeout=1.0)
+        
+        pings = inspect.ping() or {}
+        stats = inspect.stats() or {}
+        active = inspect.active() or {}
+        reserved = inspect.reserved() or {}
+        registered = inspect.registered() or {}
+        
+        workers_list = []
+        for worker_name in pings.keys():
+            w_stats = stats.get(worker_name, {})
+            w_active = active.get(worker_name, [])
+            w_reserved = reserved.get(worker_name, [])
+            w_registered = registered.get(worker_name, [])
+            
+            # Extract basic stats
+            pool = w_stats.get("pool", {})
+            broker = w_stats.get("broker", {})
+            total_tasks = w_stats.get("total", {})
+            w_rusage = w_stats.get("rusage", {})
+            
+            # Format worker resource usage if available
+            rusage_formatted = {}
+            if w_rusage:
+                maxrss = w_rusage.get("maxrss", 0)
+                # Normalize macOS vs Linux maxrss
+                maxrss_mb = round(maxrss / (1024 * 1024), 2) if platform.system() == "Darwin" else round(maxrss / 1024, 2)
+                rusage_formatted = {
+                    "utime_sec": w_rusage.get("utime"),
+                    "stime_sec": w_rusage.get("stime"),
+                    "maxrss_mb": maxrss_mb
+                }
+            
+            workers_list.append({
+                "name": worker_name,
+                "status": "online",
+                "pid": w_stats.get("pid"),
+                "uptime": w_stats.get("uptime"),
+                "pool_size": pool.get("max-concurrency", 0),
+                "total_tasks_processed": sum(total_tasks.values()) if total_tasks else 0,
+                "active_tasks_count": len(w_active),
+                "reserved_tasks_count": len(w_reserved),
+                "active_tasks": w_active,
+                "reserved_tasks": w_reserved,
+                "registered_tasks": w_registered,
+                "rusage": rusage_formatted,
+                "broker": {
+                    "transport": broker.get("transport"),
+                    "hostname": broker.get("hostname"),
+                    "port": broker.get("port")
+                }
+            })
+            
+        return jsonify({
+            "connected_workers_count": len(workers_list),
+            "workers": workers_list,
+            "system": system_resources
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+

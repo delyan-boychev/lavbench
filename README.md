@@ -1,107 +1,186 @@
-# NAI Web Platform
+# National AI Competition (NAI) Web Platform
 
-A secure, sandboxed, and real-time Natural Language Processing (NLP) / Machine Learning (ML) competition platform designed for participants to submit Python notebooks or code solutions and have them evaluated under strict environment and resource constraints.
-
----
-
-## Key Features
-
-1. **Sandboxed Container Logic**:
-   - Automated `Dockerfile` generation based on task requirements (e.g., base images, APT packages, and pip dependencies).
-   - Container execution with strict security parameters: memory limits (`-m`), no-network flags (`--network none`), process limitations (`--pids-limit 64`), and isolated volume mounts.
-   - Custom GPU device visibilities for multi-GPU worker clusters.
-   - **Image Caching Optimization**: Hashes container configurations (base image, apt packages, pip requirements) to tag images. If a matching image exists on the worker, the `docker build` check is skipped for instant container startup!
-
-2. **Real-time Live Worker Status**:
-   - Real-time display indicating whether worker clusters are live or offline (SSE-driven live state).
-   - Prevents local host-worker loops by design, enforcing dedicated worker architecture.
-
-3. **Decoupled Worker Architecture (No Remote DB Exposure)**:
-   - Workers execute database-free (`RUNNING_AS_WORKER=true`). The database is kept local to the main server.
-   - Task parameters are sent directly via Celery queue metadata, and worker reports status changes and final scores back to the main server via secure HTTPS REST API callbacks.
-   - Workers download task dataset files dynamically on-demand from the main server using secure tokens.
-
-4. **Deadline Fallback Strategy**:
-   - Automatically detects late evaluations and falls back to selecting each user's highest-scoring validated submission when a competition ends if a worker cluster outage prevented deadline submissions from processing in time.
-
-5. **Blind Jury Reviews**:
-   - Encrypted demographics stored in PostgreSQL, only visible to administrators or after the leaderboard has been officially finalized.
+A secure, sandboxed, and real-time Natural Language Processing (NLP) / Machine Learning (ML) competition platform. Participants submit Jupyter Notebooks or raw Python code solutions, which are executed and evaluated inside isolated GPU/CPU container sandboxes under strict resource constraints.
 
 ---
 
-## Project Structure
+## System Architecture
 
-```bash
-├── backend/                  # Flask API server & Celery Tasks
-│   ├── app.py                # Server entry & seeding script
-│   ├── config.py             # Config loader (dotenv-integrated)
-│   ├── models.py             # SQLAlchemy schemas & field encryption
-│   ├── tasks.py              # Celery tasks (Docker Sandbox builder & runner)
-│   └── routes/               # API Blueprints (Auth, Admin, Submissions, Leaderboard)
-├── frontend/                 # React UI + Vite
-├── mock_bin/                 # Mock Docker CLI shim for execution testing
-├── test_run.py               # E2E Integration Pipeline test suite
-├── .env.example              # Configuration environment template
-└── .env                      # Local environment configuration
+The NAI platform utilizes a decoupled, database-free worker node architecture:
+
+```mermaid
+graph TD
+    Client[React Frontend] <-->|HTTP / SSE| Server[Flask API Server]
+    Server <-->|PostgreSQL| DB[(Local DB)]
+    Server <-->|Celery Queue| Broker[(Redis Broker)]
+    Broker <-->|Task Metadata| Worker[Remote GPU/CPU Worker]
+    Worker -->|Dynamic Download API| Server
+    Worker -->|Secure HTTPS Score Report Callback| Server
 ```
 
+- **Main Server**: Houses the database (PostgreSQL), the task coordinator (Flask), the front-end interface, and the Redis Celery broker.
+- **Worker Nodes**: Decoupled, database-free worker machines (`RUNNING_AS_WORKER=true`). They listen to Celery queues (CPU or GPU), dynamically download task files from the main server via secure tokens, build/cache task containers, execute user code inside resource-limited Docker sandboxes, and callback scores over secure APIs.
+
 ---
 
-## Configuration & Environment Setup
+## Configuration & Environment
 
-1. Copy the environment template to your local `.env`:
+Configuration is managed via `.env` in the root directory. Copy the template to start:
+
+```bash
+cp .env.example .env
+```
+
+### Key Environment Variables
+
+| Variable | Description | Location / Default |
+| :--- | :--- | :--- |
+| `SECRET_KEY` | Flask API security key | `nai-super-secret-key-1337` |
+| `FIELD_ENCRYPTION_KEY` | AES key for encrypting competitor demographics | Generated on setup |
+| `DATABASE_URL` | SQLAlchemy database url (PostgreSQL) | `postgresql://nai_user:nai_pass@localhost:5432/nai_competition` |
+| `CELERY_BROKER_URL` | Redis Broker connection string | `redis://localhost:6379/0` |
+| `MAIN_SERVER_URL` | HTTP endpoint of Main Server (for worker callbacks) | `http://127.0.0.1:5001` |
+| `WORKER_SECRET_KEY` | Shared token for worker download/report headers | Shared across server + workers |
+| `HF_CACHE_DIR` | Cache directory for datasets and models | `backend/hf_cache/` |
+
+---
+
+## Setup & Local Debugging
+
+If you want to run the platform locally in debug mode on a single developer machine, you can run all services using our host-level debugging runner.
+
+### Quick Start (All-in-one Debug Script)
+
+We provide a comprehensive debug script [deploy_debug.sh](./deploy_debug.sh) that:
+1. Prepares a local Python virtualenv and installs dependencies.
+2. Checks for local PostgreSQL and Redis services (and automatically starts them in Docker if they aren't running natively).
+3. Creates and seeds the database schemas.
+4. Spawns the Flask API server, a local Celery worker (logs to `backend/celery.log`), and the Vite development server.
+
+Run it in your shell:
+```bash
+chmod +x deploy_debug.sh
+./deploy_debug.sh
+```
+*To terminate all running background services, simply press `Ctrl + C`.*
+
+### Manual Step-by-Step Local Setup
+
+If you prefer launching each layer individually:
+
+1. **Start Infrastructure**:
+   Ensure PostgreSQL and Redis are running locally.
+2. **Backend Setup**:
    ```bash
-   cp .env.example .env
+   cd backend
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   
+   # Setup database schemas & seed default challenges/users
+   python -c "from app import app, db, seed_database; with app.app_context(): db.create_all(); seed_database()"
+   
+   # Start Flask Dev Server (Port 5001)
+   python app.py
+   ```
+3. **Celery Worker Setup**:
+   With your virtualenv active, run:
+   ```bash
+   cd backend
+   celery -A tasks.celery worker --loglevel=info
+   ```
+4. **Frontend Setup**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
    ```
 
-2. Open `.env` and fill out the configuration values:
-   - `DATABASE_URL`: Connection string for PostgreSQL (local to main server).
-   - `CELERY_BROKER_URL` & `CELERY_RESULT_BACKEND`: Redis server broker URL (shared/authenticated).
-   - `HF_CACHE_DIR`: Directory where Hugging Face datasets and models are cached.
-   - `MAIN_SERVER_URL`: The HTTP URL of the main web platform API (needed for worker callbacks).
-   - `WORKER_SECRET_KEY`: Secure shared token used to authorize worker callbacks and downloads (`X-Worker-Token` header).
+---
+
+## Docker Deployment (Production Compose)
+
+To run the entire platform isolated in production-grade Docker containers (Frontend, Backend API, PostgreSQL database, Redis broker, and Celery Worker node):
+
+We provide a deployment script [deploy_docker.sh](./deploy_docker.sh). Execute:
+```bash
+chmod +x deploy_docker.sh
+./deploy_docker.sh
+```
+
+This script automates:
+- Tearing down any active container configurations (`docker-compose down`).
+- Rebuilding the application images (`docker-compose build`).
+- Starting the PostgreSQL database and waiting for it to be fully online (`pg_isready`).
+- Launching the Flask API, the React/Nginx frontend, and the Celery worker node.
+- Seeding the database inside the container context.
+
+### Useful Commands:
+* **View logs**: `docker-compose logs -f`
+* **Stop services**: `docker-compose down`
 
 ---
 
-## Running the Platform
+## Remote GPU / CPU Worker Setup
 
-### 1. Database & Broker
-Ensure **PostgreSQL** and **Redis** services are running locally or remotely as configured in your `.env`.
+Worker nodes execute in a decoupled model and **do not require direct database access**.
 
-### 2. Backend API Server
-Activate your virtual environment and start the Flask development server:
+### Prerequisites:
+- **Docker** must be installed and running on the worker machine.
+- If GPU support is required, **NVIDIA Container Toolkit** must be installed.
+- Access to the shared **Redis Broker** port (typically `6379`) configured on the main server.
+
+### Worker Initialization Flow ([start_worker.sh](./start_worker.sh))
+The startup script handles worker activation:
+1. Disables direct database access checks (`RUNNING_AS_WORKER="true"`).
+2. Configures GPU visibilities and links queue channels.
+3. Automatically sets up the execution context:
+   - **Micromamba / Conda**: If `micromamba` is detected on the system path, it automatically creates a dedicated environment named `nai_worker` with Python 3.10 and installs dependencies.
+   - **Virtualenv Fallback**: If micromamba is not available, it attempts to find and activate a local virtualenv (`venv`).
+
+### Running the Worker:
 ```bash
-source venv/bin/activate
-python backend/app.py
-```
-*Note: The database seeds automatically with default challenges and test accounts on startup.*
-
-### 3. Remote Worker node
-Start the Celery worker node (supports Micromamba/Conda environments or Python `venv` automatically):
-```bash
+chmod +x start_worker.sh
 ./start_worker.sh <REDIS_URL> [GPU_ID]
 ```
 
-### 4. Frontend Dev Server
-Navigate to the frontend directory, install dependencies, and start Vite:
-```bash
-cd frontend
-npm install
-npm run dev
-```
+#### Examples:
+* **GPU Worker 0**:
+  ```bash
+  ./start_worker.sh redis://:broker_password@main-server-ip:6379/0 0
+  ```
+  *(This binds the worker to NVIDIA GPU `0` and listens on the `gpu_queue` queue).*
+* **CPU-Only Worker**:
+  ```bash
+  ./start_worker.sh redis://:broker_password@main-server-ip:6379/0
+  ```
+  *(This runs the worker in CPU-only mode, listening on the default `celery` queue).*
 
 ---
 
-## Integration Pipeline Testing
+## Testing & Debugging
 
+The platform features comprehensive frontend and backend unit test suites.
+
+### 1. Frontend Unit Tests (Vitest + Testing Library)
+Run the React component test suite:
+```bash
+cd frontend
+npm run test
+```
+*This validates all forms, validations (such as `.ipynb` uploads, cell checkboxes, and empty submissions), formatters (bytes-to-MB calculations), mock routers, and page layouts (blind review columns, theme toggles, and live status badge indicators).*
+
+### 2. Backend Unit Tests (Python unittest)
+Run the Python route and exception test suite inside your virtualenv:
+```bash
+cd backend
+python -m unittest discover -s tests
+```
+*This discover tool executes all happy-path tests, rate-limiting limits, calendar deadline constraints, AST sandbox rule checks (magic command bans, blocked imports), and API endpoint exception paths (missing payloads, 401 unauths, and 403 access blocks).*
+
+### 3. Pipeline Integration Testing ([test_run.py](./test_run.py))
 To test the entire pipeline (including database updates, SSE, Celery workers, and the Docker container sandbox execution logic) on any machine without needing a real Docker daemon active, execute:
-
 ```bash
 python test_run.py
 ```
-
-### How Container Verification Works Under the Test:
-- The script prepends the `mock_bin/` directory to the `PATH`, activating our custom Docker CLI shim.
-- It seeds a task specifying `base_docker_image`, `apt_packages`, `pip_requirements`, and memory limits.
-- Spawns a background Celery worker, submits a task using `numpy`, and processes it.
-- Asserts that all custom container parameters, volume mounts, network restrictions, and memory limitations were precisely configured in the backend and successfully passed to the Docker runner.
+- **How it works**: The script prepends the `mock_bin/` directory to the `PATH`, activating our custom Docker CLI shim. It builds a dummy task container, runs user code, and verifies that resource limitations (RAM memory limit, process limit, and network lockouts) are verified and logged correctly.

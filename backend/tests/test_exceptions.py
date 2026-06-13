@@ -335,5 +335,85 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         res = self.client.get('/api/challenges/9999/leaderboard', headers=headers)
         self.assertEqual(res.status_code, 404)
 
+    # --- CALLBACK PERSISTENCE & RETRY TESTING ---
+
+    @patch('requests.post')
+    def test_report_status_success_on_first_try(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200)
+        from tasks import report_status_to_server
+        
+        metadata = {
+            "main_server_url": "http://localhost:5001",
+            "worker_secret_key": "secret",
+            "submission_id": 1
+        }
+        success = report_status_to_server(metadata, "completed", "done")
+        self.assertTrue(success)
+        mock_post.assert_called_once()
+
+    @patch('time.sleep')
+    @patch('requests.post')
+    def test_report_status_retry_on_failure_then_succeed(self, mock_post, mock_sleep):
+        # Fail twice, succeed on third attempt
+        mock_post.side_effect = [
+            Exception("Connection timeout"),
+            MagicMock(status_code=500),
+            MagicMock(status_code=200)
+        ]
+        from tasks import report_status_to_server
+        
+        metadata = {
+            "main_server_url": "http://localhost:5001",
+            "worker_secret_key": "secret",
+            "submission_id": 1
+        }
+        success = report_status_to_server(metadata, "completed", "done", max_retries=3, backoff_factor=1)
+        self.assertTrue(success)
+        self.assertEqual(mock_post.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch('time.sleep')
+    @patch('requests.post')
+    def test_report_status_fails_completely(self, mock_post, mock_sleep):
+        mock_post.side_effect = Exception("Permanent failure")
+        from tasks import report_status_to_server
+        
+        metadata = {
+            "main_server_url": "http://localhost:5001",
+            "worker_secret_key": "secret",
+            "submission_id": 1
+        }
+        success = report_status_to_server(metadata, "completed", "done", max_retries=3, backoff_factor=1)
+        self.assertFalse(success)
+        self.assertEqual(mock_post.call_count, 3)
+
+    @patch('requests.post')
+    @patch('tasks.download_task_files_to_dir')
+    @patch('subprocess.run')
+    def test_evaluate_submission_callback_failure_raises_runtime_error(self, mock_sub, mock_dl, mock_post):
+        # Mock container run successfully, but callback fails
+        mock_post.return_value = MagicMock(status_code=500)
+        
+        # Mock subprocess run to simulate successful evaluation run inside docker
+        mock_sub.return_value = MagicMock(returncode=0, stdout='{"status": "success", "public_score": 0.85, "private_score": 0.85, "execution_time_ms": 5}', stderr='')
+        
+        from tasks import evaluate_submission
+        
+        metadata = {
+            "main_server_url": "http://localhost:5001",
+            "worker_secret_key": "secret",
+            "submission_id": 1,
+            "task_id": 2,
+            "user_code": "def predict(x): return 1",
+            "is_custom_eval": True,
+            "custom_eval_code": "print('{\"status\": \"success\", \"public_score\": 0.85, \"private_score\": 0.85, \"execution_time_ms\": 5}')"
+        }
+        
+        # Since it's a final state ('completed'), failing to report should raise RuntimeError
+        with self.assertRaises(RuntimeError) as context:
+            evaluate_submission(submission_id=1, metadata=metadata)
+        self.assertIn("Failed to deliver final status", str(context.exception))
+        self.assertIn("callback to server.", str(context.exception))
+
 if __name__ == '__main__':
     unittest.main()

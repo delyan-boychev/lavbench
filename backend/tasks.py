@@ -52,7 +52,9 @@ class MockModel:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-def report_status_to_server(metadata, status, detailed_status, logs=None, public_score=None, private_score=None, execution_time_ms=None, metrics_payload_pub=None, metrics_payload_priv=None, gpu_node=None):
+import time
+
+def report_status_to_server(metadata, status, detailed_status, logs=None, public_score=None, private_score=None, execution_time_ms=None, metrics_payload_pub=None, metrics_payload_priv=None, gpu_node=None, max_retries=3, backoff_factor=2):
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
         return False
     url = f"{metadata['main_server_url']}/api/worker/report/{metadata['submission_id']}"
@@ -79,12 +81,20 @@ def report_status_to_server(metadata, status, detailed_status, logs=None, public
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
         
-    try:
-        res = requests.post(url, json=payload, headers=headers, timeout=10)
-        return res.status_code == 200
-    except Exception as e:
-        print(f"Error reporting progress to server: {e}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=10)
+            if res.status_code == 200:
+                return True
+            print(f"Server returned status {res.status_code} for report attempt {attempt + 1}")
+        except Exception as e:
+            print(f"Error reporting progress to server (attempt {attempt + 1}/{max_retries}): {e}")
+        
+        if attempt < max_retries - 1:
+            sleep_time = backoff_factor ** attempt
+            time.sleep(sleep_time)
+            
+    return False
 
 def download_task_files_to_dir(metadata, temp_dir, logs):
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
@@ -394,8 +404,7 @@ if __name__ == "__main__":
 """
 
 
-@celery.task(bind=True)
-@celery.task(bind=True)
+@celery.task(bind=True, autoretry_for=(RuntimeError,), retry_backoff=True, max_retries=3)
 def evaluate_submission(self, submission_id, metadata=None):
     """
     Executes a submission in a sandboxed sub-process or docker environment.
@@ -481,7 +490,7 @@ def evaluate_submission(self, submission_id, metadata=None):
     def update_status(status_val, detailed_val, logs_list=None, pub_score=None, priv_score=None, time_ms=None, m_pub=None, m_priv=None):
         if metadata:
             logs_str = "\n".join(logs_list) if logs_list is not None else None
-            report_status_to_server(
+            success = report_status_to_server(
                 metadata=metadata,
                 status=status_val,
                 detailed_status=detailed_val,
@@ -493,6 +502,8 @@ def evaluate_submission(self, submission_id, metadata=None):
                 metrics_payload_priv=m_priv,
                 gpu_node=submission.gpu_node
             )
+            if not success and status_val in ('completed', 'failed'):
+                raise RuntimeError(f"Failed to deliver final status '{status_val}' callback to server.")
         else:
             with app.app_context():
                 db.session.expire_all()
