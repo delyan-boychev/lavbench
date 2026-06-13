@@ -336,3 +336,64 @@ def select_final_submission(submission_id):
         "submission": submission.to_dict(view_role=user_role, current_user_id=user_id)
     })
 
+@submissions_bp.route('/submissions/<int:submission_id>/logs/live', methods=['GET'])
+@login_required
+def stream_submission_logs(submission_id):
+    from flask import current_app, Response, stream_with_context
+    import redis
+    
+    user_id = request.user["user_id"]
+    user_role = request.user["role"]
+    
+    submission = db.session.get(Submission, submission_id)
+    if not submission:
+        return jsonify({"error": "Submission not found.", "code": "ERR_NOT_FOUND"}), 404
+        
+    if user_role == 'competitor' and submission.user_id != user_id:
+        return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+        
+    def event_generator():
+        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(broker_url)
+        
+        log_key = f"submission:{submission_id}:logs"
+        existing_logs = r.lrange(log_key, 0, -1)
+        if existing_logs:
+            for log_bin in existing_logs:
+                log_line = log_bin.decode("utf-8")
+                yield f"data: {json.dumps({'log': log_line})}\n\n"
+                
+        with current_app.app_context():
+            sub = db.session.get(Submission, submission_id)
+            if sub and sub.status in ('completed', 'failed'):
+                yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                return
+                
+        pubsub = r.pubsub()
+        pubsub.subscribe(f"submission_{submission_id}_logs")
+        
+        try:
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                if message:
+                    yield f"data: {message['data'].decode('utf-8')}\n\n"
+                else:
+                    yield ": keep-alive\n\n"
+                    
+                with current_app.app_context():
+                    db.session.expire_all()
+                    sub = db.session.get(Submission, submission_id)
+                    if sub and sub.status in ('completed', 'failed'):
+                        yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                        break
+        except GeneratorExit:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
+        except Exception as e:
+            print(f"SSE logs streaming error: {e}")
+            
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+

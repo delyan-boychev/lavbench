@@ -34,6 +34,19 @@ else:
         backend=app.config['CELERY_RESULT_BACKEND']
     )
 
+class StreamingLogList(list):
+    def __init__(self, submission_id):
+        super().__init__()
+        self.submission_id = submission_id
+        
+    def append(self, item):
+        super().append(item)
+        try:
+            from sse_utils import publish_submission_log
+            publish_submission_log(self.submission_id, str(item))
+        except Exception as e:
+            pass
+
 # Set Celery configuration
 celery.conf.update(
     task_serializer='json',
@@ -583,7 +596,7 @@ def evaluate_submission(self, submission_id, metadata=None):
     temp_dir = tempfile.mkdtemp()
 
     # Create logs holder
-    logs = []
+    logs = StreamingLogList(submission_id)
     logs.append(f"--- Starting execution sandbox at {datetime.utcnow()} ---")
     logs.append(f"Time limit: {time_limit} seconds.")
 
@@ -921,6 +934,13 @@ def evaluate_submission(self, submission_id, metadata=None):
         m_pub=metrics_payload_pub,
         m_priv=metrics_payload_priv
     )
+    
+    try:
+        from sse_utils import clear_submission_logs
+        clear_submission_logs(submission_id)
+    except:
+        pass
+        
     return f"Submission {submission_id} evaluated with status {status}"
 
 

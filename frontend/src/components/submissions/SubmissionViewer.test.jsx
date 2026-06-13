@@ -1,7 +1,14 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import SubmissionViewer from './SubmissionViewer';
+
+vi.mock('../../AuthContext', () => ({
+  useAuth: () => ({
+    token: 'test-token',
+    currentUser: { role: 'competitor', username: 'test_comp' }
+  })
+}));
 
 describe('SubmissionViewer Component', () => {
   it('renders empty state message when no submission is selected', () => {
@@ -102,5 +109,43 @@ describe('SubmissionViewer Component', () => {
     const checkbox = screen.getByLabelText('Select as final submission (enforces anti-overfitting rules).');
     expect(checkbox).toBeDisabled();
     expect(screen.getByText('The final selection window for this stage has closed.')).toBeInTheDocument();
+  });
+
+  it('instantiates EventSource and displays live logs when submission is running', () => {
+    const mockSubmission = {
+      id: 42,
+      status: 'running',
+      user: { alias_id: 'Quantum-Falcon-402' },
+      code_cells: '[]'
+    };
+
+    const mockEventSourceInstances = [];
+    class MockEventSource {
+      constructor(url) {
+        this.url = url;
+        mockEventSourceInstances.push(this);
+      }
+      close = vi.fn();
+    }
+    vi.stubGlobal('EventSource', MockEventSource);
+
+    render(
+      <SubmissionViewer 
+        submission={mockSubmission} 
+        currentUser={{ role: 'competitor' }} 
+      />
+    );
+
+    expect(mockEventSourceInstances.length).toBe(1);
+    expect(mockEventSourceInstances[0].url).toContain('/api/submissions/42/logs/live');
+    expect(screen.getByText(/Connecting to live logs/i)).toBeInTheDocument();
+
+    const event = { data: JSON.stringify({ log: 'Building docker sandbox...' }) };
+    act(() => {
+      mockEventSourceInstances[0].onmessage(event);
+    });
+
+    expect(screen.getByText(/Building docker sandbox/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

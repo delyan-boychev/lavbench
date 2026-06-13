@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Badge from '../ui/Badge';
 import CodeHighlight from '../ui/CodeHighlight';
 import EmptyState from '../ui/EmptyState';
 import ToggleField from '../ui/ToggleField';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../AuthContext';
 
 export default function SubmissionViewer({ 
   submission, 
@@ -14,6 +15,43 @@ export default function SubmissionViewer({
   isSubmissionAfterDeadline = false
 }) {
   const { t } = useTranslation();
+  const { token } = useAuth();
+  const [liveLogs, setLiveLogs] = useState('');
+
+  useEffect(() => {
+    if (!submission || submission.status === 'completed' || submission.status === 'failed') {
+      setLiveLogs('');
+      return;
+    }
+
+    setLiveLogs(t('submissions.connecting_live_logs', 'Connecting to live logs...\n'));
+
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+    const sseUrl = `/api/submissions/${submission.id}/logs/live${tokenQuery}`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.log) {
+          setLiveLogs(prev => prev + data.log + '\n');
+        } else if (data.status) {
+          eventSource.close();
+        }
+      } catch (err) {
+        console.error("Failed to parse live log line:", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("Live logs SSE error:", err);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [submission?.id, submission?.status, token]);
 
   if (!submission) {
     return (
@@ -141,7 +179,7 @@ export default function SubmissionViewer({
         )}
 
         {/* Execution Log */}
-        {submission.logs && (
+        {submission.logs ? (
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.execution_log')}
@@ -150,7 +188,16 @@ export default function SubmissionViewer({
               {submission.logs}
             </pre>
           </div>
-        )}
+        ) : (submission.status !== 'completed' && submission.status !== 'failed') ? (
+          <div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              {t('submissions.execution_log_live', 'Execution Log (Live)')}
+            </div>
+            <pre className="code-panel max-h-[180px] text-xs text-indigo-300 font-mono">
+              {liveLogs}
+            </pre>
+          </div>
+        ) : null}
       </div>
 
       {/* Submitted Code Cells */}

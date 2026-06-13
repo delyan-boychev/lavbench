@@ -1606,6 +1606,27 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertIn("Rank,Username,Alias ID", csv_data)
         self.assertIn("--- SCORE CORRECTION AUDIT LOG ---", csv_data)
 
+    def test_stream_submission_logs(self):
+        """Test streaming submission logs SSE endpoint."""
+        sub = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            status='queued',
+            detailed_status='queued',
+            code_cells="[]"
+        )
+        db.session.add(sub)
+        db.session.commit()
+        
+        # Competitor gets their own submission logs stream
+        res = self.client.get(
+            f'/api/submissions/{sub.id}/logs/live',
+            headers=self.get_auth_header(self.competitor_token)
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.mimetype, 'text/event-stream')
+
 if __name__ == '__main__':
     unittest.main()
 
