@@ -13,9 +13,10 @@ const stringToSlug = (str) => {
   return str
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '') // strip punctuation but keep spaces/hyphens
-    .replace(/\s/g, '-')      // replace spaces with hyphens
-    .replace(/^-+|-+$/g, '');  // remove leading/trailing hyphens
+    .replace(/[^\p{L}\p{N}\s-]/gu, '') // Keep letters, numbers, spaces, and hyphens (Unicode-aware)
+    .replace(/\s+/g, '-')             // Replace spaces with hyphens
+    .replace(/-+/g, '-')              // Collapse multiple hyphens
+    .replace(/^-+|-+$/g, '');         // Remove leading/trailing hyphens
 };
 
 export const markdownComponents = {
@@ -149,10 +150,14 @@ export const markdownComponents = {
     const handleClick = (e) => {
       if (isInternal) {
         e.preventDefault();
-        const targetId = href.substring(1);
-        const element = document.getElementById(targetId);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        try {
+          const targetId = decodeURIComponent(href.substring(1));
+          const element = document.getElementById(targetId);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } catch (err) {
+          console.warn("Failed to scroll to internal link:", err);
         }
       }
     };
