@@ -499,57 +499,93 @@ def download_submissions_zip(challenge_id):
         return jsonify({"error": "Scores must be finalized before downloading submissions."}), 400
         
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+    tasks = challenge.tasks
     
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for comp in competitors:
             name_part = decrypt_field(comp.name) or ""
             surname_part = decrypt_field(comp.surname) or ""
             comp_name = f"{name_part}_{surname_part}_{comp.alias_id}"
             comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
             
-            subs = Submission.query.join(Task).filter(
-                Submission.user_id == comp.id,
-                Submission.is_final_selection == True,
-                Task.challenge_id == challenge_id
-            ).all()
+            for task in tasks:
+                subs = Submission.query.filter_by(task_id=task.id, user_id=comp.id, status='completed').all()
+                if not subs:
+                    continue
+                    
+                best_sub = None
+                has_late_sub = False
+                if challenge.end_time and datetime.utcnow() > challenge.end_time:
+                    has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in subs)
+                    
+                final_sel = next((s for s in subs if s.is_final_selection), None)
+                if final_sel and not has_late_sub:
+                    best_sub = final_sel
+                else:
+                    is_lower_better = False
+                    if task.metrics_config:
+                        try:
+                            m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
+                            for m_name, m_info in m_config.items():
+                                if m_info.get("higher_is_better") is False:
+                                    is_lower_better = True
+                                break
+                        except:
+                            pass
+                    else:
+                        metric_name = challenge.metric_name or ''
+                        if 'mse' in metric_name.lower() or 'error' in metric_name.lower() or 'loss' in metric_name.lower():
+                            is_lower_better = True
+                    
+                    if is_lower_better:
+                        subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or 999999))
+                    else:
+                        subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or -999999), reverse=True)
+                    
+                    if subs_sorted:
+                        best_sub = subs_sorted[0]
+                
+                if best_sub:
+                    task_title = "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-")).strip()
+                    filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
+                    
+                    try:
+                        cells_data = json.loads(best_sub.code_cells) if isinstance(best_sub.code_cells, str) else best_sub.code_cells
+                    except:
+                        cells_data = []
+                        
+                    ipynb_cells = []
+                    for c in cells_data:
+                        source_lines = c.get("source", "")
+                        if isinstance(source_lines, str):
+                            source_lines = [line + "\n" for line in source_lines.splitlines()]
+                        ipynb_cells.append({
+                            "cell_type": c.get("type", "code"),
+                            "execution_count": None,
+                            "metadata": {},
+                            "outputs": [],
+                            "source": source_lines
+                        })
+                        
+                    notebook_json = {
+                        "cells": ipynb_cells,
+                        "metadata": {
+                            "language_info": {
+                                "name": "python"
+                            }
+                        },
+                        "nbformat": 4,
+                        "nbformat_minor": 2
+                    }
+                    
+                    notebook_str = json.dumps(notebook_json, indent=2)
+                    zip_file.writestr(filename, notebook_str)
+                    
+        # Check if the zip file has no entries, write a readme to prevent empty/corrupted archives
+        if not zip_file.namelist():
+            zip_file.writestr("README.txt", f"No completed student submissions found for challenge: {challenge.title}")
             
-            for sub in subs:
-                task_title = "".join(c for c in sub.task.title if c.isalnum() or c in (" ", "_", "-")).strip()
-                filename = f"{comp_name}/{task_title}_sub_{sub.id}.ipynb"
-                
-                try:
-                    cells_data = json.loads(sub.code_cells) if isinstance(sub.code_cells, str) else sub.code_cells
-                except:
-                    cells_data = []
-                    
-                ipynb_cells = []
-                for c in cells_data:
-                    source_lines = c.get("source", "")
-                    if isinstance(source_lines, str):
-                        source_lines = [line + "\n" for line in source_lines.splitlines()]
-                    ipynb_cells.append({
-                        "cell_type": c.get("type", "code"),
-                        "execution_count": None,
-                        "metadata": {},
-                        "outputs": [],
-                        "source": source_lines
-                    })
-                    
-                notebook_json = {
-                    "cells": ipynb_cells,
-                    "metadata": {
-                        "language_info": {
-                            "name": "python"
-                        }
-                    },
-                    "nbformat": 4,
-                    "nbformat_minor": 2
-                }
-                
-                notebook_str = json.dumps(notebook_json, indent=2)
-                zip_file.writestr(filename, notebook_str)
-                
     zip_buffer.seek(0)
     return Response(
         zip_buffer.getvalue(),
