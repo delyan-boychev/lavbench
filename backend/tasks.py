@@ -1,5 +1,11 @@
 import os
+import time
 from celery import Celery
+
+# Force UTC for Celery heartbeats to avoid clock drift warnings
+# when the host system uses a non-UTC local timezone.
+os.environ["TZ"] = "UTC"
+time.tzset()
 
 # Check if running as remote worker to bypass Flask/SQLAlchemy database connection setup
 RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER") == "true"
