@@ -212,7 +212,9 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         try:
             m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
             for m_name, m_info in m_config.items():
-                if m_info.get("higher_is_better") is False or is_metric_lower_better(m_name):
+                if m_name.startswith("_"):
+                    continue
+                if isinstance(m_info, dict) and (m_info.get("higher_is_better") is False or is_metric_lower_better(m_name)):
                     is_lower_better = True
                 break
         except Exception:

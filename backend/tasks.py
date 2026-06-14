@@ -113,6 +113,14 @@ def watchdog_stuck_submissions():
         
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
+            # Invalidate leaderboard cache for affected challenges
+            from cache_utils import invalidate_leaderboard_cache
+            challenge_ids = set()
+            for sub in stuck:
+                if sub.challenge_id:
+                    challenge_ids.add(sub.challenge_id)
+            for cid in challenge_ids:
+                invalidate_leaderboard_cache(cid)
         return {"recovered": recovered, "timed_out": timeout_count}
 
 # Celery Beat schedule for periodic tasks

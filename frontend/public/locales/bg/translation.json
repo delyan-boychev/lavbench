@@ -277,6 +277,7 @@
     "manual_points_label": "Точки от журито:",
     "points_short": "{{count}} т.",
     "title": "Класиране",
+    "refresh": "Обнови",
     "metric": "Метрика:",
     "participants": "участници",
     "participants_one": "{{count}} участник",

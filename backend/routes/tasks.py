@@ -839,9 +839,12 @@ def submit_task_code(task_id):
     )
     db.session.add(submission)
     db.session.commit()
+    
+    from cache_utils import invalidate_leaderboard_cache
+    invalidate_leaderboard_cache(submission.challenge_id)
+    
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)
-    
     from tasks import evaluate_submission
     
     gpu_required = False
