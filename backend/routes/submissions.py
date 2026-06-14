@@ -356,6 +356,9 @@ def stream_submission_logs(submission_id):
         broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
         r = redis.Redis.from_url(broker_url)
         
+        # Yield an initial message to flush headers immediately and establish connection
+        yield f"data: {json.dumps({'info': 'connected'})}\n\n"
+        
         log_key = f"submission:{submission_id}:logs"
         existing_logs = r.lrange(log_key, 0, -1)
         if existing_logs:
@@ -395,5 +398,10 @@ def stream_submission_logs(submission_id):
         except Exception as e:
             print(f"SSE logs streaming error: {e}")
             
-    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    headers = {
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+    }
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers)
 

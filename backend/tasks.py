@@ -104,7 +104,7 @@ class StreamingLogList(list):
             from sse_utils import publish_submission_log
             publish_submission_log(self.submission_id, str(item))
         except Exception as e:
-            pass
+            print(f"[StreamingLogList Error] Failed to publish log line to Redis: {e}")
 
 # Set Celery configuration
 celery.conf.update(
