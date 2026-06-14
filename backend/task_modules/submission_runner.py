@@ -60,6 +60,9 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
         except:
             pass
 
+    if not hf_token:
+        hf_token = None
+
     # 3. Preload datasets
     if datasets_to_load and hf_cache_dir:
         logs.append(f"Preloading datasets on host: {datasets_to_load}...")
