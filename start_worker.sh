@@ -13,6 +13,7 @@ fi
 export CELERY_BROKER_URL="$1"
 export CELERY_RESULT_BACKEND="$1"
 export RUNNING_AS_WORKER="true" # Enforce database-free decoupled worker execution
+export PYTHONPATH=".:backend:$PYTHONPATH"
 
 # Load server callback configurations from .env if present
 if [ -f ".env" ]; then
