@@ -1123,7 +1123,7 @@ def register_worker_specs(sender, **kwargs):
         worker_secret_key = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
         
         try:
-            url = f"{main_server_url.rstrip('/')}/api/tasks/worker/active-datasets"
+            url = f"{main_server_url.rstrip('/')}/api/worker/active-datasets"
             headers = {"X-Worker-Token": worker_secret_key}
             res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
