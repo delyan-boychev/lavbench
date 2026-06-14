@@ -882,6 +882,8 @@ def evaluate_submission(self, submission_id, metadata=None):
     ] + gpu_args + hf_cache_mount + [
         "-e", "HF_HOME=/hf_cache",
         "-e", "HF_DATASETS_CACHE=/hf_cache",
+        "-e", "HF_DATASETS_OFFLINE=1",
+        "-e", "HF_HUB_OFFLINE=1",
         image_tag, "python", exec_file
     ]
     
