@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Badge from '../ui/Badge';
 import CodeHighlight from '../ui/CodeHighlight';
 import EmptyState from '../ui/EmptyState';
@@ -19,6 +19,16 @@ export default function SubmissionViewer({
   const { token } = useAuth();
   const [liveLogs, setLiveLogs] = useState('');
   const [currentId, setCurrentId] = useState(null);
+  const logRef = useRef(null);
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTo({
+        top: logRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, [liveLogs, submission?.logs]);
 
   useEffect(() => {
     if (submission && submission.id !== currentId) {
@@ -197,6 +207,7 @@ export default function SubmissionViewer({
               }
             </div>
             <pre 
+              ref={logRef}
               className={`code-panel text-xs font-mono ${
                 submission.status === 'completed' 
                   ? 'text-slate-200' 
@@ -205,7 +216,7 @@ export default function SubmissionViewer({
                     : 'text-indigo-300'
               }`}
               style={{
-                maxHeight: '180px',
+                maxHeight: '400px',
                 overflowY: 'auto',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all'
