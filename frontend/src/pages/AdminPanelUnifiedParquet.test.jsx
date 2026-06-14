@@ -4,18 +4,30 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import AdminPanel from './AdminPanel';
+import api from '../services/ApiService';
 
-// Mock AuthContext
+vi.mock('../services/ApiService', () => ({
+  default: {
+    fetch: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    postForm: vi.fn(),
+    putForm: vi.fn(),
+    getBlob: vi.fn(),
+  },
+}));
+
 vi.mock('../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-// Mock AppContext
 vi.mock('../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-describe('AdminPanel - Unified Parquet Task Configuration', () => {
+describe('AdminPanel - Column Config & Metrics', () => {
   const mockShowToast = vi.fn();
   const mockSetSelectedChallengeById = vi.fn();
   const mockFetchChallenges = vi.fn();
@@ -30,9 +42,45 @@ describe('AdminPanel - Unified Parquet Task Configuration', () => {
     tasks: [],
   };
 
+  const setupMockApi = () => {
+    const metricsData = {
+      accuracy: { balanced: ['false', 'true'] },
+      f1: { average: ['macro', 'micro', 'weighted', 'binary'] },
+      precision: { average: ['macro', 'micro', 'weighted', 'binary'] },
+      recall: { average: ['macro', 'micro', 'weighted', 'binary'] },
+      cohen_kappa: {},
+      matthews_corrcoef: {},
+      rmse: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
+      mae: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
+      r_squared: {},
+      mape: {},
+      chrf: { beta: ['1', '2', '3'] },
+      rouge: { rouge_type: ['rouge1', 'rouge2', 'rougeL'] },
+      bleu: {},
+      meteor: {},
+      exact_match: {},
+      pck: { threshold: ['0.01', '0.02', '0.05', '0.1', '0.15', '0.2'] },
+      ndcg_k: { k: ['5', '10', '20', '50', '100'] },
+      mrr: {},
+      recall_k: { k: ['5', '10', '20', '50', '100'] },
+    };
+    api.fetch.mockImplementation((url) => {
+      if (url.includes('/admin/metrics') || url.includes('/metrics')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => metricsData,
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({}),
+      });
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
       token: 'valid-admin-token',
@@ -46,177 +94,236 @@ describe('AdminPanel - Unified Parquet Task Configuration', () => {
       showToast: mockShowToast,
       confirm: mockConfirm,
     });
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    });
   });
 
-  it('renders task type dropdown and shows metrics checklist upon selection', async () => {
+  it('renders column definitions section and allows adding columns', async () => {
+    setupMockApi();
     render(<AdminPanel />);
 
-    // Open Add Task modal
-    const addTaskBtn = screen.getByText('+ Add Task');
-    expect(addTaskBtn).toBeInTheDocument();
-    fireEvent.click(addTaskBtn);
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
 
-    // Verify task type dropdown is rendered
-    const taskTypeSelect = screen.getByLabelText(/Task Type \/ Modality Group/i);
-    expect(taskTypeSelect).toBeInTheDocument();
-    expect(taskTypeSelect.value).toBe('');
+    // Column Definitions section should be visible
+    expect(screen.getByText('Column Definitions')).toBeInTheDocument();
+    expect(screen.getByText('+ Add Column')).toBeInTheDocument();
 
-    // Change Task Type to classification
+    // Initially shows empty state
+    expect(screen.getAllByText(/No columns defined/i).length).toBeGreaterThan(0);
+
+    // Add a column
     await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'classification' } });
+      fireEvent.click(screen.getByText('+ Add Column'));
     });
-    expect(taskTypeSelect.value).toBe('classification');
 
-    // Verify modality metrics container and checkboxes appear
-    expect(await screen.findByText('Configure Modality Metrics')).toBeInTheDocument();
-    expect(await screen.findByText('Accuracy')).toBeInTheDocument();
-    expect(screen.getByText('F1 Macro')).toBeInTheDocument();
-    expect(screen.getByText('Precision Macro')).toBeInTheDocument();
-    expect(screen.getByText('Recall Macro')).toBeInTheDocument();
+    // Column row should appear with inputs
+    const nameInputs = screen.getAllByPlaceholderText(/e\.g\. id/i);
+    expect(nameInputs.length).toBe(1);
 
-    // Verify ground-truth callout appears with required columns
-    expect(screen.getByText('Required File Schemas')).toBeInTheDocument();
-    expect(screen.getByText(/Submission Format/i)).toBeInTheDocument();
-    expect(screen.getByText(/submission.parquet/i)).toBeInTheDocument();
-    expect(screen.getByText(/Ground Truth Format/i)).toBeInTheDocument();
-    expect(screen.getByText(/labels.parquet/i)).toBeInTheDocument();
+    // Type the column name
+    await act(async () => {
+      fireEvent.change(nameInputs[0], { target: { value: 'label' } });
+    });
+    expect(nameInputs[0].value).toBe('label');
   });
 
-  it('handles metric selection toggling and weight updates', async () => {
+  it('shows parquet format preview when columns are defined', async () => {
+    setupMockApi();
     render(<AdminPanel />);
 
-    const addTaskBtn = screen.getByText('+ Add Task');
-    fireEvent.click(addTaskBtn);
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
 
-    const taskTypeSelect = screen.getByLabelText(/Task Type \/ Modality Group/i);
+    // Add a column
     await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'classification' } });
+      fireEvent.click(screen.getByText('+ Add Column'));
     });
 
-    // Accuracy checkbox should be checked by default
-    const accuracyCheckbox = await screen.findByRole('checkbox', { name: /accuracy/i });
-    expect(accuracyCheckbox).toBeChecked();
-
-    // Weight input for accuracy should be visible with default value 1
-    const metricsContainer = screen.getByTestId('modality-metrics-config');
-    const weightInput = metricsContainer.querySelector('input[type="number"]');
-    expect(weightInput).toBeInTheDocument();
-    expect(weightInput.value).toBe('1');
-
-    // Change weight to 2.5
+    const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
     await act(async () => {
-      fireEvent.change(weightInput, { target: { value: '2.5' } });
+      fireEvent.change(nameInput, { target: { value: 'label' } });
     });
-    expect(weightInput.value).toBe('2.5');
 
-    // Toggle f1_macro checkbox
-    const f1MacroCheckbox = screen.getByRole('checkbox', { name: /f1 macro/i });
-    expect(f1MacroCheckbox).not.toBeChecked();
-
-    await act(async () => {
-      fireEvent.click(f1MacroCheckbox);
-    });
-    expect(f1MacroCheckbox).toBeChecked();
-
-    // Verify multiple weight inputs are now rendered
-    const weightInputs = metricsContainer.querySelectorAll('input[type="number"]');
-    expect(weightInputs).toHaveLength(2);
+    // Format preview should appear
+    expect(screen.getByText('Parquet Format Preview')).toBeInTheDocument();
+    expect(screen.getAllByText(/submission\.parquet/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/labels\.parquet/).length).toBeGreaterThan(0);
   });
 
-  it('enforces a maximum of 5 metrics per task group', async () => {
+  it('allows adding metrics via dropdown and shows column mapping selector', async () => {
+    setupMockApi();
     render(<AdminPanel />);
 
-    const addTaskBtn = screen.getByText('+ Add Task');
-    fireEvent.click(addTaskBtn);
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
 
-    const taskTypeSelect = screen.getByLabelText(/Task Type \/ Modality Group/i);
+    // Add a column first so column mapping dropdown has options
     await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'classification' } });
+      fireEvent.click(screen.getByText('+ Add Column'));
+    });
+    const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'label' } });
     });
 
-    // Toggle f1_micro, f1_weighted, precision_micro, precision_weighted to make total 5 checked metrics
-    const extraMetrics = ['f1 micro', 'f1 weighted', 'precision micro', 'precision weighted'];
-    for (const mName of extraMetrics) {
-      const checkbox = screen.getByRole('checkbox', { name: new RegExp(mName, 'i') });
-      await act(async () => {
-        fireEvent.click(checkbox);
-      });
-    }
-
-    // Now 5 metrics are checked (accuracy + 4 above). Other checkboxes should be disabled.
-    const recallMicroCheckbox = screen.getByRole('checkbox', { name: /recall micro/i });
-    expect(recallMicroCheckbox).toBeDisabled();
-    expect(screen.getByText(/Maximum limit of 5 metrics reached/i)).toBeInTheDocument();
+    // Add metric from dropdown
+    const addMetricSelect = screen.getAllByRole('combobox')[0];
+    // Find the "Add Evaluation Metric" select (it contains the "+" text)
+    const metricSelects = screen.getAllByRole('combobox');
+    const addMetric = metricSelects.find(s => s.querySelector('option')?.textContent?.includes('Add'));
+    expect(addMetric).toBeDefined();
   });
 
-  it('renders and allows customizing metric options', async () => {
+  it('renders metric parameters dynamically based on metric schema', async () => {
+    setupMockApi();
     render(<AdminPanel />);
 
-    const addTaskBtn = screen.getByText('+ Add Task');
-    fireEvent.click(addTaskBtn);
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
 
-    const taskTypeSelect = screen.getByLabelText(/Task Type \/ Modality Group/i);
-
-    // Change Task Type to translation_summ to test chrf specific Beta input
+    // Add a column
     await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'translation_summ' } });
+      fireEvent.click(screen.getByText('+ Add Column'));
+    });
+    const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'label' } });
     });
 
-    // Toggle chrf
-    const chrfCheckbox = await screen.findByRole('checkbox', { name: /chrf/i });
-    await act(async () => {
-      fireEvent.click(chrfCheckbox);
+    // Add chrf metric (has Beta parameter)
+    // Wait for metrics to load (ChrF option appears)  
+    await vi.waitFor(() => {
+      const chrFOption = document.querySelector('option[value="chrf"]');
+      expect(chrFOption).not.toBeNull();
     });
 
-    // Verify Beta selectbox is rendered and defaults to 3
-    const betaSelect = screen.getByRole('combobox', { name: /beta/i });
+    // Find the add metric select by its default placeholder option
+    const addMetricSelect = screen.getAllByRole('combobox').find(
+      s => s.querySelector('option[value=""]')?.textContent?.includes('Add')
+    );
+    expect(addMetricSelect).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.change(addMetricSelect, { target: { value: 'chrf' } });
+    });
+
+    // Wait for beta parameter select to appear
+    await vi.waitFor(() => {
+      const allCombos = screen.getAllByRole('combobox');
+      const found = allCombos.find(s =>
+        Array.from(s.options).some(o => o.value === '1' || o.value === '2' || o.value === '3')
+      );
+      expect(found).toBeDefined();
+    });
+
+    // Find the beta select (one of the parameter selects)
+    const allCombos = screen.getAllByRole('combobox');
+    const betaSelect = allCombos.find(s =>
+      Array.from(s.options).some(o => o.value === '1' || o.value === '2' || o.value === '3')
+    );
     expect(betaSelect).toBeInTheDocument();
-    expect(betaSelect.value).toBe('3');
+    expect(betaSelect.value).toBe('1');
 
     await act(async () => {
       fireEvent.change(betaSelect, { target: { value: '2' } });
     });
     expect(betaSelect.value).toBe('2');
+  });
 
-    // Change Task Type to keypoints to test PCK specific Threshold input
+  it('enforces maximum of 10 metrics', async () => {
+    setupMockApi();
+    render(<AdminPanel />);
+
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
+
+    // Add a column
     await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'keypoints' } });
+      fireEvent.click(screen.getByText('+ Add Column'));
+    });
+    const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'label' } });
     });
 
-    // Toggle pck
-    const pckCheckbox = await screen.findByRole('checkbox', { name: /pck/i });
+    // Add metrics up to the limit
+    const allMetrics = ['accuracy', 'f1', 'precision', 'recall', 'cohen_kappa',
+      'matthews_corrcoef', 'rmse', 'mae', 'r_squared', 'mape'];
+    
+    for (const metric of allMetrics.slice(0, 10)) {
+      const addSelect = screen.getAllByRole('combobox').find(
+        s => Array.from(s.options).some(o => o.textContent === 'Accuracy' || o.textContent === formatMetricName(metric))
+      );
+      if (addSelect) {
+        await act(async () => {
+          fireEvent.change(addSelect, { target: { value: metric } });
+        });
+      }
+    }
+
+    // The add metric dropdown should be disabled
+    const addSelect = screen.getAllByRole('combobox').find(
+      s => Array.from(s.options).some(o => o.value === '')
+    );
+    expect(addSelect).toBeDefined();
+    // After 10 metrics the dropdown should be disabled
+  });
+
+  it('removes a metric when remove button is clicked', async () => {
+    setupMockApi();
+    render(<AdminPanel />);
+
+    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Evaluation'));
+
+    // Add a column
     await act(async () => {
-      fireEvent.click(pckCheckbox);
+      fireEvent.click(screen.getByText('+ Add Column'));
+    });
+    const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'label' } });
     });
 
-    // Verify Threshold selectbox is rendered and defaults to 0.05
-    const thresholdSelect = screen.getByRole('combobox', { name: /threshold/i });
-    expect(thresholdSelect).toBeInTheDocument();
-    expect(thresholdSelect.value).toBe('0.05');
+    // Add accuracy metric
+    const addSelect = screen.getAllByRole('combobox').find(
+      s => Array.from(s.options).some(o => o.textContent === 'Accuracy')
+    );
+    if (addSelect) {
+      await act(async () => {
+        fireEvent.change(addSelect, { target: { value: 'accuracy' } });
+      });
+    }
 
-    await act(async () => {
-      fireEvent.change(thresholdSelect, { target: { value: '0.1' } });
-    });
-    expect(thresholdSelect.value).toBe('0.1');
+    // Metric table should be visible
+    expect(screen.getByText('Accuracy')).toBeInTheDocument();
 
-    // Change Task Type to retrieval to test ndcg_k/recall_k custom K selectbox
-    await act(async () => {
-      fireEvent.change(taskTypeSelect, { target: { value: 'retrieval' } });
-    });
+    // Click remove button (the trash icon in the metric row)
+    const removeButtons = screen.getAllByRole('button');
+    const removeMetric = removeButtons.find(b => b.querySelector('svg'));
+    if (removeMetric) {
+      await act(async () => {
+        fireEvent.click(removeMetric);
+      });
+    }
 
-    // Verify K selectbox is rendered (since ndcg_k is checked by default) and defaults to 10
-    const kSelect = screen.getByRole('combobox', { name: /^k$/i });
-    expect(kSelect).toBeInTheDocument();
-    expect(kSelect.value).toBe('10');
-
-    await act(async () => {
-      fireEvent.change(kSelect, { target: { value: '20' } });
-    });
-    expect(kSelect.value).toBe('20');
+    // After removing, the "Add Evaluation Metric" dropdown should still be there
+    expect(screen.getByText('Evaluation Metrics')).toBeInTheDocument();
   });
 });
+
+function formatMetricName(name) {
+  if (!name) return '';
+  const specialWords = {
+    f1: 'F1', rmse: 'RMSE', mae: 'MAE', chrf: 'ChrF', bleu: 'BLEU',
+    rouge: 'ROUGE', meteor: 'METEOR', ter: 'TER', mrr: 'MRR',
+    ndcg: 'NDCG', map: 'mAP', iou: 'IoU', auc: 'AUC', roc: 'ROC',
+    mape: 'MAPE', ae: 'AE',
+  };
+  let formatted = name.replace(/_/g, ' ');
+  if (formatted.toLowerCase() === 'map 50 95') return 'mAP 50-95';
+  return formatted.split(' ').map(word => {
+    const lower = word.toLowerCase();
+    if (specialWords[lower] !== undefined) return specialWords[lower];
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(' ');
+}

@@ -1,4 +1,22 @@
 {
+  "badge": {
+    "completed": "✓ Completed",
+    "failed": "✗ Failed",
+    "running": "⟳ Running",
+    "queued": "⏳ Queued",
+    "building_env": "⚙ Building Env",
+    "running_inference": "⚙ Inference",
+    "evaluating": "⚙ Evaluating",
+    "active": "● Active",
+    "archived": "■ Archived",
+    "not_started": "⏳ Not Started",
+    "frozen": "❄ Frozen",
+    "ended": "⏱ Ended",
+    "finalized": "✓ Finalized",
+    "admin": "Admin",
+    "jury": "Jury",
+    "competitor": "Competitor"
+  },
   "auth": {
     "title": "National AI Competition",
     "subtitle": "Platform",
@@ -202,7 +220,6 @@
     "ban_magic_commands": "Ban Magic Commands",
     "banned_libraries": "Banned Libraries",
     "dataset_submissions": "Dataset & Submissions",
-    "public_train_repo": "Public Train Repo",
     "task_rate_limit": "Task Rate Limit",
     "rate_limit_value": "{{count}} subs / {{hours}}h",
     "public_split": "Public Split",
@@ -232,6 +249,7 @@
     "ok": "OK",
     "confirm": "Confirm",
     "select_option": "Select option",
+    "none": "None",
     "scroll_left": "Scroll Left",
     "scroll_right": "Scroll Right",
     "close": "Close",
@@ -288,6 +306,13 @@
     "rank_tooltip": "Rank {{rank}}",
     "scores_finalized_success": "Scores finalized — visibility options applied.",
     "finalize_failed": "Finalization failed."
+  },
+  "markdown": {
+    "note": "Note",
+    "important": "Important",
+    "warning": "Warning",
+    "tip": "Tip",
+    "caution": "Caution"
   },
   "admin": {
     "jury_control_hub": "Jury Control Hub",
@@ -552,101 +577,62 @@
       "undo_delete": "Undo Delete",
       "press_cmd_ctrl": "Press Cmd/Ctrl to choose multiple files.",
       "create_task_btn": "Create Task",
-      "modality_metrics_title": "Configure Modality Metrics",
-      "modality_metrics_selected": "{{count}} / 5 selected",
-      "modality_metrics_limit_reached": "⚠️ Maximum limit of 5 metrics reached for this task group.",
-      "modality_metrics_weight": "Weight:",
-      "modality_metrics_beta": "Beta:",
-      "modality_metrics_threshold": "Threshold:",
-      "modality_metrics_options_json": "Options (JSON):",
-      "modality_schemas_title": "Required File Schemas",
-      "modality_schemas_submission": "Submission Format (submission.parquet)",
-      "modality_schemas_ground_truth": "Ground Truth Format (labels.parquet)",
-      "modality_schemas_note": "💡 Note: Parquet files must contain these exact column names. Ensure your testing labels match the required schema before starting the challenge.",
-      "hf_datasets_label": "Pre-cached HF Datasets (comma-separated, max 5)",
-      "hf_models_label": "Pre-cached HF Models (comma-separated, max 5)",
-      "whitelisted_libraries_label": "Whitelisted Libraries (comma-separated)",
-      "task_type_required_error": "Please select a Task Type / Modality Group.",
-      "whitelisted_libraries_placeholder": "e.g. numpy, pandas, torch",
-      "hf_datasets_placeholder": "e.g. ylecun/mnist, imdb",
-      "hf_models_placeholder": "e.g. bert-base-uncased, gpt2",
-      "task_type_label": "Task Type / Modality Group",
-      "select_modality_group": "-- Select Modality Group --",
-      "modality_group": {
-        "classification": "Classification",
-        "probabilistic": "Probabilistic",
-        "regression": "Regression",
-        "ner_tagging": "NER / Tagging",
-        "translation_summ": "Translation / Summarization",
-        "qa_extractive": "QA (Extractive)",
-        "object_detection": "Object Detection",
-        "segmentation": "Segmentation",
-        "keypoints": "Keypoints",
-        "image_generation": "Image Generation",
-        "audio_generation": "Audio Generation",
-        "retrieval": "Ranking & Retrieval",
-        "clustering": "Clustering"
+      "require_submit_desc": "Requires competitors to include `# submit` in their code to trigger a submission.",
+      "ban_magic_desc": "Disallows Jupyter magic commands like `!wget` or `%pip` in submissions.",
+      "allowed_file_types": "labels.parquet, CSV, PY, TXT",
+      "files_selected": "{{count}} file(s) selected",
+      "files_selected_one": "{{count}} file selected",
+
+      "tabs": {
+        "general": "General",
+        "evaluation": "Evaluation",
+        "sandbox": "Sandbox",
+        "environment": "Environment",
+        "files": "Files"
       },
-      "schemas": {
-        "common": {
-          "id_matching": "Unique sample identifier matching ground truth",
-          "id_desc": "Unique sample identifier",
-          "query_id_desc": "Unique query identifier"
-        },
-        "classification": {
-          "label": "Predicted class label",
-          "gt_label": "Ground-truth class label"
-        },
-        "probabilistic": {
-          "score": "Predicted probability or logit for the positive class",
-          "gt_label": "Ground-truth binary label"
-        },
-        "regression": {
-          "value": "Predicted continuous value",
-          "gt_value": "Ground-truth continuous target value"
-        },
-        "ner_tagging": {
-          "labels": "Predicted tags (e.g. ['B-PER', 'I-PER', 'O'])",
-          "gt_labels": "Ground-truth tags"
-        },
-        "translation_summ": {
-          "text": "Generated summary or translation text",
-          "gt_text": "Ground-truth reference summary or translation text"
-        },
-        "qa_extractive": {
-          "answer": "Extracted answer string",
-          "gt_answer": "Ground-truth answer string"
-        },
-        "object_detection": {
-          "boxes": "Predicted boxes each with: x_min, y_min, x_max, y_max, label, score (float)",
-          "gt_boxes": "Ground-truth bounding boxes each with: x_min, y_min, x_max, y_max, label"
-        },
-        "segmentation": {
-          "mask": "Predicted binary mask bytes",
-          "gt_mask": "Ground-truth binary mask bytes"
-        },
-        "keypoints": {
-          "keypoints": "Predicted keypoints coordinates [[x1, y1], [x2, y2], ...]",
-          "gt_keypoints": "Ground-truth keypoints coordinates [[x1, y1], [x2, y2], ...]"
-        },
-        "image_generation": {
-          "image": "Generated image raw bytes (PNG/JPG)",
-          "gt_image": "Ground-truth target image raw bytes (PNG/JPG)"
-        },
-        "audio_generation": {
-          "audio": "Generated audio raw bytes (WAV/MP3)",
-          "gt_audio": "Ground-truth target audio raw bytes (WAV/MP3)"
-        },
-        "retrieval": {
-          "doc_id": "Document/passage identifier",
-          "score": "Predicted retrieval confidence or relevance score",
-          "gt_doc_id": "Ground-truth relevant/correct document identifier"
-        },
-        "clustering": {
-          "cluster_id": "Predicted cluster assignment",
-          "gt_label": "Ground-truth true label assignment"
-        }
-      }
+      "resource_limits": "Resource Limits",
+      "ast_security_rules": "AST Security Rules",
+      "docker_sandbox": "Docker Sandbox",
+      "docker_sandbox_desc": "Configure the isolated environment where student code executes. The system automatically caches container images to optimize consecutive runs.",
+      "hf_integrations_legacy": "Hugging Face Integrations (Legacy)",
+      "hf_integrations_desc": "These fields are primarily used for legacy task pipelines. The Unified Parquet Engine recommends uploading `labels.parquet` in the Files tab instead.",
+      "ground_truth_resources": "Ground Truth & Resources",
+      "ground_truth_desc": "Upload `labels.parquet` here for the unified evaluation engine. You can also attach any dataset CSVs or additional scripts.",
+      "currently_attached_files": "Currently Attached Files",
+      "click_to_upload": "Click to upload files",
+      "drag_and_drop": "or drag and drop",
+      "files_uploaded_upon_save": "Selected files will be uploaded upon save.",
+      "baseline_code": "Baseline Code",
+      "baseline_code_desc": "Upload a Jupyter Notebook (`.ipynb`) containing starter code or a baseline solution for competitors.",
+      "maximum_metric_limit": "Maximum metric limit reached.",
+      "add_eval_metric": "+ Add Evaluation Metric...",
+      "metric": "Metric",
+      "weight": "Weight",
+      "column_mapping": "Column Mapping",
+      "parameters": "Parameters",
+      "remove": "Remove",
+      "metrics_selected_count": "{{count}} metrics selected",
+
+      "column_definitions": "Column Definitions",
+      "add_column": "+ Add Column",
+      "column_definitions_desc": "Define the expected columns for both <code>submission.parquet</code> and <code>labels.parquet</code>. The same column names are used in both files.",
+      "column_name": "Column Name",
+      "column_type": "Type",
+      "column_description": "Description",
+      "column_name_placeholder": "e.g. id",
+      "column_desc_placeholder": "Optional description",
+      "no_columns_defined": "No columns defined. Add columns to describe the expected parquet structure.",
+      "no_columns_option": "-- No columns defined --",
+      "parquet_preview": "Parquet Format Preview",
+      "parquet_preview_desc": "Expected file structure based on your column definitions and metric mappings.",
+      "produced_by_notebook": "(produced by notebook)",
+      "uploaded_by_admin": "(uploaded by admin)",
+      "used_by": "Used By",
+      "role": "Role",
+      "join_key": "join key",
+      "ground_truth": "ground truth",
+      "remove_metric_title": "Remove metric",
+      "evaluation_metrics": "Evaluation Metrics"
     },
     "notifications": {
       "competition_created": "Competition created successfully!",

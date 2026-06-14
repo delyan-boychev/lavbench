@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import api from './services/ApiService';
 
 const AuthContext = createContext(null);
-const API_BASE = '/api';
 
 // Native browser Web Crypto API SHA-256 hash helper
 const hashPassword = async (password) => {
@@ -26,6 +26,17 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
   }, []);
 
+  // Listen for global unauthorized events from ApiService
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+    };
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth:unauthorized', handleUnauthorized);
+    };
+  }, [logout]);
+
   // Fetch current user details
   const fetchUser = useCallback(async (currentToken) => {
     if (!currentToken) {
@@ -35,11 +46,12 @@ export const AuthProvider = ({ children }) => {
     }
     setAuthLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${currentToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      // Temporarily store token in localStorage if it isn't so ApiService can use it
+      if (!localStorage.getItem('token')) {
+        localStorage.setItem('token', currentToken);
+      }
+      const { ok, data } = await api.get('/auth/me');
+      if (ok) {
         if (currentToken === localStorage.getItem('token')) {
           setCurrentUser(data.user);
         }
@@ -60,20 +72,20 @@ export const AuthProvider = ({ children }) => {
     try {
       let finalPassword = password || '';
       const hashedPassword = await hashPassword(finalPassword);
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: (identifier || '').trim(), password: hashedPassword })
+      
+      const { ok, data } = await api.post('/auth/login', { 
+        username: (identifier || '').trim(), 
+        password: hashedPassword 
       });
-      const data = await res.json();
-      if (res.ok) {
+      
+      if (ok) {
         setToken(data.token);
         localStorage.setItem('token', data.token);
         setCurrentUser(data.user);
         return { success: true };
       } else {
-        setAuthError(data.code ? { code: data.code, error: data.error } : 'auth.failed');
-        return { success: false, error: data.error };
+        setAuthError(data?.code ? { code: data.code, error: data.error } : 'auth.failed');
+        return { success: false, error: data?.error };
       }
     } catch (err) {
       setAuthError('auth.unreachable');

@@ -1,4 +1,22 @@
 {
+  "badge": {
+    "completed": "✓ Завършено",
+    "failed": "✗ Неуспешно",
+    "running": "⟳ Изпълнява се",
+    "queued": "⏳ На опашка",
+    "building_env": "⚙ Изграждане на среда",
+    "running_inference": "⚙ Извличане",
+    "evaluating": "⚙ Оценяване",
+    "active": "● Активно",
+    "archived": "■ Архивирано",
+    "not_started": "⏳ Не е започнало",
+    "frozen": "❄ Замразено",
+    "ended": "⏱ Приключило",
+    "finalized": "✓ Финализирано",
+    "admin": "Администратор",
+    "jury": "Жури",
+    "competitor": "Участник"
+  },
   "auth": {
     "title": "Национално състезание по ИИ",
     "subtitle": "Платформа",
@@ -202,7 +220,6 @@
     "ban_magic_commands": "Забрана на магически команди",
     "banned_libraries": "Забранени библиотеки",
     "dataset_submissions": "Набор от данни и решения",
-    "public_train_repo": "Публично хранилище с данни за обучение",
     "task_rate_limit": "Лимит на изпращанията",
     "rate_limit_value": "{{count}} решения / {{hours}}ч",
     "public_split": "Публичен дял (public split)",
@@ -232,6 +249,7 @@
     "ok": "ОК",
     "confirm": "Потвърждаване",
     "select_option": "Изберете опция",
+    "none": "Няма",
     "scroll_left": "Превъртане наляво",
     "scroll_right": "Превъртане надясно",
     "close": "Затваряне",
@@ -288,6 +306,13 @@
     "rank_tooltip": "Място {{rank}}",
     "scores_finalized_success": "Резултатите са финализирани — опциите за видимост са приложени.",
     "finalize_failed": "Неуспешно финализиране."
+  },
+  "markdown": {
+    "note": "Забележка",
+    "important": "Важно",
+    "warning": "Предупреждение",
+    "tip": "Съвет",
+    "caution": "Внимание"
   },
   "admin": {
     "jury_control_hub": "Контролен панел за журито",
@@ -552,101 +577,62 @@
       "undo_delete": "Възстанови изтриването",
       "press_cmd_ctrl": "Натиснете Cmd/Ctrl за избор на няколко файла.",
       "create_task_btn": "Създай задача",
-      "modality_metrics_title": "Настройка на метриките за модалност",
-      "modality_metrics_selected": "{{count}} / 5 избрани",
-      "modality_metrics_limit_reached": "⚠️ Достигнат е максималният лимит от 5 метрики за тази група задачи.",
-      "modality_metrics_weight": "Тегло:",
-      "modality_metrics_beta": "Бета:",
-      "modality_metrics_threshold": "Праг:",
-      "modality_metrics_options_json": "Настройки (JSON):",
-      "modality_schemas_title": "Изисквани файлови схеми",
-      "modality_schemas_submission": "Формат на решението (submission.parquet)",
-      "modality_schemas_ground_truth": "Формат на верните отговори (labels.parquet)",
-      "modality_schemas_note": "💡 Забележка: Parquet файловете трябва да съдържат тези точни имена на колони. Уверете се, че вашите тестови етикети отговарят на изискваната схема, преди да стартирате предизвикателството.",
-      "hf_datasets_label": "Предварително кеширани HF датасети (разделени със запетая, макс. 5)",
-      "hf_models_label": "Предварително кеширани HF модели (разделени със запетая, макс. 5)",
-      "whitelisted_libraries_label": "Списък с разрешени библиотеки (разделени със запетая)",
-      "task_type_required_error": "Моля, изберете тип задача / модалност.",
-      "whitelisted_libraries_placeholder": "напр. numpy, pandas, torch",
-      "hf_datasets_placeholder": "напр. ylecun/mnist, imdb",
-      "hf_models_placeholder": "напр. bert-base-uncased, gpt2",
-      "task_type_label": "Тип задача / Група модалности",
-      "select_modality_group": "-- Изберете група модалности --",
-      "modality_group": {
-        "classification": "Класификация",
-        "probabilistic": "Вероятностен",
-        "regression": "Регресия",
-        "ner_tagging": "NER / Маркиране",
-        "translation_summ": "Превод / Резюмиране",
-        "qa_extractive": "QA (Екстрактивен)",
-        "object_detection": "Засичане на обекти",
-        "segmentation": "Сегментация",
-        "keypoints": "Ключови точки",
-        "image_generation": "Генериране на изображения",
-        "audio_generation": "Генериране на аудио",
-        "retrieval": "Класиране и извличане",
-        "clustering": "Клъстериране"
+      "require_submit_desc": "Изисква състезателите да включат `# submit` в кода си, за да задействат изпълнение.",
+      "ban_magic_desc": "Забранява Jupyter magic команди като `!wget` или `%pip` в решенията.",
+      "allowed_file_types": "labels.parquet, CSV, PY, TXT",
+      "files_selected": "{{count}} избрани файла",
+      "files_selected_one": "{{count}} избран файл",
+
+      "tabs": {
+        "general": "Общи",
+        "evaluation": "Оценяване",
+        "sandbox": "Сандбокс",
+        "environment": "Среда",
+        "files": "Файлове"
       },
-      "schemas": {
-        "common": {
-          "id_matching": "Уникален идентификатор на извадка, съответстващ на верните отговори",
-          "id_desc": "Уникален идентификатор на извадка",
-          "query_id_desc": "Уникален идентификатор на заявка"
-        },
-        "classification": {
-          "label": "Предвиден клас етикет",
-          "gt_label": "Истински клас етикет (ground truth)"
-        },
-        "probabilistic": {
-          "score": "Предвидена вероятност или logit за положителния клас",
-          "gt_label": "Истински двоичен етикет (ground truth)"
-        },
-        "regression": {
-          "value": "Предвидена непрекъсната стойност",
-          "gt_value": "Истинска непрекъсната целева стойност (ground truth)"
-        },
-        "ner_tagging": {
-          "labels": "Предвидени тагове (напр. ['B-PER', 'I-PER', 'O'])",
-          "gt_labels": "Истински тагове (ground truth)"
-        },
-        "translation_summ": {
-          "text": "Генериран текст за резюме или превод",
-          "gt_text": "Истински референтен текст за резюме или превод"
-        },
-        "qa_extractive": {
-          "answer": "Извлечен низ за отговор",
-          "gt_answer": "Истински низ за отговор"
-        },
-        "object_detection": {
-          "boxes": "Предвидени кутии, всяка с: x_min, y_min, x_max, y_max, label, score (float)",
-          "gt_boxes": "Истински ограничаващи кутии, всяка с: x_min, y_min, x_max, y_max, label"
-        },
-        "segmentation": {
-          "mask": "Предвидени байтове на двоична маска",
-          "gt_mask": "Истински байтове на двоична маска"
-        },
-        "keypoints": {
-          "keypoints": "Предвидени координати на ключови точки [[x1, y1], [x2, y2], ...]",
-          "gt_keypoints": "Истински координати на ключови точки [[x1, y1], [x2, y2], ...]"
-        },
-        "image_generation": {
-          "image": "Сурови байтове на генерираното изображение (PNG/JPG)",
-          "gt_image": "Сурови байтове на истинското целево изображение (PNG/JPG)"
-        },
-        "audio_generation": {
-          "audio": "Сурови байтове на генерирания аудио файл (WAV/MP3)",
-          "gt_audio": "Сурови байтове на истинския целеви аудио файл (WAV/MP3)"
-        },
-        "retrieval": {
-          "doc_id": "Идентификатор на документ/пасаж",
-          "score": "Предвидена увереност при извличане или резултат за уместност",
-          "gt_doc_id": "Истински уместен/правилен идентификатор на документ"
-        },
-        "clustering": {
-          "cluster_id": "Предвидено разпределение на клъстера",
-          "gt_label": "Истинско разпределение на етикетите (ground truth)"
-        }
-      }
+      "resource_limits": "Ресурсни Лимити",
+      "ast_security_rules": "AST Правила за Сигурност",
+      "docker_sandbox": "Docker Сандбокс",
+      "docker_sandbox_desc": "Конфигурирайте изолираната среда, където се изпълнява кодът на участниците.",
+      "hf_integrations_legacy": "Hugging Face Интеграции (Стари)",
+      "hf_integrations_desc": "Тези полета се използват основно за стари задачи. Препоръчително е да качите `labels.parquet` в раздел Файлове.",
+      "ground_truth_resources": "Ground Truth и Ресурси",
+      "ground_truth_desc": "Качете `labels.parquet` тук за унифицирания енджин за оценяване.",
+      "currently_attached_files": "Текущо Прикачени Файлове",
+      "click_to_upload": "Кликнете за качване на файлове",
+      "drag_and_drop": "или плъзнете и пуснете",
+      "files_uploaded_upon_save": "Избраните файлове ще бъдат качени при запазване.",
+      "baseline_code": "Базов Код (Baseline)",
+      "baseline_code_desc": "Качете Jupyter Notebook (`.ipynb`) със стартов код.",
+      "maximum_metric_limit": "Достигнат е максималният брой метрики.",
+      "add_eval_metric": "+ Добави Метрика...",
+      "metric": "Метрика",
+      "weight": "Тежест",
+      "column_mapping": "Колона",
+      "parameters": "Параметри",
+      "remove": "Премахни",
+      "metrics_selected_count": "{{count}} избрани метрики",
+
+      "column_definitions": "Дефиниции на колони",
+      "add_column": "+ Добави колона",
+      "column_definitions_desc": "Дефинирайте очакваните колони за <code>submission.parquet</code> и <code>labels.parquet</code>. Едни и същи имена на колони се използват и в двата файла.",
+      "column_name": "Име на колона",
+      "column_type": "Тип",
+      "column_description": "Описание",
+      "column_name_placeholder": "напр. id",
+      "column_desc_placeholder": "Описание (по желание)",
+      "no_columns_defined": "Няма дефинирани колони. Добавете колони, за да опишете очакваната parquet структура.",
+      "no_columns_option": "-- Няма дефинирани колони --",
+      "parquet_preview": "Преглед на Parquet формата",
+      "parquet_preview_desc": "Очаквана файлова структура според дефинициите на колони и метриките.",
+      "produced_by_notebook": "(създаден от notebook)",
+      "uploaded_by_admin": "(качен от администратор)",
+      "used_by": "Използвана от",
+      "role": "Роля",
+      "join_key": "ключ за свързване",
+      "ground_truth": "реални стойности",
+      "remove_metric_title": "Премахни метрика",
+      "evaluation_metrics": "Метрики за оценяване"
     },
     "notifications": {
       "competition_created": "Предизвикателството е създадено успешно!",
@@ -739,4 +725,3 @@
     }
   }
 }
-

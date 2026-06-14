@@ -1,4 +1,3 @@
-// Base API service class — all methods read the JWT from localStorage on every call
 class ApiService {
   #baseUrl;
 
@@ -7,19 +6,55 @@ class ApiService {
   }
 
   #getHeaders(isForm = false) {
-    const token = localStorage.getItem('token');
+    let token = null;
+    try { token = window?.localStorage?.getItem('token'); } catch(e) {}
     const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!isForm) headers['Content-Type'] = 'application/json';
     return headers;
   }
 
+  async #handleResponse(res) {
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    const data = res.status === 204 ? null : await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data, res };
+  }
+
+  // Generic fetch wrapper to act as a drop-in replacement for native fetch
+  async fetch(url, options = {}) {
+    const isForm = options.body instanceof FormData;
+    const defaultHeaders = this.#getHeaders(isForm);
+    
+    // We strip headers that fetch would auto-generate for FormData
+    const mergedHeaders = { ...defaultHeaders, ...options.headers };
+    if (isForm && mergedHeaders['Content-Type']) {
+      delete mergedHeaders['Content-Type'];
+    }
+
+    let finalUrl = url;
+    if (!url.startsWith('http')) {
+      // Avoid double /api prefix
+      finalUrl = url.startsWith(this.#baseUrl) ? url : `${this.#baseUrl}${url}`;
+    }
+
+    const res = await fetch(finalUrl, {
+      ...options,
+      headers: mergedHeaders
+    });
+
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    return res;
+  }
+
   async get(path) {
     const res = await fetch(`${this.#baseUrl}${path}`, {
       headers: this.#getHeaders(),
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
   async post(path, body) {
@@ -28,8 +63,7 @@ class ApiService {
       headers: this.#getHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
   async put(path, body) {
@@ -38,8 +72,7 @@ class ApiService {
       headers: this.#getHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
   async delete(path) {
@@ -47,8 +80,7 @@ class ApiService {
       method: 'DELETE',
       headers: this.#getHeaders(),
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
   async postForm(path, formData) {
@@ -57,8 +89,7 @@ class ApiService {
       headers: this.#getHeaders(true),
       body: formData,
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
   async putForm(path, formData) {
@@ -67,15 +98,16 @@ class ApiService {
       headers: this.#getHeaders(true),
       body: formData,
     });
-    const data = res.status === 204 ? null : await res.json();
-    return { ok: res.ok, status: res.status, data };
+    return this.#handleResponse(res);
   }
 
-  // Returns a raw fetch response (for streaming blob downloads)
   async getBlob(path) {
     const res = await fetch(`${this.#baseUrl}${path}`, {
       headers: this.#getHeaders(),
     });
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
     return res;
   }
 }

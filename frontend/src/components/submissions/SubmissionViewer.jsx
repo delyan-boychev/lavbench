@@ -177,7 +177,7 @@ export default function SubmissionViewer({
               {t('submissions.integrity_title')}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
-              <div><strong>{t('submissions.celery_task_id')}</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || "None"}</span></div>
+              <div><strong>{t('submissions.celery_task_id')}</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || t('common.none')}</span></div>
               <div><strong>{t('submissions.execution_time')}</strong> {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : "—"}</div>
             </div>
           </div>

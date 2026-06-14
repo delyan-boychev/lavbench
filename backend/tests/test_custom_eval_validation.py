@@ -24,7 +24,7 @@ class TestCustomEvalValidation(unittest.TestCase):
         self.real_run = original_subprocess.run
 
         # Mock subprocess.run to simulate docker being available and image checks/builds succeeding
-        self.docker_patch = patch('tasks.subprocess.run')
+        self.docker_patch = patch('subprocess.run')
         self.mock_sub_run = self.docker_patch.start()
         
         def run_side_effect(cmd, **kwargs):
@@ -36,7 +36,7 @@ class TestCustomEvalValidation(unittest.TestCase):
         self.mock_sub_run.side_effect = run_side_effect
 
         # Mock subprocess.Popen to intercept the docker run and run the python code locally for the test
-        self.popen_patch = patch('tasks.subprocess.Popen')
+        self.popen_patch = patch('subprocess.Popen')
         self.mock_popen = self.popen_patch.start()
         
         def popen_side_effect(cmd, **kwargs):
@@ -70,7 +70,7 @@ class TestCustomEvalValidation(unittest.TestCase):
         db.drop_all()
         self.app_context.pop()
 
-    @patch('tasks.report_status_to_server')
+    @patch('task_modules.submission_runner.report_status_to_server')
     def run_eval_with_code(self, custom_eval_code, mock_report):
         mock_report.return_value = True
 
@@ -81,7 +81,8 @@ class TestCustomEvalValidation(unittest.TestCase):
             "task_id": 456,
             "user_code": "def run_pipeline(): return 0.75, 0.85",
             "is_custom_eval": True,
-            "custom_eval_code": custom_eval_code
+            "custom_eval_code": custom_eval_code,
+            "is_unified_parquet": False,
         }
 
         # Run the evaluation

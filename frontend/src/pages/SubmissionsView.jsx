@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api from '../services/ApiService';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
@@ -182,7 +183,7 @@ export default function SubmissionsView() {
   const handleSelectFinal = async (submissionId) => {
     setSelectingFinal(true);
     try {
-      const res = await fetch(`/api/submissions/${submissionId}/select-final`, {
+      const res = await api.fetch(`/api/submissions/${submissionId}/select-final`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

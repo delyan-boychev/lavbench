@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api from '../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
@@ -15,6 +16,7 @@ import BackupManager from '../components/admin/BackupManager';
 import UserManager from '../components/admin/UserManager';
 import CompetitorManager from '../components/admin/CompetitorManager';
 import ChallengeConfig from '../components/admin/ChallengeConfig';
+import TaskForm from '../components/admin/TaskForm';
 
 const getTimezones = () => {
   let zones = [];
@@ -116,199 +118,8 @@ export const formatMetricName = (name) => {
     .join(' ');
 };
 
-const TASK_TYPE_METRICS = {
-  classification: [
-    "accuracy",
-    "f1_macro",
-    "f1_micro",
-    "f1_weighted",
-    "precision",
-    "precision_macro",
-    "precision_micro",
-    "precision_weighted",
-    "recall",
-    "recall_macro",
-    "recall_micro",
-    "recall_weighted",
-    "cohen_kappa",
-    "matthews_corrcoef"
-  ],
-  probabilistic: ["auc_roc", "logloss", "brier_score"],
-  regression: ["rmse", "mae", "r_squared", "mape", "median_ae"],
-  ner_tagging: ["seqeval_f1", "seqeval_precision", "seqeval_recall"],
-  translation_summ: ["bleu", "rouge_l", "meteor", "bertscore", "chrf", "ter"],
-  qa_extractive: ["exact_match", "f1"],
-  object_detection: ["map_50", "map_75", "map_50_95", "recall"],
-  segmentation: ["mean_iou", "dice", "pixel_accuracy"],
-  keypoints: ["oks", "pck"],
-  image_generation: ["psnr", "ssim", "mse", "fid", "is", "clip_score", "lpips", "niqe"],
-  audio_generation: ["snr", "mse", "mel_lsd", "nisqa", "pesq", "si_sdr"],
-  retrieval: ["ndcg_k", "ndcg_5", "ndcg_10", "ndcg_20", "mrr", "recall_k", "recall_5", "recall_10", "recall_20"],
-  clustering: ["adjusted_rand_index", "normalized_mutual_info", "adjusted_mutual_info", "v_measure"]
-};
 
-const TASK_TYPE_COLUMNS = {
-  classification: ["id", "label"],
-  probabilistic: ["id", "label"],
-  regression: ["id", "value"],
-  ner_tagging: ["id", "labels"],
-  translation_summ: ["id", "text"],
-  qa_extractive: ["id", "answer"],
-  object_detection: ["id", "boxes"],
-  segmentation: ["id", "mask"],
-  keypoints: ["id", "keypoints"],
-  image_generation: ["id", "image"],
-  audio_generation: ["id", "audio"],
-  retrieval: ["query_id", "doc_id"],
-  clustering: ["id", "cluster_id"]
-};
 
-const getTaskTypeSchemasHelp = (t) => ({
-  classification: {
-    name: t('admin.tasks.modality_group.classification'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.classification.label') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.classification.gt_label') }
-    ]
-  },
-  probabilistic: {
-    name: t('admin.tasks.modality_group.probabilistic'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "score", type: "float", desc: t('admin.tasks.schemas.probabilistic.score') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "label", type: "integer (0 or 1)", desc: t('admin.tasks.schemas.probabilistic.gt_label') }
-    ]
-  },
-  regression: {
-    name: t('admin.tasks.modality_group.regression'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "value", type: "float", desc: t('admin.tasks.schemas.regression.value') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "value", type: "float", desc: t('admin.tasks.schemas.regression.gt_value') }
-    ]
-  },
-  ner_tagging: {
-    name: t('admin.tasks.modality_group.ner_tagging'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "labels", type: "list of strings", desc: t('admin.tasks.schemas.ner_tagging.labels') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "labels", type: "list of strings", desc: t('admin.tasks.schemas.ner_tagging.gt_labels') }
-    ]
-  },
-  translation_summ: {
-    name: t('admin.tasks.modality_group.translation_summ'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "text", type: "string", desc: t('admin.tasks.schemas.translation_summ.text') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "text", type: "string", desc: t('admin.tasks.schemas.translation_summ.gt_text') }
-    ]
-  },
-  qa_extractive: {
-    name: t('admin.tasks.modality_group.qa_extractive'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "answer", type: "string", desc: t('admin.tasks.schemas.qa_extractive.answer') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "answer", type: "string", desc: t('admin.tasks.schemas.qa_extractive.gt_answer') }
-    ]
-  },
-  object_detection: {
-    name: t('admin.tasks.modality_group.object_detection'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "boxes", type: "list of structs", desc: t('admin.tasks.schemas.object_detection.boxes') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "boxes", type: "list of structs", desc: t('admin.tasks.schemas.object_detection.gt_boxes') }
-    ]
-  },
-  segmentation: {
-    name: t('admin.tasks.modality_group.segmentation'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "mask", type: "binary/bytes", desc: t('admin.tasks.schemas.segmentation.mask') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "mask", type: "binary/bytes", desc: t('admin.tasks.schemas.segmentation.gt_mask') }
-    ]
-  },
-  keypoints: {
-    name: t('admin.tasks.modality_group.keypoints'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "keypoints", type: "list of coordinate pairs", desc: t('admin.tasks.schemas.keypoints.keypoints') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "keypoints", type: "list of coordinate pairs", desc: t('admin.tasks.schemas.keypoints.gt_keypoints') }
-    ]
-  },
-  image_generation: {
-    name: t('admin.tasks.modality_group.image_generation'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "image", type: "binary/bytes", desc: t('admin.tasks.schemas.image_generation.image') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "image", type: "binary/bytes", desc: t('admin.tasks.schemas.image_generation.gt_image') }
-    ]
-  },
-  audio_generation: {
-    name: t('admin.tasks.modality_group.audio_generation'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "audio", type: "binary/bytes", desc: t('admin.tasks.schemas.audio_generation.audio') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "audio", type: "binary/bytes", desc: t('admin.tasks.schemas.audio_generation.gt_audio') }
-    ]
-  },
-  retrieval: {
-    name: t('admin.tasks.modality_group.retrieval'),
-    sub_cols: [
-      { name: "query_id", type: "integer/string", desc: t('admin.tasks.schemas.common.query_id_desc') },
-      { name: "doc_id", type: "integer/string", desc: t('admin.tasks.schemas.retrieval.doc_id') },
-      { name: "score", type: "float", desc: t('admin.tasks.schemas.retrieval.score') }
-    ],
-    label_cols: [
-      { name: "query_id", type: "integer/string", desc: t('admin.tasks.schemas.common.query_id_desc') },
-      { name: "doc_id", type: "integer/string", desc: t('admin.tasks.schemas.retrieval.gt_doc_id') }
-    ]
-  },
-  clustering: {
-    name: t('admin.tasks.modality_group.clustering'),
-    sub_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
-      { name: "cluster_id", type: "integer/string", desc: t('admin.tasks.schemas.clustering.cluster_id') }
-    ],
-    label_cols: [
-      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
-      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.clustering.gt_label') }
-    ]
-  }
-});
 
 export default function AdminPanel() {
   const { t } = useTranslation();
@@ -404,7 +215,6 @@ export default function AdminPanel() {
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
-    task_type: '',
     ram_limit_mb: '',
     time_limit_sec: '',
     gpu_required: true,
@@ -416,8 +226,6 @@ export default function AdminPanel() {
     banned_imports: '',
     whitelisted_imports: '',
     metrics_config: '',
-    hf_train_repo: '',
-    hf_eval_repo: '',
     hf_datasets_raw: '',
     hf_models_raw: '',
     hf_api_key: '',
@@ -526,11 +334,33 @@ export default function AdminPanel() {
   const [workerStatsLoading, setWorkerStatsLoading] = useState(false);
   const [workerStatsError, setWorkerStatsError] = useState(null);
 
+  const [availableMetrics, setAvailableMetrics] = useState({});
+
+  const fetchAvailableMetrics = async () => {
+    try {
+      const res = await api.fetch(`${API_BASE}/admin/metrics`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableMetrics(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchAvailableMetrics();
+    }
+  }, [token]);
+
   // Fetch Worker & Resource Stats
   const fetchWorkerStats = async () => {
     setWorkerStatsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/workers/stats`, {
+      const res = await api.fetch(`${API_BASE}/admin/workers/stats`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -552,7 +382,7 @@ export default function AdminPanel() {
   // Fetch Users
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
+      const res = await api.fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -570,7 +400,7 @@ export default function AdminPanel() {
   const fetchCompetitors = async () => {
     if (!selectedChallenge) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`, {
+      const res = await api.fetch(`${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -587,7 +417,7 @@ export default function AdminPanel() {
   // Fetch Paginated Challenges (Competitions)
   const fetchPaginatedChallenges = async () => {
     try {
-      const res = await fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
+      const res = await api.fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -645,7 +475,7 @@ export default function AdminPanel() {
   const handleCreateChallenge = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/challenges`, {
+      const res = await api.fetch(`${API_BASE}/challenges`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -683,7 +513,7 @@ export default function AdminPanel() {
   // Handle Competition update
   const handleUpdateChallenge = async (id, updated) => {
     try {
-      const res = await fetch(`${API_BASE}/challenges/${id}`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -715,7 +545,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/challenges/${id}`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -740,7 +570,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/challenges/${id}/finalize`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}/finalize`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -760,7 +590,7 @@ export default function AdminPanel() {
   // Handle archive toggle
   const handleArchiveToggle = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/challenges/${id}/archive`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -785,7 +615,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/challenges/${id}/test-competition`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}/test-competition`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -845,7 +675,7 @@ export default function AdminPanel() {
         start_time: stageForm.start_time,
         end_time: stageForm.end_time
       };
-      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -876,7 +706,7 @@ export default function AdminPanel() {
         start_time: stageForm.start_time,
         end_time: stageForm.end_time
       };
-      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -905,7 +735,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -931,7 +761,7 @@ export default function AdminPanel() {
         reveal_private: stageFinalizeForm.reveal_private,
         reveal_points: stageFinalizeForm.reveal_points
       };
-      const res = await fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -955,10 +785,10 @@ export default function AdminPanel() {
 
   // Set up task form edit / create
   const initCreateTask = () => {
+    if (!selectedChallenge) return;
     setTaskForm({
       title: '',
       description: '',
-      task_type: '',
       ram_limit_mb: '',
       time_limit_sec: '',
       gpu_required: true,
@@ -970,8 +800,6 @@ export default function AdminPanel() {
       banned_imports: '',
       whitelisted_imports: '',
       metrics_config: '{"accuracy": {"weight": 1.0, "higher_is_better": true}}',
-      hf_train_repo: '',
-      hf_eval_repo: '',
       hf_datasets_raw: '',
       hf_models_raw: '',
       hf_api_key: '',
@@ -989,7 +817,6 @@ export default function AdminPanel() {
     setTaskForm({
       title: task.title || '',
       description: task.description || '',
-      task_type: task.task_type || '',
       ram_limit_mb: task.ram_limit_mb !== null ? task.ram_limit_mb : '',
       time_limit_sec: task.time_limit_sec !== null ? task.time_limit_sec : '',
       gpu_required: task.gpu_required !== null ? task.gpu_required : true,
@@ -1001,8 +828,6 @@ export default function AdminPanel() {
       banned_imports: task.banned_imports || '',
       whitelisted_imports: task.whitelisted_imports || '',
       metrics_config: task.metrics_config ? JSON.stringify(task.metrics_config) : '',
-      hf_train_repo: task.hf_train_repo || '',
-      hf_eval_repo: task.hf_eval_repo || '',
       hf_datasets_raw: task.hf_datasets ? (Array.isArray(task.hf_datasets) ? task.hf_datasets.join(', ') : '') : '',
       hf_models_raw: task.hf_models ? (Array.isArray(task.hf_models) ? task.hf_models.join(', ') : '') : '',
       hf_api_key: '', // Keep empty for input security
@@ -1032,7 +857,6 @@ export default function AdminPanel() {
     formData.append("require_submit_tag", taskForm.require_submit_tag);
     formData.append("ban_magic_commands", taskForm.ban_magic_commands);
     formData.append("banned_imports", taskForm.banned_imports);
-    formData.append("task_type", taskForm.task_type || '');
     let cleanMetricsConfig = taskForm.metrics_config;
     try {
       const parsed = JSON.parse(taskForm.metrics_config);
@@ -1047,8 +871,6 @@ export default function AdminPanel() {
     } catch (e) {}
     formData.append("metrics_config", cleanMetricsConfig);
     
-    formData.append("hf_train_repo", taskForm.hf_train_repo);
-    formData.append("hf_eval_repo", taskForm.hf_eval_repo);
     if (taskForm.hf_api_key) formData.append("hf_api_key", taskForm.hf_api_key);
     formData.append("public_eval_percentage", taskForm.public_eval_percentage);
     
@@ -1082,14 +904,10 @@ export default function AdminPanel() {
   const handleSaveCreateTask = async (e) => {
     e.preventDefault();
     if (!selectedChallenge) return;
-    if (!taskForm.task_type) {
-      showToast("Please select a Task Type / Modality Group.", 'rose');
-      return;
-    }
     const formData = prepareTaskFormData();
 
     try {
-      const res = await fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -1111,10 +929,6 @@ export default function AdminPanel() {
   const handleSaveUpdateTask = async (e) => {
     e.preventDefault();
     if (!editingTask) return;
-    if (!taskForm.task_type) {
-      showToast("Please select a Task Type / Modality Group.", 'rose');
-      return;
-    }
     const formData = prepareTaskFormData();
 
     // Handle file deletions if selected
@@ -1124,7 +938,7 @@ export default function AdminPanel() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/tasks/${editingTask.id}`, {
+      const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -1150,7 +964,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
+      const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1176,7 +990,7 @@ export default function AdminPanel() {
     setGeneratedCredentials(null);
 
     try {
-      const res = await fetch(`${API_BASE}/admin/register-competitor`, {
+      const res = await api.fetch(`${API_BASE}/admin/register-competitor`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1224,7 +1038,7 @@ export default function AdminPanel() {
       if (newUser.password) {
         requestBody.password = await hashPassword(newUser.password);
       }
-      const res = await fetch(`${API_BASE}/admin/register-user`, {
+      const res = await api.fetch(`${API_BASE}/admin/register-user`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1272,7 +1086,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
+      const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1307,7 +1121,7 @@ export default function AdminPanel() {
     fd.append('challenge_id', csvChallengeId);
 
     try {
-      const res = await fetch(`${API_BASE}/admin/import-competitors-csv`, {
+      const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: fd
@@ -1331,7 +1145,7 @@ export default function AdminPanel() {
   // Backups
   const handleDownloadBackup = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/backup`, {
+      const res = await api.fetch(`${API_BASE}/admin/backup`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) {
@@ -1356,7 +1170,7 @@ export default function AdminPanel() {
   // Download Scores CSV
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
-      const res = await fetch(`${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`, {
+      const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) {
@@ -1381,7 +1195,7 @@ export default function AdminPanel() {
   // Download Submissions ZIP
   const handleDownloadSubmissionsZip = async (challengeId, challengeTitle) => {
     try {
-      const res = await fetch(`${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`, {
+      const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) {
@@ -1423,7 +1237,7 @@ export default function AdminPanel() {
   const handleUpdateUserSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
+      const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1463,7 +1277,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
+      const res = await api.fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1513,7 +1327,7 @@ export default function AdminPanel() {
     if (!ok) return;
     
     try {
-      const res = await fetch(`${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`, {
+      const res = await api.fetch(`${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1713,7 +1527,7 @@ export default function AdminPanel() {
               <div className="flex flex-col gap-6">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h1 className="text-xl font-bold text-white">{t('admin.active_competitions')}</h1>
-                  <Button variant="primary" onClick={initCreateTask}>{t('admin.add_task')}</Button>
+                  <Button variant="primary" onClick={initCreateTask} disabled={!selectedChallenge}>{t('admin.add_task')}</Button>
                 </div>
                 
                 {paginatedChallengesList.length === 0 ? (
@@ -1968,518 +1782,25 @@ export default function AdminPanel() {
               </h2>
             </div>
             
-            <form onSubmit={isCreatingTask ? handleSaveCreateTask : handleSaveUpdateTask} className="flex flex-col gap-6">
-              
-              {/* Section A: General */}
-              <div>
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.general_settings')}</h3>
-                <div className="flex flex-col gap-4">
-                  <InputField 
-                    label={t('admin.tasks.task_title')} 
-                    value={taskForm.title} 
-                    onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} 
-                    required 
-                  />
-                  <SelectField
-                    label={t('admin.tasks.stage_optional')}
-                    value={taskForm.stage_id}
-                    onChange={(val) => setTaskForm({ ...taskForm, stage_id: val })}
-                    options={[
-                      { value: "", label: t('admin.tasks.stage_none') },
-                      ...(challenges.find(c => c.id === (editingTask ? editingTask.challenge_id : selectedChallenge?.id))?.stages || []).map(st => {
-                        const challenge = challenges.find(c => c.id === (editingTask ? editingTask.challenge_id : selectedChallenge?.id));
-                        return {
-                          value: st.id.toString(),
-                          label: t('admin.tasks.stage_option_label', { number: st.stage_number, title: st.title, start: formatDateTime(st.start_time, challenge?.timezone), end: formatDateTime(st.end_time, challenge?.timezone) })
-                        };
-                      })
-                    ]}
-                  />
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.description_markdown')}</label>
-                    <textarea 
-                      rows="4" 
-                      className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm font-sans"
-                      value={taskForm.description} 
-                      onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} 
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section B: Sandbox overrides */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.sandbox_overrides')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <InputField 
-                    label={t('admin.tasks.override_ram')} 
-                    type="number" 
-                    value={taskForm.ram_limit_mb} 
-                    onChange={(e) => setTaskForm({ ...taskForm, ram_limit_mb: e.target.value })} 
-                    placeholder="8192"
-                  />
-                  <InputField 
-                    label={t('admin.tasks.override_timeout')} 
-                    type="number" 
-                    value={taskForm.time_limit_sec} 
-                    onChange={(e) => setTaskForm({ ...taskForm, time_limit_sec: e.target.value })} 
-                    placeholder="300"
-                  />
-                  <div className="flex items-center gap-2 h-full pt-6">
-                    <ToggleField 
-                      label={t('admin.tasks.requires_gpu_worker_node')}
-                      id="task-gpu-req"
-                      checked={taskForm.gpu_required}
-                      onChange={(e) => setTaskForm({ ...taskForm, gpu_required: e.target.checked })}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section C: Docker Environment */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.docker_config')}</h3>
-                <div className="flex flex-col gap-4">
-                  <InputField 
-                    label={t('admin.tasks.base_image')} 
-                    value={taskForm.base_docker_image} 
-                    onChange={(e) => setTaskForm({ ...taskForm, base_docker_image: e.target.value })} 
-                    placeholder={t('admin.tasks.base_image_placeholder')}
-                  />
-                  <InputField 
-                    label={t('admin.tasks.apt_packages')} 
-                    value={taskForm.apt_packages} 
-                    onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })} 
-                    placeholder={t('admin.tasks.apt_packages_placeholder')}
-                  />
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.pip_requirements')}</label>
-                    <textarea 
-                      rows="3" 
-                      className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-xs font-mono"
-                      value={taskForm.pip_requirements} 
-                      onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })} 
-                      placeholder={t('admin.tasks.pip_requirements_placeholder')}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section D: Rules engine */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.ast_rules')}</h3>
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap gap-6">
-                    <ToggleField 
-                      label={t('admin.tasks.require_submit_comment')}
-                      id="rule-tag"
-                      checked={taskForm.require_submit_tag}
-                      onChange={(e) => setTaskForm({ ...taskForm, require_submit_tag: e.target.checked })}
-                    />
-                    <ToggleField 
-                      label={t('admin.tasks.ban_magic_commands')}
-                      id="rule-magic"
-                      checked={taskForm.ban_magic_commands}
-                      onChange={(e) => setTaskForm({ ...taskForm, ban_magic_commands: e.target.checked })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <InputField 
-                      label={t('admin.tasks.banned_libraries')} 
-                      value={taskForm.banned_imports} 
-                      onChange={(e) => setTaskForm({ ...taskForm, banned_imports: e.target.value })} 
-                      placeholder={t('admin.tasks.banned_libraries_placeholder')}
-                    />
-                    <InputField 
-                      label={t('admin.tasks.whitelisted_libraries_label')} 
-                      value={taskForm.whitelisted_imports} 
-                      onChange={(e) => setTaskForm({ ...taskForm, whitelisted_imports: e.target.value })} 
-                      placeholder={t('admin.tasks.whitelisted_libraries_placeholder')}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section E: Data Integration (Hugging Face) */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.hf_dataset_metrics')}</h3>
-                <div className="flex flex-col gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <InputField 
-                      label={t('admin.tasks.hf_datasets_label')} 
-                      value={taskForm.hf_datasets_raw} 
-                      onChange={(e) => setTaskForm({ ...taskForm, hf_datasets_raw: e.target.value })} 
-                      placeholder={t('admin.tasks.hf_datasets_placeholder')}
-                    />
-                    <InputField 
-                      label={t('admin.tasks.hf_models_label')} 
-                      value={taskForm.hf_models_raw} 
-                      onChange={(e) => setTaskForm({ ...taskForm, hf_models_raw: e.target.value })} 
-                      placeholder={t('admin.tasks.hf_models_placeholder')}
-                    />
-                  </div>
-                  <InputField 
-                    label={t('admin.tasks.hf_api_key')} 
-                    type="password"
-                    value={taskForm.hf_api_key} 
-                    onChange={(e) => setTaskForm({ ...taskForm, hf_api_key: e.target.value })} 
-                    placeholder={t('admin.tasks.hf_api_key_placeholder')}
-                  />
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold text-slate-300">
-                      {t('admin.tasks.public_eval_split_percentage', { percentage: taskForm.public_eval_percentage })}
-                    </label>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
-                      value={taskForm.public_eval_percentage} 
-                      onChange={(e) => setTaskForm({ ...taskForm, public_eval_percentage: parseInt(e.target.value) })}
-                      className="w-full accent-indigo-600 h-1.5 bg-slate-900 rounded-lg cursor-pointer border border-white/5"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label htmlFor="task-type-select" className="text-xs font-semibold text-slate-300">{t('admin.tasks.task_type_label')}</label>
-                    <select
-                      id="task-type-select"
-                      value={taskForm.task_type || ''}
-                      onChange={(e) => {
-                        const newType = e.target.value;
-                        let defaultMetrics = "";
-                        if (newType && TASK_TYPE_METRICS[newType]) {
-                          const firstMetric = TASK_TYPE_METRICS[newType][0];
-                          defaultMetrics = JSON.stringify({ [firstMetric]: { weight: 1.0 } });
-                        }
-                        setTaskForm({ ...taskForm, task_type: newType, metrics_config: defaultMetrics });
-                      }}
-                      className="text-xs text-slate-200 border border-white/5 p-2 bg-slate-950 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="">{t('admin.tasks.select_modality_group')}</option>
-                      <option value="classification">{t('admin.tasks.modality_group.classification')}</option>
-                      <option value="probabilistic">{t('admin.tasks.modality_group.probabilistic')}</option>
-                      <option value="regression">{t('admin.tasks.modality_group.regression')}</option>
-                      <option value="ner_tagging">{t('admin.tasks.modality_group.ner_tagging')}</option>
-                      <option value="translation_summ">{t('admin.tasks.modality_group.translation_summ')}</option>
-                      <option value="qa_extractive">{t('admin.tasks.modality_group.qa_extractive')}</option>
-                      <option value="object_detection">{t('admin.tasks.modality_group.object_detection')}</option>
-                      <option value="segmentation">{t('admin.tasks.modality_group.segmentation')}</option>
-                      <option value="keypoints">{t('admin.tasks.modality_group.keypoints')}</option>
-                      <option value="image_generation">{t('admin.tasks.modality_group.image_generation')}</option>
-                      <option value="audio_generation">{t('admin.tasks.modality_group.audio_generation')}</option>
-                      <option value="retrieval">{t('admin.tasks.modality_group.retrieval')}</option>
-                      <option value="clustering">{t('admin.tasks.modality_group.clustering')}</option>
-                    </select>
-                  </div>
-
-                  {taskForm.task_type && TASK_TYPE_METRICS[taskForm.task_type] && (() => {
-                    let metricsObj = {};
-                    try { metricsObj = JSON.parse(taskForm.metrics_config) || {}; } catch(e) {}
-                    const selectedCount = Object.keys(metricsObj).length;
-
-                    return (
-                      <div data-testid="modality-metrics-config" className="flex flex-col gap-2 border border-white/5 p-3 bg-slate-950 rounded-lg">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-semibold text-indigo-400">{t('admin.tasks.modality_metrics_title')}</span>
-                          <span className="text-[10px] text-slate-400 font-medium">{t('admin.tasks.modality_metrics_selected', { count: selectedCount })}</span>
-                        </div>
-                        {selectedCount >= 5 && (
-                          <span className="text-[10px] text-amber-500 font-semibold mt-0.5">{t('admin.tasks.modality_metrics_limit_reached')}</span>
-                        )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
-                          {TASK_TYPE_METRICS[taskForm.task_type].map((mName) => {
-                            const isChecked = mName in metricsObj;
-                            const currentWeight = isChecked ? (metricsObj[mName].weight !== undefined ? metricsObj[mName].weight : 1.0) : 1.0;
-
-                            return (
-                              <div key={mName} className={`flex flex-col gap-2 p-2.5 rounded border border-white/5 bg-slate-900/50 ${(!isChecked && selectedCount >= 5) ? 'opacity-40' : ''}`}>
-                                <div className="flex items-center justify-between w-full">
-                                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      disabled={!isChecked && selectedCount >= 5}
-                                      onChange={(e) => {
-                                        let updatedObj = { ...metricsObj };
-                                        if (e.target.checked) {
-                                          let defaultOpts = {};
-                                          if (mName === 'chrf') {
-                                            defaultOpts = { beta: 3 };
-                                          } else if (mName === 'pck') {
-                                            defaultOpts = { threshold: 0.05 };
-                                          } else if (mName === 'ndcg_k' || mName === 'recall_k') {
-                                            defaultOpts = { k: 10 };
-                                          }
-                                          updatedObj[mName] = { weight: 1.0, options: defaultOpts };
-                                        } else {
-                                          delete updatedObj[mName];
-                                        }
-                                        setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
-                                      }}
-                                      className="accent-indigo-600 rounded disabled:cursor-not-allowed"
-                                    />
-                                    <span>{formatMetricName(mName)}</span>
-                                  </label>
-                                  {isChecked && (
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_weight')}</span>
-                                      <input
-                                        type="number"
-                                        step="0.1"
-                                        min="0"
-                                        value={currentWeight}
-                                        onChange={(e) => {
-                                          let updatedObj = { ...metricsObj };
-                                          if (updatedObj[mName]) {
-                                            updatedObj[mName].weight = parseFloat(e.target.value) || 0;
-                                          }
-                                          setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
-                                        }}
-                                        className="w-16 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                                {isChecked && (
-                                  (mName === 'chrf' || mName === 'pck' || mName === 'ndcg_k' || mName === 'recall_k') && (
-                                    <div className="flex flex-col gap-1 pl-5 border-t border-white/5 pt-1.5 mt-0.5">
-                                      {mName === 'chrf' && (
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_beta', 'Beta')}</span>
-                                          <select
-                                            aria-label="Beta"
-                                            value={metricsObj[mName].options?.beta ?? 3}
-                                            onChange={(e) => {
-                                              let updatedObj = { ...metricsObj };
-                                              if (updatedObj[mName]) {
-                                                updatedObj[mName].options = {
-                                                  ...updatedObj[mName].options,
-                                                  beta: parseInt(e.target.value) || 3
-                                                };
-                                              }
-                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
-                                            }}
-                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          >
-                                            <option value="1">1</option>
-                                            <option value="2">2</option>
-                                            <option value="3">3</option>
-                                          </select>
-                                        </div>
-                                      )}
-                                      {mName === 'pck' && (
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_threshold', 'Threshold')}</span>
-                                          <select
-                                            aria-label="Threshold"
-                                            value={metricsObj[mName].options?.threshold ?? 0.05}
-                                            onChange={(e) => {
-                                              let updatedObj = { ...metricsObj };
-                                              if (updatedObj[mName]) {
-                                                updatedObj[mName].options = {
-                                                  ...updatedObj[mName].options,
-                                                  threshold: parseFloat(e.target.value) || 0.05
-                                                };
-                                              }
-                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
-                                            }}
-                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          >
-                                            <option value="0.01">0.01</option>
-                                            <option value="0.02">0.02</option>
-                                            <option value="0.05">0.05</option>
-                                            <option value="0.1">0.1</option>
-                                            <option value="0.15">0.15</option>
-                                            <option value="0.2">0.2</option>
-                                          </select>
-                                        </div>
-                                      )}
-                                      {(mName === 'ndcg_k' || mName === 'recall_k') && (
-                                        <div className="flex items-center justify-between w-full">
-                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_k', 'K')}</span>
-                                          <select
-                                            aria-label="K"
-                                            value={metricsObj[mName].options?.k ?? 10}
-                                            onChange={(e) => {
-                                              let updatedObj = { ...metricsObj };
-                                              if (updatedObj[mName]) {
-                                                updatedObj[mName].options = {
-                                                  ...updatedObj[mName].options,
-                                                  k: parseInt(e.target.value) || 10
-                                                };
-                                              }
-                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
-                                            }}
-                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          >
-                                            <option value="5">5</option>
-                                            <option value="10">10</option>
-                                            <option value="20">20</option>
-                                            <option value="50">50</option>
-                                            <option value="100">100</option>
-                                          </select>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {taskForm.task_type && getTaskTypeSchemasHelp(t)[taskForm.task_type] && (() => {
-                    const help = getTaskTypeSchemasHelp(t)[taskForm.task_type];
-                    return (
-                      <div className="flex flex-col gap-3 border border-white/5 p-4 bg-slate-950 rounded-lg">
-                        <span className="text-xs font-semibold text-indigo-400">{t('admin.tasks.modality_schemas_title')}</span>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-1">
-                          <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-slate-900/40">
-                            <span className="text-xs font-bold text-slate-200">📦 {t('admin.tasks.modality_schemas_submission')}</span>
-                            <div className="flex flex-col gap-1.5 mt-1 animate-fadein">
-                              {help.sub_cols.map(c => (
-                                <div key={c.name} className="flex flex-col text-[11px] border-b border-white/5 pb-1 last:border-b-0">
-                                  <div className="flex justify-between">
-                                    <code className="text-indigo-300 font-bold">{c.name}</code>
-                                    <span className="text-slate-400 italic">({c.type})</span>
-                                  </div>
-                                  <span className="text-slate-300 mt-0.5">{c.desc}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-slate-900/40">
-                            <span className="text-xs font-bold text-slate-200">🎯 {t('admin.tasks.modality_schemas_ground_truth')}</span>
-                            <div className="flex flex-col gap-1.5 mt-1 animate-fadein">
-                              {help.label_cols.map(c => (
-                                <div key={c.name} className="flex flex-col text-[11px] border-b border-white/5 pb-1 last:border-b-0">
-                                  <div className="flex justify-between">
-                                    <code className="text-indigo-300 font-bold">{c.name}</code>
-                                    <span className="text-slate-400 italic">({c.type})</span>
-                                  </div>
-                                  <span className="text-slate-300 mt-0.5">{c.desc}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-1">
-                          {t('admin.tasks.modality_schemas_note')}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Section F: Optional Rate Limits */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.optional_rate_limits')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <InputField 
-                    label={t('admin.tasks.max_submissions')} 
-                    type="number"
-                    value={taskForm.max_submissions_per_period} 
-                    onChange={(e) => setTaskForm({ ...taskForm, max_submissions_per_period: e.target.value })} 
-                    placeholder={t('admin.tasks.max_submissions_placeholder')}
-                  />
-                  <InputField 
-                    label={t('admin.tasks.submission_period_hours')} 
-                    type="number"
-                    value={taskForm.submission_period_hours} 
-                    onChange={(e) => setTaskForm({ ...taskForm, submission_period_hours: e.target.value })} 
-                    placeholder={t('admin.tasks.submission_period_placeholder')}
-                  />
-                </div>
-              </div>
-
-              {/* Section G: Config files */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.upload_scripts_notebooks')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  
-                  {/* Baseline Notebook */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.baseline_notebook_label')}</label>
-                    <input 
-                      type="file" 
-                      accept=".ipynb" 
-                      onChange={(e) => setBaselineFile(e.target.files[0])}
-                      className="text-xs text-slate-400 border border-white/5 p-2 bg-slate-950 rounded-lg"
-                    />
-                  </div>
-
-                </div>
-
-
-              </div>
-
-              {/* Section H: Resource Files (Optional) */}
-              <div className="border-t border-white/5 pt-6">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.resource_files_title')}</h3>
-                
-                {/* File list update */}
-                {editingTask && editingTask.files && (
-                  <div className="mb-4">
-                    <span className="text-xs text-slate-400 block mb-2 font-semibold">{t('admin.tasks.current_resource_files')}</span>
-                    <div className="flex flex-col gap-2">
-                      {(Array.isArray(editingTask.files) 
-                        ? editingTask.files 
-                        : (typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
-                            ? JSON.parse(editingTask.files) 
-                            : [])
-                      ).map(f => {
-                        const isDeleted = (editingTask.filesToDelete || []).includes(f.filename);
-                        return (
-                          <div key={f.filename} className="flex justify-between items-center p-2.5 bg-slate-950 border border-white/5 rounded-lg text-xs">
-                            <span style={{ textDecoration: isDeleted ? 'line-through' : 'none', color: isDeleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                              {f.filename} ({t('challenge.kb', { count: Math.round(f.size_bytes / 1024) })})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const current = editingTask.filesToDelete || [];
-                                const next = current.includes(f.filename) 
-                                  ? current.filter(x => x !== f.filename) 
-                                  : [...current, f.filename];
-                                setEditingTask({ ...editingTask, filesToDelete: next });
-                              }}
-                              className="text-xs text-brand-rose bg-transparent border-0 cursor-pointer font-bold"
-                            >
-                              {isDeleted ? t('admin.tasks.undo_delete') : t('admin.stages.delete')}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <input 
-                    type="file" 
-                    multiple 
-                    onChange={(e) => setTaskFiles(Array.from(e.target.files))}
-                    className="text-xs text-slate-400 border border-white/5 p-3.5 bg-slate-950 rounded-lg w-full"
-                  />
-                  <p className="text-[10px] text-slate-500">{t('admin.tasks.press_cmd_ctrl')}</p>
-                </div>
-              </div>
-
-              <div className="flex gap-4 border-t border-white/5 pt-6 mt-4">
-                <Button type="submit" variant="primary">
-                  {isCreatingTask ? t('admin.tasks.create_task_btn') : t('admin.stages.save_changes_btn')}
-                </Button>
-                <Button variant="secondary" onClick={() => { setIsCreatingTask(false); setEditingTask(null); }}>
-                  {t('common.cancel')}
-                </Button>
-              </div>
-
-            </form>
+            <TaskForm 
+              taskForm={taskForm}
+              setTaskForm={setTaskForm}
+              isCreatingTask={isCreatingTask}
+              editingTask={editingTask}
+              setEditingTask={setEditingTask}
+              setIsCreatingTask={setIsCreatingTask}
+              handleSaveCreateTask={handleSaveCreateTask}
+              handleSaveUpdateTask={handleSaveUpdateTask}
+              challenges={challenges}
+              selectedChallenge={selectedChallenge}
+              availableMetrics={availableMetrics}
+              formatMetricName={formatMetricName}
+              taskFiles={taskFiles}
+              setTaskFiles={setTaskFiles}
+              baselineFile={baselineFile}
+              setBaselineFile={setBaselineFile}
+              formatDateTime={formatDateTime}
+            />
           </div>
         )}
 

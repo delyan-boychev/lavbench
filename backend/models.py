@@ -8,6 +8,7 @@ import hashlib
 import json
 from cryptography.fernet import Fernet
 import uuid
+import zoneinfo
 
 db = SQLAlchemy()
 
@@ -94,7 +95,7 @@ class User(db.Model):
     is_anonymous = db.Column(db.Boolean, default=False, nullable=False)
     manual_points = db.Column(db.JSON, default=dict, nullable=False)
     
-    submissions = db.relationship('Submission', backref='user', lazy=True)
+    submissions = db.relationship('Submission', backref='user', lazy=True, cascade="all, delete-orphan")
     
     def set_demographics(self, name, surname, grade, school, city):
         """
@@ -212,6 +213,25 @@ class Challenge(db.Model):
     submissions = db.relationship('Submission', backref='challenge', lazy=True, cascade="all, delete-orphan")
     stages = db.relationship('Stage', backref='challenge', lazy=True, cascade="all, delete-orphan", order_by="Stage.stage_number")
     
+    def _now_local(self):
+        try:
+            tz = zoneinfo.ZoneInfo(self.timezone or "UTC")
+            return datetime.now(tz).replace(tzinfo=None)
+        except Exception:
+            return datetime.utcnow()
+
+    @property
+    def is_started(self):
+        if not self.start_time:
+            return False
+        return self._now_local() >= self.start_time
+
+    @property
+    def is_ended(self):
+        if not self.end_time:
+            return False
+        return self._now_local() > self.end_time
+
     @property
     def computed_status(self):
         if self.is_archived:
@@ -219,12 +239,11 @@ class Challenge(db.Model):
         if self.scores_finalized:
             return "finalized"
         
-        now = datetime.utcnow()
-        if self.start_time and now < self.start_time:
+        if not self.is_started:
             return "not_started"
         if self.is_frozen:
             return "frozen"
-        if self.end_time and now > self.end_time:
+        if self.is_ended:
             return "ended"
         
         return "active"
@@ -302,7 +321,6 @@ class Task(db.Model):
     stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
-    task_type = db.Column(db.String(100), nullable=True)
     
     # Store up to 5 uploaded resource files as JSON array
     # e.g., [{"filename": "data.csv", "path": "uploads/t1_data.csv", "size": 1048576}]
@@ -338,8 +356,6 @@ class Task(db.Model):
     solution_notebook_path = db.Column(db.String(512), nullable=True)
     
     # HF & Evaluation
-    hf_train_repo = db.Column(db.String(255), nullable=True)
-    hf_eval_repo = db.Column(db.String(255), nullable=True)
     hf_api_key = db.Column(db.Text, nullable=True) # Encrypted
     public_eval_percentage = db.Column(db.Integer, default=30)
     max_submissions_per_period = db.Column(db.Integer, nullable=True)
@@ -358,6 +374,8 @@ class Task(db.Model):
             files_list = json.loads(self.files)
         except Exception:
             files_list = []
+        
+        files_list = [f for f in files_list if f.get("filename") != "labels.parquet"]
             
         metrics_cfg_val = None
         if self.metrics_config:
@@ -386,15 +404,12 @@ class Task(db.Model):
             "evaluator_script_path": self.evaluator_script_path,
             "baseline_notebook_path": self.baseline_notebook_path,
             "solution_notebook_path": self.solution_notebook_path,
-            "hf_train_repo": self.hf_train_repo,
-            "hf_eval_repo": self.hf_eval_repo,
             "hf_datasets": json.loads(self.hf_datasets) if isinstance(self.hf_datasets, str) else (self.hf_datasets or []),
             "hf_models": json.loads(self.hf_models) if isinstance(self.hf_models, str) else (self.hf_models or []),
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
-            "stage_id": self.stage_id,
-            "task_type": self.task_type
+            "stage_id": self.stage_id
         }
 
 class Submission(db.Model):
@@ -464,13 +479,10 @@ class Submission(db.Model):
 
     @property
     def logs(self):
-        if hasattr(self, '_cached_logs') and self._cached_logs is not None:
-            return self._cached_logs
         if self.log_storage_path and os.path.exists(self.log_storage_path):
             try:
                 with open(self.log_storage_path, 'r', encoding='utf-8') as f:
-                    self._cached_logs = f.read()
-                    return self._cached_logs
+                    return f.read()
             except Exception:
                 pass
         return ""

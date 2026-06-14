@@ -15,8 +15,14 @@ from flask import Blueprint, request, jsonify, send_file, current_app, Response
 from werkzeug.security import generate_password_hash
 from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, encrypt_field, is_metric_lower_better
 from auth_utils import role_required
+from evaluation_engine import AVAILABLE_METRICS
 
 admin_bp = Blueprint('admin', __name__)
+
+@admin_bp.route('/metrics', methods=['GET'])
+@role_required('admin')
+def get_available_metrics():
+    return jsonify(AVAILABLE_METRICS), 200
 
 def transliterate_bulgarian(text):
     if not text:
@@ -72,7 +78,7 @@ def register_competitor():
         return jsonify({"error": "Invalid challenge_id."}), 400
         
     # Check if the competition has started
-    if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+    if challenge.is_started:
         if request.user["role"] != 'admin':
             return jsonify({"error": "Jury members cannot register competitors once the competition has started."}), 403
     
@@ -124,7 +130,7 @@ def get_users():
     challenges = Challenge.query.all()
     started_challenge_ids = {
         c.id for c in challenges 
-        if c.start_time and datetime.utcnow() >= c.start_time
+        if c.is_started
     }
         
     if not search_term:
@@ -228,7 +234,7 @@ def register_user():
         if not challenge:
             return jsonify({"error": "Invalid challenge_id."}), 400
         # Check if the competition has started
-        if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+        if challenge.is_started:
             if request.user["role"] != 'admin':
                 return jsonify({"error": "Jury members cannot register competitors once the competition has started."}), 403
             
@@ -285,7 +291,7 @@ def import_competitors_csv():
         return jsonify({"error": "Invalid challenge_id."}), 400
         
     # Check if the competition has started
-    if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+    if challenge.is_started:
         if request.user["role"] != 'admin':
             return jsonify({"error": "Jury members cannot import competitors once the competition has started."}), 403
         
@@ -413,7 +419,7 @@ def update_user(user_id):
         # Check current assigned challenge
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
-            if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
+            if challenge and challenge.is_started:
                 return jsonify({"error": "Cannot edit user: The assigned competition has already started."}), 403
     
     data = request.json or {}
@@ -436,7 +442,7 @@ def update_user(user_id):
         target_challenge_id = int(challenge_id)
         if current_role == 'jury':
             challenge = db.session.get(Challenge, target_challenge_id)
-            if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
+            if challenge and challenge.is_started:
                 return jsonify({"error": "Cannot assign user to a competition that has already started."}), 403
         user.challenge_id = target_challenge_id
     elif challenge_id == "":
@@ -485,7 +491,7 @@ def reset_user_password(user_id):
     if request.user["role"] == 'jury':
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
-            if challenge and challenge.start_time and datetime.utcnow() >= challenge.start_time:
+            if challenge and challenge.is_started:
                 return jsonify({"error": "Cannot reset password: The assigned competition has already started."}), 403
 
     new_password = generate_random_password(8)
@@ -506,7 +512,7 @@ def reset_all_challenge_passwords(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == 'jury':
-        if challenge.start_time and datetime.utcnow() >= challenge.start_time:
+        if challenge.is_started:
             return jsonify({"error": "Cannot reset passwords: The competition has already started."}), 403
 
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()

@@ -1,4 +1,5 @@
 import React from 'react';
+import api from '../../services/ApiService';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Logo from '../ui/Logo';
@@ -164,7 +165,7 @@ export default function Navbar() {
       setDocLoading(true);
       setDocError(null);
       try {
-        const res = await fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
+        const res = await api.fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Accept-Language': i18n.language || 'en'
@@ -197,7 +198,7 @@ export default function Navbar() {
     
     const checkStatus = async () => {
       try {
-        const res = await fetch('/api/worker-status', {
+        const res = await api.fetch('/api/worker-status', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {

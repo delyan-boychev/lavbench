@@ -59,6 +59,18 @@ vi.mock('react-i18next', () => {
         language: 'en',
       },
     }),
+    Trans: ({ i18nKey }) => {
+      const parts = i18nKey.split('.');
+      let current = mockEnTranslation;
+      for (const part of parts) {
+        if (current && typeof current === 'object') {
+          current = current[part];
+        } else {
+          return i18nKey;
+        }
+      }
+      return typeof current === 'string' ? current : i18nKey;
+    },
     initReactI18next: {
       type: '3rdParty',
       init: () => {},

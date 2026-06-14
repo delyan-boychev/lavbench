@@ -1,4 +1,5 @@
 import React from 'react';
+import api from '../../services/ApiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
@@ -13,7 +14,7 @@ function FileCard({ file, taskId, token }) {
     const a = document.createElement('a');
     a.href = url;
     a.download = file.filename;
-    fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+    api.fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.blob())
       .then(blob => {
         const objUrl = URL.createObjectURL(blob);
@@ -147,11 +148,6 @@ export default function TaskDetail({ task, token }) {
           {/* Rate Limits & Dataset */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <h4 style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{t('challenge.dataset_submissions')}</h4>
-            {task.hf_train_repo && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                <strong>{t('challenge.public_train_repo')}:</strong> <a href={`https://huggingface.co/${task.hf_train_repo}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>{task.hf_train_repo}</a>
-              </div>
-            )}
             {task.max_submissions_per_period && task.submission_period_hours && (
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 <strong>{t('challenge.task_rate_limit')}:</strong> {t('challenge.rate_limit_value', { count: task.max_submissions_per_period, hours: task.submission_period_hours })}

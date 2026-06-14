@@ -69,7 +69,7 @@ describe('Navbar Component', () => {
     render(<Navbar />);
 
     expect(global.fetch).toHaveBeenCalledWith('/api/worker-status', {
-      headers: { 'Authorization': 'Bearer valid-token' }
+      headers: { 'Authorization': 'Bearer valid-token', 'Content-Type': 'application/json' }
     });
 
     await vi.waitFor(() => {

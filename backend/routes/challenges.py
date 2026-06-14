@@ -5,10 +5,18 @@ from auth_utils import login_required, role_required
 challenges_bp = Blueprint('challenges', __name__)
 
 from datetime import datetime
+import zoneinfo
+
+def _now_local_for_timezone(timezone_str):
+    try:
+        tz = zoneinfo.ZoneInfo(timezone_str or "UTC")
+        return datetime.now(tz).replace(tzinfo=None)
+    except Exception:
+        return datetime.utcnow()
 
 def filter_challenge_for_competitor(challenge_dict):
     challenge_dict = dict(challenge_dict)
-    now = datetime.utcnow()
+    now = _now_local_for_timezone(challenge_dict.get("timezone"))
     
     comp_start = None
     if challenge_dict.get("start_time"):

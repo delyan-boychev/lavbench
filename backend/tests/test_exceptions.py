@@ -364,7 +364,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
     @patch('requests.post')
     def test_report_status_success_on_first_try(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200)
-        from tasks import report_status_to_server
+        from worker_utils import report_status_to_server
         
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -384,7 +384,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
             MagicMock(status_code=500),
             MagicMock(status_code=200)
         ]
-        from tasks import report_status_to_server
+        from worker_utils import report_status_to_server
         
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -400,7 +400,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
     @patch('requests.post')
     def test_report_status_fails_completely(self, mock_post, mock_sleep):
         mock_post.side_effect = Exception("Permanent failure")
-        from tasks import report_status_to_server
+        from worker_utils import report_status_to_server
         
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -412,7 +412,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
         self.assertEqual(mock_post.call_count, 3)
 
     @patch('requests.post')
-    @patch('tasks.download_task_files_to_dir')
+    @patch('worker_utils.download_task_files_to_dir')
     @patch('subprocess.run')
     def test_evaluate_submission_callback_failure_raises_runtime_error(self, mock_sub, mock_dl, mock_post):
         # Mock container run successfully, but callback fails

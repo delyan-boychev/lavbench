@@ -83,9 +83,17 @@ describe('AdminPanel Page - Workers & Resources', () => {
       token: 'valid-admin-token',
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockSystemStats,
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (url === '/api/admin/metrics' || url.includes('metrics')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ metrics: {} }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => mockSystemStats,
+      });
     });
   });
 
@@ -105,9 +113,9 @@ describe('AdminPanel Page - Workers & Resources', () => {
     });
 
     // Check it calls fetch with correct URL and headers
-    expect(global.fetch).toHaveBeenCalledWith('/api/admin/workers/stats', {
-      headers: { 'Authorization': 'Bearer valid-admin-token' }
-    });
+    expect(global.fetch).toHaveBeenCalledWith('/api/admin/workers/stats', expect.objectContaining({
+      headers: expect.objectContaining({ 'Authorization': 'Bearer valid-admin-token' })
+    }));
 
     // Verify system stats section renders
     await vi.waitFor(() => {

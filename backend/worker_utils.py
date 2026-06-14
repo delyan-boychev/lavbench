@@ -133,7 +133,7 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
         return
         
     task_id = metadata.get("task_id")
-    is_unified = bool(metadata.get("task_type"))
+    is_unified = True
     for f in files_list:
         filename = f["filename"]
         if is_unified and filename == "labels.parquet":

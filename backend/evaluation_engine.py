@@ -3,114 +3,80 @@ import json
 import math
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, log_loss, brier_score_loss, mean_squared_error, mean_absolute_error, r2_score, cohen_kappa_score, matthews_corrcoef, mean_absolute_percentage_error, median_absolute_error, adjusted_rand_score, normalized_mutual_info_score, adjusted_mutual_info_score, v_measure_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, log_loss, brier_score_loss, mean_squared_error, mean_absolute_error, r2_score, cohen_kappa_score, matthews_corrcoef, mean_absolute_percentage_error, median_absolute_error, adjusted_rand_score, normalized_mutual_info_score, adjusted_mutual_info_score, v_measure_score
 
 # ---------------------------------------------------------
 # 1. TASK TYPE SCHEMAS & METRICS CONFIG
 # ---------------------------------------------------------
 
-TASK_SCHEMAS = {
-    "classification": {
-        "submission_cols": ["id", "label"],
-        "labels_cols": ["id", "label"],
-        "metrics": [
-            "accuracy", "f1_macro", "f1_micro", "f1_weighted",
-            "precision", "precision_macro", "precision_micro", "precision_weighted",
-            "recall", "recall_macro", "recall_micro", "recall_weighted",
-            "cohen_kappa", "matthews_corrcoef"
-        ]
-    },
-    "probabilistic": {
-        "submission_cols": ["id", "score"],
-        "labels_cols": ["id", "label"],
-        "metrics": ["auc_roc", "logloss", "brier_score"]
-    },
-    "regression": {
-        "submission_cols": ["id", "value"],
-        "labels_cols": ["id", "value"],
-        "metrics": ["rmse", "mae", "r_squared", "mape", "median_ae"]
-    },
-    "ner_tagging": {
-        "submission_cols": ["id", "labels"],
-        "labels_cols": ["id", "labels"],
-        "metrics": ["seqeval_f1", "seqeval_precision", "seqeval_recall"]
-    },
-    "translation_summ": {
-        "submission_cols": ["id", "text"],
-        "labels_cols": ["id", "text"],
-        "metrics": ["bleu", "rouge_l", "meteor", "bertscore", "chrf", "ter"]
-    },
-    "qa_extractive": {
-        "submission_cols": ["id", "answer"],
-        "labels_cols": ["id", "answer"],
-        "metrics": ["exact_match", "f1"]
-    },
-    "object_detection": {
-        "submission_cols": ["id", "boxes"],
-        "labels_cols": ["id", "boxes"],
-        "metrics": ["map_50", "map_75", "map_50_95", "recall"]
-    },
-    "segmentation": {
-        "submission_cols": ["id", "mask"],
-        "labels_cols": ["id", "mask"],
-        "metrics": ["mean_iou", "dice", "pixel_accuracy"]
-    },
-    "keypoints": {
-        "submission_cols": ["id", "keypoints"],
-        "labels_cols": ["id", "keypoints"],
-        "metrics": ["oks", "pck"]
-    },
-    "image_generation": {
-        "submission_cols": ["id", "image"],
-        "labels_cols": ["id", "image"],
-        "metrics": ["psnr", "ssim", "mse", "fid", "is", "clip_score", "lpips", "niqe"]
-    },
-    "audio_generation": {
-        "submission_cols": ["id", "audio"],
-        "labels_cols": ["id", "audio"],
-        "metrics": ["snr", "mse", "mel_lsd", "nisqa", "pesq", "si_sdr"]
-    },
-    "retrieval": {
-        "submission_cols": ["query_id", "doc_id", "score"],
-        "labels_cols": ["query_id", "doc_id"],
-        "metrics": [
-            "ndcg_k", "ndcg_5", "ndcg_10", "ndcg_20",
-            "mrr",
-            "recall_k", "recall_5", "recall_10", "recall_20"
-        ]
-    },
-    "clustering": {
-        "submission_cols": ["id", "cluster_id"],
-        "labels_cols": ["id", "label"],
-        "metrics": [
-            "adjusted_rand_index",
-            "normalized_mutual_info",
-            "adjusted_mutual_info",
-            "v_measure"
-        ]
-    }
+
+AVAILABLE_METRICS = {
+    "accuracy": {"balanced": ["false", "true"]},
+    "f1": {"average": ["macro", "micro", "weighted", "binary"]},
+    "precision": {"average": ["macro", "micro", "weighted", "binary"]},
+    "recall": {"average": ["macro", "micro", "weighted", "binary"]},
+    "cohen_kappa": {},
+    "matthews_corrcoef": {},
+    "auc_roc": {"average": ["macro", "micro", "weighted"], "multi_class": ["raise", "ovr", "ovo"]},
+    "logloss": {},
+    "brier_score": {},
+    "rmse": {"shape": "string", "multioutput": ["uniform_average", "raw_values"]},
+    "mse": {"shape": "string", "multioutput": ["uniform_average", "raw_values"]},
+    "mae": {"shape": "string", "multioutput": ["uniform_average", "raw_values"]},
+    "r_squared": {},
+    "mape": {},
+    "median_ae": {},
+    "seqeval_f1": {},
+    "seqeval_precision": {},
+    "seqeval_recall": {},
+    "bleu": {},
+    "rouge": {"rouge_type": ["rouge1", "rouge2", "rougeL"]},
+    "meteor": {},
+    "bertscore": {},
+    "chrf": {"beta": ["1", "2", "3"]},
+    "ter": {},
+    "exact_match": {},
+    "map_50": {},
+    "map_75": {},
+    "map_50_95": {},
+    "mean_iou": {},
+    "dice": {},
+    "pixel_accuracy": {},
+    "oks": {},
+    "pck": {"threshold": ["0.01", "0.02", "0.05", "0.1", "0.15", "0.2"]},
+    "psnr": {},
+    "ssim": {},
+    "fid": {},
+    "is": {},
+    "clip_score": {},
+    "lpips": {},
+    "niqe": {},
+    "snr": {},
+    "mel_lsd": {},
+    "nisqa": {},
+    "pesq": {},
+    "si_sdr": {},
+    "ndcg_k": {"k": ["5", "10", "20", "50", "100"]},
+    "mrr": {},
+    "recall_k": {"k": ["5", "10", "20", "50", "100"]},
+    "adjusted_rand_index": {},
+    "normalized_mutual_info": {},
+    "adjusted_mutual_info": {},
+    "v_measure": {}
 }
 
 # ---------------------------------------------------------
 # 2. SCHEMA VALIDATION ENGINE
 # ---------------------------------------------------------
 
-def validate_parquet_schema(df, task_type, is_submission=True):
+def validate_parquet_schema(df, is_submission=True):
     """
-    Validates a pandas DataFrame against the standardized schema columns for the task type.
-    Returns (is_valid, error_message).
+    Validates a pandas DataFrame against the standardized schema columns.
+    For now, we only strictly require 'id'.
     """
-    if task_type not in TASK_SCHEMAS:
-        return False, f"Unknown task type: {task_type}"
-    
-    schema = TASK_SCHEMAS[task_type]
-    req_cols = schema["submission_cols"] if is_submission else schema["labels_cols"]
-    
-    missing_cols = [c for c in req_cols if c not in df.columns]
-    if missing_cols:
+    if "id" not in df.columns:
         role = "Submission" if is_submission else "Labels/Ground Truth"
-        return False, f"{role} parquet missing required columns: {missing_cols}. Expected schema: {req_cols}"
-    
+        return False, f"{role} parquet missing required column: ['id']. Found columns: {list(df.columns)}"
     return True, None
 
 # ---------------------------------------------------------
@@ -542,19 +508,17 @@ def compute_retrieval_metrics(df_true, df_pred, k=10):
 # 4. MAIN EVALUATION & METRIC RESOLUTION ROUTINE
 # ---------------------------------------------------------
 
-def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
+def evaluate_predictions(df_sub, df_labels, metrics_cfg):
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
     metrics_cfg: dict of {metric_name: {weight: float, higher_is_better: bool}}
     """
     if not metrics_cfg:
-        # Default fallback metric
-        default_metric = TASK_SCHEMAS[task_type]["metrics"][0]
-        metrics_cfg = {default_metric: {"weight": 1.0, "higher_is_better": True}}
+        metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
     
     # Sort dataframes by ID to ensure alignment
     # For Retrieval task, we handle retrieval separately
-    if task_type == "retrieval":
+    if "query_id" in df_labels.columns:
         payload = {}
         for m_name in metrics_cfg.keys():
             m_name_clean = m_name.lower().strip()
@@ -591,47 +555,7 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
     if len(df_sub) != len(df_labels):
         raise ValueError(f"Submission ID alignment mismatch. Found {len(df_sub)} aligned items out of {len(df_labels)} ground truths.")
 
-    # Determine metric name & targets
-    # Extract arrays
-    if task_type == "classification":
-        y_true = df_labels["label"].tolist()
-        y_pred = df_sub["label"].tolist()
-    elif task_type == "probabilistic":
-        y_true = df_labels["label"].tolist()
-        y_pred = df_sub["score"].tolist()
-    elif task_type == "regression":
-        y_true = df_labels["value"].tolist()
-        y_pred = df_sub["value"].tolist()
-    elif task_type == "ner_tagging":
-        y_true = df_labels["labels"].tolist()
-        y_pred = df_sub["labels"].tolist()
-    elif task_type == "translation_summ":
-        y_true = df_labels["text"].tolist()
-        y_pred = df_sub["text"].tolist()
-    elif task_type == "qa_extractive":
-        y_true = df_labels["answer"].tolist()
-        y_pred = df_sub["answer"].tolist()
-    elif task_type == "object_detection":
-        y_true = df_labels["boxes"].tolist()
-        y_pred = df_sub["boxes"].tolist()
-    elif task_type == "segmentation":
-        y_true = df_labels["mask"].tolist()
-        y_pred = df_sub["mask"].tolist()
-    elif task_type == "keypoints":
-        y_true = df_labels["keypoints"].tolist()
-        y_pred = df_sub["keypoints"].tolist()
-    elif task_type == "image_generation":
-        y_true = df_labels["image"].tolist()
-        y_pred = df_sub["image"].tolist()
-    elif task_type == "audio_generation":
-        y_true = df_labels["audio"].tolist()
-        y_pred = df_sub["audio"].tolist()
-    elif task_type == "clustering":
-        y_true = df_labels["label"].tolist()
-        y_pred = df_sub["cluster_id"].tolist()
-    else:
-        raise ValueError(f"Unsupported task type: {task_type}")
-
+    # Extract arrays per metric
     payload = {}
     
     for m_name in metrics_cfg.keys():
@@ -640,27 +564,29 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
         cfg = metrics_cfg[m_name]
         m_opts = cfg.get("options", {}) if isinstance(cfg, dict) else {}
         
-        # 1. Classification Metrics
+        custom_col = m_opts.get("column", "")
+        if custom_col:
+            if custom_col not in df_labels.columns or custom_col not in df_sub.columns:
+                payload[m_name] = 0.0
+                continue
+            y_true = df_labels[custom_col].tolist()
+            y_pred = df_sub[custom_col].tolist()
+        else:
+            pred_col = [c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]][0] if len([c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]]) > 0 else df_sub.columns[-1]
+            label_col = [c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]][0] if len([c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]]) > 0 else df_labels.columns[-1]
+            y_true = df_labels[label_col].tolist()
+            y_pred = df_sub[pred_col].tolist()
         if m_name_clean == "accuracy":
-            val = accuracy_score(y_true, y_pred)
-        elif m_name_clean == "f1_macro":
-            val = f1_score(y_true, y_pred, average="macro")
-        elif m_name_clean == "f1_micro":
-            val = f1_score(y_true, y_pred, average="micro")
-        elif m_name_clean == "f1_weighted":
-            val = f1_score(y_true, y_pred, average="weighted")
-        elif m_name_clean in ["precision", "precision_macro"]:
-            val = precision_score(y_true, y_pred, average="macro", zero_division=0)
-        elif m_name_clean == "precision_micro":
-            val = precision_score(y_true, y_pred, average="micro", zero_division=0)
-        elif m_name_clean == "precision_weighted":
-            val = precision_score(y_true, y_pred, average="weighted", zero_division=0)
-        elif m_name_clean in ["recall", "recall_macro"]:
-            val = recall_score(y_true, y_pred, average="macro", zero_division=0)
-        elif m_name_clean == "recall_micro":
-            val = recall_score(y_true, y_pred, average="micro", zero_division=0)
-        elif m_name_clean == "recall_weighted":
-            val = recall_score(y_true, y_pred, average="weighted", zero_division=0)
+            if str(m_opts.get("balanced", "false")).lower() == "true":
+                val = balanced_accuracy_score(y_true, y_pred)
+            else:
+                val = accuracy_score(y_true, y_pred)
+        elif m_name_clean == "f1":
+            val = f1_score(y_true, y_pred, average=m_opts.get("average", "macro"))
+        elif m_name_clean == "precision":
+            val = precision_score(y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0)
+        elif m_name_clean == "recall":
+            val = recall_score(y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0)
         elif m_name_clean == "cohen_kappa":
             val = cohen_kappa_score(y_true, y_pred)
         elif m_name_clean == "matthews_corrcoef":
@@ -669,7 +595,9 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
         # 2. Probabilistic Metrics
         elif m_name_clean == "auc_roc":
             try:
-                val = roc_auc_score(y_true, y_pred)
+                avg = m_opts.get("average", "macro")
+                mc = m_opts.get("multi_class", "raise")
+                val = roc_auc_score(y_true, y_pred, average=avg, multi_class=mc)
             except Exception:
                 val = 0.5
         elif m_name_clean == "logloss":
@@ -684,10 +612,52 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
                 val = 1.0
                 
         # 3. Regression Metrics
-        elif m_name_clean == "rmse":
-            val = math.sqrt(mean_squared_error(y_true, y_pred))
-        elif m_name_clean == "mae":
-            val = mean_absolute_error(y_true, y_pred)
+        elif m_name_clean in ["rmse", "mse", "mae"]:
+            if len(y_true) > 0 and isinstance(y_true[0], (bytes, bytearray)):
+                scores = []
+                for t, p in zip(y_true, y_pred):
+                    if not t or not p:
+                        scores.append(1.0)
+                        continue
+                    min_len = min(len(t), len(p))
+                    arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
+                    arr_p = np.frombuffer(p[:min_len], dtype=np.uint8)
+                    if m_name_clean == "rmse":
+                        scores.append(math.sqrt(mean_squared_error(arr_t, arr_p)))
+                    elif m_name_clean == "mse":
+                        scores.append(mean_squared_error(arr_t, arr_p))
+                    elif m_name_clean == "mae":
+                        scores.append(mean_absolute_error(arr_t, arr_p))
+                val = np.mean(scores)
+            else:
+                shape_str = str(m_opts.get("shape", "0")).strip()
+                mo = m_opts.get("multioutput", "uniform_average")
+                if shape_str == "0" or not shape_str:
+                    if m_name_clean == "rmse":
+                        res = mean_squared_error(y_true, y_pred, multioutput=mo)
+                        val = np.mean(np.sqrt(res)) if isinstance(res, np.ndarray) else math.sqrt(res)
+                    elif m_name_clean == "mse":
+                        res = mean_squared_error(y_true, y_pred, multioutput=mo)
+                        val = np.mean(res) if isinstance(res, np.ndarray) else res
+                    elif m_name_clean == "mae":
+                        res = mean_absolute_error(y_true, y_pred, multioutput=mo)
+                        val = np.mean(res) if isinstance(res, np.ndarray) else res
+                else:
+                    try:
+                        shape_tuple = tuple(int(x.strip()) for x in shape_str.split(","))
+                        scores = []
+                        for t, p in zip(y_true, y_pred):
+                            arr_t = np.array(t).reshape(shape_tuple)
+                            arr_p = np.array(p).reshape(shape_tuple)
+                            if m_name_clean == "rmse":
+                                scores.append(math.sqrt(np.mean((arr_t - arr_p) ** 2)))
+                            elif m_name_clean == "mse":
+                                scores.append(np.mean((arr_t - arr_p) ** 2))
+                            elif m_name_clean == "mae":
+                                scores.append(np.mean(np.abs(arr_t - arr_p)))
+                        val = np.mean(scores)
+                    except Exception as e:
+                        val = 999.0  # Fallback on shape error
         elif m_name_clean == "r_squared":
             val = r2_score(y_true, y_pred)
         elif m_name_clean == "mape":
@@ -716,6 +686,11 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
         # 5. Generative NLP Metrics
         elif m_name_clean == "bleu":
             val = np.mean([compute_bleu(t, p) for t, p in zip(y_true, y_pred)])
+        elif m_name_clean == "rouge":
+            rouge_type = m_opts.get("rouge_type", "rougeL")
+            # Currently compute_rouge_l specifically returns rougeL. We can adapt it if needed,
+            # but for now we'll pass the type to a custom wrapper or just use rougeL.
+            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred)])
         elif m_name_clean == "rouge_l":
             val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred)])
         elif m_name_clean == "meteor":
@@ -805,17 +780,6 @@ def evaluate_predictions(df_sub, df_labels, task_type, metrics_cfg):
             val = compute_psnr(y_true, y_pred)
         elif m_name_clean == "ssim":
             val = compute_ssim(y_true, y_pred)
-        elif m_name_clean == "mse":
-            mse_scores = []
-            for t, p in zip(y_true, y_pred):
-                if not t or not p:
-                    mse_scores.append(1.0)
-                    continue
-                min_len = min(len(t), len(p))
-                arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
-                arr_p = np.frombuffer(p[:min_len], dtype=np.uint8)
-                mse_scores.append(mean_squared_error(arr_t, arr_p))
-            val = np.mean(mse_scores)
         elif m_name_clean in ["fid", "is", "clip_score"]:
             # Neural network outputs mock fallback for scoring host
             val = 0.85

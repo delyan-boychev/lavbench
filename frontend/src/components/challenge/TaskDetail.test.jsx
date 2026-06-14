@@ -30,7 +30,6 @@ describe('TaskDetail Component', () => {
     require_submit_tag: true,
     ban_magic_commands: true,
     banned_imports: 'sys,os',
-    hf_train_repo: 'org/dataset-repo',
     max_submissions_per_period: 5,
     submission_period_hours: 24,
     public_eval_percentage: 40,
@@ -69,7 +68,6 @@ describe('TaskDetail Component', () => {
     expect(screen.getByText('sys,os')).toBeInTheDocument();
 
     // Dataset & Submissions metadata
-    expect(screen.getByText('org/dataset-repo')).toBeInTheDocument();
     expect(screen.getByText('5 subs / 24h')).toBeInTheDocument();
     expect(screen.getByText('40% of Private Dataset')).toBeInTheDocument();
   });
@@ -102,7 +100,7 @@ describe('TaskDetail Component', () => {
 
     expect(TaskService.getDownloadUrl).toHaveBeenCalledWith(5, 'data_sample.csv');
     expect(global.fetch).toHaveBeenCalledWith('/api/tasks/5/files/data_sample.csv', {
-      headers: { 'Authorization': 'Bearer token-123' },
+      headers: { 'Authorization': 'Bearer token-123', 'Content-Type': 'application/json' },
     });
 
     // Wait for the async download actions to finish

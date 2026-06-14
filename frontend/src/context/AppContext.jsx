@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
+import api from '../services/ApiService';
 
 const AppContext = createContext(null);
 
@@ -144,11 +145,8 @@ export const AppProvider = ({ children }) => {
   const fetchChallenges = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch('/api/challenges', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const { ok, data } = await api.get('/challenges');
+      if (ok) {
         setChallenges(data);
         if (data.length > 0) {
           setSelectedChallengeState(prev => {

@@ -243,7 +243,6 @@ def submit_code(challenge_id):
         
         "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
-        "hf_eval_repo": task.hf_eval_repo,
         "hf_token": hf_token,
         "public_eval_percentage": task.public_eval_percentage or 30,
         

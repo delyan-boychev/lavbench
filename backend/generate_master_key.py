@@ -3,7 +3,7 @@ import sys
 import secrets
 import hashlib
 from werkzeug.security import generate_password_hash
-from app import create_app, seed_database
+from app import create_app
 from models import db, User
 
 def generate_master_key():
@@ -18,8 +18,8 @@ def generate_master_key():
             db.session.rollback()
             print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")
             db.drop_all()
-        print("Recreating database tables and seeding default data...")
-        seed_database()
+        print("Recreating database tables...")
+        db.create_all()
         
         # Generate random unique admin username (not standard "admin")
         admin_username = f"admin_{secrets.token_hex(4)}"
