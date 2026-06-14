@@ -621,6 +621,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         except:
                             metrics_cfg = None
                     
+                    # Strip metadata keys (e.g., _columns) that are not metrics
+                    if isinstance(metrics_cfg, dict):
+                        metrics_cfg = {k: v for k, v in metrics_cfg.items() if not k.startswith("_")}
+                    
                     pub_pct = task.public_eval_percentage if task.public_eval_percentage is not None else 30
                     
                     if "query_id" in df_labels.columns:
@@ -697,8 +701,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     status = 'completed'
                     logs.append("Evaluation completed successfully.")
                 except Exception as eval_err:
+                    import traceback
                     status = 'failed'
                     logs.append(f"Error during parquet metric calculation: {str(eval_err)}")
+                    logs.append(f"Traceback: {traceback.format_exc()}")
                     
             # Clean up securely downloaded labels directory on host if created
             if metadata and 'host_labels_dir' in locals() and host_labels_dir:
