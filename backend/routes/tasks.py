@@ -142,6 +142,20 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         priority=priority,
         queue=queue_name
     )
+    
+def _maybe_queue_baseline(task, challenge, admin_id):
+    """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
+    # Remove old baseline submissions for this task
+    Submission.query.filter_by(task_id=task.id, is_baseline=True).delete(synchronize_session=False)
+    db.session.commit()
+    
+    # Parse and submit new baseline if notebook exists
+    baseline_cells = []
+    if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
+        baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
+    
+    if baseline_cells:
+        queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
 
 # --- TASK CRUD ---
 
@@ -397,18 +411,13 @@ def create_task(challenge_id):
     task.files = json.dumps(uploaded_files_meta)
     db.session.commit()
     
+    # Parse code cells from notebooks and queue baseline submission
+    admin_id = request.user["user_id"]
+    _maybe_queue_baseline(task, challenge, admin_id)
+    
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
     
-    # Parse code cells from notebooks
-    baseline_cells = []
-    if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
-        baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
-        
-    admin_id = request.user["user_id"]
-    if baseline_cells:
-        queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
-        
     return jsonify(task.to_dict()), 201
 
 @tasks_bp.route('/tasks/<int:task_id>', methods=['PUT'])
@@ -667,6 +676,7 @@ def update_task(task_id):
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(task.challenge_id)
+    _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
     
     return jsonify(task.to_dict())
 
