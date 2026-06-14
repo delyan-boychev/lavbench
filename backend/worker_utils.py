@@ -67,7 +67,7 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
             remaining = proc.stderr.read()
             if remaining:
                 stderr_lines.append(remaining)
-                logs_list.append(f"[stderr] {remaining.rstrip('\r\n')}")
+                logs_list.append("[stderr] " + remaining.rstrip('\r\n'))
         except:
             pass
         
