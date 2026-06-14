@@ -440,6 +440,7 @@ class Submission(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True)
     
     status = db.Column(db.String(50), default='queued', index=True)
+    is_baseline = db.Column(db.Boolean, default=False)
     detailed_status = db.Column(db.String(100), default='queued')
     
     # Lightweight storage path pointers instead of heavy text columns
@@ -564,6 +565,7 @@ class Submission(db.Model):
             "final_weighted_score_public": self.final_weighted_score_public,
             "final_weighted_score_private": self.final_weighted_score_private if show_private_score else None,
             "is_final_selection": self.is_final_selection,
+            "is_baseline": self.is_baseline,
             "is_disqualified": self.is_disqualified,
             "celery_task_id": self.celery_task_id
         }
