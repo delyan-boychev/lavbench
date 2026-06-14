@@ -1279,4 +1279,42 @@ def worker_download_task_file(task_id, filename):
     return send_from_directory(task_upload_dir, saved_name)
 
 
+@tasks_bp.route('/worker/active-datasets', methods=['GET'])
+def get_active_datasets():
+    token = request.headers.get("X-Worker-Token")
+    expected_token = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
+    if not token or token != expected_token:
+        return jsonify({"error": "Unauthorized"}), 401
+        
+    active_challenges = Challenge.query.filter_by(is_archived=False).all()
+    datasets_set = set()
+    import re
+    
+    for challenge in active_challenges:
+        if challenge.hf_dataset_path:
+            datasets_set.add(challenge.hf_dataset_path)
+            
+        for task in challenge.tasks:
+            if task.hf_eval_repo:
+                datasets_set.add(task.hf_eval_repo)
+            
+            # Extract from custom evaluation code
+            eval_code = ""
+            if task.custom_eval_code:
+                eval_code = task.custom_eval_code
+            elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
+                try:
+                    with open(task.evaluator_script_path, "r") as f:
+                        eval_code = f.read()
+                except:
+                    pass
+                    
+            if eval_code:
+                matches = re.findall(r'(?:datasets\.)?load_dataset\(\s*[\'"]([^\'"]+)[\'"]', eval_code)
+                for m in matches:
+                    datasets_set.add(m)
+                    
+    return jsonify({"datasets": list(datasets_set)}), 200
+
+
 

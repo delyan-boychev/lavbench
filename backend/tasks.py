@@ -691,6 +691,23 @@ def evaluate_submission(self, submission_id, metadata=None):
     hf_cache_dir = os.environ.get("HF_CACHE_DIR")
     if not hf_cache_dir and not RUNNING_AS_WORKER:
         hf_cache_dir = app.config.get("HF_CACHE_DIR")
+        
+    valid_cache = False
+    if hf_cache_dir:
+        try:
+            os.makedirs(hf_cache_dir, exist_ok=True)
+            valid_cache = True
+        except Exception:
+            pass
+            
+    if not valid_cache:
+        relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'hf_cache'))
+        try:
+            os.makedirs(relative_path, exist_ok=True)
+            hf_cache_dir = relative_path
+        except Exception as e:
+            pass
+            
     if hf_cache_dir:
         env["HF_HOME"] = hf_cache_dir
         env["HF_DATASETS_CACHE"] = hf_cache_dir
@@ -757,6 +774,42 @@ def evaluate_submission(self, submission_id, metadata=None):
             )
             with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
                 f.write(run_script_content)
+
+    # Preload HuggingFace datasets on the host so they are available offline in docker
+    datasets_to_load = []
+    if task and hasattr(task, 'hf_eval_repo') and task.hf_eval_repo:
+        datasets_to_load.append(task.hf_eval_repo)
+    if challenge and hasattr(challenge, 'hf_dataset_path') and challenge.hf_dataset_path:
+        datasets_to_load.append(challenge.hf_dataset_path)
+
+    eval_code = ""
+    evaluator_path = os.path.join(temp_dir, "evaluator.py")
+    if os.path.exists(evaluator_path):
+        try:
+            with open(evaluator_path, "r") as f:
+                eval_code = f.read()
+        except Exception:
+            pass
+
+    if eval_code:
+        import re
+        matches = re.findall(r'(?:datasets\.)?load_dataset\(\s*[\'"]([^\'"]+)[\'"]', eval_code)
+        for m in matches:
+            if m not in datasets_to_load:
+                datasets_to_load.append(m)
+
+    if datasets_to_load and hf_cache_dir:
+        logs.append(f"Preloading datasets on host: {datasets_to_load}...")
+        try:
+            from datasets import load_dataset as host_load_dataset
+            for ds_name in datasets_to_load:
+                try:
+                    host_load_dataset(ds_name, cache_dir=hf_cache_dir)
+                    logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache '{hf_cache_dir}'.")
+                except Exception as preload_err:
+                    logs.append(f"Warning: Failed to preload dataset '{ds_name}' to host cache: {preload_err}")
+        except Exception as import_err:
+            logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
 
     # Phase 2: Build / Prepare environment
     docker_available = False
@@ -884,7 +937,8 @@ def evaluate_submission(self, submission_id, metadata=None):
         "-e", "HF_DATASETS_CACHE=/hf_cache",
         "-e", "HF_DATASETS_OFFLINE=1",
         "-e", "HF_HUB_OFFLINE=1",
-        image_tag, "python", exec_file
+        "-e", "PYTHONUNBUFFERED=1",
+        image_tag, "python", "-u", exec_file
     ]
     
     logs.append(f"Executing sandbox command: {' '.join(cmd)}")
@@ -1056,6 +1110,47 @@ def register_worker_specs(sender, **kwargs):
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
         print(f"[NAI Worker] Specs registered successfully: {spec}")
+        
+        # Call main server to retrieve active datasets and preload them on worker startup
+        main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
+        worker_secret_key = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
+        
+        try:
+            url = f"{main_server_url.rstrip('/')}/api/tasks/worker/active-datasets"
+            headers = {"X-Worker-Token": worker_secret_key}
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                datasets_to_preload = data.get("datasets", [])
+                if datasets_to_preload:
+                    print(f"[NAI Worker] Active datasets to preload on startup: {datasets_to_preload}")
+                    
+                    # Resolve cache directory on worker
+                    hf_cache_dir = os.environ.get("HF_CACHE_DIR")
+                    if not hf_cache_dir:
+                        hf_cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'hf_cache'))
+                    
+                    try:
+                        os.makedirs(hf_cache_dir, exist_ok=True)
+                    except:
+                        pass
+                        
+                    if os.path.exists(hf_cache_dir):
+                        try:
+                            from datasets import load_dataset as host_load_dataset
+                            for ds_name in datasets_to_preload:
+                                try:
+                                    print(f"[NAI Worker] Preloading dataset '{ds_name}' to '{hf_cache_dir}'...")
+                                    host_load_dataset(ds_name, cache_dir=hf_cache_dir)
+                                    print(f"[NAI Worker] Successfully preloaded dataset '{ds_name}' on worker startup.")
+                                except Exception as e:
+                                    print(f"[NAI Worker] Failed preloading dataset '{ds_name}': {e}")
+                        except Exception as import_err:
+                            print(f"[NAI Worker] Could not import 'datasets' to preload: {import_err}")
+            else:
+                print(f"[NAI Worker] Failed to fetch active datasets from main server: HTTP {res.status_code}")
+        except Exception as e:
+            print(f"[NAI Worker] Error fetching/preloading active datasets: {e}")
     except Exception as e:
         print(f"[NAI Worker] Failed to register specs: {e}")
 
