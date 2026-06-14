@@ -491,6 +491,46 @@ if __name__ == "__main__":
 """
 
 
+def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
+    """
+    Preloads HuggingFace datasets on the host so they are available offline in docker.
+    """
+    datasets_to_load = []
+    if task and hasattr(task, 'hf_eval_repo') and task.hf_eval_repo:
+        datasets_to_load.append(task.hf_eval_repo)
+    if challenge and hasattr(challenge, 'hf_dataset_path') and challenge.hf_dataset_path:
+        datasets_to_load.append(challenge.hf_dataset_path)
+
+    eval_code = ""
+    evaluator_path = os.path.join(temp_dir, "evaluator.py")
+    if os.path.exists(evaluator_path):
+        try:
+            with open(evaluator_path, "r") as f:
+                eval_code = f.read()
+        except Exception:
+            pass
+
+    if eval_code:
+        import re
+        matches = re.findall(r'(?:datasets\.)?load_dataset\(\s*[\'"]([^\'"]+)[\'"]', eval_code)
+        for m in matches:
+            if m not in datasets_to_load:
+                datasets_to_load.append(m)
+
+    if datasets_to_load and hf_cache_dir:
+        logs.append(f"Preloading datasets on host: {datasets_to_load}...")
+        try:
+            from datasets import load_dataset as host_load_dataset
+            for ds_name in datasets_to_load:
+                try:
+                    host_load_dataset(ds_name, cache_dir=hf_cache_dir)
+                    logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache '{hf_cache_dir}'.")
+                except Exception as preload_err:
+                    logs.append(f"Warning: Failed to preload dataset '{ds_name}' to host cache: {preload_err}")
+        except Exception as import_err:
+            logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
+
+
 @celery.task(bind=True)
 def evaluate_submission(self, submission_id, metadata=None):
     """
@@ -776,40 +816,7 @@ def evaluate_submission(self, submission_id, metadata=None):
                 f.write(run_script_content)
 
     # Preload HuggingFace datasets on the host so they are available offline in docker
-    datasets_to_load = []
-    if task and hasattr(task, 'hf_eval_repo') and task.hf_eval_repo:
-        datasets_to_load.append(task.hf_eval_repo)
-    if challenge and hasattr(challenge, 'hf_dataset_path') and challenge.hf_dataset_path:
-        datasets_to_load.append(challenge.hf_dataset_path)
-
-    eval_code = ""
-    evaluator_path = os.path.join(temp_dir, "evaluator.py")
-    if os.path.exists(evaluator_path):
-        try:
-            with open(evaluator_path, "r") as f:
-                eval_code = f.read()
-        except Exception:
-            pass
-
-    if eval_code:
-        import re
-        matches = re.findall(r'(?:datasets\.)?load_dataset\(\s*[\'"]([^\'"]+)[\'"]', eval_code)
-        for m in matches:
-            if m not in datasets_to_load:
-                datasets_to_load.append(m)
-
-    if datasets_to_load and hf_cache_dir:
-        logs.append(f"Preloading datasets on host: {datasets_to_load}...")
-        try:
-            from datasets import load_dataset as host_load_dataset
-            for ds_name in datasets_to_load:
-                try:
-                    host_load_dataset(ds_name, cache_dir=hf_cache_dir)
-                    logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache '{hf_cache_dir}'.")
-                except Exception as preload_err:
-                    logs.append(f"Warning: Failed to preload dataset '{ds_name}' to host cache: {preload_err}")
-        except Exception as import_err:
-            logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
+    preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs)
 
     # Phase 2: Build / Prepare environment
     docker_available = False
