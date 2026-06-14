@@ -1,5 +1,22 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { CheckIcon, CrossIcon, SpinnerIcon, ClockIcon, GearIcon, DotIcon, SnowflakeIcon, FlagIcon } from './icons';
+
+const ICON = {
+  completed:        CheckIcon,
+  failed:           CrossIcon,
+  running:          SpinnerIcon,
+  queued:           ClockIcon,
+  building_env:     GearIcon,
+  running_inference: SpinnerIcon,
+  evaluating:       GearIcon,
+  active:           DotIcon,
+  archived:         DotIcon,
+  not_started:      ClockIcon,
+  frozen:           SnowflakeIcon,
+  ended:            FlagIcon,
+  finalized:        CheckIcon,
+};
 
 const CONFIG = {
   completed:        { style: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", key: "badge.completed" },
@@ -23,8 +40,10 @@ const CONFIG = {
 export default function Badge({ status }) {
   const { t } = useTranslation();
   const cfg = CONFIG[status] || { style: "border-slate-500/30 bg-slate-800 text-slate-400", key: null };
+  const StatusIcon = ICON[status];
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none ${cfg.style}`}>
+      {StatusIcon && <StatusIcon className="w-3 h-3" />}
       {cfg.key ? t(cfg.key) : status?.toUpperCase()}
     </span>
   );

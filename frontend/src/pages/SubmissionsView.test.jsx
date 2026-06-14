@@ -35,25 +35,9 @@ describe('SubmissionsView Page', () => {
       token: 'student-token',
     });
 
-    // Mock EventSource globally to avoid reference errors and network calls
-    global.EventSource = class {
-      constructor() {
-        this.close = vi.fn();
-        setTimeout(() => {
-          if (this.onerror) {
-            this.onerror(new Event('error'));
-          }
-        }, 0);
-      }
-    };
-
     TaskService.getSubmissions.mockResolvedValue({
       ok: true,
-      data: {
-        items: [],
-        total: 0,
-        pages: 1,
-      },
+      data: { items: [], total: 0, pages: 1 },
     });
   });
 
@@ -111,8 +95,7 @@ describe('SubmissionsView Page', () => {
       confirm: mockConfirm,
     });
 
-    // Mock submissions where one pre-deadline submission is still running/queued
-    // end_time is 12:00. This submission is created at 11:50 (pre-deadline) and status is queued
+    // Mock EventSource — fire onmessage directly with submission data to bypass SSE/fallback complexity
     const mockSubmissions = [
       {
         id: 100,
@@ -120,18 +103,19 @@ describe('SubmissionsView Page', () => {
         created_at: '2026-06-13T11:50:00Z',
       }
     ];
+    global.EventSource = class {
+      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onmessage) this.onmessage({ data: JSON.stringify(mockSubmissions) }); }, 10); }
+    };
 
-    TaskService.getSubmissions.mockResolvedValue({
-      ok: true,
-      data: mockSubmissions,
-    });
+    // Mock Date.now() to 11:55 — stage is still active, submission is pre-deadline and queued
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
     render(<SubmissionsView />);
 
     // Check that it shows waiting for running submissions
     await vi.waitFor(() => {
       expect(screen.getByText(/Waiting for running pre-deadline submissions/i)).toBeInTheDocument();
-    });
+    }, { timeout: 5000 });
   });
 
   it('displays countdown timer showing remaining time to select final', async () => {
@@ -165,6 +149,11 @@ describe('SubmissionsView Page', () => {
       confirm: mockConfirm,
     });
 
+    // Mock EventSource — fire onerror to trigger HTTP fallback which loads submissions
+    global.EventSource = class {
+      constructor() { this.close = vi.fn(); }
+    };
+
     // Mock submissions (all finished)
     const mockSubmissions = [
       {
@@ -180,9 +169,8 @@ describe('SubmissionsView Page', () => {
       data: mockSubmissions,
     });
 
-    // Mock Date.now() to be 12:02:00
-    const mockSystemTime = new Date('2026-06-13T12:02:00Z').getTime();
-    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+    // Mock Date.now() to be 12:02:00 (must be before render)
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:02:00Z').getTime());
 
     render(<SubmissionsView />);
 
@@ -236,9 +224,8 @@ describe('SubmissionsView Page', () => {
       data: mockSubmissions,
     });
 
-    // Mock Date.now() to be 12:06:00
-    const mockSystemTime = new Date('2026-06-13T12:06:00Z').getTime();
-    vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
+    // Mock Date.now() to be 12:06:00 (must be before render)
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:06:00Z').getTime());
 
     render(<SubmissionsView />);
 

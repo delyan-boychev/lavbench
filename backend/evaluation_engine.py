@@ -549,6 +549,9 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
         return payload
 
     # Align dataframes by 'id'
+    if len(df_labels) == 0:
+        return {}
+    
     df_labels = df_labels.sort_values("id")
     df_sub = df_sub[df_sub["id"].isin(df_labels["id"])].sort_values("id")
     
@@ -572,8 +575,10 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             y_true = df_labels[custom_col].tolist()
             y_pred = df_sub[custom_col].tolist()
         else:
-            pred_col = [c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]][0] if len([c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]]) > 0 else df_sub.columns[-1]
-            label_col = [c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]][0] if len([c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]]) > 0 else df_labels.columns[-1]
+            non_id_cols_sub = [c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]]
+            non_id_cols_label = [c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]]
+            pred_col = next((c for c in non_id_cols_sub if c.lower() == "prediction"), None) or (non_id_cols_sub[0] if non_id_cols_sub else df_sub.columns[-1])
+            label_col = next((c for c in non_id_cols_label if c.lower() == "label"), None) or (non_id_cols_label[0] if non_id_cols_label else df_labels.columns[-1])
             y_true = df_labels[label_col].tolist()
             y_pred = df_sub[pred_col].tolist()
         if m_name_clean == "accuracy":

@@ -7,6 +7,7 @@ export default function CustomSelect({
   onChange, 
   placeholder, 
   disabled = false,
+  error = false,
   size = 'md'
 }) {
   const { t } = useTranslation();
@@ -54,7 +55,9 @@ export default function CustomSelect({
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between w-full px-3 text-slate-200 bg-slate-900 border border-slate-800 rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`flex items-center justify-between w-full px-3 text-slate-200 bg-slate-900 border rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+            error ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-800'
+          } ${
             isSm ? 'py-1.5 text-xs font-semibold' : 'py-2 text-sm'
           }`}
         >
@@ -76,7 +79,7 @@ export default function CustomSelect({
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute left-0 mt-1.5 w-full bg-slate-950/95 border border-slate-800/80 rounded-lg shadow-2xl backdrop-blur-md max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-850 z-[110]">
+        <div className="absolute left-0 mt-1.5 w-full bg-slate-950/95 border border-slate-800/80 rounded-lg shadow-2xl backdrop-blur-md max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 z-[110]">
           {options.length > 5 && (
             <div className="sticky top-0 bg-slate-950/95 border-b border-slate-800/80 p-2 z-20 backdrop-blur-md">
               <input
@@ -110,7 +113,7 @@ export default function CustomSelect({
                   }}
                   className={`flex items-center justify-between w-full px-3 py-2 text-left transition-colors duration-150 cursor-pointer ${
                     opt.value === value
-                      ? 'bg-indigo-650/20 text-indigo-300 font-bold border-l-2 border-indigo-500'
+                      ? 'bg-indigo-600/20 text-indigo-300 font-bold border-l-2 border-indigo-500'
                       : 'text-slate-300 hover:bg-slate-900 hover:text-white'
                   } ${isSm ? 'text-xs' : 'text-sm'}`}
                 >

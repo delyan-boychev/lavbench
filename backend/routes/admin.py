@@ -115,7 +115,7 @@ def register_competitor():
 @role_required(['admin', 'jury'])
 def get_users():
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
     role_filter = request.args.get('role')
     challenge_id_filter = request.args.get('challenge_id', type=int)
     search_term = request.args.get('search')

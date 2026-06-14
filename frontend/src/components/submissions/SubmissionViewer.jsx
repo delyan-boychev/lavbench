@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Badge from '../ui/Badge';
 import CodeHighlight from '../ui/CodeHighlight';
 import EmptyState from '../ui/EmptyState';
+import { StarIcon } from '../ui/icons';
 import ToggleField from '../ui/ToggleField';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../AuthContext';
@@ -19,10 +20,12 @@ export default function SubmissionViewer({
   const [liveLogs, setLiveLogs] = useState('');
   const [currentId, setCurrentId] = useState(null);
 
-  if (submission && submission.id !== currentId) {
-    setCurrentId(submission.id);
-    setLiveLogs('');
-  }
+  useEffect(() => {
+    if (submission && submission.id !== currentId) {
+      setCurrentId(submission.id);
+      setLiveLogs('');
+    }
+  }, [submission?.id]);
 
   useEffect(() => {
     if (!submission || submission.status === 'completed' || submission.status === 'failed') {
@@ -101,7 +104,8 @@ export default function SubmissionViewer({
                 <Badge status={submission.detailed_status} />
               )}
               {submission.is_final_selection && (
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
+                  <StarIcon className="w-3 h-3" />
                   {t('submissions.final_selection_star')}
                 </span>
               )}
@@ -135,7 +139,7 @@ export default function SubmissionViewer({
 
         {/* Final Selection Selector for Competitor */}
         {isCompetitor && submission.status === 'completed' && (
-          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
+          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
             <ToggleField
               id={`final-check-${submission.id}`}
               checked={submission.is_final_selection}
@@ -156,7 +160,7 @@ export default function SubmissionViewer({
 
         {/* Demographics View for Jury/Admin */}
         {showUserDemographics && (
-          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
+          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.demographics_title')}
             </div>
@@ -172,7 +176,7 @@ export default function SubmissionViewer({
 
         {/* Integrity View for Jury/Admin */}
         {isAdminOrJury && (
-          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-850 rounded-lg">
+          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.integrity_title')}
             </div>

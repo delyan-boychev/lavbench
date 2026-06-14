@@ -5,6 +5,7 @@ import ChallengeService from '../../services/ChallengeService';
 import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
 import CodeHighlight from '../ui/CodeHighlight';
+import { NotebookIcon } from '../ui/icons';
 import { useTranslation } from 'react-i18next';
 
 export default function NotebookSubmit({ task, challenge }) {
@@ -170,7 +171,7 @@ export default function NotebookSubmit({ task, challenge }) {
             </div>
           ) : fileName ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--accent)' }}>📓 {fileName}</span>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}><NotebookIcon className="w-4 h-4" />{fileName}</span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('challenge.click_to_replace')}</span>
             </div>
           ) : (

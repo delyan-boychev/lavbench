@@ -23,36 +23,31 @@ export default function ChallengeConfig({
           onChange={(e) => setNewChallenge({ ...newChallenge, title: e.target.value })} 
           required 
         />
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-slate-300">{t('admin.description')}</label>
-          <textarea 
-            rows="4" 
-            className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm font-sans"
-            value={newChallenge.description} 
-            onChange={(e) => setNewChallenge({ ...newChallenge, description: e.target.value })} 
-          />
-        </div>
+        <InputField
+          multiline
+          label={t('admin.description')}
+          value={newChallenge.description}
+          onChange={(e) => setNewChallenge({ ...newChallenge, description: e.target.value })}
+          rows={4}
+        />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <InputField 
             label={t('admin.daily_limits')} 
             type="number"
             value={newChallenge.max_eval_requests} 
             onChange={(e) => setNewChallenge({ ...newChallenge, max_eval_requests: parseInt(e.target.value) || 0 })} 
-            required 
           />
           <InputField 
             label={t('admin.ram_limit_override')} 
             type="number"
             value={newChallenge.ram_limit_mb} 
             onChange={(e) => setNewChallenge({ ...newChallenge, ram_limit_mb: parseInt(e.target.value) || 0 })} 
-            required 
           />
           <InputField 
             label={t('admin.time_limit_override')} 
             type="number"
             value={newChallenge.time_limit_sec} 
             onChange={(e) => setNewChallenge({ ...newChallenge, time_limit_sec: parseInt(e.target.value) || 0 })} 
-            required 
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

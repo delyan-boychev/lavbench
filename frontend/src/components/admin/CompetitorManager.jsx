@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import Pagination from '../ui/Pagination';
+import FileUploader from '../ui/FileUploader';
 
 export default function CompetitorManager({
   editingUser,
@@ -21,6 +22,7 @@ export default function CompetitorManager({
   generatedCredentials,
   csvChallengeId,
   setCsvChallengeId,
+  csvFile = null,
   setCsvFile,
   csvImporting,
   isCSVImportDisabled,
@@ -234,16 +236,13 @@ export default function CompetitorManager({
                   ]}
                 />
 
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-300">{t('admin.competitor_reg.choose_csv_file')}</label>
-                  <input 
-                    type="file" 
-                    accept=".csv" 
-                    onChange={(e) => setCsvFile(e.target.files[0])}
-                    className="text-xs text-slate-400 border border-white/5 p-3.5 bg-slate-900 rounded-lg cursor-pointer"
-                    required
-                  />
-                </div>
+                <FileUploader
+                  files={csvFile ? [csvFile] : []}
+                  onChange={(files) => setCsvFile(files[0] || null)}
+                  accept=".csv"
+                  label={t('admin.competitor_reg.choose_csv_file')}
+                  required
+                />
 
                 {isCSVImportDisabled && (
                   <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">

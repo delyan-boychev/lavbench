@@ -1,6 +1,7 @@
 import React from 'react';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
+import { FolderIcon } from '../ui/icons';
 
 export default function TaskSidebar({ tasks, selectedTask, onSelect }) {
   const { t } = useTranslation();
@@ -61,7 +62,7 @@ export default function TaskSidebar({ tasks, selectedTask, onSelect }) {
                   background: 'var(--info-soft)', border: '1px solid var(--info-border)',
                   padding: '1px 6px', borderRadius: 'var(--radius-xs)',
                 }}>
-                  📂 {task.files.length}
+                    <FolderIcon className="w-3.5 h-3.5 inline mr-1" />{task.files.length}
                 </span>
               )}
             </div>

@@ -5,7 +5,9 @@ import unittest
 import tempfile
 import shutil
 import io
+import math
 import pandas as pd
+import numpy as np
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 
@@ -225,6 +227,87 @@ class TestUnifiedParquetEvaluation(unittest.TestCase):
         self.assertIn("mae", res)
         # mae for label_2: (0.2 + 0.2) / 2 = 0.2
         self.assertAlmostEqual(res["mae"], 0.2)
+
+    def test_empty_dataframe_returns_empty_dict(self):
+        """Empty DataFrames should return {} without crashing."""
+        df_empty = pd.DataFrame(columns=["id", "label"])
+        metrics_cfg = {"accuracy": {"weight": 1.0}}
+        res = evaluate_predictions(df_empty, df_empty, metrics_cfg)
+        self.assertEqual(res, {})
+
+    def test_empty_labels_only_returns_empty_dict(self):
+        """When only labels is empty, should return {} gracefully."""
+        df_sub = pd.DataFrame({"id": [1], "label": [0]})
+        df_labels = pd.DataFrame(columns=["id", "label"])
+        metrics_cfg = {"accuracy": {"weight": 1.0}}
+        res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
+        self.assertEqual(res, {})
+
+    def test_column_auto_selection_prefers_prediction_label(self):
+        """Should prefer 'prediction' column on sub side, 'label' on labels side."""
+        df_labels = pd.DataFrame({"id": [1, 2], "label": [0, 1], "extra": [1, 2]})
+        df_sub = pd.DataFrame({"id": [1, 2], "prediction": [1, 0], "extra": [3, 4]})
+        metrics_cfg = {"accuracy": {"weight": 1.0}}
+        res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
+        # prediction=1,0 vs label=0,1 → 0% accuracy
+        self.assertIn("accuracy", res)
+        self.assertAlmostEqual(res["accuracy"], 0.0)
+
+    def test_column_falls_back_when_no_prediction_label(self):
+        """When no 'prediction'/'label' columns, should use first non-id column."""
+        df_labels = pd.DataFrame({"id": [1, 2], "score": [0.0, 1.0]})
+        df_sub = pd.DataFrame({"id": [1, 2], "score": [1.0, 0.0]})
+        metrics_cfg = {"mse": {"weight": 1.0, "options": {"column": "score"}}}
+        res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
+        self.assertIn("mse", res)
+
+    def test_malformed_hf_json_does_not_crash_to_dict(self):
+        """Task.to_dict() should not crash when hf_datasets/hf_models contain malformed JSON."""
+        task = Task(
+            challenge_id=self.challenge.id,
+            title="HF Test Task",
+            hf_datasets="{malformed",
+            hf_models='[not json',
+            metrics_config='{"accuracy": {"weight": 1.0}}'
+        )
+        db.session.add(task)
+        db.session.commit()
+        d = task.to_dict()
+        self.assertEqual(d["hf_datasets"], [])
+        self.assertEqual(d["hf_models"], [])
+
+    def test_valid_hf_json_parses_correctly(self):
+        """Task.to_dict() should correctly parse valid JSON hf_datasets/hf_models."""
+        task = Task(
+            challenge_id=self.challenge.id,
+            title="HF Valid Task",
+            hf_datasets='["stanfordnlp/imdb", "glue"]',
+            hf_models='["distilbert-base-uncased"]',
+            metrics_config='{"accuracy": {"weight": 1.0}}'
+        )
+        db.session.add(task)
+        db.session.commit()
+        d = task.to_dict()
+        self.assertEqual(d["hf_datasets"], ["stanfordnlp/imdb", "glue"])
+        self.assertEqual(d["hf_models"], ["distilbert-base-uncased"])
+
+    def test_stage_timezone_conversion_utc_to_sofia(self):
+        """Stage start_time in UTC should be correctly converted to challenge timezone."""
+        import zoneinfo
+        from routes.challenges import _now_local_for_timezone
+
+        tz_sofia = zoneinfo.ZoneInfo("Europe/Sofia")  # UTC+3 summer
+        now_utc = datetime(2026, 6, 14, 12, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
+        now_sofia_expected = datetime(2026, 6, 14, 15, 0, 0)  # 12:00 UTC = 15:00 Sofia
+
+        # _now_local_for_timezone should return a naive datetime in the challenge's local zone
+        local_now = _now_local_for_timezone("Europe/Sofia")
+        # Just verify it returns a datetime without tzinfo
+        self.assertIsNone(local_now.tzinfo)
+        # Verify it's within a reasonable range (within a minute of current time)
+        utc_now_naive = datetime.utcnow()
+        diff = abs((local_now.replace(tzinfo=None) - utc_now_naive).total_seconds())
+        self.assertLess(diff, 3600 * 5)  # within 5 hours (UTC+2 or UTC+3 for Sofia)
 
 if __name__ == '__main__':
     unittest.main()

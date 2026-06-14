@@ -31,6 +31,7 @@ def publish_submission_log(submission_id, log_line):
         r = redis.Redis.from_url(broker_url)
         log_key = f"submission:{submission_id}:logs"
         r.rpush(log_key, log_line)
+        r.ltrim(log_key, -10000, -1)
         r.expire(log_key, 3600)  # Expire logs in 1 hour
         r.publish(f"submission_{submission_id}_logs", json.dumps({"log": log_line}))
     except Exception as e:

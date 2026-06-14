@@ -212,6 +212,7 @@ export default function AdminPanel() {
   // Task Form State
   const [editingTask, setEditingTask] = useState(null); // Task object or null
   const [isCreatingTask, setIsCreatingTask] = useState(false); // boolean
+  const [savingTask, setSavingTask] = useState(false);
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
@@ -369,11 +370,11 @@ export default function AdminPanel() {
         setWorkerStatsError(null);
       } else {
         const errData = await res.json().catch(() => ({}));
-        setWorkerStatsError(errData.error || `Failed to fetch stats (Status: ${res.status})`);
+        setWorkerStatsError(errData.error || t('admin.workers.fetch_stats_error_status', { status: res.status }));
       }
     } catch (e) {
       console.error(e);
-      setWorkerStatsError(e.message || 'Network error fetching stats');
+      setWorkerStatsError(e.message || t('admin.workers.fetch_stats_network_error'));
     } finally {
       setWorkerStatsLoading(false);
     }
@@ -431,6 +432,9 @@ export default function AdminPanel() {
           setChallengesTotal(data?.length || 0);
           setChallengesPages(1);
         }
+      } else {
+        showToast(t('admin.notifications.network_error'), 'rose');
+        setPaginatedChallengesList([]);
       }
     } catch (e) {
       console.error(e);
@@ -552,6 +556,7 @@ export default function AdminPanel() {
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competition_deleted', { title }));
+        if (editingChallenge?.id === id) setEditingChallenge(null);
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
@@ -904,6 +909,14 @@ export default function AdminPanel() {
   const handleSaveCreateTask = async (e) => {
     e.preventDefault();
     if (!selectedChallenge) return;
+
+    const hasLabels = taskFiles.some(f => f.name === 'labels.parquet');
+    if (!hasLabels) {
+      showToast(t('admin.tasks.labels_parquet_required'), 'rose');
+      return;
+    }
+
+    setSavingTask(true);
     const formData = prepareTaskFormData();
 
     try {
@@ -922,6 +935,8 @@ export default function AdminPanel() {
       }
     } catch (err) {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
+    } finally {
+      setSavingTask(false);
     }
   };
 
@@ -929,10 +944,25 @@ export default function AdminPanel() {
   const handleSaveUpdateTask = async (e) => {
     e.preventDefault();
     if (!editingTask) return;
-    const formData = prepareTaskFormData();
 
-    // Handle file deletions if selected
     const deletedNames = editingTask.filesToDelete || [];
+    const existingLabels = (() => {
+      if (!editingTask.files) return false;
+      const filesArr = Array.isArray(editingTask.files)
+        ? editingTask.files
+        : (typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
+            ? JSON.parse(editingTask.files)
+            : []);
+      return filesArr.some(f => f.filename === 'labels.parquet' && !deletedNames.includes(f.filename));
+    })();
+    const newLabels = taskFiles.some(f => f.name === 'labels.parquet');
+    if (!existingLabels && !newLabels) {
+      showToast(t('admin.tasks.labels_parquet_required'), 'rose');
+      return;
+    }
+
+    setSavingTask(true);
+    const formData = prepareTaskFormData();
     if (deletedNames.length > 0) {
       formData.append("deleted_files", JSON.stringify(deletedNames));
     }
@@ -953,6 +983,8 @@ export default function AdminPanel() {
       }
     } catch (err) {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
+    } finally {
+      setSavingTask(false);
     }
   };
 
@@ -970,6 +1002,10 @@ export default function AdminPanel() {
       });
       if (res.ok) {
         showToast(t('admin.notifications.task_deleted', { title }));
+        if (editingTask?.id === taskId) {
+          setEditingTask(null);
+          setIsCreatingTask(false);
+        }
         fetchChallenges();
       } else {
         const data = await res.json();
@@ -1442,36 +1478,31 @@ export default function AdminPanel() {
                     onChange={(e) => setEditingChallenge({ ...editingChallenge, title: e.target.value })} 
                     required 
                   />
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.description')}</label>
-                    <textarea 
-                      rows="4" 
-                      className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm font-sans"
-                      value={editingChallenge.description} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, description: e.target.value })} 
-                    />
-                  </div>
+                  <InputField
+                    multiline
+                    label={t('admin.description')}
+                    value={editingChallenge.description}
+                    onChange={(e) => setEditingChallenge({ ...editingChallenge, description: e.target.value })}
+                    rows={4}
+                  />
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <InputField 
                       label={t('admin.daily_limits')} 
                       type="number"
                       value={editingChallenge.max_eval_requests} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, max_eval_requests: parseInt(e.target.value) })} 
-                      required 
+                      onChange={(e) => setEditingChallenge({ ...editingChallenge, max_eval_requests: parseInt(e.target.value) || 0 })} 
                     />
                     <InputField 
                       label={t('admin.ram_limit_override')} 
                       type="number"
                       value={editingChallenge.ram_limit_mb} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, ram_limit_mb: parseInt(e.target.value) })} 
-                      required 
+                      onChange={(e) => setEditingChallenge({ ...editingChallenge, ram_limit_mb: parseInt(e.target.value) || 0 })} 
                     />
                     <InputField 
                       label={t('admin.time_limit_override')} 
                       type="number"
                       value={editingChallenge.time_limit_sec} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, time_limit_sec: parseInt(e.target.value) })} 
-                      required 
+                      onChange={(e) => setEditingChallenge({ ...editingChallenge, time_limit_sec: parseInt(e.target.value) || 0 })} 
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1651,7 +1682,7 @@ export default function AdminPanel() {
                   total={challengesTotal}
                   perPage={5}
                   onPageChange={setChallengesPage}
-                  itemName="competitions"
+                  itemName={t('admin.competitions_pagination_item')}
                 />
               </div>
             )}
@@ -1800,6 +1831,7 @@ export default function AdminPanel() {
               baselineFile={baselineFile}
               setBaselineFile={setBaselineFile}
               formatDateTime={formatDateTime}
+              savingTask={savingTask}
             />
           </div>
         )}
@@ -1831,6 +1863,7 @@ export default function AdminPanel() {
             generatedCredentials={generatedCredentials}
             csvChallengeId={csvChallengeId}
             setCsvChallengeId={setCsvChallengeId}
+            csvFile={csvFile}
             setCsvFile={setCsvFile}
             csvImporting={csvImporting}
             isCSVImportDisabled={isCSVImportDisabled}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/ApiService';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +31,11 @@ export default function SubmissionsView() {
   const [submissionsPages, setSubmissionsPages] = useState(1);
   const [submissionsTotal, setSubmissionsTotal] = useState(0);
   const [nowMs, setNowMs] = useState(Date.now());
+  const taskIdRef = useRef(selectedTask?.id);
+
+  useEffect(() => {
+    taskIdRef.current = selectedTask?.id;
+  }, [selectedTask]);
 
   useEffect(() => {
     if (challengeId) {
@@ -148,11 +153,16 @@ export default function SubmissionsView() {
       console.error("Submissions SSE error, attempting HTTP fallback:", err);
       eventSource.close();
 
+      const controller = new AbortController();
       const loadSubmissionsFallback = async () => {
         try {
-          const res = await TaskService.getSubmissions(selectedTask.id, submissionsPage, 10);
+          const res = await api.fetch(`/api/tasks/${selectedTask.id}/submissions?page=${submissionsPage}&per_page=10`, {
+            signal: controller.signal,
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
           if (res.ok) {
-            const data = res.data;
+            if (taskIdRef.current !== selectedTask.id) return;
+            const data = await res.json();
             if (data && data.items !== undefined) {
               setSubmissions(data.items || []);
               setSubmissionsTotal(data.total || 0);
@@ -165,13 +175,19 @@ export default function SubmissionsView() {
             }
           }
         } catch (fetchErr) {
-          console.error("Fallback submissions fetch failed:", fetchErr);
+          if (fetchErr.name !== 'AbortError') {
+            console.error("Fallback submissions fetch failed:", fetchErr);
+          }
         } finally {
           setLoading(false);
         }
       };
 
       loadSubmissionsFallback();
+
+      return () => {
+        controller.abort();
+      };
     };
 
     return () => {

@@ -74,13 +74,13 @@ describe('SubmissionList Component', () => {
 
     // Submission 101 details
     expect(screen.getByText('#101')).toBeInTheDocument();
-    expect(screen.getByText('✓ Completed')).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
     expect(screen.getByText('0.9877')).toBeInTheDocument(); // formatted to 4 decimals
     expect(screen.getByText('Alias: UserA')).toBeInTheDocument();
 
     // Submission 102 details
     expect(screen.getByText('#102')).toBeInTheDocument();
-    expect(screen.getByText('✗ Failed')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
     expect(screen.queryByText('Alias: UserB')).not.toBeInTheDocument();
   });
 

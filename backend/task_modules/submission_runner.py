@@ -168,10 +168,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
 
     # 2. Define status callback helper
     def update_status(status_val, detailed_val, logs_list=None, pub_score=None, priv_score=None, time_ms=None, m_pub=None, m_priv=None):
-        if status_val == 'running' and detailed_val != 'running':
-            return
         if metadata:
-            logs_str = "\n".join(logs_list) if logs_list is not None else None
+            # Safely join logs — filter out non-string items (can happen in test mocks)
+            logs_str = None
+            if logs_list is not None:
+                safe_logs = [str(x) for x in logs_list if x is not None]
+                if safe_logs:
+                    logs_str = "\n".join(safe_logs)
             success = report_status_to_server(
                 metadata=metadata,
                 status=status_val,
@@ -184,8 +187,32 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 metrics_payload_priv=m_priv,
                 gpu_node=submission.gpu_node
             )
-            if not success and status_val in ('completed', 'failed'):
-                raise RuntimeError(f"Failed to deliver final status '{status_val}' callback to server.")
+            if not success:
+                if status_val in ('completed', 'failed'):
+                    # Final status: critical — must persist via Redis fallback
+                    try:
+                        import redis as redis_lib
+                        import json
+                        r = redis_lib.Redis.from_url(metadata.get("celery_broker_url", "redis://localhost:6379/0"))
+                        fallback = {
+                            "submission_id": submission_id,
+                            "status": status_val,
+                            "detailed_status": detailed_val,
+                            "logs": logs_str or "",
+                            "public_score": pub_score,
+                            "private_score": priv_score,
+                            "execution_time_ms": time_ms,
+                            "metrics_payload_pub": m_pub,
+                            "metrics_payload_priv": m_priv,
+                        }
+                        r.setex(f"submission:{submission_id}:fallback", 7200, json.dumps(fallback, default=str))
+                        logs_list.append("[WARNING] Could not reach main server. Result saved to Redis fallback — server watchdog will recover it.")
+                    except Exception as fallback_err:
+                        logs_list.append(f"[CRITICAL] Failed to store fallback result: {fallback_err}")
+                        raise RuntimeError(f"Failed to deliver final status '{status_val}' to server and fallback.") from fallback_err
+                else:
+                    # Intermediate status: best-effort — already logged to Redis via StreamingLogList
+                    pass
         else:
             with app.app_context():
                 from sse_utils import publish_submissions_update, publish_leaderboard_update
@@ -515,7 +542,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
     logs.append(f"Executing sandbox command: {' '.join(cmd)}")
     retcode, stdout, stderr, process_timeout = run_command_streaming(cmd, logs, time_limit=time_limit)
     if process_timeout:
-        subprocess.run(["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"], capture_output=True)
+        result = subprocess.run(["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"], capture_output=True, text=True)
+        container_id = result.stdout.strip()
+        if container_id:
+            subprocess.run(["docker", "kill", container_id], capture_output=True)
         
     end_wall_time = time.time()
 
@@ -586,39 +616,44 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         except:
                             metrics_cfg = None
                     
-                    # public eval percentage (default 30)
                     pub_pct = task.public_eval_percentage if task.public_eval_percentage is not None else 30
                     
                     if "query_id" in df_labels.columns:
                         unique_queries = sorted(df_labels["query_id"].unique())
-                        num_public = max(1, int(len(unique_queries) * (pub_pct / 100.0)))
+                        num_public = int(len(unique_queries) * (pub_pct / 100.0))
+                        num_public = max(0, min(num_public, len(unique_queries)))
                         public_queries = set(unique_queries[:num_public])
                         
-                        df_labels_pub = df_labels[df_labels["query_id"].isin(public_queries)]
-                        df_labels_priv = df_labels[~df_labels["query_id"].isin(public_queries)]
+                        df_labels_pub = df_labels[df_labels["query_id"].isin(public_queries)] if num_public > 0 else pd.DataFrame(columns=df_labels.columns)
+                        df_labels_priv = df_labels[~df_labels["query_id"].isin(public_queries)] if num_public < len(unique_queries) else pd.DataFrame(columns=df_labels.columns)
                         
-                        df_sub_pub = df_sub[df_sub["query_id"].isin(public_queries)]
-                        df_sub_priv = df_sub[~df_sub["query_id"].isin(public_queries)]
+                        df_sub_pub = df_sub[df_sub["query_id"].isin(public_queries)] if num_public > 0 else pd.DataFrame(columns=df_sub.columns)
+                        df_sub_priv = df_sub[~df_sub["query_id"].isin(public_queries)] if num_public < len(unique_queries) else pd.DataFrame(columns=df_sub.columns)
                     else:
                         df_labels = df_labels.sort_values('id').reset_index(drop=True)
-                        num_public = max(1, int(len(df_labels) * (pub_pct / 100.0)))
+                        n_total = len(df_labels)
+                        num_public = int(n_total * (pub_pct / 100.0))
+                        num_public = max(0, min(num_public, n_total))
                         
-                        df_labels_pub = df_labels.iloc[:num_public]
-                        df_labels_priv = df_labels.iloc[num_public:]
+                        df_labels_pub = df_labels.iloc[:num_public] if num_public > 0 else pd.DataFrame(columns=df_labels.columns)
+                        df_labels_priv = df_labels.iloc[num_public:] if num_public < n_total else pd.DataFrame(columns=df_labels.columns)
                         
-                        df_sub_pub = df_sub[df_sub["id"].isin(df_labels_pub["id"])]
-                        df_sub_priv = df_sub[df_sub["id"].isin(df_labels_priv["id"])]
+                        df_sub_pub = df_sub[df_sub["id"].isin(df_labels_pub["id"])] if num_public > 0 else pd.DataFrame(columns=df_sub.columns)
+                        df_sub_priv = df_sub[df_sub["id"].isin(df_labels_priv["id"])] if num_public < n_total else pd.DataFrame(columns=df_sub.columns)
                     
-                    # Compute metrics
-                    m_pub = evaluate_predictions(df_sub_pub, df_labels_pub, metrics_cfg)
-                    m_priv = evaluate_predictions(df_sub_priv, df_labels_priv, metrics_cfg)
+                    # Compute metrics (skip empty splits)
+                    m_pub = evaluate_predictions(df_sub_pub, df_labels_pub, metrics_cfg) if len(df_labels_pub) > 0 else {}
+                    m_priv = evaluate_predictions(df_sub_priv, df_labels_priv, metrics_cfg) if len(df_labels_priv) > 0 else {}
                     
-                    # Calculate weighted scores
+                    # Calculate weighted scores with NaN/Inf sanitization
+                    import math
                     def calculate_weighted_score(metrics_payload, metrics_cfg):
                         if not metrics_cfg:
                             if metrics_payload:
                                 m_name = list(metrics_payload.keys())[0]
                                 val = metrics_payload[m_name]
+                                if math.isnan(val) or math.isinf(val):
+                                    return 0.0
                                 if m_name.lower().strip() in {"logloss", "brier_score", "rmse", "mae", "mse", "mel_lsd", "fid", "lpips", "niqe", "ter", "mape", "median_ae"}:
                                     if m_name.lower().strip() == "brier_score":
                                         return 1.0 - val
@@ -633,14 +668,18 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         weighted_sum = 0.0
                         for m_name, cfg in metrics_cfg.items():
                             val = metrics_payload.get(m_name, 0.0)
+                            if math.isnan(val) or math.isinf(val):
+                                val = 0.0
                             m_name_clean = m_name.lower().strip()
                             if m_name_clean in {"logloss", "brier_score", "rmse", "mae", "mse", "mel_lsd", "fid", "lpips", "niqe", "ter", "mape", "median_ae"}:
                                 if m_name_clean == "brier_score":
                                     norm_val = 1.0 - val
                                 else:
-                                    norm_val = 1.0 / (1.0 + val)
+                                    norm_val = 1.0 / (1.0 + val) if val != -1.0 else 0.0
                             else:
                                 norm_val = val
+                            if math.isnan(norm_val) or math.isinf(norm_val):
+                                norm_val = 0.0
                             weight = float(cfg.get("weight", 1.0))
                             weighted_sum += norm_val * weight
                         return weighted_sum / total_weight

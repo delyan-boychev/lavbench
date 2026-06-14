@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from functools import cmp_to_key
+from sqlalchemy.orm import joinedload
 from models import db, Challenge, Submission, User, Task, is_metric_lower_better
 from services.submission_service import get_best_submission
 
@@ -29,9 +30,10 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
     all_completed = Submission.query.filter_by(
         challenge_id=challenge_id,
         status='completed'
-    ).all()
+    ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).all()
     
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+    challenge_cache = {challenge.id: challenge}
     leaderboard_entries = []
     
     for comp in competitors:
@@ -110,7 +112,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
         earliest_sub_date = min(sub_dates) if sub_dates else datetime.max
         
         entry_dict = {
-            "user": comp.to_dict(view_role='admin', scores_finalized=False, current_user_id=None),
+            "user": comp.to_dict(view_role='admin', scores_finalized=False, current_user_id=None, challenge_cache=challenge_cache),
             "task_scores": task_scores,
             "public_score": aggregated_public,
             "private_score": aggregated_private,
@@ -203,7 +205,7 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
     all_completed = Submission.query.filter_by(
         task_id=task_id,
         status='completed'
-    ).all()
+    ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).all()
     
     is_lower_better = False
     if task.metrics_config:
@@ -217,6 +219,7 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
             pass
 
     competitors = User.query.filter_by(role='competitor', challenge_id=task.challenge_id).all()
+    challenge_cache = {challenge.id: challenge}
     user_best = {}
     for comp in competitors:
         comp_subs = [s for s in all_completed if s.user_id == comp.id]
@@ -247,7 +250,7 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
                 "execution_time_ms": None,
                 "created_at": None,
                 "executed_at": None,
-                "user": comp.to_dict(view_role=user_role, scores_finalized=challenge.scores_finalized, current_user_id=current_user_id),
+                "user": comp.to_dict(view_role=user_role, scores_finalized=challenge.scores_finalized, current_user_id=current_user_id, challenge_cache=challenge_cache),
                 "metrics_payload_public": {},
                 "metrics_payload_private": {},
                 "final_weighted_score_public": None,

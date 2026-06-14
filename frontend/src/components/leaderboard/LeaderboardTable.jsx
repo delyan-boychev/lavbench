@@ -9,7 +9,11 @@ import ToggleField from '../ui/ToggleField';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
 
-const MEDALS = ['🥇', '🥈', '🥉'];
+const MEDAL_STYLES = [
+  'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
+  'bg-gradient-to-br from-slate-300 to-slate-400 text-slate-800 border-slate-200 shadow-[0_0_6px_rgba(148,163,184,0.25)]',
+  'bg-gradient-to-br from-amber-600 to-amber-800 text-amber-100 border-amber-500/60 shadow-[0_0_5px_rgba(180,83,9,0.2)]',
+];
 
 
 function Row({ 
@@ -32,7 +36,7 @@ function Row({
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
-  const medal = rank <= 3 ? MEDALS[rank - 1] : null;
+  const medalStyle = rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
   const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
   const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isJuryOrAdmin;
   const showDemographics = showIdentity && (!entry.user?.is_anonymous || isJuryOrAdmin || isCurrentUser);
@@ -115,16 +119,12 @@ function Row({
         </td>
 
         {/* Rank column */}
-        <td className="px-4 py-3 text-center w-12 text-slate-300">
-          {medal ? (
-            <span className="text-sm" title={t('leaderboard.rank_tooltip', { rank })}>{medal}</span>
-          ) : (
-            <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-800/40 border border-slate-700/50 mx-auto">
-              <span className="text-xs font-mono font-bold text-slate-400">
-                {rank}
-              </span>
-            </div>
-          )}
+        <td className="px-4 py-3 text-center w-14 text-slate-300">
+          <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`} title={t('leaderboard.rank_tooltip', { rank })}>
+            <span className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}>
+              {rank}
+            </span>
+          </div>
         </td>
 
         {/* Participant Details */}

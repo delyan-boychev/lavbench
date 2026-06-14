@@ -89,9 +89,9 @@ class User(db.Model):
     school = db.Column(db.Text, nullable=True)
     city = db.Column(db.Text, nullable=True)
     
-    role = db.Column(db.String(50), default='competitor')  # competitor, jury, admin
+    role = db.Column(db.String(50), default='competitor', index=True)  # competitor, jury, admin
     alias_id = db.Column(db.String(100), unique=True, nullable=False, default=generate_pseudonym)
-    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=True, index=True)
     is_anonymous = db.Column(db.Boolean, default=False, nullable=False)
     manual_points = db.Column(db.JSON, default=dict, nullable=False)
     
@@ -107,7 +107,7 @@ class User(db.Model):
         self.school = encrypt_field(school)
         self.city = encrypt_field(city)
         
-    def to_dict(self, view_role='competitor', scores_finalized=False, current_user_id=None):
+    def to_dict(self, view_role='competitor', scores_finalized=False, current_user_id=None, challenge_cache=None):
         """
         Locks decrypted demographics for blind jury reviews.
         """
@@ -117,7 +117,7 @@ class User(db.Model):
         double_blind = True
         
         if self.challenge_id:
-            challenge = db.session.get(Challenge, self.challenge_id)
+            challenge = challenge_cache.get(self.challenge_id) if challenge_cache else db.session.get(Challenge, self.challenge_id)
             if challenge:
                 double_blind = challenge.double_blind
                 if challenge.start_time:
@@ -285,7 +285,7 @@ class Stage(db.Model):
     __tablename__ = 'stages'
     
     id = db.Column(db.Integer, primary_key=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False, index=True)
     stage_number = db.Column(db.Integer, nullable=False, default=1)
     title = db.Column(db.String(255), nullable=False)
     
@@ -317,7 +317,7 @@ class Task(db.Model):
     __tablename__ = 'tasks'
     
     id = db.Column(db.Integer, primary_key=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
+    challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False, index=True)
     stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
@@ -376,6 +376,20 @@ class Task(db.Model):
             files_list = []
         
         files_list = [f for f in files_list if f.get("filename") != "labels.parquet"]
+        
+        hf_datasets_list = []
+        if self.hf_datasets:
+            try:
+                hf_datasets_list = json.loads(self.hf_datasets) if isinstance(self.hf_datasets, str) else (self.hf_datasets or [])
+            except Exception:
+                hf_datasets_list = []
+        
+        hf_models_list = []
+        if self.hf_models:
+            try:
+                hf_models_list = json.loads(self.hf_models) if isinstance(self.hf_models, str) else (self.hf_models or [])
+            except Exception:
+                hf_models_list = []
             
         metrics_cfg_val = None
         if self.metrics_config:
@@ -404,8 +418,8 @@ class Task(db.Model):
             "evaluator_script_path": self.evaluator_script_path,
             "baseline_notebook_path": self.baseline_notebook_path,
             "solution_notebook_path": self.solution_notebook_path,
-            "hf_datasets": json.loads(self.hf_datasets) if isinstance(self.hf_datasets, str) else (self.hf_datasets or []),
-            "hf_models": json.loads(self.hf_models) if isinstance(self.hf_models, str) else (self.hf_models or []),
+            "hf_datasets": hf_datasets_list,
+            "hf_models": hf_models_list,
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
@@ -417,6 +431,7 @@ class Submission(db.Model):
     
     __table_args__ = (
         db.Index('idx_sub_user_task', 'user_id', 'task_id', 'challenge_id'),
+        db.Index('idx_sub_task_id', 'task_id'),
     )
     
     id = db.Column(db.Integer, primary_key=True)
@@ -424,7 +439,7 @@ class Submission(db.Model):
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True)
     
-    status = db.Column(db.String(50), default='queued')
+    status = db.Column(db.String(50), default='queued', index=True)
     detailed_status = db.Column(db.String(100), default='queued')
     
     # Lightweight storage path pointers instead of heavy text columns
@@ -436,7 +451,7 @@ class Submission(db.Model):
     gpu_node = db.Column(db.String(255), nullable=True)
     execution_time_ms = db.Column(db.Integer, nullable=True)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     executed_at = db.Column(db.DateTime, nullable=True)
     
     # New Fields

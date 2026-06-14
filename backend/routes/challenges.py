@@ -43,10 +43,16 @@ def filter_challenge_for_competitor(challenge_dict):
         filtered_stages = []
         for s in challenge_dict.get("stages", []):
             try:
-                st_start = datetime.fromisoformat(s["start_time"].replace('Z', '+00:00')).replace(tzinfo=None)
+                st_start_utc = datetime.fromisoformat(s["start_time"].replace('Z', '+00:00'))
+                tz_key = challenge_dict.get("timezone") or "UTC"
+                try:
+                    tz = zoneinfo.ZoneInfo(tz_key)
+                except Exception:
+                    tz = zoneinfo.ZoneInfo("UTC")
+                st_start_local = st_start_utc.astimezone(tz).replace(tzinfo=None)
             except Exception:
-                st_start = None
-            if not st_start or now >= st_start:
+                st_start_local = None
+            if not st_start_local or now >= st_start_local:
                 filtered_stages.append(s)
         challenge_dict["stages"] = filtered_stages
         
@@ -83,7 +89,7 @@ def get_challenges():
     from sqlalchemy.orm import joinedload
     page = request.args.get('page', type=int)
     if page is not None:
-        per_page = request.args.get('per_page', 10, type=int)
+        per_page = min(request.args.get('per_page', 10, type=int), 100)
         pagination = Challenge.query.options(
             joinedload(Challenge.tasks),
             joinedload(Challenge.stages)
@@ -341,13 +347,9 @@ def update_challenge(challenge_id):
 def delete_challenge(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     
-    users = User.query.filter_by(challenge_id=challenge_id).all()
-    for u in users:
-        if u.role == 'competitor':
-            db.session.delete(u)
-        else:
-            u.challenge_id = None
-         
+    User.query.filter_by(challenge_id=challenge_id, role='competitor').delete(synchronize_session=False)
+    User.query.filter_by(challenge_id=challenge_id).filter(User.role != 'competitor').update({User.challenge_id: None}, synchronize_session=False)
+    
     db.session.delete(challenge)
     db.session.commit()
     
@@ -596,6 +598,13 @@ def create_scheduled_test_competition(challenge_id):
     
     from datetime import timedelta
     now = datetime.utcnow()
+    
+    Challenge.query.filter(
+        Challenge.title.like("Test: % (Warm-up)"),
+        Challenge.end_time < now
+    ).delete(synchronize_session='fetch')
+    db.session.commit()
+    
     end_time = now + timedelta(hours=2)
     
     test_title = f"Test: {orig.title} (Warm-up)"

@@ -78,6 +78,8 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
         logs_list.append(f"Failed to execute command: {exc}")
         return -1, "", str(exc), False
 
+MAX_LOG_LINES = 10000
+
 class StreamingLogList(list):
     def __init__(self, submission_id):
         super().__init__()
@@ -85,6 +87,8 @@ class StreamingLogList(list):
         
     def append(self, item):
         super().append(item)
+        if len(self) > MAX_LOG_LINES:
+            self.pop(0)
         try:
             from sse_utils import publish_submission_log
             publish_submission_log(self.submission_id, str(item))

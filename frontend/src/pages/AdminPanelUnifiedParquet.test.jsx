@@ -298,8 +298,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
     expect(screen.getByText('Accuracy')).toBeInTheDocument();
 
     // Click remove button (the trash icon in the metric row)
-    const removeButtons = screen.getAllByRole('button');
-    const removeMetric = removeButtons.find(b => b.querySelector('svg'));
+    const removeMetric = screen.getByTitle('Remove metric');
     if (removeMetric) {
       await act(async () => {
         fireEvent.click(removeMetric);

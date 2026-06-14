@@ -80,7 +80,7 @@ export default function Pagination({
           {pageNumbers.map((p, idx) => {
             if (p === 'ellipsis-start' || p === 'ellipsis-end') {
               return (
-                <span key={`ellipse-${idx}`} className="px-2 text-slate-650 font-bold select-none">
+                <span key={`ellipse-${idx}`} className="px-2 text-slate-500 font-bold select-none">
                   ...
                 </span>
               );
@@ -95,7 +95,7 @@ export default function Pagination({
                 className={`w-7 h-7 flex items-center justify-center rounded-lg font-semibold border text-[11px] transition-all cursor-pointer ${
                   isCurrent
                     ? 'bg-indigo-600 border-indigo-500/30 text-white font-bold'
-                    : 'bg-slate-900/60 hover:bg-slate-850 border-slate-800 text-slate-300 hover:text-slate-100'
+                    : 'bg-slate-900/60 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-slate-100'
                 }`}
               >
                 {p}

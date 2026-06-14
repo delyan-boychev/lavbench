@@ -4,6 +4,8 @@ import InputField from '../ui/InputField';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
+import FileUploader from '../ui/FileUploader';
+import { PencilIcon, ChartIcon, LockIcon, DockerIcon, FolderIcon } from '../ui/icons';
 
 export default function TaskForm({
   taskForm,
@@ -22,7 +24,8 @@ export default function TaskForm({
   setTaskFiles,
   baselineFile,
   setBaselineFile,
-  formatDateTime
+  formatDateTime,
+  savingTask = false
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
@@ -397,11 +400,11 @@ export default function TaskForm({
   })();
 
   const TABS = [
-    { id: 'general', label: t('admin.tasks.tabs.general'), icon: '📝' },
-    { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), icon: '📊' },
-    { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), icon: '🔒' },
-    { id: 'environment', label: t('admin.tasks.tabs.environment'), icon: '🐳' },
-    { id: 'files', label: t('admin.tasks.tabs.files'), icon: '📁' }
+    { id: 'general', label: t('admin.tasks.tabs.general'), Icon: PencilIcon },
+    { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), Icon: ChartIcon },
+    { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: LockIcon },
+    { id: 'environment', label: t('admin.tasks.tabs.environment'), Icon: DockerIcon },
+    { id: 'files', label: t('admin.tasks.tabs.files'), Icon: FolderIcon }
   ];
 
   return (
@@ -426,7 +429,7 @@ export default function TaskForm({
                 : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
             }`}
           >
-            <span>{tab.icon}</span>
+            <span className={activeTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}><tab.Icon /></span>
             {tab.label}
           </button>
         ))}
@@ -460,16 +463,14 @@ export default function TaskForm({
               ]}
             />
             
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-300 tracking-wide uppercase">{t('admin.tasks.description_markdown')}</label>
-              <textarea 
-                rows="6" 
-                className="w-full px-4 py-3 bg-slate-900 border border-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm font-sans resize-y"
-                value={taskForm.description} 
-                onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} 
-                required
-              />
-            </div>
+            <InputField
+              multiline
+              label={t('admin.tasks.description_markdown')}
+              value={taskForm.description}
+              onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+              rows={6}
+              required
+            />
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 pt-6 border-t border-white/5">
               <InputField 
@@ -506,8 +507,8 @@ export default function TaskForm({
                   min="0" 
                   max="100" 
                   value={taskForm.public_eval_percentage} 
-                  onChange={(e) => setTaskForm({ ...taskForm, public_eval_percentage: parseInt(e.target.value) })}
-                  className="w-full accent-indigo-500 h-2 bg-slate-950 rounded-lg cursor-pointer border border-white/5 mt-2"
+                   onChange={(e) => setTaskForm({ ...taskForm, public_eval_percentage: parseInt(e.target.value) || 0 })}
+                   className="w-full accent-indigo-500 h-2 bg-slate-950 rounded-lg cursor-pointer border border-white/5 mt-2"
                 />
               </div>
             </div>
@@ -527,14 +528,14 @@ export default function TaskForm({
                   type="number" 
                   value={taskForm.ram_limit_mb} 
                   onChange={(e) => setTaskForm({ ...taskForm, ram_limit_mb: e.target.value })} 
-                  placeholder="8192"
+                  placeholder={t('admin.tasks.ram_limit_placeholder')}
                 />
                 <InputField 
                   label={t('admin.tasks.override_timeout')} 
                   type="number" 
                   value={taskForm.time_limit_sec} 
                   onChange={(e) => setTaskForm({ ...taskForm, time_limit_sec: e.target.value })} 
-                  placeholder="300"
+                  placeholder={t('admin.tasks.time_limit_placeholder')}
                 />
                 <div className="flex items-center h-full pt-5">
                   <div className="bg-slate-900/50 p-3 w-full rounded-xl border border-white/5 h-full flex items-center">
@@ -614,16 +615,14 @@ export default function TaskForm({
                 onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })} 
                 placeholder={t('admin.tasks.apt_packages_placeholder')}
               />
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">{t('admin.tasks.pip_requirements')}</label>
-                <textarea 
-                  rows="4" 
-                  className="w-full px-4 py-3 bg-slate-950 border border-white/10 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 text-xs font-mono resize-y shadow-inner"
-                  value={taskForm.pip_requirements} 
-                  onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })} 
-                  placeholder={t('admin.tasks.pip_requirements_placeholder')}
-                />
-              </div>
+              <InputField
+                multiline
+                label={t('admin.tasks.pip_requirements')}
+                value={taskForm.pip_requirements}
+                onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })}
+                placeholder={t('admin.tasks.pip_requirements_placeholder')}
+                rows={4}
+              />
             </div>
 
             <div className="flex flex-col gap-4 bg-amber-900/10 p-6 rounded-2xl border border-amber-500/20">
@@ -631,7 +630,7 @@ export default function TaskForm({
                 <div className="bg-amber-500/20 p-2 rounded-lg">
                   <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 </div>
-                <h3 className="text-sm font-bold text-amber-200 uppercase tracking-wider">{t('admin.tasks.hf_integrations_legacy')}</h3>
+                <h3 className="text-sm font-bold text-amber-200 uppercase tracking-wider">{t('admin.tasks.hf_integrations')}</h3>
               </div>
               <p className="text-xs text-amber-400/70 mb-4">{t('admin.tasks.hf_integrations_desc')}</p>
               
@@ -707,59 +706,26 @@ export default function TaskForm({
                 </div>
               )}
 
-              <div className="flex flex-col gap-3">
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group">
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <svg className="w-8 h-8 mb-3 text-slate-400 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                    <p className="mb-2 text-sm text-slate-300"><span className="font-semibold text-indigo-400">{t('admin.tasks.click_to_upload')}</span> {t('admin.tasks.drag_and_drop')}</p>
-                    <p className="text-xs text-slate-500">{t('admin.tasks.allowed_file_types')}</p>
-                  </div>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    multiple 
-                    onChange={(e) => setTaskFiles(Array.from(e.target.files))}
-                  />
-                </label>
-
-                {taskFiles.length > 0 && (
-                  <div className="flex flex-col gap-2 mt-3">
-                    <span className="text-xs text-slate-400 font-medium">{t('admin.tasks.files_selected', { count: taskFiles.length })}</span>
-                    {taskFiles.map((f, i) => (
-                      <div key={i} className="flex items-center gap-2 bg-slate-900 border border-white/5 rounded-lg px-3 py-2 text-xs text-slate-300">
-                        <svg className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        <span className="truncate flex-1">{f.name}</span>
-                        <span className="text-slate-500">{(f.size / 1024).toFixed(1)} KB</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="text-xs text-slate-500 flex items-center justify-between px-2">
-                  <span>{t('admin.tasks.files_uploaded_upon_save')}</span>
-                </div>
-              </div>
+              <FileUploader
+                files={taskFiles}
+                onChange={setTaskFiles}
+                multiple
+                accept=".parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl"
+                label={t('admin.tasks.ground_truth_resources')}
+                description={t('admin.tasks.ground_truth_desc')}
+                maxFiles={5}
+                requiredFiles={['labels.parquet']}
+              />
             </div>
 
             <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5">
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">{t('admin.tasks.baseline_code')}</h3>
-              <p className="text-xs text-slate-400 mb-6">{t('admin.tasks.baseline_code_desc')}</p>
-              
-                <div className="flex flex-col gap-3">
-                <input 
-                  type="file" 
-                  accept=".ipynb" 
-                  onChange={(e) => setBaselineFile(e.target.files[0])}
-                  className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-600/20 file:text-indigo-300 hover:file:bg-indigo-600/30 transition-all cursor-pointer border border-white/5 bg-slate-950 p-2 rounded-xl"
-                />
-                {baselineFile && (
-                  <div className="flex items-center gap-2 bg-slate-900 border border-indigo-500/20 rounded-lg px-3 py-2 text-xs text-slate-300">
-                    <svg className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    <span className="truncate flex-1">{baselineFile.name}</span>
-                    <span className="text-slate-500">{(baselineFile.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                )}
-              </div>
+              <FileUploader
+                files={baselineFile ? [baselineFile] : []}
+                onChange={(files) => setBaselineFile(files[0] || null)}
+                accept=".ipynb"
+                label={t('admin.tasks.baseline_code')}
+                description={t('admin.tasks.baseline_code_desc')}
+              />
             </div>
           </div>
         )}
@@ -768,8 +734,8 @@ export default function TaskForm({
           <Button variant="secondary" onClick={() => { setIsCreatingTask(false); setEditingTask(null); }} className="px-8 py-2.5">
             {t('common.cancel')}
           </Button>
-          <Button type="submit" variant="primary" className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-600/20">
-            {isCreatingTask ? t('admin.tasks.create_task_btn') : t('admin.stages.save_changes_btn')}
+          <Button type="submit" variant="primary" disabled={savingTask} className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-600/20">
+            {savingTask ? t('common.loading') : (isCreatingTask ? t('admin.tasks.create_task_btn') : t('admin.stages.save_changes_btn'))}
           </Button>
         </div>
 

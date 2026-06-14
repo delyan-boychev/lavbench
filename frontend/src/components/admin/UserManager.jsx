@@ -135,7 +135,7 @@ export default function UserManager({
             />
           </div>
 
-          {allUsers.length === 0 ? (
+          {!allUsers || allUsers.length === 0 ? (
             <div className="text-center py-8 text-slate-500 text-xs italic">
               {t('admin.user_mgmt.no_users_found')}
             </div>
@@ -165,7 +165,7 @@ export default function UserManager({
                       </td>
                       <td>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${user.role === 'admin' ? 'border-rose-500/30 bg-rose-500/10 text-rose-400' : user.role === 'jury' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-blue-500/30 bg-blue-500/10 text-blue-400'}`}>
-                          {user.role.toUpperCase()}
+                          {t('badge.' + user.role)}
                         </span>
                       </td>
                       <td>{user.email || "—"}</td>

@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify
+from sqlalchemy.orm import joinedload
 from models import db, Challenge, Submission, User, Task
 from auth_utils import login_required
 from sse_utils import publish_submissions_update, publish_leaderboard_update
@@ -248,6 +249,7 @@ def submit_code(challenge_id):
         
         "task_files": task_files_list,
         "main_server_url": main_server_url,
+        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
         "worker_secret_key": worker_token
     }
 
@@ -286,11 +288,11 @@ def get_submissions(challenge_id):
         submissions = Submission.query.filter_by(
             challenge_id=challenge_id, 
             user_id=user_id
-        ).order_by(Submission.created_at.desc()).all()
+        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).order_by(Submission.created_at.desc()).all()
     else:
         submissions = Submission.query.filter_by(
             challenge_id=challenge_id
-        ).order_by(Submission.created_at.desc()).all()
+        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).order_by(Submission.created_at.desc()).all()
         
     return jsonify([s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in submissions])
 
@@ -450,6 +452,11 @@ def stream_submission_logs(submission_id):
                 pass
         except Exception as e:
             print(f"SSE logs streaming error: {e}")
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
             
     headers = {
         'Cache-Control': 'no-cache',

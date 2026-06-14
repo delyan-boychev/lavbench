@@ -37,13 +37,13 @@ describe('TaskSidebar Component', () => {
     expect(screen.getByText('Task #1')).toBeInTheDocument();
     expect(screen.getByText('Task Alpha')).toBeInTheDocument();
     expect(screen.getByText('First task description with markdown formatting.')).toBeInTheDocument(); // stripped markdown
-    expect(screen.getByText('📂 2')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
 
     // Check Task 2
     expect(screen.getByText('Task #2')).toBeInTheDocument();
     expect(screen.getByText('Task Beta')).toBeInTheDocument();
     expect(screen.getByText('Second task description.')).toBeInTheDocument();
-    expect(screen.queryByText('📂 0')).not.toBeInTheDocument(); // Beta has no files, shouldn't show files indicator
+    expect(screen.queryByText('0')).not.toBeInTheDocument(); // Beta has no files, shouldn't show files indicator
   });
 
   it('triggers onSelect callback when clicking a task button', () => {

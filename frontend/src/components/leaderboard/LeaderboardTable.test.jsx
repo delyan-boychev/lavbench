@@ -72,8 +72,8 @@ describe('LeaderboardTable Component', () => {
     render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
 
     // Renders Rank Medals
-    expect(screen.getByText('🥇')).toBeInTheDocument();
-    expect(screen.getByText('🥈')).toBeInTheDocument();
+    expect(screen.getByTitle('Rank 1')).toBeInTheDocument();
+    expect(screen.getByTitle('Rank 2')).toBeInTheDocument();
 
     // Renders "You" badge for current user, and shows their real name
     expect(screen.getByText('You')).toBeInTheDocument();

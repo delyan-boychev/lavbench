@@ -674,6 +674,7 @@ def delete_task(task_id):
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     import shutil
     shutil.rmtree(task_upload_dir, ignore_errors=True)
+    Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     db.session.delete(task)
     db.session.commit()
     
@@ -886,6 +887,7 @@ def submit_task_code(task_id):
         
         "task_files": task_files_list,
         "main_server_url": main_server_url,
+        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
         "worker_secret_key": worker_secret_key
     }
     
@@ -924,6 +926,9 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
         query = Submission.query.filter_by(task_id=task_id)
+    
+    from sqlalchemy.orm import joinedload
+    query = query.options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task))
         
     if page is not None:
         pagination = query.order_by(Submission.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
@@ -943,7 +948,7 @@ def get_task_submissions(task_id):
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     page = request.args.get('page', type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
     
     data = _get_task_submissions_data(task_id, user_role, user_id, page, per_page)
     if isinstance(data, dict) and "error" in data:
@@ -1004,6 +1009,11 @@ def get_task_leaderboard_live(task_id):
                 pass
         except Exception as e:
             print(f"Leaderboard SSE error: {e}")
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
             
     return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
 
@@ -1013,7 +1023,7 @@ def get_task_submissions_live(task_id):
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     page = request.args.get('page', type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
     
     if user_role == 'competitor':
         task = db.session.get(Task, task_id)
@@ -1062,6 +1072,14 @@ def get_task_submissions_live(task_id):
                 pass
         except Exception as e:
             print(f"Submissions SSE error: {e}")
+            try:
+                if user_role in ['admin', 'jury']:
+                    pubsub.punsubscribe()
+                else:
+                    pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
             
     return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
 
@@ -1151,18 +1169,35 @@ def report_worker_progress(submission_id):
     data = request.json or {}
     submission = db.get_or_404(Submission, submission_id)
     
+    VALID_STATUSES = {'queued', 'running', 'completed', 'failed'}
+    MAX_LOG_SIZE = 100 * 1024
+    
     if "status" in data:
-        submission.status = data["status"]
+        status_val = data["status"]
+        if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
+            return jsonify({"error": f"Invalid status value: {status_val}"}), 400
+        submission.status = status_val
     if "detailed_status" in data:
         submission.detailed_status = data["detailed_status"]
     if "logs" in data:
-        submission.logs = data["logs"]
+        logs_val = data["logs"]
+        if isinstance(logs_val, list):
+            logs_val = "\n".join(str(line) for line in logs_val)
+        if isinstance(logs_val, str) and len(logs_val.encode("utf-8")) > MAX_LOG_SIZE:
+            logs_val = logs_val[:MAX_LOG_SIZE // 2]
+        submission.logs = logs_val
     if "public_score" in data:
-        submission.public_score = data["public_score"]
-        submission.final_weighted_score_public = data["public_score"]
+        val = data["public_score"]
+        if val is not None and not isinstance(val, (int, float)):
+            return jsonify({"error": "public_score must be numeric or null"}), 400
+        submission.public_score = val
+        submission.final_weighted_score_public = val
     if "private_score" in data:
-        submission.private_score = data["private_score"]
-        submission.final_weighted_score_private = data["private_score"]
+        val = data["private_score"]
+        if val is not None and not isinstance(val, (int, float)):
+            return jsonify({"error": "private_score must be numeric or null"}), 400
+        submission.private_score = val
+        submission.final_weighted_score_private = val
     if "execution_time_ms" in data:
         submission.execution_time_ms = data["execution_time_ms"]
     if "metrics_payload_public" in data:

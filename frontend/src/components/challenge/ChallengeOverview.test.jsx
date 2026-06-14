@@ -25,7 +25,7 @@ describe('ChallengeOverview Component', () => {
 
     expect(screen.getByText('Image Classification Benchmark')).toBeInTheDocument();
     expect(screen.getByText('Classify images in a restricted RAM environment.')).toBeInTheDocument();
-    expect(screen.getByText('● Active')).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
 
     // Verify stats cards are rendered
     expect(screen.getByText('Daily Limit')).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe('ChallengeOverview Component', () => {
 
     render(<ChallengeOverview challenge={challenge} />);
 
-    expect(screen.getByText('■ Archived')).toBeInTheDocument();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
     expect(screen.getByText('8 GB')).toBeInTheDocument();
     expect(screen.getByText('GPU Cluster')).toBeInTheDocument();
   });
