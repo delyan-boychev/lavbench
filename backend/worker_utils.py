@@ -52,8 +52,24 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
                 break
             time.sleep(0.1)
             
-        t_out.join(timeout=2.0)
-        t_err.join(timeout=2.0)
+        t_out.join(timeout=30.0)
+        t_err.join(timeout=30.0)
+        
+        # Drain any remaining pipe data after join
+        try:
+            remaining = proc.stdout.read()
+            if remaining:
+                stdout_lines.append(remaining)
+                logs_list.append(remaining.rstrip('\r\n'))
+        except:
+            pass
+        try:
+            remaining = proc.stderr.read()
+            if remaining:
+                stderr_lines.append(remaining)
+                logs_list.append(f"[stderr] {remaining.rstrip('\r\n')}")
+        except:
+            pass
         
         stdout_str = "".join(stdout_lines)
         stderr_str = "".join(stderr_lines)
