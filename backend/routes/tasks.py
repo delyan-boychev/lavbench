@@ -115,10 +115,13 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
         "hf_token": hf_token,
+        "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
+        "hf_models": task.hf_models if isinstance(task.hf_models, str) else (json.dumps(task.hf_models) if task.hf_models else None),
         "public_eval_percentage": task.public_eval_percentage or 30,
         
         "task_files": task_files_list,
         "main_server_url": main_server_url,
+        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
         "worker_secret_key": worker_secret_key
     }
     
