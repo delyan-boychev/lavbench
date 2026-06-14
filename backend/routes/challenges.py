@@ -31,6 +31,9 @@ def filter_challenge_for_competitor(challenge_dict):
     else:
         filtered_tasks = []
         for t in challenge_dict.get("tasks", []):
+            # Hide labels.parquet from competitor file list
+            if t.get("files"):
+                t["files"] = [f for f in t["files"] if f.get("filename") != "labels.parquet"]
             if not t.get("stage_id"):
                 filtered_tasks.append(t)
             else:

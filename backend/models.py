@@ -375,8 +375,6 @@ class Task(db.Model):
         except Exception:
             files_list = []
         
-        files_list = [f for f in files_list if f.get("filename") != "labels.parquet"]
-        
         hf_datasets_list = []
         if self.hf_datasets:
             try:

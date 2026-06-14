@@ -582,7 +582,7 @@ def update_task(task_id):
             task.stage_id = stage_id_val
         else:
             task.stage_id = None
-        
+         
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     os.makedirs(task_upload_dir, exist_ok=True)
     
@@ -601,8 +601,6 @@ def update_task(task_id):
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
-            
-
             
     try:
         current_files = json.loads(task.files)

@@ -719,6 +719,15 @@ export default function TaskForm({
             </div>
 
             <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5">
+              {editingTask?.baseline_notebook_path && !baselineFile ? (
+                <div className="mb-4 p-4 bg-slate-950 border border-indigo-500/20 rounded-xl">
+                  <span className="text-xs text-slate-400 block mb-1">{t('admin.tasks.current_baseline')}</span>
+                  <span className="text-sm font-medium text-indigo-300 font-mono">
+                    {editingTask.baseline_notebook_path.split('/').pop()}
+                  </span>
+                  <p className="text-[10px] text-slate-500 mt-2">{t('admin.tasks.baseline_replaced_desc')}</p>
+                </div>
+              ) : null}
               <FileUploader
                 files={baselineFile ? [baselineFile] : []}
                 onChange={(files) => setBaselineFile(files[0] || null)}

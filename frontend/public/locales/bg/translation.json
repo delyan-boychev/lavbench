@@ -622,6 +622,8 @@
       "drag_and_drop": "или плъзнете и пуснете",
       "files_uploaded_upon_save": "Избраните файлове ще бъдат качени при запазване.",
       "baseline_code": "Базов Код (Baseline)",
+      "current_baseline": "Текущ базов notebook:",
+      "baseline_replaced_desc": "Изборът на нов файл ще замени текущата базова линия.",
       "baseline_code_desc": "Качете Jupyter Notebook (`.ipynb`) със стартов код.",
       "maximum_metric_limit": "Достигнат е максималният брой метрики.",
       "add_eval_metric": "+ Добави Метрика...",

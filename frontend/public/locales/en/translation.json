@@ -622,6 +622,8 @@
       "drag_and_drop": "or drag and drop",
       "files_uploaded_upon_save": "Selected files will be uploaded upon save.",
       "baseline_code": "Baseline Code",
+      "current_baseline": "Current baseline notebook:",
+      "baseline_replaced_desc": "Selecting a new file will replace the current baseline.",
       "baseline_code_desc": "Upload a Jupyter Notebook (`.ipynb`) containing starter code or a baseline solution for competitors.",
       "maximum_metric_limit": "Maximum metric limit reached.",
       "add_eval_metric": "+ Add Evaluation Metric...",
