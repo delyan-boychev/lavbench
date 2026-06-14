@@ -101,7 +101,8 @@ import sys
 try:
     from submission_runner import predict
 except ImportError:
-    print(json.dumps({"status": "error", "error": "Could not import predict function."}))
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": "Could not import predict function."}, f)
     sys.exit(1)
 
 try:
@@ -115,16 +116,18 @@ try:
     correct = sum(1 for p in preds if p == 1)
     acc = correct / len(inputs)
     
-    print(json.dumps({
-        "status": "success",
-        "public_score": acc,
-        "private_score": acc,
-        "metrics_payload_public": {"accuracy": acc},
-        "metrics_payload_private": {"accuracy": acc},
-        "execution_time_ms": 15
-    }))
+    with open("eval_results.json", "w") as f:
+        json.dump({
+            "status": "success",
+            "public_score": acc,
+            "private_score": acc,
+            "metrics_payload_public": {"accuracy": acc},
+            "metrics_payload_private": {"accuracy": acc},
+            "execution_time_ms": 15
+        }, f)
 except Exception as e:
-    print(json.dumps({"status": "error", "error": str(e)}))
+    with open("eval_results.json", "w") as f:
+        json.dump({"status": "error", "error": str(e)}, f)
 """
     evaluator_path = os.path.join(task_upload_dir, "evaluator.py")
     with open(evaluator_path, "w") as f:
@@ -161,7 +164,7 @@ except Exception as e:
     # 6. Start Local Celery Worker node in background
     print("--> Starting Celery worker process locally...")
     worker_log = open("backend/celery_test_run.log", "w")
-    celery_cmd = [sys.executable, "-m", "celery", "-A", "tasks.celery", "worker", "--loglevel=info"]
+    celery_cmd = [sys.executable, "-m", "celery", "-A", "tasks.celery", "worker", "--loglevel=info", "-Q", "test_queue"]
     worker_proc = subprocess.Popen(
         celery_cmd,
         cwd="backend",
@@ -219,7 +222,7 @@ except Exception as e:
     print("--> Dispatching Celery task...")
     from tasks import evaluate_submission
     priority = calculate_submission_priority(tester.id, "competitor")
-    evaluate_submission.apply_async(args=[submission.id], priority=priority)
+    evaluate_submission.apply_async(args=[submission.id], priority=priority, queue="test_queue")
 
     # 9. Monitor DB status transitions in real-time
     print("--> Monitoring status transitions (polling database)...")

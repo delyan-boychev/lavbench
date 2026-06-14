@@ -192,13 +192,21 @@ export default function SubmissionViewer({
                 : t('submissions.execution_log_live', 'Execution Log (Live)')
               }
             </div>
-            <pre className={`code-panel max-h-[180px] text-xs font-mono ${
-              submission.status === 'completed' 
-                ? 'text-slate-200' 
-                : submission.status === 'failed' 
-                  ? 'text-rose-400' 
-                  : 'text-indigo-300'
-            }`}>
+            <pre 
+              className={`code-panel text-xs font-mono ${
+                submission.status === 'completed' 
+                  ? 'text-slate-200' 
+                  : submission.status === 'failed' 
+                    ? 'text-rose-400' 
+                    : 'text-indigo-300'
+              }`}
+              style={{
+                maxHeight: '180px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all'
+              }}
+            >
               {submission.logs || liveLogs}
             </pre>
           </div>
