@@ -663,49 +663,6 @@ export default function TaskForm({
         {activeTab === 'files' && (
           <div className="animate-fadein flex flex-col gap-8">
             <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5">
-              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">{t('admin.tasks.ground_truth_resources')}</h3>
-              <p className="text-xs text-slate-400 mb-6">{t('admin.tasks.ground_truth_desc')}</p>
-              
-              {editingTask && editingTask.files && (
-                <div className="mb-6 bg-slate-950 p-4 rounded-xl border border-white/5">
-                  <span className="text-xs text-slate-300 block mb-3 font-semibold uppercase tracking-wide">{t('admin.tasks.currently_attached_files')}</span>
-                  <div className="flex flex-col gap-2">
-                    {(Array.isArray(editingTask.files) 
-                      ? editingTask.files 
-                      : (typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
-                          ? JSON.parse(editingTask.files) 
-                          : [])
-                    ).map(f => {
-                      const isDeleted = (editingTask.filesToDelete || []).includes(f.filename);
-                      return (
-                        <div key={f.filename} className={`flex justify-between items-center p-3 rounded-lg text-xs transition-colors ${isDeleted ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-900 border-white/10'} border`}>
-                          <div className="flex items-center gap-3">
-                            <svg className={`w-4 h-4 ${isDeleted ? 'text-red-400' : 'text-indigo-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                            <span className={isDeleted ? 'line-through text-slate-500' : 'text-slate-200 font-medium'}>
-                              {f.filename}
-                            </span>
-                            <span className="text-slate-500 text-[10px] ml-2">{(f.size_bytes / 1024).toFixed(1)} KB</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const current = editingTask.filesToDelete || [];
-                              const next = current.includes(f.filename) 
-                                ? current.filter(x => x !== f.filename) 
-                                : [...current, f.filename];
-                              setEditingTask({ ...editingTask, filesToDelete: next });
-                            }}
-                            className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ${isDeleted ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
-                          >
-                            {isDeleted ? t('admin.tasks.undo_delete') : t('admin.stages.delete')}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               <FileUploader
                 files={taskFiles}
                 onChange={setTaskFiles}
@@ -715,6 +672,23 @@ export default function TaskForm({
                 description={t('admin.tasks.ground_truth_desc')}
                 maxFiles={5}
                 requiredFiles={['labels.parquet']}
+                existingFiles={(() => {
+                  if (!editingTask?.files) return [];
+                  const filesArr = Array.isArray(editingTask.files)
+                    ? editingTask.files
+                    : (typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
+                        ? JSON.parse(editingTask.files)
+                        : []);
+                  const deletedSet = new Set(editingTask.filesToDelete || []);
+                  return filesArr.map(f => ({ ...f, _deleted: deletedSet.has(f.filename) }));
+                })()}
+                onRemoveExisting={(filename) => {
+                  const current = editingTask.filesToDelete || [];
+                  const next = current.includes(filename)
+                    ? current.filter(x => x !== filename)
+                    : [...current, filename];
+                  setEditingTask({ ...editingTask, filesToDelete: next });
+                }}
               />
             </div>
 
