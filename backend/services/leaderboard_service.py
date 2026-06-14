@@ -301,6 +301,16 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
     for rank, entry_dict in enumerate(sorted_entries, 1):
         entry_dict["rank"] = rank
         leaderboard.append(entry_dict)
+    
+    # Add baseline entry at the top if any baseline submissions exist
+    baseline_subs = [s for s in all_completed if s.is_baseline]
+    if baseline_subs:
+        best_baseline = get_best_submission(task, baseline_subs, challenge, is_lower_better=is_lower_better)
+        if best_baseline:
+            baseline_entry = best_baseline.to_dict(view_role=user_role, current_user_id=current_user_id)
+            baseline_entry["rank"] = None
+            baseline_entry["is_baseline_entry"] = True
+            leaderboard.insert(0, baseline_entry)
         
     metric_name = "Score"
     if task.metrics_config:

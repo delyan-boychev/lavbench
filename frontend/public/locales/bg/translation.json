@@ -278,6 +278,7 @@
     "points_short": "{{count}} т.",
     "title": "Класиране",
     "refresh": "Обнови",
+    "baseline_label": "Базова линия",
     "metric": "Метрика:",
     "participants": "участници",
     "participants_one": "{{count}} участник",

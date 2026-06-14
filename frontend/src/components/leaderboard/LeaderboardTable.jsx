@@ -120,16 +120,26 @@ function Row({
 
         {/* Rank column */}
         <td className="px-4 py-3 text-center w-14 text-slate-300">
-          <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`} title={t('leaderboard.rank_tooltip', { rank })}>
-            <span className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}>
-              {rank}
-            </span>
-          </div>
+          {entry.is_baseline_entry ? (
+            <span className="text-xs font-mono text-slate-500">—</span>
+          ) : (
+            <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`} title={t('leaderboard.rank_tooltip', { rank })}>
+              <span className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}>
+                {rank}
+              </span>
+            </div>
+          )}
         </td>
 
         {/* Participant Details */}
         <td className="px-4 py-3 text-left min-w-[150px]">
-          {showIdentity ? (
+          {entry.is_baseline_entry ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                {t('leaderboard.baseline_label')}
+              </span>
+            </div>
+          ) : showIdentity ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-100">
               <span className="truncate">
                 {entry.user 

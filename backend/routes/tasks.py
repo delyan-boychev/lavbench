@@ -70,6 +70,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         task_id=task.id,
         status='queued',
         detailed_status='queued',
+        is_baseline=True,
         code_cells=json.dumps(code_cells)
     )
     db.session.add(submission)

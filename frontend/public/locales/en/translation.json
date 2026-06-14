@@ -278,6 +278,7 @@
     "points_short": "{{count}} pts",
     "title": "Leaderboard",
     "refresh": "Refresh",
+    "baseline_label": "Baseline",
     "metric": "Metric:",
     "participants": "participants",
     "participants_one": "{{count}} participant",
