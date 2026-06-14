@@ -189,6 +189,75 @@ def seed_database():
             except Exception:
                 db.session.rollback()
 
+    # Ensure task_type and metrics_config columns exist on tasks table
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_type VARCHAR(100)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN task_type VARCHAR(100)"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS metrics_config JSON"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN metrics_config TEXT"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS whitelisted_imports VARCHAR(512)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS hf_datasets JSON"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN hf_datasets TEXT"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    try:
+        db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS hf_models JSON"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN hf_models TEXT"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Ensure evaluation metrics and weighted score columns exist on submissions table
+    for col, col_type in [
+        ('metrics_payload_public', 'JSON'),
+        ('metrics_payload_private', 'JSON'),
+        ('final_weighted_score_public', 'FLOAT'),
+        ('final_weighted_score_private', 'FLOAT')
+    ]:
+        try:
+            db.session.execute(db.text(f"ALTER TABLE submissions ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            try:
+                db.session.execute(db.text(f"ALTER TABLE submissions ADD COLUMN {col} {col_type}"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
     # Check if we already have challenges
     if Challenge.query.first():
         return
@@ -202,30 +271,28 @@ def seed_database():
         return hashlib.sha256(text.encode()).hexdigest()
 
     # 1. Create Challenges
+    from datetime import datetime, timedelta
+    now_time = datetime.utcnow()
     imdb_challenge = Challenge(
         title="IMDb Movie Sentiment Classification",
         description="Predict whether movie reviews from the IMDb dataset are positive or negative. The submissions will execute inside our container and access the test split.",
-        hf_dataset_path="imdb",
-        hf_dataset_config="",
-        hf_dataset_split="test",
-        metric_name="accuracy",
         max_eval_requests=10,
         ram_limit_mb=8192,
         time_limit_sec=300,
-        gpu_required=True
+        gpu_required=True,
+        start_time=now_time - timedelta(days=1),
+        end_time=now_time + timedelta(days=30)
     )
     
     sst2_challenge = Challenge(
         title="SST-2 Sentence Classification (GLUE)",
         description="Predict the sentiment of sentences extracted from movie reviews in the Stanford Sentiment Treebank. Evaluated using Accuracy on the validation split.",
-        hf_dataset_path="glue",
-        hf_dataset_config="sst2",
-        hf_dataset_split="validation",
-        metric_name="accuracy",
         max_eval_requests=5,
         ram_limit_mb=4096,
         time_limit_sec=150,
-        gpu_required=False
+        gpu_required=False,
+        start_time=now_time - timedelta(days=1),
+        end_time=now_time + timedelta(days=30)
     )
     db.session.add_all([imdb_challenge, sst2_challenge])
     db.session.commit()

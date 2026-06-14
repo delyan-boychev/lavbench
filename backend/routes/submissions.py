@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify
@@ -170,7 +171,7 @@ def submit_code(challenge_id):
         }), 400
         
     # AST and general rule validation
-    from routes.tasks import check_execution_rules
+    from services.submission_service import check_execution_rules
     passed, err_msg = check_execution_rules(task, selected_cells)
     if not passed:
         return jsonify({
@@ -205,7 +206,60 @@ def submit_code(challenge_id):
     
     # Trigger Celery Task asynchronously
     from tasks import evaluate_submission
-    evaluate_submission.delay(submission.id)
+    from services.submission_service import extract_code_from_cells, calculate_submission_priority
+    from auth_utils import generate_worker_token
+
+    task_files_list = []
+    if task.files:
+        try:
+            task_files_list = json.loads(task.files)
+        except:
+            pass
+
+    hf_token = task.get_hf_api_key() or ""
+    main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
+    
+    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
+    worker_token = generate_worker_token(submission.id, task.id, time_limit + 600)
+
+    gpu_required = False
+    if task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+
+    metadata = {
+        "submission_id": submission.id,
+        "task_id": task.id,
+        "challenge_id": challenge.id,
+        "user_code": "\n\n".join(extract_code_from_cells(selected_cells)),
+        "time_limit": time_limit,
+        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
+        "gpu_required": gpu_required,
+        
+        "base_docker_image": task.base_docker_image,
+        "apt_packages": task.apt_packages,
+        "pip_requirements": task.pip_requirements,
+        
+        "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
+        "metrics_config": task.metrics_config,
+        "hf_eval_repo": task.hf_eval_repo,
+        "hf_token": hf_token,
+        "public_eval_percentage": task.public_eval_percentage or 30,
+        
+        "task_files": task_files_list,
+        "main_server_url": main_server_url,
+        "worker_secret_key": worker_token
+    }
+
+    priority = calculate_submission_priority(user_id, user_role)
+    queue_name = 'gpu_queue' if gpu_required else 'celery'
+
+    evaluate_submission.apply_async(
+        args=[submission.id, metadata],
+        priority=priority,
+        queue=queue_name
+    )
     
     return jsonify({
         "message": "Submission received and queued for execution.",

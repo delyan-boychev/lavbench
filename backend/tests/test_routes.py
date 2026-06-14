@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app import create_app
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
-from routes.tasks import calculate_submission_priority
+from services.submission_service import calculate_submission_priority
 
 class TestRouteLevelLogic(unittest.TestCase):
     def setUp(self):
@@ -60,8 +60,7 @@ class TestRouteLevelLogic(unittest.TestCase):
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
-            is_frozen=False,
-            metric_name="accuracy"
+            is_frozen=False
         )
         db.session.add(self.challenge)
         db.session.commit() # Get challenge ID
@@ -268,7 +267,7 @@ class TestRouteLevelLogic(unittest.TestCase):
         db.session.commit()
 
         # Case B: MSE (Lower is better)
-        self.challenge.metric_name = "mse"
+        self.task.metrics_config = json.dumps({"mse": {"weight": 1.0}})
         db.session.commit()
 
         # Setup final submissions:
@@ -670,6 +669,53 @@ class TestRouteLevelLogic(unittest.TestCase):
         res = self.client.post(f'/api/challenges/{self.challenge.id}/tasks', data=data, headers=admin_header)
         self.assertEqual(res.status_code, 400)
         self.assertIn("Invalid pip requirement line", res.get_json()["error"])
+
+    def test_jury_custom_environment_restrictions(self):
+        """Jury users should not be allowed to configure base_docker_image, apt_packages, or pip_requirements during task creation or update."""
+        jury_user = User(
+            username="test_jury_env",
+            password_hash="pbkdf2:sha256:...",
+            role="jury"
+        )
+        db.session.add(jury_user)
+        db.session.commit()
+        jury_token = generate_token(jury_user.id, jury_user.role)
+        jury_header = self.get_auth_header(jury_token)
+        
+        # 1. Jury attempts to create a task with base_docker_image
+        import io
+        data = {
+            "title": "Jury Custom Env Task",
+            "base_docker_image": "python:3.10-slim",
+            "baseline_notebook": (io.BytesIO(b'{"cells": []}'), 'baseline.ipynb'),
+            "solution_notebook": (io.BytesIO(b'{"cells": []}'), 'solution.ipynb'),
+        }
+        res = self.client.post(f'/api/challenges/{self.challenge.id}/tasks', data=data, headers=jury_header)
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("Only administrators are allowed", res.get_json()["error"])
+        
+        # 2. Jury attempts to update a task and set base_docker_image
+        task = Task(
+            challenge_id=self.challenge.id,
+            title="Clean Task",
+            description="No custom env",
+            ram_limit_mb=1024,
+            time_limit_sec=60
+        )
+        db.session.add(task)
+        db.session.commit()
+        
+        data = {
+            "base_docker_image": "python:3.10-slim"
+        }
+        res = self.client.put(f'/api/tasks/{task.id}', data=data, headers=jury_header)
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("Only administrators are allowed", res.get_json()["error"])
+        
+        # 3. Admin updates the task successfully with custom env
+        admin_header = self.get_auth_header(self.admin_token)
+        res = self.client.put(f'/api/tasks/{task.id}', data=data, headers=admin_header)
+        self.assertEqual(res.status_code, 200)
 
     @patch('cache_utils.delete_cached')
     @patch('cache_utils.set_cached')

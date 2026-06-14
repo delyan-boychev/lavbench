@@ -44,6 +44,11 @@ def clear_failures(identifier):
     except Exception:
         pass
 
+def get_client_ip():
+    if request.headers.getlist("X-Forwarded-For"):
+        return request.headers.getlist("X-Forwarded-For")[0].split(',')[0].strip()
+    return request.remote_addr or "127.0.0.1"
+
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.json or {}
@@ -56,7 +61,10 @@ def login():
             "code": "ERR_MISSING_CREDENTIALS"
         }), 400
         
-    if check_rate_limit(username):
+    ip = get_client_ip()
+    rate_limit_key = f"{username}:{ip}"
+        
+    if check_rate_limit(rate_limit_key):
         return jsonify({
             "error": "Too many failed login attempts. Please try again in a minute.",
             "code": "ERR_RATE_LIMIT_EXCEEDED"
@@ -65,13 +73,13 @@ def login():
     user = User.query.filter(User.username == username).first()
     
     if not user or not check_password_hash(user.password_hash, password):
-        record_failure(username)
+        record_failure(rate_limit_key)
         return jsonify({
             "error": "Invalid credentials.",
             "code": "ERR_INVALID_CREDENTIALS"
         }), 401
         
-    clear_failures(username)
+    clear_failures(rate_limit_key)
         
     if user.role == 'competitor' and user.challenge_id:
         from models import Challenge
@@ -88,6 +96,7 @@ def login():
         "token": token,
         "user": user.to_dict(current_user_id=user.id)
     })
+
 
 @auth_bp.route('/me', methods=['GET'])
 @login_required

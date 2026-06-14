@@ -72,10 +72,14 @@ def get_challenges():
         set_cached(cache_key, filtered, timeout=600)
         return jsonify([filtered])
         
+    from sqlalchemy.orm import joinedload
     page = request.args.get('page', type=int)
     if page is not None:
         per_page = request.args.get('per_page', 10, type=int)
-        pagination = Challenge.query.paginate(page=page, per_page=per_page, error_out=False)
+        pagination = Challenge.query.options(
+            joinedload(Challenge.tasks),
+            joinedload(Challenge.stages)
+        ).paginate(page=page, per_page=per_page, error_out=False)
         return jsonify({
             "items": [c.to_dict() for c in pagination.items],
             "total": pagination.total,
@@ -88,7 +92,10 @@ def get_challenges():
     if cached_all is not None:
         return jsonify(cached_all)
         
-    challenges = Challenge.query.all()
+    challenges = Challenge.query.options(
+        joinedload(Challenge.tasks),
+        joinedload(Challenge.stages)
+    ).all()
     challenges_list = [c.to_dict() for c in challenges]
     set_cached(cache_key, challenges_list, timeout=600)
     return jsonify(challenges_list)
@@ -589,10 +596,6 @@ def create_scheduled_test_competition(challenge_id):
     test_comp = Challenge(
         title=test_title,
         description=test_desc,
-        hf_dataset_path=orig.hf_dataset_path,
-        hf_dataset_config=orig.hf_dataset_config,
-        hf_dataset_split=orig.hf_dataset_split,
-        metric_name=orig.metric_name,
         max_eval_requests=100,
         ram_limit_mb=max(orig.ram_limit_mb, 16384),
         time_limit_sec=max(orig.time_limit_sec, 600),
@@ -661,102 +664,14 @@ except Exception as e:
 @login_required
 @role_required(['admin', 'jury'])
 def export_results(challenge_id):
-    import csv
-    import io
     from flask import Response
-    from routes.leaderboard import build_and_cache_leaderboard
-    from models import AuditLog, Task
+    from services.challenge_service import generate_exported_results_csv
     
     challenge = db.get_or_404(Challenge, challenge_id)
+    csv_data = generate_exported_results_csv(challenge)
     
-    # Get leaderboard entries
-    leaderboard = build_and_cache_leaderboard(challenge_id) or []
-    
-    # Get all tasks for this challenge
-    tasks = challenge.tasks
-    
-    # Get audit logs for these tasks
-    task_ids = [t.id for t in tasks]
-    if task_ids:
-        audit_logs = AuditLog.query.filter(AuditLog.task_id.in_(task_ids)).order_by(AuditLog.timestamp.asc()).all()
-    else:
-        audit_logs = []
-        
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    # 1. Write Header for Results
-    header = [
-        "Rank", "Username", "Alias ID", "Real Name", "Email", "School", "City", "Grade", 
-        "Has Submitted", "Total Points", "Aggregated Public Score", "Aggregated Private Score"
-    ]
-    for task in tasks:
-        header.extend([
-            f"Task '{task.title}' Public Score",
-            f"Task '{task.title}' Private Score",
-            f"Task '{task.title}' Manual Points"
-        ])
-    writer.writerow(header)
-    
-    # 2. Write Competitor Rows
-    for entry in leaderboard:
-        user_data = entry["user"]
-        real_name = f"{user_data.get('name') or ''} {user_data.get('surname') or ''}".strip()
-        
-        # Parse manual points dict safely
-        manual_pts = user_data.get("manual_points") or {}
-        
-        row = [
-            entry["rank"],
-            user_data.get("username"),
-            user_data.get("alias_id"),
-            real_name,
-            user_data.get("email"),
-            user_data.get("school"),
-            user_data.get("city"),
-            user_data.get("grade"),
-            "Yes" if entry["has_submitted"] else "No",
-            entry["total_points"],
-            entry["public_score"] if entry["public_score"] is not None else "N/A",
-            entry["private_score"] if entry["private_score"] is not None else "N/A"
-        ]
-        
-        for task in tasks:
-            task_score = entry["task_scores"].get(str(task.id)) or {}
-            pub = task_score.get("public_score")
-            priv = task_score.get("private_score")
-            m_pts = manual_pts.get(str(task.id), 0)
-            
-            row.extend([
-                pub if pub is not None else "N/A",
-                priv if priv is not None else "N/A",
-                m_pts
-            ])
-            
-        writer.writerow(row)
-        
-    # 3. Add space and section for Audit Logs
-    writer.writerow([])
-    writer.writerow(["--- SCORE CORRECTION AUDIT LOG ---"])
-    writer.writerow(["Timestamp (UTC)", "Admin", "Target Student", "Task", "Old Score", "New Score", "Reason"])
-    
-    for log in audit_logs:
-        admin_user = log.admin.username if log.admin else f"User ID {log.admin_id}"
-        target_user = log.target_user.username if log.target_user else f"User ID {log.target_user_id}"
-        task_title = log.task.title if log.task else f"Task ID {log.task_id}"
-        
-        writer.writerow([
-            log.timestamp.isoformat(),
-            admin_user,
-            target_user,
-            task_title,
-            log.old_score if log.old_score is not None else "None",
-            log.new_score if log.new_score is not None else "None",
-            log.reason
-        ])
-        
     response = Response(
-        output.getvalue(),
+        csv_data,
         mimetype="text/csv",
         headers={"Content-disposition": f"attachment; filename=challenge_{challenge_id}_export.csv"}
     )

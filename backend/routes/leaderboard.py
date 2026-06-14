@@ -1,209 +1,14 @@
 from flask import Blueprint, request, jsonify
 import json
 from datetime import datetime
-from models import db, Challenge, Submission, User, decrypt_field, Task
+from models import db, Challenge, Submission, User, decrypt_field, Task, is_metric_lower_better
 from auth_utils import login_required, role_required
 
 leaderboard_bp = Blueprint('leaderboard', __name__)
 
-def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
-    from cache_utils import set_cached
-    challenge = db.session.get(Challenge, challenge_id)
-    if not challenge:
-        return None
-        
-    is_mse = (challenge.metric_name or '').lower() in ('mse', 'loss', 'error')
-    challenge_finalized = challenge.scores_finalized
-    
-    tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
-    all_completed = Submission.query.filter_by(
-        challenge_id=challenge_id,
-        status='completed'
-    ).all()
-    
-    competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
-    leaderboard_entries = []
-    
-    for comp in competitors:
-        task_scores = {}
-        has_submitted = False
-        
-        for task in tasks:
-            user_subs_for_task = [s for s in all_completed if s.user_id == comp.id and s.task_id == task.id]
-            
-            final_sub = next((s for s in user_subs_for_task if s.is_final_selection), None)
-            chosen_sub = None
-            
-            if final_sub:
-                has_late_sub = False
-                if challenge.end_time:
-                    has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in user_subs_for_task)
-                if not has_late_sub:
-                    chosen_sub = final_sub
-                    
-            if not chosen_sub and user_subs_for_task:
-                best_sub = None
-                for s in user_subs_for_task:
-                    if s.public_score is None:
-                        continue
-                    if best_sub is None:
-                        best_sub = s
-                    else:
-                        if is_mse:
-                            if s.public_score < best_sub.public_score:
-                                best_sub = s
-                        else:
-                            if s.public_score > best_sub.public_score:
-                                best_sub = s
-                chosen_sub = best_sub
-                
-            if chosen_sub:
-                has_submitted = True
-                task_scores[str(task.id)] = {
-                    "public_score": chosen_sub.public_score,
-                    "private_score": chosen_sub.private_score,
-                    "submission_id": chosen_sub.id,
-                    "execution_time_ms": chosen_sub.execution_time_ms or 0,
-                    "created_at": chosen_sub.created_at
-                }
-            else:
-                task_scores[str(task.id)] = {
-                    "public_score": None,
-                    "private_score": None,
-                    "submission_id": None,
-                    "execution_time_ms": 0,
-                    "created_at": None
-                }
-        
-        pub_scores_list = [v["public_score"] for v in task_scores.values() if v["public_score"] is not None]
-        priv_scores_list = [v["private_score"] for v in task_scores.values() if v["private_score"] is not None]
-        
-        if pub_scores_list:
-            tot_pub = 0.0
-            for task in tasks:
-                sc = task_scores[str(task.id)]["public_score"]
-                if sc is not None:
-                    tot_pub += sc
-                else:
-                    tot_pub += 999.0 if is_mse else 0.0
-            aggregated_public = tot_pub
-        else:
-            aggregated_public = None
-            
-        if priv_scores_list:
-            tot_priv = 0.0
-            for task in tasks:
-                sc = task_scores[str(task.id)]["private_score"]
-                if sc is not None:
-                    tot_priv += sc
-                else:
-                    tot_priv += 999.0 if is_mse else 0.0
-            aggregated_private = tot_priv
-        else:
-            aggregated_private = None
-            
-        manual_points_dict = {}
-        if comp.manual_points:
-            if isinstance(comp.manual_points, dict):
-                manual_points_dict = comp.manual_points
-            elif isinstance(comp.manual_points, str):
-                try:
-                    manual_points_dict = json.loads(comp.manual_points)
-                except Exception:
-                    manual_points_dict = {}
-                    
-        total_points = sum(manual_points_dict.get(str(t.id), 0) for t in tasks)
-        
-        total_exec_time = 0
-        sub_dates = []
-        for v in task_scores.values():
-            if v.get("submission_id") is not None:
-                total_exec_time += v.get("execution_time_ms") or 0
-                if v.get("created_at"):
-                    sub_dates.append(v.get("created_at"))
-        
-        earliest_sub_date = min(sub_dates) if sub_dates else datetime.max
-        
-        entry_dict = {
-            "user": comp.to_dict(view_role='admin', scores_finalized=False, current_user_id=None),
-            "task_scores": task_scores,
-            "public_score": aggregated_public,
-            "private_score": aggregated_private,
-            "total_points": total_points,
-            "has_submitted": has_submitted,
-            "total_execution_time_ms": total_exec_time,
-            "earliest_submission_time": earliest_sub_date
-        }
-        leaderboard_entries.append(entry_dict)
-        
-    from functools import cmp_to_key
-    def compare_entries(a, b):
-        if challenge_finalized:
-            pa = a["total_points"]
-            pb = b["total_points"]
-            if pa != pb:
-                return -1 if pa > pb else 1
-        else:
-            if a["has_submitted"] != b["has_submitted"]:
-                return -1 if a["has_submitted"] else 1
-                
-            if not a["has_submitted"]:
-                name_a = f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower() or a['user'].get('username', '').lower()
-                name_b = f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower() or b['user'].get('username', '').lower()
-                if name_a != name_b:
-                    return -1 if name_a < name_b else 1
-                return 0
-                
-            score_a = a["public_score"]
-            score_b = b["public_score"]
-            if score_a is not None and score_b is not None and score_a != score_b:
-                if is_mse:
-                    return -1 if score_a < score_b else 1
-                else:
-                    return -1 if score_a > score_b else 1
-                    
-        eta = a.get("total_execution_time_ms", 0)
-        etb = b.get("total_execution_time_ms", 0)
-        if eta != etb:
-            return -1 if eta < etb else 1
-            
-        cda = a.get("earliest_submission_time", datetime.max)
-        cdb = b.get("earliest_submission_time", datetime.max)
-        if cda != cdb:
-            return -1 if cda < cdb else 1
-            
-        name_a = f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower() or a['user'].get('username', '').lower()
-        name_b = f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower() or b['user'].get('username', '').lower()
-        if name_a != name_b:
-            return -1 if name_a < name_b else 1
-        return 0
-        
-    sorted_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
-    
-    cached_entries = []
-    if challenge_finalized:
-        current_rank = 1
-        for i, entry_dict in enumerate(sorted_entries):
-            if i > 0 and entry_dict["total_points"] != sorted_entries[i-1]["total_points"]:
-                current_rank = i + 1
-            entry_dict["rank"] = current_rank
-            cached_entries.append(entry_dict)
-    else:
-        for rank, entry_dict in enumerate(sorted_entries, 1):
-            entry_dict["rank"] = rank
-            cached_entries.append(entry_dict)
-            
-    # Convert datetime objects to string for JSON serialization
-    for entry in cached_entries:
-        if isinstance(entry.get("earliest_submission_time"), datetime):
-            entry["earliest_submission_time"] = entry["earliest_submission_time"].isoformat() if entry["earliest_submission_time"] != datetime.max else None
-        for ts_score in entry["task_scores"].values():
-            if isinstance(ts_score.get("created_at"), datetime):
-                ts_score["created_at"] = ts_score["created_at"].isoformat()
+from services.leaderboard_service import build_and_cache_leaderboard
 
-    cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
-    set_cached(cache_key, cached_entries, timeout=300)
-    return cached_entries
+
 
 
 @leaderboard_bp.route('/challenges/<int:challenge_id>/leaderboard', methods=['GET'])
@@ -222,7 +27,21 @@ def get_leaderboard(challenge_id):
                 "code": "ERR_NOT_REGISTERED"
             }), 403
             
-    is_mse = (challenge.metric_name or '').lower() in ('mse', 'loss', 'error')
+    tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
+    is_mse = False
+    for task in tasks:
+        if task.metrics_config:
+            try:
+                cfg = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
+                for m_name in cfg.keys():
+                    if is_metric_lower_better(m_name):
+                        is_mse = True
+                        break
+            except Exception:
+                pass
+        if is_mse:
+            break
+            
     challenge_finalized = challenge.scores_finalized
     
     # Check if competitor needs to see frozen leaderboard
@@ -409,6 +228,10 @@ def get_leaderboard(challenge_id):
         post_processed_leaderboard = sorted_competitor
         tasks_list = [t.to_dict() for t in visible_tasks]
     else:
+        now = datetime.utcnow()
+        has_started = (challenge.start_time is not None and now >= challenge.start_time)
+        reveal_pts = challenge.reveal_points
+        
         post_processed_leaderboard = []
         for entry in cached_entries:
             entry_copy = dict(entry)
@@ -440,7 +263,7 @@ def get_leaderboard(challenge_id):
         
     return jsonify({
         "challenge_title": challenge.title,
-        "metric_name": challenge.metric_name,
+        "metric_name": "Score",
         "is_finalized": challenge.scores_finalized,
         "reveal_public_scores": challenge.reveal_public_scores,
         "reveal_private_scores": challenge.reveal_private_scores,

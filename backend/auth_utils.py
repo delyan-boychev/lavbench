@@ -53,3 +53,37 @@ def role_required(allowed_roles):
         return decorated
     return decorator
 
+
+def generate_worker_token(submission_id, task_id, expires_in_sec):
+    payload = {
+        "sub": str(submission_id),
+        "task_id": task_id,
+        "role": "worker_submission",
+        "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def verify_worker_token(token, submission_id=None, task_id=None):
+    if not token:
+        return False
+    # Only allow global WORKER_SECRET_KEY for non-submission-specific endpoints (like preloading active datasets)
+    if submission_id is None and task_id is None:
+        global_key = os.environ.get("WORKER_SECRET_KEY")
+        if global_key and token == global_key:
+            return True
+    try:
+        if token.startswith("Bearer "):
+            token = token[7:]
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "worker_submission":
+            return False
+        if submission_id is not None and payload.get("sub") != str(submission_id):
+            return False
+        if task_id is not None and payload.get("task_id") != task_id:
+            return False
+        return True
+    except Exception:
+        return False
+
+

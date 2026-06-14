@@ -154,7 +154,10 @@ def main():
         local_env.update(env_vars)
         
         # Execute python file locally mimicking the docker container execution
-        res = subprocess.run([sys.executable, exec_file], cwd=host_dir, env=local_env, capture_output=True, text=True)
+        python_exe = "/Users/delyan-boychev/nai-webplatform/venv/bin/python"
+        if not os.path.exists(python_exe):
+            python_exe = sys.executable
+        res = subprocess.run([python_exe, exec_file], cwd=host_dir, env=local_env, capture_output=True, text=True)
         
         sys.stdout.write(res.stdout)
         sys.stderr.write(res.stderr)

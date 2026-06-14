@@ -50,10 +50,11 @@ export default function Navbar() {
   const activeStage = React.useMemo(() => {
     if (!selectedChallenge?.stages) return null;
     const now = nowMs;
+    const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
     return selectedChallenge.stages.find(st => {
       const start = new Date(st.start_time).getTime();
       const end = new Date(st.end_time).getTime();
-      return now >= start && now <= end && !st.is_finalized;
+      return now >= start && now <= (end + graceMs) && !st.is_finalized;
     });
   }, [selectedChallenge, nowMs]);
 

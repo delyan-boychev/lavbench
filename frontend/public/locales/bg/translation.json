@@ -546,16 +546,107 @@
       "submission_period_hours": "Период за лимит на решенията (в часове)",
       "submission_period_placeholder": "напр. 24",
       "upload_scripts_notebooks": "Ж. Качване на скриптове и notebooks",
-      "evaluator_script_label": "Скрипт за оценка (evaluator.py)",
       "baseline_notebook_label": "Базов notebook (baseline.ipynb)",
-      "solution_notebook_label": "Решение notebook (solution.ipynb)",
-      "show_custom_evaluator": "Покажи шаблона за скрипта за оценка (evaluator.py)",
-      "custom_evaluator_help": "Когато пишете скрипт за оценка, той трябва да импортира решението на състезателя като submission_runner, да го оцени и да запише резултатите в eval_results.json.",
       "resource_files_title": "З. Ресурсни файлове (До 5 файла, макс. 25MB всеки)",
       "current_resource_files": "Текущи ресурсни файлове:",
       "undo_delete": "Възстанови изтриването",
       "press_cmd_ctrl": "Натиснете Cmd/Ctrl за избор на няколко файла.",
-      "create_task_btn": "Създай задача"
+      "create_task_btn": "Създай задача",
+      "modality_metrics_title": "Настройка на метриките за модалност",
+      "modality_metrics_selected": "{{count}} / 5 избрани",
+      "modality_metrics_limit_reached": "⚠️ Достигнат е максималният лимит от 5 метрики за тази група задачи.",
+      "modality_metrics_weight": "Тегло:",
+      "modality_metrics_beta": "Бета:",
+      "modality_metrics_threshold": "Праг:",
+      "modality_metrics_options_json": "Настройки (JSON):",
+      "modality_schemas_title": "Изисквани файлови схеми",
+      "modality_schemas_submission": "Формат на решението (submission.parquet)",
+      "modality_schemas_ground_truth": "Формат на верните отговори (labels.parquet)",
+      "modality_schemas_note": "💡 Забележка: Parquet файловете трябва да съдържат тези точни имена на колони. Уверете се, че вашите тестови етикети отговарят на изискваната схема, преди да стартирате предизвикателството.",
+      "hf_datasets_label": "Предварително кеширани HF датасети (разделени със запетая, макс. 5)",
+      "hf_models_label": "Предварително кеширани HF модели (разделени със запетая, макс. 5)",
+      "whitelisted_libraries_label": "Списък с разрешени библиотеки (разделени със запетая)",
+      "task_type_required_error": "Моля, изберете тип задача / модалност.",
+      "whitelisted_libraries_placeholder": "напр. numpy, pandas, torch",
+      "hf_datasets_placeholder": "напр. ylecun/mnist, imdb",
+      "hf_models_placeholder": "напр. bert-base-uncased, gpt2",
+      "task_type_label": "Тип задача / Група модалности",
+      "select_modality_group": "-- Изберете група модалности --",
+      "modality_group": {
+        "classification": "Класификация",
+        "probabilistic": "Вероятностен",
+        "regression": "Регресия",
+        "ner_tagging": "NER / Маркиране",
+        "translation_summ": "Превод / Резюмиране",
+        "qa_extractive": "QA (Екстрактивен)",
+        "object_detection": "Засичане на обекти",
+        "segmentation": "Сегментация",
+        "keypoints": "Ключови точки",
+        "image_generation": "Генериране на изображения",
+        "audio_generation": "Генериране на аудио",
+        "retrieval": "Класиране и извличане",
+        "clustering": "Клъстериране"
+      },
+      "schemas": {
+        "common": {
+          "id_matching": "Уникален идентификатор на извадка, съответстващ на верните отговори",
+          "id_desc": "Уникален идентификатор на извадка",
+          "query_id_desc": "Уникален идентификатор на заявка"
+        },
+        "classification": {
+          "label": "Предвиден клас етикет",
+          "gt_label": "Истински клас етикет (ground truth)"
+        },
+        "probabilistic": {
+          "score": "Предвидена вероятност или logit за положителния клас",
+          "gt_label": "Истински двоичен етикет (ground truth)"
+        },
+        "regression": {
+          "value": "Предвидена непрекъсната стойност",
+          "gt_value": "Истинска непрекъсната целева стойност (ground truth)"
+        },
+        "ner_tagging": {
+          "labels": "Предвидени тагове (напр. ['B-PER', 'I-PER', 'O'])",
+          "gt_labels": "Истински тагове (ground truth)"
+        },
+        "translation_summ": {
+          "text": "Генериран текст за резюме или превод",
+          "gt_text": "Истински референтен текст за резюме или превод"
+        },
+        "qa_extractive": {
+          "answer": "Извлечен низ за отговор",
+          "gt_answer": "Истински низ за отговор"
+        },
+        "object_detection": {
+          "boxes": "Предвидени кутии, всяка с: x_min, y_min, x_max, y_max, label, score (float)",
+          "gt_boxes": "Истински ограничаващи кутии, всяка с: x_min, y_min, x_max, y_max, label"
+        },
+        "segmentation": {
+          "mask": "Предвидени байтове на двоична маска",
+          "gt_mask": "Истински байтове на двоична маска"
+        },
+        "keypoints": {
+          "keypoints": "Предвидени координати на ключови точки [[x1, y1], [x2, y2], ...]",
+          "gt_keypoints": "Истински координати на ключови точки [[x1, y1], [x2, y2], ...]"
+        },
+        "image_generation": {
+          "image": "Сурови байтове на генерираното изображение (PNG/JPG)",
+          "gt_image": "Сурови байтове на истинското целево изображение (PNG/JPG)"
+        },
+        "audio_generation": {
+          "audio": "Сурови байтове на генерирания аудио файл (WAV/MP3)",
+          "gt_audio": "Сурови байтове на истинския целеви аудио файл (WAV/MP3)"
+        },
+        "retrieval": {
+          "doc_id": "Идентификатор на документ/пасаж",
+          "score": "Предвидена увереност при извличане или резултат за уместност",
+          "gt_doc_id": "Истински уместен/правилен идентификатор на документ"
+        },
+        "clustering": {
+          "cluster_id": "Предвидено разпределение на клъстера",
+          "gt_label": "Истинско разпределение на етикетите (ground truth)"
+        }
+      }
     },
     "notifications": {
       "competition_created": "Предизвикателството е създадено успешно!",

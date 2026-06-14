@@ -5,7 +5,7 @@ import redis
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_from_directory, current_app, Response, stream_with_context
 from werkzeug.utils import secure_filename
-from models import db, Challenge, Task, User, Submission, decrypt_field
+from models import db, Challenge, Task, User, Submission, decrypt_field, is_metric_lower_better
 from auth_utils import login_required, role_required
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
@@ -50,87 +50,12 @@ def to_int(val):
     except ValueError:
         return None
 
-def extract_code_from_cells(cells_list):
-    if not cells_list:
-        return []
-    extracted = []
-    for cell in cells_list:
-        if isinstance(cell, dict):
-            source = cell.get("source", "")
-            if isinstance(source, list):
-                extracted.append("".join(source))
-            else:
-                extracted.append(str(source))
-        elif isinstance(cell, str):
-            extracted.append(cell)
-        else:
-            extracted.append(str(cell))
-    return extracted
-
-def check_execution_rules(task, cells_list):
-    extracted_cells = extract_code_from_cells(cells_list)
-    combined_code = "\n".join(extracted_cells)
-    
-    if task.require_submit_tag:
-        if "# SUBMIT" not in combined_code:
-            return False, "Rule Violation: The code is missing the required '# SUBMIT' tag."
-            
-    if task.ban_magic_commands:
-        for line in combined_code.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("!") or stripped.startswith("%"):
-                return False, "Rule Violation: Jupyter magic commands ('!' or '%') are banned."
-                
-    if task.banned_imports:
-        banned = [lib.strip().lower() for lib in task.banned_imports.split(",") if lib.strip()]
-        if banned:
-            try:
-                tree = ast.parse(combined_code)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for name in node.names:
-                            root_import = name.name.split(".")[0].lower()
-                            if root_import in banned:
-                                return False, f"Rule Violation: Import of library '{name.name}' is banned."
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            root_import = node.module.split(".")[0].lower()
-                            if root_import in banned:
-                                return False, f"Rule Violation: Import from library '{node.module}' is banned."
-            except SyntaxError:
-                pass
-                
-    return True, None
-
-def calculate_submission_priority(user_id, role):
-    if role in ['admin', 'jury']:
-        return 9
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    submission_count = Submission.query.filter(
-        Submission.user_id == user_id,
-        Submission.created_at >= today_start
-    ).count()
-    if submission_count == 0:
-        return 6
-    priority = max(1, 6 - submission_count)
-    return priority
-
-def extract_code_from_notebook(filepath):
-    try:
-        with open(filepath, "r") as f:
-            data = json.load(f)
-        code_cells = []
-        for cell in data.get("cells", []):
-            if cell.get("cell_type") == "code":
-                source = cell.get("source", [])
-                if isinstance(source, list):
-                    code_cells.append("".join(source))
-                else:
-                    code_cells.append(str(source))
-        return code_cells
-    except Exception as e:
-        print(f"Error parsing notebook {filepath}: {e}")
-        return []
+from services.submission_service import (
+    extract_code_from_cells,
+    extract_code_from_notebook,
+    check_execution_rules,
+    calculate_submission_priority
+)
 
 def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     submission = Submission(
@@ -156,7 +81,10 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
             
     hf_token = task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-    worker_secret_key = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
+    
+    from auth_utils import generate_worker_token
+    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
+    worker_secret_key = generate_worker_token(submission.id, task.id, time_limit + 600)
     
     gpu_required = False
     if task.gpu_required is not None:
@@ -248,6 +176,13 @@ def create_task(challenge_id):
     apt_packages = request.form.get("apt_packages")
     pip_requirements = request.form.get("pip_requirements")
     
+    if request.user.get("role") != 'admin':
+        if base_docker_image or apt_packages or pip_requirements:
+            return jsonify({
+                "error": "Only administrators are allowed to configure custom environments.",
+                "code": "ERR_FORBIDDEN"
+            }), 403
+            
     # Task parameter validations
     if ram_limit_mb is not None:
         if ram_limit_mb <= 0 or ram_limit_mb > 16384:
@@ -276,14 +211,67 @@ def create_task(challenge_id):
     require_submit_tag = to_bool(request.form.get("require_submit_tag")) or False
     ban_magic_commands = to_bool(request.form.get("ban_magic_commands")) or False
     banned_imports = request.form.get("banned_imports")
+    whitelisted_imports = request.form.get("whitelisted_imports")
+
+    hf_datasets_raw = request.form.get("hf_datasets")
+    hf_datasets = None
+    if hf_datasets_raw:
+        try:
+            hf_datasets = json.loads(hf_datasets_raw)
+        except:
+            return jsonify({"error": "hf_datasets must be valid JSON array."}), 400
+        if not isinstance(hf_datasets, list):
+            return jsonify({"error": "hf_datasets must be a list."}), 400
+        if len(hf_datasets) > 5:
+            return jsonify({"error": "You can configure up to 5 Hugging Face datasets."}), 400
+        for item in hf_datasets:
+            if not isinstance(item, str):
+                return jsonify({"error": "Dataset names must be strings."}), 400
+
+    hf_models_raw = request.form.get("hf_models")
+    hf_models = None
+    if hf_models_raw:
+        try:
+            hf_models = json.loads(hf_models_raw)
+        except:
+            return jsonify({"error": "hf_models must be valid JSON array."}), 400
+        if not isinstance(hf_models, list):
+            return jsonify({"error": "hf_models must be a list."}), 400
+        if len(hf_models) > 5:
+            return jsonify({"error": "You can configure up to 5 Hugging Face models."}), 400
+        for item in hf_models:
+            if not isinstance(item, str):
+                return jsonify({"error": "Model names must be strings."}), 400
     
+    task_type = request.form.get("task_type")
+    if task_type:
+        from evaluation_engine import TASK_SCHEMAS
+        if task_type not in TASK_SCHEMAS:
+            return jsonify({"error": f"Invalid task type: '{task_type}'. Must be one of: {list(TASK_SCHEMAS.keys())}"}), 400
+
     metrics_config_raw = request.form.get("metrics_config")
     metrics_config = None
     if metrics_config_raw:
         try:
             metrics_config = json.loads(metrics_config_raw)
         except:
-            pass
+            return jsonify({"error": "metrics_config must be valid JSON."}), 400
+            
+    if task_type and metrics_config:
+        from evaluation_engine import TASK_SCHEMAS
+        allowed_metrics = TASK_SCHEMAS[task_type]["metrics"]
+        for metric_name in metrics_config.keys():
+            if metric_name not in allowed_metrics:
+                return jsonify({"error": f"Invalid metric '{metric_name}' for task type '{task_type}'. Allowed metrics: {allowed_metrics}"}), 400
+            cfg = metrics_config[metric_name]
+            if not isinstance(cfg, dict) or "weight" not in cfg:
+                return jsonify({"error": f"Metric '{metric_name}' configuration must be a dictionary and include a 'weight'."}), 400
+            try:
+                float(cfg["weight"])
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Weight for metric '{metric_name}' must be a numeric value."}), 400
+            if "options" in cfg and not isinstance(cfg["options"], dict):
+                return jsonify({"error": f"Options for metric '{metric_name}' must be a dictionary/JSON object."}), 400
             
     hf_train_repo = request.form.get("hf_train_repo")
     hf_eval_repo = request.form.get("hf_eval_repo")
@@ -303,6 +291,7 @@ def create_task(challenge_id):
         stage_id=stage_id,
         title=title,
         description=description,
+        task_type=task_type,
         ram_limit_mb=ram_limit_mb,
         time_limit_sec=time_limit_sec,
         gpu_required=gpu_required,
@@ -312,9 +301,12 @@ def create_task(challenge_id):
         require_submit_tag=require_submit_tag,
         ban_magic_commands=ban_magic_commands,
         banned_imports=banned_imports,
+        whitelisted_imports=whitelisted_imports,
         metrics_config=metrics_config,
         hf_train_repo=hf_train_repo,
         hf_eval_repo=hf_eval_repo,
+        hf_datasets=hf_datasets,
+        hf_models=hf_models,
         public_eval_percentage=public_eval_percentage,
         max_submissions_per_period=max_submissions_per_period,
         submission_period_hours=submission_period_hours,
@@ -353,13 +345,7 @@ def create_task(challenge_id):
             f.save(save_path)
             task.baseline_notebook_path = save_path
             
-    if 'solution_notebook' in request.files:
-        f = request.files['solution_notebook']
-        if f and f.filename != '':
-            safe_name = "solution_" + secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
-            f.save(save_path)
-            task.solution_notebook_path = save_path
+
             
     for key in files_keys:
         uploaded_file = request.files[key]
@@ -379,6 +365,32 @@ def create_task(challenge_id):
             save_path = os.path.join(task_upload_dir, safe_name)
             uploaded_file.save(save_path)
             
+            if uploaded_file.filename == 'labels.parquet':
+                if not task_type:
+                    db.session.delete(task)
+                    db.session.commit()
+                    import shutil
+                    shutil.rmtree(task_upload_dir, ignore_errors=True)
+                    return jsonify({"error": "Cannot upload labels.parquet without a configured task_type."}), 400
+                
+                try:
+                    import pandas as pd
+                    from evaluation_engine import validate_parquet_schema
+                    df = pd.read_parquet(save_path)
+                    is_valid, err = validate_parquet_schema(df, task_type, is_submission=False)
+                    if not is_valid:
+                        db.session.delete(task)
+                        db.session.commit()
+                        import shutil
+                        shutil.rmtree(task_upload_dir, ignore_errors=True)
+                        return jsonify({"error": f"Invalid labels.parquet schema: {err}"}), 400
+                except Exception as e:
+                    db.session.delete(task)
+                    db.session.commit()
+                    import shutil
+                    shutil.rmtree(task_upload_dir, ignore_errors=True)
+                    return jsonify({"error": f"Failed to parse labels.parquet: {str(e)}"}), 400
+            
             uploaded_files_meta.append({
                 "filename": uploaded_file.filename,
                 "saved_name": safe_name,
@@ -396,15 +408,9 @@ def create_task(challenge_id):
     if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
         baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
         
-    solution_cells = []
-    if task.solution_notebook_path and os.path.exists(task.solution_notebook_path):
-        solution_cells = extract_code_from_notebook(task.solution_notebook_path)
-        
     admin_id = request.user["user_id"]
     if baseline_cells:
         queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
-    if solution_cells:
-        queue_system_submission(task, challenge, solution_cells, admin_id, priority=8)
         
     return jsonify(task.to_dict()), 201
 
@@ -416,6 +422,17 @@ def update_task(task_id):
     title = request.form.get("title")
     description = request.form.get("description")
     
+    if request.user.get("role") != 'admin':
+        for field in ["base_docker_image", "apt_packages", "pip_requirements"]:
+            if field in request.form:
+                val = request.form.get(field)
+                current_val = getattr(task, field)
+                if (val or "").strip() != (current_val or "").strip():
+                    return jsonify({
+                        "error": "Only administrators are allowed to configure custom environments.",
+                        "code": "ERR_FORBIDDEN"
+                    }), 403
+                    
     if title:
         task.title = title
     if description is not None:
@@ -475,12 +492,82 @@ def update_task(task_id):
     if "banned_imports" in request.form:
         task.banned_imports = request.form.get("banned_imports")
         
+    if "task_type" in request.form:
+        task_type_val = request.form.get("task_type")
+        if task_type_val:
+            from evaluation_engine import TASK_SCHEMAS
+            if task_type_val not in TASK_SCHEMAS:
+                return jsonify({"error": f"Invalid task type: '{task_type_val}'. Must be one of: {list(TASK_SCHEMAS.keys())}"}), 400
+            task.task_type = task_type_val
+        else:
+            task.task_type = None
+
     if "metrics_config" in request.form:
         metrics_config_raw = request.form.get("metrics_config")
-        try:
-            task.metrics_config = json.loads(metrics_config_raw) if metrics_config_raw else None
-        except:
-            pass
+        if metrics_config_raw:
+            try:
+                metrics_config = json.loads(metrics_config_raw)
+            except:
+                return jsonify({"error": "metrics_config must be valid JSON."}), 400
+            
+            active_task_type = task.task_type
+            if active_task_type and metrics_config:
+                from evaluation_engine import TASK_SCHEMAS
+                allowed_metrics = TASK_SCHEMAS[active_task_type]["metrics"]
+                for metric_name in metrics_config.keys():
+                    if metric_name not in allowed_metrics:
+                        return jsonify({"error": f"Invalid metric '{metric_name}' for task type '{active_task_type}'. Allowed metrics: {allowed_metrics}"}), 400
+                    cfg = metrics_config[metric_name]
+                    if not isinstance(cfg, dict) or "weight" not in cfg:
+                        return jsonify({"error": f"Metric '{metric_name}' configuration must be a dictionary and include a 'weight'."}), 400
+                    try:
+                        float(cfg["weight"])
+                    except (ValueError, TypeError):
+                        return jsonify({"error": f"Weight for metric '{metric_name}' must be a numeric value."}), 400
+                    if "options" in cfg and not isinstance(cfg["options"], dict):
+                        return jsonify({"error": f"Options for metric '{metric_name}' must be a dictionary/JSON object."}), 400
+            task.metrics_config = metrics_config
+        else:
+            task.metrics_config = None
+
+    if "whitelisted_imports" in request.form:
+        task.whitelisted_imports = request.form.get("whitelisted_imports")
+
+    if "hf_datasets" in request.form:
+        hf_datasets_raw = request.form.get("hf_datasets")
+        if hf_datasets_raw:
+            try:
+                hf_datasets = json.loads(hf_datasets_raw)
+            except:
+                return jsonify({"error": "hf_datasets must be valid JSON array."}), 400
+            if not isinstance(hf_datasets, list):
+                return jsonify({"error": "hf_datasets must be a list."}), 400
+            if len(hf_datasets) > 5:
+                return jsonify({"error": "You can configure up to 5 Hugging Face datasets."}), 400
+            for item in hf_datasets:
+                if not isinstance(item, str):
+                    return jsonify({"error": "Dataset names must be strings."}), 400
+            task.hf_datasets = hf_datasets
+        else:
+            task.hf_datasets = None
+
+    if "hf_models" in request.form:
+        hf_models_raw = request.form.get("hf_models")
+        if hf_models_raw:
+            try:
+                hf_models = json.loads(hf_models_raw)
+            except:
+                return jsonify({"error": "hf_models must be valid JSON array."}), 400
+            if not isinstance(hf_models, list):
+                return jsonify({"error": "hf_models must be a list."}), 400
+            if len(hf_models) > 5:
+                return jsonify({"error": "You can configure up to 5 Hugging Face models."}), 400
+            for item in hf_models:
+                if not isinstance(item, str):
+                    return jsonify({"error": "Model names must be strings."}), 400
+            task.hf_models = hf_models
+        else:
+            task.hf_models = None
             
     if "hf_train_repo" in request.form:
         task.hf_train_repo = request.form.get("hf_train_repo")
@@ -526,13 +613,7 @@ def update_task(task_id):
             f.save(save_path)
             task.baseline_notebook_path = save_path
             
-    if 'solution_notebook' in request.files:
-        f = request.files['solution_notebook']
-        if f and f.filename != '':
-            safe_name = "solution_" + secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
-            f.save(save_path)
-            task.solution_notebook_path = save_path
+
             
     try:
         current_files = json.loads(task.files)
@@ -559,6 +640,8 @@ def update_task(task_id):
     if len(current_files) + len(new_files_keys) > 5:
         return jsonify({"error": "A task can contain a maximum of 5 files."}), 400
         
+    newly_saved_paths = []
+    
     for key in new_files_keys:
         uploaded_file = request.files[key]
         if uploaded_file and uploaded_file.filename != '':
@@ -567,11 +650,39 @@ def update_task(task_id):
             uploaded_file.seek(0)
             
             if size > MAX_FILE_SIZE_BYTES:
+                for p in newly_saved_paths:
+                    if os.path.exists(p):
+                        os.remove(p)
                 return jsonify({"error": f"File '{uploaded_file.filename}' exceeds the maximum allowed size of 25MB."}), 400
                 
             safe_name = secure_filename(uploaded_file.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             uploaded_file.save(save_path)
+            newly_saved_paths.append(save_path)
+            
+            if uploaded_file.filename == 'labels.parquet':
+                active_task_type = task.task_type
+                if not active_task_type:
+                    for p in newly_saved_paths:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    return jsonify({"error": "Cannot upload labels.parquet without a configured task_type."}), 400
+                
+                try:
+                    import pandas as pd
+                    from evaluation_engine import validate_parquet_schema
+                    df = pd.read_parquet(save_path)
+                    is_valid, err = validate_parquet_schema(df, active_task_type, is_submission=False)
+                    if not is_valid:
+                        for p in newly_saved_paths:
+                            if os.path.exists(p):
+                                os.remove(p)
+                        return jsonify({"error": f"Invalid labels.parquet schema: {err}"}), 400
+                except Exception as e:
+                    for p in newly_saved_paths:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    return jsonify({"error": f"Failed to parse labels.parquet: {str(e)}"}), 400
             
             current_files.append({
                 "filename": uploaded_file.filename,
@@ -579,6 +690,41 @@ def update_task(task_id):
                 "size_bytes": size
             })
             
+    # Validate existing labels.parquet if task_type was updated in this request
+    if "task_type" in request.form:
+        active_task_type = task.task_type
+        if active_task_type:
+            # Look for labels.parquet in current_files
+            has_labels_parquet = False
+            labels_parquet_saved_name = None
+            for f in current_files:
+                if f["filename"] == "labels.parquet":
+                    has_labels_parquet = True
+                    labels_parquet_saved_name = f["saved_name"]
+                    break
+            
+            if has_labels_parquet:
+                # Validate the existing labels.parquet
+                parquet_path = os.path.join(task_upload_dir, labels_parquet_saved_name)
+                if os.path.exists(parquet_path):
+                    try:
+                        import pandas as pd
+                        from evaluation_engine import validate_parquet_schema
+                        df = pd.read_parquet(parquet_path)
+                        is_valid, err = validate_parquet_schema(df, active_task_type, is_submission=False)
+                        if not is_valid:
+                            # Clean up newly uploaded files
+                            for p in newly_saved_paths:
+                                if os.path.exists(p):
+                                    os.remove(p)
+                            return jsonify({"error": f"Existing labels.parquet is not compatible with the new task type '{active_task_type}': {err}"}), 400
+                    except Exception as e:
+                        # Clean up newly uploaded files
+                        for p in newly_saved_paths:
+                            if os.path.exists(p):
+                                os.remove(p)
+                        return jsonify({"error": f"Failed to parse existing labels.parquet for validation: {str(e)}"}), 400
+
     task.files = json.dumps(current_files)
     db.session.commit()
     
@@ -772,7 +918,10 @@ def submit_task_code(task_id):
             
     hf_token = task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-    worker_secret_key = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
+    
+    from auth_utils import generate_worker_token
+    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
+    worker_secret_key = generate_worker_token(submission.id, task.id, time_limit + 600)
     
     metadata = {
         "submission_id": submission.id,
@@ -860,171 +1009,8 @@ def get_task_submissions(task_id):
     return jsonify(data)
 
 def _get_task_leaderboard_data(task_id, user_role, current_user_id):
-    task = db.session.get(Task, task_id)
-    if not task:
-        return {"error": "Task not found."}
-    challenge = task.challenge
-    
-    if user_role == 'competitor':
-        if not check_task_started(task, user_role, current_user_id):
-            return {"error": "Access denied or task not available yet."}
-            
-    all_completed = Submission.query.filter_by(
-        task_id=task_id,
-        status='completed'
-    ).all()
-    
-    if user_role == 'competitor' and challenge.is_frozen and not challenge.scores_finalized:
-        # Under manual freeze, new submissions are blocked. The leaderboard displays the current state.
-        pass
-    
-    is_lower_better = False
-    if task.metrics_config:
-        try:
-            m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
-            for m_name, m_info in m_config.items():
-                if m_info.get("higher_is_better") is False:
-                    is_lower_better = True
-                break
-        except Exception:
-            pass
-    else:
-        metric_name = challenge.metric_name or ''
-        if 'mse' in metric_name.lower() or 'error' in metric_name.lower() or 'loss' in metric_name.lower():
-            is_lower_better = True
-            
-    final_selections = {s.user_id: s for s in all_completed if s.is_final_selection}
-    
-    user_best = {}
-    for sub in all_completed:
-        uid = sub.user_id
-        
-        # Override manual selection if competition ended and there were late-processed runs
-        use_best = True
-        if challenge.end_time and datetime.utcnow() > challenge.end_time:
-            user_subs = [s for s in all_completed if s.user_id == uid]
-            has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in user_subs)
-            if not has_late_sub and uid in final_selections:
-                use_best = False
-        else:
-            if uid in final_selections:
-                use_best = False
-                
-        if not use_best:
-            user_best[uid] = final_selections[uid]
-            continue
-            
-        score = sub.public_score
-        if score is None:
-            continue
-            
-        if uid not in user_best:
-            user_best[uid] = sub
-        else:
-            current_best = user_best[uid]
-            is_better = False
-            if is_lower_better:
-                if score < current_best.public_score:
-                    is_better = True
-                elif score == current_best.public_score:
-                    t_new = sub.execution_time_ms if sub.execution_time_ms is not None else 999999
-                    t_curr = current_best.execution_time_ms if current_best.execution_time_ms is not None else 999999
-                    if t_new < t_curr:
-                        is_better = True
-            else:
-                if score > current_best.public_score:
-                    is_better = True
-                elif score == current_best.public_score:
-                    t_new = sub.execution_time_ms if sub.execution_time_ms is not None else 999999
-                    t_curr = current_best.execution_time_ms if current_best.execution_time_ms is not None else 999999
-                    if t_new < t_curr:
-                        is_better = True
-            if is_better:
-                user_best[uid] = sub
-                
-    # Include all competitors, even those with no submissions
-    competitors = User.query.filter_by(role='competitor', challenge_id=task.challenge_id).all()
-    leaderboard_entries = []
-    
-    for comp in competitors:
-        sub = user_best.get(comp.id)
-        if sub:
-            entry_dict = sub.to_dict(view_role=user_role, current_user_id=current_user_id)
-            entry_dict["has_submitted"] = True
-        else:
-            entry_dict = {
-                "id": None,
-                "challenge_id": task.challenge_id,
-                "task_id": task_id,
-                "task_title": task.title,
-                "status": None,
-                "detailed_status": None,
-                "code_cells": "[]",
-                "public_score": None,
-                "private_score": None,
-                "logs": None,
-                "gpu_node": None,
-                "execution_time_ms": None,
-                "created_at": None,
-                "executed_at": None,
-                "user": comp.to_dict(view_role=user_role, scores_finalized=challenge.scores_finalized, current_user_id=current_user_id),
-                "metrics_payload_public": {},
-                "metrics_payload_private": {},
-                "final_weighted_score_public": None,
-                "final_weighted_score_private": None,
-                "is_final_selection": False,
-                "is_disqualified": False,
-                "celery_task_id": None,
-                "has_submitted": False
-            }
-        leaderboard_entries.append(entry_dict)
-        
-    from functools import cmp_to_key
-    def compare_entries(a, b):
-        if a["has_submitted"] != b["has_submitted"]:
-            return -1 if a["has_submitted"] else 1
-            
-        if not a["has_submitted"]:
-            name_a = f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower() or a['user'].get('username', '').lower()
-            name_b = f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower() or b['user'].get('username', '').lower()
-            if name_a != name_b:
-                return -1 if name_a < name_b else 1
-            return 0
-            
-        score_a = a["public_score"]
-        score_b = b["public_score"]
-        
-        if score_a != score_b:
-            if is_lower_better:
-                return -1 if score_a < score_b else 1
-            else:
-                return -1 if score_a > score_b else 1
-                
-        ta = a["execution_time_ms"] if a["execution_time_ms"] is not None else 999999
-        tb = b["execution_time_ms"] if b["execution_time_ms"] is not None else 999999
-        if ta != tb:
-            return -1 if ta < tb else 1
-            
-        ca = a["created_at"] or ""
-        cb = b["created_at"] or ""
-        if ca != cb:
-            return -1 if ca < cb else 1
-        return 0
-
-    sorted_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
-    
-    leaderboard = []
-    for rank, entry_dict in enumerate(sorted_entries, 1):
-        entry_dict["rank"] = rank
-        leaderboard.append(entry_dict)
-        
-    return {
-        "challenge_title": challenge.title,
-        "task_title": task.title,
-        "metric_name": challenge.metric_name,
-        "is_finalized": challenge.scores_finalized,
-        "leaderboard": leaderboard
-    }
+    from services.leaderboard_service import get_task_leaderboard_data
+    return get_task_leaderboard_data(task_id, user_role, current_user_id)
 
 @tasks_bp.route('/tasks/<int:task_id>/leaderboard', methods=['GET'])
 @login_required
@@ -1216,8 +1202,8 @@ def get_worker_status():
 @tasks_bp.route('/worker/report/<int:submission_id>', methods=['POST'])
 def report_worker_progress(submission_id):
     token = request.headers.get("X-Worker-Token")
-    expected_token = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
-    if not token or token != expected_token:
+    from auth_utils import verify_worker_token
+    if not verify_worker_token(token, submission_id=submission_id):
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.json or {}
@@ -1256,8 +1242,8 @@ def report_worker_progress(submission_id):
 @tasks_bp.route('/worker/tasks/<int:task_id>/files/<string:filename>', methods=['GET'])
 def worker_download_task_file(task_id, filename):
     token = request.headers.get("X-Worker-Token")
-    expected_token = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
-    if not token or token != expected_token:
+    from auth_utils import verify_worker_token
+    if not verify_worker_token(token, task_id=task_id):
         return jsonify({"error": "Unauthorized"}), 401
         
     task = db.get_or_404(Task, task_id)
@@ -1282,8 +1268,8 @@ def worker_download_task_file(task_id, filename):
 @tasks_bp.route('/worker/active-datasets', methods=['GET'])
 def get_active_datasets():
     token = request.headers.get("X-Worker-Token")
-    expected_token = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
-    if not token or token != expected_token:
+    from auth_utils import verify_worker_token
+    if not verify_worker_token(token):
         return jsonify({"error": "Unauthorized"}), 401
         
     active_challenges = Challenge.query.filter_by(is_archived=False).all()
@@ -1291,9 +1277,6 @@ def get_active_datasets():
     import re
     
     for challenge in active_challenges:
-        if challenge.hf_dataset_path:
-            datasets_set.add(challenge.hf_dataset_path)
-            
         for task in challenge.tasks:
             if task.hf_eval_repo:
                 datasets_set.add(task.hf_eval_repo)

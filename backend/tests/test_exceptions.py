@@ -45,8 +45,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
             description="Competitor challenge A",
             max_eval_requests=3,
             start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
-            metric_name="accuracy"
+            end_time=datetime.utcnow() + timedelta(hours=1)
         )
         # Competitor challenge B (unregistered for self.competitor)
         self.challenge_b = Challenge(
@@ -54,8 +53,7 @@ class TestBackendExceptionAndErrorCases(unittest.TestCase):
             description="Competitor challenge B",
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
-            metric_name="accuracy"
+            end_time=datetime.utcnow() + timedelta(hours=1)
         )
         db.session.add(self.admin)
         db.session.add(self.challenge_a)

@@ -9,6 +9,13 @@ import Pagination from '../components/ui/Pagination';
 import CodeHighlight from '../components/ui/CodeHighlight';
 import ToggleField from '../components/ui/ToggleField';
 
+// Modular Child Components & Service Layer
+import WorkersStats from '../components/admin/WorkersStats';
+import BackupManager from '../components/admin/BackupManager';
+import UserManager from '../components/admin/UserManager';
+import CompetitorManager from '../components/admin/CompetitorManager';
+import ChallengeConfig from '../components/admin/ChallengeConfig';
+
 const getTimezones = () => {
   let zones = [];
   try {
@@ -53,63 +60,255 @@ const getTimezones = () => {
 
 const TIMEZONES = getTimezones();
 
-const CUSTOM_EVALUATOR_TEMPLATE = `import os
-import json
-import traceback
-import time
+export const formatMetricName = (name) => {
+  if (!name) return '';
+  
+  const specialWords = {
+    f1: 'F1',
+    rmse: 'RMSE',
+    mae: 'MAE',
+    mse: 'MSE',
+    fid: 'FID',
+    oks: 'OKS',
+    pck: 'PCK',
+    snr: 'SNR',
+    ssim: 'SSIM',
+    psnr: 'PSNR',
+    mrr: 'MRR',
+    ndcg: 'NDCG',
+    map: 'mAP',
+    iou: 'IoU',
+    chrf: 'chrF',
+    bleu: 'BLEU',
+    rouge: 'ROUGE',
+    meteor: 'METEOR',
+    ter: 'TER',
+    auc: 'AUC',
+    roc: 'ROC',
+    mape: 'MAPE',
+    ae: 'AE',
+    bertscore: 'BERTScore',
+    is: 'IS',
+    lpips: 'LPIPS',
+    niqe: 'NIQE',
+    lsd: 'LSD',
+    nisqa: 'NISQA',
+    pesq: 'PESQ',
+    sdr: 'SDR',
+    si: 'SI',
+  };
 
-# 1. SECURE IMPORT
-# The student's notebook cells are saved as 'submission_runner.py'
-try:
-    import submission_runner
-except Exception as e:
-    # Safely catch import errors without leaking sandbox state
-    with open("eval_results.json", "w") as f:
-        json.dump({"status": "error", "error": "Failed to compile or import student code."}, f)
-    exit(1)
+  let formatted = name.replace(/_/g, ' ');
 
-def run_evaluation():
-    try:
-        # 2. RUN STUDENT LOGIC
-        # Execute the student's entry point (e.g., predict, generate, or a full pipeline)
-        # Assuming the Jury requested a function named 'run_pipeline':
-        if not hasattr(submission_runner, 'run_pipeline'):
-            raise AttributeError("Your notebook must define the requested entry point function.")
-            
-        student_func = submission_runner.run_pipeline
+  if (formatted.toLowerCase() === 'map 50 95') {
+    return 'mAP 50-95';
+  }
 
-        start_time = time.time()
-        
-        # Pass whatever data the Jury deems necessary
-        # The student code can handle training, prediction, etc. internally.
-        public_score, private_score = student_func() 
-        
-        execution_time_ms = int((time.time() - start_time) * 1000)
+  return formatted
+    .split(' ')
+    .map(word => {
+      const lower = word.toLowerCase();
+      if (specialWords[lower] !== undefined) {
+        return specialWords[lower];
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
 
-        # 3. WRITE SECURE RESULTS (Do not print to stdout)
-        results = {
-            "status": "success",
-            "public_score": float(public_score),
-            "private_score": float(private_score),
-            "execution_time_ms": execution_time_ms,
-            "metrics_payload_public": {"score": public_score},
-            "metrics_payload_private": {"score": private_score}
-        }
-        
-        with open("eval_results.json", "w") as f:
-            json.dump(results, f)
-            
-    except Exception as e:
-        # 4. PREVENT DATA LEAKAGE
-        # Do NOT write traceback.format_exc() to prevent leaking private dataset values
-        # that might be captured in exception variables.
-        error_type = type(e).__name__
-        with open("eval_results.json", "w") as f:
-            json.dump({"status": "error", "error": f"Evaluation failed with {error_type}"}, f)
+const TASK_TYPE_METRICS = {
+  classification: [
+    "accuracy",
+    "f1_macro",
+    "f1_micro",
+    "f1_weighted",
+    "precision",
+    "precision_macro",
+    "precision_micro",
+    "precision_weighted",
+    "recall",
+    "recall_macro",
+    "recall_micro",
+    "recall_weighted",
+    "cohen_kappa",
+    "matthews_corrcoef"
+  ],
+  probabilistic: ["auc_roc", "logloss", "brier_score"],
+  regression: ["rmse", "mae", "r_squared", "mape", "median_ae"],
+  ner_tagging: ["seqeval_f1", "seqeval_precision", "seqeval_recall"],
+  translation_summ: ["bleu", "rouge_l", "meteor", "bertscore", "chrf", "ter"],
+  qa_extractive: ["exact_match", "f1"],
+  object_detection: ["map_50", "map_75", "map_50_95", "recall"],
+  segmentation: ["mean_iou", "dice", "pixel_accuracy"],
+  keypoints: ["oks", "pck"],
+  image_generation: ["psnr", "ssim", "mse", "fid", "is", "clip_score", "lpips", "niqe"],
+  audio_generation: ["snr", "mse", "mel_lsd", "nisqa", "pesq", "si_sdr"],
+  retrieval: ["ndcg_k", "ndcg_5", "ndcg_10", "ndcg_20", "mrr", "recall_k", "recall_5", "recall_10", "recall_20"],
+  clustering: ["adjusted_rand_index", "normalized_mutual_info", "adjusted_mutual_info", "v_measure"]
+};
 
-if __name__ == "__main__":
-    run_evaluation()`;
+const TASK_TYPE_COLUMNS = {
+  classification: ["id", "label"],
+  probabilistic: ["id", "label"],
+  regression: ["id", "value"],
+  ner_tagging: ["id", "labels"],
+  translation_summ: ["id", "text"],
+  qa_extractive: ["id", "answer"],
+  object_detection: ["id", "boxes"],
+  segmentation: ["id", "mask"],
+  keypoints: ["id", "keypoints"],
+  image_generation: ["id", "image"],
+  audio_generation: ["id", "audio"],
+  retrieval: ["query_id", "doc_id"],
+  clustering: ["id", "cluster_id"]
+};
 
+const getTaskTypeSchemasHelp = (t) => ({
+  classification: {
+    name: t('admin.tasks.modality_group.classification'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.classification.label') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.classification.gt_label') }
+    ]
+  },
+  probabilistic: {
+    name: t('admin.tasks.modality_group.probabilistic'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "score", type: "float", desc: t('admin.tasks.schemas.probabilistic.score') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "label", type: "integer (0 or 1)", desc: t('admin.tasks.schemas.probabilistic.gt_label') }
+    ]
+  },
+  regression: {
+    name: t('admin.tasks.modality_group.regression'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "value", type: "float", desc: t('admin.tasks.schemas.regression.value') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "value", type: "float", desc: t('admin.tasks.schemas.regression.gt_value') }
+    ]
+  },
+  ner_tagging: {
+    name: t('admin.tasks.modality_group.ner_tagging'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "labels", type: "list of strings", desc: t('admin.tasks.schemas.ner_tagging.labels') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "labels", type: "list of strings", desc: t('admin.tasks.schemas.ner_tagging.gt_labels') }
+    ]
+  },
+  translation_summ: {
+    name: t('admin.tasks.modality_group.translation_summ'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "text", type: "string", desc: t('admin.tasks.schemas.translation_summ.text') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "text", type: "string", desc: t('admin.tasks.schemas.translation_summ.gt_text') }
+    ]
+  },
+  qa_extractive: {
+    name: t('admin.tasks.modality_group.qa_extractive'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "answer", type: "string", desc: t('admin.tasks.schemas.qa_extractive.answer') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "answer", type: "string", desc: t('admin.tasks.schemas.qa_extractive.gt_answer') }
+    ]
+  },
+  object_detection: {
+    name: t('admin.tasks.modality_group.object_detection'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "boxes", type: "list of structs", desc: t('admin.tasks.schemas.object_detection.boxes') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "boxes", type: "list of structs", desc: t('admin.tasks.schemas.object_detection.gt_boxes') }
+    ]
+  },
+  segmentation: {
+    name: t('admin.tasks.modality_group.segmentation'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "mask", type: "binary/bytes", desc: t('admin.tasks.schemas.segmentation.mask') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "mask", type: "binary/bytes", desc: t('admin.tasks.schemas.segmentation.gt_mask') }
+    ]
+  },
+  keypoints: {
+    name: t('admin.tasks.modality_group.keypoints'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "keypoints", type: "list of coordinate pairs", desc: t('admin.tasks.schemas.keypoints.keypoints') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "keypoints", type: "list of coordinate pairs", desc: t('admin.tasks.schemas.keypoints.gt_keypoints') }
+    ]
+  },
+  image_generation: {
+    name: t('admin.tasks.modality_group.image_generation'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "image", type: "binary/bytes", desc: t('admin.tasks.schemas.image_generation.image') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "image", type: "binary/bytes", desc: t('admin.tasks.schemas.image_generation.gt_image') }
+    ]
+  },
+  audio_generation: {
+    name: t('admin.tasks.modality_group.audio_generation'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "audio", type: "binary/bytes", desc: t('admin.tasks.schemas.audio_generation.audio') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "audio", type: "binary/bytes", desc: t('admin.tasks.schemas.audio_generation.gt_audio') }
+    ]
+  },
+  retrieval: {
+    name: t('admin.tasks.modality_group.retrieval'),
+    sub_cols: [
+      { name: "query_id", type: "integer/string", desc: t('admin.tasks.schemas.common.query_id_desc') },
+      { name: "doc_id", type: "integer/string", desc: t('admin.tasks.schemas.retrieval.doc_id') },
+      { name: "score", type: "float", desc: t('admin.tasks.schemas.retrieval.score') }
+    ],
+    label_cols: [
+      { name: "query_id", type: "integer/string", desc: t('admin.tasks.schemas.common.query_id_desc') },
+      { name: "doc_id", type: "integer/string", desc: t('admin.tasks.schemas.retrieval.gt_doc_id') }
+    ]
+  },
+  clustering: {
+    name: t('admin.tasks.modality_group.clustering'),
+    sub_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_matching') },
+      { name: "cluster_id", type: "integer/string", desc: t('admin.tasks.schemas.clustering.cluster_id') }
+    ],
+    label_cols: [
+      { name: "id", type: "integer/string", desc: t('admin.tasks.schemas.common.id_desc') },
+      { name: "label", type: "integer/string", desc: t('admin.tasks.schemas.clustering.gt_label') }
+    ]
+  }
+});
 
 export default function AdminPanel() {
   const { t } = useTranslation();
@@ -205,6 +404,7 @@ export default function AdminPanel() {
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
+    task_type: '',
     ram_limit_mb: '',
     time_limit_sec: '',
     gpu_required: true,
@@ -214,9 +414,12 @@ export default function AdminPanel() {
     require_submit_tag: false,
     ban_magic_commands: false,
     banned_imports: '',
+    whitelisted_imports: '',
     metrics_config: '',
     hf_train_repo: '',
     hf_eval_repo: '',
+    hf_datasets_raw: '',
+    hf_models_raw: '',
     hf_api_key: '',
     public_eval_percentage: 30,
     max_submissions_per_period: '',
@@ -226,9 +429,7 @@ export default function AdminPanel() {
 
   // Task Upload Files
   const [taskFiles, setTaskFiles] = useState([]);
-  const [evaluatorFile, setEvaluatorFile] = useState(null);
   const [baselineFile, setBaselineFile] = useState(null);
-  const [solutionFile, setSolutionFile] = useState(null);
 
   // Stage CRUD & Finalization State
   const [isCreatingStage, setIsCreatingStage] = useState(false);
@@ -757,6 +958,7 @@ export default function AdminPanel() {
     setTaskForm({
       title: '',
       description: '',
+      task_type: '',
       ram_limit_mb: '',
       time_limit_sec: '',
       gpu_required: true,
@@ -766,9 +968,12 @@ export default function AdminPanel() {
       require_submit_tag: false,
       ban_magic_commands: false,
       banned_imports: '',
+      whitelisted_imports: '',
       metrics_config: '{"accuracy": {"weight": 1.0, "higher_is_better": true}}',
       hf_train_repo: '',
       hf_eval_repo: '',
+      hf_datasets_raw: '',
+      hf_models_raw: '',
       hf_api_key: '',
       public_eval_percentage: 30,
       max_submissions_per_period: '',
@@ -776,9 +981,7 @@ export default function AdminPanel() {
       stage_id: ''
     });
     setTaskFiles([]);
-    setEvaluatorFile(null);
     setBaselineFile(null);
-    setSolutionFile(null);
     setIsCreatingTask(true);
   };
 
@@ -786,6 +989,7 @@ export default function AdminPanel() {
     setTaskForm({
       title: task.title || '',
       description: task.description || '',
+      task_type: task.task_type || '',
       ram_limit_mb: task.ram_limit_mb !== null ? task.ram_limit_mb : '',
       time_limit_sec: task.time_limit_sec !== null ? task.time_limit_sec : '',
       gpu_required: task.gpu_required !== null ? task.gpu_required : true,
@@ -795,9 +999,12 @@ export default function AdminPanel() {
       require_submit_tag: task.require_submit_tag || false,
       ban_magic_commands: task.ban_magic_commands || false,
       banned_imports: task.banned_imports || '',
+      whitelisted_imports: task.whitelisted_imports || '',
       metrics_config: task.metrics_config ? JSON.stringify(task.metrics_config) : '',
       hf_train_repo: task.hf_train_repo || '',
       hf_eval_repo: task.hf_eval_repo || '',
+      hf_datasets_raw: task.hf_datasets ? (Array.isArray(task.hf_datasets) ? task.hf_datasets.join(', ') : '') : '',
+      hf_models_raw: task.hf_models ? (Array.isArray(task.hf_models) ? task.hf_models.join(', ') : '') : '',
       hf_api_key: '', // Keep empty for input security
       public_eval_percentage: task.public_eval_percentage || 30,
       max_submissions_per_period: task.max_submissions_per_period !== null ? task.max_submissions_per_period : '',
@@ -806,9 +1013,7 @@ export default function AdminPanel() {
     });
     setEditingTask(task);
     setTaskFiles([]);
-    setEvaluatorFile(null);
     setBaselineFile(null);
-    setSolutionFile(null);
   };
 
   const prepareTaskFormData = () => {
@@ -827,12 +1032,36 @@ export default function AdminPanel() {
     formData.append("require_submit_tag", taskForm.require_submit_tag);
     formData.append("ban_magic_commands", taskForm.ban_magic_commands);
     formData.append("banned_imports", taskForm.banned_imports);
-    formData.append("metrics_config", taskForm.metrics_config);
+    formData.append("task_type", taskForm.task_type || '');
+    let cleanMetricsConfig = taskForm.metrics_config;
+    try {
+      const parsed = JSON.parse(taskForm.metrics_config);
+      if (parsed && typeof parsed === 'object') {
+        Object.keys(parsed).forEach(k => {
+          if (parsed[k] && parsed[k].options_raw !== undefined) {
+            delete parsed[k].options_raw;
+          }
+        });
+        cleanMetricsConfig = JSON.stringify(parsed);
+      }
+    } catch (e) {}
+    formData.append("metrics_config", cleanMetricsConfig);
     
     formData.append("hf_train_repo", taskForm.hf_train_repo);
     formData.append("hf_eval_repo", taskForm.hf_eval_repo);
     if (taskForm.hf_api_key) formData.append("hf_api_key", taskForm.hf_api_key);
     formData.append("public_eval_percentage", taskForm.public_eval_percentage);
+    
+    formData.append("whitelisted_imports", taskForm.whitelisted_imports);
+    const datasetsArray = taskForm.hf_datasets_raw 
+      ? taskForm.hf_datasets_raw.split(',').map(s => s.trim()).filter(Boolean) 
+      : [];
+    formData.append("hf_datasets", JSON.stringify(datasetsArray));
+
+    const modelsArray = taskForm.hf_models_raw 
+      ? taskForm.hf_models_raw.split(',').map(s => s.trim()).filter(Boolean) 
+      : [];
+    formData.append("hf_models", JSON.stringify(modelsArray));
     
     if (taskForm.max_submissions_per_period) formData.append("max_submissions_per_period", taskForm.max_submissions_per_period);
     if (taskForm.submission_period_hours) formData.append("submission_period_hours", taskForm.submission_period_hours);
@@ -844,9 +1073,7 @@ export default function AdminPanel() {
     });
 
     // Special uploads
-    if (evaluatorFile) formData.append("evaluator_script", evaluatorFile, "evaluator.py");
     if (baselineFile) formData.append("baseline_notebook", baselineFile);
-    if (solutionFile) formData.append("solution_notebook", solutionFile);
 
     return formData;
   };
@@ -855,6 +1082,10 @@ export default function AdminPanel() {
   const handleSaveCreateTask = async (e) => {
     e.preventDefault();
     if (!selectedChallenge) return;
+    if (!taskForm.task_type) {
+      showToast("Please select a Task Type / Modality Group.", 'rose');
+      return;
+    }
     const formData = prepareTaskFormData();
 
     try {
@@ -880,6 +1111,10 @@ export default function AdminPanel() {
   const handleSaveUpdateTask = async (e) => {
     e.preventDefault();
     if (!editingTask) return;
+    if (!taskForm.task_type) {
+      showToast("Please select a Task Type / Modality Group.", 'rose');
+      return;
+    }
     const formData = prepareTaskFormData();
 
     // Handle file deletions if selected
@@ -1849,12 +2084,20 @@ export default function AdminPanel() {
                       onChange={(e) => setTaskForm({ ...taskForm, ban_magic_commands: e.target.checked })}
                     />
                   </div>
-                  <InputField 
-                    label={t('admin.tasks.banned_libraries')} 
-                    value={taskForm.banned_imports} 
-                    onChange={(e) => setTaskForm({ ...taskForm, banned_imports: e.target.value })} 
-                    placeholder={t('admin.tasks.banned_libraries_placeholder')}
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <InputField 
+                      label={t('admin.tasks.banned_libraries')} 
+                      value={taskForm.banned_imports} 
+                      onChange={(e) => setTaskForm({ ...taskForm, banned_imports: e.target.value })} 
+                      placeholder={t('admin.tasks.banned_libraries_placeholder')}
+                    />
+                    <InputField 
+                      label={t('admin.tasks.whitelisted_libraries_label')} 
+                      value={taskForm.whitelisted_imports} 
+                      onChange={(e) => setTaskForm({ ...taskForm, whitelisted_imports: e.target.value })} 
+                      placeholder={t('admin.tasks.whitelisted_libraries_placeholder')}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1864,16 +2107,16 @@ export default function AdminPanel() {
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <InputField 
-                      label={t('admin.tasks.public_train_dataset')} 
-                      value={taskForm.hf_train_repo} 
-                      onChange={(e) => setTaskForm({ ...taskForm, hf_train_repo: e.target.value })} 
-                      placeholder={t('admin.tasks.public_train_dataset_placeholder')}
+                      label={t('admin.tasks.hf_datasets_label')} 
+                      value={taskForm.hf_datasets_raw} 
+                      onChange={(e) => setTaskForm({ ...taskForm, hf_datasets_raw: e.target.value })} 
+                      placeholder={t('admin.tasks.hf_datasets_placeholder')}
                     />
                     <InputField 
-                      label={t('admin.tasks.private_eval_dataset')} 
-                      value={taskForm.hf_eval_repo} 
-                      onChange={(e) => setTaskForm({ ...taskForm, hf_eval_repo: e.target.value })} 
-                      placeholder={t('admin.tasks.private_eval_dataset_placeholder')}
+                      label={t('admin.tasks.hf_models_label')} 
+                      value={taskForm.hf_models_raw} 
+                      onChange={(e) => setTaskForm({ ...taskForm, hf_models_raw: e.target.value })} 
+                      placeholder={t('admin.tasks.hf_models_placeholder')}
                     />
                   </div>
                   <InputField 
@@ -1896,12 +2139,240 @@ export default function AdminPanel() {
                       className="w-full accent-indigo-600 h-1.5 bg-slate-900 rounded-lg cursor-pointer border border-white/5"
                     />
                   </div>
-                  <InputField 
-                    label={t('admin.tasks.metrics_config_json')} 
-                    value={taskForm.metrics_config} 
-                    onChange={(e) => setTaskForm({ ...taskForm, metrics_config: e.target.value })} 
-                    placeholder='{"accuracy": {"weight": 1.0, "higher_is_better": true}}'
-                  />
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="task-type-select" className="text-xs font-semibold text-slate-300">{t('admin.tasks.task_type_label')}</label>
+                    <select
+                      id="task-type-select"
+                      value={taskForm.task_type || ''}
+                      onChange={(e) => {
+                        const newType = e.target.value;
+                        let defaultMetrics = "";
+                        if (newType && TASK_TYPE_METRICS[newType]) {
+                          const firstMetric = TASK_TYPE_METRICS[newType][0];
+                          defaultMetrics = JSON.stringify({ [firstMetric]: { weight: 1.0 } });
+                        }
+                        setTaskForm({ ...taskForm, task_type: newType, metrics_config: defaultMetrics });
+                      }}
+                      className="text-xs text-slate-200 border border-white/5 p-2 bg-slate-950 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="">{t('admin.tasks.select_modality_group')}</option>
+                      <option value="classification">{t('admin.tasks.modality_group.classification')}</option>
+                      <option value="probabilistic">{t('admin.tasks.modality_group.probabilistic')}</option>
+                      <option value="regression">{t('admin.tasks.modality_group.regression')}</option>
+                      <option value="ner_tagging">{t('admin.tasks.modality_group.ner_tagging')}</option>
+                      <option value="translation_summ">{t('admin.tasks.modality_group.translation_summ')}</option>
+                      <option value="qa_extractive">{t('admin.tasks.modality_group.qa_extractive')}</option>
+                      <option value="object_detection">{t('admin.tasks.modality_group.object_detection')}</option>
+                      <option value="segmentation">{t('admin.tasks.modality_group.segmentation')}</option>
+                      <option value="keypoints">{t('admin.tasks.modality_group.keypoints')}</option>
+                      <option value="image_generation">{t('admin.tasks.modality_group.image_generation')}</option>
+                      <option value="audio_generation">{t('admin.tasks.modality_group.audio_generation')}</option>
+                      <option value="retrieval">{t('admin.tasks.modality_group.retrieval')}</option>
+                      <option value="clustering">{t('admin.tasks.modality_group.clustering')}</option>
+                    </select>
+                  </div>
+
+                  {taskForm.task_type && TASK_TYPE_METRICS[taskForm.task_type] && (() => {
+                    let metricsObj = {};
+                    try { metricsObj = JSON.parse(taskForm.metrics_config) || {}; } catch(e) {}
+                    const selectedCount = Object.keys(metricsObj).length;
+
+                    return (
+                      <div data-testid="modality-metrics-config" className="flex flex-col gap-2 border border-white/5 p-3 bg-slate-950 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-semibold text-indigo-400">{t('admin.tasks.modality_metrics_title')}</span>
+                          <span className="text-[10px] text-slate-400 font-medium">{t('admin.tasks.modality_metrics_selected', { count: selectedCount })}</span>
+                        </div>
+                        {selectedCount >= 5 && (
+                          <span className="text-[10px] text-amber-500 font-semibold mt-0.5">{t('admin.tasks.modality_metrics_limit_reached')}</span>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+                          {TASK_TYPE_METRICS[taskForm.task_type].map((mName) => {
+                            const isChecked = mName in metricsObj;
+                            const currentWeight = isChecked ? (metricsObj[mName].weight !== undefined ? metricsObj[mName].weight : 1.0) : 1.0;
+
+                            return (
+                              <div key={mName} className={`flex flex-col gap-2 p-2.5 rounded border border-white/5 bg-slate-900/50 ${(!isChecked && selectedCount >= 5) ? 'opacity-40' : ''}`}>
+                                <div className="flex items-center justify-between w-full">
+                                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      disabled={!isChecked && selectedCount >= 5}
+                                      onChange={(e) => {
+                                        let updatedObj = { ...metricsObj };
+                                        if (e.target.checked) {
+                                          let defaultOpts = {};
+                                          if (mName === 'chrf') {
+                                            defaultOpts = { beta: 3 };
+                                          } else if (mName === 'pck') {
+                                            defaultOpts = { threshold: 0.05 };
+                                          } else if (mName === 'ndcg_k' || mName === 'recall_k') {
+                                            defaultOpts = { k: 10 };
+                                          }
+                                          updatedObj[mName] = { weight: 1.0, options: defaultOpts };
+                                        } else {
+                                          delete updatedObj[mName];
+                                        }
+                                        setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
+                                      }}
+                                      className="accent-indigo-600 rounded disabled:cursor-not-allowed"
+                                    />
+                                    <span>{formatMetricName(mName)}</span>
+                                  </label>
+                                  {isChecked && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_weight')}</span>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        value={currentWeight}
+                                        onChange={(e) => {
+                                          let updatedObj = { ...metricsObj };
+                                          if (updatedObj[mName]) {
+                                            updatedObj[mName].weight = parseFloat(e.target.value) || 0;
+                                          }
+                                          setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
+                                        }}
+                                        className="w-16 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                {isChecked && (
+                                  (mName === 'chrf' || mName === 'pck' || mName === 'ndcg_k' || mName === 'recall_k') && (
+                                    <div className="flex flex-col gap-1 pl-5 border-t border-white/5 pt-1.5 mt-0.5">
+                                      {mName === 'chrf' && (
+                                        <div className="flex items-center justify-between w-full">
+                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_beta', 'Beta')}</span>
+                                          <select
+                                            aria-label="Beta"
+                                            value={metricsObj[mName].options?.beta ?? 3}
+                                            onChange={(e) => {
+                                              let updatedObj = { ...metricsObj };
+                                              if (updatedObj[mName]) {
+                                                updatedObj[mName].options = {
+                                                  ...updatedObj[mName].options,
+                                                  beta: parseInt(e.target.value) || 3
+                                                };
+                                              }
+                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
+                                            }}
+                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          >
+                                            <option value="1">1</option>
+                                            <option value="2">2</option>
+                                            <option value="3">3</option>
+                                          </select>
+                                        </div>
+                                      )}
+                                      {mName === 'pck' && (
+                                        <div className="flex items-center justify-between w-full">
+                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_threshold', 'Threshold')}</span>
+                                          <select
+                                            aria-label="Threshold"
+                                            value={metricsObj[mName].options?.threshold ?? 0.05}
+                                            onChange={(e) => {
+                                              let updatedObj = { ...metricsObj };
+                                              if (updatedObj[mName]) {
+                                                updatedObj[mName].options = {
+                                                  ...updatedObj[mName].options,
+                                                  threshold: parseFloat(e.target.value) || 0.05
+                                                };
+                                              }
+                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
+                                            }}
+                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          >
+                                            <option value="0.01">0.01</option>
+                                            <option value="0.02">0.02</option>
+                                            <option value="0.05">0.05</option>
+                                            <option value="0.1">0.1</option>
+                                            <option value="0.15">0.15</option>
+                                            <option value="0.2">0.2</option>
+                                          </select>
+                                        </div>
+                                      )}
+                                      {(mName === 'ndcg_k' || mName === 'recall_k') && (
+                                        <div className="flex items-center justify-between w-full">
+                                          <span className="text-[10px] text-slate-400">{t('admin.tasks.modality_metrics_k', 'K')}</span>
+                                          <select
+                                            aria-label="K"
+                                            value={metricsObj[mName].options?.k ?? 10}
+                                            onChange={(e) => {
+                                              let updatedObj = { ...metricsObj };
+                                              if (updatedObj[mName]) {
+                                                updatedObj[mName].options = {
+                                                  ...updatedObj[mName].options,
+                                                  k: parseInt(e.target.value) || 10
+                                                };
+                                              }
+                                              setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updatedObj) });
+                                            }}
+                                            className="w-20 text-center text-xs bg-slate-950 border border-white/5 rounded text-slate-200 p-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          >
+                                            <option value="5">5</option>
+                                            <option value="10">10</option>
+                                            <option value="20">20</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                          </select>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {taskForm.task_type && getTaskTypeSchemasHelp(t)[taskForm.task_type] && (() => {
+                    const help = getTaskTypeSchemasHelp(t)[taskForm.task_type];
+                    return (
+                      <div className="flex flex-col gap-3 border border-white/5 p-4 bg-slate-950 rounded-lg">
+                        <span className="text-xs font-semibold text-indigo-400">{t('admin.tasks.modality_schemas_title')}</span>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-1">
+                          <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-slate-900/40">
+                            <span className="text-xs font-bold text-slate-200">📦 {t('admin.tasks.modality_schemas_submission')}</span>
+                            <div className="flex flex-col gap-1.5 mt-1 animate-fadein">
+                              {help.sub_cols.map(c => (
+                                <div key={c.name} className="flex flex-col text-[11px] border-b border-white/5 pb-1 last:border-b-0">
+                                  <div className="flex justify-between">
+                                    <code className="text-indigo-300 font-bold">{c.name}</code>
+                                    <span className="text-slate-400 italic">({c.type})</span>
+                                  </div>
+                                  <span className="text-slate-300 mt-0.5">{c.desc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2 p-3 rounded-lg border border-white/5 bg-slate-900/40">
+                            <span className="text-xs font-bold text-slate-200">🎯 {t('admin.tasks.modality_schemas_ground_truth')}</span>
+                            <div className="flex flex-col gap-1.5 mt-1 animate-fadein">
+                              {help.label_cols.map(c => (
+                                <div key={c.name} className="flex flex-col text-[11px] border-b border-white/5 pb-1 last:border-b-0">
+                                  <div className="flex justify-between">
+                                    <code className="text-indigo-300 font-bold">{c.name}</code>
+                                    <span className="text-slate-400 italic">({c.type})</span>
+                                  </div>
+                                  <span className="text-slate-300 mt-0.5">{c.desc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-1">
+                          {t('admin.tasks.modality_schemas_note')}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1929,19 +2400,8 @@ export default function AdminPanel() {
               {/* Section G: Config files */}
               <div className="border-t border-white/5 pt-6">
                 <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">{t('admin.tasks.upload_scripts_notebooks')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
-                  {/* Evaluator script */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.evaluator_script_label')}</label>
-                    <input 
-                      type="file" 
-                      accept=".py" 
-                      onChange={(e) => setEvaluatorFile(e.target.files[0])}
-                      className="text-xs text-slate-400 border border-white/5 p-2 bg-slate-950 rounded-lg"
-                    />
-                  </div>
-
                   {/* Baseline Notebook */}
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.baseline_notebook_label')}</label>
@@ -1953,33 +2413,9 @@ export default function AdminPanel() {
                     />
                   </div>
 
-                  {/* Solution Notebook */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-slate-300">{t('admin.tasks.solution_notebook_label')}</label>
-                    <input 
-                      type="file" 
-                      accept=".ipynb" 
-                      onChange={(e) => setSolutionFile(e.target.files[0])}
-                      className="text-xs text-slate-400 border border-white/5 p-2 bg-slate-950 rounded-lg"
-                    />
-                  </div>
-
                 </div>
 
-                <div className="mt-4 p-4 rounded-lg bg-slate-900/50 border border-white/5 text-xs text-slate-300">
-                  <details className="group">
-                    <summary className="font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center justify-between">
-                      <span>{t('admin.tasks.show_custom_evaluator')}</span>
-                      <span className="transition-transform group-open:rotate-180">▼</span>
-                    </summary>
-                    <div className="mt-3 text-slate-400 space-y-2">
-                      <p>
-                        {t('admin.tasks.custom_evaluator_help')}
-                      </p>
-                      <CodeHighlight code={CUSTOM_EVALUATOR_TEMPLATE} />
-                    </div>
-                  </details>
-                </div>
+
               </div>
 
               {/* Section H: Resource Files (Optional) */}
@@ -2049,990 +2485,90 @@ export default function AdminPanel() {
 
         {/* 3. CREATE NEW COMPETITIONS */}
         {adminSubTab === 'challenge-config' && (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
-            <h2 className="text-xl font-bold text-white mb-6">{t('admin.create_new_challenge')}</h2>
-            <form onSubmit={handleCreateChallenge} className="flex flex-col gap-4">
-              <InputField 
-                label={t('admin.competition_title')} 
-                value={newChallenge.title} 
-                onChange={(e) => setNewChallenge({ ...newChallenge, title: e.target.value })} 
-                required 
-              />
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-slate-300">{t('admin.description')}</label>
-                <textarea 
-                  rows="4" 
-                  className="w-full px-3 py-2 bg-slate-900 border border-white/5 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 text-sm font-sans"
-                  value={newChallenge.description} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, description: e.target.value })} 
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <InputField 
-                  label={t('admin.daily_limits')} 
-                  type="number"
-                  value={newChallenge.max_eval_requests} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, max_eval_requests: parseInt(e.target.value) })} 
-                  required 
-                />
-                <InputField 
-                  label={t('admin.ram_limit_override')} 
-                  type="number"
-                  value={newChallenge.ram_limit_mb} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, ram_limit_mb: parseInt(e.target.value) })} 
-                  required 
-                />
-                <InputField 
-                  label={t('admin.time_limit_override')} 
-                  type="number"
-                  value={newChallenge.time_limit_sec} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, time_limit_sec: parseInt(e.target.value) })} 
-                  required 
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <InputField 
-                  label={t('admin.stages.start_time_label')} 
-                  type="datetime-local"
-                  value={newChallenge.start_time} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, start_time: e.target.value })} 
-                  required
-                />
-                <InputField 
-                  label={t('admin.stages.end_time_label')} 
-                  type="datetime-local"
-                  value={newChallenge.end_time} 
-                  onChange={(e) => setNewChallenge({ ...newChallenge, end_time: e.target.value })} 
-                  required
-                />
-                <SelectField
-                  label={t('admin.timezone_choose')}
-                  value={newChallenge.timezone}
-                  onChange={(val) => setNewChallenge({ ...newChallenge, timezone: val })}
-                  options={TIMEZONES}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-3 mt-2.5">
-                <ToggleField 
-                  label={t('admin.requires_gpu_workers')}
-                  id="create-gpu-req"
-                  checked={newChallenge.gpu_required}
-                  onChange={(e) => setNewChallenge({ ...newChallenge, gpu_required: e.target.checked })}
-                />
-                <ToggleField 
-                  label={t('admin.double_blind_eval')}
-                  id="create-double-blind"
-                  checked={newChallenge.double_blind !== false}
-                  onChange={(e) => setNewChallenge({ ...newChallenge, double_blind: e.target.checked })}
-                />
-                <ToggleField 
-                  label={t('admin.freeze_label')}
-                  id="create-is-frozen"
-                  checked={newChallenge.is_frozen || false}
-                  onChange={(e) => setNewChallenge({ ...newChallenge, is_frozen: e.target.checked })}
-                />
-              </div>
-              <Button type="submit" variant="primary" className="w-fit mt-4">{t('admin.create_competition_btn')}</Button>
-            </form>
-          </div>
+          <ChallengeConfig
+            handleCreateChallenge={handleCreateChallenge}
+            newChallenge={newChallenge}
+            setNewChallenge={setNewChallenge}
+            timezones={TIMEZONES}
+          />
         )}
 
         {/* 4. COMPETITOR REGISTRATION MODULE (JURY/ADMIN) */}
         {adminSubTab === 'competitor-reg' && (
-          <div className="flex flex-col gap-8 animate-fadein">
-            
-            {/* Registration Workspace */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-              {editingUser ? (
-                /* Edit Competitor Form */
-                <div className="bg-[#0d0e18] border border-indigo-500/20 p-8 rounded-2xl lg:col-span-1">
-                  <h2 className="text-lg font-bold text-white mb-2">{t('admin.competitor_reg.edit_competitor_details')}</h2>
-                  <p className="text-slate-400 text-xs mb-6">{t('admin.competitor_reg.updating_account', { username: editingUser.username })}</p>
-                  
-                  <form onSubmit={handleUpdateUserSubmit} className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <InputField 
-                        label={t('admin.competitor_reg.first_name')} 
-                        value={editUserForm.name} 
-                        onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })} 
-                        required 
-                      />
-                      <InputField 
-                        label={t('admin.competitor_reg.last_name')} 
-                        value={editUserForm.surname} 
-                        onChange={(e) => setEditUserForm({ ...editUserForm, surname: e.target.value })} 
-                        required 
-                      />
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-4">
-                      <InputField 
-                        label={t('admin.competitor_reg.grade')} 
-                        value={editUserForm.grade} 
-                        onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })} 
-                      />
-                      <InputField 
-                        label={t('admin.competitor_reg.school')} 
-                        value={editUserForm.school} 
-                        onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })} 
-                      />
-                      <InputField 
-                        label={t('admin.competitor_reg.city')} 
-                        value={editUserForm.city} 
-                        onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })} 
-                      />
-                    </div>
-
-                    <InputField 
-                      label={t('admin.competitor_reg.system_username')} 
-                      value={editUserForm.username} 
-                      onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })} 
-                      required 
-                    />
-
-                    <InputField 
-                      label={t('admin.competitor_reg.email_address')} 
-                      type="email"
-                      value={editUserForm.email} 
-                      onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })} 
-                      placeholder={t('admin.competitor_reg.email_placeholder')}
-                    />
-
-                    <SelectField 
-                      label={t('admin.competitor_reg.assign_competition')} 
-                      value={editUserForm.challenge_id} 
-                      onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })} 
-                      required 
-                      options={[
-                        { value: "", label: t('admin.competitor_reg.assign_competition_choose') },
-                        ...challenges.map(c => ({ value: c.id.toString(), label: c.title }))
-                      ]}
-                    />
-
-                    <div className="mt-2.5">
-                      <ToggleField 
-                        label={t('admin.competitor_reg.anonymous_help')}
-                        id="edit-is-anonymous"
-                        checked={editUserForm.is_anonymous}
-                        onChange={(e) => setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })}
-                      />
-                    </div>
-
-                    {isEditDisabled && (
-                      <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                        {t('admin.competitor_reg.competition_started_warning')}
-                      </div>
-                    )}
-                    <div className="flex gap-2.5 mt-2">
-                      <Button type="submit" variant="primary" className="flex-1" disabled={isEditDisabled}>{t('admin.stages.save_changes_btn')}</Button>
-                      <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>{t('common.cancel')}</Button>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                <>
-                  {/* Form Manual */}
-                  <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-                    <h2 className="text-lg font-bold text-white mb-2">{t('admin.competitor_reg.manual_competitor_registration')}</h2>
-                    <p className="text-slate-400 text-xs mb-6">{t('admin.competitor_reg.manual_registration_desc')}</p>
-                    
-                    <form onSubmit={handleRegisterCompetitor} className="flex flex-col gap-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <InputField 
-                          label={t('admin.competitor_reg.first_name')} 
-                          value={newCompetitor.name} 
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, name: e.target.value })} 
-                          required 
-                        />
-                        <InputField 
-                          label={t('admin.competitor_reg.last_name')} 
-                          value={newCompetitor.surname} 
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, surname: e.target.value })} 
-                          required 
-                        />
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <InputField 
-                          label={t('admin.competitor_reg.grade')} 
-                          value={newCompetitor.grade} 
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, grade: e.target.value })} 
-                        />
-                        <InputField 
-                          label={t('admin.competitor_reg.school')} 
-                          value={newCompetitor.school} 
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, school: e.target.value })} 
-                        />
-                        <InputField 
-                          label={t('admin.competitor_reg.city')} 
-                          value={newCompetitor.city} 
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, city: e.target.value })} 
-                        />
-                      </div>
-                      
-                      <SelectField 
-                        label={t('admin.competitor_reg.assign_competition')} 
-                        value={newCompetitor.challenge_id} 
-                        onChange={(val) => setNewCompetitor({ ...newCompetitor, challenge_id: val })} 
-                        required 
-                        options={[
-                          { value: "", label: t('admin.competitor_reg.assign_competition_choose') },
-                          ...challenges.map(c => ({ value: c.id.toString(), label: c.title }))
-                        ]}
-                      />
-
-                      <div className="mt-2.5">
-                        <ToggleField 
-                          label={t('admin.competitor_reg.anonymous_help')}
-                          id="register-is-anonymous"
-                          checked={newCompetitor.is_anonymous}
-                          onChange={(e) => setNewCompetitor({ ...newCompetitor, is_anonymous: e.target.checked })}
-                        />
-                      </div>
-
-                      {isManualRegisterDisabled && (
-                        <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                          {t('admin.competitor_reg.competition_started_warning')}
-                        </div>
-                      )}
-                      <Button type="submit" variant="primary" className="mt-2" disabled={isManualRegisterDisabled}>{t('admin.competitor_reg.generate_credentials')}</Button>
-                    </form>
-
-                    {generatedCredentials && (
-                      <div className="mt-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5">
-                        <h3 className="font-bold text-sm text-indigo-300">{t('admin.competitor_reg.competitor_account_generated')}</h3>
-                        <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
-                          <div><strong>{t('admin.competitor_reg.competitor_label')}</strong> {generatedCredentials.name} {generatedCredentials.surname}</div>
-                          <div className="pt-2"><strong>{t('admin.competitor_reg.generated_username')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{generatedCredentials.username}</code></div>
-                          <div><strong>{t('admin.competitor_reg.generated_password')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{generatedCredentials.password}</code></div>
-                          <p className="text-[10px] text-slate-500 mt-2 font-medium">{t('admin.competitor_reg.share_credentials_help')}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Form CSV upload */}
-                  <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-                    <h2 className="text-lg font-bold text-white mb-2">{t('admin.competitor_reg.import_competitors_csv')}</h2>
-                    <p className="text-slate-400 text-xs mb-6">{t('admin.competitor_reg.csv_import_desc')}</p>
-                    
-                    <form onSubmit={handleCSVImport} className="flex flex-col gap-4">
-                      <SelectField 
-                        label={t('admin.competitor_reg.target_competition_challenge')} 
-                        value={csvChallengeId} 
-                        onChange={(val) => setCsvChallengeId(val)} 
-                        required 
-                        options={[
-                          { value: "", label: t('admin.competitor_reg.assign_competition_choose') },
-                          ...challenges.map(c => ({ value: c.id.toString(), label: c.title }))
-                        ]}
-                      />
-
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-slate-300">{t('admin.competitor_reg.choose_csv_file')}</label>
-                        <input 
-                          type="file" 
-                          accept=".csv" 
-                          onChange={(e) => setCsvFile(e.target.files[0])}
-                          className="text-xs text-slate-400 border border-white/5 p-3.5 bg-slate-900 rounded-lg cursor-pointer"
-                          required
-                        />
-                      </div>
-
-                      {isCSVImportDisabled && (
-                        <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                          {t('admin.competitor_reg.bulk_import_started_warning')}
-                        </div>
-                      )}
-                      <Button type="submit" variant="accent" disabled={csvImporting || isCSVImportDisabled}>
-                        {csvImporting ? t('admin.competitor_reg.importing_bulk_data') : t('admin.competitor_reg.upload_parse_csv')}
-                      </Button>
-                    </form>
-
-                    {importedCompetitors.length > 0 && (
-                      <div className="mt-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3">
-                        <h3 className="font-bold text-sm text-emerald-400">{t('admin.competitor_reg.successfully_imported_count', { count: importedCompetitors.length })}</h3>
-                        <div className="max-h-60 overflow-y-auto pr-1">
-                          <table className="w-full text-left border-collapse text-[10px]">
-                            <thead>
-                              <tr className="border-b border-white/5 text-slate-400">
-                                <th className="py-1.5">{t('admin.competitor_reg.competitor_table_header')}</th>
-                                <th className="py-1.5">{t('admin.competitor_reg.username_table_header')}</th>
-                                <th className="py-1.5">{t('admin.competitor_reg.password_table_header')}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {importedCompetitors.map((item, idx) => (
-                                <tr key={idx} className="border-b border-white/5 text-slate-300">
-                                  <td className="py-1.5 font-semibold">{item.name} {item.surname}</td>
-                                  <td className="py-1.5 font-mono">{item.generated_username}</td>
-                                  <td className="py-1.5 font-mono font-bold text-indigo-400">{item.generated_password}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* List Registered Competitors */}
-            <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-              <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-                <div>
-                  <h2 className="text-lg font-bold text-white">{t('admin.competitor_reg.registered_competitors')}</h2>
-                  <p className="text-slate-400 text-xs">{t('admin.competitor_reg.unmasking_desc')}</p>
-                </div>
-                <div className="flex items-center gap-3.5 flex-wrap">
-                  {(currentUser.role === 'admin' || challenges.some(c => !isChallengeStarted(c.id))) && (
-                    <Button 
-                      variant="secondary" 
-                      size="sm"
-                      onClick={handleBulkResetPasswords}
-                    >
-                      {t('admin.competitor_reg.reset_all_passwords')}
-                    </Button>
-                  )}
-                  <InputField 
-                    placeholder={currentUser.role === 'jury' && selectedChallenge && isChallengeStarted(selectedChallenge.id) ? t('admin.competitor_reg.search_alias_only_placeholder') : t('admin.competitor_reg.search_competitor_placeholder')} 
-                    value={competitorSearch} 
-                    onChange={(e) => setCompetitorSearch(e.target.value)} 
-                    className="max-w-xs w-full"
-                  />
-                </div>
-              </div>
-
-              {resetCredentials && (
-                <div className="mb-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5 animate-fadein">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-sm text-indigo-300 font-sans">{t('admin.competitor_reg.password_reset_succeeded')}</h3>
-                    <button 
-                      onClick={() => setResetCredentials(null)} 
-                      className="text-xs font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-                    >
-                      {t('admin.competitor_reg.clear')}
-                    </button>
-                  </div>
-                  <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
-                    <div><strong>{t('admin.competitor_reg.account_username')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{resetCredentials.username}</code></div>
-                    <div><strong>{t('admin.competitor_reg.new_generated_password')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{resetCredentials.password}</code></div>
-                    <p className="text-[10px] text-slate-500 mt-2 font-medium">{t('admin.competitor_reg.share_credentials_help')}</p>
-                  </div>
-                </div>
-              )}
-
-              {bulkResetCredentials.length > 0 && (
-                <div className="mb-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3 animate-fadein">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-sm text-emerald-400 font-sans">{t('admin.competitor_reg.generated_passwords_bulk_title', { count: bulkResetCredentials.length })}</h3>
-                    <button 
-                      onClick={() => setBulkResetCredentials([])} 
-                      className="text-xs font-bold text-emerald-400 hover:underline bg-transparent border-0 cursor-pointer"
-                    >
-                      {t('admin.competitor_reg.clear_list')}
-                    </button>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto pr-1">
-                    <table className="w-full text-left border-collapse text-[10px]">
-                      <thead>
-                        <tr className="border-b border-white/5 text-slate-400 font-semibold">
-                          <th className="py-1.5">{t('admin.competitor_reg.competitor_table_header')}</th>
-                          <th className="py-1.5">{t('admin.competitor_reg.username_table_header')}</th>
-                          <th className="py-1.5">{t('admin.competitor_reg.new_password_table_header')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bulkResetCredentials.map((item, idx) => (
-                          <tr key={idx} className="border-b border-white/5 text-slate-300">
-                            <td className="py-1.5 font-semibold">{item.name} {item.surname}</td>
-                            <td className="py-1.5 font-mono">{item.username}</td>
-                            <td className="py-1.5 font-mono font-bold text-indigo-400">{item.password}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {filteredCompetitors.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-xs italic">
-                  {t('admin.competitor_reg.no_competitors_found')}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>{t('admin.competitor_reg.alias_id_header')}</th>
-                        <th>{t('admin.competitor_reg.real_name_header')}</th>
-                        <th>{t('admin.competitor_reg.school_grade_header')}</th>
-                        <th>{t('admin.competitor_reg.city_header')}</th>
-                        <th>{t('admin.competitor_reg.system_username')}</th>
-                        <th className="text-right">{t('admin.competitor_reg.actions_header')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCompetitors.map(comp => (
-                        <tr key={comp.id}>
-                          <td className="font-mono font-semibold text-indigo-400">{comp.alias_id}</td>
-                          <td>
-                            <div className="flex items-center gap-2">
-                              <span>{comp.name ? `${comp.name} ${comp.surname || ''}` : <span className="text-slate-500 italic">{t('admin.competitor_reg.double_blind_badge')}</span>}</span>
-                              {comp.is_anonymous && (
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 uppercase tracking-wider" title={t('admin.competitor_reg.requested_anonymity_title')}>{t('admin.competitor_reg.anon_badge')}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td>{comp.school ? `${comp.school}${comp.grade ? ` (${t('leaderboard.grade_value', { grade: comp.grade })})` : ""}` : "—"}</td>
-                          <td>{comp.city || "—"}</td>
-                          <td className="font-mono text-slate-400">{comp.username || <span className="text-slate-500 italic">{t('admin.competitor_reg.hidden_badge')}</span>}</td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div className="flex justify-end gap-3.5">
-                              {(currentUser.role === 'admin' || !isChallengeStarted(comp.challenge_id)) && (
-                                <>
-                                  <button
-                                    onClick={() => initEditUser(comp)}
-                                    className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-                                  >
-                                    {t('admin.competitor_reg.edit')}
-                                  </button>
-                                  <button
-                                    onClick={() => handleResetUserPassword(comp.id, comp.name ? `${comp.name} ${comp.surname}` : comp.alias_id)}
-                                    className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-                                  >
-                                    {t('admin.competitor_reg.reset_pw_btn')}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <Pagination
-                    page={competitorsPage}
-                    pages={competitorsPages}
-                    total={competitorsTotal}
-                    perPage={10}
-                    onPageChange={setCompetitorsPage}
-                    itemName={t('admin.competitor_reg.competitors')}
-                  />
-                </div>
-              )}
-            </div>
-
-          </div>
+          <CompetitorManager
+            editingUser={editingUser}
+            setEditingUser={setEditingUser}
+            editUserForm={editUserForm}
+            setEditUserForm={setEditUserForm}
+            handleUpdateUserSubmit={handleUpdateUserSubmit}
+            challenges={challenges}
+            isEditDisabled={isEditDisabled}
+            newCompetitor={newCompetitor}
+            setNewCompetitor={setNewCompetitor}
+            handleRegisterCompetitor={handleRegisterCompetitor}
+            isManualRegisterDisabled={isManualRegisterDisabled}
+            generatedCredentials={generatedCredentials}
+            csvChallengeId={csvChallengeId}
+            setCsvChallengeId={setCsvChallengeId}
+            setCsvFile={setCsvFile}
+            csvImporting={csvImporting}
+            isCSVImportDisabled={isCSVImportDisabled}
+            handleCSVImport={handleCSVImport}
+            importedCompetitors={importedCompetitors}
+            resetCredentials={resetCredentials}
+            setResetCredentials={setResetCredentials}
+            bulkResetCredentials={bulkResetCredentials}
+            setBulkResetCredentials={setBulkResetCredentials}
+            competitorsList={competitorsList}
+            competitorSearch={competitorSearch}
+            setCompetitorSearch={setCompetitorSearch}
+            handleBulkResetPasswords={handleBulkResetPasswords}
+            currentUser={currentUser}
+            selectedChallenge={selectedChallenge}
+            isChallengeStarted={isChallengeStarted}
+            initEditUser={initEditUser}
+            handleResetUserPassword={handleResetUserPassword}
+            competitorsPage={competitorsPage}
+            competitorsPages={competitorsPages}
+            competitorsTotal={competitorsTotal}
+            setCompetitorsPage={setCompetitorsPage}
+          />
         )}
 
         {/* 5. DATABASE BACKUP MANAGEMENT */}
         {adminSubTab === 'backups' && currentUser.role === 'admin' && (
-          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
-            <h2 className="text-xl font-bold text-white mb-2">{t('admin.backups.database_backups_security')}</h2>
-            <p className="text-slate-400 text-xs mb-6">{t('admin.backups.database_backups_desc')}</p>
-            
-            <div className="bg-slate-900/40 border border-white/5 p-6 rounded-xl flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <h4 className="font-bold text-slate-200 text-sm">{t('admin.backups.download_postgres_backup')}</h4>
-                <p className="text-slate-500 text-xs mt-1">{t('admin.backups.download_postgres_backup_desc')}</p>
-              </div>
-              <Button variant="accent" onClick={handleDownloadBackup}>{t('admin.backups.download_backup_dump_btn')}</Button>
-            </div>
-          </div>
+          <BackupManager handleDownloadBackup={handleDownloadBackup} />
         )}
 
         {/* 6. SYSTEM USER MANAGEMENT */}
         {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
-          <div className="flex flex-col gap-8 animate-fadein">
-            
-            <div className="flex flex-col gap-8">
-              
-              {/* Form Register Admin/Jury */}
-              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl w-full">
-                <h2 className="text-lg font-bold text-white mb-2">{t('admin.user_mgmt.register_user_account')}</h2>
-                <p className="text-slate-400 text-xs mb-6">{t('admin.user_mgmt.register_user_account_desc')}</p>
-                
-                <form onSubmit={handleRegisterUser} className="flex flex-col gap-4">
-                  <InputField 
-                    label={t('admin.user_mgmt.username_label')} 
-                    value={newUser.username} 
-                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} 
-                    placeholder={t('admin.user_mgmt.username_placeholder_eg')}
-                    required 
-                  />
-                  <InputField 
-                    label={t('admin.competitor_reg.email_address')} 
-                    type="email"
-                    value={newUser.email} 
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} 
-                    placeholder={t('admin.user_mgmt.email_placeholder_eg')}
-                  />
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <InputField 
-                      label={t('admin.competitor_reg.first_name')} 
-                      value={newUser.name} 
-                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} 
-                      required 
-                    />
-                    <InputField 
-                      label={t('admin.competitor_reg.last_name')} 
-                      value={newUser.surname} 
-                      onChange={(e) => setNewUser({ ...newUser, surname: e.target.value })} 
-                      required 
-                    />
-                  </div>
-
-                  <SelectField 
-                    label={t('admin.user_mgmt.role_label')} 
-                    value={newUser.role} 
-                    onChange={(val) => setNewUser({ ...newUser, role: val })} 
-                    required 
-                    options={[
-                      { value: "competitor", label: t('admin.user_mgmt.role_competitor') },
-                      { value: "jury", label: t('admin.user_mgmt.role_jury') }
-                    ]}
-                  />
-
-                  {newUser.role === 'competitor' && (
-                    <>
-                      <div className="grid grid-cols-3 gap-2">
-                        <InputField label={t('admin.competitor_reg.grade')} value={newUser.grade} onChange={(e) => setNewUser({ ...newUser, grade: e.target.value })} />
-                        <InputField label={t('admin.competitor_reg.school')} value={newUser.school} onChange={(e) => setNewUser({ ...newUser, school: e.target.value })} />
-                        <InputField label={t('admin.competitor_reg.city')} value={newUser.city} onChange={(e) => setNewUser({ ...newUser, city: e.target.value })} />
-                      </div>
-                      <SelectField 
-                        label={t('admin.competitor_reg.assign_competition')} 
-                        value={newUser.challenge_id} 
-                        onChange={(val) => setNewUser({ ...newUser, challenge_id: val })} 
-                        required 
-                        options={[
-                          { value: "", label: t('admin.competitor_reg.assign_competition_choose') },
-                          ...challenges.map(c => ({ value: c.id.toString(), label: c.title }))
-                        ]}
-                      />
-
-                      <div className="mt-2.5">
-                        <ToggleField 
-                          label={t('admin.competitor_reg.anonymous_help')}
-                          id="new-user-is-anonymous"
-                          checked={newUser.is_anonymous}
-                          onChange={(e) => setNewUser({ ...newUser, is_anonymous: e.target.checked })}
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <Button type="submit" variant="primary" className="mt-2">{t('admin.user_mgmt.register_user_btn')}</Button>
-                </form>
-
-                {generatedUserCredentials && (
-                  <div className="mt-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5">
-                    <h3 className="font-bold text-sm text-indigo-300">{t('admin.user_mgmt.account_created_title', { role: t(`admin.user_mgmt.role_${generatedUserCredentials.role}`).toUpperCase() })}</h3>
-                    <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
-                      <div><strong>{t('admin.user_mgmt.user_label')}</strong> {generatedUserCredentials.name} {generatedUserCredentials.surname}</div>
-                      <div className="pt-2"><strong>{t('admin.user_mgmt.username_label_colon')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{generatedUserCredentials.username}</code></div>
-                      <div><strong>{t('admin.user_mgmt.password_label_colon')}</strong> <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">{generatedUserCredentials.password}</code></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* User accounts list */}
-              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl w-full">
-                <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-                  <div>
-                    <h2 className="text-lg font-bold text-white">{t('admin.user_mgmt.system_user_accounts')}</h2>
-                    <p className="text-slate-400 text-xs">{t('admin.user_mgmt.system_user_accounts_desc')}</p>
-                  </div>
-                  <InputField 
-                    placeholder={t('admin.user_mgmt.search_users_placeholder')} 
-                    value={userSearch} 
-                    onChange={(e) => setUserSearch(e.target.value)} 
-                    className="max-w-xs w-full"
-                  />
-                </div>
-
-                {filteredUsers.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 text-xs italic">
-                    {t('admin.user_mgmt.no_users_found')}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>{t('admin.user_mgmt.username_header')}</th>
-                          <th>{t('admin.competitor_reg.real_name_header')}</th>
-                          <th>{t('admin.user_mgmt.role_header')}</th>
-                          <th>{t('admin.user_mgmt.email_address_header')}</th>
-                          <th className="text-right">{t('admin.competitor_reg.actions_header')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredUsers.map(user => (
-                          <tr key={user.id}>
-                            <td className="font-mono font-bold text-slate-200">{user.username}</td>
-                            <td>
-                              <div className="flex items-center gap-2">
-                                <span>{user.name} {user.surname}</span>
-                                {user.is_anonymous && (
-                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 uppercase tracking-wider" title={t('admin.competitor_reg.requested_anonymity_title')}>{t('admin.competitor_reg.anon_badge')}</span>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${user.role === 'admin' ? 'border-rose-500/30 bg-rose-500/10 text-rose-400' : user.role === 'jury' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-blue-500/30 bg-blue-500/10 text-blue-400'}`}>
-                                {user.role.toUpperCase()}
-                              </span>
-                            </td>
-                            <td>{user.email || "—"}</td>
-                            <td style={{ textAlign: 'right' }}>
-                              {user.id !== currentUser.id ? (
-                                <button
-                                  onClick={() => handleDeleteUser(user.id, user.username)}
-                                  className="text-[11px] font-bold text-rose-400 hover:underline bg-transparent border-0 cursor-pointer"
-                                >
-                                  {t('admin.user_mgmt.delete_btn')}
-                                </button>
-                              ) : (
-                                <span className="text-[10px] text-slate-500 font-semibold italic">{t('admin.user_mgmt.current_admin')}</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <Pagination
-                      page={usersPage}
-                      pages={usersPages}
-                      total={usersTotal}
-                      perPage={10}
-                      onPageChange={setUsersPage}
-                      itemName={t('admin.user_mgmt.users')}
-                    />
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-          </div>
+          <UserManager
+            newUser={newUser}
+            setNewUser={setNewUser}
+            handleRegisterUser={handleRegisterUser}
+            generatedUserCredentials={generatedUserCredentials}
+            allUsers={filteredUsers}
+            userSearch={userSearch}
+            setUserSearch={setUserSearch}
+            handleDeleteUser={handleDeleteUser}
+            usersPage={usersPage}
+            usersPages={usersPages}
+            usersTotal={usersTotal}
+            setUsersPage={setUsersPage}
+            challenges={challenges}
+            currentUser={currentUser}
+          />
         )}
 
+        {/* 7. WORKERS MONITORING MODULE */}
         {adminSubTab === 'workers-stats' && (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <div className="flex flex-col gap-6 animate-fadein">
-            {/* Header / Control Bar */}
-            <div className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-wrap justify-between items-center gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-white mb-1">{t('admin.workers.system_resources')}</h2>
-                <p className="text-slate-400 text-xs">
-                  {t('admin.workers.monitoring_desc')}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {workerStatsLoading && (
-                  <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                )}
-                <Button 
-                  variant="secondary" 
-                  onClick={fetchWorkerStats}
-                  disabled={workerStatsLoading}
-                  className="text-xs"
-                >
-                  {workerStatsLoading ? t('admin.workers.refreshing') : t('admin.workers.refresh_now')}
-                </Button>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {workerStatsError && (
-              <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-400 text-xs font-semibold">
-                {t('admin.workers.error_retrieving_stats', { error: workerStatsError })}
-              </div>
-            )}
-
-            {/* Host Server Resources */}
-            {workerStats?.system && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* CPU Card */}
-                <div className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-slate-400 font-bold text-xs uppercase tracking-wider mb-2">{t('admin.workers.cpu_utilization')}</h3>
-                    <div className="flex items-baseline gap-2 mb-3">
-                      <span className="text-2xl font-extrabold text-white">
-                        {workerStats.system.load_avg?.[0]?.toFixed(2) || '0.00'}
-                      </span>
-                      <span className="text-slate-500 text-[10px]">{t('admin.workers.one_min_load')}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-500 font-bold mb-1">
-                      <span>{t('admin.workers.load_trend')}</span>
-                      <span>{t('admin.workers.cores', { count: workerStats.system.cpu_count })}</span>
-                    </div>
-                    <div className="flex gap-2 font-mono text-[10px] text-indigo-400 font-semibold bg-indigo-500/5 px-3 py-1.5 rounded-lg border border-indigo-500/10">
-                      <span>{t('admin.workers.load_5m', { value: workerStats.system.load_avg?.[1]?.toFixed(2) || '0.00' })}</span>
-                      <span className="text-slate-700">|</span>
-                      <span>{t('admin.workers.load_15m', { value: workerStats.system.load_avg?.[2]?.toFixed(2) || '0.00' })}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* RAM Memory Card */}
-                <div className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-slate-400 font-bold text-xs uppercase tracking-wider mb-2">{t('admin.workers.memory_usage')}</h3>
-                    <div className="flex items-baseline gap-2 mb-3">
-                      <span className="text-2xl font-extrabold text-white">
-                        {workerStats.system.memory?.percent_used || '0'}%
-                      </span>
-                      <span className="text-slate-500 text-[10px]">
-                        {t('admin.workers.memory_used_total', { used: workerStats.system.memory?.used_gb || '0', total: workerStats.system.memory?.total_gb || '0' })}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          (workerStats.system.memory?.percent_used || 0) > 90 ? 'bg-rose-500' :
-                          (workerStats.system.memory?.percent_used || 0) > 75 ? 'bg-amber-500' : 'bg-indigo-500'
-                        }`}
-                        style={{ width: `${Math.min(workerStats.system.memory?.percent_used || 0, 100)}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                      <span>{t('admin.workers.used', { count: workerStats.system.memory?.used_gb || '0' })}</span>
-                      <span>{t('admin.workers.free', { count: workerStats.system.memory?.free_gb || '0' })}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Disk Space Card */}
-                <div className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-slate-400 font-bold text-xs uppercase tracking-wider mb-2">{t('admin.workers.disk_capacity')}</h3>
-                    <div className="flex items-baseline gap-2 mb-3">
-                      <span className="text-2xl font-extrabold text-white">
-                        {workerStats.system.disk?.percent_used || '0'}%
-                      </span>
-                      <span className="text-slate-500 text-[10px]">
-                        {t('admin.workers.memory_used_total', { used: workerStats.system.disk?.used_gb || '0', total: workerStats.system.disk?.total_gb || '0' })}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
-                      <div 
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(workerStats.system.disk?.percent_used || 0, 100)}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                      <span>{t('admin.workers.used', { count: workerStats.system.disk?.used_gb || '0' })}</span>
-                      <span>{t('admin.workers.free', { count: workerStats.system.disk?.free_gb || '0' })}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Workers Summary Row */}
-            {workerStats && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-slate-900/40 border border-white/5 p-4 rounded-xl text-center">
-                  <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{t('admin.workers.connected_workers_label')}</div>
-                  <div className="text-xl font-extrabold text-white mt-1">{workerStats.connected_workers_count}</div>
-                </div>
-                <div className="bg-slate-900/40 border border-white/5 p-4 rounded-xl text-center">
-                  <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{t('admin.workers.total_active_tasks')}</div>
-                  <div className="text-xl font-extrabold text-indigo-400 mt-1">
-                    {workerStats.workers?.reduce((sum, w) => sum + (w.active_tasks_count || 0), 0) || 0}
-                  </div>
-                </div>
-                <div className="bg-slate-900/40 border border-white/5 p-4 rounded-xl text-center">
-                  <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{t('admin.workers.reserved_tasks_label')}</div>
-                  <div className="text-xl font-extrabold text-amber-400 mt-1">
-                    {workerStats.workers?.reduce((sum, w) => sum + (w.reserved_tasks_count || 0), 0) || 0}
-                  </div>
-                </div>
-                <div className="bg-slate-900/40 border border-white/5 p-4 rounded-xl text-center">
-                  <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{t('admin.workers.tasks_processed_label')}</div>
-                  <div className="text-xl font-extrabold text-emerald-400 mt-1">
-                    {workerStats.workers?.reduce((sum, w) => sum + (w.total_tasks_processed || 0), 0) || 0}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* System Info Footnote */}
-            {workerStats?.system && (
-              <div className="bg-slate-900/20 border border-white/5 px-4 py-2.5 rounded-xl flex flex-wrap gap-x-6 gap-y-2 text-[10px] text-slate-500 font-mono">
-                <span><strong>{t('admin.workers.os')}</strong> {workerStats.system.os} {workerStats.system.platform_release}</span>
-                <span><strong>{t('admin.workers.python')}</strong> {workerStats.system.python_version}</span>
-              </div>
-            )}
-
-            {/* Workers Detailed List */}
-            <div className="flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider px-1">{t('admin.workers.connected_nodes_label')}</h3>
-
-              {(!workerStats || workerStats.workers?.length === 0) ? (
-                <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl text-center text-slate-500 text-xs italic">
-                  {workerStatsLoading ? t('admin.workers.fetching_metrics') : t('admin.workers.no_active_workers_connected')}
-                </div>
-              ) : (
-                workerStats.workers.map((worker) => (
-                  <div key={worker.name} className="bg-[#0d0e18] border border-white/5 rounded-2xl overflow-hidden">
-                    {/* Worker Header */}
-                    <div className="bg-slate-900/40 border-b border-white/5 p-5 flex flex-wrap justify-between items-center gap-4">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <h4 className="font-mono text-sm font-bold text-slate-200">{worker.name}</h4>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs font-mono">
-                        <div className="text-slate-500">
-                          {t('admin.workers.pid_label')} <span className="text-slate-300 font-bold">{worker.pid || 'N/A'}</span>
-                        </div>
-                        <div className="text-slate-500">
-                          {t('admin.workers.uptime_label', { time: '' })}<span className="text-indigo-400 font-bold">{formatUptime(worker.uptime)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Worker Stats Body */}
-                    <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      {/* Left: General Stats & Resource Usage */}
-                      <div className="flex flex-col gap-4">
-                        <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('admin.workers.capacity_resource_usage')}</h5>
-                        <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-3 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">{t('admin.workers.concurrency_pool')}</span>
-                            <span className="font-bold text-slate-300">{t('admin.workers.concurrency_pool_processes', { count: worker.pool_size })}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">{t('admin.workers.processed_tasks')}</span>
-                            <span className="font-bold text-emerald-400">{worker.total_tasks_processed}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">{t('admin.workers.max_ram_usage')}</span>
-                            <span className="font-bold text-slate-300">
-                              {worker.rusage?.maxrss_mb ? `${worker.rusage.maxrss_mb} MB` : 'N/A'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">{t('admin.workers.cpu_time')}</span>
-                            <span className="font-mono font-bold text-slate-300">
-                              {worker.rusage?.utime_sec !== undefined ? `${worker.rusage.utime_sec.toFixed(2)}s` : 'N/A'}
-                              {' / '}
-                              {worker.rusage?.stime_sec !== undefined ? `${worker.rusage.stime_sec.toFixed(2)}s` : 'N/A'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Broker Details */}
-                        <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">{t('admin.workers.broker_connection')}</h5>
-                        <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-2 font-mono text-[11px] text-slate-400">
-                          <div><span className="text-slate-600">{t('admin.workers.transport')}</span> {worker.broker?.transport || 'N/A'}</div>
-                          <div><span className="text-slate-600">{t('admin.workers.hostname')}</span> {worker.broker?.hostname || 'N/A'}</div>
-                          <div><span className="text-slate-600">{t('admin.workers.port')}</span> {worker.broker?.port || 'N/A'}</div>
-                        </div>
-                      </div>
-
-                      {/* Middle: Active & Reserved Tasks */}
-                      <div className="lg:col-span-2 flex flex-col gap-4">
-                        {/* Active Tasks */}
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('admin.workers.active_tasks', { count: worker.active_tasks_count })}</h5>
-                            {worker.active_tasks_count > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 uppercase border border-indigo-500/20 animate-pulse">{t('admin.workers.running')}</span>}
-                          </div>
-                          
-                          {worker.active_tasks?.length === 0 ? (
-                            <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
-                              {t('admin.workers.no_active_tasks')}
-                            </div>
-                          ) : (
-                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
-                              <table className="w-full text-left border-collapse text-[10px]">
-                                <thead>
-                                  <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
-                                    <th className="p-3">{t('admin.workers.task_id_header')}</th>
-                                    <th className="p-3">{t('admin.workers.task_name_header')}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {worker.active_tasks?.map((task) => (
-                                    <tr key={task.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                                      <td className="p-3 font-mono text-slate-300 font-semibold">{task.id}</td>
-                                      <td className="p-3 font-mono text-indigo-400">{task.name}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Reserved Queue Tasks */}
-                        <div className="mt-2">
-                          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{t('admin.workers.reserved_queue', { count: worker.reserved_tasks_count })}</h5>
-                          
-                          {worker.reserved_tasks?.length === 0 ? (
-                            <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
-                              {t('admin.workers.queue_empty')}
-                            </div>
-                          ) : (
-                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
-                              <table className="w-full text-left border-collapse text-[10px]">
-                                <thead>
-                                  <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
-                                    <th className="p-3">{t('admin.workers.task_id_header')}</th>
-                                    <th className="p-3">{t('admin.workers.task_name_header')}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {worker.reserved_tasks?.map((task) => (
-                                    <tr key={task.id} className="border-b border-white/5 last:border-0 hover:bg-white/5">
-                                      <td className="p-3 font-mono text-slate-300 font-semibold">{task.id}</td>
-                                      <td className="p-3 font-mono text-amber-400">{task.name}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Registered Capabilities */}
-                        <div className="mt-2">
-                          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{t('admin.workers.registered_capabilities')}</h5>
-                          <div className="flex flex-wrap gap-2">
-                            {worker.registered_tasks?.length === 0 ? (
-                              <span className="text-[10px] text-slate-500 italic">{t('admin.workers.no_capabilities')}</span>
-                            ) : (
-                              worker.registered_tasks?.map((taskName) => (
-                                <span key={taskName} className="font-mono text-[9px] font-bold px-2 py-1 rounded bg-slate-900/60 text-slate-400 border border-white/5">
-                                  {taskName}
-                                </span>
-                              ))
-                            )}
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-          </div>
+          <WorkersStats
+            workerStats={workerStats}
+            workerStatsLoading={workerStatsLoading}
+            workerStatsError={workerStatsError}
+            fetchWorkerStats={fetchWorkerStats}
+            formatUptime={formatUptime}
+          />
         )}
 
       </div>

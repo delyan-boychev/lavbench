@@ -38,6 +38,35 @@ def decrypt_field(cipher_text):
 ADJECTIVES = ["Quantum", "Cyber", "Stellar", "Hyper", "Neural", "Shadow", "Alpha", "Zenith", "Vector", "Binary"]
 NOUNS = ["Falcon", "Pioneer", "Voyager", "Oracle", "Matrix", "Nomad", "Eclipse", "Ranger", "Titan", "Specter"]
 
+METRIC_LOWER_IS_BETTER = {
+    # Probabilistic
+    "logloss": True,
+    "brier_score": True,
+    
+    # Regression
+    "rmse": True,
+    "mae": True,
+    "mape": True,
+    "median_ae": True,
+    
+    # NLP
+    "ter": True,
+    
+    # CV keypoints / Generation / Quality
+    "mse": True,
+    "fid": True,
+    "lpips": True,
+    "niqe": True,
+    
+    # Audio
+    "mel_lsd": True
+}
+
+def is_metric_lower_better(metric_name):
+    if not metric_name:
+        return False
+    return METRIC_LOWER_IS_BETTER.get(metric_name.lower().strip(), False)
+
 def generate_pseudonym():
     adj = random.choice(ADJECTIVES)
     noun = random.choice(NOUNS)
@@ -163,12 +192,6 @@ class Challenge(db.Model):
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     
-    # Legacy fields kept for migration compatibility but can be empty/unused
-    hf_dataset_path = db.Column(db.String(255), nullable=True)
-    hf_dataset_config = db.Column(db.String(255), nullable=True)
-    hf_dataset_split = db.Column(db.String(50), nullable=True, default='test')
-    metric_name = db.Column(db.String(100), nullable=True, default='accuracy')
-    
     max_eval_requests = db.Column(db.Integer, default=10)
     ram_limit_mb = db.Column(db.Integer, default=8192)
     time_limit_sec = db.Column(db.Integer, default=300)
@@ -217,10 +240,6 @@ class Challenge(db.Model):
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "hf_dataset_path": self.hf_dataset_path,
-            "hf_dataset_config": self.hf_dataset_config,
-            "hf_dataset_split": self.hf_dataset_split,
-            "metric_name": self.metric_name,
             "max_eval_requests": self.max_eval_requests,
             "ram_limit_mb": self.ram_limit_mb,
             "time_limit_sec": self.time_limit_sec,
@@ -283,6 +302,7 @@ class Task(db.Model):
     stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
+    task_type = db.Column(db.String(100), nullable=True)
     
     # Store up to 5 uploaded resource files as JSON array
     # e.g., [{"filename": "data.csv", "path": "uploads/t1_data.csv", "size": 1048576}]
@@ -305,9 +325,12 @@ class Task(db.Model):
     require_submit_tag = db.Column(db.Boolean, default=False)
     ban_magic_commands = db.Column(db.Boolean, default=False)
     banned_imports = db.Column(db.String(512), nullable=True)
+    whitelisted_imports = db.Column(db.String(512), nullable=True)
     
     # Metrics Config
     metrics_config = db.Column(db.JSON, nullable=True)
+    hf_datasets = db.Column(db.JSON, nullable=True)
+    hf_models = db.Column(db.JSON, nullable=True)
     
     # Scripts/Notebooks
     evaluator_script_path = db.Column(db.String(512), nullable=True)
@@ -358,16 +381,20 @@ class Task(db.Model):
             "require_submit_tag": self.require_submit_tag,
             "ban_magic_commands": self.ban_magic_commands,
             "banned_imports": self.banned_imports,
+            "whitelisted_imports": self.whitelisted_imports,
             "metrics_config": metrics_cfg_val,
             "evaluator_script_path": self.evaluator_script_path,
             "baseline_notebook_path": self.baseline_notebook_path,
             "solution_notebook_path": self.solution_notebook_path,
             "hf_train_repo": self.hf_train_repo,
             "hf_eval_repo": self.hf_eval_repo,
+            "hf_datasets": json.loads(self.hf_datasets) if isinstance(self.hf_datasets, str) else (self.hf_datasets or []),
+            "hf_models": json.loads(self.hf_models) if isinstance(self.hf_models, str) else (self.hf_models or []),
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
-            "stage_id": self.stage_id
+            "stage_id": self.stage_id,
+            "task_type": self.task_type
         }
 
 class Submission(db.Model):

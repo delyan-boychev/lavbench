@@ -11,7 +11,13 @@ def generate_master_key():
     with app.app_context():
         # Drop and recreate database to clean old runs
         print("Dropping all existing database tables...")
-        db.drop_all()
+        try:
+            db.session.execute(db.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")
+            db.drop_all()
         print("Recreating database tables and seeding default data...")
         seed_database()
         

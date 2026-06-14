@@ -546,16 +546,107 @@
       "submission_period_hours": "Submission limit period (Hours)",
       "submission_period_placeholder": "e.g. 24",
       "upload_scripts_notebooks": "G. Upload Scripts & Notebooks",
-      "evaluator_script_label": "Evaluator script (evaluator.py)",
       "baseline_notebook_label": "Baseline Notebook (baseline.ipynb)",
-      "solution_notebook_label": "Solution Notebook (solution.ipynb)",
-      "show_custom_evaluator": "Show Custom Evaluator Template (evaluator.py)",
-      "custom_evaluator_help": "When writing a custom evaluator, your script must import the student submission as submission_runner, evaluate it, and write the final metrics to eval_results.json.",
       "resource_files_title": "H. Resource Files (Up to 5 files, Max 25MB each)",
       "current_resource_files": "Current resource files:",
       "undo_delete": "Undo Delete",
       "press_cmd_ctrl": "Press Cmd/Ctrl to choose multiple files.",
-      "create_task_btn": "Create Task"
+      "create_task_btn": "Create Task",
+      "modality_metrics_title": "Configure Modality Metrics",
+      "modality_metrics_selected": "{{count}} / 5 selected",
+      "modality_metrics_limit_reached": "⚠️ Maximum limit of 5 metrics reached for this task group.",
+      "modality_metrics_weight": "Weight:",
+      "modality_metrics_beta": "Beta:",
+      "modality_metrics_threshold": "Threshold:",
+      "modality_metrics_options_json": "Options (JSON):",
+      "modality_schemas_title": "Required File Schemas",
+      "modality_schemas_submission": "Submission Format (submission.parquet)",
+      "modality_schemas_ground_truth": "Ground Truth Format (labels.parquet)",
+      "modality_schemas_note": "💡 Note: Parquet files must contain these exact column names. Ensure your testing labels match the required schema before starting the challenge.",
+      "hf_datasets_label": "Pre-cached HF Datasets (comma-separated, max 5)",
+      "hf_models_label": "Pre-cached HF Models (comma-separated, max 5)",
+      "whitelisted_libraries_label": "Whitelisted Libraries (comma-separated)",
+      "task_type_required_error": "Please select a Task Type / Modality Group.",
+      "whitelisted_libraries_placeholder": "e.g. numpy, pandas, torch",
+      "hf_datasets_placeholder": "e.g. ylecun/mnist, imdb",
+      "hf_models_placeholder": "e.g. bert-base-uncased, gpt2",
+      "task_type_label": "Task Type / Modality Group",
+      "select_modality_group": "-- Select Modality Group --",
+      "modality_group": {
+        "classification": "Classification",
+        "probabilistic": "Probabilistic",
+        "regression": "Regression",
+        "ner_tagging": "NER / Tagging",
+        "translation_summ": "Translation / Summarization",
+        "qa_extractive": "QA (Extractive)",
+        "object_detection": "Object Detection",
+        "segmentation": "Segmentation",
+        "keypoints": "Keypoints",
+        "image_generation": "Image Generation",
+        "audio_generation": "Audio Generation",
+        "retrieval": "Ranking & Retrieval",
+        "clustering": "Clustering"
+      },
+      "schemas": {
+        "common": {
+          "id_matching": "Unique sample identifier matching ground truth",
+          "id_desc": "Unique sample identifier",
+          "query_id_desc": "Unique query identifier"
+        },
+        "classification": {
+          "label": "Predicted class label",
+          "gt_label": "Ground-truth class label"
+        },
+        "probabilistic": {
+          "score": "Predicted probability or logit for the positive class",
+          "gt_label": "Ground-truth binary label"
+        },
+        "regression": {
+          "value": "Predicted continuous value",
+          "gt_value": "Ground-truth continuous target value"
+        },
+        "ner_tagging": {
+          "labels": "Predicted tags (e.g. ['B-PER', 'I-PER', 'O'])",
+          "gt_labels": "Ground-truth tags"
+        },
+        "translation_summ": {
+          "text": "Generated summary or translation text",
+          "gt_text": "Ground-truth reference summary or translation text"
+        },
+        "qa_extractive": {
+          "answer": "Extracted answer string",
+          "gt_answer": "Ground-truth answer string"
+        },
+        "object_detection": {
+          "boxes": "Predicted boxes each with: x_min, y_min, x_max, y_max, label, score (float)",
+          "gt_boxes": "Ground-truth bounding boxes each with: x_min, y_min, x_max, y_max, label"
+        },
+        "segmentation": {
+          "mask": "Predicted binary mask bytes",
+          "gt_mask": "Ground-truth binary mask bytes"
+        },
+        "keypoints": {
+          "keypoints": "Predicted keypoints coordinates [[x1, y1], [x2, y2], ...]",
+          "gt_keypoints": "Ground-truth keypoints coordinates [[x1, y1], [x2, y2], ...]"
+        },
+        "image_generation": {
+          "image": "Generated image raw bytes (PNG/JPG)",
+          "gt_image": "Ground-truth target image raw bytes (PNG/JPG)"
+        },
+        "audio_generation": {
+          "audio": "Generated audio raw bytes (WAV/MP3)",
+          "gt_audio": "Ground-truth target audio raw bytes (WAV/MP3)"
+        },
+        "retrieval": {
+          "doc_id": "Document/passage identifier",
+          "score": "Predicted retrieval confidence or relevance score",
+          "gt_doc_id": "Ground-truth relevant/correct document identifier"
+        },
+        "clustering": {
+          "cluster_id": "Predicted cluster assignment",
+          "gt_label": "Ground-truth true label assignment"
+        }
+      }
     },
     "notifications": {
       "competition_created": "Competition created successfully!",

@@ -21,8 +21,9 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const isCompetitor = currentUser?.role === 'competitor';
   const stage = challenge?.stages?.find(s => s.id === task?.stage_id);
-  const stageEnded = stage ? new Date() > new Date(stage.end_time) : false;
-  const challengeEnded = !stage && challenge?.end_time && new Date() > new Date(challenge.end_time);
+  const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
+  const stageEnded = stage ? new Date().getTime() > (new Date(stage.end_time).getTime() + graceMs) : false;
+  const challengeEnded = !stage && challenge?.end_time && new Date().getTime() > (new Date(challenge.end_time).getTime() + graceMs);
   const isClosed = !challenge?.is_active || challenge?.is_archived || challenge?.scores_finalized || challengeEnded || stageEnded;
 
   // Admin/Jury: show info panel only

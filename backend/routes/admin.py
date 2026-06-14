@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, current_app, Response
 from werkzeug.security import generate_password_hash
-from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, encrypt_field
+from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, encrypt_field, is_metric_lower_better
 from auth_utils import role_required
 
 admin_bp = Blueprint('admin', __name__)
@@ -127,41 +127,48 @@ def get_users():
         if c.start_time and datetime.utcnow() >= c.start_time
     }
         
+    if not search_term:
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            "items": [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
+            "total": pagination.total,
+            "page": pagination.page,
+            "pages": pagination.pages
+        })
+
     all_items = query.all()
-    if search_term:
-        term = search_term.lower()
-        user_role = request.user["role"]
-        filtered_items = []
-        for u in all_items:
-            comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
-            alias_match = term in (u.alias_id or "").lower()
-            
-            if user_role == 'jury' and comp_started:
-                match = alias_match
-            else:
-                dec_name = decrypt_field(u.name) or ""
-                dec_surname = decrypt_field(u.surname) or ""
-                full_name = f"{dec_name} {dec_surname}".lower()
-                dec_school = decrypt_field(u.school) or ""
-                dec_city = decrypt_field(u.city) or ""
-                
-                match = (alias_match or
-                         term in (u.username or "").lower() or
-                         term in (u.email or "").lower() or
-                         term in dec_name.lower() or
-                         term in dec_surname.lower() or
-                         term in full_name or
-                         term in dec_school.lower() or
-                         term in dec_city.lower())
-                         
-            if match:
-                filtered_items.append(u)
-        all_items = filtered_items
+    term = search_term.lower()
+    user_role = request.user["role"]
+    filtered_items = []
+    for u in all_items:
+        comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
+        alias_match = term in (u.alias_id or "").lower()
         
-    total = len(all_items)
+        if user_role == 'jury' and comp_started:
+            match = alias_match
+        else:
+            dec_name = decrypt_field(u.name) or ""
+            dec_surname = decrypt_field(u.surname) or ""
+            full_name = f"{dec_name} {dec_surname}".lower()
+            dec_school = decrypt_field(u.school) or ""
+            dec_city = decrypt_field(u.city) or ""
+            
+            match = (alias_match or
+                     term in (u.username or "").lower() or
+                     term in (u.email or "").lower() or
+                     term in dec_name.lower() or
+                     term in dec_surname.lower() or
+                     term in full_name or
+                     term in dec_school.lower() or
+                     term in dec_city.lower())
+                     
+        if match:
+            filtered_items.append(u)
+    
+    total = len(filtered_items)
     start = (page - 1) * per_page
     end = start + per_page
-    paginated_items = all_items[start:end]
+    paginated_items = filtered_items[start:end]
     
     return jsonify({
         "items": [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
@@ -531,98 +538,17 @@ def reset_all_challenge_passwords(challenge_id):
 @admin_bp.route('/challenges/<int:challenge_id>/download-scores-csv', methods=['GET'])
 @role_required(['admin', 'jury'])
 def download_scores_csv(challenge_id):
+    from flask import Response
+    from services.challenge_service import generate_scores_csv
+    
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return jsonify({"error": "Scores must be finalized before downloading."}), 400
         
-    tasks = challenge.tasks
-    competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
+    csv_data = generate_scores_csv(challenge)
     
-    competitor_data = []
-    for comp in competitors:
-        task_scores = {}
-        total_score = 0.0
-        for task in tasks:
-            subs = Submission.query.filter_by(task_id=task.id, user_id=comp.id, status='completed').all()
-            best_sub = None
-            has_late_sub = False
-            if challenge.end_time and datetime.utcnow() > challenge.end_time:
-                has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in subs)
-                
-            final_sel = next((s for s in subs if s.is_final_selection), None)
-            if final_sel and not has_late_sub:
-                best_sub = final_sel
-            elif subs:
-                is_lower_better = False
-                if task.metrics_config:
-                    try:
-                        m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
-                        for m_name, m_info in m_config.items():
-                            if m_info.get("higher_is_better") is False:
-                                is_lower_better = True
-                            break
-                    except:
-                        pass
-                else:
-                    metric_name = challenge.metric_name or ''
-                    if 'mse' in metric_name.lower() or 'error' in metric_name.lower() or 'loss' in metric_name.lower():
-                        is_lower_better = True
-                
-                if is_lower_better:
-                    subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or 999999))
-                else:
-                    subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or -999999), reverse=True)
-                
-                if subs_sorted:
-                    best_sub = subs_sorted[0]
-            
-            score = 0.0
-            if best_sub:
-                score = best_sub.private_score if best_sub.private_score is not None else (best_sub.public_score or 0.0)
-            
-            task_scores[task.id] = score
-            total_score += score
-            
-        competitor_data.append({
-            "competitor": comp,
-            "task_scores": task_scores,
-            "total_score": total_score
-        })
-        
-    # Sort competitors by total score descending
-    competitor_data = sorted(competitor_data, key=lambda x: x["total_score"], reverse=True)
-    
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    # Header
-    header = ["Rank", "Alias ID", "Name", "Surname", "Username", "Email", "School", "City", "Grade"]
-    for task in tasks:
-        header.append(f"Task: {task.title}")
-    header.append("Total Score")
-    writer.writerow(header)
-    
-    for rank, item in enumerate(competitor_data, 1):
-        comp = item["competitor"]
-        row = [
-            rank,
-            comp.alias_id,
-            decrypt_field(comp.name) or "—",
-            decrypt_field(comp.surname) or "—",
-            comp.username,
-            comp.email or "—",
-            decrypt_field(comp.school) or "—",
-            decrypt_field(comp.city) or "—",
-            decrypt_field(comp.grade) or "—",
-        ]
-        for task in tasks:
-            row.append(f"{item['task_scores'][task.id]:.4f}")
-        row.append(f"{item['total_score']:.4f}")
-        writer.writerow(row)
-        
-    output.seek(0)
     return Response(
-        output.getvalue(),
+        csv_data,
         mimetype="text/csv",
         headers={"Content-disposition": f"attachment; filename=scores_challenge_{challenge_id}.csv"}
     )
@@ -651,37 +577,8 @@ def download_submissions_zip(challenge_id):
                 if not subs:
                     continue
                     
-                best_sub = None
-                has_late_sub = False
-                if challenge.end_time and datetime.utcnow() > challenge.end_time:
-                    has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in subs)
-                    
-                final_sel = next((s for s in subs if s.is_final_selection), None)
-                if final_sel and not has_late_sub:
-                    best_sub = final_sel
-                else:
-                    is_lower_better = False
-                    if task.metrics_config:
-                        try:
-                            m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
-                            for m_name, m_info in m_config.items():
-                                if m_info.get("higher_is_better") is False:
-                                    is_lower_better = True
-                                break
-                        except:
-                            pass
-                    else:
-                        metric_name = challenge.metric_name or ''
-                        if 'mse' in metric_name.lower() or 'error' in metric_name.lower() or 'loss' in metric_name.lower():
-                            is_lower_better = True
-                    
-                    if is_lower_better:
-                        subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or 999999))
-                    else:
-                        subs_sorted = sorted(subs, key=lambda x: (x.private_score if x.private_score is not None else x.public_score or -999999), reverse=True)
-                    
-                    if subs_sorted:
-                        best_sub = subs_sorted[0]
+                from services.submission_service import get_best_submission
+                best_sub = get_best_submission(task, subs, challenge)
                 
                 if best_sub:
                     task_title = "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-")).strip()
