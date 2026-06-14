@@ -419,7 +419,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         "    rm -rf /var/lib/apt/lists/*"
                     ])
             
-            dockerfile_lines.append("RUN pip install --no-cache-dir datasets scikit-learn pandas numpy cryptography")
+            # Core ML/deps — add more via task's pip_requirements field
             
             if task.pip_requirements:
                 req_path = os.path.join(temp_dir, "requirements.txt")
