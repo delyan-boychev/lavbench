@@ -2,6 +2,7 @@ import React from 'react';
 import Badge from '../ui/Badge';
 import Pagination from '../ui/Pagination';
 import EmptyState from '../ui/EmptyState';
+import { Star } from 'lucide-react';
 import { formatLocalizedDate } from '../../utils/formatDate';
 import { useTranslation } from 'react-i18next';
 
@@ -60,12 +61,20 @@ export default function SubmissionList({
               className={`flex flex-col gap-1.5 p-3 rounded-lg text-left w-full transition-all duration-150 border cursor-pointer ${
                 isSelected 
                   ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100' 
-                  : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
+                  : sub.is_final_selection
+                    ? 'bg-slate-900/40 border-indigo-500/25 hover:bg-slate-800/60 text-slate-300'
+                    : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
               }`}
             >
               <div className="flex justify-between items-center gap-2 w-full">
-                <span className="font-mono text-xs text-slate-500">
+                <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
                   #{sub.id}
+                  {sub.is_final_selection && (
+                    <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                      <Star className="w-3 h-3" />
+                      {t('submissions.final_selection_label')}
+                    </span>
+                  )}
                 </span>
                 <Badge status={sub.status} />
               </div>

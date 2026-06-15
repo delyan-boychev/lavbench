@@ -9,6 +9,7 @@ import SelectField from '../components/ui/SelectField';
 import Pagination from '../components/ui/Pagination';
 import CodeHighlight from '../components/ui/CodeHighlight';
 import ToggleField from '../components/ui/ToggleField';
+import { Plus } from 'lucide-react';
 
 // Modular Child Components & Service Layer
 import WorkersStats from '../components/admin/WorkersStats';
@@ -357,30 +358,40 @@ export default function AdminPanel() {
     }
   }, [token]);
 
-  // Fetch Worker & Resource Stats
-  const fetchWorkerStats = async () => {
+  // Worker stats via SSE (persistent connection, no polling)
+  useEffect(() => {
+    if (adminSubTab !== 'workers-stats') return;
+    
     setWorkerStatsLoading(true);
-    try {
-      const res = await api.fetch(`${API_BASE}/admin/workers/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setWorkerStats(data);
-        setWorkerStatsError(null);
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setWorkerStatsError(errData.error || t('admin.workers.fetch_stats_error_status', { status: res.status }));
+    const sseUrl = `/api/admin/workers/stats/live?token=${encodeURIComponent(token)}`;
+    const eventSource = new EventSource(sseUrl);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data && !data.error) {
+          setWorkerStats(data);
+          setWorkerStatsError(null);
+        } else if (data?.error) {
+          setWorkerStatsError(data.error);
+        }
+        setWorkerStatsLoading(false);
+      } catch (e) {
+        console.error("Worker stats SSE parse error:", e);
       }
-    } catch (e) {
-      console.error(e);
-      setWorkerStatsError(e.message || t('admin.workers.fetch_stats_network_error'));
-    } finally {
+    };
+    
+    eventSource.onerror = () => {
+      setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
       setWorkerStatsLoading(false);
-    }
-  };
+      eventSource.close();
+    };
+    
+    return () => eventSource.close();
+  }, [adminSubTab, token]);
 
-  // Fetch Users
+  const fetchWorkerStats = () => setWorkerStatsLoading(true);
+
   const fetchUsers = async () => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
@@ -461,9 +472,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (adminSubTab === 'workers-stats') {
-      fetchWorkerStats();
-      const interval = setInterval(fetchWorkerStats, 5000);
-      return () => clearInterval(interval);
+      // SSE handles updates — no polling needed
     }
   }, [adminSubTab]);
 
@@ -1558,7 +1567,7 @@ export default function AdminPanel() {
               <div className="flex flex-col gap-6">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h1 className="text-xl font-bold text-white">{t('admin.active_competitions')}</h1>
-                  <Button variant="primary" onClick={initCreateTask} disabled={!selectedChallenge}>{t('admin.add_task')}</Button>
+                  <Button variant="primary" onClick={initCreateTask} disabled={!selectedChallenge}><Plus size={16} />{t('admin.add_task')}</Button>
                 </div>
                 
                 {paginatedChallengesList.length === 0 ? (
@@ -1641,7 +1650,7 @@ export default function AdminPanel() {
                       <div className="border-t border-white/5 pt-4 mt-2">
                         <div className="flex justify-between items-center mb-3">
                           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('admin.stages.stages_in_competition', { count: c.stages ? c.stages.length : 0 })}</h3>
-                          <Button variant="primary" className="py-1 px-3 text-[10px]" onClick={() => initCreateStage(c.id)}>{t('admin.stages.add_stage')}</Button>
+                          <Button variant="primary" className="py-1 px-3 text-[10px]" onClick={() => initCreateStage(c.id)}><Plus size={14} />{t('admin.stages.add_stage')}</Button>
                         </div>
                         {c.stages?.length === 0 ? (
                           <p className="text-xs text-slate-500 italic">{t('admin.stages.no_stages')}</p>

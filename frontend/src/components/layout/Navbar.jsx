@@ -247,7 +247,7 @@ export default function Navbar() {
         gap: 16,
       }}>
         {/* Left: Logo */}
-        <Logo />
+        <Logo size="lg" />
 
         {/* Center: Cluster status & Docs */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

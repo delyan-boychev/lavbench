@@ -67,6 +67,6 @@ describe('ProtectedLayout Component', () => {
     expect(screen.getByTestId('navbar')).toBeInTheDocument();
     expect(screen.getByTestId('competition-bar')).toBeInTheDocument();
     expect(screen.getByTestId('router-outlet')).toBeInTheDocument();
-    expect(screen.getByText(/National AI Competition Platform/)).toBeInTheDocument();
+    expect(screen.getByText(/LavBench/)).toBeInTheDocument();
   });
 });

@@ -1,21 +1,21 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckIcon, CrossIcon, SpinnerIcon, ClockIcon, GearIcon, DotIcon, SnowflakeIcon, FlagIcon } from './icons';
+import { Check, X, Loader2, Clock, Settings, Circle, Snowflake, Flag } from 'lucide-react';
 
 const ICON = {
-  completed:        CheckIcon,
-  failed:           CrossIcon,
-  running:          SpinnerIcon,
-  queued:           ClockIcon,
-  building_env:     GearIcon,
-  running_inference: SpinnerIcon,
-  evaluating:       GearIcon,
-  active:           DotIcon,
-  archived:         DotIcon,
-  not_started:      ClockIcon,
-  frozen:           SnowflakeIcon,
-  ended:            FlagIcon,
-  finalized:        CheckIcon,
+  completed:        Check,
+  failed:           X,
+  running:          Loader2,
+  queued:           Clock,
+  building_env:     Settings,
+  running_inference: Loader2,
+  evaluating:       Settings,
+  active:           Circle,
+  archived:         Circle,
+  not_started:      Clock,
+  frozen:           Snowflake,
+  ended:            Flag,
+  finalized:        Check,
 };
 
 const CONFIG = {
@@ -43,7 +43,7 @@ export default function Badge({ status }) {
   const StatusIcon = ICON[status];
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none ${cfg.style}`}>
-      {StatusIcon && <StatusIcon className="w-3 h-3" />}
+      {StatusIcon && <StatusIcon className={`w-3 h-3 ${status === 'running' || status === 'running_inference' ? 'animate-spin' : ''}`} />}
       {cfg.key ? t(cfg.key) : status?.toUpperCase()}
     </span>
   );

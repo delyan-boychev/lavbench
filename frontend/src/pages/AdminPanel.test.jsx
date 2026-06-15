@@ -83,6 +83,18 @@ describe('AdminPanel Page - Workers & Resources', () => {
       token: 'valid-admin-token',
     });
 
+    global.EventSource = class {
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+        setTimeout(() => {
+          if (this.onmessage) {
+            this.onmessage({ data: JSON.stringify(mockSystemStats) });
+          }
+        }, 10);
+      }
+    };
+
     global.fetch = vi.fn().mockImplementation((url) => {
       if (url === '/api/admin/metrics' || url.includes('metrics')) {
         return Promise.resolve({
@@ -112,11 +124,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
       fireEvent.click(workersTabBtn);
     });
 
-    // Check it calls fetch with correct URL and headers
-    expect(global.fetch).toHaveBeenCalledWith('/api/admin/workers/stats', expect.objectContaining({
-      headers: expect.objectContaining({ 'Authorization': 'Bearer valid-admin-token' })
-    }));
-
+    // Workers stats now arrive via SSE EventSource — data is pumped via mock onmessage
     // Verify system stats section renders
     await vi.waitFor(() => {
       expect(screen.getByText('System Resources & Worker Status')).toBeInTheDocument();
@@ -139,12 +147,10 @@ describe('AdminPanel Page - Workers & Resources', () => {
     expect(screen.getByText('test-task-1')).toBeInTheDocument();
   });
 
-  it('handles API fetch errors gracefully', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({ error: 'Database connection failed' }),
-    });
+  it('handles SSE errors gracefully', async () => {
+    global.EventSource = class {
+      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onerror) this.onerror(new Event('error')); }, 10); }
+    };
 
     render(<AdminPanel />);
     const workersTabBtn = screen.getByText('Workers & Resources');
@@ -154,7 +160,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     });
 
     await vi.waitFor(() => {
-      expect(screen.getByText('Error retrieving system statistics: Database connection failed')).toBeInTheDocument();
+      expect(screen.getByText(/Network error fetching stats/i)).toBeInTheDocument();
     });
   });
 

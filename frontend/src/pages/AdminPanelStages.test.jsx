@@ -89,7 +89,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
     });
 
-    const addStageBtn = screen.getByText('+ Add Stage');
+    const addStageBtn = screen.getByText('Add Stage');
     expect(addStageBtn).toBeInTheDocument();
     
     fireEvent.click(addStageBtn);

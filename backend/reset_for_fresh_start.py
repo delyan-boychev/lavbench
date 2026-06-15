@@ -47,7 +47,7 @@ def reset_and_create_admin():
         try:
             with open(creds_path, "w") as f:
                 f.write("=" * 50 + "\n")
-                f.write("      NAI COMPETITION SYSTEM ADMIN CREDENTIALS\n")
+                f.write("      LAVBENCH ADMIN CREDENTIALS\n")
                 f.write("=" * 50 + "\n")
                 f.write(
                     f"Generated On   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
@@ -62,7 +62,7 @@ def reset_and_create_admin():
             saved_msg = f"Failed to save credentials file: {e}"
 
         print("\n" + "=" * 60)
-        print("         MASTER ADMIN PROFILE GENERATOR ONLINE")
+        print("         NEUROBENCH ADMIN GENERATOR")
         print("=" * 60)
         print("  A secure administrator profile has been generated.")
         print("  Keep these credentials safe. Paste them to log in.")

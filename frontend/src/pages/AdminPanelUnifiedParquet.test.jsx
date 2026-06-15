@@ -100,19 +100,19 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Column Definitions section should be visible
     expect(screen.getByText('Column Definitions')).toBeInTheDocument();
-    expect(screen.getByText('+ Add Column')).toBeInTheDocument();
+    expect(screen.getByText('Add Column')).toBeInTheDocument();
 
     // Initially shows empty state
     expect(screen.getAllByText(/No columns defined/i).length).toBeGreaterThan(0);
 
     // Add a column
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
 
     // Column row should appear with inputs
@@ -130,12 +130,12 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Add a column
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
 
     const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
@@ -153,12 +153,12 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Add a column first so column mapping dropdown has options
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
     const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
     await act(async () => {
@@ -177,12 +177,12 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Add a column
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
     const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
     await act(async () => {
@@ -233,12 +233,12 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Add a column
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
     const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
     await act(async () => {
@@ -272,12 +272,12 @@ describe('AdminPanel - Column Config & Metrics', () => {
     setupMockApi();
     render(<AdminPanel />);
 
-    fireEvent.click(screen.getByText('+ Add Task'));
+    fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
 
     // Add a column
     await act(async () => {
-      fireEvent.click(screen.getByText('+ Add Column'));
+      fireEvent.click(screen.getByText('Add Column'));
     });
     const nameInput = screen.getAllByPlaceholderText(/e\.g\. id/i)[0];
     await act(async () => {

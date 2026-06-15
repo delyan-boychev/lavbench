@@ -17,6 +17,8 @@ export default function LeaderboardView() {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [metricName, setMetricName] = useState('Score');
+  const [isNormalized, setIsNormalized] = useState(false);
 
   useEffect(() => {
     if (challengeId) {
@@ -32,6 +34,8 @@ export default function LeaderboardView() {
       if (res.ok) {
         setLeaderboardData(res.data.leaderboard || []);
         setTasks(res.data.tasks || []);
+        setMetricName(res.data.metric_name || 'Score');
+        setIsNormalized(res.data.is_normalized || false);
       }
     } catch (err) {
       console.error("Failed to load challenge leaderboard:", err);
@@ -58,6 +62,8 @@ export default function LeaderboardView() {
           tasks={tasks}
           challenge={selectedChallenge} 
           loading={loading}
+          metricName={metricName}
+          isNormalized={isNormalized}
           onRefresh={() => loadLeaderboard(true)}
         />
       ) : (

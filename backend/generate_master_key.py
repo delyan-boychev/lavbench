@@ -52,7 +52,7 @@ def generate_master_key():
         try:
             with open(creds_path, "w") as f:
                 f.write("==================================================\n")
-                f.write("      NAI COMPETITION SYSTEM ADMIN CREDENTIALS     \n")
+                f.write("      LAVBENCH ADMIN CREDENTIALS\n")
                 f.write("==================================================\n")
                 f.write(f"Generated On   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
                 f.write(f"Admin Username : {admin_username}\n")

@@ -104,19 +104,8 @@ export default function Login() {
         
         <div className="text-center mb-8">
           <div className="flex justify-center mb-5">
-            <Logo size="lg" />
+            <Logo size="xl" />
           </div>
-          <div className="flex flex-col items-center gap-2.5">
-            <h1 className="text-2xl font-bold text-white tracking-tight">
-              {t('auth.title')}
-            </h1>
-            <span className="bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 text-[10px] tracking-wider uppercase font-bold px-2.5 py-0.5 rounded">
-              {t('auth.subtitle')}
-            </span>
-          </div>
-          <p className="text-slate-400 text-xs mt-2">
-            {t('auth.desc')}
-          </p>
         </div>
 
         {authError && (

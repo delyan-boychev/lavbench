@@ -8,6 +8,7 @@ import TabScrollContainer from '../ui/TabScrollContainer';
 import ToggleField from '../ui/ToggleField';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
+import { ChevronRight, RefreshCw, BarChart3 } from 'lucide-react';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
@@ -40,6 +41,7 @@ function Row({
   const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
   const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isJuryOrAdmin;
   const showDemographics = showIdentity && (!entry.user?.is_anonymous || isJuryOrAdmin || isCurrentUser);
+  const isBaseline = entry.is_baseline_entry;
 
   // Manage temporary points state during editing
   const [tempPoints, setTempPoints] = useState({});
@@ -99,43 +101,34 @@ function Row({
       <tr className={`border-b border-slate-800/60 transition-colors duration-150 ${isCurrentUser ? 'bg-indigo-500/5' : ''}`}>
         {/* Toggle Expand column */}
         <td className="px-4 py-3 text-center w-10">
+          {!isBaseline && (
           <button 
             onClick={onToggleExpand}
             className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer p-1"
             title={t('leaderboard.toggle_details_tooltip', 'Toggle details')}
           >
-            <svg 
-              width="14" 
-              height="14" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor" 
-              strokeWidth="2.5"
+            <ChevronRight 
+              size={14} 
               className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-90 text-indigo-400' : ''}`}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            />
           </button>
+          )}
         </td>
 
         {/* Rank column */}
         <td className="px-4 py-3 text-center w-14 text-slate-300">
-          {entry.is_baseline_entry ? (
-            <span className="text-xs font-mono text-slate-500">—</span>
-          ) : (
-            <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`} title={t('leaderboard.rank_tooltip', { rank })}>
-              <span className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}>
-                {rank}
-              </span>
-            </div>
-          )}
+          <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`} title={t('leaderboard.rank_tooltip', { rank })}>
+            <span className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}>
+              {rank}
+            </span>
+          </div>
         </td>
 
         {/* Participant Details */}
         <td className="px-4 py-3 text-left min-w-[150px]">
           {entry.is_baseline_entry ? (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+              <span className="text-sm font-extrabold px-3 py-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 text-indigo-400">
                 {t('leaderboard.baseline_label')}
               </span>
             </div>
@@ -265,7 +258,7 @@ function Row({
                         {(showPointsCols || isJuryOrAdmin) && (
                           <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
                             <span className="text-slate-500">{t('leaderboard.manual_points_label')}</span>
-                            {isJuryOrAdmin && !isFinalized ? (
+                {isJuryOrAdmin && !isFinalized && !isBaseline ? (
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="number"
@@ -301,12 +294,12 @@ function Row({
   );
 }
 
-export default function LeaderboardTable({ data, tasks, challenge, loading, onRefresh }) {
+export default function LeaderboardTable({ data, tasks, challenge, loading, onRefresh, metricName, isNormalized }) {
   const { currentUser } = useAuth();
   const { showToast, fetchChallenges } = useApp();
   const { t } = useTranslation();
   const isFinalized = challenge?.scores_finalized;
-  const metric = challenge?.metric_name || 'Score';
+  const metric = metricName || challenge?.metric_name || 'Score';
   const isJury = currentUser?.role === 'jury';
   const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
 
@@ -424,6 +417,11 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
             <h2 className="text-lg font-bold text-slate-100">{t('leaderboard.title')}</h2>
             <p className="text-xs text-slate-400 mt-0.5">
               {t('leaderboard.metric')} <span className="text-indigo-400 font-semibold">{metric}</span>
+              {isNormalized && (
+                <span className="text-[10px] text-slate-500 ml-1" title={t('leaderboard.normalized_hint')}>
+                  {t('leaderboard.normalized')}
+                </span>
+              )}
               {' · '}{t('leaderboard.participants', { count: data.length })}
               {isFinalized && <span className="pill pill-success ml-2">{t('leaderboard.finalized')}</span>}
             </p>
@@ -433,9 +431,7 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
             className="p-2 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition-colors"
             title={t('leaderboard.refresh')}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-            </svg>
+            <RefreshCw size={16} />
           </button>
         </div>
         {/* Only JURY (not admin) can finalize */}
@@ -488,9 +484,7 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
             surface={false}
             message={t('leaderboard.no_submissions')}
             icon={
-              <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-                <path strokeLinecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2m0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+              <BarChart3 size={32} className="text-slate-500" />
             }
           />
         ) : (

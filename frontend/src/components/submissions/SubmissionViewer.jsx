@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import Badge from '../ui/Badge';
 import CodeHighlight from '../ui/CodeHighlight';
 import EmptyState from '../ui/EmptyState';
-import { StarIcon } from '../ui/icons';
+import { Star } from 'lucide-react';
 import ToggleField from '../ui/ToggleField';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../AuthContext';
+import { FileText } from 'lucide-react';
 
 export default function SubmissionViewer({ 
   submission, 
@@ -77,9 +78,7 @@ export default function SubmissionViewer({
         minHeight={300}
         message={t('submissions.select_to_view')}
         icon={
-          <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-            <path strokeLinecap="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-          </svg>
+          <FileText size={32} className="text-slate-500" />
         }
       />
     );
@@ -115,7 +114,7 @@ export default function SubmissionViewer({
               )}
               {submission.is_final_selection && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
-                  <StarIcon className="w-3 h-3" />
+                  <Star className="w-3 h-3" />
                   {t('submissions.final_selection_star')}
                 </span>
               )}

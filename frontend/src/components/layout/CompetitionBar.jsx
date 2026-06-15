@@ -4,19 +4,17 @@ import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import CustomSelect from '../ui/CustomSelect';
 import { useTranslation } from 'react-i18next';
+import { Layout, Trophy, Pencil, Shield } from 'lucide-react';
 
 function TabIcon({ name }) {
-  const icons = {
-    challenge: <path d="M3 3v18h18M8.7 15.3l-2.4 2.4M12 12l-2.4 2.4M15.3 8.7l-2.4 2.4M9 6h6v6H9z" />,
-    leaderboard: <path d="M3 21h18M7 17v-5m4 5v-9m4 5V6m4 11v-6" />,
-    submissions: <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />,
-    admin: <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />,
-  };
-  return (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {icons[name]}
-    </svg>
-  );
+  const style = { width: 18, height: 18, flexShrink: 0 };
+  switch (name) {
+    case 'challenge': return <Layout {...style} />;
+    case 'leaderboard': return <Trophy {...style} />;
+    case 'submissions': return <Pencil {...style} />;
+    case 'admin': return <Shield {...style} />;
+    default: return null;
+  }
 }
 
 function getNavClass({ isActive }) {

@@ -10,8 +10,9 @@ import urllib.parse
 import subprocess
 import json
 import zipfile
+import redis
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file, current_app, Response
+from flask import Blueprint, request, jsonify, send_file, current_app, Response, stream_with_context
 from werkzeug.security import generate_password_hash
 from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, encrypt_field, is_metric_lower_better
 from auth_utils import role_required
@@ -643,6 +644,51 @@ def download_submissions_zip(challenge_id):
 @admin_bp.route('/workers/stats', methods=['GET'])
 @role_required(['admin', 'jury'])
 def get_detailed_worker_stats():
+    return _get_worker_stats_response()
+
+@admin_bp.route('/workers/stats/live', methods=['GET'])
+@role_required(['admin', 'jury'])
+def stream_worker_stats():
+    def event_generator():
+        with current_app.app_context():
+            # Send initial data immediately
+            res_data = _get_worker_stats_response()
+            yield f"data: {json.dumps(res_data)}\n\n"
+        
+        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(broker_url)
+        pubsub = r.pubsub()
+        pubsub.subscribe("worker_stats_update")
+        
+        try:
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                if message:
+                    with current_app.app_context():
+                        res_data = _get_worker_stats_response()
+                        yield f"data: {json.dumps(res_data)}\n\n"
+                else:
+                    # Push periodic updates every 5s even if no pubsub event
+                    with current_app.app_context():
+                        res_data = _get_worker_stats_response()
+                        yield f"data: {json.dumps(res_data)}\n\n"
+        except GeneratorExit:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
+        except Exception as e:
+            print(f"Worker stats SSE error: {e}")
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except:
+                pass
+    
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+
+def _get_worker_stats_response():
     from flask import current_app
     from cache_utils import get_cached, set_cached
     

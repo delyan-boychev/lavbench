@@ -5,7 +5,7 @@ import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
-import { PencilIcon, ChartIcon, LockIcon, DockerIcon, FolderIcon } from '../ui/icons';
+import { Pencil, BarChart3, Lock, Box, Folder, Plus } from 'lucide-react';
 
 export default function TaskForm({
   taskForm,
@@ -72,7 +72,7 @@ export default function TaskForm({
             onClick={addColumn}
             className="text-xs font-medium text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 rounded-lg transition-colors"
           >
-            {t('admin.tasks.add_column')}
+            <Plus size={14} />{t('admin.tasks.add_column')}
           </button>
         </div>
         <p className="text-xs text-slate-400">
@@ -180,7 +180,7 @@ export default function TaskForm({
             defaultValue=""
             disabled={selectedCount >= 10}
           >
-            <option value="">{t('admin.tasks.add_eval_metric')}</option>
+            <option value="">            <Plus size={14} />{t('admin.tasks.add_eval_metric')}</option>
             {Object.keys(availableMetrics).filter(m => !metricsOnly[m]).sort().map(m => (
               <option key={m} value={m}>{formatMetricName(m)}</option>
             ))}
@@ -400,11 +400,11 @@ export default function TaskForm({
   })();
 
   const TABS = [
-    { id: 'general', label: t('admin.tasks.tabs.general'), Icon: PencilIcon },
-    { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), Icon: ChartIcon },
-    { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: LockIcon },
-    { id: 'environment', label: t('admin.tasks.tabs.environment'), Icon: DockerIcon },
-    { id: 'files', label: t('admin.tasks.tabs.files'), Icon: FolderIcon }
+    { id: 'general', label: t('admin.tasks.tabs.general'), Icon: Pencil },
+    { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), Icon: BarChart3 },
+    { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: Lock },
+    { id: 'environment', label: t('admin.tasks.tabs.environment'), Icon: Box },
+    { id: 'files', label: t('admin.tasks.tabs.files'), Icon: Folder }
   ];
 
   return (

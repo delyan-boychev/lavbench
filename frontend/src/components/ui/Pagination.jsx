@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from './Button';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function Pagination({
   page,
@@ -70,9 +71,7 @@ export default function Pagination({
           onClick={() => onPageChange(page - 1)}
           title={t('common.prev_page')}
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
-          </svg>
+          <ChevronLeft size={14} />
         </Button>
 
         {/* Page Buttons */}
@@ -112,9 +111,7 @@ export default function Pagination({
           onClick={() => onPageChange(page + 1)}
           title={t('common.next_page')}
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight size={14} />
         </Button>
       </div>
     </div>

@@ -7,6 +7,7 @@ import Home from './pages/Home';
 import LeaderboardView from './pages/LeaderboardView';
 import SubmissionsView from './pages/SubmissionsView';
 import AdminPanel from './pages/AdminPanel';
+import LeaderboardDemo from './pages/LeaderboardDemo';
 
 function ToastContainer() {
   const { toast } = useApp();
@@ -39,6 +40,9 @@ export default function App() {
           
           {/* Public Login Route */}
           <Route path="/login" element={<Login />} />
+          
+          {/* Demo */}
+          <Route path="/demo/leaderboard" element={<LeaderboardDemo />} />
           
           {/* Fallback Catch-all Route */}
           <Route path="*" element={<Navigate to="/challenges" replace />} />

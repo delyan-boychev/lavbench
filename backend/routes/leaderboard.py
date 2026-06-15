@@ -260,10 +260,26 @@ def get_leaderboard(challenge_id):
                 }
             post_processed_leaderboard.append(entry_copy)
         tasks_list = [t.to_dict() for t in tasks]
+    
+    metric_name = "Score"
+    is_normalized = False
+    for task in tasks:
+        if task.metrics_config:
+            try:
+                cfg = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
+                keys = [k for k in cfg.keys() if not k.startswith("_")]
+                if keys:
+                    m_name = keys[0]
+                    metric_name = m_name.replace("_", " ").title()
+                    is_normalized = is_metric_lower_better(m_name)
+                    break
+            except Exception:
+                pass
         
     return jsonify({
         "challenge_title": challenge.title,
-        "metric_name": "Score",
+        "metric_name": metric_name,
+        "is_normalized": is_normalized,
         "is_finalized": challenge.scores_finalized,
         "reveal_public_scores": challenge.reveal_public_scores,
         "reveal_private_scores": challenge.reveal_private_scores,

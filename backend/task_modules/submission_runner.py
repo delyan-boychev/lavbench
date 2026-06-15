@@ -862,7 +862,7 @@ def register_worker_specs(sender, **kwargs):
             "last_seen": time.time()
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
-        print(f"[NAI Worker] Specs registered successfully: {spec}")
+        print(f"[NeuroBench] Specs registered successfully: {spec}")
         
         # Call main server to retrieve active datasets and preload them on worker startup
         main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
@@ -876,7 +876,7 @@ def register_worker_specs(sender, **kwargs):
                 data = res.json()
                 datasets_to_preload = data.get("datasets", [])
                 if datasets_to_preload:
-                    print(f"[NAI Worker] Active datasets to preload on startup: {datasets_to_preload}")
+                    print(f"[NeuroBench] Active datasets to preload on startup: {datasets_to_preload}")
                     
                     # Resolve cache directory on worker
                     hf_cache_dir = os.environ.get("HF_CACHE_DIR")
@@ -893,17 +893,17 @@ def register_worker_specs(sender, **kwargs):
                             from datasets import load_dataset as host_load_dataset
                             for ds_name in datasets_to_preload:
                                 try:
-                                    print(f"[NAI Worker] Preloading dataset '{ds_name}' to '{hf_cache_dir}'...")
+                                    print(f"[NeuroBench] Preloading dataset '{ds_name}' to '{hf_cache_dir}'...")
                                     host_load_dataset(ds_name, cache_dir=hf_cache_dir)
-                                    print(f"[NAI Worker] Successfully preloaded dataset '{ds_name}' on worker startup.")
+                                    print(f"[NeuroBench] Successfully preloaded dataset '{ds_name}' on worker startup.")
                                 except Exception as e:
-                                    print(f"[NAI Worker] Failed preloading dataset '{ds_name}': {e}")
+                                    print(f"[NeuroBench] Failed preloading dataset '{ds_name}': {e}")
                         except Exception as import_err:
-                            print(f"[NAI Worker] Could not import 'datasets' to preload: {import_err}")
+                            print(f"[NeuroBench] Could not import 'datasets' to preload: {import_err}")
             else:
-                print(f"[NAI Worker] Failed to fetch active datasets from main server: HTTP {res.status_code}")
+                print(f"[NeuroBench] Failed to fetch active datasets from main server: HTTP {res.status_code}")
         except Exception as e:
-            print(f"[NAI Worker] Error fetching/preloading active datasets: {e}")
+            print(f"[NeuroBench] Error fetching/preloading active datasets: {e}")
     except Exception as e:
-        print(f"[NAI Worker] Failed to register specs: {e}")
+        print(f"[NeuroBench] Failed to register specs: {e}")
 

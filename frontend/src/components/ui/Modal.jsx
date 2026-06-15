@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { CloseIcon } from './icons';
+import { X } from 'lucide-react';
 
 const SIZES = {
   sm: 'max-w-md',
@@ -76,7 +76,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
             onClick={onClose}
             className="text-slate-400 hover:text-slate-200 cursor-pointer text-lg p-1.5 rounded-lg hover:bg-slate-800 leading-none transition-colors"
             title={t('common.close')}
-          ><CloseIcon /></button>
+          ><X size={20} /></button>
         </div>
 
         {/* Body */}

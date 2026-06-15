@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FileText, Upload, X } from 'lucide-react';
 
 export default function FileUploader({
   files = [],
@@ -28,7 +29,7 @@ export default function FileUploader({
     if (multiple) {
       onChange(prev => {
         const existingNames = new Set(prev.map(f => f.name));
-        existingFiles.forEach(f => existingNames.add(f.filename));
+        existingFiles.filter(f => !f._deleted).forEach(f => existingNames.add(f.filename));
         const uniqueNew = incoming.filter(f => !existingNames.has(f.name));
         const merged = [...prev, ...uniqueNew];
         return maxFiles ? merged.slice(0, maxFiles) : merged;
@@ -80,7 +81,7 @@ export default function FileUploader({
             return (
               <div key={f.filename} className={`flex items-center justify-between p-3 rounded-lg text-xs transition-colors ${isDeleted ? 'bg-red-500/10 border border-red-500/20' : 'bg-slate-900 border border-white/5'}`}>
                 <div className="flex items-center gap-2">
-                  <svg className={`w-4 h-4 flex-shrink-0 ${isDeleted ? 'text-red-400' : 'text-indigo-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  <FileText size={16} className={`flex-shrink-0 ${isDeleted ? 'text-red-400' : 'text-indigo-400'}`} />
                   <span className={`truncate flex-1 ${isDeleted ? 'line-through text-slate-500' : 'text-slate-200 font-medium'}`}>{f.filename}</span>
                   <span className="text-slate-500 text-[10px]">{(f.size_bytes / 1024).toFixed(1)} KB</span>
                 </div>
@@ -98,7 +99,7 @@ export default function FileUploader({
       {!isOverLimit && (
         <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group">
           <div className="flex flex-col items-center justify-center pt-5 pb-6">
-            <svg className="w-8 h-8 mb-3 text-slate-400 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            <Upload size={32} className="mb-3 text-slate-400 group-hover:text-indigo-400 transition-colors" />
             <p className="mb-2 text-sm text-slate-300">
               <span className="font-semibold text-indigo-400">{multiple ? t('admin.tasks.click_to_upload') : t('admin.tasks.click_to_upload')}</span>
               {' '}{t('admin.tasks.drag_and_drop')}
@@ -122,11 +123,11 @@ export default function FileUploader({
           </span>
           {files.map((f, i) => (
             <div key={i} className="flex items-center gap-2 bg-slate-900 border border-white/5 rounded-lg px-3 py-2 text-xs text-slate-300">
-              <svg className="w-4 h-4 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              <FileText size={16} className="text-indigo-400 flex-shrink-0" />
               <span className="truncate flex-1">{f.name}</span>
               <span className="text-slate-500">{(f.size / 1024).toFixed(1)} KB</span>
               <button type="button" onClick={() => removeFile(i)} className="text-slate-500 hover:text-rose-400 transition-colors ml-1">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                <X size={14} />
               </button>
             </div>
           ))}
