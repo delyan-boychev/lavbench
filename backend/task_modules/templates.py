@@ -86,15 +86,10 @@ except Exception as e:
 def run_evaluation():
     try:
         # Load Hugging Face dataset
-        token = "[[hf_token]]"
         public_pct = [[public_eval_percentage]]
         
-        # Load dataset
-        if token:
-            dataset = load_dataset(token, split="[[hf_dataset_split]]", token=token)
-        else:
-            raise ValueError("No dataset configured for evaluation.")
-            
+        dataset = load_dataset("default", split="[[hf_dataset_split]]")
+        
         total_len = len(dataset)
         if total_len == 0:
             raise ValueError("The Hugging Face dataset split has 0 rows.")

@@ -4,6 +4,7 @@ import logging
 import random
 import string
 import os
+import sys
 import base64
 import hashlib
 import json
@@ -19,8 +20,8 @@ db = SQLAlchemy()
 # This ensures field encryption persists across server restarts
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
-    print("FATAL: Required environment variable 'SECRET_KEY' is not set.", file=__import__('sys').stderr)
-    __import__('sys').exit(1)
+    logger.critical("SECRET_KEY environment variable is not set")
+    sys.exit(1)
 DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 cipher_suite = Fernet(DERIVED_KEY)
 
@@ -502,7 +503,7 @@ class Submission(db.Model):
             with open(self.code_storage_path, 'w', encoding='utf-8') as f:
                 f.write(value)
         except Exception as e:
-            print(f"Error saving code_cells to file: {e}")
+            logger.exception("Error saving code_cells to file")
 
     @property
     def logs(self):
@@ -527,7 +528,7 @@ class Submission(db.Model):
             with open(self.log_storage_path, 'w', encoding='utf-8') as f:
                 f.write(value or "")
         except Exception as e:
-            print(f"Error saving logs to file: {e}")
+            logger.exception("Error saving logs to file")
 
     def to_dict(self, view_role='competitor', current_user_id=None):
         finalized = self.challenge.scores_finalized if self.challenge else False

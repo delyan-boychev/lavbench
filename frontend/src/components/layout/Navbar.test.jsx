@@ -15,6 +15,11 @@ vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
+// Mock react-router-dom for useLocation
+vi.mock('react-router-dom', () => ({
+  useLocation: () => ({ pathname: '/' }),
+}));
+
 // Mock Logo
 vi.mock('../ui/Logo', () => ({
   default: () => <div data-testid="logo" />,

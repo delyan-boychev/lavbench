@@ -117,7 +117,7 @@ describe('TaskDetail Component', () => {
       evaluator_script_path: '/path/to/evaluator.py'
     };
 
-    render(<TaskDetail task={taskWithCustomEval} token="token-123" />);
+    render(<TaskDetail task={taskWithCustomEval} />);
 
     expect(screen.getByText('Jury Custom Evaluator Active')).toBeInTheDocument();
     expect(screen.getByText(/This task uses a custom evaluator. Please ensure your submission defines the entry-point/)).toBeInTheDocument();

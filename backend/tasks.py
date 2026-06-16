@@ -1,7 +1,10 @@
 import os
 import time
+import logging
 from celery import Celery
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 # Force UTC for Celery heartbeats to avoid clock drift warnings
 # when the host system uses a non-UTC local timezone.
@@ -84,13 +87,15 @@ def watchdog_stuck_submissions():
     if not app:
         return {"skipped": "no_app_context"}
     with app.app_context():
-        import redis as redis_lib
         import json
         
         # 1. Recover fallback results from Redis (workers that finished but couldn't reach server)
         recovered = 0
         try:
-            r = redis_lib.Redis.from_url(app.config.get('CELERY_BROKER_URL', 'redis://localhost:6379/0'))
+            from cache_utils import get_redis_client
+            r = get_redis_client()
+            if not r:
+                return {"error": "redis_unavailable"}
             stuck = Submission.query.filter(
                 Submission.status.in_(['queued', 'running', 'building_env', 'running_inference', 'evaluating'])
             ).all()
@@ -116,12 +121,12 @@ def watchdog_stuck_submissions():
                         r.delete(fallback_key)
                         recovered += 1
                     except Exception as e:
-                        print(f"Watchdog: failed to recover fallback for submission {sub.id}: {e}")
+                        logger.error("Watchdog: failed to recover fallback for submission %s: %s", sub.id, e)
         except Exception as e:
-            print(f"Watchdog: Redis connection error: {e}")
+            logger.error("Watchdog: Redis connection error: %s", e)
         
-        # 2. Time out truly stuck submissions (30+ minutes without any update)
-        stuck_since = datetime.utcnow() - timedelta(minutes=30)
+        # 2. Time out truly stuck submissions (10+ minutes without any update)
+        stuck_since = datetime.utcnow() - timedelta(minutes=10)
         timed_out = Submission.query.filter(
             Submission.status.in_(['queued', 'running', 'building_env', 'running_inference', 'evaluating']),
             Submission.created_at < stuck_since
@@ -130,7 +135,7 @@ def watchdog_stuck_submissions():
         for sub in timed_out:
             sub.status = 'failed'
             sub.detailed_status = 'failed'
-            sub.logs = (sub.logs or '') + '\n[WATCHDOG] Submission timed out — worker did not report back within 30 minutes.'
+            sub.logs = (sub.logs or '') + '\n[WATCHDOG] Submission timed out — worker did not report back within 10 minutes.'
             timeout_count += 1
         
         if recovered > 0 or timeout_count > 0:

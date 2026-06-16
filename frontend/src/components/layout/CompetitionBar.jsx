@@ -17,10 +17,6 @@ function TabIcon({ name }) {
   }
 }
 
-function getNavClass({ isActive }) {
-  return `nav-tab${isActive ? ' active' : ''}`;
-}
-
 export default function CompetitionBar() {
   const { currentUser } = useAuth();
   const { challenges, selectedChallenge, setSelectedChallengeById } = useApp();

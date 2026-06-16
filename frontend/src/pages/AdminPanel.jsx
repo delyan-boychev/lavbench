@@ -1386,7 +1386,6 @@ export default function AdminPanel() {
   };
 
   const filteredUsers = allUsers;
-  const fontFilteredCompetitors = competitorsList; // keep simple naming
   const filteredCompetitors = competitorsList;
 
   const isManualRegisterDisabled = currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
@@ -1403,7 +1402,7 @@ export default function AdminPanel() {
         
         {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
           <button 
-            onClick={() => { setAdminSubTab('competition-mgmt'); }}
+            onClick={() => { setAdminSubTab('competition-mgmt'); setIsCreatingTask(false); setEditingTask(null); }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'competition-mgmt' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.manage_competitions')}

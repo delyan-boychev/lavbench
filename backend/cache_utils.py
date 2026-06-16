@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from datetime import datetime
 from contextlib import contextmanager
 import logging
@@ -20,13 +21,15 @@ def get_redis_client():
 
 
 @contextmanager
-def cache_lock(lock_key, ttl=30):
-    """Context manager: acquires a Redis lock (SET NX), releases on exit."""
+def cache_lock(lock_key, ttl=120):
+    """Context manager: acquires a Redis lock (SET NX), releases on exit.
+    Uses a UUID value so only the owner can release (prevents TTL cross-deletion)."""
     r = get_redis_client()
+    owner = uuid.uuid4().hex
     got = False
     if r:
         try:
-            got = r.set(lock_key, "1", nx=True, ex=ttl)
+            got = r.set(lock_key, owner, nx=True, ex=ttl)
         except Exception:
             logger.exception("cache_lock acquire failed for %s", lock_key)
     try:
@@ -34,7 +37,9 @@ def cache_lock(lock_key, ttl=30):
     finally:
         if got and r:
             try:
-                r.delete(lock_key)
+                current = r.get(lock_key)
+                if current and (current.decode() if isinstance(current, bytes) else current) == owner:
+                    r.delete(lock_key)
             except Exception:
                 pass
 

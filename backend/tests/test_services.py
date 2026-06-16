@@ -111,13 +111,11 @@ class TestServiceSandboxAndPriority(unittest.TestCase):
         formatted_default = render_eval_template(
             DEFAULT_EVALUATION_TEMPLATE,
             user_code="print('user default')",
-
-            hf_token="test_token",
             public_eval_percentage=30,
             hf_dataset_split="test",
             metrics_config_str='{"accuracy": {"weight": 1.0, "higher_is_better": true}}'
         )
-        self.assertIn("test_token", formatted_default)
+        self.assertIn("load_dataset", formatted_default)
 
     def test_get_best_submission_higher_better(self):
         """Verify get_best_submission returns the submission with the highest score and handles tie breaking."""

@@ -10,7 +10,6 @@ import urllib.parse
 import subprocess
 import json
 import zipfile
-import redis
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, current_app, Response, stream_with_context
 from werkzeug.security import generate_password_hash
@@ -206,7 +205,10 @@ def delete_user(user_id):
     if not user:
         return jsonify({"error": "User not found."}), 404
         
-    Submission.query.filter_by(user_id=user_id).delete()
+    # ORM delete per submission — triggers after_delete event for file cleanup
+    subs = Submission.query.filter_by(user_id=user_id).all()
+    for s in subs:
+        db.session.delete(s)
     db.session.delete(user)
     db.session.commit()
     

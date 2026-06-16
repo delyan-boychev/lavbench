@@ -135,6 +135,32 @@ services:
       retries: 3
       start_period: 20s
 
+  # 4b. Celery Beat (watchdog scheduler)
+  celery_beat:
+    build: ./backend
+    container_name: nai_celery_beat
+    restart: always
+    command: celery -A tasks.celery beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://nai_user:nai_password@db:5432/nai_competition
+      - CELERY_BROKER_URL=redis://:redis_password@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:redis_password@redis:6379/0
+      - SECRET_KEY=nai-super-secret-key-1337-secure-random-length-for-jwt
+      - WORKER_SECRET_KEY=replace-with-secure-worker-token
+      - HF_CACHE_DIR=/app/hf_cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # 5. React Frontend & Nginx Router
   frontend:
     build: ./frontend

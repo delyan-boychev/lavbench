@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 
 function SunIcon() {
   return (
@@ -31,6 +32,7 @@ export default function Navbar() {
   const { currentUser, logout } = useAuth();
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
+  const location = useLocation();
   const [workerStatus, setWorkerStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -42,6 +44,10 @@ export default function Navbar() {
   const [docLoading, setDocLoading] = React.useState(false);
   const [docError, setDocError] = React.useState(null);
   const [nowMs, setNowMs] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   React.useEffect(() => {
     const timer = setInterval(() => {
@@ -221,7 +227,7 @@ export default function Navbar() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  const displayName = currentUser?.name
+  const displayName = currentUser?.name?.trim()
     ? `${currentUser.name} ${currentUser.surname || ''}`.trim()
     : currentUser?.username;
 

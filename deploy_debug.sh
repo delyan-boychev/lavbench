@@ -101,7 +101,14 @@ celery -A tasks.celery worker --loglevel=info > celery.log 2>&1 &
 cd ..
 echo "    Celery running. Logs redirected to backend/celery.log"
 
-# 7. Start React Dev Server
+# 7. Start Celery Beat (watchdog scheduler)
+echo "--> Starting Celery Beat..."
+cd backend
+celery -A tasks.celery beat --loglevel=info > celery_beat.log 2>&1 &
+cd ..
+echo "    Celery Beat running. Logs redirected to backend/celery_beat.log"
+
+# 8. Start React Dev Server
 echo "--> Starting React Front-end..."
 cd frontend
 npm run dev &

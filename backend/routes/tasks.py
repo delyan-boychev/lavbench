@@ -1,7 +1,6 @@
 import os
 import json
 import ast
-import redis
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_from_directory, current_app, Response, stream_with_context
 from werkzeug.utils import secure_filename
@@ -684,7 +683,17 @@ def delete_task(task_id):
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
     import shutil
     shutil.rmtree(task_upload_dir, ignore_errors=True)
+    # Collect file paths before bulk delete for cleanup
+    subs = Submission.query.filter_by(task_id=task_id).all()
+    paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
+    for code_path, log_path in paths:
+        if code_path and os.path.exists(code_path):
+            try: os.remove(code_path)
+            except OSError: pass
+        if log_path and os.path.exists(log_path):
+            try: os.remove(log_path)
+            except OSError: pass
     db.session.delete(task)
     db.session.commit()
     
@@ -913,13 +922,23 @@ def submit_task_code(task_id):
                 metadata["custom_eval_code"] = ef.read()
         except Exception as ef_err:
             print(f"Error reading evaluator script: {ef_err}")
-             
-    evaluate_submission.apply_async(
-        args=[submission.id, metadata],
-        priority=priority,
-        queue=queue_name,
-        countdown=1
-    )
+              
+    try:
+        evaluate_submission.apply_async(
+            args=[submission.id, metadata],
+            priority=priority,
+            queue=queue_name,
+            countdown=1
+        )
+    except Exception as e:
+        submission.status = 'failed'
+        submission.detailed_status = 'failed'
+        submission.logs = f'Submission queue unavailable: {e}'
+        db.session.commit()
+        return jsonify({
+            "error": "Submission queue is temporarily unavailable. Please try again.",
+            "submission_id": submission.id
+        }), 503
     
     return jsonify({
         "message": "Submission received and queued for execution.",

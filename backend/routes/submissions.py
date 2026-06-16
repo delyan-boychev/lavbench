@@ -259,12 +259,22 @@ def submit_code(challenge_id):
     priority = calculate_submission_priority(user_id, user_role)
     queue_name = 'gpu_queue' if gpu_required else 'celery'
 
-    evaluate_submission.apply_async(
-        args=[submission.id, metadata],
-        priority=priority,
-        queue=queue_name,
-        countdown=1
-    )
+    try:
+        evaluate_submission.apply_async(
+            args=[submission.id, metadata],
+            priority=priority,
+            queue=queue_name,
+            countdown=1
+        )
+    except Exception as e:
+        submission.status = 'failed'
+        submission.detailed_status = 'failed'
+        submission.logs = f'Submission queue unavailable: {e}'
+        db.session.commit()
+        return jsonify({
+            "error": "Submission queue is temporarily unavailable. Please try again.",
+            "submission_id": submission.id
+        }), 503
     
     return jsonify({
         "message": "Submission received and queued for execution.",
@@ -411,7 +421,6 @@ def select_final_submission(submission_id):
 @login_required
 def stream_submission_logs(submission_id):
     from flask import current_app, Response, stream_with_context
-    import redis
     
     user_id = request.user["user_id"]
     user_role = request.user["role"]

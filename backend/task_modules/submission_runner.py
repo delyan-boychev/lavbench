@@ -7,6 +7,7 @@ import traceback
 import hashlib
 import requests
 from datetime import datetime
+from cache_utils import get_redis_client
 
 from worker_utils import (
     run_command_streaming, 
@@ -217,7 +218,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 if status_val in ('completed', 'failed'):
                     # Final status: critical — must persist via Redis fallback
                     try:
-                        from cache_utils import get_redis_client
                         r = get_redis_client()
                         fallback = {
                             "submission_id": submission_id,
@@ -384,7 +384,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             run_script_content = render_eval_template(
                 DEFAULT_EVALUATION_TEMPLATE,
                 user_code="",
-                hf_token=metadata.get("hf_token") or "",
                 public_eval_percentage=metadata.get("public_eval_percentage") or 30,
                 metrics_config_str=metrics_cfg_str,
                 hf_dataset_split="test"
@@ -411,7 +410,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 run_script_content = render_eval_template(
                     DEFAULT_EVALUATION_TEMPLATE,
                     user_code="",
-                    hf_token=hf_token,
                     public_eval_percentage=task.public_eval_percentage or 30,
                     metrics_config_str=metrics_cfg_str,
                     hf_dataset_split="test"
@@ -826,7 +824,6 @@ from celery.signals import worker_ready
 def register_worker_specs(sender, **kwargs):
     try:
         import platform
-        from cache_utils import get_redis_client
         r = get_redis_client()
         if not r:
             return

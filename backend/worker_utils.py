@@ -96,7 +96,7 @@ class StreamingLogList(list):
             from sse_utils import publish_submission_log
             publish_submission_log(self.submission_id, str(item))
         except Exception as e:
-            print(f"[StreamingLogList Error] Failed to publish log line to Redis: {e}")
+            logger.exception("[StreamingLogList Error] Failed to publish log line to Redis")
 
 class MockModel:
     def __init__(self, **kwargs):
@@ -138,9 +138,9 @@ def report_status_to_server(metadata, status, detailed_status, logs=None, public
             res = requests.post(url, json=payload, headers=headers, timeout=10)
             if res.status_code == 200:
                 return True
-            print(f"Server returned status {res.status_code} for report attempt {attempt + 1}")
+            logger.warning("Server returned status %s for report attempt %s", res.status_code, attempt + 1)
         except Exception as e:
-            print(f"Error reporting progress to server (attempt {attempt + 1}/{max_retries}): {e}")
+            logger.warning("Error reporting progress to server (attempt %s/%s): %s", attempt + 1, max_retries, e)
         
         if attempt < max_retries - 1:
             sleep_time = backoff_factor ** attempt
