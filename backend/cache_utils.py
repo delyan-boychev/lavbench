@@ -37,9 +37,13 @@ def cache_lock(lock_key, ttl=120):
     finally:
         if got and r:
             try:
-                current = r.get(lock_key)
-                if current and (current.decode() if isinstance(current, bytes) else current) == owner:
-                    r.delete(lock_key)
+                lua_script = """
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('del', KEYS[1])
+                end
+                return 0
+                """
+                r.eval(lua_script, 1, lock_key, owner)
             except Exception:
                 pass
 

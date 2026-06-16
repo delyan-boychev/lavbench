@@ -194,9 +194,14 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                 identity = request.remote_addr or "127.0.0.1"
             key = f"rate:{identity}:{request.endpoint}"
             try:
-                current = r.incr(key)
-                if current == 1:
-                    r.expire(key, window_seconds)
+                lua_script = """
+                local current = redis.call('incr', KEYS[1])
+                if current == 1 then
+                    redis.call('expire', KEYS[1], ARGV[1])
+                end
+                return current
+                """
+                current = r.eval(lua_script, 1, key, window_seconds)
                 if current > max_requests:
                     return jsonify({
                         "error": "Too many requests. Please slow down.",

@@ -5,6 +5,7 @@ import re
 import secrets
 import string
 import random
+import glob
 import hashlib
 import urllib.parse
 import subprocess
@@ -382,40 +383,110 @@ def import_competitors_csv():
         return jsonify({"error": f"Failed to parse CSV file: {str(e)}"}), 400
 
 
-@admin_bp.route('/backup', methods=['GET'])
+BACKUPS_DIR = "/backups"
+
+def _list_backup_files(directory):
+    if not os.path.isdir(directory):
+        return []
+    files = []
+    for f in sorted(os.listdir(directory), reverse=True):
+        if not f.endswith(".tar.gz"):
+            continue
+        path = os.path.join(directory, f)
+        ftype = "manual"
+        if f.startswith("auto_"):
+            ftype = "auto"
+        elif f.startswith("submission_ended") or f.startswith("grace_ended") or f.startswith("finalized"):
+            ftype = "competition"
+        files.append({
+            "filename": f,
+            "size_mb": round(os.path.getsize(path) / (1024 * 1024), 2) if os.path.isfile(path) else 0,
+            "created_at": datetime.utcfromtimestamp(os.path.getctime(path)).isoformat(),
+            "type": ftype
+        })
+    return files
+
+@admin_bp.route('/backups', methods=['GET'])
 @role_required(['admin'])
-def download_backup():
-    db_uri = current_app.config['SQLALCHEMY_DATABASE_URI']
-    if not (db_uri.startswith("postgresql://") or db_uri.startswith("postgres://")):
-        return jsonify({"error": "Database backup is only supported for PostgreSQL databases."}), 400
-        
-    parsed = urllib.parse.urlparse(db_uri)
-    username = parsed.username
-    password = parsed.password
-    host = parsed.hostname
-    port = parsed.port or 5432
-    database = parsed.path.lstrip('/')
-    
-    env = os.environ.copy()
-    if password:
-        env["PGPASSWORD"] = password
-        
-    cmd = ["pg_dump", "-h", host, "-U", username, "-p", str(port), "-d", database]
-    try:
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-        stdout, stderr = process.communicate()
-        if process.returncode != 0:
-            return jsonify({"error": f"pg_dump failed: {stderr.decode()}"}), 500
-        
-        from io import BytesIO
-        return send_file(
-            BytesIO(stdout),
-            mimetype="application/octet-stream",
-            as_attachment=True,
-            download_name=f"backup_nai_db_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.sql"
-        )
-    except Exception as e:
-        return jsonify({"error": f"Failed to execute backup process: {str(e)}"}), 500
+def list_backups():
+    return jsonify({"backups": _list_backup_files(BACKUPS_DIR)})
+
+@admin_bp.route('/backups/force', methods=['POST'])
+@role_required(['admin'])
+def force_backup():
+    from tasks import run_backup
+    task = run_backup.delay(auto=False)
+    return jsonify({"task_id": task.id, "status": "started"}), 202
+
+@admin_bp.route('/backups/live', methods=['GET'])
+@role_required(['admin'])
+def stream_backup_status():
+    def event_generator():
+        with current_app.app_context():
+            yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
+
+        from cache_utils import get_redis_client
+        r = get_redis_client()
+        pubsub = r.pubsub()
+        pubsub.subscribe("backup_status")
+        try:
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                if message:
+                    with current_app.app_context():
+                        yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR), 'event': json.loads(message['data'])})}\n\n"
+                else:
+                    yield ": keep-alive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream",
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'})
+
+@admin_bp.route('/backups/<path:filename>/download', methods=['GET'])
+@role_required(['admin'])
+def download_backup_file(filename):
+    safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
+    if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
+        return jsonify({"error": "Invalid path"}), 403
+    if not os.path.isfile(safe_path):
+        return jsonify({"error": "Not found"}), 404
+    return send_file(safe_path, as_attachment=True, download_name=filename)
+
+@admin_bp.route('/backups/<path:filename>', methods=['DELETE'])
+@role_required(['admin'])
+def delete_backup_file(filename):
+    if filename.startswith("auto_"):
+        return jsonify({"error": "Auto-backups cannot be deleted manually."}), 403
+    safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
+    if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
+        return jsonify({"error": "Invalid path"}), 403
+    if not os.path.isfile(safe_path):
+        return jsonify({"error": "Not found"}), 404
+    os.remove(safe_path)
+    return jsonify({"message": "Deleted."})
+
+@admin_bp.route('/challenges/<int:challenge_id>/backups', methods=['GET'])
+@role_required(['admin'])
+def list_challenge_backups(challenge_id):
+    directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
+    return jsonify({"backups": _list_backup_files(directory)})
+
+@admin_bp.route('/challenges/<int:challenge_id>/backups/<path:filename>/download', methods=['GET'])
+@role_required(['admin'])
+def download_challenge_backup(challenge_id, filename):
+    directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
+    safe_path = os.path.abspath(os.path.join(directory, filename))
+    if not safe_path.startswith(os.path.abspath(directory)):
+        return jsonify({"error": "Invalid path"}), 403
+    if not os.path.isfile(safe_path):
+        return jsonify({"error": "Not found"}), 404
+    return send_file(safe_path, as_attachment=True, download_name=filename)
 
 
 @admin_bp.route('/users/<int:user_id>', methods=['PUT'])

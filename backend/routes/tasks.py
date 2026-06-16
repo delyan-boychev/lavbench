@@ -1,7 +1,10 @@
 import os
 import json
 import ast
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from flask import Blueprint, request, jsonify, send_from_directory, current_app, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from models import db, Challenge, Task, User, Submission, decrypt_field, is_metric_lower_better
@@ -128,10 +131,11 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         try:
             with open(task.evaluator_script_path, "r") as ef:
                 metadata["custom_eval_code"] = ef.read()
-        except:
-            pass
-            
-    from tasks import evaluate_submission
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Failed to read evaluator script for task %s", task.id)
+    
+    # Dispatch the submission via Celery
     queue_name = 'gpu_queue' if gpu_required else 'celery'
     
     evaluate_submission.apply_async(
@@ -383,9 +387,11 @@ def create_task(challenge_id):
                 
                 try:
                     import pandas as pd
-                    from evaluation_engine import validate_parquet_schema
-                    df = pd.read_parquet(save_path)
-                    is_valid, err = validate_parquet_schema(df, is_submission=False)
+                    from evaluation_engine import validate_parquet_schema_columns
+                    import pyarrow.parquet as pq
+                    schema = pq.read_schema(save_path)
+                    columns = [col.name for col in schema]
+                    is_valid, err = validate_parquet_schema_columns(columns, is_submission=False)
                     if not is_valid:
                         db.session.delete(task)
                         db.session.commit()
@@ -620,6 +626,16 @@ def update_task(task_id):
         except:
             pass
             
+    # Handle evaluator script and baseline notebook deletion
+    if request.form.get("delete_evaluator") == "true" and task.evaluator_script_path:
+        if os.path.exists(task.evaluator_script_path):
+            os.remove(task.evaluator_script_path)
+        task.evaluator_script_path = None
+    if request.form.get("delete_baseline") == "true" and task.baseline_notebook_path:
+        if os.path.exists(task.baseline_notebook_path):
+            os.remove(task.baseline_notebook_path)
+        task.baseline_notebook_path = None
+            
     new_files_keys = [k for k in request.files.keys() if k.startswith('file')]
     if len(current_files) + len(new_files_keys) > 5:
         return jsonify({"error": "A task can contain a maximum of 5 files."}), 400
@@ -647,9 +663,11 @@ def update_task(task_id):
             if uploaded_file.filename == 'labels.parquet':
                 try:
                     import pandas as pd
-                    from evaluation_engine import validate_parquet_schema
-                    df = pd.read_parquet(save_path)
-                    is_valid, err = validate_parquet_schema(df, is_submission=False)
+                    from evaluation_engine import validate_parquet_schema_columns
+                    import pyarrow.parquet as pq
+                    schema = pq.read_schema(save_path)
+                    columns = [col.name for col in schema]
+                    is_valid, err = validate_parquet_schema_columns(columns, is_submission=False)
                     if not is_valid:
                         for p in newly_saved_paths:
                             if os.path.exists(p):
@@ -921,7 +939,12 @@ def submit_task_code(task_id):
             with open(task.evaluator_script_path, "r") as ef:
                 metadata["custom_eval_code"] = ef.read()
         except Exception as ef_err:
-            print(f"Error reading evaluator script: {ef_err}")
+            logger.error("Failed to read evaluator script for task %s: %s", task.id, ef_err)
+            submission.status = 'failed'
+            submission.detailed_status = 'failed'
+            submission.logs = f'Evaluator script read error: {ef_err}'
+            db.session.commit()
+            return jsonify({"error": "Failed to load evaluator script.", "submission_id": submission.id}), 500
               
     try:
         evaluate_submission.apply_async(

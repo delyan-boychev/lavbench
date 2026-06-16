@@ -510,10 +510,14 @@
     },
     "backups": {
       "database_backups_security": "Database Backups & Security",
-      "database_backups_desc": "Download a complete PostgreSQL database dump for disaster recovery, migrations or compliance.",
-      "download_postgres_backup": "Download Postgres DB Backup",
-      "download_postgres_backup_desc": "Generates an instant `.sql` backup file via `pg_dump` stream.",
-      "download_backup_dump_btn": "Download Backup Dump File"
+      "competition_backups": "Competition Backups",
+      "force_now": "Force Backup Now",
+      "forcing": "Backing up…",
+      "download": "Download",
+      "no_backups": "No backups found.",
+      "submission_ended": "Submission Period Ended",
+      "grace_ended": "Grace Period Ended",
+      "finalized": "Scores Finalized"
     },
     "user_mgmt": {
       "register_user_account": "Register User Account",

@@ -16,14 +16,18 @@ logger = logging.getLogger(__name__)
 
 db = SQLAlchemy()
 
-# Derive a stable symmetric encryption key from SECRET_KEY
-# This ensures field encryption persists across server restarts
-SECRET_KEY = os.environ.get("SECRET_KEY")
-if not SECRET_KEY:
-    logger.critical("SECRET_KEY environment variable is not set")
-    sys.exit(1)
-DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
-cipher_suite = Fernet(DERIVED_KEY)
+# Derive a stable symmetric encryption key from SECRET_KEY or ENCRYPTION_KEY
+# ENCRYPTION_KEY allows key rotation without invalidating all encrypted data
+ENCRYPTION_KEY_BASE64 = os.environ.get("ENCRYPTION_KEY")
+if ENCRYPTION_KEY_BASE64:
+    cipher_suite = Fernet(ENCRYPTION_KEY_BASE64.encode())
+else:
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+    if not SECRET_KEY:
+        logger.critical("SECRET_KEY environment variable is not set")
+        sys.exit(1)
+    DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
+    cipher_suite = Fernet(DERIVED_KEY)
 
 def encrypt_field(text):
     if not text:

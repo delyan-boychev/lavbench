@@ -57,17 +57,17 @@ except Exception as e:
     
     if os.path.exists("run_student.py"):
         try: os.remove("run_student.py")
-        except: pass
+        except OSError: pass
     if os.path.exists("inputs.json"):
         try: os.remove("inputs.json")
-        except: pass
+        except OSError: pass
         
     # Clean up any potential eval_results spoofing attempt by the student code
     results_key = os.environ.get("RESULTS_KEY", "")
     for f_name in ["eval_results.json", f"eval_results_{results_key}.json"]:
         if os.path.exists(f_name):
             try: os.remove(f_name)
-            except: pass
+            except OSError: pass
             
     if not os.path.exists("predictions.json"):
         raise RuntimeError(f"Student code subprocess failed to run. Stderr: {proc.stderr}")
@@ -79,7 +79,7 @@ except Exception as e:
         raise RuntimeError(f"Error in student predict: {preds_data['error']}\\n{preds_data.get('traceback', '')}")
         
     try: os.remove("predictions.json")
-    except: pass
+    except OSError: pass
     
     return preds_data
 
@@ -262,17 +262,17 @@ except Exception as e:
     
     if os.path.exists("run_student.py"):
         try: os.remove("run_student.py")
-        except: pass
+        except OSError: pass
     if os.path.exists("inputs.json"):
         try: os.remove("inputs.json")
-        except: pass
+        except OSError: pass
         
     # Clean up any potential eval_results spoofing attempt by the student code
     results_key = os.environ.get("RESULTS_KEY", "")
     for f_name in ["eval_results.json", f"eval_results_{results_key}.json"]:
         if os.path.exists(f_name):
             try: os.remove(f_name)
-            except: pass
+            except OSError: pass
             
     if not os.path.exists("predictions.json"):
         raise RuntimeError(f"Student code subprocess failed to run. Stderr: {proc.stderr}")
@@ -284,7 +284,7 @@ except Exception as e:
         raise RuntimeError(f"Error in student predict: {preds_data['error']}\\n{preds_data.get('traceback', '')}")
         
     try: os.remove("predictions.json")
-    except: pass
+    except OSError: pass
     
     return preds_data
 '''

@@ -81,6 +81,10 @@ describe('AdminPanel - Column Config & Metrics', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    global.EventSource = class {
+      constructor(url) { this.url = url; this.close = vi.fn(); }
+    };
+
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
       

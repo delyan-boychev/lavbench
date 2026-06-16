@@ -1,25 +1,41 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import BackupManager from './BackupManager';
+import api from '../../services/ApiService';
+
+vi.mock('../../services/ApiService', () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({ ok: true, data: { backups: [] } }),
+    post: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
 
 describe('BackupManager Component', () => {
-  it('renders download backup section correctly', () => {
-    const handleDownloadBackup = vi.fn();
-    render(<BackupManager handleDownloadBackup={handleDownloadBackup} />);
-
-    expect(screen.getByText('Database Backups & Security')).toBeInTheDocument();
-    expect(screen.getByText('Download Postgres DB Backup')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Download Backup Dump File/i })).toBeInTheDocument();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    global.EventSource = class {
+      constructor(url) { this.url = url; this.close = vi.fn(); }
+    };
   });
 
-  it('triggers handleDownloadBackup on button click', () => {
-    const handleDownloadBackup = vi.fn();
-    render(<BackupManager handleDownloadBackup={handleDownloadBackup} />);
+  it('renders general backup section', async () => {
+    api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
+    render(<BackupManager />);
 
-    const downloadBtn = screen.getByRole('button', { name: /Download Backup Dump File/i });
-    fireEvent.click(downloadBtn);
+    await waitFor(() => {
+      expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
+    });
+  });
 
-    expect(handleDownloadBackup).toHaveBeenCalledTimes(1);
+  it('renders competition backup section', async () => {
+    api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
+    render(<BackupManager challengeId={5} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Competition Backups')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Force Backup Now')).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, request, jsonify
 from models import db, Challenge, User
 from auth_utils import login_required, role_required
@@ -355,6 +356,12 @@ def update_challenge(challenge_id):
 def delete_challenge(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     
+    # Remove competition backups
+    import shutil
+    backup_dir = os.path.join("/backups", f"challenge_{challenge_id}")
+    if os.path.isdir(backup_dir):
+        shutil.rmtree(backup_dir, ignore_errors=True)
+    
     User.query.filter_by(challenge_id=challenge_id, role='competitor').delete(synchronize_session=False)
     User.query.filter_by(challenge_id=challenge_id).filter(User.role != 'competitor').update({User.challenge_id: None}, synchronize_session=False)
     
@@ -409,6 +416,10 @@ def finalize_challenge(challenge_id):
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
     invalidate_challenge_cache(challenge_id)
     invalidate_leaderboard_cache(challenge_id)
+    
+    # Dispatch competition finalized backup
+    from tasks import run_backup
+    run_backup.delay(auto=True, challenge_id=challenge_id, state="finalized")
     
     return jsonify({
         "message": "Competition finalized! Competitor identities and private scores are now fully revealed to everyone.",

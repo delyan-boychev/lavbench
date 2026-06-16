@@ -510,10 +510,14 @@
     },
     "backups": {
       "database_backups_security": "Резервни копия на БД и сигурност",
-      "database_backups_desc": "Изтегляне на пълен Postgres архив за възстановяване при аварии, миграции или съответствие.",
-      "download_postgres_backup": "Изтегляне на Postgres архив",
-      "download_postgres_backup_desc": "Генерира моментален архивен файл `.sql` чрез `pg_dump` поток.",
-      "download_backup_dump_btn": "Изтегляне на архивния файл"
+      "competition_backups": "Резервни копия на състезанието",
+      "force_now": "Създай резервно копие",
+      "forcing": "Създаване…",
+      "download": "Изтегли",
+      "no_backups": "Няма намерени резервни копия.",
+      "submission_ended": "Периодът за предаване приключи",
+      "grace_ended": "Гратисният период изтече",
+      "finalized": "Резултатите са финализирани"
     },
     "user_mgmt": {
       "register_user_account": "Регистриране на потребителски акаунт",

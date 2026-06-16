@@ -1183,30 +1183,7 @@ export default function AdminPanel() {
     }
   };
 
-  // Backups
-  const handleDownloadBackup = async () => {
-    try {
-      const res = await api.fetch(`${API_BASE}/admin/backup`, {
-        headers: {}
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        showToast(errData.error || t('admin.notifications.backup_failed'), 'rose');
-        return;
-      }
-      const blob = await res.blob();
-      const filename = `backup_nai_db_${new Date().toISOString().slice(0,19).replace(/[:-]/g,"")}.sql`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast(t('admin.notifications.backup_success'));
-    } catch {
-      showToast(t('admin.notifications.backup_failed'), 'rose');
-    }
-  };
+  // Backups — handled by BackupManager via API
 
   // Download Scores CSV
   const handleDownloadScores = async (challengeId, challengeTitle) => {
@@ -1904,7 +1881,12 @@ export default function AdminPanel() {
 
         {/* 5. DATABASE BACKUP MANAGEMENT */}
         {adminSubTab === 'backups' && currentUser.role === 'admin' && (
-          <BackupManager handleDownloadBackup={handleDownloadBackup} />
+          <BackupManager />
+        )}
+
+        {/* 6. COMPETITION BACKUPS (inside competition detail view) */}
+        {adminSubTab === 'competition-mgmt' && currentUser.role === 'admin' && selectedChallenge && !isCreatingTask && !editingTask && !isCreatingStage && !editingStage && !finalizingStage && (
+          <BackupManager challengeId={selectedChallenge.id} />
         )}
 
         {/* 6. SYSTEM USER MANAGEMENT */}

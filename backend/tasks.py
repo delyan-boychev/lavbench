@@ -35,7 +35,7 @@ else:
     )
 
 from task_modules.submission_runner import run_eval_submission
-from task_modules.system import run_register_worker_specs, run_automated_backup as auto_backup
+from task_modules.system import run_register_worker_specs, run_backup as _do_backup
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 
 @celery.task(
@@ -74,8 +74,61 @@ def register_worker_specs():
     return run_register_worker_specs(celery)
 
 @celery.task
-def run_automated_backup():
-    return auto_backup(app)
+def run_backup(auto=True, challenge_id=None, state=None):
+    if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
+    if not app: return {"error": "no_app"}
+    return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state)
+
+@celery.task
+def check_and_backup():
+    if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
+    if not app: return {"error": "no_app"}
+    with app.app_context():
+        from config import Config
+        now = datetime.utcnow()
+        grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+        window = timedelta(minutes=20)
+
+        from models import Challenge
+        challenges = Challenge.query.filter(
+            Challenge.is_active == True,
+            Challenge.is_archived == False
+        ).all()
+
+        active_count = 0
+        for c in challenges:
+            if c.start_time and c.start_time <= now and (not c.end_time or c.end_time >= now):
+                active_count += 1
+
+            # Grace period just ended
+            if c.end_time and not c.scores_finalized and c.end_time + grace < now and c.end_time + grace > now - window:
+                run_backup.delay(auto=True, challenge_id=c.id, state="grace_ended")
+
+            # Submission deadline just passed
+            elif c.end_time and not c.scores_finalized and c.end_time < now and c.end_time > now - window:
+                run_backup.delay(auto=True, challenge_id=c.id, state="submission_ended")
+
+        # General auto backup: every 20min when active, every 6h when idle
+        last_key = "backup:last_auto"
+        from cache_utils import get_redis_client, get_cached, set_cached
+        r = get_redis_client()
+        if r:
+            last_ts = get_cached(last_key)
+            should_run = False
+            if last_ts:
+                last = datetime.fromisoformat(last_ts) if isinstance(last_ts, str) else datetime.utcfromtimestamp(float(last_ts))
+                interval = timedelta(hours=6)
+                if active_count > 0:
+                    interval = timedelta(minutes=20)
+                if now - last >= interval:
+                    should_run = True
+            else:
+                should_run = True
+            if should_run:
+                set_cached(last_key, now.isoformat(), timeout=86400)
+                run_backup.delay(auto=True)
+
+    return {"active_competitions": active_count}
 
 # Periodic watchdog: marks submissions as failed if stuck in queued/running for too long
 # Also recovers results from Redis fallback (workers that completed but couldn't reach the server).
@@ -125,17 +178,34 @@ def watchdog_stuck_submissions():
         except Exception as e:
             logger.error("Watchdog: Redis connection error: %s", e)
         
-        # 2. Time out truly stuck submissions (10+ minutes without any update)
-        stuck_since = datetime.utcnow() - timedelta(minutes=10)
-        timed_out = Submission.query.filter(
+        # 2. Time out stuck submissions with dynamic per-task timeout
+        timed_out_candidates = Submission.query.filter(
             Submission.status.in_(['queued', 'running', 'building_env', 'running_inference', 'evaluating']),
-            Submission.created_at < stuck_since
+            Submission.executed_at.is_(None)
         ).all()
+        # Also check running submissions with executed_at set
+        running_candidates = Submission.query.filter(
+            Submission.status.in_(['running', 'building_env', 'running_inference', 'evaluating']),
+            Submission.executed_at.isnot(None)
+        ).all()
+        now = datetime.utcnow()
         timeout_count = 0
-        for sub in timed_out:
+        for sub in timed_out_candidates + running_candidates:
+            task_time_limit = 300
+            if sub.task:
+                task_time_limit = sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
+            if sub.executed_at:
+                max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
+                if now - sub.executed_at <= max_runtime:
+                    continue
+                reason = f'task time limit ({task_time_limit}s) exceeded'
+            else:
+                if now - sub.created_at <= timedelta(minutes=10):
+                    continue
+                reason = 'never picked up by a worker (10m+ queued)'
             sub.status = 'failed'
             sub.detailed_status = 'failed'
-            sub.logs = (sub.logs or '') + '\n[WATCHDOG] Submission timed out — worker did not report back within 10 minutes.'
+            sub.logs = (sub.logs or '') + f'\n[WATCHDOG] Submission timed out — {reason}.'
             timeout_count += 1
         
         if recovered > 0 or timeout_count > 0:
@@ -156,6 +226,10 @@ def watchdog_stuck_submissions():
 celery.conf.beat_schedule = {
     'watchdog-every-5m': {
         'task': 'tasks.watchdog_stuck_submissions',
-        'schedule': 300.0,  # seconds (5 minutes)
+        'schedule': 300.0,
+    },
+    'backup-check-every-20m': {
+        'task': 'tasks.check_and_backup',
+        'schedule': 1200.0,
     },
 }

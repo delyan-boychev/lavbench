@@ -1,8 +1,11 @@
 import os
 import json
 import math
+import logging
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, log_loss, brier_score_loss, mean_squared_error, mean_absolute_error, r2_score, cohen_kappa_score, matthews_corrcoef, mean_absolute_percentage_error, median_absolute_error, adjusted_rand_score, normalized_mutual_info_score, adjusted_mutual_info_score, v_measure_score
 
 # ---------------------------------------------------------
@@ -70,13 +73,18 @@ AVAILABLE_METRICS = {
 # ---------------------------------------------------------
 
 def validate_parquet_schema(df, is_submission=True):
-    """
-    Validates a pandas DataFrame against the standardized schema columns.
-    For now, we only strictly require 'id'.
-    """
+    """Validates a pandas DataFrame against the standardized schema columns."""
     if "id" not in df.columns:
         role = "Submission" if is_submission else "Labels/Ground Truth"
         return False, f"{role} parquet missing required column: ['id']. Found columns: {list(df.columns)}"
+    return True, None
+
+
+def validate_parquet_schema_columns(column_names, is_submission=True):
+    """Validates a list of column names (from pyarrow schema) against the standardized schema."""
+    if "id" not in column_names:
+        role = "Submission" if is_submission else "Labels/Ground Truth"
+        return False, f"{role} parquet missing required column: ['id']. Found columns: {column_names}"
     return True, None
 
 # ---------------------------------------------------------
@@ -577,7 +585,11 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
         else:
             non_id_cols_sub = [c for c in df_sub.columns if c not in ["id", "query_id", "doc_id"]]
             non_id_cols_label = [c for c in df_labels.columns if c not in ["id", "query_id", "doc_id"]]
-            pred_col = next((c for c in non_id_cols_sub if c.lower() == "prediction"), None) or (non_id_cols_sub[0] if non_id_cols_sub else df_sub.columns[-1])
+            if not non_id_cols_sub:
+                raise ValueError("Submission parquet contains no prediction columns (only metadata columns like 'id').")
+            if not non_id_cols_label:
+                raise ValueError("Labels parquet contains no label columns (only metadata columns like 'id').")
+            pred_col = next((c for c in non_id_cols_sub if c.lower() == "prediction"), None) or non_id_cols_sub[0]
             label_col = next((c for c in non_id_cols_label if c.lower() == "label"), None) or (non_id_cols_label[0] if non_id_cols_label else df_labels.columns[-1])
             y_true = df_labels[label_col].tolist()
             y_pred = df_sub[pred_col].tolist()
@@ -603,17 +615,20 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                 avg = m_opts.get("average", "macro")
                 mc = m_opts.get("multi_class", "raise")
                 val = roc_auc_score(y_true, y_pred, average=avg, multi_class=mc)
-            except Exception:
+            except Exception as e:
+                logger.warning("roc_auc_score failed for metric '%s', using fallback 0.5: %s", m_name, e)
                 val = 0.5
         elif m_name_clean == "logloss":
             try:
                 val = log_loss(y_true, y_pred)
-            except Exception:
+            except Exception as e:
+                logger.warning("log_loss failed for metric '%s', using fallback 10.0: %s", m_name, e)
                 val = 10.0
         elif m_name_clean == "brier_score":
             try:
                 val = brier_score_loss(y_true, y_pred)
-            except Exception:
+            except Exception as e:
+                logger.warning("brier_score_loss failed for metric '%s', using fallback 1.0: %s", m_name, e)
                 val = 1.0
                 
         # 3. Regression Metrics
@@ -662,6 +677,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                                 scores.append(np.mean(np.abs(arr_t - arr_p)))
                         val = np.mean(scores)
                     except Exception as e:
+                        logger.warning("Shape error for metric '%s', using fallback 999.0: %s", m_name, e)
                         val = 999.0  # Fallback on shape error
         elif m_name_clean == "r_squared":
             val = r2_score(y_true, y_pred)
