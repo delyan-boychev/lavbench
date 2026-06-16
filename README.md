@@ -1,33 +1,7 @@
 # LavBench
 
 <div align="center">
-  <svg width="96" height="96" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="36" height="36" rx="8" fill="#0f172a" />
-    <path d="M 18 11.5 L 18 6.5 M 21.8 12.6 Q 25.1 11.3 23.7 8.0 M 25.1 15.6 Q 28.6 15.6 28.6 12.1 M 27.2 20.2 Q 30.5 21.5 31.8 18.3 M 28 25.5 Q 30.5 28.0 33 25.5 M 14.2 12.6 Q 10.9 11.3 12.3 8.0 M 10.9 15.6 Q 7.4 15.6 7.4 12.1 M 8.8 20.2 Q 5.5 21.5 4.2 18.3 M 8 25.5 Q 5.5 28.0 3 25.5" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.8"/>
-    <circle cx="18" cy="6.5" r="1.2" fill="#f59e0b"/>
-    <circle cx="12.3" cy="8.0" r="1.2" fill="#f59e0b"/>
-    <circle cx="23.7" cy="8.0" r="1.2" fill="#f59e0b"/>
-    <circle cx="7.4" cy="12.1" r="1.2" fill="#f59e0b"/>
-    <circle cx="28.6" cy="12.1" r="1.2" fill="#f59e0b"/>
-    <circle cx="4.2" cy="18.3" r="1.2" fill="#f59e0b"/>
-    <circle cx="31.8" cy="18.3" r="1.2" fill="#f59e0b"/>
-    <circle cx="3" cy="25.5" r="1.2" fill="#f59e0b"/>
-    <circle cx="33" cy="25.5" r="1.2" fill="#f59e0b"/>
-    <path d="M 8 25.5 A 10 14 0 0 1 28 25.5" stroke="#f59e0b" stroke-width="1.5" fill="none"/>
-    <rect x="6.5" y="25.5" width="3" height="4" rx="1.5" fill="#f59e0b"/>
-    <rect x="26.5" y="25.5" width="3" height="4" rx="1.5" fill="#f59e0b"/>
-    <rect x="11.5" y="18.5" width="3" height="11" rx="1.5" fill="#f59e0b"/>
-    <circle cx="13" cy="18.5" r="2.2" fill="#0f172a"/>
-    <circle cx="13" cy="18.5" r="1.4" fill="#fff"/>
-    <circle cx="13" cy="18.5" r="0.6" fill="#0f172a"/>
-    <rect x="21.5" y="18.5" width="3" height="11" rx="1.5" fill="#f59e0b"/>
-    <circle cx="23" cy="18.5" r="2.2" fill="#0f172a"/>
-    <circle cx="23" cy="18.5" r="1.4" fill="#fff"/>
-    <circle cx="23" cy="18.5" r="0.6" fill="#0f172a"/>
-    <rect x="16.5" y="14.5" width="3" height="15" rx="1.5" fill="#f59e0b"/>
-    <circle cx="18" cy="27.5" r="2.2" fill="#0f172a"/>
-    <circle cx="18" cy="27.5" r="0.9" fill="#fff"/>
-  </svg>
+  <img src="frontend/public/favicon.svg" alt="LavBench Logo" width="96" height="96" />
 </div>
 
 [![License](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
