@@ -1,6 +1,6 @@
 # Jury & Grader Complete Guide
 
-Welcome to the NAI Platform Jury Portal. Your elevated access allows you to monitor cluster health, audit code integrity, provide manual scoring assessments, and export verified results.
+Welcome to the LavBench Platform Jury Portal. Your elevated access allows you to monitor cluster health, audit code integrity, provide manual scoring assessments, and export verified results.
 
 ## Table of Contents
 1. [Role Capabilities & Privacy Constraints](#1-role-capabilities--privacy-constraints)

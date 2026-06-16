@@ -1,6 +1,6 @@
 # Administrator Portal Complete Guide
 
-Welcome to the NAI Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform.
+Welcome to the LavBench Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform.
 
 ## Table of Contents
 1. [Challenge Lifecycle Management](#1-challenge-lifecycle-management)

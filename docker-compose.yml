@@ -4,12 +4,12 @@ services:
   # 1. PostgreSQL Database Container
   db:
     image: postgres:15-alpine
-    container_name: nai_db
+    container_name: lavbench_db
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-nai_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nai_password}
-      POSTGRES_DB: ${POSTGRES_DB:-nai_competition}
+      POSTGRES_USER: ${POSTGRES_USER:-lavbench_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lavbench_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
       POSTGRES_SHARED_BUFFERS: 256MB
       POSTGRES_MAX_CONNECTIONS: 100
       POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
@@ -28,7 +28,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nai_user} -d ${POSTGRES_DB:-nai_competition}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lavbench_user} -d ${POSTGRES_DB:-lavbench_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,7 +37,7 @@ services:
   # 2. Redis Message Broker for Celery Queue
   redis:
     image: redis:alpine
-    container_name: nai_redis
+    container_name: lavbench_redis
     restart: always
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password} --maxmemory 256mb --maxmemory-policy allkeys-lru
     deploy:
@@ -60,10 +60,10 @@ services:
   # 3. Flask API Backend
   backend:
     build: ./backend
-    container_name: nai_backend
+    container_name: lavbench_backend
     restart: always
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://nai_user:nai_password@db:5432/nai_competition}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:lavbench_pass@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis_password@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis_password@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY}
@@ -102,11 +102,11 @@ services:
   # Workers run on host via: ./start_worker.sh <REDIS_URL>
   celery_beat:
     build: ./backend
-    container_name: nai_celery_beat
+    container_name: lavbench_beat
     restart: always
     command: celery -A tasks.celery beat --loglevel=info
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://nai_user:nai_password@db:5432/nai_competition}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:lavbench_pass@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis_password@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis_password@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY}
@@ -128,7 +128,7 @@ services:
   # 5. React Frontend & Nginx Router
   frontend:
     build: ./frontend
-    container_name: nai_frontend
+    container_name: lavbench_frontend
     restart: always
     ports:
       - "80:80"

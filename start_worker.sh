@@ -35,16 +35,16 @@ if command -v micromamba &> /dev/null; then
     echo "--> Micromamba detected. Initializing shell hook..."
     eval "$(micromamba shell hook --shell bash)"
     
-    # Check if 'nai_worker' environment exists, otherwise create it
-    if ! micromamba env list | grep -q "nai_worker"; then
-        echo "--> Creating micromamba environment 'nai_worker' with Python 3.10..."
-        micromamba create -n nai_worker python=3.10 -y
-        micromamba activate nai_worker
+    # Check if 'lavbench_worker' environment exists, otherwise create it
+    if ! micromamba env list | grep -q "lavbench_worker"; then
+        echo "--> Creating micromamba environment 'lavbench_worker' with Python 3.10..."
+        micromamba create -n lavbench_worker python=3.10 -y
+        micromamba activate lavbench_worker
         echo "--> Installing pip dependencies..."
         pip install -r backend/requirements.txt
     else
-        echo "--> Activating micromamba environment 'nai_worker'..."
-        micromamba activate nai_worker
+        echo "--> Activating micromamba environment 'lavbench_worker'..."
+        micromamba activate lavbench_worker
     fi
 # 2. Fallback to standard virtualenv
 elif [ -d "venv" ]; then

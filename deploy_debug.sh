@@ -17,16 +17,16 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 echo "============================================="
-echo "   Starting NAI Platform in Local Debug Mode  "
+echo "   Starting LavBench Platform in Local Debug Mode  "
 echo "============================================="
 
 # 1. Prepare Python Virtual Environment
 echo "--> Setting up Python Virtual Environment..."
-if command -v micromamba &> /dev/null && micromamba env list | grep -q "nai_backend"; then
-    echo "--> Micromamba environment 'nai_backend' detected. Initializing shell hook..."
+if command -v micromamba &> /dev/null && micromamba env list | grep -q "lavbench_backend"; then
+    echo "--> Micromamba environment 'lavbench_backend' detected. Initializing shell hook..."
     eval "$(micromamba shell hook --shell bash)"
-    echo "--> Activating micromamba environment 'nai_backend'..."
-    micromamba activate nai_backend
+    echo "--> Activating micromamba environment 'lavbench_backend'..."
+    micromamba activate lavbench_backend
 else
     if [ ! -d "venv" ]; then
         python3 -m venv venv

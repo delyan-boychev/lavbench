@@ -1,371 +1,260 @@
-# National AI Competition (NAI) Web Platform
+# LavBench
 
-A secure, sandboxed, and real-time NLP / ML competition platform. Participants submit Jupyter Notebooks or raw Python code, which are executed and evaluated inside isolated GPU/CPU container sandboxes under strict resource constraints.
+<div align="center">
+  <svg width="96" height="96" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="36" height="36" rx="8" fill="#0f172a" />
+    <path d="M 18 11.5 L 18 6.5 M 21.8 12.6 Q 25.1 11.3 23.7 8.0 M 25.1 15.6 Q 28.6 15.6 28.6 12.1 M 27.2 20.2 Q 30.5 21.5 31.8 18.3 M 28 25.5 Q 30.5 28.0 33 25.5 M 14.2 12.6 Q 10.9 11.3 12.3 8.0 M 10.9 15.6 Q 7.4 15.6 7.4 12.1 M 8.8 20.2 Q 5.5 21.5 4.2 18.3 M 8 25.5 Q 5.5 28.0 3 25.5" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="18" cy="6.5" r="1.2" fill="#f59e0b"/>
+    <circle cx="12.3" cy="8.0" r="1.2" fill="#f59e0b"/>
+    <circle cx="23.7" cy="8.0" r="1.2" fill="#f59e0b"/>
+    <circle cx="7.4" cy="12.1" r="1.2" fill="#f59e0b"/>
+    <circle cx="28.6" cy="12.1" r="1.2" fill="#f59e0b"/>
+    <circle cx="4.2" cy="18.3" r="1.2" fill="#f59e0b"/>
+    <circle cx="31.8" cy="18.3" r="1.2" fill="#f59e0b"/>
+    <circle cx="3" cy="25.5" r="1.2" fill="#f59e0b"/>
+    <circle cx="33" cy="25.5" r="1.2" fill="#f59e0b"/>
+    <path d="M 8 25.5 A 10 14 0 0 1 28 25.5" stroke="#f59e0b" stroke-width="1.5" fill="none"/>
+    <rect x="6.5" y="25.5" width="3" height="4" rx="1.5" fill="#f59e0b"/>
+    <rect x="26.5" y="25.5" width="3" height="4" rx="1.5" fill="#f59e0b"/>
+    <rect x="11.5" y="18.5" width="3" height="11" rx="1.5" fill="#f59e0b"/>
+    <circle cx="13" cy="18.5" r="2.2" fill="#0f172a"/>
+    <circle cx="13" cy="18.5" r="1.4" fill="#fff"/>
+    <circle cx="13" cy="18.5" r="0.6" fill="#0f172a"/>
+    <rect x="21.5" y="18.5" width="3" height="11" rx="1.5" fill="#f59e0b"/>
+    <circle cx="23" cy="18.5" r="2.2" fill="#0f172a"/>
+    <circle cx="23" cy="18.5" r="1.4" fill="#fff"/>
+    <circle cx="23" cy="18.5" r="0.6" fill="#0f172a"/>
+    <rect x="16.5" y="14.5" width="3" height="15" rx="1.5" fill="#f59e0b"/>
+    <circle cx="18" cy="27.5" r="2.2" fill="#0f172a"/>
+    <circle cx="18" cy="27.5" r="0.9" fill="#fff"/>
+  </svg>
+</div>
+
+[![License](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
+
+A secure, sandboxed machine learning competition platform. Participants submit Jupyter notebooks or raw Python code which are executed in isolated Docker containers under strict resource constraints. Real-time leaderboards stream via SSE, with double-blind review for anonymous jury scoring.
+
+Created by the Bulgarian Team. Contributions and use by others are welcome.
 
 ---
 
-## Table of Contents
+## Features
 
-1. [System Architecture](#system-architecture)
-2. [Prerequisites](#prerequisites)
-3. [Project Structure](#project-structure)
-4. [Configuration & Environment](#configuration--environment)
-5. [Setup & Local Debugging](#setup--local-debugging)
-   - [Quick Start (All-in-one Debug Script)](#quick-start-all-in-one-debug-script)
-   - [Manual Step-by-Step Setup](#manual-step-by-step-setup)
-   - [Database Reset & Admin Creation](#database-reset--admin-creation)
-6. [Docker Deployment](#docker-deployment)
-7. [Remote GPU / CPU Worker Setup](#remote-gpu--cpu-worker-setup)
-8. [Testing](#testing)
-   - [Frontend Tests](#1-frontend-unit-tests-vitest--testing-library)
-   - [Backend Tests](#2-backend-unit-tests-python-unittest)
-   - [Pipeline Integration Testing](#3-pipeline-integration-testing)
+- **Sandboxed Execution** — User code runs in throwaway Docker containers with `--network none`, CPU/RAM/process limits, and `tmpfs` mounts
+- **Double-Blind Review** — Competitor demographics encrypted at rest (Fernet), only revealed after scores are finalized
+- **Live Leaderboards** — Server-Sent Events push real-time score updates to all connected clients
+- **Multi-Stage Competitions** — Stages with independent deadlines, grace periods, and score visibility controls
+- **Custom Evaluators** — Jury can upload Python evaluation scripts with per-metric weighting and configuration
+- **GPU/CPU Routing** — Celery queue routing separates GPU and CPU workloads across worker pools
+- **Automated Backups** — Database + uploaded files backed up every 20 minutes during active competitions (every 6 hours when idle), with competition lifecycle snapshots
+- **i18n** — English and Bulgarian
+- **Security** — httpOnly cookie auth, token revocation with Redis blacklist, rate limiting, encrypted PII, ProxyFix for trusted reverse proxies
 
 ---
 
-## System Architecture
+## Quick Start
 
-The NAI platform utilizes a decoupled, database-free worker node architecture:
+```bash
+# 1. Configure
+cp .env.example .env
+# Edit .env — set SECRET_KEY and any other values
+
+# 2. Launch
+chmod +x deploy_debug.sh
+./deploy_debug.sh
+
+# 3. Open
+# Frontend → http://localhost:5173
+# API      → http://localhost:5001/api
+```
+
+Press `Ctrl+C` to stop all services.
+
+---
+
+## Architecture
 
 ```
-Client (React)  <-->  Server (Flask API)  <-->  DB (PostgreSQL)
-                    Server  <-->  Broker (Redis)
-                    Broker  <-->  Worker (Remote GPU/CPU)
-                    Worker  -->  Server (Score Callback)
+┌──────────┐     ┌──────────────┐     ┌──────────────┐
+│  Browser  │────▶│  Nginx/React  │────▶│  Flask API    │
+│  (React)  │◀────│  (Port 80)    │◀────│  (Port 5001)  │
+└──────────┘     └──────────────┘     └──────┬───────┘
+                                              │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    │                         │                         │
+              ┌─────▼─────┐           ┌──────▼──────┐          ┌──────▼──────┐
+              │ PostgreSQL │           │    Redis     │          │ Celery Beat │
+              │   (DB)     │           │  (Broker +   │          │ (Scheduler) │
+              └───────────┘           │   Cache)     │          └─────────────┘
+                                      └──────┬──────┘
+                                              │
+                              ┌───────────────┼───────────────┐
+                              │               │               │
+                       ┌──────▼──────┐ ┌─────▼─────┐  ┌──────▼──────┐
+                       │  GPU Worker  │ │ CPU Worker │  │ CPU Worker  │
+                       │ (start_worker│ │(start_worker│  │(start_worker│
+                       │   .sh 0)     │ │   .sh)     │  │   .sh)      │
+                       └──────┬──────┘ └─────┬─────┘  └──────┬──────┘
+                              │               │               │
+                              └───────────────┼───────────────┘
+                                              │
+                                    ┌─────────▼─────────┐
+                                    │  Docker Sandbox     │
+                                    │  (--network none)   │
+                                    │  CPU/RAM/PIDs limit │
+                                    └────────────────────┘
 ```
 
-- **Main Server**: Houses PostgreSQL, Flask API, React frontend, and Redis (Celery broker).
-- **Worker Nodes**: Decoupled machines (`RUNNING_AS_WORKER=true`). They listen to Celery queues, download task files from the server via secure tokens, build Docker sandboxes, execute user code, and callback scores.
+**Components**:
 
----
-
-## Prerequisites
-
-| Dependency    | Minimum Version | Purpose                     |
-|---------------|-----------------|-----------------------------|
-| Python        | 3.10            | Flask API + Celery worker   |
-| Node.js       | 18              | React frontend (Vite)       |
-| PostgreSQL    | 15              | Main database               |
-| Redis         | 6+              | Celery message broker       |
-| Docker        | 20+             | Containerized worker (optional for local debug) |
-
-Recommended package managers: `npm` (Node), `pip` / `micromamba` (Python).
+| Service | Role | Port |
+|---------|------|------|
+| **PostgreSQL** | Primary database — users, challenges, tasks, submissions | 5432 |
+| **Redis** | Celery message broker, SSE pub/sub, caching, rate limiting | 6379 |
+| **Flask API** | REST API + SSE streaming endpoints | 5001 |
+| **Celery Worker** | Runs on host via `start_worker.sh` — builds Docker sandboxes, executes submissions | — |
+| **Celery Beat** | Periodic tasks — watchdog (stuck submissions), automated backups | — |
+| **Nginx/React** | Static file serving + API reverse proxy | 80 |
 
 ---
 
 ## Project Structure
 
 ```
-nai-webplatform/
+lavbench-webplatform/
 ├── backend/
-│   ├── app.py                  # Flask application factory + seed_database()
-│   ├── config.py               # Configuration from .env
-│   ├── models.py               # SQLAlchemy models (User, Challenge, Task, Submission)
-│   ├── auth_utils.py           # JWT auth helpers
-│   ├── evaluation_engine.py    # Parquet-based evaluation logic
-│   ├── tasks.py                # Celery task definitions
-│   ├── worker_utils.py         # Worker runtime helpers
-│   ├── generate_master_key.py  # Full DB reset + seed + admin creation
-│   ├── recreate_db.py          # Drop + recreate + seed (no admin)
-│   ├── reset_for_fresh_start.py# Drop + recreate + admin only (no seed data)
-│   ├── routes/                 # Flask blueprints (admin, challenges, tasks, auth)
-│   ├── services/               # Business logic (submissions, scoring)
-│   ├── task_modules/           # Submission runner, validation
-│   ├── tests/                  # Backend unit tests (unittest)
-│   ├── requirements.in        # Pinned dependency source
-│   └── requirements.txt       # Compiled dependencies
+│   ├── app.py                   # Flask application factory
+│   ├── config.py                # Configuration from .env
+│   ├── models.py                # SQLAlchemy models
+│   ├── auth_utils.py            # JWT auth, rate limiting, token revocation
+│   ├── cache_utils.py           # Redis caching, connection pool, locks
+│   ├── evaluation_engine.py     # Parquet-based evaluation with 50+ metrics
+│   ├── sse_utils.py             # SSE pub/sub helpers
+│   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
+│   ├── tasks.py                 # Celery task definitions + beat schedule
+│   ├── Dockerfile               # Backend container
+│   ├── routes/                  # Flask blueprints
+│   │   ├── admin.py             # Admin dashboard, user management, backups
+│   │   ├── auth.py              # Login, logout, rate limiting
+│   │   ├── challenges.py        # Challenge CRUD, stages, finalize
+│   │   ├── submissions.py       # Notebook parsing, submission pipeline
+│   │   ├── tasks.py             # Task CRUD, worker endpoints
+│   │   ├── leaderboard.py       # Leaderboard + manual points
+│   │   └── docs.py              # In-app documentation
+│   ├── services/                # Business logic
+│   ├── task_modules/            # Submission runner, templates, system tasks
+│   └── tests/                   # Backend tests (pytest, 129 tests)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/         # Reusable React components (admin, challenge, ui)
-│   │   ├── pages/              # Page-level components (AdminPanel, ChallengeView, etc.)
-│   │   ├── services/           # ApiService, AuthContext, AppContext
-│   │   ├── context/            # React context providers
-│   │   └── hooks/              # Custom hooks
-│   ├── public/locales/         # i18n translation files (en, bg)
-│   └── package.json
-├── docker-compose.yml          # Production compose: db, redis, backend, frontend, worker
-├── deploy_debug.sh             # One-command local debug launcher
-├── deploy_docker.sh            # Production deployment script
-├── start_worker.sh             # Remote worker bootstrap
-├── .env.example                # Environment variable template
-└── AGENTS.md                   # AI assistant configuration (separate from README)
+│   │   ├── components/          # Reusable components (admin, challenge, ui, layout)
+│   │   ├── pages/               # Page components
+│   │   ├── services/            # ApiService, AuthContext, AppContext
+│   │   ├── context/             # React context providers
+│   │   └── hooks/               # Custom hooks
+│   ├── public/locales/          # i18n (en, bg)
+│   └── nginx.conf               # Nginx configuration
+├── guides/                      # User documentation (student, jury, admin, API)
+├── docker-compose.yml           # Docker Compose (db, redis, backend, beat, frontend)
+├── deploy_debug.sh              # Local dev launcher
+├── deploy_docker.sh             # Production deployment
+├── start_worker.sh              # Remote GPU/CPU worker bootstrap
+├── .env.example                 # Environment template
+├── LICENSE                      # AGPL v3
+└── NOTICE                       # Copyright notice
 ```
 
 ---
 
-## Configuration & Environment
+## Configuration
 
-Copy the template and edit:
+Copy and edit the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-### Key Environment Variables
-
-| Variable                | Description                                      | Default / Example                                          |
-|-------------------------|--------------------------------------------------|------------------------------------------------------------|
-| `SECRET_KEY`            | Flask secret key for JWT / session signing        | `replace_with_a_secure_random_string`                      |
-| `FIELD_ENCRYPTION_KEY`  | Fernet AES key for encrypting competitor PII      | Generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `DATABASE_URL`          | PostgreSQL connection string                      | `postgresql://nai_user:nai_password@localhost:5432/nai_competition` |
-| `CELERY_BROKER_URL`     | Redis broker URL for Celery                        | `redis://localhost:6379/0`                                 |
-| `CELERY_RESULT_BACKEND` | Redis result backend URL                          | `redis://localhost:6379/0`                                 |
-| `MAIN_SERVER_URL`       | Server URL for worker callbacks                   | `http://localhost:5001`                                    |
-| `WORKER_SECRET_KEY`     | Shared secret for worker ↔ server auth            | `nai-worker-default-secret-token`                          |
-| `HF_CACHE_DIR`          | Hugging Face dataset/model cache directory        | `./backend/hf_cache`                                       |
-
-### Generating `FIELD_ENCRYPTION_KEY`
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-Add the output to your `.env` as:
-```
-FIELD_ENCRYPTION_KEY=<generated-key>
-```
+| Variable | Description | Default / Example |
+|----------|-------------|-------------------|
+| `SECRET_KEY` | Flask secret for JWT signing | **Required** — generate a random 64+ char string |
+| `DATABASE_URL` | PostgreSQL connection | `postgresql://user:pass@localhost:5432/dbname` |
+| `CELERY_BROKER_URL` | Redis broker for Celery | `redis://localhost:6379/0` |
+| `CELERY_RESULT_BACKEND` | Redis result backend | `redis://localhost:6379/0` |
+| `WORKER_SECRET_KEY` | Shared secret for worker ↔ server auth | **Required for workers** |
+| `ENCRYPTION_KEY` | Fernet key for PII encryption | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `HF_CACHE_DIR` | HuggingFace dataset cache | `./backend/hf_cache` |
+| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:80` |
+| `MAIN_SERVER_URL` | Server URL for worker callbacks | `http://localhost:5001` |
+| `FLASK_DEBUG` | Enable Flask debug mode | `false` |
+| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after deadline | `60` |
 
 ---
 
-## Setup & Local Debugging
+## Testing
 
-### Quick Start (All-in-one Debug Script)
-
-```bash
-chmod +x deploy_debug.sh
-./deploy_debug.sh
-```
-
-This script:
-1. Prepares a Python virtualenv and installs dependencies.
-2. Checks for local PostgreSQL and Redis (starts them in Docker if not native).
-3. Creates database schemas and seeds demo data.
-4. Spawns Flask API, Celery worker, and Vite dev server.
-
-Press `Ctrl + C` to stop all services.
-
-### Manual Step-by-Step Setup
-
-1. **Start Infrastructure**: Ensure PostgreSQL and Redis are running locally.
-
-2. **Backend Setup**:
-   ```bash
-   cd backend
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-
-   # Create tables + seed demo data
-   python -c "from app import app, db, seed_database; with app.app_context(): db.create_all(); seed_database()"
-
-   # Start Flask dev server (port 5001)
-   python app.py
-   ```
-
-   **Managing Python Dependencies**:
-   Edit `backend/requirements.in`, then re-compile:
-   ```bash
-   pip-compile backend/requirements.in --output-file backend/requirements.txt
-   ```
-
-3. **Celery Worker** (optional for local debugging):
-   ```bash
-   cd backend
-   celery -A tasks.celery worker --loglevel=info
-   ```
-
-4. **Frontend Setup**:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-
-### Database Reset & Admin Creation
-
-**Option A — Fresh start, no demo data (recommended for production setup):**
+### Backend
 
 ```bash
 cd backend
 source venv/bin/activate
-python reset_for_fresh_start.py
+python -m pytest tests/ -v
 ```
 
-This drops all tables, recreates the schema, and creates a single admin user with randomly generated credentials. Credentials are printed to the terminal and saved in `admin_credentials.txt`. No challenges, tasks, or competitor users are created.
+129 tests covering routes, auth, evaluation, caching, rate limiting, and models.
 
-**Option B — Full reset with demo data + admin:**
+### Frontend
 
 ```bash
-cd backend
-source venv/bin/activate
-python generate_master_key.py
+cd frontend
+npm run test
 ```
 
-This drops the database, seeds demo challenges (IMDb, SST-2) with tasks and sample submissions, and creates a master admin user. Useful for development and testing.
-
-**Option C — Recreate schema without admin user:**
-
-```bash
-cd backend
-source venv/bin/activate
-python recreate_db.py
-```
-
-Drops and recreates all tables, seeds demo data, but does not create an admin user. Useful for testing DB migrations without admin side-effects.
+149 tests covering all components, pages, auth context, and API service.
 
 ---
 
-## Docker Deployment (Production Compose)
+## Deployment
+
+### Docker Compose
 
 ```bash
 chmod +x deploy_docker.sh
 ./deploy_docker.sh
 ```
 
-This script:
-- Tears down any existing containers (`docker-compose down`)
-- Rebuilds images (`docker-compose build`)
-- Starts PostgreSQL and waits for readiness (`pg_isready`)
-- Launches Flask API, React/Nginx frontend, and Celery worker
-- Seeds the database inside the container
+Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
 
-**Useful Commands**:
-- `docker-compose logs -f` — tail all container logs
-- `docker-compose down` — stop all services
-
----
-
-## Remote GPU / CPU Worker Setup
-
-Worker nodes do **not** require direct database access.
-
-### Prerequisites
-- Docker installed and running.
-- For GPU: NVIDIA Container Toolkit.
-- Network access to the shared Redis broker port (6379).
-
-### Worker Initialization
+### Remote Workers
 
 ```bash
-chmod +x start_worker.sh
 ./start_worker.sh <REDIS_URL> [GPU_ID]
+
+# GPU worker
+./start_worker.sh redis://:password@server:6379/0 0
+
+# CPU worker
+./start_worker.sh redis://:password@server:6379/0
 ```
 
-**Examples**:
-- **GPU Worker 0**: `./start_worker.sh redis://:password@server:6379/0 0`
-- **CPU Worker**: `./start_worker.sh redis://:password@server:6379/0`
-
-The script detects `micromamba` or falls back to a local `venv`, configures GPU visibility, and connects to the Celery queue.
+Workers require Docker and NVIDIA Container Toolkit (for GPU). No database access needed.
 
 ---
 
-## Testing
+## Security
 
-### 1. Frontend Unit Tests (Vitest + React Testing Library)
+| Layer | Mechanism |
+|-------|-----------|
+| **Authentication** | httpOnly cookies with JWTs (XSS-immune), 24h expiry |
+| **Authorization** | Role-based (admin, jury, competitor) with DB-backed role lookup |
+| **Token Revocation** | Redis blacklist with `jti` — logout instantly invalidates tokens |
+| **Rate Limiting** | Lua atomic counters per-user per-endpoint, Redis-down fails open |
+| **PII Encryption** | Fernet symmetric encryption for competitor demographics |
+| **Sandbox** | `--network none`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, RAM limits |
+| **Ground Truth** | `labels.parquet` never mounted into evaluation sandbox |
+| **IP Trust** | `ProxyFix` middleware — only trusts `X-Forwarded-For` from Nginx |
+| **HF API Keys** | Fetched on-demand by workers via authenticated API, never in Redis |
 
-**Run the full suite**:
-```bash
-cd frontend
-npm run test
-```
+---
 
-**Test framework**: `vitest` with `happy-dom` environment.
+## License
 
-**Testing libraries**: `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`.
-
-#### Test Structure
-
-Tests follow the naming convention `*.test.jsx` and are co-located with the components they test or placed in the same directory.
-
-Example layout:
-```
-src/
-├── components/
-│   ├── admin/
-│   │   ├── TaskForm.jsx
-│   │   └── TaskForm.test.jsx       # co-located
-│   └── ui/
-│       ├── InputField.jsx
-│       └── InputField.test.jsx
-└── pages/
-    ├── AdminPanel.jsx
-    ├── AdminPanel.test.jsx          # page-level test
-    ├── AdminPanelStages.test.jsx
-    └── AdminPanelUnifiedParquet.test.jsx
-```
-
-#### Mocking Patterns
-
-The test suite uses `vi.mock()` for three main categories:
-
-**1. Auth & App Context** — every test file mocks these:
-```javascript
-vi.mock('../AuthContext', () => ({ useAuth: vi.fn() }));
-vi.mock('../context/AppContext', () => ({ useApp: vi.fn() }));
-```
-`useAuth` returns `{ currentUser, token }`; `useApp` returns `{ challenges, selectedChallenge, showToast, ... }`.
-
-**2. API Service** — the shared `ApiService` module is mocked per-suite:
-```javascript
-vi.mock('../services/ApiService', () => ({
-  default: { fetch: vi.fn(), get: vi.fn(), post: vi.fn(), ... },
-}));
-import api from '../services/ApiService';
-api.fetch.mockResolvedValue({ ok: true, json: async () => ({...}) });
-```
-
-**3. Global `fetch`** — some tests mock `global.fetch` directly (used by `api.fetch` internally):
-```javascript
-global.fetch = vi.fn().mockImplementation((url) => {
-  if (url.includes('/metrics')) return Promise.resolve({ ok: true, json: async () => ({...}) });
-  return Promise.resolve({ ok: true, json: async () => mockSystemStats });
-});
-```
-
-#### Common Test Patterns
-
-- **Async state updates**: Use `await act(async () => { fireEvent.click(button); })` or `await vi.waitFor(() => expect(...))`.
-- **Finding elements**: Prefer `getByRole`, `getByText`, `getByPlaceholderText`. Use `getAllBy*` when text appears multiple times.
-- **Combobox / Select**: Use `screen.getAllByRole('combobox')` and filter by option text or value, since parameter selects lack accessible names.
-- **API calls**: Use `api.fetch.mock.calls` to verify request URLs and headers.
-
-#### Running a Single Test File
-
-```bash
-npx vitest run src/pages/AdminPanel.test.jsx
-npx vitest run src/pages/AdminPanel.test.jsx -t "switches to Workers"
-```
-
-### 2. Backend Unit Tests (Python unittest)
-
-**Run the full suite**:
-```bash
-cd backend
-source venv/bin/activate
-python -m unittest discover -s tests
-```
-
-**Test files** (in `backend/tests/`):
-
-| File | Tests |
-|------|-------|
-| `test_routes.py` | API endpoint happy-paths, rate limiting, auth (401/403), calendar deadlines |
-| `test_exceptions.py` | Error handlers, payload validation |
-| `test_services.py` | Service-layer logic, submission processing |
-| `test_custom_eval_validation.py` | Custom eval code validation, AST sandbox rules |
-| `test_unified_parquet_evaluation.py` | Parquet-based evaluation engine |
-
-The suite uses Python's `unittest.TestCase` and can be run with verbose output:
-```bash
-python -m unittest discover -s tests -v
-```
-
-### 3. Pipeline Integration Testing
-
-The `test_run.py` script tests the full pipeline (DB updates, SSE, Celery, Docker sandbox) without requiring a real Docker daemon:
-
-```bash
-python test_run.py
-```
-
-It prepends `mock_bin/` to `PATH`, activating a Docker CLI shim that simulates container builds and execution, verifying resource limits (RAM, processes, network isolation) are enforced correctly.
+[GNU Affero General Public License v3.0](LICENSE)

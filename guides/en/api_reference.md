@@ -1,6 +1,6 @@
 # Developer API Complete Reference
 
-This comprehensive specification outlines the REST endpoints and Server-Sent Events (SSE) utilized by the NAI Web Platform backend.
+This comprehensive specification outlines the REST endpoints and Server-Sent Events (SSE) utilized by the LavBench backend.
 
 ## Table of Contents
 1. [Authentication & Access Control](#1-authentication--access-control)

@@ -6,7 +6,7 @@
 set -e
 
 echo "============================================="
-echo "   Deploying NAI Platform in Docker Compose   "
+echo "   Deploying LavBench Platform in Docker Compose   "
 echo "============================================="
 
 # 1. Clean up existing containers
@@ -24,7 +24,7 @@ docker-compose up -d db redis
 # 4. Wait for PostgreSQL container to become ready
 echo "--> Waiting for PostgreSQL to initialize..."
 RETRIES=15
-until docker-compose exec -T db pg_isready -U nai_user -d nai_competition >/dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
+until docker-compose exec -T db pg_isready -U lavbench_user -d lavbench_db >/dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
     echo "    Waiting for database connection... ($RETRIES retries left)"
     sleep 1
     RETRIES=$((RETRIES - 1))

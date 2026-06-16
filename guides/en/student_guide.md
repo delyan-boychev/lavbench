@@ -1,6 +1,6 @@
 # Student (Competitor) Complete Guide
 
-Welcome to the NAI Platform! This guide explains how to authenticate, prepare your Jupyter notebooks, and successfully submit your machine learning models to the evaluation cluster.
+Welcome to the LavBench Platform! This guide explains how to authenticate, prepare your Jupyter notebooks, and successfully submit your machine learning models to the evaluation cluster.
 
 ## Table of Contents
 1. [Authentication & Account Security](#1-authentication--account-security)

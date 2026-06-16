@@ -6,7 +6,7 @@ import sys
 
 # Allowed literal values that do not need translation (common acronyms, units, names)
 ALLOWED_LITERALS = {
-    "bg", "en", "nai", "nai platform", "platform", "jwt", "sql", "ram", "gb", "mb", "cpu", "gpu", "vram", 
+    "bg", "en", "lavbench", "platform", "jwt", "sql", "ram", "gb", "mb", "cpu", "gpu", "vram", 
     "utc", "id", "csv", "excel", "docker", "redis", "jupyter", "python", "api", "html", "css",
     "x", "y", "w", "h", "o", "a", "b", "c", "d" # single letters often used as math or close indicators
 }

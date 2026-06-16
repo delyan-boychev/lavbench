@@ -462,7 +462,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             import hashlib
             config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
             config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
-            image_tag = f"nai_task_{task.id}_{config_hash}".lower()
+            image_tag = f"lavbench_task_{task.id}_{config_hash}".lower()
         
             image_exists = False
             try:
@@ -536,7 +536,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         import hashlib
         config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
         config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
-        image_tag = f"nai_task_{task.id}_{config_hash}".lower() if (task and (task.base_docker_image or task.apt_packages or task.pip_requirements)) else "python:3.10-slim"
+        image_tag = f"lavbench_task_{task.id}_{config_hash}".lower() if (task and (task.base_docker_image or task.apt_packages or task.pip_requirements)) else "python:3.10-slim"
     
         hf_cache_mount = []
         if hf_cache_dir and os.path.exists(hf_cache_dir):

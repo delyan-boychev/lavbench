@@ -74,7 +74,7 @@ docker-compose.*.local.yml
 *.bak
 *~
 
-# NAI Specific Ignores
+# LavBench Specific Ignores
 admin_credentials.txt
 backend/uploads/
 backend/hf_cache/
