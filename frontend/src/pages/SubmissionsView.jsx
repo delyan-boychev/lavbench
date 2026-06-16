@@ -30,7 +30,7 @@ export default function SubmissionsView() {
   const [submissionsPage, setSubmissionsPage] = useState(1);
   const [submissionsPages, setSubmissionsPages] = useState(1);
   const [submissionsTotal, setSubmissionsTotal] = useState(0);
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const taskIdRef = useRef(selectedTask?.id);
 
   useEffect(() => {

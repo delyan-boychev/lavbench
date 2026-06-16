@@ -418,6 +418,7 @@ class TestRouteLevelLogic(unittest.TestCase):
     def test_sse_live_leaderboard_route(self, mock_redis_cls):
         """Leaderboard live SSE endpoint should authenticate and stream data."""
         mock_redis = mock_redis_cls.return_value
+        mock_redis.exists.return_value = 0  # Token revocation check
         mock_pubsub = mock_redis.pubsub.return_value
         mock_pubsub.get_message.return_value = None
 
@@ -436,6 +437,7 @@ class TestRouteLevelLogic(unittest.TestCase):
     def test_sse_live_submissions_route(self, mock_redis_cls):
         """Submissions live SSE endpoint should authenticate and stream data."""
         mock_redis = mock_redis_cls.return_value
+        mock_redis.exists.return_value = 0  # Token revocation check
         mock_pubsub = mock_redis.pubsub.return_value
         mock_pubsub.get_message.return_value = None
 

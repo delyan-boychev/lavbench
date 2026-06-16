@@ -2,19 +2,6 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import mockEnTranslation from '../public/locales/en/translation.json';
 
-function getTranslationValue(key) {
-  const parts = key.split('.');
-  let current = mockEnTranslation;
-  for (const part of parts) {
-    if (current && typeof current === 'object') {
-      current = current[part];
-    } else {
-      return undefined;
-    }
-  }
-  return current;
-}
-
 vi.mock('react-i18next', () => {
   // Define helper inside or access it since it starts with mock
   const getTranslationVal = (key, count) => {

@@ -89,17 +89,25 @@ describe('AdminPanel Page - Workers & Resources', () => {
         this.close = vi.fn();
         setTimeout(() => {
           if (this.onmessage) {
-            this.onmessage({ data: JSON.stringify(mockSystemStats) });
+            act(() => {
+              this.onmessage({ data: JSON.stringify(mockSystemStats) });
+            });
           }
         }, 10);
       }
     };
 
     global.fetch = vi.fn().mockImplementation((url) => {
-      if (url === '/api/admin/metrics' || url.includes('metrics')) {
+      if (url.includes('metrics')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ metrics: {} }),
+        });
+      }
+      if (url.includes('challenges') || url.includes('users')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [], total: 0, pages: 1 }),
         });
       }
       return Promise.resolve({
@@ -109,14 +117,24 @@ describe('AdminPanel Page - Workers & Resources', () => {
     });
   });
 
-  it('renders sidebar options including Workers & Resources for admin', () => {
+  it('renders sidebar options including Workers & Resources for admin', async () => {
     render(<AdminPanel />);
     expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
     expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
+    
+    // Wait for on-mount fetch promises to resolve and state updates to run
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
   });
 
   it('switches to Workers & Resources tab and fetches detailed stats', async () => {
     render(<AdminPanel />);
+
+    // Wait for on-mount fetch promises to resolve and state updates to run
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
     
     const workersTabBtn = screen.getByText('Workers & Resources');
     
@@ -145,14 +163,25 @@ describe('AdminPanel Page - Workers & Resources', () => {
     expect(screen.getByText('256.5 MB')).toBeInTheDocument();
     expect(screen.getByText('1h 0s')).toBeInTheDocument(); // uptime (3600 seconds = 1 hour)
     expect(screen.getByText('test-task-1')).toBeInTheDocument();
+
+    // Wait for remaining pending async actions
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
   });
 
   it('handles SSE errors gracefully', async () => {
     global.EventSource = class {
-      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onerror) this.onerror(new Event('error')); }, 10); }
+      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onerror) { act(() => { this.onerror(new Event('error')); }); } }, 10); }
     };
 
     render(<AdminPanel />);
+
+    // Wait for on-mount fetch promises to resolve and state updates to run
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
     const workersTabBtn = screen.getByText('Workers & Resources');
 
     await act(async () => {
@@ -161,6 +190,11 @@ describe('AdminPanel Page - Workers & Resources', () => {
 
     await vi.waitFor(() => {
       expect(screen.getByText(/Network error fetching stats/i)).toBeInTheDocument();
+    });
+
+    // Wait for remaining pending async actions
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
     });
   });
 

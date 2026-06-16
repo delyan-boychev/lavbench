@@ -27,10 +27,11 @@ export default function LeaderboardView() {
   }, [challengeId, setSelectedChallengeById]);
 
   const loadLeaderboard = async (showLoading = true) => {
-    if (!challengeId) return;
+    const activeId = challengeId || selectedChallenge?.id;
+    if (!activeId) return;
     if (showLoading) setLoading(true);
     try {
-      const res = await ChallengeService.getLeaderboard(challengeId);
+      const res = await ChallengeService.getLeaderboard(activeId);
       if (res.ok) {
         setLeaderboardData(res.data.leaderboard || []);
         setTasks(res.data.tasks || []);
@@ -52,7 +53,7 @@ export default function LeaderboardView() {
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [challengeId]);
+  }, [challengeId, selectedChallenge?.id]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">

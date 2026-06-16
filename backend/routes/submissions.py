@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import joinedload
 from models import db, Challenge, Submission, User, Task
-from auth_utils import login_required
+from auth_utils import login_required, rate_limit
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 
@@ -12,6 +12,7 @@ submissions_bp = Blueprint('submissions', __name__)
 
 @submissions_bp.route('/challenges/<int:challenge_id>/parse-notebook', methods=['POST'])
 @login_required
+@rate_limit(max_requests=30, window_seconds=60)
 def parse_notebook(challenge_id):
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -75,6 +76,7 @@ def parse_notebook(challenge_id):
 
 @submissions_bp.route('/challenges/<int:challenge_id>/submit', methods=['POST'])
 @login_required
+@rate_limit(max_requests=30, window_seconds=60)
 def submit_code(challenge_id):
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -244,7 +246,6 @@ def submit_code(challenge_id):
         
         "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
-        "hf_token": hf_token,
         "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
         "hf_models": task.hf_models if isinstance(task.hf_models, str) else (json.dumps(task.hf_models) if task.hf_models else None),
         "public_eval_percentage": task.public_eval_percentage or 30,
@@ -328,6 +329,7 @@ def get_submission_detail(submission_id):
 
 @submissions_bp.route('/submissions/<int:submission_id>/select-final', methods=['POST'])
 @login_required
+@rate_limit(max_requests=20, window_seconds=60)
 def select_final_submission(submission_id):
     user_id = request.user["user_id"]
     user_role = request.user["role"]

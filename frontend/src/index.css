@@ -39,6 +39,15 @@
   --accent-soft: rgba(99, 102, 241, 0.15);
   --accent-border: var(--color-indigo-400);
   --accent-border-hover: var(--color-indigo-300);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+
+  --info: var(--color-blue-500);
+  --success: var(--color-emerald-500);
+  --warning: var(--color-amber-500);
+  --danger: var(--color-rose-500);
 }
 
 :root[data-theme='light'] {
@@ -75,6 +84,15 @@
   --accent-soft: rgba(79, 70, 229, 0.10);
   --accent-border: var(--color-indigo-600);
   --accent-border-hover: var(--color-indigo-700);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+
+  --info: var(--color-blue-600);
+  --success: var(--color-emerald-600);
+  --warning: var(--color-amber-600);
+  --danger: var(--color-rose-600);
 }
 
 /* Light mode structural & utility overrides */

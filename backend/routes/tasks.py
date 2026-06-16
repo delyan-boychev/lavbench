@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_from_directory, current_app, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from models import db, Challenge, Task, User, Submission, decrypt_field, is_metric_lower_better
-from auth_utils import login_required, role_required
+from auth_utils import login_required, role_required, rate_limit
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 
@@ -86,7 +86,6 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         except:
             pass
             
-    hf_token = task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
     
     from auth_utils import generate_worker_token
@@ -114,8 +113,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         
         "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
-        "hf_token": hf_token,
-        "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
+                "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
         "hf_models": task.hf_models if isinstance(task.hf_models, str) else (json.dumps(task.hf_models) if task.hf_models else None),
         "public_eval_percentage": task.public_eval_percentage or 30,
         
@@ -745,6 +743,7 @@ def download_task_file(task_id, filename):
 
 @tasks_bp.route('/tasks/<int:task_id>/submit', methods=['POST'])
 @login_required
+@rate_limit(max_requests=30, window_seconds=60)
 def submit_task_code(task_id):
     task = db.get_or_404(Task, task_id)
     challenge = task.challenge
@@ -875,7 +874,6 @@ def submit_task_code(task_id):
         except:
             pass
             
-    hf_token = task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
     
     from auth_utils import generate_worker_token
@@ -897,8 +895,7 @@ def submit_task_code(task_id):
         
         "is_custom_eval": True if (task.custom_eval_code or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))) else False,
         "metrics_config": task.metrics_config,
-        "hf_token": hf_token,
-        "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
+                "hf_datasets": task.hf_datasets if isinstance(task.hf_datasets, str) else (json.dumps(task.hf_datasets) if task.hf_datasets else None),
         "hf_models": task.hf_models if isinstance(task.hf_models, str) else (json.dumps(task.hf_models) if task.hf_models else None),
         "public_eval_percentage": task.public_eval_percentage or 30,
         
@@ -1336,6 +1333,18 @@ def get_active_datasets():
                     datasets_set.add(m)
                     
     return jsonify({"datasets": list(datasets_set)}), 200
+
+
+@tasks_bp.route('/worker/tasks/<int:task_id>/hf-key', methods=['GET'])
+def get_task_hf_key(task_id):
+    token = request.headers.get("X-Worker-Token")
+    from auth_utils import verify_worker_token
+    if not verify_worker_token(token):
+        return jsonify({"error": "Unauthorized"}), 401
+    task = db.session.get(Task, task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify({"hf_key": task.get_hf_api_key() or ""}), 200
 
 
 

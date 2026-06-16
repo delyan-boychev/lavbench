@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../AuthContext';
 import ChallengeOverview from '../components/challenge/ChallengeOverview';
 import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
@@ -11,7 +10,6 @@ import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const { challengeId } = useParams();
-  const { currentUser } = useAuth();
   const { 
     selectedChallenge, 
     setSelectedChallengeById, 

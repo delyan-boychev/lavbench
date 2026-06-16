@@ -5,7 +5,6 @@ import { useApp } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
-import ToggleField from '../components/ui/ToggleField';
 import Logo from '../components/ui/Logo';
 
 function SunIcon() {
@@ -26,7 +25,7 @@ function MoonIcon() {
 }
 
 export default function Login() {
-  const { currentUser, login, authError, setAuthError } = useAuth();
+  const { currentUser, login, authError } = useAuth();
   const { theme, toggleTheme } = useApp();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();

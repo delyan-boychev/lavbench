@@ -18,6 +18,21 @@ from worker_utils import (
 )
 from task_modules.templates import DEFAULT_EVALUATION_TEMPLATE, CUSTOM_EVAL_WRAPPER, render_eval_template
 
+def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
+    if not task_id or not main_server_url or not worker_token:
+        return ""
+    try:
+        res = requests.get(
+            f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/hf-key",
+            headers={"X-Worker-Token": worker_token},
+            timeout=5
+        )
+        if res.status_code == 200:
+            return res.json().get("hf_key", "")
+    except Exception:
+        pass
+    return ""
+
 def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
     """
     Preloads HuggingFace datasets and models on the host so they are available offline in docker.
@@ -111,7 +126,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             public_eval_percentage=metadata.get("public_eval_percentage"),
             hf_datasets=metadata.get("hf_datasets"),
             hf_models=metadata.get("hf_models"),
-            get_hf_api_key=lambda: metadata.get("hf_token"),
+            get_hf_api_key=lambda: _fetch_hf_key_from_server(metadata.get("task_id"), metadata.get("main_server_url"), metadata.get("worker_secret_key")),
             evaluator_script_path=None,
             custom_eval_code=metadata.get("custom_eval_code"),
         )

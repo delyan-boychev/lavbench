@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -6,9 +6,18 @@ import ProtectedLayout from './components/layout/ProtectedLayout';
 import Login from './pages/Login';
 import Home from './pages/Home';
 import LeaderboardView from './pages/LeaderboardView';
-import SubmissionsView from './pages/SubmissionsView';
-import AdminPanel from './pages/AdminPanel';
 import LeaderboardDemo from './pages/LeaderboardDemo';
+
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
+
+function LoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin h-6 w-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
+    </div>
+  );
+}
 
 function ToastContainer() {
   const { toast } = useApp();
@@ -35,9 +44,21 @@ export default function App() {
             <Route path="/challenges/:challengeId" element={<Home />} />
             <Route path="/leaderboard" element={<LeaderboardView />} />
             <Route path="/challenges/:challengeId/leaderboard" element={<LeaderboardView />} />
-            <Route path="/submissions" element={<SubmissionsView />} />
-            <Route path="/challenges/:challengeId/submissions" element={<SubmissionsView />} />
-            <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/submissions" element={
+              <Suspense fallback={<LoadingFallback />}>
+                <SubmissionsView />
+              </Suspense>
+            } />
+            <Route path="/challenges/:challengeId/submissions" element={
+              <Suspense fallback={<LoadingFallback />}>
+                <SubmissionsView />
+              </Suspense>
+            } />
+            <Route path="/admin" element={
+              <Suspense fallback={<LoadingFallback />}>
+                <AdminPanel />
+              </Suspense>
+            } />
           </Route>
           
           {/* Public Login Route */}

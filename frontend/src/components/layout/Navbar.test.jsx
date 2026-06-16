@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Navbar from './Navbar';
@@ -81,7 +81,9 @@ describe('Navbar Component', () => {
     expect(eventSourceInstance.url).toBe('/api/worker-status/live');
 
     // Simulate SSE data arriving
-    eventSourceInstance.onmessage({ data: JSON.stringify({ status: 'online', clusters: [] }) });
+    act(() => {
+      eventSourceInstance.onmessage({ data: JSON.stringify({ status: 'online', clusters: [] }) });
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Cluster')).toBeInTheDocument();
@@ -100,7 +102,13 @@ describe('Navbar Component', () => {
         this.onmessage = null;
         this.onerror = () => {};
         // Simulate error immediately
-        setTimeout(() => this.onerror(), 0);
+        setTimeout(() => {
+          if (this.onerror) {
+            act(() => {
+              this.onerror();
+            });
+          }
+        }, 0);
       }
     };
 
@@ -130,15 +138,20 @@ describe('Navbar Component', () => {
     render(<Navbar />);
 
     // Simulate SSE with cluster data
-    eventSourceInstance.onmessage({ data: JSON.stringify({
-      status: 'online',
-      clusters: [
-        { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
-      ]
-    })});
+    act(() => {
+      eventSourceInstance.onmessage({ data: JSON.stringify({
+        status: 'online',
+        clusters: [
+          { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
+        ]
+      })});
+    });
 
     const statusBtn = screen.getByText('Cluster');
-    fireEvent.click(statusBtn);
+    await act(async () => {
+      fireEvent.click(statusBtn);
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     expect(screen.getByText('Cluster Info & Active Node Specifications')).toBeInTheDocument();
 
@@ -149,7 +162,10 @@ describe('Navbar Component', () => {
     });
 
     // Click again to close (toggle)
-    fireEvent.click(statusBtn);
+    await act(async () => {
+      fireEvent.click(statusBtn);
+      await new Promise((r) => setTimeout(r, 220));
+    });
     await vi.waitFor(() => {
       expect(screen.queryByText('Cluster Info & Active Node Specifications')).not.toBeInTheDocument();
     });
@@ -213,9 +229,7 @@ describe('Navbar Component', () => {
 
     expect(screen.getByText('Documentation & Guides')).toBeInTheDocument();
 
-    await vi.waitFor(() => {
-      expect(screen.getByText('Student Guide Content')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Student Guide Content')).toBeInTheDocument();
   });
 
   it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {
@@ -245,11 +259,9 @@ describe('Navbar Component', () => {
     const docsBtn = screen.getByText('Docs');
     fireEvent.click(docsBtn);
 
-    await vi.waitFor(() => {
-      expect(screen.queryByText(/\[!NOTE\]/)).toBeNull();
-      expect(screen.getByText('Note')).toBeInTheDocument();
-      expect(screen.getByText('This is a test note.')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('This is a test note.')).toBeInTheDocument();
+    expect(screen.queryByText(/\[!NOTE\]/)).toBeNull();
+    expect(screen.getByText('Note')).toBeInTheDocument();
   });
 
   it('renders countdown timer in green when time remaining is > 30 minutes', async () => {

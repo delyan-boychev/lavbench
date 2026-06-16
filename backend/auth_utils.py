@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import uuid
 import jwt
 from datetime import datetime, timedelta
 from functools import wraps
@@ -14,6 +15,24 @@ def _require_env(key):
         print(f"FATAL: Required environment variable '{key}' is not set.", file=sys.stderr)
         sys.exit(1)
     return val
+
+def _redis_client():
+    try:
+        import redis
+        broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        return redis.Redis.from_url(broker_url)
+    except Exception:
+        return None
+
+def _redis_exists(key):
+    try:
+        r = _redis_client()
+        if r is not None:
+            val = r.exists(key)
+            return bool(val)
+    except Exception:
+        pass
+    return False
 
 AUTH_COOKIE_NAME = "auth_token"
 AUTH_COOKIE_MAX_AGE = 86400  # 24 hours
@@ -47,6 +66,9 @@ def set_auth_cookie(response, user_id, role):
     return token
 
 def clear_auth_cookie(response):
+    token = _extract_token()
+    if token:
+        revoke_token(token)
     response.set_cookie(
         AUTH_COOKIE_NAME,
         "",
@@ -64,10 +86,52 @@ def generate_token(user_id, role):
     payload = {
         "sub": str(user_id),
         "role": role,
+        "jti": uuid.uuid4().hex,
         "exp": datetime.utcnow() + timedelta(days=1), # Token valid for 24 hours
         "iat": datetime.utcnow()
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def revoke_token(token):
+    try:
+        if token.startswith("Bearer "):
+            token = token[7:]
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti and exp:
+            r = _redis_client()
+            if r:
+                ttl = max(1, int(exp - datetime.utcnow().timestamp()))
+                try:
+                    r.setex(f"revoked:{jti}", ttl, "1")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+def is_token_revoked(token):
+    try:
+        if token.startswith("Bearer "):
+            token = token[7:]
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        jti = payload.get("jti")
+        if jti and _redis_exists(f"revoked:{jti}"):
+            return True
+    except Exception:
+        pass
+    return False
+
+def _fetch_current_role(user_id):
+    try:
+        from models import db, User
+        if db and db.session:
+            user = db.session.get(User, user_id)
+            if user:
+                return user.role
+    except Exception:
+        pass
+    return None
 
 def verify_token(token):
     if not token:
@@ -76,7 +140,15 @@ def verify_token(token):
         if token.startswith("Bearer "):
             token = token[7:]
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        return {"user_id": int(payload["sub"]), "role": payload["role"]}
+        user_id = int(payload["sub"])
+        # Check blacklist
+        jti = payload.get("jti")
+        if jti and _redis_exists(f"revoked:{jti}"):
+            return None
+        # Fetch current role from DB (handles mid-session promotions/demotions)
+        # Falls back to JWT role if DB is unavailable (e.g. test environments)
+        role = _fetch_current_role(user_id) or payload.get("role")
+        return {"user_id": user_id, "role": role}
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
@@ -102,6 +174,37 @@ def role_required(allowed_roles):
             if not user_data or user_data["role"] not in allowed_roles:
                 return jsonify({"error": f"Unauthorized. Requires role: {allowed_roles}"}), 403
             request.user = user_data
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+
+# --- Rate limiting ---
+
+def rate_limit(max_requests=60, window_seconds=60, per_user=True):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            r = _redis_client()
+            if not r:
+                return f(*args, **kwargs)
+            # Build key: rate:user_id:endpoint or rate:ip:endpoint
+            if per_user and hasattr(request, 'user') and request.user:
+                identity = str(request.user["user_id"])
+            else:
+                identity = request.remote_addr or "127.0.0.1"
+            key = f"rate:{identity}:{request.endpoint}"
+            try:
+                current = r.incr(key)
+                if current == 1:
+                    r.expire(key, window_seconds)
+                if current > max_requests:
+                    return jsonify({
+                        "error": "Too many requests. Please slow down.",
+                        "code": "ERR_RATE_LIMITED"
+                    }), 429
+            except Exception:
+                pass  # Redis down — allow request through
             return f(*args, **kwargs)
         return decorated
     return decorator
