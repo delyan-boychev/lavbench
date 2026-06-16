@@ -47,7 +47,7 @@ Created by the Bulgarian Team. Contributions and use by others are welcome.
 - **Custom Evaluators** — Jury can upload Python evaluation scripts with per-metric weighting and configuration
 - **GPU/CPU Routing** — Celery queue routing separates GPU and CPU workloads across worker pools
 - **Automated Backups** — Database + uploaded files backed up every 20 minutes during active competitions (every 6 hours when idle), with competition lifecycle snapshots
-- **i18n** — English and Bulgarian
+- **i18n** — English and Bulgarian *(contributions for additional languages are welcome)*
 - **Security** — httpOnly cookie auth, token revocation with Redis blacklist, rate limiting, encrypted PII, ProxyFix for trusted reverse proxies
 
 ---
