@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const { challengeId } = useParams();
-  const { token } = useAuth();
+  const { currentUser } = useAuth();
   const { 
     selectedChallenge, 
     setSelectedChallengeById, 
@@ -58,7 +58,7 @@ export default function Home() {
             <div key={selectedTask?.id || 'no-task'} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
               {selectedTask ? (
                 <>
-                  <TaskDetail task={selectedTask} token={token} />
+                  <TaskDetail task={selectedTask} />
                   <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
                 </>
               ) : (

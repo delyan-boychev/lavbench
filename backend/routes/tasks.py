@@ -795,7 +795,7 @@ def submit_task_code(task_id):
         Submission.user_id == user_id,
         Submission.challenge_id == challenge.id,
         Submission.created_at >= today_start
-    ).count()
+    ).with_for_update().count()
     
     if submission_count >= challenge.max_eval_requests:
         return jsonify({
@@ -916,11 +916,12 @@ def submit_task_code(task_id):
                 metadata["custom_eval_code"] = ef.read()
         except Exception as ef_err:
             print(f"Error reading evaluator script: {ef_err}")
-            
+             
     evaluate_submission.apply_async(
         args=[submission.id, metadata],
         priority=priority,
-        queue=queue_name
+        queue=queue_name,
+        countdown=1
     )
     
     return jsonify({
@@ -1104,6 +1105,59 @@ def get_task_submissions_live(task_id):
 @tasks_bp.route('/worker-status', methods=['GET'])
 @login_required
 def get_worker_status():
+    return jsonify(_get_worker_status_data())
+
+
+@tasks_bp.route('/worker-status/live', methods=['GET'])
+@login_required
+def stream_worker_status():
+    from flask import current_app, Response, stream_with_context
+    
+    def event_generator():
+        with current_app.app_context():
+            res_data = _get_worker_status_data()
+            yield f"data: {json.dumps(res_data)}\n\n"
+        
+        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(broker_url)
+        pubsub = r.pubsub()
+        pubsub.subscribe("worker_status_live")
+        
+        last_sent = datetime.utcnow()
+        try:
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                now = datetime.utcnow()
+                if message:
+                    with current_app.app_context():
+                        res_data = _get_worker_status_data()
+                        yield f"data: {json.dumps(res_data)}\n\n"
+                        last_sent = now
+                elif (now - last_sent).total_seconds() >= 10:
+                    with current_app.app_context():
+                        res_data = _get_worker_status_data()
+                        yield f"data: {json.dumps(res_data)}\n\n"
+                        last_sent = now
+                else:
+                    yield ": keep-alive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
+    
+    headers = {
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+    }
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers)
+
+
+def _get_worker_status_data():
     from flask import current_app
     from cache_utils import get_cached, set_cached
     
@@ -1112,68 +1166,61 @@ def get_worker_status():
     if not is_testing:
         cached_val = get_cached(cache_key)
         if cached_val is not None:
-            return jsonify(cached_val), 200
+            return cached_val
 
+    from tasks import celery
+    import json as json_lib
+    
+    inspect = celery.control.inspect(timeout=1.0)
+    pings = inspect.ping() or {}
+    stats = inspect.stats() or {}
+    
+    is_online = pings is not None and len(pings) > 0
+    
+    r = None
     try:
-        from tasks import celery
-        import redis
-        import json
+        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(broker_url)
+    except Exception:
+        pass
         
-        inspect = celery.control.inspect(timeout=1.0)
-        pings = inspect.ping() or {}
-        stats = inspect.stats() or {}
-        
-        is_online = pings is not None and len(pings) > 0
-        
-        r = None
-        try:
-            broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-            r = redis.Redis.from_url(broker_url)
-        except Exception:
-            pass
-            
-        clusters = []
-        for worker_name in pings.keys():
-            spec = None
-            if r:
-                try:
-                    spec_data = r.get(f"worker_spec:{worker_name}")
-                    if spec_data:
-                        spec = json.loads(spec_data)
-                except Exception:
-                    pass
-                    
-            if not spec:
-                w_stats = stats.get(worker_name, {}) if stats else {}
-                pool = w_stats.get("pool", {}) if w_stats else {}
-                concurrency = pool.get("max-concurrency", 1) if pool else 1
+    clusters = []
+    for worker_name in pings.keys():
+        spec = None
+        if r:
+            try:
+                spec_data = r.get(f"worker_spec:{worker_name}")
+                if spec_data:
+                    spec = json_lib.loads(spec_data)
+            except Exception:
+                pass
                 
-                # Resilient numeric conversion (handles MagicMocks in testing)
-                try:
-                    concurrency = int(concurrency)
-                except Exception:
-                    concurrency = 1
-                    
-                has_gpu = "gpu" in worker_name.lower()
-                spec = {
-                    "name": worker_name,
-                    "type": "GPU" if has_gpu else "CPU",
-                    "concurrency": concurrency,
-                    "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
-                    "ram_gb": 16.0 if has_gpu else 8.0,
-                    "vram_gb": 8.0 if has_gpu else "N/A"
-                }
-            clusters.append(spec)
-            
-        res_data = {
-            "status": "online" if is_online else "offline",
-            "clusters": clusters
-        }
-        if not is_testing:
-            set_cached(cache_key, res_data, timeout=10)
-        return jsonify(res_data), 200
-    except Exception as e:
-        return jsonify({"status": "offline", "error": str(e), "clusters": []}), 200
+        if not spec:
+            w_stats = stats.get(worker_name, {}) if stats else {}
+            pool = w_stats.get("pool", {}) if w_stats else {}
+            concurrency = pool.get("max-concurrency", 1) if pool else 1
+            try:
+                concurrency = int(concurrency)
+            except Exception:
+                concurrency = 1
+            has_gpu = "gpu" in worker_name.lower()
+            spec = {
+                "name": worker_name,
+                "type": "GPU" if has_gpu else "CPU",
+                "concurrency": concurrency,
+                "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
+                "ram_gb": 16.0 if has_gpu else 8.0,
+                "vram_gb": 8.0 if has_gpu else "N/A"
+            }
+        clusters.append(spec)
+        
+    res_data = {
+        "status": "online" if is_online else "offline",
+        "clusters": clusters
+    }
+    if not is_testing:
+        set_cached(cache_key, res_data, timeout=10)
+    return res_data
 
 
 @tasks_bp.route('/worker/report/<int:submission_id>', methods=['POST'])

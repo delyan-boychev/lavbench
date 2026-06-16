@@ -35,7 +35,18 @@ from task_modules.submission_runner import run_eval_submission
 from task_modules.system import run_register_worker_specs, run_automated_backup as auto_backup
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 
-@celery.task(bind=True, soft_time_limit=1200, time_limit=1500, acks_late=True, reject_on_worker_lost=True)
+@celery.task(
+    bind=True,
+    soft_time_limit=1200,
+    time_limit=1500,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    autoretry_for=(Exception,),
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True
+)
 def evaluate_submission(self, submission_id, metadata=None):
     return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
 

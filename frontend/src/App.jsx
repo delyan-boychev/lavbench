@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedLayout from './components/layout/ProtectedLayout';
 import Login from './pages/Login';
 import Home from './pages/Home';
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <AppProvider>
       <BrowserRouter>
+        <ErrorBoundary>
         <Routes>
           {/* Protected Routes */}
           <Route element={<ProtectedLayout />}>
@@ -47,6 +49,7 @@ export default function App() {
           {/* Fallback Catch-all Route */}
           <Route path="*" element={<Navigate to="/challenges" replace />} />
         </Routes>
+        </ErrorBoundary>
         <ToastContainer />
       </BrowserRouter>
     </AppProvider>

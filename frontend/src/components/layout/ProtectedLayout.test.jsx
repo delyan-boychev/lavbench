@@ -33,7 +33,7 @@ describe('ProtectedLayout Component', () => {
 
   it('renders loading indicator when authLoading is true', () => {
     useAuth.mockReturnValue({
-      token: null,
+      currentUser: null,
       authLoading: true,
     });
 
@@ -44,7 +44,7 @@ describe('ProtectedLayout Component', () => {
 
   it('redirects to login page if no auth token is present', () => {
     useAuth.mockReturnValue({
-      token: null,
+      currentUser: null,
       authLoading: false,
     });
 
@@ -58,7 +58,7 @@ describe('ProtectedLayout Component', () => {
 
   it('renders navbar, competition bar, and outlet content when logged in', () => {
     useAuth.mockReturnValue({
-      token: 'mock-valid-token-xyz',
+      currentUser: { id: 1, username: 'test', role: 'admin' },
       authLoading: false,
     });
 

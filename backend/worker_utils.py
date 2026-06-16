@@ -2,7 +2,10 @@ import os
 import subprocess
 import time
 import threading
+import logging
 import requests
+
+logger = logging.getLogger(__name__)
 
 def run_command_streaming(cmd, logs_list, time_limit=None):
     """
@@ -28,11 +31,11 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
                     else:
                         logs_list.append(clean_line)
             except Exception:
-                pass
+                logger.exception("Error reading pipe")
             finally:
                 try:
                     pipe.close()
-                except:
+                except Exception:
                     pass
 
         t_out = threading.Thread(target=read_pipe, args=(proc.stdout, stdout_lines, False))
@@ -61,14 +64,14 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
             if remaining:
                 stdout_lines.append(remaining)
                 logs_list.append(remaining.rstrip('\r\n'))
-        except:
+        except Exception:
             pass
         try:
             remaining = proc.stderr.read()
             if remaining:
                 stderr_lines.append(remaining)
                 logs_list.append("[stderr] " + remaining.rstrip('\r\n'))
-        except:
+        except Exception:
             pass
         
         stdout_str = "".join(stdout_lines)

@@ -83,7 +83,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
-      token: 'valid-admin-token',
+      
     });
 
     useApp.mockReturnValue({

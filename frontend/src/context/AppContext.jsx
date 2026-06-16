@@ -76,7 +76,7 @@ function ConfirmModal({ config }) {
 }
 
 export const AppProvider = ({ children }) => {
-  const { token } = useAuth();
+  const { currentUser } = useAuth();
   const { t } = useTranslation();
   const [challenges, setChallenges] = useState([]);
   const [selectedChallenge, setSelectedChallengeState] = useState(null);
@@ -143,7 +143,7 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const fetchChallenges = useCallback(async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
       const { ok, data } = await api.get('/challenges');
       if (ok) {
@@ -168,13 +168,13 @@ export const AppProvider = ({ children }) => {
     } catch (e) {
       console.error('fetchChallenges error:', e);
     }
-  }, [token]);
+  }, [currentUser]);
 
   // Fetch challenges when user logs in
   useEffect(() => {
-    if (token) fetchChallenges();
+    if (currentUser) fetchChallenges();
     else { setChallenges([]); setSelectedChallengeState(null); setSelectedTask(null); }
-  }, [token, fetchChallenges]);
+  }, [currentUser, fetchChallenges]);
 
   // Set selected challenge by ID - resets task to first of new challenge (fixes B7)
   const setSelectedChallengeById = useCallback((id) => {

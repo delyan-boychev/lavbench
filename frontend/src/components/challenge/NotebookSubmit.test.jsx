@@ -44,7 +44,7 @@ describe('NotebookSubmit Component', () => {
   it('renders judge/admin session banner when role is not competitor', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'admin' },
-      token: 'admin-token',
+      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
@@ -55,7 +55,7 @@ describe('NotebookSubmit Component', () => {
   it('renders competition closed banner if challenge is inactive', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     const inactiveChallenge = { ...challenge, is_active: false };
@@ -66,7 +66,7 @@ describe('NotebookSubmit Component', () => {
   it('renders competition closed banner if challenge is archived', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     const archivedChallenge = { ...challenge, is_archived: true };
@@ -77,7 +77,7 @@ describe('NotebookSubmit Component', () => {
   it('renders upload panel normally for active competitor', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
@@ -88,7 +88,7 @@ describe('NotebookSubmit Component', () => {
   it('validates file extension upon upload selection', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
@@ -107,7 +107,7 @@ describe('NotebookSubmit Component', () => {
   it('calls parseNotebook on valid .ipynb selection and updates cell list', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     const cellsMock = [
@@ -145,7 +145,7 @@ describe('NotebookSubmit Component', () => {
   it('handles parseNotebook server error response gracefully', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     ChallengeService.parseNotebook.mockResolvedValue({
@@ -168,7 +168,7 @@ describe('NotebookSubmit Component', () => {
   it('handles parseNotebook network throw exception gracefully', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     ChallengeService.parseNotebook.mockRejectedValue(new Error('DNS failure'));
@@ -188,7 +188,7 @@ describe('NotebookSubmit Component', () => {
   it('verifies cell selection changes, submit button disabled checks, and execution submission calls', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      token: 'comp-token',
+      
     });
 
     const cellsMock = [

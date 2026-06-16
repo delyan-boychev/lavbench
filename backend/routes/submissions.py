@@ -180,13 +180,13 @@ def submit_code(challenge_id):
             "code": "ERR_AST_RULE_FAILED"
         }), 400
         
-    # Check rate limit (submissions count today)
+    # Check rate limit (submissions count today) - use SELECT FOR UPDATE to prevent race
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     submission_count = Submission.query.filter(
         Submission.user_id == user_id,
         Submission.challenge_id == challenge_id,
         Submission.created_at >= today_start
-    ).count()
+    ).with_for_update().count()
     
     if submission_count >= challenge.max_eval_requests:
         return jsonify({
@@ -261,7 +261,8 @@ def submit_code(challenge_id):
     evaluate_submission.apply_async(
         args=[submission.id, metadata],
         priority=priority,
-        queue=queue_name
+        queue=queue_name,
+        countdown=1
     )
     
     return jsonify({
@@ -278,6 +279,10 @@ def get_submissions(challenge_id):
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    per_page = min(per_page, 200)
+    
     # Restrict competitors to their registered challenge
     if user_role == 'competitor':
         user = db.session.get(User, user_id)
@@ -287,16 +292,23 @@ def get_submissions(challenge_id):
                 "code": "ERR_NOT_REGISTERED"
             }), 403
             
-        submissions = Submission.query.filter_by(
+        query = Submission.query.filter_by(
             challenge_id=challenge_id, 
             user_id=user_id
-        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).order_by(Submission.created_at.desc()).all()
+        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task))
     else:
-        submissions = Submission.query.filter_by(
+        query = Submission.query.filter_by(
             challenge_id=challenge_id
-        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).order_by(Submission.created_at.desc()).all()
-        
-    return jsonify([s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in submissions])
+        ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task))
+    
+    pagination = query.order_by(Submission.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        "submissions": [s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items],
+        "page": pagination.page,
+        "per_page": pagination.per_page,
+        "total": pagination.total,
+        "pages": pagination.pages
+    })
 
 @submissions_bp.route('/submissions/<int:submission_id>', methods=['GET'])
 @login_required

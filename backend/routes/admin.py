@@ -53,8 +53,8 @@ def generate_unique_username(name, surname):
         if not User.query.filter_by(username=username).first():
             return username
 
-def generate_random_password(length=8):
-    chars = string.ascii_letters + string.digits
+def generate_random_password(length=16):
+    chars = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(chars) for _ in range(length))
 
 
@@ -87,7 +87,7 @@ def register_competitor():
         return jsonify({"error": "Name and Surname are required."}), 400
         
     username = generate_unique_username(name, surname)
-    password = generate_random_password(8)
+    password = generate_random_password()
     
     client_hash = hashlib.sha256(password.encode()).hexdigest()
     user = User(
@@ -520,7 +520,7 @@ def reset_all_challenge_passwords(challenge_id):
 
     results = []
     for user in competitors:
-        new_password = generate_random_password(8)
+        new_password = generate_random_password()
         client_hash = hashlib.sha256(new_password.encode()).hexdigest()
         user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
 
@@ -644,7 +644,7 @@ def download_submissions_zip(challenge_id):
 @admin_bp.route('/workers/stats', methods=['GET'])
 @role_required(['admin', 'jury'])
 def get_detailed_worker_stats():
-    return _get_worker_stats_response()
+    return jsonify(_get_worker_stats_response())
 
 @admin_bp.route('/workers/stats/live', methods=['GET'])
 @role_required(['admin', 'jury'])
@@ -697,7 +697,7 @@ def _get_worker_stats_response():
     if not is_testing:
         cached_val = get_cached(cache_key)
         if cached_val is not None:
-            return jsonify(cached_val), 200
+            return cached_val
 
     try:
         import os
@@ -874,8 +874,8 @@ def _get_worker_stats_response():
         }
         if not is_testing:
             set_cached(cache_key, res_data, timeout=10)
-        return jsonify(res_data), 200
+        return res_data
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
 

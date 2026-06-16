@@ -9,7 +9,7 @@ import { Book } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export default function NotebookSubmit({ task, challenge }) {
-  const { currentUser, token } = useAuth();
+  const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
 

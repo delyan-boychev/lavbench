@@ -1,11 +1,64 @@
 import os
+import sys
+import logging
 import jwt
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import request, jsonify
 
+logger = logging.getLogger(__name__)
+
+def _require_env(key):
+    val = os.environ.get(key)
+    if not val:
+        print(f"FATAL: Required environment variable '{key}' is not set.", file=sys.stderr)
+        sys.exit(1)
+    return val
+
+AUTH_COOKIE_NAME = "auth_token"
+AUTH_COOKIE_MAX_AGE = 86400  # 24 hours
+
+def _extract_token():
+    # 1. httpOnly cookie (primary method — browser auto-attaches, immune to XSS)
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    if token:
+        return token
+    # 2. Authorization header (fallback for API clients / workers)
+    token = request.headers.get("Authorization")
+    if token:
+        return token
+    # 3. URL query param (legacy, for EventSource SSE — cookie covers this now)
+    token = request.args.get("token")
+    if token:
+        logger.warning("Token received via URL query parameter")
+    return token
+
+def set_auth_cookie(response, user_id, role):
+    token = generate_token(user_id, role)
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        token,
+        max_age=AUTH_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="Strict",
+        secure=False,  # Set True when behind HTTPS
+        path="/"
+    )
+    return token
+
+def clear_auth_cookie(response):
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        "",
+        max_age=0,
+        httponly=True,
+        samesite="Strict",
+        secure=False,
+        path="/"
+    )
+
 # JWT Settings
-SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
+SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
 
 def generate_token(user_id, role):
     payload = {
@@ -32,7 +85,7 @@ def verify_token(token):
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get("Authorization") or request.args.get("token")
+        token = _extract_token()
         user_data = verify_token(token)
         if not user_data:
             return jsonify({"error": "Unauthorized access. Token is missing, expired, or invalid."}), 401
@@ -44,7 +97,7 @@ def role_required(allowed_roles):
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            token = request.headers.get("Authorization") or request.args.get("token")
+            token = _extract_token()
             user_data = verify_token(token)
             if not user_data or user_data["role"] not in allowed_roles:
                 return jsonify({"error": f"Unauthorized. Requires role: {allowed_roles}"}), 403
@@ -67,10 +120,10 @@ def generate_worker_token(submission_id, task_id, expires_in_sec):
 def verify_worker_token(token, submission_id=None, task_id=None):
     if not token:
         return False
-    # Only allow global WORKER_SECRET_KEY for non-submission-specific endpoints (like preloading active datasets)
+    # Worker bootstrapping (active-datasets preloading) uses raw WORKER_SECRET_KEY
     if submission_id is None and task_id is None:
-        global_key = os.environ.get("WORKER_SECRET_KEY")
-        if global_key and token == global_key:
+        worker_key = os.environ.get("WORKER_SECRET_KEY")
+        if worker_key and token == worker_key:
             return True
     try:
         if token.startswith("Bearer "):

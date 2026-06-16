@@ -29,6 +29,12 @@ def filter_challenge_for_competitor(challenge_dict):
         challenge_dict["tasks"] = []
         challenge_dict["stages"] = []
     else:
+        from models import Stage
+        stage_ids = [t.get("stage_id") for t in challenge_dict.get("tasks", []) if t.get("stage_id")]
+        stages_by_id = {}
+        if stage_ids:
+            stages_by_id = {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()}
+        
         filtered_tasks = []
         for t in challenge_dict.get("tasks", []):
             # Hide labels.parquet from competitor file list
@@ -37,8 +43,7 @@ def filter_challenge_for_competitor(challenge_dict):
             if not t.get("stage_id"):
                 filtered_tasks.append(t)
             else:
-                from models import Stage
-                stage = db.session.get(Stage, t["stage_id"])
+                stage = stages_by_id.get(t["stage_id"])
                 if stage and now >= stage.start_time:
                     filtered_tasks.append(t)
         challenge_dict["tasks"] = filtered_tasks

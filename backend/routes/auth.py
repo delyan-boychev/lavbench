@@ -1,7 +1,7 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from werkzeug.security import check_password_hash
 from models import db, User
-from auth_utils import generate_token, login_required
+from auth_utils import generate_token, login_required, set_auth_cookie, clear_auth_cookie
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -90,12 +90,20 @@ def login():
                 "code": "ERR_COMPETITION_ARCHIVED"
             }), 403
             
-    token = generate_token(user.id, user.role)
-    return jsonify({
+    user_data = user.to_dict(current_user_id=user.id)
+    resp = make_response(jsonify({
         "message": "Logged in successfully.",
-        "token": token,
-        "user": user.to_dict(current_user_id=user.id)
-    })
+        "user": user_data
+    }))
+    set_auth_cookie(resp, user.id, user.role)
+    return resp
+
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    resp = make_response(jsonify({"message": "Logged out successfully."}))
+    clear_auth_cookie(resp)
+    return resp
 
 
 @auth_bp.route('/me', methods=['GET'])

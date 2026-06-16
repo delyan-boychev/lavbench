@@ -26,7 +26,7 @@ function MoonIcon() {
 }
 
 export default function Login() {
-  const { token, currentUser, login, authError, setAuthError } = useAuth();
+  const { currentUser, login, authError, setAuthError } = useAuth();
   const { theme, toggleTheme } = useApp();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
@@ -37,10 +37,10 @@ export default function Login() {
 
   useEffect(() => {
     // If already authenticated, redirect to home
-    if (token && currentUser) {
+    if (currentUser) {
       navigate('/challenges', { replace: true });
     }
-  }, [token, currentUser, navigate]);
+  }, [currentUser, navigate]);
 
   const handleAuth = async (e) => {
     e.preventDefault();

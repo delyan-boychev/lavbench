@@ -80,7 +80,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
-      token: 'valid-admin-token',
+      
     });
 
     global.EventSource = class {

@@ -32,7 +32,7 @@ describe('SubmissionsView Page', () => {
     
     useAuth.mockReturnValue({
       currentUser: { id: 2, username: 'student1', role: 'competitor' },
-      token: 'student-token',
+      
     });
 
     TaskService.getSubmissions.mockResolvedValue({

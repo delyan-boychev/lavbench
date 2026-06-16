@@ -30,21 +30,21 @@ def read_doc_file(filename, lang='en'):
     langs_to_try = [lang]
     if lang != 'en':
         langs_to_try.append('en')
+    
+    # Determine guides base directory and ensure we never escape it
+    guides_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'guides'))
         
     for l in langs_to_try:
-        paths = [
-            os.path.join(os.path.dirname(__file__), '..', '..', 'guides', l, filename),
-            os.path.join(os.path.dirname(__file__), '..', 'guides', l, filename),
-            os.path.join('guides', l, filename)
-        ]
-        for p in paths:
-            abs_p = os.path.abspath(p)
-            if os.path.exists(abs_p):
-                try:
-                    with open(abs_p, 'r', encoding='utf-8') as f:
-                        return f.read()
-                except Exception as e:
-                    return f"Error reading documentation file: {str(e)}"
+        safe_path = os.path.abspath(os.path.join(guides_base, l, filename))
+        # Verify the resolved path stays within guides_base
+        if os.path.commonpath([safe_path, guides_base]) != guides_base:
+            continue
+        if os.path.isfile(safe_path):
+            try:
+                with open(safe_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                return f"Error reading documentation file: {str(e)}"
                     
     return "Documentation file not found."
 

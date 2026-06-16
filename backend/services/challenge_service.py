@@ -9,12 +9,22 @@ def generate_scores_csv(challenge):
     tasks = challenge.tasks
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge.id).all()
     
+    all_subs = Submission.query.filter(
+        Submission.challenge_id == challenge.id,
+        Submission.status == 'completed'
+    ).all()
+    
+    sub_by_user_task = {}
+    for s in all_subs:
+        key = (s.user_id, s.task_id)
+        sub_by_user_task.setdefault(key, []).append(s)
+    
     competitor_data = []
     for comp in competitors:
         task_scores = {}
         total_score = 0.0
         for task in tasks:
-            subs = Submission.query.filter_by(task_id=task.id, user_id=comp.id, status='completed').all()
+            subs = sub_by_user_task.get((comp.id, task.id), [])
             best_sub = get_best_submission(task, subs, challenge)
             score = 0.0
             if best_sub:

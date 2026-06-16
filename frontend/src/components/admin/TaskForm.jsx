@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
+import TabScrollContainer from '../ui/TabScrollContainer';
 import { Pencil, BarChart3, Lock, Box, Folder, Plus } from 'lucide-react';
 
 export default function TaskForm({
@@ -417,13 +418,13 @@ export default function TaskForm({
         </h2>
       </div>
 
-      <div className="flex space-x-1 mb-8 bg-slate-900/50 p-1 rounded-xl border border-white/5">
+      <TabScrollContainer>
         {TABS.map(tab => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${
+            className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
               activeTab === tab.id 
                 ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner' 
                 : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
@@ -433,7 +434,7 @@ export default function TaskForm({
             {tab.label}
           </button>
         ))}
-      </div>
+      </TabScrollContainer>
 
       <form onSubmit={isCreatingTask ? handleSaveCreateTask : handleSaveUpdateTask} className="flex flex-col gap-8 min-h-[400px]">
         

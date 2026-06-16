@@ -17,4 +17,4 @@ COPY . .
 # Expose the Gunicorn listener port
 EXPOSE 5001
 
-CMD ["gunicorn", "-k", "gevent", "--worker-connections", "1000", "-w", "4", "-b", "0.0.0.0:5001", "app:app"]
+CMD ["gunicorn", "-k", "gevent", "--worker-connections", "1000", "-w", "4", "--timeout", "300", "--graceful-timeout", "30", "-b", "0.0.0.0:5001", "app:app"]

@@ -189,6 +189,10 @@ class TestUnifiedParquetEvaluation(unittest.TestCase):
             
         mock_subproc.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
+        # Reset submission status so idempotency check allows re-evaluation
+        sub.status = 'queued'
+        db.session.commit()
+
         with patch('tempfile.mkdtemp', side_effect=mock_mkdtemp), \
              patch('task_modules.submission_runner.run_command_streaming', return_value=(0, "", "", False)), \
              patch('tasks.app', self.app):

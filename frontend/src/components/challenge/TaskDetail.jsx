@@ -6,7 +6,7 @@ import { markdownComponents } from '../ui/MarkdownComponents';
 import TaskService from '../../services/TaskService';
 import { useTranslation } from 'react-i18next';
 
-function FileCard({ file, taskId, token }) {
+function FileCard({ file, taskId }) {
   const { t } = useTranslation();
 
   const handleDownload = () => {
@@ -14,8 +14,11 @@ function FileCard({ file, taskId, token }) {
     const a = document.createElement('a');
     a.href = url;
     a.download = file.filename;
-    api.fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(r => r.blob())
+    api.fetch(url)
+      .then(r => {
+        if (!r.ok) throw new Error(`Download failed: ${r.status}`);
+        return r.blob();
+      })
       .then(blob => {
         const objUrl = URL.createObjectURL(blob);
         a.href = objUrl;
@@ -23,6 +26,10 @@ function FileCard({ file, taskId, token }) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(objUrl);
+      })
+      .catch(err => {
+        console.error('File download failed:', err);
+        alert('Failed to download file. Please try again.');
       });
   };
 
@@ -58,7 +65,7 @@ function FileCard({ file, taskId, token }) {
   );
 }
 
-export default function TaskDetail({ task, token }) {
+export default function TaskDetail({ task }) {
   const { t } = useTranslation();
 
   if (!task) return null;
@@ -168,7 +175,7 @@ export default function TaskDetail({ task, token }) {
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {files.map(f => (
-              <FileCard key={f.filename} file={f} taskId={task.id} token={token} />
+              <FileCard key={f.filename} file={f} taskId={task.id} />
             ))}
           </div>
         </div>

@@ -48,7 +48,7 @@ describe('TaskDetail Component', () => {
   });
 
   it('renders task header, markdown description, and resource limits', () => {
-    render(<TaskDetail task={taskMock} token="token-123" />);
+    render(<TaskDetail task={taskMock} />);
 
     expect(screen.getByText('Task Epsilon')).toBeInTheDocument();
     expect(screen.getByTestId('markdown')).toHaveTextContent('Predict user engagement metrics.');
@@ -61,7 +61,7 @@ describe('TaskDetail Component', () => {
   });
 
   it('renders execution rules, banned libraries, and dataset properties', () => {
-    render(<TaskDetail task={taskMock} token="token-123" />);
+    render(<TaskDetail task={taskMock} />);
 
     expect(screen.getByText('Execution Rules')).toBeInTheDocument();
     // Banned libraries text
@@ -82,12 +82,13 @@ describe('TaskDetail Component', () => {
 
     // Mock global fetch to return blob
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       blob: async () => mockBlob,
     });
 
     TaskService.getDownloadUrl.mockReturnValue('/api/tasks/5/files/data_sample.csv');
 
-    render(<TaskDetail task={taskMock} token="token-123" />);
+    render(<TaskDetail task={taskMock} />);
 
     // File card check
     expect(screen.getByText('Task Files (1)')).toBeInTheDocument();
@@ -100,7 +101,7 @@ describe('TaskDetail Component', () => {
 
     expect(TaskService.getDownloadUrl).toHaveBeenCalledWith(5, 'data_sample.csv');
     expect(global.fetch).toHaveBeenCalledWith('/api/tasks/5/files/data_sample.csv', {
-      headers: { 'Authorization': 'Bearer token-123', 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     // Wait for the async download actions to finish

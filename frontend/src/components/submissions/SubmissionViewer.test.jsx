@@ -5,7 +5,6 @@ import SubmissionViewer from './SubmissionViewer';
 
 vi.mock('../../AuthContext', () => ({
   useAuth: () => ({
-    token: 'test-token',
     currentUser: { role: 'competitor', username: 'test_comp' }
   })
 }));

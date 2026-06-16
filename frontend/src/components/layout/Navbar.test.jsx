@@ -37,7 +37,9 @@ describe('Navbar Component', () => {
       toggleTheme: mockToggleTheme,
       showToast: mockShowToast,
     });
-    // Mock successful fetch for status check
+    global.EventSource = class {
+      constructor(url) { this.url = url; this.close = vi.fn(); }
+    };
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: 'online' }),
@@ -47,30 +49,39 @@ describe('Navbar Component', () => {
   it('renders logo and user info when logged in', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123', name: 'John', surname: 'Doe' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
     render(<Navbar />);
 
     expect(screen.getByTestId('logo')).toBeInTheDocument();
-    expect(screen.getByText('John Doe')).toBeInTheDocument();
-    expect(screen.getByText('Alias-123')).toBeInTheDocument();
-    expect(screen.getByTestId('badge')).toHaveTextContent('competitor');
+    expect(screen.getAllByText('John Doe').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Alias-123').length).toBeGreaterThan(0);
+    const badges = screen.getAllByTestId('badge');
+    expect(badges.some(b => b.textContent === 'competitor')).toBe(true);
   });
 
   it('polls worker status endpoint and displays online badge', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
+    let eventSourceInstance;
+    global.EventSource = class {
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+        eventSourceInstance = this;
+      }
+    };
+
     render(<Navbar />);
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/worker-status', {
-      headers: { 'Authorization': 'Bearer valid-token', 'Content-Type': 'application/json' }
-    });
+    expect(eventSourceInstance.url).toBe('/api/worker-status/live');
+
+    // Simulate SSE data arriving
+    eventSourceInstance.onmessage({ data: JSON.stringify({ status: 'online', clusters: [] }) });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Cluster')).toBeInTheDocument();
@@ -80,13 +91,18 @@ describe('Navbar Component', () => {
   it('handles offline worker status gracefully', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-    });
+    global.EventSource = class {
+      constructor() {
+        this.close = vi.fn();
+        this.onmessage = null;
+        this.onerror = () => {};
+        // Simulate error immediately
+        setTimeout(() => this.onerror(), 0);
+      }
+    };
 
     render(<Navbar />);
 
@@ -98,21 +114,28 @@ describe('Navbar Component', () => {
   it('opens clusters modal on status button click', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'online',
-        clusters: [
-          { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
-        ]
-      }),
-    });
+    let eventSourceInstance;
+    global.EventSource = class {
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+        this.onmessage = vi.fn();
+        eventSourceInstance = this;
+      }
+    };
 
     render(<Navbar />);
+
+    // Simulate SSE with cluster data
+    eventSourceInstance.onmessage({ data: JSON.stringify({
+      status: 'online',
+      clusters: [
+        { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
+      ]
+    })});
 
     const statusBtn = screen.getByText('Cluster');
     fireEvent.click(statusBtn);
@@ -135,7 +158,6 @@ describe('Navbar Component', () => {
   it('triggers theme toggle on clicking the theme button', () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -150,13 +172,12 @@ describe('Navbar Component', () => {
   it('calls logout and shows success toast when clicking Sign out', () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
     render(<Navbar />);
 
-    const signoutBtn = screen.getByText('Sign out');
+    const signoutBtn = screen.getByTitle('Sign out');
     fireEvent.click(signoutBtn);
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
@@ -166,7 +187,6 @@ describe('Navbar Component', () => {
   it('renders and fetches docs based on role permissions', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -201,7 +221,6 @@ describe('Navbar Component', () => {
   it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -251,7 +270,6 @@ describe('Navbar Component', () => {
     
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -292,7 +310,6 @@ describe('Navbar Component', () => {
     
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -333,7 +350,6 @@ describe('Navbar Component', () => {
     
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 
@@ -374,7 +390,6 @@ describe('Navbar Component', () => {
     
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      token: 'valid-token',
       logout: mockLogout,
     });
 

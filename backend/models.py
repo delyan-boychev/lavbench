@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import logging
 import random
 import string
 import os
@@ -10,11 +11,16 @@ from cryptography.fernet import Fernet
 import uuid
 import zoneinfo
 
+logger = logging.getLogger(__name__)
+
 db = SQLAlchemy()
 
 # Derive a stable symmetric encryption key from SECRET_KEY
 # This ensures field encryption persists across server restarts
-SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    print("FATAL: Required environment variable 'SECRET_KEY' is not set.", file=__import__('sys').stderr)
+    __import__('sys').exit(1)
 DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 cipher_suite = Fernet(DERIVED_KEY)
 
@@ -24,6 +30,7 @@ def encrypt_field(text):
     try:
         return cipher_suite.encrypt(text.encode()).decode()
     except Exception:
+        logger.exception("encrypt_field failed")
         return None
 
 def decrypt_field(cipher_text):
@@ -32,6 +39,7 @@ def decrypt_field(cipher_text):
     try:
         return cipher_suite.decrypt(cipher_text.encode()).decode()
     except Exception:
+        logger.exception("decrypt_field failed")
         return "[Decryption Error]"
 
 
@@ -197,8 +205,8 @@ class Challenge(db.Model):
     ram_limit_mb = db.Column(db.Integer, default=8192)
     time_limit_sec = db.Column(db.Integer, default=300)
     gpu_required = db.Column(db.Boolean, default=True)
-    is_active = db.Column(db.Boolean, default=True)
-    is_archived = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True, index=True)
+    is_archived = db.Column(db.Boolean, default=False, index=True)
     scores_finalized = db.Column(db.Boolean, default=False)
     start_time = db.Column(db.DateTime, nullable=False)
     end_time = db.Column(db.DateTime, nullable=False)
@@ -284,6 +292,10 @@ class Challenge(db.Model):
 class Stage(db.Model):
     __tablename__ = 'stages'
     
+    __table_args__ = (
+        db.UniqueConstraint('challenge_id', 'stage_number', name='uq_stage_challenge_number'),
+    )
+    
     id = db.Column(db.Integer, primary_key=True)
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False, index=True)
     stage_number = db.Column(db.Integer, nullable=False, default=1)
@@ -318,7 +330,7 @@ class Task(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     challenge_id = db.Column(db.Integer, db.ForeignKey('challenges.id'), nullable=False, index=True)
-    stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True)
+    stage_id = db.Column(db.Integer, db.ForeignKey('stages.id'), nullable=True, index=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
     
@@ -430,6 +442,7 @@ class Submission(db.Model):
     __table_args__ = (
         db.Index('idx_sub_user_task', 'user_id', 'task_id', 'challenge_id'),
         db.Index('idx_sub_task_id', 'task_id'),
+        db.Index('idx_sub_user_challenge_created', 'user_id', 'challenge_id', 'created_at'),
     )
     
     id = db.Column(db.Integer, primary_key=True)
@@ -534,12 +547,12 @@ class Submission(db.Model):
         
         try:
             m_public = json.loads(self.metrics_payload_public) if isinstance(self.metrics_payload_public, str) else self.metrics_payload_public
-        except:
+        except Exception:
             m_public = {}
             
         try:
             m_private = json.loads(self.metrics_payload_private) if isinstance(self.metrics_payload_private, str) else self.metrics_payload_private
-        except:
+        except Exception:
             m_private = {}
             
         return {
@@ -578,9 +591,9 @@ class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     
     id = db.Column(db.Integer, primary_key=True)
-    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False, index=True)
     old_score = db.Column(db.Integer, nullable=True)
     new_score = db.Column(db.Integer, nullable=True)
     reason = db.Column(db.Text, nullable=False)

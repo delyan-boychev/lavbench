@@ -7,12 +7,12 @@ import { useTranslation } from 'react-i18next';
 import { Layout, Trophy, Pencil, Shield } from 'lucide-react';
 
 function TabIcon({ name }) {
-  const style = { width: 18, height: 18, flexShrink: 0 };
+  const iconStyle = { flexShrink: 0 };
   switch (name) {
-    case 'challenge': return <Layout {...style} />;
-    case 'leaderboard': return <Trophy {...style} />;
-    case 'submissions': return <Pencil {...style} />;
-    case 'admin': return <Shield {...style} />;
+    case 'challenge': return <Layout size={18} style={iconStyle} />;
+    case 'leaderboard': return <Trophy size={18} style={iconStyle} />;
+    case 'submissions': return <Pencil size={18} style={iconStyle} />;
+    case 'admin': return <Shield size={18} style={iconStyle} />;
     default: return null;
   }
 }
@@ -82,7 +82,7 @@ export default function CompetitionBar() {
       <div style={{
         maxWidth: 1400,
         margin: '0 auto',
-        padding: '0 24px',
+        padding: '8px 12px',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',

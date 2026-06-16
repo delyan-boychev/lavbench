@@ -28,13 +28,15 @@ function MoonIcon() {
 }
 
 export default function Navbar() {
-  const { currentUser, logout, token } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
   const [workerStatus, setWorkerStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
   const [activeDocTab, setActiveDocTab] = React.useState('student');
   const [docContent, setDocContent] = React.useState('');
   const [docLoading, setDocLoading] = React.useState(false);
@@ -159,7 +161,7 @@ export default function Navbar() {
   }, [currentUser, t]);
 
   React.useEffect(() => {
-    if (!token || !isDocsModalOpen) return;
+    if (!isDocsModalOpen) return;
     
     const fetchDoc = async () => {
       setDocLoading(true);
@@ -167,7 +169,6 @@ export default function Navbar() {
       try {
         const res = await api.fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
           headers: { 
-            'Authorization': `Bearer ${token}`,
             'Accept-Language': i18n.language || 'en'
           }
         });
@@ -186,7 +187,7 @@ export default function Navbar() {
     };
     
     fetchDoc();
-  }, [token, isDocsModalOpen, activeDocTab]);
+  }, [isDocsModalOpen, activeDocTab]);
 
   const handleLogout = () => {
     logout();
@@ -194,31 +195,31 @@ export default function Navbar() {
   };
 
   React.useEffect(() => {
-    if (!token) return;
+    const eventSource = new EventSource('/api/worker-status/live');
     
-    const checkStatus = async () => {
+    eventSource.onmessage = (event) => {
       try {
-        const res = await api.fetch('/api/worker-status', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setWorkerStatus(data.status);
-          setClusters(data.clusters || []);
-        } else {
-          setWorkerStatus('offline');
-          setClusters([]);
-        }
-      } catch {
-        setWorkerStatus('offline');
-        setClusters([]);
-      }
+        const data = JSON.parse(event.data);
+        setWorkerStatus(data.status);
+        setClusters(data.clusters || []);
+      } catch {}
     };
+    
+    eventSource.onerror = () => {
+      setWorkerStatus('offline');
+      setClusters([]);
+    };
+    
+    return () => eventSource.close();
+  }, []);
 
-    checkStatus();
-    const interval = setInterval(checkStatus, 10000);
-    return () => clearInterval(interval);
-  }, [token]);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 450px)');
+    const handler = (e) => setIsNarrow(e.matches);
+    mq.addEventListener('change', handler);
+    setIsNarrow(mq.matches);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const displayName = currentUser?.name
     ? `${currentUser.name} ${currentUser.surname || ''}`.trim()
@@ -239,18 +240,18 @@ export default function Navbar() {
       <div style={{
         maxWidth: 1400,
         margin: '0 auto',
-        padding: '0 24px',
+        padding: '0 12px',
         height: 56,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 16,
+        gap: 8,
       }}>
         {/* Left: Logo */}
         <Logo size="lg" />
 
-        {/* Center: Cluster status & Docs */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {/* Center: Timer + Cluster + Docs (hidden on mobile) */}
+        <div className="hidden lg:flex" style={{ gap: 10, alignItems: 'center' }}>
           {renderNavbarTimer()}
           <button 
             onClick={() => setIsModalOpen(prev => !prev)}
@@ -316,26 +317,62 @@ export default function Navbar() {
         </div>
 
         {/* Right: user + controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* User info */}
-          {currentUser && (
-            <div className="hidden sm:flex" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* User info (mobile — name / role / alias; hidden under 450px) */}
+          {currentUser && !isNarrow && (
+            <div className="flex lg:hidden" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
                 {displayName}
               </span>
-              <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                <Badge status={currentUser.role} />
-                <span style={{
-                  fontSize: '0.68rem', color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
-                  {currentUser.alias_id}
-                </span>
-              </div>
+              <Badge status={currentUser.role} />
+              <span style={{
+                fontSize: '0.65rem', color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', lineHeight: 1.2,
+              }}>
+                {currentUser.alias_id}
+              </span>
             </div>
           )}
 
-          {/* Language Selector Selector */}
+          {/* User info (desktop) */}
+          {currentUser && (
+            <div className="hidden lg:flex" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                {displayName}
+              </span>
+              <Badge status={currentUser.role} />
+              <span style={{
+                fontSize: '0.65rem', color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', lineHeight: 1.2,
+              }}>
+                {currentUser.alias_id}
+              </span>
+            </div>
+          )}
+
+          {/* Mobile menu toggle */}
+          <button
+            className="flex lg:hidden"
+            onClick={() => setMobileMenuOpen(prev => !prev)}
+            style={{
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 0.15s ease', flexShrink: 0,
+            }}
+          >
+            {mobileMenuOpen ? (
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+
+          {/* Language toggle */}
           <button
             onClick={() => i18n.changeLanguage(i18n.language.startsWith('bg') ? 'en' : 'bg')}
             title={i18n.language.startsWith('bg') ? 'Switch to English' : 'Премини на български'}
@@ -350,7 +387,8 @@ export default function Navbar() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
-              userSelect: 'none'
+              userSelect: 'none',
+              flexShrink: 0,
             }}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
@@ -371,6 +409,7 @@ export default function Navbar() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
@@ -378,15 +417,105 @@ export default function Navbar() {
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
 
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="btn btn-secondary btn-sm"
+          {/* Logout (desktop — icon only) */}
+          <button onClick={handleLogout}
+            className="hidden lg:inline-flex"
+            title={t('nav.sign_out')}
+            style={{
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
+              width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 0.15s ease', flexShrink: 0,
+            }}
           >
-            {t('nav.sign_out')}
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
           </button>
         </div>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {mobileMenuOpen && (
+        <div className="flex lg:hidden" style={{
+          background: 'var(--bg-nav)', borderTop: '1px solid var(--border)',
+          padding: '12px 12px', flexDirection: 'column', gap: 8,
+        }}>
+          {currentUser && (
+            <div style={{ padding: '4px 8px', textAlign: 'center' }}>
+              {isNarrow ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {displayName}
+                  </span>
+                  <Badge status={currentUser.role} />
+                  <span style={{
+                    fontSize: '0.78rem', color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                  }}>
+                    {currentUser.alias_id}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {displayName}
+                  </div>
+                  <span style={{
+                    fontSize: '0.78rem', color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                  }}>
+                    {currentUser.alias_id}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+          {renderNavbarTimer()}
+          <button 
+            onClick={() => { setIsModalOpen(true); setMobileMenuOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
+              color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+            }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: workerStatus === 'online' ? '#10b981' : '#ef4444' }}></span>
+            {t('nav.cluster')}
+          </button>
+          {currentUser && (
+            <button 
+              onClick={() => { setIsDocsModalOpen(true); setMobileMenuOpen(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
+                color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+              }}
+            >
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              {t('nav.docs')}
+            </button>
+          )}
+          <button
+            onClick={handleLogout}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
+              color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+            }}
+          >
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            {t('nav.sign_out')}
+          </button>
+        </div>
+      )}
 
       <Modal 
         isOpen={isModalOpen} 

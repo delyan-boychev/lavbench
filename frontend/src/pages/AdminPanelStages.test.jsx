@@ -44,7 +44,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'jury_user', role: 'jury' },
-      token: 'valid-jury-token',
+      
     });
 
     useApp.mockReturnValue({

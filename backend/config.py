@@ -1,17 +1,23 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 # Load environment variables from .env in workspace root
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
+def _require_env(key, message=None):
+    val = os.environ.get(key)
+    if not val:
+        msg = message or f"Required environment variable '{key}' is not set."
+        print(f"FATAL: {msg}", file=sys.stderr)
+        sys.exit(1)
+    return val
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "nai-super-secret-key-1337-secure-random-length-for-jwt")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
     
     # Database configuration - PostgreSQL strictly enforced
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", 
-        "postgresql://nai_user:nai_password@localhost:5432/nai_competition"
-    )
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or _require_env("DATABASE_URL")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Celery configuration
@@ -31,7 +37,9 @@ class Config:
         SQLALCHEMY_ENGINE_OPTIONS = {
             'pool_size': 30,
             'pool_timeout': 30,
-            'max_overflow': 60
+            'max_overflow': 60,
+            'pool_pre_ping': True,
+            'pool_recycle': 600
         }
     
     # Grace period (seconds) for submissions after the official deadline

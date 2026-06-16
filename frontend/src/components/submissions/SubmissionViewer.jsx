@@ -5,7 +5,6 @@ import EmptyState from '../ui/EmptyState';
 import { Star } from 'lucide-react';
 import ToggleField from '../ui/ToggleField';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../../AuthContext';
 import { FileText } from 'lucide-react';
 
 export default function SubmissionViewer({ 
@@ -17,7 +16,6 @@ export default function SubmissionViewer({
   isSubmissionAfterDeadline = false
 }) {
   const { t } = useTranslation();
-  const { token } = useAuth();
   const [liveLogs, setLiveLogs] = useState('');
   const [currentId, setCurrentId] = useState(null);
   const logRef = useRef(null);
@@ -45,8 +43,8 @@ export default function SubmissionViewer({
 
     setLiveLogs(t('submissions.connecting_live_logs', 'Connecting to live logs...\n'));
 
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-    const sseUrl = `/api/submissions/${submission.id}/logs/live${tokenQuery}`;
+    const sseUrl = `/api/submissions/${submission.id}/logs/live`;
+
     const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
@@ -70,7 +68,7 @@ export default function SubmissionViewer({
     return () => {
       eventSource.close();
     };
-  }, [submission?.id, submission?.status, token]);
+  }, [submission?.id, submission?.status]);
 
   if (!submission) {
     return (
@@ -173,7 +171,7 @@ export default function SubmissionViewer({
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.demographics_title')}
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
               <div><strong>{t('submissions.name')}</strong> {submission.user.name} {submission.user.surname}</div>
               <div><strong>{t('submissions.username')}</strong> {submission.user.username}</div>
               {submission.user.grade && <div><strong>{t('submissions.grade')}</strong> {submission.user.grade}</div>}
@@ -189,7 +187,7 @@ export default function SubmissionViewer({
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.integrity_title')}
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
               <div><strong>{t('submissions.celery_task_id')}</strong> <span className="font-mono text-[11px] text-slate-400">{submission.celery_task_id || t('common.none')}</span></div>
               <div><strong>{t('submissions.execution_time')}</strong> {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : "—"}</div>
             </div>

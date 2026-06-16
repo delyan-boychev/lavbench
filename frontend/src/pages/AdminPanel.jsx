@@ -3,6 +3,7 @@ import api from '../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
+import useDebounce from '../hooks/useDebounce';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
@@ -124,7 +125,7 @@ export const formatMetricName = (name) => {
 
 export default function AdminPanel() {
   const { t } = useTranslation();
-  const { token, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   const { 
     challenges, 
     selectedChallenge, 
@@ -277,6 +278,7 @@ export default function AdminPanel() {
   // User Management State
   const [allUsers, setAllUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
+  const debouncedUserSearch = useDebounce(userSearch, 300);
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
@@ -316,6 +318,7 @@ export default function AdminPanel() {
   // Competitor Listing
   const [competitorsList, setCompetitorsList] = useState([]);
   const [competitorSearch, setCompetitorSearch] = useState('');
+  const debouncedCompetitorSearch = useDebounce(competitorSearch, 300);
   const [competitorsPage, setCompetitorsPage] = useState(1);
   const [competitorsTotal, setCompetitorsTotal] = useState(0);
   const [competitorsPages, setCompetitorsPages] = useState(1);
@@ -341,7 +344,7 @@ export default function AdminPanel() {
   const fetchAvailableMetrics = async () => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/metrics`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -353,17 +356,17 @@ export default function AdminPanel() {
   };
 
   useEffect(() => {
-    if (token) {
+    if (currentUser) {
       fetchAvailableMetrics();
     }
-  }, [token]);
+  }, [currentUser]);
 
   // Worker stats via SSE (persistent connection, no polling)
   useEffect(() => {
     if (adminSubTab !== 'workers-stats') return;
     
     setWorkerStatsLoading(true);
-    const sseUrl = `/api/admin/workers/stats/live?token=${encodeURIComponent(token)}`;
+    const sseUrl = `/api/admin/workers/stats/live`;
     const eventSource = new EventSource(sseUrl);
     
     eventSource.onmessage = (event) => {
@@ -388,14 +391,14 @@ export default function AdminPanel() {
     };
     
     return () => eventSource.close();
-  }, [adminSubTab, token]);
+  }, [adminSubTab]);
 
   const fetchWorkerStats = () => setWorkerStatsLoading(true);
 
   const fetchUsers = async () => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -413,7 +416,7 @@ export default function AdminPanel() {
     if (!selectedChallenge) return;
     try {
       const res = await api.fetch(`${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -430,7 +433,7 @@ export default function AdminPanel() {
   const fetchPaginatedChallenges = async () => {
     try {
       const res = await api.fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -456,13 +459,13 @@ export default function AdminPanel() {
     if (adminSubTab === 'user-management') {
       fetchUsers();
     }
-  }, [adminSubTab, usersPage, userSearch]);
+  }, [adminSubTab, usersPage, debouncedUserSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competitor-reg' || adminSubTab === 'competition-mgmt') {
       fetchCompetitors();
     }
-  }, [adminSubTab, selectedChallenge, competitorsPage, competitorSearch]);
+  }, [adminSubTab, selectedChallenge, competitorsPage, debouncedCompetitorSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competition-mgmt') {
@@ -492,7 +495,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(newChallenge)
       });
@@ -530,7 +532,6 @@ export default function AdminPanel() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(updated)
       });
@@ -560,7 +561,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (res.ok) {
@@ -586,7 +587,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${id}/finalize`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (res.ok) {
@@ -606,7 +607,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (res.ok) {
@@ -631,7 +632,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${id}/test-competition`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (res.ok) {
@@ -693,7 +694,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
@@ -724,7 +724,6 @@ export default function AdminPanel() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
@@ -751,7 +750,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (res.ok) {
@@ -779,7 +778,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
@@ -931,7 +929,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {},
         body: formData
       });
       const data = await res.json();
@@ -979,7 +977,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {},
         body: formData
       });
       const data = await res.json();
@@ -1007,7 +1005,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         showToast(t('admin.notifications.task_deleted', { title }));
@@ -1039,7 +1037,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(newCompetitor)
       });
@@ -1087,7 +1084,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(requestBody)
       });
@@ -1133,7 +1129,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         showToast(t('admin.notifications.user_deleted', { username }));
@@ -1168,7 +1164,7 @@ export default function AdminPanel() {
     try {
       const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {},
         body: fd
       });
       const data = await res.json();
@@ -1191,7 +1187,7 @@ export default function AdminPanel() {
   const handleDownloadBackup = async () => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/backup`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -1216,7 +1212,7 @@ export default function AdminPanel() {
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -1241,7 +1237,7 @@ export default function AdminPanel() {
   const handleDownloadSubmissionsZip = async (challengeId, challengeTitle) => {
     try {
       const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -1286,7 +1282,6 @@ export default function AdminPanel() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           username: editUserForm.username,
@@ -1326,7 +1321,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         }
       });
       const data = await res.json();
@@ -1376,7 +1370,6 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         }
       });
       const data = await res.json();
@@ -1410,7 +1403,7 @@ export default function AdminPanel() {
         
         {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
           <button 
-            onClick={() => { setAdminSubTab('competition-mgmt'); setIsCreatingTask(false); setEditingTask(null); }}
+            onClick={() => { setAdminSubTab('competition-mgmt'); }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'competition-mgmt' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.manage_competitions')}
@@ -1419,7 +1412,11 @@ export default function AdminPanel() {
 
         {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
           <button 
-            onClick={() => setAdminSubTab('challenge-config')}
+            onClick={() => {
+              setAdminSubTab('challenge-config');
+              setIsCreatingTask(false); setEditingTask(null);
+              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
+            }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'challenge-config' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.create_competition')}
@@ -1427,7 +1424,11 @@ export default function AdminPanel() {
         )}
         
         <button 
-          onClick={() => setAdminSubTab('competitor-reg')}
+          onClick={() => {
+            setAdminSubTab('competitor-reg');
+            setIsCreatingTask(false); setEditingTask(null);
+            setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
+          }}
           className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'competitor-reg' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
         >
           {t('admin.competitor_registrations')}
@@ -1435,7 +1436,11 @@ export default function AdminPanel() {
 
         {currentUser.role === 'admin' && (
           <button 
-            onClick={() => setAdminSubTab('backups')}
+            onClick={() => {
+              setAdminSubTab('backups');
+              setIsCreatingTask(false); setEditingTask(null);
+              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
+            }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'backups' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.database_backup')}
@@ -1444,7 +1449,11 @@ export default function AdminPanel() {
 
         {currentUser.role === 'admin' && (
           <button 
-            onClick={() => setAdminSubTab('user-management')}
+            onClick={() => {
+              setAdminSubTab('user-management');
+              setIsCreatingTask(false); setEditingTask(null);
+              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
+            }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'user-management' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.user_management')}
@@ -1453,7 +1462,11 @@ export default function AdminPanel() {
 
         {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
           <button 
-            onClick={() => setAdminSubTab('workers-stats')}
+            onClick={() => {
+              setAdminSubTab('workers-stats');
+              setIsCreatingTask(false); setEditingTask(null);
+              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
+            }}
             className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'workers-stats' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
           >
             {t('admin.workers_resources')}
@@ -1814,15 +1827,8 @@ export default function AdminPanel() {
         )}
 
         {/* 2. TASK EDITING OR CREATION (The Sandbox + HF + Rules form) */}
-        {(isCreatingTask || editingTask) && (
-          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
-            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-              <h2 className="text-xl font-bold text-white">
-                {isCreatingTask ? t('admin.tasks.create_task_under', { title: selectedChallenge?.title }) : t('admin.tasks.edit_task', { title: editingTask?.title })}
-              </h2>
-            </div>
-            
-            <TaskForm 
+        {adminSubTab === 'competition-mgmt' && (isCreatingTask || editingTask) && (
+          <TaskForm 
               taskForm={taskForm}
               setTaskForm={setTaskForm}
               isCreatingTask={isCreatingTask}
@@ -1842,7 +1848,6 @@ export default function AdminPanel() {
               formatDateTime={formatDateTime}
               savingTask={savingTask}
             />
-          </div>
         )}
 
         {/* 3. CREATE NEW COMPETITIONS */}

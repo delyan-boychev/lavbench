@@ -138,6 +138,12 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             db_submission = db.session.get(Submission, submission_id)
             if not db_submission:
                 return f"Submission {submission_id} not found."
+            # Idempotency: skip if already in a terminal state
+            if db_submission.status in ('completed', 'failed'):
+                return f"Submission {submission_id} already in terminal state: {db_submission.status}"
+            db_submission.status = 'running'
+            db_submission.detailed_status = 'running'
+            db.session.commit()
             task = MockModel(
                 id=db_submission.task.id if db_submission.task else None,
                 time_limit_sec=db_submission.task.time_limit_sec if db_submission.task else None,
@@ -530,6 +536,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         "docker", "run", "--rm",
         "--network", "none",
         "--pids-limit", "64",
+        "--cpus", "2",
+        "--ulimit", "nofile=256:256",
+        "--ulimit", "nproc=64:64",
         "--tmpfs", "/tmp",
         "-m", f"{ram_limit}m",
         "-v", f"{temp_dir}:/app",
@@ -791,7 +800,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
     try:
         from sse_utils import clear_submission_logs
         clear_submission_logs(submission_id)
-    except:
+    except Exception:
         pass
         
     return f"Submission {submission_id} evaluated with status {status}"
@@ -866,7 +875,7 @@ def register_worker_specs(sender, **kwargs):
         
         # Call main server to retrieve active datasets and preload them on worker startup
         main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-        worker_secret_key = os.environ.get("WORKER_SECRET_KEY", "nai-worker-default-secret-token")
+        worker_secret_key = os.environ.get("WORKER_SECRET_KEY") or ""
         
         try:
             url = f"{main_server_url.rstrip('/')}/api/worker/active-datasets"

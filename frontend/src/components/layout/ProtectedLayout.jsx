@@ -7,7 +7,7 @@ import CompetitionBar from './CompetitionBar';
 
 export default function ProtectedLayout() {
   const { t } = useTranslation();
-  const { token, authLoading } = useAuth();
+  const { currentUser, authLoading } = useAuth();
   const location = useLocation();
 
   if (authLoading) {
@@ -28,7 +28,7 @@ export default function ProtectedLayout() {
     );
   }
 
-  if (!token) return <Navigate to="/login" replace />;
+  if (!currentUser) return <Navigate to="/login" replace />;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
@@ -39,7 +39,7 @@ export default function ProtectedLayout() {
         maxWidth: 1400,
         width: '100%',
         margin: '0 auto',
-        padding: '28px 24px',
+        padding: '20px 16px',
       }}>
         <div key={location.pathname} className="animate-fadein">
           <Outlet />

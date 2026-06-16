@@ -13,7 +13,7 @@ import EmptyState from '../components/ui/EmptyState';
 export default function SubmissionsView() {
   const { t } = useTranslation();
   const { challengeId } = useParams();
-  const { currentUser, token } = useAuth();
+  const { currentUser } = useAuth();
   const { 
     selectedChallenge, 
     setSelectedChallengeById, 
@@ -112,8 +112,7 @@ export default function SubmissionsView() {
 
     setLoading(true);
 
-    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : '';
-    const sseUrl = `/api/tasks/${selectedTask.id}/submissions/live?page=${submissionsPage}&per_page=10${tokenQuery}`;
+    const sseUrl = `/api/tasks/${selectedTask.id}/submissions/live?page=${submissionsPage}&per_page=10`;
     const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
@@ -158,7 +157,7 @@ export default function SubmissionsView() {
         try {
           const res = await api.fetch(`/api/tasks/${selectedTask.id}/submissions?page=${submissionsPage}&per_page=10`, {
             signal: controller.signal,
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: {}
           });
           if (res.ok) {
             if (taskIdRef.current !== selectedTask.id) return;
@@ -193,7 +192,7 @@ export default function SubmissionsView() {
     return () => {
       eventSource.close();
     };
-  }, [selectedTask, submissionsPage, token]);
+  }, [selectedTask, submissionsPage]);
 
 
   const handleSelectFinal = async (submissionId) => {
@@ -203,7 +202,6 @@ export default function SubmissionsView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         }
       });
       if (res.ok) {

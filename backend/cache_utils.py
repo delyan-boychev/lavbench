@@ -1,12 +1,16 @@
 import os
 import json
+import logging
 import redis
+
+logger = logging.getLogger(__name__)
 
 def get_redis_client():
     try:
         broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
         return redis.Redis.from_url(broker_url)
     except Exception:
+        logger.exception("get_redis_client failed")
         return None
 
 def get_cached(key):
@@ -18,7 +22,7 @@ def get_cached(key):
         if data:
             return json.loads(data)
     except Exception as e:
-        print(f"Cache get error for {key}: {e}")
+        logger.exception("Cache get error for %s", key)
     return None
 
 def set_cached(key, value, timeout=300):
@@ -29,7 +33,7 @@ def set_cached(key, value, timeout=300):
         r.set(key, json.dumps(value), ex=timeout)
         return True
     except Exception as e:
-        print(f"Cache set error for {key}: {e}")
+        logger.exception("Cache set error for %s", key)
         return False
 
 def delete_cached(key):
@@ -40,7 +44,7 @@ def delete_cached(key):
         r.delete(key)
         return True
     except Exception as e:
-        print(f"Cache delete error for {key}: {e}")
+        logger.exception("Cache delete error for %s", key)
         return False
 
 def invalidate_challenge_cache(challenge_id=None):

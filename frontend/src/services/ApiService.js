@@ -6,10 +6,7 @@ class ApiService {
   }
 
   #getHeaders(isForm = false) {
-    let token = null;
-    try { token = window?.localStorage?.getItem('token'); } catch(e) {}
     const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!isForm) headers['Content-Type'] = 'application/json';
     return headers;
   }
