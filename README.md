@@ -1,7 +1,7 @@
 # LavBench
 
 <div align="center">
-  <img src="frontend/public/favicon.svg" alt="LavBench Logo" width="96" height="96" />
+  <img src="frontend/public/favicon.svg" alt="LavBench Logo" width="128" height="128" />
 </div>
 
 [![License](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
@@ -97,7 +97,7 @@ Press `Ctrl+C` to stop all services.
 ## Project Structure
 
 ```
-lavbench-webplatform/
+lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
 │   ├── config.py                # Configuration from .env
@@ -176,7 +176,7 @@ cp .env.example .env
 
 ```bash
 cd backend
-micromamba run -n nai_backend python -m pytest tests/ -v
+micromamba run -n lavbench_backend python -m pytest tests/ -v
 ```
 
 120 tests covering routes, auth, evaluation, caching, rate limiting, and models.
