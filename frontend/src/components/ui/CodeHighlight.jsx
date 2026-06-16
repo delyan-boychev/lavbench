@@ -17,7 +17,7 @@ function sanitizePrismOutput(html) {
 export default function CodeHighlight({ 
   code = '', 
   language = 'python', 
-  maxHeight, 
+  maxHeight = 'none', 
   wrap = true,
   style = {}
 }) {
@@ -45,7 +45,7 @@ export default function CodeHighlight({
 
   if (!highlighted) {
     return (
-      <pre className="code-panel" style={preStyle}>
+      <pre className="code-panel" style={/** @type {React.CSSProperties} */(preStyle)}>
         {code}
       </pre>
     );
@@ -54,10 +54,10 @@ export default function CodeHighlight({
   const codeStyle = wrap ? { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } : {};
 
   return (
-    <pre className="code-panel" style={preStyle}>
+    <pre className="code-panel" style={/** @type {React.CSSProperties} */(preStyle)}>
       <code 
         className={`language-${language}`} 
-        style={codeStyle}
+        style={/** @type {React.CSSProperties} */(codeStyle)}
         dangerouslySetInnerHTML={{ __html: highlighted }} 
       />
     </pre>

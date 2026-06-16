@@ -128,6 +128,7 @@ export default function UserManager({
               <p className="text-slate-400 text-xs">{t('admin.user_mgmt.system_user_accounts_desc')}</p>
             </div>
             <InputField 
+              label=""
               placeholder={t('admin.user_mgmt.search_users_placeholder')} 
               value={userSearch} 
               onChange={(e) => setUserSearch(e.target.value)} 

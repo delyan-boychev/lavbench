@@ -8,13 +8,13 @@ export default function FileUploader({
   accept,
   multiple = false,
   label,
-  description,
+  description = '',
   required = false,
   requiredFiles = [],
-  maxFiles,
+  maxFiles = 0,
   className = '',
   existingFiles = [],
-  onRemoveExisting,
+  onRemoveExisting = (/** @type {string} */ _filename) => {},
 }) {
   const { t } = useTranslation();
   const inputRef = useRef(null);

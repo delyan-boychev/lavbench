@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
-from flask import Blueprint, request, jsonify, send_from_directory, current_app, Response, stream_with_context
+from flask import Blueprint, request, jsonify, send_file, send_from_directory, current_app, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from models import db, Challenge, Task, User, Submission, decrypt_field, is_metric_lower_better
 from auth_utils import login_required, role_required, rate_limit
@@ -178,6 +178,11 @@ def get_task(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -209,6 +214,11 @@ def create_task(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     
@@ -262,7 +272,6 @@ def create_task(challenge_id):
             if not re.match(r'^[a-zA-Z0-9_.-]+(?:\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+(?:\s*,\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+)*)?$', line):
                 return jsonify({"error": f"Invalid pip requirement line format: '{line}'."}), 400
     
-    require_submit_tag = to_bool(request.form.get("require_submit_tag")) or False
     ban_magic_commands = to_bool(request.form.get("ban_magic_commands")) or False
     banned_imports = request.form.get("banned_imports")
     whitelisted_imports = request.form.get("whitelisted_imports")
@@ -347,7 +356,6 @@ def create_task(challenge_id):
         base_docker_image=base_docker_image,
         apt_packages=apt_packages,
         pip_requirements=pip_requirements,
-        require_submit_tag=require_submit_tag,
         ban_magic_commands=ban_magic_commands,
         banned_imports=banned_imports,
         whitelisted_imports=whitelisted_imports,
@@ -473,6 +481,11 @@ def update_task(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     task = db.get_or_404(Task, task_id)
     
@@ -542,8 +555,6 @@ def update_task(task_id):
     if "pip_requirements" in request.form:
         task.pip_requirements = request.form.get("pip_requirements")
         
-    if "require_submit_tag" in request.form:
-        task.require_submit_tag = to_bool(request.form.get("require_submit_tag"))
     if "ban_magic_commands" in request.form:
         task.ban_magic_commands = to_bool(request.form.get("ban_magic_commands"))
     if "banned_imports" in request.form:
@@ -759,6 +770,11 @@ def delete_task(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
@@ -808,6 +824,11 @@ def download_task_file(task_id, filename):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -835,20 +856,29 @@ def download_task_file(task_id, filename):
         if f["filename"] == filename:
             saved_name = f["saved_name"]
             break
-            
-    if not saved_name:
-        return jsonify({
-            "error": "File not found in task metadata.",
-            "code": "ERR_FILE_NOT_FOUND"
-        }), 404
-        
-    task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
-    return send_from_directory(
-        task_upload_dir,
-        saved_name,
-        as_attachment=True,
-        download_name=filename
-    )
+
+    if saved_name:
+        task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
+        return send_from_directory(
+            task_upload_dir,
+            saved_name,
+            as_attachment=True,
+            download_name=filename
+        )
+
+    if task.baseline_notebook_path:
+        baseline_basename = os.path.basename(task.baseline_notebook_path)
+        if filename == baseline_basename:
+            return send_file(
+                task.baseline_notebook_path,
+                as_attachment=True,
+                download_name=filename
+            )
+
+    return jsonify({
+        "error": "File not found in task metadata.",
+        "code": "ERR_FILE_NOT_FOUND"
+    }), 404
 
 # --- TASK SUBMISSIONS & EVALUATIONS ---
 
@@ -871,6 +901,11 @@ def submit_task_code(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     task = db.get_or_404(Task, task_id)
     challenge = task.challenge
@@ -1117,6 +1152,11 @@ def get_task_submissions(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -1150,6 +1190,11 @@ def get_task_leaderboard(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1176,6 +1221,11 @@ def get_task_leaderboard_live(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1240,6 +1290,11 @@ def get_task_submissions_live(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1318,6 +1373,11 @@ def get_worker_status():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     return jsonify(_get_worker_status_data())
 
@@ -1335,6 +1395,11 @@ def stream_worker_status():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from flask import current_app, Response, stream_with_context
     
@@ -1465,6 +1530,11 @@ def report_worker_progress(submission_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
@@ -1542,6 +1612,11 @@ def worker_download_task_file(task_id, filename):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
@@ -1579,6 +1654,11 @@ def get_active_datasets():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
@@ -1627,6 +1707,11 @@ def get_task_hf_key(task_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token

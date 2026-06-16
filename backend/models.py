@@ -357,7 +357,6 @@ class Task(db.Model):
     pip_requirements = db.Column(db.Text, nullable=True)
     
     # Rule Settings
-    require_submit_tag = db.Column(db.Boolean, default=False)
     ban_magic_commands = db.Column(db.Boolean, default=False)
     banned_imports = db.Column(db.String(512), nullable=True)
     whitelisted_imports = db.Column(db.String(512), nullable=True)
@@ -391,6 +390,16 @@ class Task(db.Model):
             files_list = json.loads(self.files)
         except Exception:
             files_list = []
+
+        if self.baseline_notebook_path and os.path.exists(self.baseline_notebook_path):
+            baseline_filename = os.path.basename(self.baseline_notebook_path)
+            if not any(f.get("filename") == baseline_filename for f in files_list):
+                files_list.append({
+                    "filename": baseline_filename,
+                    "saved_name": baseline_filename,
+                    "size_bytes": os.path.getsize(self.baseline_notebook_path),
+                    "type": "baseline"
+                })
         
         hf_datasets_list = []
         if self.hf_datasets:
@@ -425,7 +434,6 @@ class Task(db.Model):
             "base_docker_image": self.base_docker_image,
             "apt_packages": self.apt_packages,
             "pip_requirements": self.pip_requirements,
-            "require_submit_tag": self.require_submit_tag,
             "ban_magic_commands": self.ban_magic_commands,
             "banned_imports": self.banned_imports,
             "whitelisted_imports": self.whitelisted_imports,

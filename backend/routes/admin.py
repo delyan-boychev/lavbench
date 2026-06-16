@@ -33,6 +33,11 @@ def get_available_metrics():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     return jsonify(AVAILABLE_METRICS), 200
 
@@ -84,6 +89,11 @@ def register_competitor():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     data = request.json or {}
     name = data.get("name")
@@ -147,6 +157,11 @@ def get_users():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 10, type=int), 100)
@@ -247,6 +262,11 @@ def delete_user(user_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     if request.user["user_id"] == user_id:
         return jsonify({"error": "You cannot delete your own admin account."}), 400
@@ -282,6 +302,11 @@ def register_user():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     data = request.json or {}
     username = data.get("username")
@@ -367,6 +392,11 @@ def import_competitors_csv():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
     if not challenge_id:
@@ -490,6 +520,11 @@ def list_backups():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     return jsonify({"backups": _list_backup_files(BACKUPS_DIR)})
 
@@ -506,6 +541,11 @@ def force_backup():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from tasks import run_backup
     task = run_backup.delay(auto=False)
@@ -524,6 +564,11 @@ def stream_backup_status():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     def event_generator():
         with current_app.app_context():
@@ -570,6 +615,11 @@ def download_backup_file(filename):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
@@ -596,6 +646,11 @@ def delete_backup_file(filename):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     if filename.startswith("auto_"):
         return jsonify({"error": "Auto-backups cannot be deleted manually."}), 403
@@ -625,6 +680,11 @@ def list_challenge_backups(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
     return jsonify({"backups": _list_backup_files(directory)})
@@ -651,6 +711,11 @@ def download_challenge_backup(challenge_id, filename):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
     safe_path = os.path.abspath(os.path.join(directory, filename))
@@ -679,6 +744,11 @@ def update_user(user_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
@@ -774,6 +844,11 @@ def reset_user_password(user_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
@@ -813,6 +888,11 @@ def reset_all_challenge_passwords(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
@@ -864,6 +944,11 @@ def download_scores_csv(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from flask import Response
     from services.challenge_service import generate_scores_csv
@@ -899,6 +984,11 @@ def download_submissions_zip(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
@@ -990,6 +1080,11 @@ def get_detailed_worker_stats():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     return jsonify(_get_worker_stats_response())
 
@@ -1006,6 +1101,11 @@ def stream_worker_stats():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     def event_generator():
         with current_app.app_context():
@@ -1250,6 +1350,11 @@ def get_dead_letters():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from cache_utils import get_redis_client
     r = get_redis_client()

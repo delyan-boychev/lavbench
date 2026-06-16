@@ -24,7 +24,6 @@ class TestServiceSandboxAndPriority(unittest.TestCase):
 
         # Create an actual Task instance for testing execution rules
         self.task = Task(
-            require_submit_tag=False,
             ban_magic_commands=False,
             banned_imports=None
         )
@@ -38,20 +37,6 @@ class TestServiceSandboxAndPriority(unittest.TestCase):
         """Valid code with no special rules should pass."""
         code_cells = ["def predict(x):\n    return x * 2"]
         passed, error = check_execution_rules(self.task, code_cells)
-        self.assertTrue(passed)
-        self.assertIsNone(error)
-
-    def test_check_execution_rules_missing_submit_tag(self):
-        """Code must fail if # SUBMIT tag is required but missing."""
-        self.task.require_submit_tag = True
-        code_cells = ["def predict(x):\n    return x"]
-        passed, error = check_execution_rules(self.task, code_cells)
-        self.assertFalse(passed)
-        self.assertIn("missing the required '# SUBMIT' tag", error)
-
-        # Should pass when tag is present
-        code_cells_with_tag = ["# SUBMIT\ndef predict(x):\n    return x"]
-        passed, error = check_execution_rules(self.task, code_cells_with_tag)
         self.assertTrue(passed)
         self.assertIsNone(error)
 
@@ -160,7 +145,6 @@ class TestServiceSandboxAndPriority(unittest.TestCase):
         task = Task(
             challenge_id=challenge.id,
             title="Test Task",
-            require_submit_tag=False,
             ban_magic_commands=False,
             files="[]"
         )

@@ -155,19 +155,21 @@ export default function SubmissionsView() {
       const controller = new AbortController();
       const loadSubmissionsFallback = async () => {
         try {
+          /** @type {Response} */
           const res = await api.fetch(`/api/tasks/${selectedTask.id}/submissions?page=${submissionsPage}&per_page=10`, {
             signal: controller.signal,
             headers: {}
           });
           if (res.ok) {
             if (taskIdRef.current !== selectedTask.id) return;
+            /** @type {import('../types/api').paths['/api/tasks/{task_id}/submissions']['get']['responses']['200']['content']['application/json']} */
             const data = await res.json();
             if (data && data.items !== undefined) {
               setSubmissions(data.items || []);
               setSubmissionsTotal(data.total || 0);
               setSubmissionsPages(data.pages || 1);
             } else {
-              const arr = data || [];
+              const arr = /** @type {any[]} */(data || []);
               setSubmissions(arr);
               setSubmissionsTotal(arr.length);
               setSubmissionsPages(1);
@@ -198,6 +200,7 @@ export default function SubmissionsView() {
   const handleSelectFinal = async (submissionId) => {
     setSelectingFinal(true);
     try {
+      /** @type {Response} */
       const res = await api.fetch(`/api/submissions/${submissionId}/select-final`, {
         method: 'POST',
         headers: {

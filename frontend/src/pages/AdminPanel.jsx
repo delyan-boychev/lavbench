@@ -224,7 +224,6 @@ export default function AdminPanel() {
     base_docker_image: '',
     apt_packages: '',
     pip_requirements: '',
-    require_submit_tag: false,
     ban_magic_commands: false,
     banned_imports: '',
     whitelisted_imports: '',
@@ -343,10 +342,12 @@ export default function AdminPanel() {
 
   const fetchAvailableMetrics = async () => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/metrics`, {
         headers: {}
       });
       if (res.ok) {
+        /** @type {import('../types/api').paths['/api/admin/metrics']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
         setAvailableMetrics(data);
       }
@@ -397,10 +398,12 @@ export default function AdminPanel() {
 
   const fetchUsers = async () => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
         headers: {}
       });
       if (res.ok) {
+        /** @type {import('../types/api').paths['/api/admin/users']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
         setAllUsers(data.items || []);
         setUsersTotal(data.total || 0);
@@ -415,10 +418,12 @@ export default function AdminPanel() {
   const fetchCompetitors = async () => {
     if (!selectedChallenge) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`, {
         headers: {}
       });
       if (res.ok) {
+        /** @type {import('../types/api').paths['/api/admin/users']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
         setCompetitorsList(data.items || []);
         setCompetitorsTotal(data.total || 0);
@@ -432,17 +437,19 @@ export default function AdminPanel() {
   // Fetch Paginated Challenges (Competitions)
   const fetchPaginatedChallenges = async () => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
         headers: {}
       });
       if (res.ok) {
+        /** @type {import('../types/api').paths['/api/challenges']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
         if (data.items) {
           setPaginatedChallengesList(data.items);
           setChallengesTotal(data.total);
           setChallengesPages(data.pages);
         } else {
-          setPaginatedChallengesList(data || []);
+          setPaginatedChallengesList(/** @type {any[]} */(data || []));
           setChallengesTotal(data?.length || 0);
           setChallengesPages(1);
         }
@@ -491,6 +498,7 @@ export default function AdminPanel() {
   const handleCreateChallenge = async (e) => {
     e.preventDefault();
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges`, {
         method: 'POST',
         headers: {
@@ -498,6 +506,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(newChallenge)
       });
+      /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competition_created'));
@@ -528,6 +537,7 @@ export default function AdminPanel() {
   // Handle Competition update
   const handleUpdateChallenge = async (id, updated) => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'PUT',
         headers: {
@@ -535,6 +545,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(updated)
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competition_updated'));
@@ -559,10 +570,12 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'DELETE',
         headers: {}
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['delete']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competition_deleted', { title }));
@@ -585,10 +598,12 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/finalize`, {
         method: 'POST',
         headers: {}
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/finalize']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.scores_finalized'));
@@ -605,10 +620,12 @@ export default function AdminPanel() {
   // Handle archive toggle
   const handleArchiveToggle = async (id) => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
         method: 'POST',
         headers: {}
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(data.message || t('admin.notifications.archive_toggle_success'));
@@ -630,10 +647,12 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/test-competition`, {
         method: 'POST',
         headers: {}
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/test-competition']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.test_competition_scheduled'));
@@ -690,6 +709,7 @@ export default function AdminPanel() {
         start_time: stageForm.start_time,
         end_time: stageForm.end_time
       };
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
         method: 'POST',
         headers: {
@@ -697,6 +717,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(payload)
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.stage_created'));
@@ -720,6 +741,7 @@ export default function AdminPanel() {
         start_time: stageForm.start_time,
         end_time: stageForm.end_time
       };
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`, {
         method: 'PUT',
         headers: {
@@ -727,6 +749,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(payload)
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.stage_updated'));
@@ -748,10 +771,12 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
         method: 'DELETE',
         headers: {}
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['delete']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.stage_deleted', { title }));
@@ -774,6 +799,7 @@ export default function AdminPanel() {
         reveal_private: stageFinalizeForm.reveal_private,
         reveal_points: stageFinalizeForm.reveal_points
       };
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`, {
         method: 'POST',
         headers: {
@@ -781,6 +807,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(payload)
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}/finalize']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.stage_finalized'));
@@ -807,7 +834,6 @@ export default function AdminPanel() {
       base_docker_image: '',
       apt_packages: '',
       pip_requirements: '',
-      require_submit_tag: false,
       ban_magic_commands: false,
       banned_imports: '',
       whitelisted_imports: '',
@@ -835,7 +861,6 @@ export default function AdminPanel() {
       base_docker_image: task.base_docker_image || '',
       apt_packages: task.apt_packages || '',
       pip_requirements: task.pip_requirements || '',
-      require_submit_tag: task.require_submit_tag || false,
       ban_magic_commands: task.ban_magic_commands || false,
       banned_imports: task.banned_imports || '',
       whitelisted_imports: task.whitelisted_imports || '',
@@ -859,15 +884,14 @@ export default function AdminPanel() {
     formData.append("description", taskForm.description);
     
     if (taskForm.ram_limit_mb) formData.append("ram_limit_mb", taskForm.ram_limit_mb);
-    if (taskForm.time_limit_sec) formData.append("time_limit_sec", taskForm.time_limit_sec);
-    formData.append("gpu_required", taskForm.gpu_required);
+    if (taskForm.time_limit_sec) formData.append("time_limit_sec", String(taskForm.time_limit_sec));
+    formData.append("gpu_required", String(taskForm.gpu_required));
     
     formData.append("base_docker_image", taskForm.base_docker_image);
     formData.append("apt_packages", taskForm.apt_packages);
     formData.append("pip_requirements", taskForm.pip_requirements);
     
-    formData.append("require_submit_tag", taskForm.require_submit_tag);
-    formData.append("ban_magic_commands", taskForm.ban_magic_commands);
+    formData.append("ban_magic_commands", String(taskForm.ban_magic_commands));
     formData.append("banned_imports", taskForm.banned_imports);
     let cleanMetricsConfig = taskForm.metrics_config;
     try {
@@ -884,7 +908,7 @@ export default function AdminPanel() {
     formData.append("metrics_config", cleanMetricsConfig);
     
     if (taskForm.hf_api_key) formData.append("hf_api_key", taskForm.hf_api_key);
-    formData.append("public_eval_percentage", taskForm.public_eval_percentage);
+    formData.append("public_eval_percentage", String(taskForm.public_eval_percentage));
     
     formData.append("whitelisted_imports", taskForm.whitelisted_imports);
     const datasetsArray = taskForm.hf_datasets_raw 
@@ -927,11 +951,13 @@ export default function AdminPanel() {
     const formData = prepareTaskFormData();
 
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
         method: 'POST',
         headers: {},
         body: formData
       });
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.task_created'));
@@ -975,11 +1001,13 @@ export default function AdminPanel() {
     }
 
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
         method: 'PUT',
         headers: {},
         body: formData
       });
+      /** @type {import('../types/api').paths['/api/tasks/{task_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.task_updated'));
@@ -1003,6 +1031,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'DELETE',
         headers: {}
@@ -1033,6 +1062,7 @@ export default function AdminPanel() {
     setGeneratedCredentials(null);
 
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/register-competitor`, {
         method: 'POST',
         headers: {
@@ -1040,6 +1070,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(newCompetitor)
       });
+      /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         setGeneratedCredentials({
@@ -1080,6 +1111,7 @@ export default function AdminPanel() {
       if (newUser.password) {
         requestBody.password = await hashPassword(newUser.password);
       }
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/register-user`, {
         method: 'POST',
         headers: {
@@ -1087,6 +1119,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(requestBody)
       });
+      /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.user_registered'));
@@ -1127,6 +1160,7 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {}
@@ -1162,6 +1196,7 @@ export default function AdminPanel() {
     fd.append('challenge_id', csvChallengeId);
 
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
         method: 'POST',
         headers: {},
@@ -1188,6 +1223,7 @@ export default function AdminPanel() {
   // Download Scores CSV
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`, {
         headers: {}
       });
@@ -1213,6 +1249,7 @@ export default function AdminPanel() {
   // Download Submissions ZIP
   const handleDownloadSubmissionsZip = async (challengeId, challengeTitle) => {
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`, {
         headers: {}
       });
@@ -1255,6 +1292,7 @@ export default function AdminPanel() {
   const handleUpdateUserSubmit = async (e) => {
     e.preventDefault();
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
         method: 'PUT',
         headers: {
@@ -1273,6 +1311,7 @@ export default function AdminPanel() {
           is_anonymous: editUserForm.is_anonymous
         })
       });
+      /** @type {import('../types/api').paths['/api/admin/users/{user_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competitor_updated'));
@@ -1294,12 +1333,14 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         }
       });
+      /** @type {import('../types/api').paths['/api/admin/users/{user_id}/reset-password']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.password_reset_success'));
@@ -1343,6 +1384,7 @@ export default function AdminPanel() {
     if (!ok) return;
     
     try {
+      /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`, {
         method: 'POST',
         headers: {
@@ -1881,7 +1923,7 @@ export default function AdminPanel() {
 
         {/* 5. DATABASE BACKUP MANAGEMENT */}
         {adminSubTab === 'backups' && currentUser.role === 'admin' && (
-          <BackupManager />
+          <BackupManager challengeId={null} />
         )}
 
         {/* 6. COMPETITION BACKUPS (inside competition detail view) */}

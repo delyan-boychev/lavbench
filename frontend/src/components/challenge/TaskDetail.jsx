@@ -14,6 +14,7 @@ function FileCard({ file, taskId }) {
     const a = document.createElement('a');
     a.href = url;
     a.download = file.filename;
+    /** @type {Promise<Response>} */
     api.fetch(url)
       .then(r => {
         if (!r.ok) throw new Error(`Download failed: ${r.status}`);
@@ -139,9 +140,6 @@ export default function TaskDetail({ task }) {
           {/* Submission Rules */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <h4 style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{t('challenge.execution_rules')}</h4>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              <strong>{t('challenge.require_submit_tag')}:</strong> {task.require_submit_tag ? t('challenge.yes') : t('challenge.no')}
-            </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               <strong>{t('challenge.ban_magic_commands')}:</strong> {task.ban_magic_commands ? t('challenge.yes') : t('challenge.no')}
             </div>

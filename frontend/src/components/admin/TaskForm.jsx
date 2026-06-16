@@ -35,7 +35,7 @@ export default function TaskForm({
     let metricsObj = {};
     try { metricsObj = JSON.parse(taskForm.metrics_config) || {}; } catch(e) {}
     const columnsDef = metricsObj._columns || [];
-    const metricsOnly = { ...metricsObj };
+    const metricsOnly = /** @type {Record<string, any>} */({ ...metricsObj });
     delete metricsOnly._columns;
     const selectedCount = Object.keys(metricsOnly).length;
 
@@ -418,7 +418,8 @@ export default function TaskForm({
         </h2>
       </div>
 
-      <TabScrollContainer>
+      <div className="mb-6">
+        <TabScrollContainer>
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -435,6 +436,7 @@ export default function TaskForm({
           </button>
         ))}
       </TabScrollContainer>
+      </div>
 
       <form onSubmit={isCreatingTask ? handleSaveCreateTask : handleSaveUpdateTask} className="flex flex-col gap-8 min-h-[400px]">
         
@@ -554,15 +556,6 @@ export default function TaskForm({
             <div className="flex flex-col gap-4 border-t border-white/5 pt-6">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">{t('admin.tasks.ast_security_rules')}</h3>
               <div className="flex flex-col md:flex-row gap-5 mb-4">
-                <div className="bg-slate-900/50 p-4 w-full rounded-xl border border-white/5">
-                  <ToggleField 
-                    label={t('admin.tasks.require_submit_comment')}
-                    id="rule-tag"
-                    checked={taskForm.require_submit_tag}
-                    onChange={(e) => setTaskForm({ ...taskForm, require_submit_tag: e.target.checked })}
-                  />
-                  <p className="text-[11px] text-slate-500 mt-2">{t('admin.tasks.require_submit_desc')}</p>
-                </div>
                 <div className="bg-slate-900/50 p-4 w-full rounded-xl border border-white/5">
                   <ToggleField 
                     label={t('admin.tasks.ban_magic_commands')}

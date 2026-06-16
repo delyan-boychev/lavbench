@@ -193,7 +193,7 @@ function Row({
                     onBlur={() => handleSavePoints(activeTask.id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        e.target.blur();
+                        /** @type {HTMLElement} */(e.target).blur();
                       }
                     }}
                     className="w-16 px-1 py-0.5 text-center bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-xs text-indigo-300 inline-block"
@@ -269,7 +269,7 @@ function Row({
                                   onBlur={() => handleSavePoints(task.id)}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
-                                      e.target.blur();
+                                      /** @type {HTMLElement} */(e.target).blur();
                                     }
                                   }}
                                   className="w-14 px-1 py-0.5 text-center bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-xs text-indigo-300"

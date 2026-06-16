@@ -63,18 +63,20 @@ def login():
       - in: body
         name: body
         required: true
-        schema:
-          type: object
-          required: [username, password]
-          properties:
-            username:
-              type: string
-              description: Username or email
-              example: "admin_1c15d4d7"
-            password:
-              type: string
-              description: SHA-256 hash of the plaintext password
-              example: "a1b2c3..."
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  description: Username or email
+                  example: "admin_1c15d4d7"
+                password:
+                  type: string
+                  description: SHA-256 hash of the plaintext password
+                  example: "a1b2c3..."
     responses:
       200:
         description: Login successful. httpOnly cookie set.
@@ -82,30 +84,40 @@ def login():
           Set-Cookie:
             type: string
             description: auth_token=httpOnly; SameSite=Strict
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-              example: "Logged in successfully."
-            user:
-              $ref: '#/components/schemas/User'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  example: "Logged in successfully."
+                user:
+                  $ref: '#/components/schemas/User'
       400:
         description: Missing username or password
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       401:
         description: Invalid credentials
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       403:
         description: Competition archived (competitor login only)
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       429:
         description: Rate limited (5 failures per 60s per username+IP)
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
     data = request.json or {}
     username = data.get("username")
@@ -165,12 +177,14 @@ def logout():
     responses:
       200:
         description: Logged out successfully. Cookie cleared, token revoked.
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-              example: "Logged out successfully."
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  example: "Logged out successfully."
     """
     resp = make_response(jsonify({"message": "Logged out successfully."}))
     clear_auth_cookie(resp)
@@ -191,19 +205,25 @@ def me():
     responses:
       200:
         description: Current user profile
-        schema:
-          type: object
-          properties:
-            user:
-              $ref: '#/components/schemas/User'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user:
+                  $ref: '#/components/schemas/User'
       401:
         description: Unauthorized — missing, expired, or revoked token
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       404:
         description: User not found (deleted after token was issued)
-        schema:
-          $ref: '#/components/schemas/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
     user = db.session.get(User, request.user["user_id"])
     if not user:

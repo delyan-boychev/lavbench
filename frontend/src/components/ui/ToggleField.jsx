@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ToggleField({ label, id, checked, onChange, disabled }) {
+export default function ToggleField({ label, id, checked, onChange, disabled = false }) {
   return (
     <div className="flex items-center gap-2 select-none">
       <label className="relative inline-flex items-center cursor-pointer">

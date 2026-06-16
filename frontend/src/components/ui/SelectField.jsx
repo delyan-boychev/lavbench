@@ -10,7 +10,7 @@ export default function SelectField({
   className = '',
   required = false,
   disabled = false,
-  placeholder,
+  placeholder = '',
 }) {
   const { t } = useTranslation();
   const [error, setError] = useState(false);

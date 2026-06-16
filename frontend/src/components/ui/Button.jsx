@@ -2,12 +2,13 @@ import React from 'react';
 
 export default function Button({ 
   children, 
-  onClick, 
+  onClick = () => {}, 
   type = 'button', 
   variant = 'primary', 
   disabled = false, 
   className = '',
-  title = ''
+  title = '',
+  size = 'md'
 }) {
   const baseStyle = "px-4 py-2.5 text-xs font-bold rounded-lg transition-all duration-200 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border inline-flex items-center justify-center gap-2";
   const variants = {
@@ -18,9 +19,11 @@ export default function Button({
     link: "bg-transparent hover:underline text-indigo-400 hover:text-indigo-300 border-transparent shadow-none"
   };
 
+  const buttonType = /** @type {'button' | 'submit' | 'reset'} */ (type);
+
   return (
     <button
-      type={type}
+      type={buttonType}
       onClick={onClick}
       disabled={disabled}
       title={title}

@@ -172,6 +172,7 @@ export default function Navbar() {
       setDocLoading(true);
       setDocError(null);
       try {
+        /** @type {Response} */
         const res = await api.fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
           headers: { 
             'Accept-Language': i18n.language || 'en'

@@ -302,6 +302,7 @@ export default function CompetitorManager({
               </Button>
             )}
             <InputField 
+              label=""
               placeholder={currentUser.role === 'jury' && selectedChallenge && isChallengeStarted(selectedChallenge.id) ? t('admin.competitor_reg.search_alias_only_placeholder') : t('admin.competitor_reg.search_competitor_placeholder')} 
               value={competitorSearch} 
               onChange={(e) => setCompetitorSearch(e.target.value)} 

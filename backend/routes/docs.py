@@ -67,6 +67,11 @@ def get_student_doc():
     responses:
       200:
         description: Returns the rendered guide
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     lang = get_request_lang()
     content = read_doc_file('student_guide.md', lang)
@@ -95,6 +100,11 @@ def get_jury_doc():
     responses:
       200:
         description: Returns the rendered guide
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     lang = get_request_lang()
     content = read_doc_file('jury_guide.md', lang)
@@ -123,6 +133,11 @@ def get_admin_doc():
     responses:
       200:
         description: Returns the rendered guide
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     lang = get_request_lang()
     content = read_doc_file('admin_guide.md', lang)

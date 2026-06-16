@@ -80,6 +80,11 @@ def get_challenges():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -153,6 +158,11 @@ def get_challenge(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -237,6 +247,11 @@ def create_challenge():
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     data = request.json or {}
     title = data.get("title")
@@ -333,6 +348,11 @@ def update_challenge(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
@@ -423,6 +443,11 @@ def delete_challenge(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     
@@ -463,6 +488,11 @@ def finalize_challenge(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     
@@ -531,6 +561,11 @@ def archive_challenge(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
@@ -564,6 +599,11 @@ def create_stage(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
@@ -634,6 +674,11 @@ def update_stage(challenge_id, stage_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
@@ -683,6 +728,11 @@ def delete_stage(challenge_id, stage_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
@@ -725,6 +775,11 @@ def finalize_stage(challenge_id, stage_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
@@ -805,6 +860,11 @@ def create_scheduled_test_competition(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     orig = db.get_or_404(Challenge, challenge_id)
     from models import Task
@@ -909,6 +969,11 @@ def export_results(challenge_id):
     responses:
       200:
         description: Success
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from flask import Response
     from services.challenge_service import generate_exported_results_csv

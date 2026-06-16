@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List all system backups with filenames, sizes, and timestamps. */
         get: {
             parameters: {
                 query?: never;
@@ -26,7 +26,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -47,7 +49,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Trigger an immediate manual backup of the database and uploaded files. */
         post: {
             parameters: {
                 query?: never;
@@ -62,7 +64,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -79,7 +83,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Stream backup events in real-time via Server-Sent Events. */
         get: {
             parameters: {
                 query?: never;
@@ -94,7 +98,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -116,7 +122,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Delete a manual backup file. Auto-backups cannot be deleted. */
         delete: {
             parameters: {
                 query?: never;
@@ -133,7 +139,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -149,7 +157,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Download a specific backup archive file. */
         get: {
             parameters: {
                 query?: never;
@@ -166,7 +174,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -185,7 +195,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List competition lifecycle backups for a specific challenge. */
         get: {
             parameters: {
                 query?: never;
@@ -202,7 +212,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -221,7 +233,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Download a competition lifecycle backup file. */
         get: {
             parameters: {
                 query?: never;
@@ -239,7 +251,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -258,7 +272,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Generate and download a CSV of all competitor scores for a challenge. */
         get: {
             parameters: {
                 query?: never;
@@ -275,7 +289,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -294,7 +310,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Download all completed student submissions as a ZIP archive. */
         get: {
             parameters: {
                 query?: never;
@@ -311,7 +327,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -332,7 +350,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Generate new passwords for all competitors in a challenge. */
         post: {
             parameters: {
                 query?: never;
@@ -349,7 +367,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -366,7 +386,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Inspect the dead letter queue of permanently failed submission evaluations. */
         get: {
             parameters: {
                 query?: never;
@@ -381,7 +401,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -402,7 +424,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Bulk import competitors from a CSV file. */
         post: {
             parameters: {
                 query?: never;
@@ -417,7 +439,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -434,7 +458,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List all built-in evaluation metrics available for task configuration. */
         get: {
             parameters: {
                 query?: never;
@@ -449,7 +473,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -470,7 +496,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Register a new competitor with auto-generated credentials. */
         post: {
             parameters: {
                 query?: never;
@@ -485,7 +511,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -504,7 +532,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Register a new user account with specified role and demographics. */
         post: {
             parameters: {
                 query?: never;
@@ -519,7 +547,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -536,7 +566,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List and search users with pagination. Supports filtering by role and challenge. */
         get: {
             parameters: {
                 query?: never;
@@ -551,7 +581,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -571,7 +603,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Update user profile fields. Jury members have restricted edit access. */
         put: {
             parameters: {
                 query?: never;
@@ -588,12 +620,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
         post?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Permanently delete a user and all their submissions. */
         delete: {
             parameters: {
                 query?: never;
@@ -610,7 +644,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -628,7 +664,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Generate a new random password for a specific user. */
         post: {
             parameters: {
                 query?: never;
@@ -645,7 +681,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -662,7 +700,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Get detailed worker cluster statistics including CPU, RAM, GPU specs. */
         get: {
             parameters: {
                 query?: never;
@@ -677,7 +715,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -696,7 +736,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Stream real-time worker cluster statistics via Server-Sent Events. */
         get: {
             parameters: {
                 query?: never;
@@ -711,7 +751,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -752,35 +794,49 @@ export interface paths {
                         "Set-Cookie"?: unknown;
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** @example Logged in successfully. */
+                            message?: string;
+                            user?: components["schemas"]["User"];
+                        };
+                    };
                 };
                 /** @description Missing username or password */
                 400: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 /** @description Invalid credentials */
                 401: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 /** @description Competition archived (competitor login only) */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 /** @description Rate limited (5 failures per 60s per username+IP) */
                 429: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -814,7 +870,12 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** @example Logged out successfully. */
+                            message?: string;
+                        };
+                    };
                 };
             };
         };
@@ -849,21 +910,29 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            user?: components["schemas"]["User"];
+                        };
+                    };
                 };
                 /** @description Unauthorized — missing, expired, or revoked token */
                 401: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 /** @description User not found (deleted after token was issued) */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -882,7 +951,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List all available challenges with their tasks and stages. */
         get: {
             parameters: {
                 query?: never;
@@ -897,12 +966,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Create a new competition with start/end times, resource limits, and privacy settings. */
         post: {
             parameters: {
                 query?: never;
@@ -917,7 +988,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -934,7 +1007,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Get detailed information about a specific challenge. */
         get: {
             parameters: {
                 query?: never;
@@ -951,11 +1024,13 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Update the configuration of an existing challenge. */
         put: {
             parameters: {
                 query?: never;
@@ -972,12 +1047,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
         post?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Permanently delete a challenge including all its tasks, submissions, and competition backups. */
         delete: {
             parameters: {
                 query?: never;
@@ -994,7 +1071,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1012,7 +1091,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Toggle archive state. Archived challenges are hidden from competitors. */
         post: {
             parameters: {
                 query?: never;
@@ -1029,7 +1108,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1046,7 +1127,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Export comprehensive competition results as CSV with ranks, scores, and audit log. */
         get: {
             parameters: {
                 query?: never;
@@ -1063,7 +1144,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1084,7 +1167,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Finalize the competition scores. Locks rankings and reveals competitor identities. */
         post: {
             parameters: {
                 query?: never;
@@ -1101,7 +1184,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1139,21 +1224,27 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied for competitor */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Challenge not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1195,21 +1286,27 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Validation error */
                 400: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description User or Challenge not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1248,7 +1345,12 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            cells?: components["schemas"]["Cell"][];
+                            filename?: string;
+                        };
+                    };
                 };
                 /** @description Invalid file type, file too large, or parse error */
                 400: {
@@ -1281,7 +1383,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Add a new stage to a challenge with its own deadline and score visibility rules. */
         post: {
             parameters: {
                 query?: never;
@@ -1298,7 +1400,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1316,7 +1420,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Update an existing stage configuration. */
         put: {
             parameters: {
                 query?: never;
@@ -1334,12 +1438,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
         post?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Remove a stage from a challenge. */
         delete: {
             parameters: {
                 query?: never;
@@ -1357,7 +1463,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1375,7 +1483,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Finalize a specific stage. Locks stage scores. */
         post: {
             parameters: {
                 query?: never;
@@ -1393,7 +1501,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1430,14 +1540,18 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1475,28 +1589,36 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Validation error */
                 400: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied or challenge frozen */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Rate limit exceeded */
                 429: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1515,7 +1637,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Create a new evaluation task with resource limits, metrics, and test data files. */
         post: {
             parameters: {
                 query?: never;
@@ -1532,7 +1654,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1551,7 +1675,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Create a test competition that starts immediately for testing purposes. */
         post: {
             parameters: {
                 query?: never;
@@ -1568,7 +1692,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1603,7 +1729,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1640,7 +1768,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1677,7 +1807,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1714,14 +1846,27 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** @example connected */
+                            database?: string;
+                            /** @example ok */
+                            status?: string;
+                        };
+                    };
                 };
                 /** @description Database unreachable */
                 503: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            detail?: string;
+                            /** @example error */
+                            status?: string;
+                        };
+                    };
                 };
             };
         };
@@ -1757,21 +1902,27 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Submission not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1807,21 +1958,27 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Submission not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1859,28 +2016,36 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Selection window closed */
                 400: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Access denied */
                 403: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
                 /** @description Submission not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1897,7 +2062,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** API endpoint. */
         get: {
             parameters: {
                 query?: never;
@@ -1914,11 +2079,13 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Update an existing task configuration including files and evaluator scripts. */
         put: {
             parameters: {
                 query?: never;
@@ -1935,12 +2102,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
         post?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Remove a task and all its submissions from a challenge. */
         delete: {
             parameters: {
                 query?: never;
@@ -1957,7 +2126,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -1973,7 +2144,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Download a resource file attached to a task. */
         get: {
             parameters: {
                 query?: never;
@@ -1991,7 +2162,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2010,7 +2183,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Get cached leaderboard data for a specific task. */
         get: {
             parameters: {
                 query?: never;
@@ -2027,7 +2200,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2046,7 +2221,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Stream live task leaderboard updates via SSE. */
         get: {
             parameters: {
                 query?: never;
@@ -2063,7 +2238,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2082,7 +2259,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List submissions for a specific task with pagination. */
         get: {
             parameters: {
                 query?: never;
@@ -2099,7 +2276,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2118,7 +2297,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Stream live task submission updates via SSE. */
         get: {
             parameters: {
                 query?: never;
@@ -2135,7 +2314,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2156,7 +2337,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Submit code cells for execution under a specific task. */
         post: {
             parameters: {
                 query?: never;
@@ -2173,7 +2354,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2190,7 +2373,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Get current worker cluster health status with specs. */
         get: {
             parameters: {
                 query?: never;
@@ -2205,7 +2388,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2224,7 +2409,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Stream worker cluster health status via SSE. */
         get: {
             parameters: {
                 query?: never;
@@ -2239,7 +2424,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2258,7 +2445,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** List all HuggingFace datasets used by active challenges for worker preloading. */
         get: {
             parameters: {
                 query?: never;
@@ -2273,7 +2460,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2294,7 +2483,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto-generated documentation for this endpoint. */
+        /** Worker callback to report submission status and scores. */
         post: {
             parameters: {
                 query?: never;
@@ -2311,7 +2500,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2328,7 +2519,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Worker endpoint to securely download task resource files. */
         get: {
             parameters: {
                 query?: never;
@@ -2346,7 +2537,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2365,7 +2558,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auto-generated documentation for this endpoint. */
+        /** Worker endpoint to fetch the HuggingFace API key for a task. */
         get: {
             parameters: {
                 query?: never;
@@ -2382,7 +2575,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
                 };
             };
         };
@@ -2465,7 +2660,6 @@ export interface components {
             metrics_config?: Record<string, never>;
             pip_requirements?: string;
             ram_limit_mb?: number;
-            require_submit_tag?: boolean;
             stage_id?: number;
             submission_period_hours?: number;
             time_limit_sec?: number;

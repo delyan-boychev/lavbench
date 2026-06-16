@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "check-types": "tsc --noEmit",
     "generate-api-types": "openapi-typescript http://localhost:5001/apispec_1.json -o src/types/api.d.ts"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
     "globals": "^17.6.0",
     "happy-dom": "^20.10.4",
     "openapi-typescript": "^7.13.0",
+    "typescript": "^5.8.0",
     "vite": "^8.0.12",
     "vitest": "^4.1.9"
   }

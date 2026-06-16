@@ -27,7 +27,6 @@ describe('TaskDetail Component', () => {
     ram_limit_mb: 4096,
     time_limit_sec: 120,
     gpu_required: true,
-    require_submit_tag: true,
     ban_magic_commands: true,
     banned_imports: 'sys,os',
     max_submissions_per_period: 5,
@@ -57,7 +56,7 @@ describe('TaskDetail Component', () => {
     expect(screen.getByText('Resource Limits')).toBeInTheDocument();
     expect(screen.getByText('4096 MB')).toBeInTheDocument();
     expect(screen.getByText('120s')).toBeInTheDocument();
-    expect(screen.getAllByText('Yes')).toHaveLength(3); // GPU, Require SUBMIT, and Ban Magic Commands
+    expect(screen.getAllByText('Yes')).toHaveLength(2); // GPU and Ban Magic Commands
   });
 
   it('renders execution rules, banned libraries, and dataset properties', () => {

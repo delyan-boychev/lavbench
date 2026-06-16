@@ -19,6 +19,7 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState('');
 
   const logout = useCallback(async () => {
+    /** @type {Promise<{ ok: boolean, data: import('./types/api').paths['/api/auth/logout']['post']['responses']['200']['content']['application/json'] }>} */
     try { await api.post('/auth/logout'); } catch {}
     setCurrentUser(null);
     setAuthLoading(false);
@@ -39,6 +40,7 @@ export const AuthProvider = ({ children }) => {
   const fetchUser = useCallback(async () => {
     setAuthLoading(true);
     try {
+      /** @type {{ ok: boolean, data: import('./types/api').paths['/api/auth/me']['get']['responses']['200']['content']['application/json'] }} */
       const { ok, data } = await api.get('/auth/me');
       if (ok) {
         setCurrentUser(data.user);
@@ -67,7 +69,7 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(data.user);
         return { success: true };
       } else {
-        setAuthError(data?.code ? { code: data.code, error: data.error } : 'auth.failed');
+        setAuthError(/** @type {string} */(data?.code ? { code: data.code, error: data.error } : 'auth.failed'));
         return { success: false, error: data?.error };
       }
     } catch {

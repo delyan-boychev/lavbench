@@ -826,20 +826,7 @@ class TestRouteLevelLogic(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("magic commands", res.get_json()["error"])
         
-        # 5. AST Required Tag check
-        self.task.ban_magic_commands = False
-        self.task.require_submit_tag = True
-        db.session.commit()
-        
-        payload = {
-            "selected_cells": ["print('hello')"],
-            "task_id": self.task.id
-        }
-        res = self.client.post(f'/api/challenges/{self.challenge.id}/submit', json=payload, headers=comp_header)
-        self.assertEqual(res.status_code, 400)
-        self.assertIn("missing the required '# SUBMIT' tag", res.get_json()["error"])
-        
-        # 6. Valid submission
+        # 5. Valid submission
         payload = {
             "selected_cells": ["# SUBMIT\nprint('hello')"],
             "task_id": self.task.id

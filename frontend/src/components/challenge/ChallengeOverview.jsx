@@ -2,7 +2,7 @@ import React from 'react';
 import Badge from '../ui/Badge';
 import { useTranslation } from 'react-i18next';
 
-function StatCard({ label, value, accent }) {
+function StatCard({ label, value, accent = undefined }) {
   return (
     <div style={{
       background: 'var(--bg-elevated)',

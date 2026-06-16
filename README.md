@@ -49,6 +49,8 @@ Created by the Bulgarian Team. Contributions and use by others are welcome.
 - **Automated Backups** — Database + uploaded files backed up every 20 minutes during active competitions (every 6 hours when idle), with competition lifecycle snapshots
 - **i18n** — English and Bulgarian *(contributions for additional languages are welcome)*
 - **Security** — httpOnly cookie auth, token revocation with Redis blacklist, rate limiting, encrypted PII, ProxyFix for trusted reverse proxies
+- **Typed API** — OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls
+- **Type Checking** — `tsc --noEmit` verifies all JSDoc annotations + component props, 0 errors in CI
 
 ---
 
@@ -143,15 +145,20 @@ lavbench-webplatform/
 │   │   └── docs.py              # In-app documentation
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks
-│   └── tests/                   # Backend tests (pytest, 129 tests)
+│   └── tests/                   # Backend tests (pytest, 120 tests)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # Reusable components (admin, challenge, ui, layout)
 │   │   ├── pages/               # Page components
 │   │   ├── services/            # ApiService, AuthContext, AppContext
 │   │   ├── context/             # React context providers
-│   │   └── hooks/               # Custom hooks
+│   │   ├── hooks/               # Custom hooks
+│   │   └── types/               # Auto-generated TypeScript declarations (api.d.ts)
+│   ├── scripts/
+│   │   ├── _annotate_types.py    # Injects JSDoc @type annotations
+│   │   └── check_translations.py # Validates i18n keys
 │   ├── public/locales/          # i18n (en, bg)
+│   ├── tsconfig.json            # TypeScript config for JSDoc type checking
 │   └── nginx.conf               # Nginx configuration
 ├── guides/                      # User documentation (student, jury, admin, API)
 ├── docker-compose.yml           # Docker Compose (db, redis, backend, beat, frontend)
@@ -195,20 +202,28 @@ cp .env.example .env
 
 ```bash
 cd backend
-source venv/bin/activate
-python -m pytest tests/ -v
+micromamba run -n nai_backend python -m pytest tests/ -v
 ```
 
-129 tests covering routes, auth, evaluation, caching, rate limiting, and models.
+120 tests covering routes, auth, evaluation, caching, rate limiting, and models.
 
 ### Frontend
 
 ```bash
 cd frontend
-npm run test
-```
 
-149 tests covering all components, pages, auth context, and API service.
+# Unit / component tests
+npm run test       # vitest — 149 tests
+
+# Type checking (JSDoc annotations + component props)
+npm run check-types
+
+# Translation integrity (missing keys, symmetry, orphaned keys)
+python3 scripts/check_translations.py
+
+# Regenerate API types after backend spec changes
+python3 scripts/_annotate_types.py
+```
 
 ---
 
@@ -258,3 +273,68 @@ Workers require Docker and NVIDIA Container Toolkit (for GPU). No database acces
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)
+
+---
+
+## Documentation
+
+| Guide | Audience |
+|-------|----------|
+| [Student Guide](guides/en/student_guide.md) | Competitors — logging in, understanding tasks, submitting notebooks, leaderboard |
+| [Jury Guide](guides/en/jury_guide.md) | Jury members — monitoring, manual scoring, competitor registration, exports |
+| [Admin Guide](guides/en/admin_guide.md) | Administrators — challenge/task management, backups, worker health, user admin |
+| [API Reference](http://localhost:5001/apidocs) | Developers — interactive Swagger UI with all 65 endpoints |
+| [Translation Check](frontend/scripts/check_translations.py) | Developers — validates i18n keys across en/bg, finds missing/orphaned keys |
+
+---
+
+## Contributing
+
+### Pull Request Checklist
+
+1. **Run all tests**: `npm run test` (frontend) + `python -m pytest tests/` (backend)
+2. **Keep types clean**: `npm run check-types` must pass (0 errors)
+3. **Check translations**: `python3 scripts/check_translations.py` must show 0 missing keys
+4. **Regenerate API types** if you changed backend endpoints:
+   ```bash
+   # Start the backend on port 5001, then:
+   npm run generate-api-types
+   python3 scripts/_annotate_types.py
+   ```
+5. **Follow existing patterns** — use `@type` JSDoc annotations for API responses, keep component props with defaults, use `tsc --noEmit` for validation
+
+### Type System
+
+The frontend uses **JSDoc `@type` annotations** (not full TypeScript) referencing a generated `types/api.d.ts` file:
+
+```
+Backend flasgger docstrings
+       │
+       ▼
+  openapi-typescript
+       │
+       ▼
+  frontend/src/types/api.d.ts    (auto-generated)
+       │
+       ▼
+  scripts/_annotate_types.py     (injects @type annotations)
+       │
+       ▼
+  tsc --noEmit                   (validates all types)
+```
+
+**Key conventions**:
+- API response types use `paths['/api/endpoint']['method']['responses']['200']['content']['application/json']`
+- Component props use default values (`prop = 'default'`) to keep them optional
+- Service wrappers use `(...args: any[]) => Promise<{ok, data: Type}>`
+- Translations use dot-notation keys (`section.subsection.key`) matching the JSON structure
+- Never use `@ts-ignore` or `@type {any}` — use specific type assertions or narrow types with `typeof` guards
+
+### Project Structure
+
+New code should follow the existing directory layout:
+- **Backend routes**: `backend/routes/<feature>.py` with flasgger docstrings
+- **Frontend components**: `frontend/src/components/<domain>/<Component>.jsx`
+- **Frontend pages**: `frontend/src/pages/<Page>.jsx`
+- **Services**: `frontend/src/services/<Service>.js`
+- **Translations**: `frontend/public/locales/{en,bg}/translation.json`

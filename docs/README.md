@@ -14,10 +14,13 @@
 
 ```bash
 cd frontend
-npm run generate-api-types
+# Start the backend first (port 5001), then:
+npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
+python3 scripts/_annotate_types.py  # Inject JSDoc @type annotations
+npm run check-types              # tsc --noEmit — verify 0 errors
 ```
 
-This runs `openapi-typescript` against the live OpenAPI spec served by the backend, producing `src/types/api.d.ts` with full type definitions for all endpoints.
+This pipeline generates `src/types/api.d.ts` (full type definitions for all 65 endpoints), injects `@type` annotations into all `api.get/post/put/delete/fetch` call sites, and validates everything with TypeScript's `checkJs` mode.
 
 ### Key things to know
 
@@ -25,18 +28,21 @@ This runs `openapi-typescript` against the live OpenAPI spec served by the backe
 - **SSE endpoints**: 6 streaming endpoints use Server-Sent Events. Connect with `new EventSource(url)`. Cookie auth is automatic.
 - **Rate limiting**: Per-user, per-endpoint. Backend returns 429 with `ERR_RATE_LIMITED` code. Frontend should show a toast and throttle retries.
 - **Error format**: All errors return `{"error": "message", "code": "ERR_CODE"}`. Map `code` values to user-facing translations where needed.
+- **Type system**: JSDoc `@type` annotations reference `import('./types/api').paths['/api/...']['method']['responses']['200']['content']['application/json']`. Never use `@ts-ignore` or `@type {any}` — use specific assertions instead.
+- **Translation check**: `python3 scripts/check_translations.py` validates i18n keys across en/bg locales, finds missing/orphaned keys.
 
 ### Example: calling the login endpoint
 
 ```javascript
 import api from './services/ApiService';
 
+/** @type {{ ok: boolean, data: import('./types/api').paths['/api/auth/login']['post']['responses']['200']['content']['application/json'] }} */
 const { ok, data } = await api.post('/auth/login', {
   username: 'admin_1c15d4d7',
   password: hashedPassword
 });
 if (ok) {
-  // data.user contains the user object
+  // data.user contains the typed User object
   // cookie is set automatically by the browser
 }
 ```
@@ -49,8 +55,10 @@ if (ok) {
 2. Add a flasgger YAML docstring with request/response schemas
 3. The Swagger UI at `/apidocs` auto-updates on next server restart
 4. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
+5. Run `python3 scripts/_annotate_types.py` to inject JSDoc annotations
+6. Run `npm run check-types` to verify 0 errors
 
-### flasgger docstring template
+### flasgger docstring template (OpenAPI 3.0)
 
 ```python
 @some_bp.route('/path/<int:id>', methods=['POST'])
@@ -70,27 +78,35 @@ def some_action(id):
       - in: body
         name: body
         required: true
-        schema:
-          type: object
-          required: [field1]
-          properties:
-            field1:
-              type: string
-              example: "value"
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [field1]
+              properties:
+                field1:
+                  type: string
+                  example: "value"
     responses:
       200:
         description: Success
-        schema:
-          type: object
-          properties:
-            result:
-              type: string
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
       401:
         description: Unauthorized
-        schema:
-          $ref: '#/definitions/Error'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
 ```
+
+**Key difference**: Use OpenAPI 3.0 `content: application/json: schema:` (not Swagger 2.0 bare `schema:`). The `$ref` path is `#/components/schemas/Error` (not `#/definitions/Error`). This ensures `openapi-typescript` generates proper response body types instead of `content?: never`.
 
 ### SSE endpoint template
 
@@ -116,9 +132,11 @@ responses:
       ```json
       {"key": "value"}
       ```
-    schema:
-      type: string
-      format: binary
+    content:
+      text/event-stream:
+        schema:
+          type: string
+          format: binary
   401:
     description: Unauthorized
 """

@@ -30,13 +30,15 @@ vi.mock('react-i18next', () => {
     useTranslation: () => ({
       t: (key, options) => {
         const count = options && typeof options === 'object' ? options.count : undefined;
-        let value = getTranslationVal(key, count);
+        let value = /** @type {string|any} */ (getTranslationVal(key, count));
         if (value === undefined) {
           return key;
         }
         if (options && typeof options === 'object') {
           Object.keys(options).forEach((optKey) => {
-            value = value.replace(new RegExp(`{{${optKey}}}`, 'g'), options[optKey]);
+            if (typeof value === 'string') {
+              value = value.replace(new RegExp(`{{${optKey}}}`, 'g'), options[optKey]);
+            }
           });
         }
         return value;

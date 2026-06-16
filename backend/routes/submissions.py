@@ -33,11 +33,13 @@ def parse_notebook(challenge_id):
     responses:
       200:
         description: Notebook parsed successfully
-        schema:
-          type: object
-          properties:
-            filename: {type: string}
-            cells: {type: array, items: {$ref: '#/components/schemas/Cell'}}
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename: {type: string}
+                cells: {type: array, items: {$ref: '#/components/schemas/Cell'}}
       400:
         description: Invalid file type, file too large, or parse error
         schema: {$ref: '#/components/schemas/Error'}
@@ -124,20 +126,42 @@ def submit_code(challenge_id):
       - in: body
         name: body
         required: true
-        schema:
-          type: object
-          properties:
-            task_id: {type: integer}
-            selected_cells: {type: array, items: {type: object}}
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_id: {type: integer}
+                selected_cells: {type: array, items: {type: object}}
     responses:
       202:
         description: Submission received and queued
+
+        content:
+          application/json:
+            schema:
+              type: object
       400:
         description: Validation error
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied or challenge frozen
+
+        content:
+          application/json:
+            schema:
+              type: object
       429:
         description: Rate limit exceeded
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -370,8 +394,18 @@ def get_submissions(challenge_id):
     responses:
       200:
         description: List of submissions
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
@@ -426,10 +460,25 @@ def get_submission_detail(submission_id):
     responses:
       200:
         description: Submission details
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied
+
+        content:
+          application/json:
+            schema:
+              type: object
       404:
         description: Submission not found
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -463,12 +512,32 @@ def select_final_submission(submission_id):
     responses:
       200:
         description: Submission selected as final
+
+        content:
+          application/json:
+            schema:
+              type: object
       400:
         description: Selection window closed
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied
+
+        content:
+          application/json:
+            schema:
+              type: object
       404:
         description: Submission not found
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -564,10 +633,25 @@ def stream_submission_logs(submission_id):
     responses:
       200:
         description: SSE stream of logs
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied
+
+        content:
+          application/json:
+            schema:
+              type: object
       404:
         description: Submission not found
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     from flask import current_app, Response, stream_with_context
     

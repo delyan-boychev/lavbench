@@ -6,6 +6,7 @@ class ApiService {
   }
 
   #getHeaders(isForm = false) {
+    /** @type {{ [key: string]: string }} */
     const headers = {};
     if (!isForm) headers['Content-Type'] = 'application/json';
     return headers;

@@ -41,10 +41,6 @@ def check_execution_rules(task, cells_list):
     extracted_cells = extract_code_from_cells(cells_list)
     combined_code = "\n".join(extracted_cells)
     
-    if task.require_submit_tag:
-        if "# SUBMIT" not in combined_code:
-            return False, "Rule Violation: The code is missing the required '# SUBMIT' tag."
-            
     if task.ban_magic_commands:
         for line in combined_code.splitlines():
             stripped = line.strip()

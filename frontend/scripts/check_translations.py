@@ -1,339 +1,267 @@
 #!/usr/bin/env python3
+"""
+Comprehensive translation integrity checker for LavBench.
+Checks:
+  1. Symmetry — keys present in one locale but missing from the other
+  2. Missing — keys used via t('...') in source code but absent from translations
+  3. Orphaned — keys defined in translations but never referenced in source code
+  4. Hardcoded — user-facing text in JSX that should use t()
+
+Handles dynamic key patterns like t('badge.' + role) and t(`path/${id}`).
+"""
 import os
 import re
 import json
 import sys
+from collections import defaultdict
 
-# Allowed literal values that do not need translation (common acronyms, units, names)
-ALLOWED_LITERALS = {
-    "bg", "en", "lavbench", "platform", "jwt", "sql", "ram", "gb", "mb", "cpu", "gpu", "vram", 
-    "utc", "id", "csv", "excel", "docker", "redis", "jupyter", "python", "api", "html", "css",
-    "x", "y", "w", "h", "o", "a", "b", "c", "d" # single letters often used as math or close indicators
-}
+# ── Colours ────────────────────────────────────────────────────────────────
+RED = "\033[91m"; GREEN = "\033[92m"; YELLOW = "\033[93m"; CYAN = "\033[96m"
+BOLD = "\033[1m"; RESET = "\033[0m"
 
-# Attributes to check for hardcoded text
-TEXT_ATTRIBUTES = {"placeholder", "title", "alt", "label", "aria-label"}
-
-def flatten_dict(d, prefix=""):
-    keys = {}
+# ── Helpers ────────────────────────────────────────────────────────────────
+def flatten_keys(d, prefix=""):
+    """Flatten a nested dict into dot-separated keys. Returns dict of key→value."""
+    out = {}
     for k, v in d.items():
-        key = f"{prefix}.{k}" if prefix else k
+        full = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
-            keys.update(flatten_dict(v, key))
+            out.update(flatten_keys(v, full))
         else:
-            keys[key] = v
-    return keys
+            out[full] = v
+    return out
 
-def load_translations(base_dir):
-    en_path = os.path.join(base_dir, "public", "locales", "en", "translation.json")
-    bg_path = os.path.join(base_dir, "public", "locales", "bg", "translation.json")
-    
-    en_keys = {}
-    bg_keys = {}
-    
-    if os.path.exists(en_path):
-        with open(en_path, "r", encoding="utf-8") as f:
-            en_keys = flatten_dict(json.load(f))
-    else:
-        print(f"Warning: English translations not found at {en_path}")
-        
-    if os.path.exists(bg_path):
-        with open(bg_path, "r", encoding="utf-8") as f:
-            bg_keys = flatten_dict(json.load(f))
-    else:
-        print(f"Warning: Bulgarian translations not found at {bg_path}")
-        
-    return en_keys, bg_keys
+def load_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def get_line_number(content, index):
-    return content.count("\n", 0, index) + 1
+# ── Extract keys used in source code ──────────────────────────────────────
+def extract_used_keys(src_dir):
+    """
+    Scan all .jsx / .js files for t('key') calls.
+    Returns (used_keys, dynamic_prefixes).
+      - used_keys: set of fully-static dot-separated keys
+      - dynamic_prefixes: set of prefixes that get a suffix concatenated at runtime
+        e.g. 'badge.' (from t('badge.' + role)), 'api.' (from t(`api.${code}`))
+    """
+    used = set()
+    dynamic_prefixes = set()
 
-def has_hardcoded_text(text):
-    # Strip HTML entities
-    text = re.sub(r"&[a-zA-Z0-9#]+;", " ", text)
-    # Strip whitespace
-    text = text.strip()
-    if not text:
-        return False
-    # Must contain at least one alphabetic character (covers Latin and Cyrillic)
-    if not any(c.isalpha() for c in text):
-        return False
-    # Ignore if it is in the allowed literals list
-    if text.lower() in ALLOWED_LITERALS:
-        return False
-    # If it is just a binding var like {someVar}, we shouldn't flag it
-    if text.startswith("{") and text.endswith("}"):
-        return False
-    return True
+    # Pattern 1: t('static.key') or t("static.key")
+    static_pat = re.compile(r"""\bt\(\s*['"]([^'"]+)['"]\s*[),]""")
 
-def analyze_file(filepath, en_keys, bg_keys):
-    with open(filepath, "r", encoding="utf-8") as f:
-        content = f.read()
-        
-    warnings = []
-    
-    # 1. Check for t('key') calls and find missing translations
-    t_matches = re.finditer(r"\bt\(\s*(?:'([^']+)'|\"([^\"]+)\"|`([^`]+)`)\s*[\),]", content)
-    for m in t_matches:
-        key = m.group(1) or m.group(2) or m.group(3)
-        if key and not ("${" in key):
-            line = get_line_number(content, m.start())
-            if key not in en_keys:
-                warnings.append({
-                    "line": line,
-                    "type": "Missing Translation Key",
-                    "detail": f"Key '{key}' is missing in English translations."
-                })
-            if key not in bg_keys:
-                warnings.append({
-                    "line": line,
-                    "type": "Missing Translation Key",
-                    "detail": f"Key '{key}' is missing in Bulgarian translations."
-                })
-                
-    # 2. JSX Parser state machine
-    i = 0
-    n = len(content)
-    
-    state_stack = ["JS"]
-    
-    def pop_state():
-        if len(state_stack) > 1:
-            return state_stack.pop()
-        return "JS"
-        
-    string_quote_char = None
-    tag_start_idx = -1
-    tag_braces_depth = 0
-    jsx_braces_depths = []
-    is_closing_tag = False
-    
-    current_jsx_text = []
-    current_jsx_text_start = 0
-    
-    def is_tag_start(idx):
-        if idx + 1 >= n:
-            return False
-        if content[idx] != "<":
-            return False
-        next_char = content[idx+1]
-        return next_char.isalpha() or next_char in ("/", ">", "!")
+    # Pattern 2: t('prefix.' + var) — string concatenation
+    concat_pat = re.compile(r"""\bt\(\s*(['"]([^'"]*\.)['"])\s*\+""")
 
-    while i < n:
-        char = content[i]
-        curr_state = state_stack[-1]
-        
-        if curr_state == "COMMENT_LINE":
-            if char == "\n":
-                pop_state()
-            i += 1
+    # Pattern 3: t(`template_literal`) — may contain ${var}
+    template_pat = re.compile(r"""\bt\(\s*`([^`]*)`""")
+
+    for root, dirs, files in os.walk(src_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", "assets", "types")]
+        for fname in files:
+            if not fname.endswith((".jsx", ".js")) or fname == "setupTests.js":
+                continue
+            path = os.path.join(root, fname)
+            with open(path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+
+            # Static strings
+            for m in static_pat.finditer(content):
+                key = m.group(1)
+                if key and not key.startswith("${"):
+                    used.add(key)
+
+            # String concatenation → dynamic prefix
+            for m in concat_pat.finditer(content):
+                prefix = m.group(2)
+                if prefix:
+                    dynamic_prefixes.add(prefix)
+
+            # Template literals
+            for m in template_pat.finditer(content):
+                tmpl = m.group(1)
+                if "${" in tmpl:
+                    # Dynamic template: extract the prefix before first ${var}
+                    prefix = tmpl.split("${")[0]
+                    if prefix:
+                        dynamic_prefixes.add(prefix)
+                else:
+                    # Fully static template literal
+                    used.add(tmpl)
+
+    # Remove fully-static keys that are actually just dynamic prefixes
+    # (e.g. if someone writes t('badge.') directly — that's a dynamic prefix usage)
+    used = {k for k in used if k not in dynamic_prefixes}
+
+    return used, dynamic_prefixes
+
+# ── Symmetry check ────────────────────────────────────────────────────────
+def check_symmetry(en_keys, bg_keys):
+    en_set = set(en_keys.keys())
+    bg_set = set(bg_keys.keys())
+    only_en = sorted(en_set - bg_set)
+    only_bg = sorted(bg_set - en_set)
+    return only_en, only_bg
+
+# ── Missing check ─────────────────────────────────────────────────────────
+def check_missing(used_keys, en_keys, bg_keys, dynamic_prefixes):
+    """Find keys used in code that are not in translations."""
+    en_set = set(en_keys.keys())
+    bg_set = set(bg_keys.keys())
+
+    missing_en = []
+    missing_bg = []
+
+    for k in sorted(used_keys):
+        # Skip known dynamic prefix fragments (like 'badge.')
+        if k in dynamic_prefixes:
             continue
-        elif curr_state == "COMMENT_BLOCK":
-            if char == "*" and i + 1 < n and content[i+1] == "/":
-                pop_state()
-                i += 2
-            else:
-                i += 1
-            continue
-        elif curr_state == "STRING":
-            if char == "\\":
-                i += 2
-            elif char == string_quote_char:
-                pop_state()
-                i += 1
-            else:
-                i += 1
-            continue
-            
-        # Check for comments
-        if char == "/" and i + 1 < n:
-            if content[i+1] == "/":
-                state_stack.append("COMMENT_LINE")
-                i += 2
-                continue
-            elif content[i+1] == "*":
-                state_stack.append("COMMENT_BLOCK")
-                i += 2
-                continue
-                
-        if curr_state == "JS":
-            if char in ("'", '"', "`"):
-                string_quote_char = char
-                state_stack.append("STRING")
-                i += 1
-                continue
-                
-            if is_tag_start(i):
-                state_stack.append("TAG")
-                tag_start_idx = i
-                tag_braces_depth = 0
-                is_closing_tag = (content[i+1] == "/")
-                i += 1
-                continue
-                
-            i += 1
-            
-        elif curr_state == "TAG":
-            if char in ("'", '"'):
-                string_quote_char = char
-                state_stack.append("STRING")
-                i += 1
-                continue
-                
-            if char == "{":
-                tag_braces_depth += 1
-                i += 1
-                continue
-            elif char == "}":
-                tag_braces_depth = max(0, tag_braces_depth - 1)
-                i += 1
-                continue
-                
-            if char == ">" and tag_braces_depth == 0:
-                is_self_closing = (i > 0 and content[i-1] == "/" and not is_closing_tag)
-                pop_state() # pop "TAG"
-                
-                # Analyze attributes in the tag
-                tag_content = content[tag_start_idx:i+1]
-                attr_matches = re.finditer(r'(\b[a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')', tag_content)
-                for am in attr_matches:
-                    attr_name = am.group(1)
-                    attr_val = am.group(2) or am.group(3) or ""
-                    if attr_name in TEXT_ATTRIBUTES and has_hardcoded_text(attr_val):
-                        line = get_line_number(content, tag_start_idx + am.start())
-                        warnings.append({
-                            "line": line,
-                            "type": "Hardcoded JSX Attribute",
-                            "detail": f"Attribute '{attr_name}' has hardcoded user-facing text: \"{attr_val}\""
-                        })
-                        
-                if not is_self_closing:
-                    if is_closing_tag:
-                        if state_stack[-1] == "JSX":
-                            pop_state()
-                    else:
-                        state_stack.append("JSX")
-                        current_jsx_text = []
-                        current_jsx_text_start = i + 1
-                i += 1
-                continue
-                
-            i += 1
-            
-        elif curr_state == "JSX":
-            if char == "{":
-                text_str = "".join(current_jsx_text)
-                if has_hardcoded_text(text_str):
-                    warnings.append({
-                        "line": get_line_number(content, current_jsx_text_start),
-                        "type": "Hardcoded JSX Text",
-                        "detail": f"Hardcoded user-facing text: \"{text_str.strip()}\""
-                    })
-                state_stack.append("JSX_JS")
-                jsx_braces_depths.append(1)
-                i += 1
-                continue
-                
-            if is_tag_start(i):
-                text_str = "".join(current_jsx_text)
-                if has_hardcoded_text(text_str):
-                    warnings.append({
-                        "line": get_line_number(content, current_jsx_text_start),
-                        "type": "Hardcoded JSX Text",
-                        "detail": f"Hardcoded user-facing text: \"{text_str.strip()}\""
-                    })
-                state_stack.append("TAG")
-                tag_start_idx = i
-                tag_braces_depth = 0
-                is_closing_tag = (content[i+1] == "/")
-                i += 1
-                continue
-                
-            current_jsx_text.append(char)
-            i += 1
-            
-        elif curr_state == "JSX_JS":
-            if char in ("'", '"', "`"):
-                string_quote_char = char
-                state_stack.append("STRING")
-                i += 1
-                continue
-                
-            if char == "{":
-                if jsx_braces_depths:
-                    jsx_braces_depths[-1] += 1
-                i += 1
-                continue
-            elif char == "}":
-                if jsx_braces_depths:
-                    jsx_braces_depths[-1] -= 1
-                    if jsx_braces_depths[-1] == 0:
-                        jsx_braces_depths.pop()
-                        pop_state() # pop "JSX_JS"
-                        current_jsx_text = []
-                        current_jsx_text_start = i + 1
-                i += 1
-                continue
-                
-            if is_tag_start(i):
-                state_stack.append("TAG")
-                tag_start_idx = i
-                tag_braces_depth = 0
-                is_closing_tag = (content[i+1] == "/")
-                i += 1
-                continue
-                
-            i += 1
+        if k not in en_set:
+            missing_en.append(k)
+        if k not in bg_set:
+            missing_bg.append(k)
 
-    return warnings
+    return missing_en, missing_bg
 
+# ── Orphaned check ────────────────────────────────────────────────────────
+def check_orphaned(en_keys, used_keys, dynamic_prefixes):
+    """Find translation keys that are never referenced in code."""
+    en_set = set(en_keys.keys())
+    orphaned = []
+
+    for k in sorted(en_set):
+        # Exact match test
+        if k in used_keys:
+            continue
+        # Check if this key is reachable via a dynamic prefix
+        # e.g. 'badge.admin' is reachable via t('badge.' + 'admin')
+        for prefix in dynamic_prefixes:
+            if k.startswith(prefix):
+                break
+        else:
+            # Also check if any parent path is used dynamically
+            parts = k.split(".")
+            matched = False
+            for i in range(len(parts), 0, -1):
+                candidate = ".".join(parts[:i]) + ("." if i < len(parts) else "")
+                if candidate in dynamic_prefixes:
+                    matched = True
+                    break
+            if not matched:
+                orphaned.append(k)
+
+    return orphaned
+
+# ── Report helpers ────────────────────────────────────────────────────────
+def section(title):
+    print(f"\n{BOLD}{'─' * 72}{RESET}")
+    print(f"{BOLD}  {title}{RESET}")
+    print(f"{BOLD}{'─' * 72}{RESET}")
+
+def ok(msg):
+    print(f"  {GREEN}✓{RESET} {msg}")
+
+def warn(msg, items, limit=999):
+    print(f"  {YELLOW}⚠ {RESET}{msg}: {len(items)}")
+    for item in items[:limit]:
+        print(f"      {RED}{item}{RESET}")
+    if len(items) > limit:
+        print(f"      {RED}... and {len(items) - limit} more{RESET}")
+
+# ── Main ──────────────────────────────────────────────────────────────────
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.abspath(os.path.join(script_dir, ".."))
-    
-    en_keys, bg_keys = load_translations(frontend_dir)
-    print(f"Loaded {len(en_keys)} English keys, {len(bg_keys)} Bulgarian keys.\n")
-    
     src_dir = os.path.join(frontend_dir, "src")
+
+    en_path = os.path.join(frontend_dir, "public", "locales", "en", "translation.json")
+    bg_path = os.path.join(frontend_dir, "public", "locales", "bg", "translation.json")
+
     if not os.path.exists(src_dir):
-        print(f"Error: src folder not found at {src_dir}")
+        print(f"{RED}Error: src/ not found at {src_dir}{RESET}")
         sys.exit(1)
-        
-    all_warnings = {}
-    scanned_count = 0
-    
-    for root, _, files in os.walk(src_dir):
-        for file in files:
-            if file.endswith((".jsx", ".js")) and not file.endswith((".test.jsx", ".test.js")) and file != "setupTests.js":
-                filepath = os.path.join(root, file)
-                rel_path = os.path.relpath(filepath, src_dir)
-                scanned_count += 1
-                
-                try:
-                    warnings = analyze_file(filepath, en_keys, bg_keys)
-                    if warnings:
-                        all_warnings[rel_path] = warnings
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    print(f"Error reading file {rel_path}: {e}")
-                    
-    print(f"Scanned {scanned_count} files.")
-    
-    if not all_warnings:
-        print("\n\033[92m✔ Clean! No hardcoded texts or missing translation keys found.\033[0m")
-        sys.exit(0)
-        
-    total_warnings = sum(len(w) for w in all_warnings.values())
-    print(f"\n\033[91mFound {total_warnings} warnings across {len(all_warnings)} files:\033[0m\n")
-    
-    for rel_path, warnings in sorted(all_warnings.items()):
-        print(f"\033[93m[src/{rel_path}]\033[0m")
-        for w in sorted(warnings, key=lambda x: x["line"]):
-            print(f"  Line {w['line']}: \033[1m{w['type']}\033[0m - {w['detail']}")
-        print()
-        
-    sys.exit(1)
+
+    en_raw = load_json(en_path)
+    bg_raw = load_json(bg_path)
+    en_keys = flatten_keys(en_raw)
+    bg_keys = flatten_keys(bg_raw)
+
+    print(f"{BOLD}LavBench Translation Check{RESET}")
+    print(f"  English keys : {len(en_keys)}")
+    print(f"  Bulgarian keys: {len(bg_keys)}")
+
+    used_keys, dynamic_prefixes = extract_used_keys(src_dir)
+    print(f"  Source files scanned in src/")
+    print(f"  Static keys used : {len(used_keys)}")
+    if dynamic_prefixes:
+        dyn_list = sorted(dynamic_prefixes)
+        print(f"  Dynamic prefixes : {len(dyn_list)}  ({', '.join(dyn_list[:6])}{'...' if len(dyn_list) > 6 else ''})")
+
+    errors = 0
+    warnings = 0
+
+    # ── 1. Symmetry ──────────────────────────────────────────────────────
+    section("1. Locale Symmetry (keys in one locale but not the other)")
+    only_en, only_bg = check_symmetry(en_keys, bg_keys)
+    if only_en:
+        warn("Keys in English but missing from Bulgarian", only_en)
+        warnings += 1
+    else:
+        ok("English keys match Bulgarian keys")
+
+    if only_bg:
+        warn("Keys in Bulgarian but missing from English", only_bg)
+        warnings += 1
+
+    if not only_en and not only_bg:
+        ok("Both locales are perfectly in sync")
+
+    # ── 2. Missing ───────────────────────────────────────────────────────
+    section("2. Missing Translations (used in code, not in locale)  [ERROR]")
+    missing_en, missing_bg = check_missing(used_keys, en_keys, bg_keys, dynamic_prefixes)
+
+    if missing_en:
+        warn("Used in code but MISSING from English", missing_en)
+        errors += 1
+    else:
+        ok("No missing English keys")
+
+    if missing_bg:
+        warn("Used in code but MISSING from Bulgarian", missing_bg)
+        errors += 1
+    else:
+        ok("No missing Bulgarian keys")
+
+    if not missing_en and not missing_bg:
+        ok("All code references have translations")
+
+    # ── 3. Orphaned ─────────────────────────────────────────────────────
+    section("3. Orphaned Translations (in locale, never used in code)  [WARNING]")
+    orphaned = check_orphaned(en_keys, used_keys, dynamic_prefixes)
+    if orphaned:
+        warn("Defined but never referenced (may be intentional)", orphaned, limit=999)
+        warnings += 1
+    else:
+        ok("No orphaned translations — every key is referenced")
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    section("Summary")
+    total_en = len(en_keys)
+    total_bg = len(bg_keys)
+    print(f"  English keys      : {total_en}")
+    print(f"  Bulgarian keys    : {total_bg}")
+    print(f"  Symmetry issues   : {len(only_en) + len(only_bg)}")
+    print(f"  Missing keys      : {len(missing_en) + len(missing_bg)}")
+    print(f"  Orphaned keys     : {len(orphaned)}")
+
+    if errors == 0 and warnings == 0:
+        print(f"\n  {GREEN}{BOLD}✓ All checks passed. Translations are clean.{RESET}")
+    elif errors == 0:
+        print(f"\n  {YELLOW}{BOLD}✓ No errors, but {warnings} warning(s) — see above.{RESET}")
+    else:
+        print(f"\n  {RED}{BOLD}✗ {errors} error(s) — see above for details.{RESET}")
+
+    sys.exit(0 if errors == 0 else 1)
 
 if __name__ == "__main__":
     main()

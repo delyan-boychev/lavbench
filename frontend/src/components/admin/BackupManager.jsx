@@ -51,6 +51,7 @@ export default function BackupManager({ challengeId }) {
   const handleForce = async () => {
     setForcing(true);
     try {
+      /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/force']['post']['responses']['200']['content']['application/json'] }>} */
       await api.post('/api/admin/backups/force');
     } catch {
       setForcing(false);
@@ -59,6 +60,7 @@ export default function BackupManager({ challengeId }) {
 
   const handleDelete = async (filename) => {
     try {
+      /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/{filename}']['delete']['responses']['200']['content']['application/json'] }>} */
       await api.delete(`/api/admin/backups/${filename}`);
       loadBackups();
     } catch {}

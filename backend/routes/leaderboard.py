@@ -31,10 +31,25 @@ def get_leaderboard(challenge_id):
     responses:
       200:
         description: Leaderboard data returned
+
+        content:
+          application/json:
+            schema:
+              type: object
       403:
         description: Access denied for competitor
+
+        content:
+          application/json:
+            schema:
+              type: object
       404:
         description: Challenge not found
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
@@ -332,22 +347,39 @@ def save_manual_points(challenge_id):
       - in: body
         name: body
         required: true
-        schema:
-          type: object
-          properties:
-            user_id:
-              type: integer
-            points:
+        content:
+          application/json:
+            schema:
               type: object
-            reason:
-              type: string
+              properties:
+                user_id:
+                  type: integer
+                points:
+                  type: object
+                reason:
+                  type: string
     responses:
       200:
         description: Manual points saved successfully
+
+        content:
+          application/json:
+            schema:
+              type: object
       400:
         description: Validation error
+
+        content:
+          application/json:
+            schema:
+              type: object
       404:
         description: User or Challenge not found
+
+        content:
+          application/json:
+            schema:
+              type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     

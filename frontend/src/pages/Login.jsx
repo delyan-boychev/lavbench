@@ -109,7 +109,7 @@ export default function Login() {
 
         {authError && (
           <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-lg text-xs mb-6">
-            {typeof authError === 'object' ? t(`api.${authError.code}`, authError.error) : t(authError)}
+            {/** @type {React.ReactNode} */(typeof authError === 'object' ? t(`api.${authError.code}`, authError.error) : t(authError))}
           </div>
         )}
 

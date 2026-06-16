@@ -133,7 +133,6 @@ def create_app():
                     "base_docker_image": {"type": "string"},
                     "apt_packages": {"type": "string"},
                     "pip_requirements": {"type": "string"},
-                    "require_submit_tag": {"type": "boolean"},
                     "ban_magic_commands": {"type": "boolean"},
                     "banned_imports": {"type": "string"},
                     "whitelisted_imports": {"type": "string"},
@@ -185,18 +184,22 @@ def create_app():
         responses:
           200:
             description: Service healthy
-            schema:
-              type: object
-              properties:
-                status: {type: string, example: "ok"}
-                database: {type: string, example: "connected"}
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    status: {type: string, example: "ok"}
+                    database: {type: string, example: "connected"}
           503:
             description: Database unreachable
-            schema:
-              type: object
-              properties:
-                status: {type: string, example: "error"}
-                detail: {type: string}
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    status: {type: string, example: "error"}
+                    detail: {type: string}
         """
         try:
             db.session.execute(db.text("SELECT 1"))
