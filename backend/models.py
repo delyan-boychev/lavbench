@@ -587,6 +587,19 @@ class Submission(db.Model):
         res.pop("logs", None)
         return res
 
+@db.event.listens_for(Submission, 'after_delete')
+def _delete_submission_files(mapper, connection, target):
+    if target.code_storage_path and os.path.exists(target.code_storage_path):
+        try:
+            os.remove(target.code_storage_path)
+        except OSError:
+            pass
+    if target.log_storage_path and os.path.exists(target.log_storage_path):
+        try:
+            os.remove(target.log_storage_path)
+        except OSError:
+            pass
+
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     

@@ -1002,8 +1002,8 @@ def get_task_leaderboard_live(task_id):
             data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
             yield f"data: {json.dumps(data)}\n\n"
             
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe(f"task_{task_id}_leaderboard")
         
@@ -1058,8 +1058,8 @@ def get_task_submissions_live(task_id):
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
             yield f"data: {json.dumps(data)}\n\n"
             
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
         pubsub = r.pubsub()
         
         if user_role in ['admin', 'jury']:
@@ -1115,8 +1115,8 @@ def stream_worker_status():
             res_data = _get_worker_status_data()
             yield f"data: {json.dumps(res_data)}\n\n"
         
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe("worker_status_live")
         
@@ -1176,8 +1176,8 @@ def _get_worker_status_data():
     
     r = None
     try:
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
     except Exception:
         pass
         

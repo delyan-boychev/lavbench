@@ -424,8 +424,8 @@ def stream_submission_logs(submission_id):
         return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
         
     def event_generator():
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
         
         # Yield an initial message to flush headers immediately and establish connection
         yield f"data: {json.dumps({'info': 'connected'})}\n\n"

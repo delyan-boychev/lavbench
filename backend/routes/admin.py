@@ -143,11 +143,22 @@ def get_users():
             "pages": pagination.pages
         })
 
-    all_items = query.all()
+    # Reduce result set via DB query before decrypting
     term = search_term.lower()
     user_role = request.user["role"]
+    # Filter by searchable non-encrypted fields first
+    filtered_query = query.filter(
+        (User.username.ilike(f"%{search_term}%")) |
+        (User.alias_id.ilike(f"%{search_term}%")) |
+        (User.email.ilike(f"%{search_term}%"))
+    )
+    candidates = filtered_query.all()
+    # If no matches in searchable fields, fall back to full scan for encrypted field matches
+    if not candidates:
+        candidates = query.all()
+    
     filtered_items = []
-    for u in all_items:
+    for u in candidates:
         comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
         alias_match = term in (u.alias_id or "").lower()
         
@@ -168,7 +179,7 @@ def get_users():
                      term in full_name or
                      term in dec_school.lower() or
                      term in dec_city.lower())
-                     
+                      
         if match:
             filtered_items.append(u)
     
@@ -655,8 +666,8 @@ def stream_worker_stats():
             res_data = _get_worker_stats_response()
             yield f"data: {json.dumps(res_data)}\n\n"
         
-        broker_url = current_app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe("worker_stats_update")
         
@@ -877,5 +888,20 @@ def _get_worker_stats_response():
         return res_data
     except Exception as e:
         return {"error": str(e)}
+
+
+@admin_bp.route('/dead-letters', methods=['GET'])
+@role_required(['admin'])
+def get_dead_letters():
+    from cache_utils import get_redis_client
+    r = get_redis_client()
+    if not r:
+        return jsonify({"items": []}), 200
+    try:
+        entries = r.lrange("dead_letter_queue", 0, -1)
+        items = [json.loads(e) for e in entries]
+        return jsonify({"items": items}), 200
+    except Exception:
+        return jsonify({"items": []}), 200
 
 

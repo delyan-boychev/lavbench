@@ -217,9 +217,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 if status_val in ('completed', 'failed'):
                     # Final status: critical — must persist via Redis fallback
                     try:
-                        import redis as redis_lib
-                        import json
-                        r = redis_lib.Redis.from_url(metadata.get("celery_broker_url", "redis://localhost:6379/0"))
+                        from cache_utils import get_redis_client
+                        r = get_redis_client()
                         fallback = {
                             "submission_id": submission_id,
                             "status": status_val,
@@ -826,10 +825,11 @@ from celery.signals import worker_ready
 @worker_ready.connect
 def register_worker_specs(sender, **kwargs):
     try:
-        import redis
         import platform
-        broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-        r = redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        r = get_redis_client()
+        if not r:
+            return
         
         worker_name = getattr(sender, 'hostname', str(sender))
         cpu_cores = os.cpu_count() or 1

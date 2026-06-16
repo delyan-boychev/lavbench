@@ -48,7 +48,18 @@ from task_modules.leaderboard import run_recalculate_all_leaderboards
     retry_jitter=True
 )
 def evaluate_submission(self, submission_id, metadata=None):
-    return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
+    try:
+        return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
+    except Exception as e:
+        from cache_utils import log_dead_letter
+        log_dead_letter(
+            submission_id,
+            task_id=metadata.get("task_id") if metadata else None,
+            challenge_id=metadata.get("challenge_id") if metadata else None,
+            error=e,
+        )
+        raise
+
 
 @celery.task
 def recalculate_all_leaderboards():

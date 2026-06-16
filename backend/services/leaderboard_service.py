@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 from functools import cmp_to_key
 from sqlalchemy.orm import joinedload
@@ -6,10 +7,26 @@ from models import db, Challenge, Submission, User, Task, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
-    from cache_utils import set_cached
-    challenge = db.session.get(Challenge, challenge_id)
-    if not challenge:
-        return None
+    from cache_utils import set_cached, get_cached, cache_lock
+    
+    cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
+    lock_key = f"lock:{cache_key}"
+    
+    cached = get_cached(cache_key)
+    if cached is not None:
+        return cached
+    
+    with cache_lock(lock_key, ttl=30) as got_lock:
+        if not got_lock:
+            for _ in range(10):
+                time.sleep(0.3)
+                cached = get_cached(cache_key)
+                if cached is not None:
+                    return cached
+        
+        challenge = db.session.get(Challenge, challenge_id)
+        if not challenge:
+            return None
         
     tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
     task_metrics = {}  # per-task is_lower_better
@@ -33,6 +50,12 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
         status='completed'
     ).options(joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)).all()
     
+    # Pre-group by (user_id, task_id) — avoids O(N*M) scan
+    sub_by_key = {}
+    for s in all_completed:
+        key = (s.user_id, s.task_id)
+        sub_by_key.setdefault(key, []).append(s)
+    
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge_id).all()
     challenge_cache = {challenge.id: challenge}
     leaderboard_entries = []
@@ -42,7 +65,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
         has_submitted = False
         
         for task in tasks:
-            user_subs_for_task = [s for s in all_completed if s.user_id == comp.id and s.task_id == task.id]
+            user_subs_for_task = sub_by_key.get((comp.id, task.id), [])
             chosen_sub = get_best_submission(task, user_subs_for_task, challenge, is_lower_better=task_metrics.get(task.id, False))
                 
             if chosen_sub:
@@ -219,7 +242,6 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
             if isinstance(ts_score.get("created_at"), datetime):
                 ts_score["created_at"] = ts_score["created_at"].isoformat()
 
-    cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     set_cached(cache_key, cached_entries, timeout=300)
     return cached_entries
 

@@ -18,9 +18,8 @@ def _require_env(key):
 
 def _redis_client():
     try:
-        import redis
-        broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        return redis.Redis.from_url(broker_url)
+        from cache_utils import get_redis_client
+        return get_redis_client()
     except Exception:
         return None
 

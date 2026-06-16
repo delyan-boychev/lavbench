@@ -38,6 +38,14 @@ def create_app():
     app.register_blueprint(tasks_bp, url_prefix='/api')
     app.register_blueprint(docs_bp, url_prefix='/api/docs')
     
+    @app.route('/api/health', methods=['GET'])
+    def health_check():
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            return jsonify({"status": "ok", "database": "connected"}), 200
+        except Exception as e:
+            return jsonify({"status": "error", "detail": str(e)}), 503
+    
     return app
 
 app = create_app()
