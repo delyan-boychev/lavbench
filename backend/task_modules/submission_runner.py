@@ -19,7 +19,7 @@ from worker_utils import (
     download_task_files_to_dir, 
     download_labels_parquet_to_dir
 )
-from task_modules.templates import DEFAULT_EVALUATION_TEMPLATE, CUSTOM_EVAL_WRAPPER, render_eval_template
+
 
 def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     if not task_id or not main_server_url or not worker_token:
@@ -388,55 +388,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         with open(os.path.join(temp_dir, "student_actual.py"), "w") as f:
             f.write(user_code)
 
-        # Write evaluator script / template
-        is_custom_eval = False
-        if metadata:
-            if metadata.get("is_custom_eval") and metadata.get("custom_eval_code"):
-                with open(os.path.join(temp_dir, "evaluator.py"), "w") as f:
-                    f.write(metadata.get("custom_eval_code"))
-                is_custom_eval = True
-                with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
-                    f.write(CUSTOM_EVAL_WRAPPER)
-            else:
-                metrics_cfg_str = json.dumps(metadata.get("metrics_config")) if metadata.get("metrics_config") else "None"
-                run_script_content = render_eval_template(
-                    DEFAULT_EVALUATION_TEMPLATE,
-                    user_code="",
-                    public_eval_percentage=metadata.get("public_eval_percentage") or 30,
-                    metrics_config_str=metrics_cfg_str,
-                    hf_dataset_split="test"
-                )
-                with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
-                    f.write(run_script_content)
-        else:
-            if task:
-                if task.custom_eval_code:
-                    with open(os.path.join(temp_dir, "evaluator.py"), "w") as f:
-                        f.write(task.custom_eval_code)
-                    is_custom_eval = True
-                    with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
-                        f.write(CUSTOM_EVAL_WRAPPER)
-                elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
-                    import shutil
-                    shutil.copy(task.evaluator_script_path, os.path.join(temp_dir, "evaluator.py"))
-                    is_custom_eval = True
-                    with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
-                        f.write(CUSTOM_EVAL_WRAPPER)
-                else:
-                    hf_token = task.get_hf_api_key() or ""
-                    metrics_cfg_str = json.dumps(task.metrics_config) if task.metrics_config else "None"
-                    run_script_content = render_eval_template(
-                        DEFAULT_EVALUATION_TEMPLATE,
-                        user_code="",
-                        public_eval_percentage=task.public_eval_percentage or 30,
-                        metrics_config_str=metrics_cfg_str,
-                        hf_dataset_split="test"
-                    )
-                    with open(os.path.join(temp_dir, "submission_runner.py"), "w") as f:
-                        f.write(run_script_content)
-            else:
-                raise ValueError("Legacy evaluation path is no longer supported.")
-
         # Preload HuggingFace datasets on the host so they are available offline in docker
         preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs)
 
@@ -524,10 +475,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         # Update status: Running Inference
         update_status('running', 'running_inference', logs_list=logs)
 
-        if is_unified_parquet:
-            exec_file = "student_actual.py"
-        else:
-            exec_file = "evaluator.py" if is_custom_eval else "submission_runner.py"
+        exec_file = "student_actual.py"
         start_wall_time = time.time()
         stdout, stderr = "", ""
         process_timeout = False
@@ -606,8 +554,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         if process_timeout:
             status = 'failed'
             logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
-            if is_custom_eval:
-                logs.append("Jury Evaluator Error: The custom evaluation script failed to produce a valid results file.")
         elif is_unified_parquet:
             # Secure scoring for unified parquet
             sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
@@ -745,70 +691,14 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         logs.append(f"Error during parquet metric calculation: {str(eval_err)}")
                         logs.append(f"Traceback: {traceback.format_exc()}")
                     
-                # Clean up securely downloaded labels directory on host if created
-                if metadata and 'host_labels_dir' in locals() and host_labels_dir:
-                    try:
-                        import shutil
-                        shutil.rmtree(host_labels_dir, ignore_errors=True)
-                    except:
-                        pass
-        else:
-            json_output = None
-            results_file_path = os.path.join(temp_dir, f"eval_results_{results_key}.json")
-            if not os.path.exists(results_file_path):
-                results_file_path = os.path.join(temp_dir, "eval_results.json")
-            
-            if os.path.exists(results_file_path):
+            # Clean up securely downloaded labels directory on host if created
+            if metadata and 'host_labels_dir' in locals() and host_labels_dir:
                 try:
-                    with open(results_file_path, "r") as f_res:
-                        json_output = json.load(f_res)
-                except Exception as e:
-                    logs.append(f"Failed to read secure results file '{os.path.basename(results_file_path)}': {e}")
-            else:
-                logs.append("Error: Secure evaluation results file was not created.")
-            
-            is_schema_valid = True
-            if is_custom_eval:
-                if json_output is None:
-                    is_schema_valid = False
-                elif not isinstance(json_output, dict):
-                    is_schema_valid = False
-                else:
-                    eval_status = json_output.get("status")
-                    if eval_status not in ["success", "error"]:
-                        is_schema_valid = False
-                    elif eval_status == "success":
-                        pub = json_output.get("public_score")
-                        priv = json_output.get("private_score")
-                        if not (isinstance(pub, (int, float)) and not isinstance(pub, bool)):
-                            is_schema_valid = False
-                        if not (isinstance(priv, (int, float)) and not isinstance(priv, bool)):
-                            is_schema_valid = False
-
-            if is_custom_eval and not is_schema_valid:
-                status = 'failed'
-                logs.append("Jury Evaluator Error: The custom evaluation script failed to produce a valid results file.")
-            else:
-                if json_output:
-                    if json_output.get("status") == "success":
-                        public_score = json_output.get("public_score")
-                        private_score = json_output.get("private_score")
-                        execution_time_ms = json_output.get("execution_time_ms")
-                        metrics_payload_pub = json_output.get("metrics_payload_public") or {}
-                        metrics_payload_priv = json_output.get("metrics_payload_private") or {}
-                    
-                        if execution_time_ms is None:
-                            execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
-                        logs.append("Evaluation completed successfully.")
-                    else:
-                        status = 'failed'
-                        logs.append(f"Evaluation script returned error: {json_output.get('error')}")
-                        if json_output.get("traceback"):
-                            logs.append(json_output.get("traceback"))
-                else:
-                    status = 'failed'
-                    logs.append("Evaluation failed: No structured JSON output received from secure results file.")
-            
+                    import shutil
+                    shutil.rmtree(host_labels_dir, ignore_errors=True)
+                except:
+                    pass
+        
         try:
             import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)

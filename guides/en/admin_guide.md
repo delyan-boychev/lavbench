@@ -6,9 +6,9 @@ Welcome to the LavBench Platform Administrator Portal. This guide details every 
 1. [Challenge Lifecycle Management](#1-challenge-lifecycle-management)
 2. [Sandbox Customization & Resource Limits](#2-sandbox-customization--resource-limits)
 3. [Metrics & Rules Engine Configuration](#3-metrics--rules-engine-configuration)
-4. [Custom Evaluation Scripts](#4-custom-evaluation-scripts)
-5. [User Management & CSV Imports](#5-user-management--csv-imports)
-6. [Disaster Recovery & Backups](#6-disaster-recovery--backups)
+4. [User Management & CSV Imports](#4-user-management--csv-imports)
+5. [Backup Management](#5-backup-management)
+6. [Monitoring & Diagnostics](#6-monitoring--diagnostics)
 
 ---
 
@@ -62,54 +62,20 @@ A JSON configuration dictates how the final public and private scores are averag
 Before any submission reaches the Celery queue, it undergoes strict Static Application Security Testing (AST):
 * **Require Submit Tag:** Code blocks must contain `# SUBMIT`.
 * **Ban Magic Commands:** Automatically strips or rejects Jupyter `%` or `!` shell commands.
-* **Banned Imports:** Define modules (like `os, sys, subprocess, requests, socket`) that are strictly forbidden to prevent cluster breakout attempts.
+### Banned Imports
+Define modules (like `os, sys, subprocess, requests, socket`) that are forbidden. These are per-task — you can configure different restrictions for different tasks.
+
+### How Evaluation Works
+Students submit Jupyter notebooks. Their code runs in a Docker sandbox and writes a **`submission.parquet`** file with their predictions. The system compares this against the hidden **`labels.parquet`** (uploaded per task) to calculate scores.
+
+- The student's code must produce `submission.parquet` with an `id` column and prediction columns
+- The `labels.parquet` is the ground truth — upload it when creating the task
+- The task's `metrics_config` defines which metrics to compute and how to weight them
+- `public_eval_percentage` controls the public/private data split
 
 ---
 
-## 4. Custom Evaluation Scripts
-
-When a task requires evaluation beyond simple Hugging Face metrics, provide a custom Python evaluator.
-
-### Evaluator Template Structure
-Your script runs sequentially *after* the student's `predict` function successfully returns. It must securely write the resulting metrics to `eval_results.json`.
-
-```python
-import json
-import traceback
-
-test_inputs = ["Data 1", "Data 2"]
-test_labels = [0, 1]
-
-try:
-    if 'predict' not in globals():
-        raise AttributeError("Student code must define 'predict(inputs_list)'.")
-        
-    predictions = predict(test_inputs)
-    
-    # ... Calculate Accuracy/MSE ...
-    accuracy = 1.0 # Example
-    
-    with open("eval_results.json", "w") as f:
-        json.dump({
-            "status": "success",
-            "public_score": float(accuracy),
-            "private_score": float(accuracy),
-            "metrics_payload_public": {"accuracy": float(accuracy)},
-            "execution_time_ms": 45
-        }, f)
-        
-except Exception as e:
-    with open("eval_results.json", "w") as f:
-        json.dump({
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }, f)
-```
-
----
-
-## 5. User Management & CSV Imports
+## 4. User Management & CSV Imports
 
 Efficiently onboard entire classrooms or competition cohorts via the `/admin` portal.
 1. Navigate to the **Users** tab.
@@ -122,11 +88,63 @@ Efficiently onboard entire classrooms or competition cohorts via the `/admin` po
 
 ---
 
-## 6. Disaster Recovery & Backups
+## 5. Backup Management
 
-The platform features an automated, resilient backup protocol to prevent data loss.
-* **Schedule:** Backups trigger automatically every **10 minutes**.
-* **Retention Policy:** The system strictly retains only the **5 most recent** snapshots, automatically purging older files to conserve disk space.
-* **Archive Contents:** Each backup contains:
-  1. A full `pg_dump` of the PostgreSQL relational database.
-  2. A zipped archive of the `uploads/` directory, safeguarding the decoupled submission code (`.ipynb` segments) and execution logs.
+The platform features an automated backup protocol to prevent data loss. All backups include a full PostgreSQL dump and the `uploads/` directory compressed into a `.tar.gz` file.
+
+### Backup Types
+
+| Type | Frequency | Retention | Location |
+|------|-----------|-----------|----------|
+| **Auto** | Every **20 minutes** when competitions are active, every **6 hours** when idle | Latest **6** | `auto_YYYYMMDD_HHMMSS.tar.gz` in `/backups/` |
+| **Manual** | On demand via "Force Backup Now" button | Never auto-deleted | `manual_YYYYMMDD_HHMMSS.tar.gz` in `/backups/` |
+| **Competition Lifecycle** | Triggered on deadline, grace period end, and finalization | Until challenge is deleted | `challenge_{id}/{state}_YYYYMMDD_HHMMSS.tar.gz` |
+
+### Backup Management UI
+Go to **Admin Panel** → **Backups** tab:
+- View the list of all auto and manual backups with file sizes and timestamps
+- **Force Backup Now** — creates an immediate manual backup. Shows a loading spinner while in progress via SSE
+- **Download** — download any backup file
+- **Delete** — delete manual backups only (auto-backups cannot be deleted manually, 403)
+- Competition backups are viewable/downloadable from the **Competition Management** tab under each challenge detail
+
+### Retention Rules
+- **Auto-backups**: Only the 6 most recent are kept. Oldest are auto-deleted
+- **Manual backups**: Never auto-deleted. Only removed via the delete button
+- **Competition backups**: Persist until the challenge is deleted. Deleting a challenge removes all its backup files
+
+### Competition Lifecycle Backups
+The system automatically snapshots during key lifecycle events:
+- **Submission Ended** — when the competition deadline passes
+- **Grace Period Ended** — when the grace period expires (no more submissions possible)
+- **Scores Finalized** — when scores are locked and identities revealed
+
+These appear in the Competition Management tab under each challenge.
+
+---
+
+## 6. Monitoring & Diagnostics
+
+### Health Endpoint
+`GET /api/health` — verifies database connectivity. Returns:
+```json
+{"status": "ok", "database": "connected"}
+```
+Returns 503 if the database is unreachable. Used by Docker health checks and load balancers.
+
+### Dead Letter Queue
+When a Celery evaluation task fails permanently (all retries exhausted), it's logged to a Redis dead letter queue. Inspect it via:
+`GET /api/admin/dead-letters` (admin only)
+
+Each entry shows the submission ID, task ID, challenge ID, failure timestamp, and error message. Useful for debugging systemic evaluation failures.
+
+### Worker Status Monitoring
+The **Cluster** badge in the navbar shows worker status in real-time via SSE:
+- Green: workers connected and healthy
+- Red: workers disconnected
+- Click for a modal showing per-worker specs (CPU cores, RAM, GPU type, VRAM, concurrency)
+
+Workers run on the host machine via `start_worker.sh` — they are NOT part of Docker Compose because they need the Docker CLI to build sandbox containers.
+
+### Worker Specs Registration
+When a worker starts, it automatically registers its hardware specs in Redis. These appear in the cluster modal dashboard. If Redis is unavailable, worker specs are not registered until the next restart.

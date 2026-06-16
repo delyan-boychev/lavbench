@@ -161,7 +161,6 @@ export default function Navbar() {
     }
     if (currentUser?.role === 'admin') {
       tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
-      tabs.push({ id: 'api-reference', label: t('nav.doc_api_reference') });
     }
     return tabs;
   }, [currentUser, t]);

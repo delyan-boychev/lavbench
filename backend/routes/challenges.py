@@ -70,6 +70,17 @@ def filter_challenge_for_competitor(challenge_dict):
 @challenges_bp.route('', methods=['GET'])
 @login_required
 def get_challenges():
+    """
+    List all available challenges with their tasks and stages.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -127,6 +138,22 @@ def get_challenges():
 @challenges_bp.route('/<int:challenge_id>', methods=['GET'])
 @login_required
 def get_challenge(challenge_id):
+    """
+    Get detailed information about a specific challenge.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -200,6 +227,17 @@ def parse_datetime(val):
 @challenges_bp.route('', methods=['POST'])
 @role_required(['admin', 'jury'])
 def create_challenge():
+    """
+    Create a new competition with start/end times, resource limits, and privacy settings.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     data = request.json or {}
     title = data.get("title")
     description = data.get("description")
@@ -280,6 +318,22 @@ def create_challenge():
 @challenges_bp.route('/<int:challenge_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_challenge(challenge_id):
+    """
+    Update the configuration of an existing challenge.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
     
@@ -354,6 +408,22 @@ def update_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_challenge(challenge_id):
+    """
+    Permanently delete a challenge including all its tasks, submissions, and competition backups.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     
     # Remove competition backups
@@ -378,6 +448,22 @@ def delete_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/finalize', methods=['POST'])
 @role_required(['jury'])
 def finalize_challenge(challenge_id):
+    """
+    Finalize the competition scores. Locks rankings and reveals competitor identities.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     
     # Check if manual points are entered for all competitors for all tasks
@@ -430,6 +516,22 @@ def finalize_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/archive', methods=['POST'])
 @role_required(['admin', 'jury'])
 def archive_challenge(challenge_id):
+    """
+    Toggle archive state. Archived challenges are hidden from competitors.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
@@ -447,6 +549,22 @@ def archive_challenge(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/stages', methods=['POST'])
 @role_required(['admin', 'jury'])
 def create_stage(challenge_id):
+    """
+    Add a new stage to a challenge with its own deadline and score visibility rules.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     data = request.json or {}
     
@@ -497,6 +615,26 @@ def create_stage(challenge_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_stage(challenge_id, stage_id):
+    """
+    Update an existing stage configuration.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+      - in: path
+        name: stage_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -526,6 +664,26 @@ def update_stage(challenge_id, stage_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_stage(challenge_id, stage_id):
+    """
+    Remove a stage from a challenge.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+      - in: path
+        name: stage_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -548,6 +706,26 @@ def delete_stage(challenge_id, stage_id):
 @challenges_bp.route('/<int:challenge_id>/stages/<int:stage_id>/finalize', methods=['POST'])
 @role_required(['jury'])
 def finalize_stage(challenge_id, stage_id):
+    """
+    Finalize a specific stage. Locks stage scores.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+      - in: path
+        name: stage_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     from models import Stage
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -612,6 +790,22 @@ def finalize_stage(challenge_id, stage_id):
 @login_required
 @role_required(['admin', 'jury'])
 def create_scheduled_test_competition(challenge_id):
+    """
+    Create a test competition that starts immediately for testing purposes.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     orig = db.get_or_404(Challenge, challenge_id)
     from models import Task
     
@@ -700,6 +894,22 @@ except Exception as e:
 @login_required
 @role_required(['admin', 'jury'])
 def export_results(challenge_id):
+    """
+    Export comprehensive competition results as CSV with ranks, scores, and audit log.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     from flask import Response
     from services.challenge_service import generate_exported_results_csv
     

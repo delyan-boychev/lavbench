@@ -51,6 +51,23 @@ def read_doc_file(filename, lang='en'):
 @docs_bp.route('/student', methods=['GET'])
 @role_required(['competitor', 'jury', 'admin'])
 def get_student_doc():
+    """
+    Get the student documentation guide.
+    ---
+    tags:
+      - Docs
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: query
+        name: lang
+        type: string
+        required: false
+        description: Language code (e.g. 'en', 'bg')
+    responses:
+      200:
+        description: Returns the rendered guide
+    """
     lang = get_request_lang()
     content = read_doc_file('student_guide.md', lang)
     title = {
@@ -62,6 +79,23 @@ def get_student_doc():
 @docs_bp.route('/jury', methods=['GET'])
 @role_required(['jury', 'admin'])
 def get_jury_doc():
+    """
+    Get the jury documentation guide.
+    ---
+    tags:
+      - Docs
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: query
+        name: lang
+        type: string
+        required: false
+        description: Language code (e.g. 'en', 'bg')
+    responses:
+      200:
+        description: Returns the rendered guide
+    """
     lang = get_request_lang()
     content = read_doc_file('jury_guide.md', lang)
     title = {
@@ -73,21 +107,27 @@ def get_jury_doc():
 @docs_bp.route('/admin', methods=['GET'])
 @role_required(['admin'])
 def get_admin_doc():
+    """
+    Get the admin documentation guide.
+    ---
+    tags:
+      - Docs
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: query
+        name: lang
+        type: string
+        required: false
+        description: Language code (e.g. 'en', 'bg')
+    responses:
+      200:
+        description: Returns the rendered guide
+    """
     lang = get_request_lang()
     content = read_doc_file('admin_guide.md', lang)
     title = {
         'bg': "Админ ръководство",
         'en': "Admin Guide"
     }.get(lang, "Admin Guide")
-    return jsonify({"title": title, "content": content})
-
-@docs_bp.route('/api-reference', methods=['GET'])
-@role_required(['admin'])
-def get_api_ref_doc():
-    lang = get_request_lang()
-    content = read_doc_file('api_reference.md', lang)
-    title = {
-        'bg': "API Справка",
-        'en': "API Reference"
-    }.get(lang, "API Reference")
     return jsonify({"title": title, "content": content})

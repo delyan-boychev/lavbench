@@ -20,23 +20,26 @@ echo "============================================="
 echo "   Starting LavBench Platform in Local Debug Mode  "
 echo "============================================="
 
-# 1. Prepare Python Virtual Environment
-echo "--> Setting up Python Virtual Environment..."
-if command -v micromamba &> /dev/null && micromamba env list | grep -q "lavbench_backend"; then
-    echo "--> Micromamba environment 'lavbench_backend' detected. Initializing shell hook..."
-    eval "$(micromamba shell hook --shell bash)"
-    echo "--> Activating micromamba environment 'lavbench_backend'..."
-    micromamba activate lavbench_backend
-else
-    if [ ! -d "venv" ]; then
-        python3 -m venv venv
-        echo "    Created virtual environment in 'venv/'"
-    fi
-    source venv/bin/activate
+# 1. Prepare Micromamba Environment
+echo "--> Setting up Micromamba environment..."
+if ! command -v micromamba &> /dev/null; then
+    echo "    [ERROR] micromamba is not installed. Please install micromamba first."
+    echo "            https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html"
+    exit 1
 fi
 
+eval "$(micromamba shell hook --shell bash)"
+
+if ! micromamba env list | grep -q "lavbench_backend"; then
+    echo "    Creating micromamba environment 'lavbench_backend' with Python 3.10..."
+    micromamba create -n lavbench_backend python=3.10 -y
+fi
+
+echo "--> Activating micromamba environment 'lavbench_backend'..."
+micromamba activate lavbench_backend
+
 echo "--> Installing Python dependencies..."
-pip install -r backend/requirements.txt
+pip install -r backend/requirements.txt -q
 echo "    Python packages verified."
 
 # 2. Ensure PostgreSQL is active (Fallback to Docker if not native)
@@ -75,22 +78,20 @@ else
     echo "    Redis broker is online."
 fi
 
-# 4. Synchronize Database Schema and Seed Data
-echo "--> Syncing and seeding database..."
-python -c "
-from app import app, db, seed_database
+# 4. Create database tables
+echo "--> Initializing database schema..."
+cd backend
+python3 -c "
+from app import app, db
 with app.app_context():
     db.create_all()
-    seed_database()
-" 2>/dev/null || {
-    echo "    Database already seeded or updated."
-}
-echo "    Database initialization verified."
+" && echo "    Database tables verified."
+cd ..
 
 # 5. Start Flask API server
 echo "--> Starting Flask API Server..."
 cd backend
-python app.py &
+    python3 app.py &
 cd ..
 sleep 2
 

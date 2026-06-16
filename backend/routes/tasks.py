@@ -163,6 +163,22 @@ def _maybe_queue_baseline(task, challenge, admin_id):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['GET'])
 @login_required
 def get_task(task_id):
+    """
+    API endpoint.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -178,6 +194,22 @@ def get_task(task_id):
 @tasks_bp.route('/challenges/<int:challenge_id>/tasks', methods=['POST'])
 @role_required(['admin', 'jury'])
 def create_task(challenge_id):
+    """
+    Create a new evaluation task with resource limits, metrics, and test data files.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     
     title = request.form.get("title")
@@ -426,6 +458,22 @@ def create_task(challenge_id):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_task(task_id):
+    """
+    Update an existing task configuration including files and evaluator scripts.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     task = db.get_or_404(Task, task_id)
     
     title = request.form.get("title")
@@ -696,6 +744,22 @@ def update_task(task_id):
 @tasks_bp.route('/tasks/<int:task_id>', methods=['DELETE'])
 @role_required(['admin', 'jury'])
 def delete_task(task_id):
+    """
+    Remove a task and all its submissions from a challenge.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f"task_{task.id}")
@@ -725,6 +789,26 @@ def delete_task(task_id):
 @tasks_bp.route('/tasks/<int:task_id>/download/<string:filename>', methods=['GET'])
 @login_required
 def download_task_file(task_id, filename):
+    """
+    Download a resource file attached to a task.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+      - in: path
+        name: filename
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -772,6 +856,22 @@ def download_task_file(task_id, filename):
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def submit_task_code(task_id):
+    """
+    Submit code cells for execution under a specific task.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     task = db.get_or_404(Task, task_id)
     challenge = task.challenge
     
@@ -1002,6 +1102,22 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
 @tasks_bp.route('/tasks/<int:task_id>/submissions', methods=['GET'])
 @login_required
 def get_task_submissions(task_id):
+    """
+    List submissions for a specific task with pagination.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user_role = request.user["role"]
     user_id = request.user["user_id"]
     page = request.args.get('page', type=int)
@@ -1019,6 +1135,22 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
 @tasks_bp.route('/tasks/<int:task_id>/leaderboard', methods=['GET'])
 @login_required
 def get_task_leaderboard(task_id):
+    """
+    Get cached leaderboard data for a specific task.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
@@ -1029,6 +1161,22 @@ def get_task_leaderboard(task_id):
 @tasks_bp.route('/tasks/<int:task_id>/leaderboard/live', methods=['GET'])
 @login_required
 def get_task_leaderboard_live(task_id):
+    """
+    Stream live task leaderboard updates via SSE.
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     if user_role == 'competitor':
@@ -1077,6 +1225,22 @@ def get_task_leaderboard_live(task_id):
 @tasks_bp.route('/tasks/<int:task_id>/submissions/live', methods=['GET'])
 @login_required
 def get_task_submissions_live(task_id):
+    """
+    Stream live task submission updates via SSE.
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     page = request.args.get('page', type=int)
@@ -1144,12 +1308,34 @@ def get_task_submissions_live(task_id):
 @tasks_bp.route('/worker-status', methods=['GET'])
 @login_required
 def get_worker_status():
+    """
+    Get current worker cluster health status with specs.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     return jsonify(_get_worker_status_data())
 
 
 @tasks_bp.route('/worker-status/live', methods=['GET'])
 @login_required
 def stream_worker_status():
+    """
+    Stream worker cluster health status via SSE.
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     from flask import current_app, Response, stream_with_context
     
     def event_generator():
@@ -1264,6 +1450,22 @@ def _get_worker_status_data():
 
 @tasks_bp.route('/worker/report/<int:submission_id>', methods=['POST'])
 def report_worker_progress(submission_id):
+    """
+    Worker callback to report submission status and scores.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: submission_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
     if not verify_worker_token(token, submission_id=submission_id):
@@ -1321,6 +1523,26 @@ def report_worker_progress(submission_id):
 
 @tasks_bp.route('/worker/tasks/<int:task_id>/files/<string:filename>', methods=['GET'])
 def worker_download_task_file(task_id, filename):
+    """
+    Worker endpoint to securely download task resource files.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+      - in: path
+        name: filename
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
     if not verify_worker_token(token, task_id=task_id):
@@ -1347,6 +1569,17 @@ def worker_download_task_file(task_id, filename):
 
 @tasks_bp.route('/worker/active-datasets', methods=['GET'])
 def get_active_datasets():
+    """
+    List all HuggingFace datasets used by active challenges for worker preloading.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
     if not verify_worker_token(token):
@@ -1379,6 +1612,22 @@ def get_active_datasets():
 
 @tasks_bp.route('/worker/tasks/<int:task_id>/hf-key', methods=['GET'])
 def get_task_hf_key(task_id):
+    """
+    Worker endpoint to fetch the HuggingFace API key for a task.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: task_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     token = request.headers.get("X-Worker-Token")
     from auth_utils import verify_worker_token
     if not verify_worker_token(token):

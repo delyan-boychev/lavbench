@@ -23,6 +23,17 @@ admin_bp = Blueprint('admin', __name__)
 @admin_bp.route('/metrics', methods=['GET'])
 @role_required('admin')
 def get_available_metrics():
+    """
+    List all built-in evaluation metrics available for task configuration.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     return jsonify(AVAILABLE_METRICS), 200
 
 def transliterate_bulgarian(text):
@@ -63,6 +74,17 @@ def generate_random_password(length=16):
 @admin_bp.route('/register-competitor', methods=['POST'])
 @role_required(['admin', 'jury'])
 def register_competitor():
+    """
+    Register a new competitor with auto-generated credentials.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     data = request.json or {}
     name = data.get("name")
     surname = data.get("surname")
@@ -115,6 +137,17 @@ def register_competitor():
 @admin_bp.route('/users', methods=['GET'])
 @role_required(['admin', 'jury'])
 def get_users():
+    """
+    List and search users with pagination. Supports filtering by role and challenge.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 10, type=int), 100)
     role_filter = request.args.get('role')
@@ -199,6 +232,22 @@ def get_users():
 @admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
 @role_required(['admin'])
 def delete_user(user_id):
+    """
+    Permanently delete a user and all their submissions.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     if request.user["user_id"] == user_id:
         return jsonify({"error": "You cannot delete your own admin account."}), 400
         
@@ -223,6 +272,17 @@ def delete_user(user_id):
 @admin_bp.route('/register-user', methods=['POST'])
 @role_required(['admin', 'jury'])
 def register_user():
+    """
+    Register a new user account with specified role and demographics.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     data = request.json or {}
     username = data.get("username")
     email = data.get("email")
@@ -297,6 +357,17 @@ def register_user():
 @admin_bp.route('/import-competitors-csv', methods=['POST'])
 @role_required(['admin', 'jury'])
 def import_competitors_csv():
+    """
+    Bulk import competitors from a CSV file.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
     if not challenge_id:
         return jsonify({"error": "challenge_id is required for importing competitors."}), 400
@@ -409,11 +480,33 @@ def _list_backup_files(directory):
 @admin_bp.route('/backups', methods=['GET'])
 @role_required(['admin'])
 def list_backups():
+    """
+    List all system backups with filenames, sizes, and timestamps.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     return jsonify({"backups": _list_backup_files(BACKUPS_DIR)})
 
 @admin_bp.route('/backups/force', methods=['POST'])
 @role_required(['admin'])
 def force_backup():
+    """
+    Trigger an immediate manual backup of the database and uploaded files.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     from tasks import run_backup
     task = run_backup.delay(auto=False)
     return jsonify({"task_id": task.id, "status": "started"}), 202
@@ -421,6 +514,17 @@ def force_backup():
 @admin_bp.route('/backups/live', methods=['GET'])
 @role_required(['admin'])
 def stream_backup_status():
+    """
+    Stream backup events in real-time via Server-Sent Events.
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     def event_generator():
         with current_app.app_context():
             yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
@@ -451,6 +555,22 @@ def stream_backup_status():
 @admin_bp.route('/backups/<path:filename>/download', methods=['GET'])
 @role_required(['admin'])
 def download_backup_file(filename):
+    """
+    Download a specific backup archive file.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: filename
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
         return jsonify({"error": "Invalid path"}), 403
@@ -461,6 +581,22 @@ def download_backup_file(filename):
 @admin_bp.route('/backups/<path:filename>', methods=['DELETE'])
 @role_required(['admin'])
 def delete_backup_file(filename):
+    """
+    Delete a manual backup file. Auto-backups cannot be deleted.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: filename
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     if filename.startswith("auto_"):
         return jsonify({"error": "Auto-backups cannot be deleted manually."}), 403
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
@@ -474,12 +610,48 @@ def delete_backup_file(filename):
 @admin_bp.route('/challenges/<int:challenge_id>/backups', methods=['GET'])
 @role_required(['admin'])
 def list_challenge_backups(challenge_id):
+    """
+    List competition lifecycle backups for a specific challenge.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
     return jsonify({"backups": _list_backup_files(directory)})
 
 @admin_bp.route('/challenges/<int:challenge_id>/backups/<path:filename>/download', methods=['GET'])
 @role_required(['admin'])
 def download_challenge_backup(challenge_id, filename):
+    """
+    Download a competition lifecycle backup file.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+      - in: path
+        name: filename
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
     safe_path = os.path.abspath(os.path.join(directory, filename))
     if not safe_path.startswith(os.path.abspath(directory)):
@@ -492,6 +664,22 @@ def download_challenge_backup(challenge_id, filename):
 @admin_bp.route('/users/<int:user_id>', methods=['PUT'])
 @role_required(['admin', 'jury'])
 def update_user(user_id):
+    """
+    Update user profile fields. Jury members have restricted edit access.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
     
@@ -571,6 +759,22 @@ def update_user(user_id):
 @admin_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
 @role_required(['admin', 'jury'])
 def reset_user_password(user_id):
+    """
+    Generate a new random password for a specific user.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == 'jury':
@@ -594,6 +798,22 @@ def reset_user_password(user_id):
 @admin_bp.route('/challenges/<int:challenge_id>/reset-all-passwords', methods=['POST'])
 @role_required(['admin', 'jury'])
 def reset_all_challenge_passwords(challenge_id):
+    """
+    Generate new passwords for all competitors in a challenge.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == 'jury':
@@ -629,6 +849,22 @@ def reset_all_challenge_passwords(challenge_id):
 @admin_bp.route('/challenges/<int:challenge_id>/download-scores-csv', methods=['GET'])
 @role_required(['admin', 'jury'])
 def download_scores_csv(challenge_id):
+    """
+    Generate and download a CSV of all competitor scores for a challenge.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     from flask import Response
     from services.challenge_service import generate_scores_csv
     
@@ -648,6 +884,22 @@ def download_scores_csv(challenge_id):
 @admin_bp.route('/challenges/<int:challenge_id>/download-submissions-zip', methods=['GET'])
 @role_required(['admin', 'jury'])
 def download_submissions_zip(challenge_id):
+    """
+    Download all completed student submissions as a ZIP archive.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: string
+    responses:
+      200:
+        description: Success
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return jsonify({"error": "Scores must be finalized before downloading submissions."}), 400
@@ -728,11 +980,33 @@ def download_submissions_zip(challenge_id):
 @admin_bp.route('/workers/stats', methods=['GET'])
 @role_required(['admin', 'jury'])
 def get_detailed_worker_stats():
+    """
+    Get detailed worker cluster statistics including CPU, RAM, GPU specs.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     return jsonify(_get_worker_stats_response())
 
 @admin_bp.route('/workers/stats/live', methods=['GET'])
 @role_required(['admin', 'jury'])
 def stream_worker_stats():
+    """
+    Stream real-time worker cluster statistics via Server-Sent Events.
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     def event_generator():
         with current_app.app_context():
             # Send initial data immediately
@@ -966,6 +1240,17 @@ def _get_worker_stats_response():
 @admin_bp.route('/dead-letters', methods=['GET'])
 @role_required(['admin'])
 def get_dead_letters():
+    """
+    Inspect the dead letter queue of permanently failed submission evaluations.
+    ---
+    tags:
+      - Admin
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
     from cache_utils import get_redis_client
     r = get_redis_client()
     if not r:

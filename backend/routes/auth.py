@@ -51,6 +51,62 @@ def get_client_ip():
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
+    """
+    Authenticate a user and receive a session cookie.
+    Password must be SHA-256 hashed client-side before sending.
+    Sets httpOnly cookie `auth_token` on success.
+    Rate limited: 5 failed attempts per username+IP per 60 seconds.
+    ---
+    tags:
+      - Auth
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [username, password]
+          properties:
+            username:
+              type: string
+              description: Username or email
+              example: "admin_1c15d4d7"
+            password:
+              type: string
+              description: SHA-256 hash of the plaintext password
+              example: "a1b2c3..."
+    responses:
+      200:
+        description: Login successful. httpOnly cookie set.
+        headers:
+          Set-Cookie:
+            type: string
+            description: auth_token=httpOnly; SameSite=Strict
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Logged in successfully."
+            user:
+              $ref: '#/components/schemas/User'
+      400:
+        description: Missing username or password
+        schema:
+          $ref: '#/components/schemas/Error'
+      401:
+        description: Invalid credentials
+        schema:
+          $ref: '#/components/schemas/Error'
+      403:
+        description: Competition archived (competitor login only)
+        schema:
+          $ref: '#/components/schemas/Error'
+      429:
+        description: Rate limited (5 failures per 60s per username+IP)
+        schema:
+          $ref: '#/components/schemas/Error'
+    """
     data = request.json or {}
     username = data.get("username")
     password = data.get("password")
@@ -101,6 +157,21 @@ def login():
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
+    """
+    Log out the current user. Clears the httpOnly cookie and revokes the JWT token.
+    ---
+    tags:
+      - Auth
+    responses:
+      200:
+        description: Logged out successfully. Cookie cleared, token revoked.
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Logged out successfully."
+    """
     resp = make_response(jsonify({"message": "Logged out successfully."}))
     clear_auth_cookie(resp)
     return resp
@@ -109,6 +180,31 @@ def logout():
 @auth_bp.route('/me', methods=['GET'])
 @login_required
 def me():
+    """
+    Get the current authenticated user's profile.
+    Requires valid httpOnly cookie or Authorization header.
+    ---
+    tags:
+      - Auth
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Current user profile
+        schema:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+      401:
+        description: Unauthorized — missing, expired, or revoked token
+        schema:
+          $ref: '#/components/schemas/Error'
+      404:
+        description: User not found (deleted after token was issued)
+        schema:
+          $ref: '#/components/schemas/Error'
+    """
     user = db.session.get(User, request.user["user_id"])
     if not user:
         return jsonify({

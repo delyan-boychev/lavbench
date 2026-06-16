@@ -883,14 +883,10 @@ class TestRouteLevelLogic(unittest.TestCase):
         res = self.client.get('/api/docs/admin', headers=admin_header)
         self.assertEqual(res.status_code, 200)
         
-        # 4. API Reference access (Admin only)
-        res = self.client.get('/api/docs/api-reference', headers=comp_header)
-        self.assertEqual(res.status_code, 403)
-        res = self.client.get('/api/docs/api-reference', headers=jury_header)
-        self.assertEqual(res.status_code, 403)
+        # 4. API reference removed (replaced by /apidocs Swagger UI)
         res = self.client.get('/api/docs/api-reference', headers=admin_header)
-        self.assertEqual(res.status_code, 200)
-
+        self.assertEqual(res.status_code, 404)
+        
     def test_bulgarian_name_transliteration(self):
         """Registering a competitor with Bulgarian/Cyrillic names should transliterate them properly to standard Latin before username base is calculated."""
         payload = {

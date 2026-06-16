@@ -30,32 +30,25 @@ if [ ! -z "$2" ]; then
     echo "--> Configuring worker for GPU device: $2"
 fi
 
-# 1. Check for Micromamba/Conda environment setup
-if command -v micromamba &> /dev/null; then
-    echo "--> Micromamba detected. Initializing shell hook..."
-    eval "$(micromamba shell hook --shell bash)"
-    
-    # Check if 'lavbench_worker' environment exists, otherwise create it
-    if ! micromamba env list | grep -q "lavbench_worker"; then
-        echo "--> Creating micromamba environment 'lavbench_worker' with Python 3.10..."
-        micromamba create -n lavbench_worker python=3.10 -y
-        micromamba activate lavbench_worker
-        echo "--> Installing pip dependencies..."
-        pip install -r backend/requirements.txt
-    else
-        echo "--> Activating micromamba environment 'lavbench_worker'..."
-        micromamba activate lavbench_worker
-    fi
-# 2. Fallback to standard virtualenv
-elif [ -d "venv" ]; then
-    echo "--> Activating virtualenv 'venv'..."
-    source venv/bin/activate
-elif [ -d "../venv" ]; then
-    echo "--> Activating virtualenv '../venv'..."
-    source ../venv/bin/activate
-else
-    echo "--> [WARNING] No micromamba or virtualenv found. Running in global system Python..."
+# 1. Micromamba environment setup (required)
+if ! command -v micromamba &> /dev/null; then
+    echo "[ERROR] micromamba is required. Install it first:"
+    echo "        https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html"
+    exit 1
 fi
+
+echo "--> Micromamba detected. Initializing shell hook..."
+eval "$(micromamba shell hook --shell bash)"
+
+if ! micromamba env list | grep -q "lavbench_worker"; then
+    echo "--> Creating micromamba environment 'lavbench_worker' with Python 3.10..."
+    micromamba create -n lavbench_worker python=3.10 -y
+fi
+
+echo "--> Activating micromamba environment 'lavbench_worker'..."
+micromamba activate lavbench_worker
+echo "--> Installing pip dependencies..."
+pip install -r backend/requirements.txt -q
 
 # Ensure we run from backend directory
 if [ -d "backend" ]; then

@@ -14,6 +14,28 @@ from services.leaderboard_service import build_and_cache_leaderboard
 @leaderboard_bp.route('/challenges/<int:challenge_id>/leaderboard', methods=['GET'])
 @login_required
 def get_leaderboard(challenge_id):
+    """
+    Get the leaderboard for a specific challenge.
+    Competitors only see their own challenge, and frozen/finalized rules apply.
+    ---
+    tags:
+      - Leaderboard
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: integer
+        required: true
+        description: ID of the challenge
+    responses:
+      200:
+        description: Leaderboard data returned
+      403:
+        description: Access denied for competitor
+      404:
+        description: Challenge not found
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -293,6 +315,40 @@ def get_leaderboard(challenge_id):
 @login_required
 @role_required(['admin', 'jury'])
 def save_manual_points(challenge_id):
+    """
+    Save manual points for a user in a challenge.
+    Admins and Jury members only.
+    ---
+    tags:
+      - Leaderboard
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: integer
+        required: true
+        description: ID of the challenge
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            user_id:
+              type: integer
+            points:
+              type: object
+            reason:
+              type: string
+    responses:
+      200:
+        description: Manual points saved successfully
+      400:
+        description: Validation error
+      404:
+        description: User or Challenge not found
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     
     data = request.get_json() or {}

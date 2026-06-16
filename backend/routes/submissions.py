@@ -14,6 +14,37 @@ submissions_bp = Blueprint('submissions', __name__)
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def parse_notebook(challenge_id):
+    """
+    Upload and parse a Jupyter Notebook (.ipynb) to preview cells.
+    5MB file limit. Returns a list of cell objects with type and source.
+    ---
+    tags:
+      - Submissions
+    parameters:
+      - in: path
+        name: challenge_id
+        type: integer
+        required: true
+      - in: formData
+        name: file
+        type: file
+        required: true
+        description: Jupyter Notebook .ipynb file (max 5MB)
+    responses:
+      200:
+        description: Notebook parsed successfully
+        schema:
+          type: object
+          properties:
+            filename: {type: string}
+            cells: {type: array, items: {$ref: '#/components/schemas/Cell'}}
+      400:
+        description: Invalid file type, file too large, or parse error
+        schema: {$ref: '#/components/schemas/Error'}
+      403:
+        description: Not registered for this challenge
+        schema: {$ref: '#/components/schemas/Error'}
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -78,6 +109,36 @@ def parse_notebook(challenge_id):
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def submit_code(challenge_id):
+    """
+    Submit parsed code cells for a task.
+    ---
+    tags:
+      - Submissions
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: integer
+        required: true
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            task_id: {type: integer}
+            selected_cells: {type: array, items: {type: object}}
+    responses:
+      202:
+        description: Submission received and queued
+      400:
+        description: Validation error
+      403:
+        description: Access denied or challenge frozen
+      429:
+        description: Rate limit exceeded
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -286,6 +347,32 @@ def submit_code(challenge_id):
 @submissions_bp.route('/challenges/<int:challenge_id>/submissions', methods=['GET'])
 @login_required
 def get_submissions(challenge_id):
+    """
+    Get paginated submissions for a challenge.
+    ---
+    tags:
+      - Submissions
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: integer
+        required: true
+      - in: query
+        name: page
+        type: integer
+        required: false
+      - in: query
+        name: per_page
+        type: integer
+        required: false
+    responses:
+      200:
+        description: List of submissions
+      403:
+        description: Access denied
+    """
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -324,6 +411,26 @@ def get_submissions(challenge_id):
 @submissions_bp.route('/submissions/<int:submission_id>', methods=['GET'])
 @login_required
 def get_submission_detail(submission_id):
+    """
+    Get details of a specific submission.
+    ---
+    tags:
+      - Submissions
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: submission_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Submission details
+      403:
+        description: Access denied
+      404:
+        description: Submission not found
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -341,6 +448,28 @@ def get_submission_detail(submission_id):
 @login_required
 @rate_limit(max_requests=20, window_seconds=60)
 def select_final_submission(submission_id):
+    """
+    Select a submission as the final one for scoring.
+    ---
+    tags:
+      - Submissions
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: submission_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Submission selected as final
+      400:
+        description: Selection window closed
+      403:
+        description: Access denied
+      404:
+        description: Submission not found
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     
@@ -420,6 +549,26 @@ def select_final_submission(submission_id):
 @submissions_bp.route('/submissions/<int:submission_id>/logs/live', methods=['GET'])
 @login_required
 def stream_submission_logs(submission_id):
+    """
+    Stream live logs for a submission using Server-Sent Events (SSE).
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: submission_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: SSE stream of logs
+      403:
+        description: Access denied
+      404:
+        description: Submission not found
+    """
     from flask import current_app, Response, stream_with_context
     
     user_id = request.user["user_id"]

@@ -1,78 +1,116 @@
-# Jury & Grader Complete Guide
+# Jury Guide
 
-Welcome to the LavBench Platform Jury Portal. Your elevated access allows you to monitor cluster health, audit code integrity, provide manual scoring assessments, and export verified results.
-
-## Table of Contents
-1. [Role Capabilities & Privacy Constraints](#1-role-capabilities--privacy-constraints)
-2. [Leaderboard Auditing & Manual Points](#2-leaderboard-auditing--manual-points)
-3. [Submission Diagnostics & Code Review](#3-submission-diagnostics--code-review)
-4. [Post-Finalization Audits & Reporting](#4-post-finalization-audits--reporting)
-5. [Cluster Telemetry](#5-cluster-telemetry)
+Welcome to the LavBench Platform Jury Portal. As a jury member, you can monitor competitions, review submissions, assign manual scores, and export results.
 
 ---
 
-## 1. Role Capabilities & Privacy Constraints
+## 1. Your Role and Access
 
-Jury members act as impartial referees during the competition lifecycle.
-* **Double-Blind Anonymization:** While the competition is active, competitors see only pseudonyms (e.g., `Stellar-Voyager-101`). As a Jury member, your dashboard reveals the competitor's true identity, school, and demographics for verification purposes.
-* **Access Control:** You cannot modify task constraints or Docker environments, but you have full read access to student code and system logs.
+### What You Can Do
+- View all competitor submissions, code, and execution logs
+- Register competitors individually or via CSV import
+- Assign manual points to competitor scores
+- Export results (scores CSV, submissions ZIP, competition backups)
+- Monitor cluster health and worker status
 
----
+### What You Cannot Do
+- Modify task configurations or Docker environments (admin only)
+- Create, edit, or delete challenges (admin only)
+- Edit admin or other jury member accounts
 
-## 2. Leaderboard Auditing & Manual Points
+### Double-Blind Privacy
+During an active competition, **you can see competitor identities** (names, schools, demographics) while students see only pseudonyms. Identities are revealed to everyone after the competition is finalized.
 
-The Leaderboard computes real-time standings based on automated metric evaluations and your manual scoring inputs.
-
-### Applying Manual Points
-Certain tasks require subjective evaluation (e.g., code efficiency, mathematical elegance). 
-1. Navigate to the **Leaderboard**.
-2. Locate the competitor and the specific task column.
-3. Click the score field to open the manual input modifier.
-4. Input a value between `0` and `100`. The change saves automatically on blur (`Enter` or clicking away).
-> [!WARNING]
-> **Constraint Check:** The system strictly rejects manual point assignments if the competitor has not made at least one valid, completed submission for the selected task. You cannot score empty entries.
-
-### Tie-Breaking Logic
-In the event two competitors hold the exact same mathematical score, the system automatically resolves the tie by ranking the submission with the fastest `execution_time_ms`, or if execution times match, the earliest `created_at` timestamp.
+### Access Restrictions
+- Once a competition starts (`start_time` to `end_time`), you cannot edit competitor accounts
+- You cannot register competitors after the competition has started (admin can)
+- You cannot access competitions you're not assigned to
 
 ---
 
-## 3. Submission Diagnostics & Code Review
+## 2. Managing Competitors
 
-Monitor the queue to identify struggling students or broken tasks.
+### Registering Individuals
+1. Go to **Admin Panel** → **Competitor Registration** tab
+2. Fill in: Name, Surname, Grade, School, City
+3. Select the competition from the dropdown
+4. Click **Register** — the system auto-generates username and password
+5. Share the credentials with the competitor
 
-### Reviewing a Code Run
-1. Open the **Submissions** tab.
-2. Select an entry to expand its metadata. 
-3. The UI provides a syntax-highlighted inspector for the exact code cells extracted from the student's notebook.
+### CSV Bulk Import
+For large groups:
+1. Go to **Admin Panel** → **Competitor Registration**
+2. Click **Import CSV**
+3. Upload a CSV with columns:
+   ```csv
+   name,surname,grade,school,city,challenge_id,is_anonymous
+   Alice,Smith,12,High School,Sofia,1,false
+   Bob,Jones,11,Academy,Plovdiv,1,false
+   ```
 
-### Common Error Triage
-* **AttributeError ('predict' missing):** The student forgot to name their entry function `predict(inputs_list)` or failed to apply the `# SUBMIT` tag to the correct cell.
-* **TIMEOUT EXPIRED:** The execution exceeded the wall-clock limit. Advise the student to optimize their algorithm complexity.
-* **Out-Of-Memory (OOM):** The Docker container was killed by the OS. The student's dataset handling or matrix allocations are too large for the task's RAM constraint.
-
----
-
-## 4. Post-Finalization Audits & Reporting
-
-Once a competition reaches `scores_finalized=True`, standard submissions and scoring lock.
-
-### Making Score Corrections (Audit Trail)
-If a manual scoring mistake is identified after finalization:
-1. Click the manual score cell on the finalized leaderboard.
-2. A **Correction Modal** will appear.
-3. You must provide a mandatory textual **Reason/Justification** for the change.
-4. The system logs your Admin ID, the user, the old/new scores, and the justification to a permanent `AuditLog` table.
-
-### Exporting Final Results
-To generate documentation for awards or external review:
-* Navigate to the Challenge settings and click **Export Comprehensive Report**.
-* This triggers a secure `GET /export-results` request, downloading a detailed CSV/Excel file containing true identities, highest public/private scores, all manual points, final calculated rankings, and the appended Post-Finalization Audit Log.
+### Resetting Passwords
+- **Single user**: Admin Panel → User Management → find user → Reset Password
+- **All competitors**: Admin Panel → Competitor Registration → select challenge → Reset All Passwords
 
 ---
 
-## 5. Cluster Telemetry
+## 3. Monitoring the Competition
 
-Use the **Cluster** navigation badge to monitor the health of remote execution nodes.
-* **Node Status:** Green indicates a healthy connection to the Redis broker; Red indicates a disconnected or crashed remote worker.
-* **Capacity:** Review the active concurrency limits and available GPU VRAM across the worker fleet to anticipate processing delays during high-volume submission periods.
+### Live Submission Tracking
+The **Submissions** tab shows all submissions in real-time via SSE. For each submission you can:
+- View status (queued → running → evaluating → completed/failed)
+- See the exact code cells submitted
+- Read execution logs for debugging
+- Check scores and execution time
+
+### Live Leaderboard
+The **Leaderboard** tab updates in real-time as scores arrive.
+
+### Cluster Health
+The **Cluster** badge in the navbar shows worker status:
+- **Green**: All workers connected
+- **Red**: Workers disconnected
+- Click for detailed worker specs (CPU, RAM, GPU, concurrency)
+
+---
+
+## 4. Manual Scoring
+
+### Assigning Manual Points
+For tasks requiring subjective evaluation:
+1. Go to the **Leaderboard** tab
+2. Find the competitor and task
+3. Click the score field — a manual input opens
+4. Enter a score between **0 and 100** — saves automatically
+
+### Constraints
+- Competitor must have at least **one completed submission** for the task
+- You cannot score empty entries
+- Points apply per task, per competitor
+
+### Post-Finalization Corrections
+After the competition is finalized (`scores_finalized=True`):
+1. Click the score on the finalized leaderboard
+2. A correction modal appears — you **must provide a reason**
+3. The change is logged to a permanent **AuditLog** table with your ID, old/new scores, and justification
+
+---
+
+## 5. Exporting Results
+
+### Scores CSV
+Admin Panel → Competition Management → select challenge → "Download Scores CSV"
+A CSV file with ranks, aliases, names, task scores, and totals.
+
+### Submissions ZIP
+Admin Panel → Competition Management → select challenge → "Download Submissions ZIP"
+All completed student notebooks as `.ipynb` files in a ZIP archive.
+
+### Competition Backups
+In Competition Management → select a challenge → "Competition Backups" section.
+Snapshots taken at key moments:
+- **Submission Period Ended** — when the deadline passes
+- **Grace Period Ended** — when the grace period expires
+- **Scores Finalized** — when scores are locked
+
+Each backup contains a full database dump + all files. Downloadable but not deletable — only competition deletion removes them.
