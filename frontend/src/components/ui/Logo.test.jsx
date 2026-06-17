@@ -3,29 +3,63 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import Logo from './Logo';
 
+const mockUseApp = vi.hoisted(() => vi.fn());
+
 vi.mock('../../context/AppContext', () => ({
-  useApp: () => ({ theme: 'dark' }),
+  useApp: () => mockUseApp(),
 }));
 
 describe('Logo Component', () => {
-  it('renders the LavBench wordmark', () => {
+  beforeEach(() => {
+    mockUseApp.mockReset();
+  });
+
+  it('renders the brand logo image', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
     render(<Logo />);
-    expect(screen.getByText('Lav')).toBeInTheDocument();
-    expect(screen.getByText('Bench')).toBeInTheDocument();
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('alt', 'LavBench');
+  });
+
+  it('uses dark logo in dark theme', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
+    render(<Logo />);
+    const img = screen.getByRole('img');
+    expect(img.getAttribute('src')).toMatch(/brand_logo_dark/);
+  });
+
+  it('uses light logo in light theme', () => {
+    mockUseApp.mockReturnValue({ theme: 'light' });
+    render(<Logo />);
+    const img = screen.getByRole('img');
+    expect(img.getAttribute('src')).toMatch(/brand_logo_light/);
+  });
+
+  it('renders at default md size', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
+    render(<Logo />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('height', '32');
   });
 
   it('renders at small size', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
     render(<Logo size="sm" />);
-    expect(screen.getByText('Lav')).toBeInTheDocument();
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('height', '24');
   });
 
   it('renders at large size', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
     render(<Logo size="lg" />);
-    expect(screen.getByText('Lav')).toBeInTheDocument();
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute("height", "52");
   });
 
-  it('renders with dark theme styling', () => {
-    render(<Logo />);
-    expect(screen.getByText('Lav')).toBeInTheDocument();
+  it('renders at xl size', () => {
+    mockUseApp.mockReturnValue({ theme: 'dark' });
+    render(<Logo size="xl" />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('height', '72');
   });
 });

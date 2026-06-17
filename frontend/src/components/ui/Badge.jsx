@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, X, Loader2, Clock, Settings, Circle, Snowflake, Flag } from 'lucide-react';
+import { Check, X, Loader2, Clock, Settings, Activity, Snowflake, Flag, Archive } from 'lucide-react';
 
 const ICON = {
   completed:        Check,
@@ -10,8 +10,8 @@ const ICON = {
   building_env:     Settings,
   running_inference: Loader2,
   evaluating:       Settings,
-  active:           Circle,
-  archived:         Circle,
+  active:           Activity,
+  archived:         Archive,
   not_started:      Clock,
   frozen:           Snowflake,
   ended:            Flag,
