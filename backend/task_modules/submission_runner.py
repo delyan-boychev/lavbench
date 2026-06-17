@@ -3,6 +3,7 @@ import json
 import subprocess
 import tempfile
 import time
+import math
 import traceback
 import hashlib
 import requests
@@ -110,8 +111,42 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
             logs.append(f"Warning: Could not import 'huggingface_hub' on host to preload models: {import_err}")
 
 
+def calculate_weighted_score(metrics_payload, metrics_cfg):
+    from models import is_metric_lower_better
+    if not metrics_cfg:
+        if metrics_payload:
+            m_name = list(metrics_payload.keys())[0]
+            val = metrics_payload[m_name]
+            if math.isnan(val) or math.isinf(val):
+                return 0.0
+            if is_metric_lower_better(m_name):
+                if m_name.lower().strip() == "brier_score":
+                    return 1.0 - val
+                return 1.0 / (1.0 + val) if val != -1.0 else 0.0
+            return val
+        return 0.0
 
+    total_weight = sum(float(cfg.get("weight", 1.0)) for cfg in metrics_cfg.values())
+    if total_weight == 0:
+        return 0.0
 
+    weighted_sum = 0.0
+    for m_name, cfg in metrics_cfg.items():
+        val = metrics_payload.get(m_name, 0.0)
+        if math.isnan(val) or math.isinf(val):
+            val = 0.0
+        if is_metric_lower_better(m_name):
+            if m_name.lower().strip() == "brier_score":
+                norm_val = 1.0 - val
+            else:
+                norm_val = 1.0 / (1.0 + val) if val != -1.0 else 0.0
+        else:
+            norm_val = val
+        if math.isnan(norm_val) or math.isinf(norm_val):
+            norm_val = 0.0
+        weight = float(cfg.get("weight", 1.0))
+        weighted_sum += norm_val * weight
+    return weighted_sum / total_weight
 
 def run_eval_submission(self_task, submission_id, metadata, app, db, Submission, Challenge):
     RUNNING_AS_WORKER = app is None
@@ -639,45 +674,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         m_pub = evaluate_predictions(df_sub_pub, df_labels_pub, metrics_cfg) if len(df_labels_pub) > 0 else {}
                         m_priv = evaluate_predictions(df_sub_priv, df_labels_priv, metrics_cfg) if len(df_labels_priv) > 0 else {}
                     
-                        # Calculate weighted scores with NaN/Inf sanitization
-                        import math
-                        def calculate_weighted_score(metrics_payload, metrics_cfg):
-                            if not metrics_cfg:
-                                if metrics_payload:
-                                    m_name = list(metrics_payload.keys())[0]
-                                    val = metrics_payload[m_name]
-                                    if math.isnan(val) or math.isinf(val):
-                                        return 0.0
-                                    if m_name.lower().strip() in {"logloss", "brier_score", "rmse", "mae", "mse", "mel_lsd", "fid", "lpips", "niqe", "ter", "mape", "median_ae"}:
-                                        if m_name.lower().strip() == "brier_score":
-                                            return 1.0 - val
-                                        return 1.0 / (1.0 + val)
-                                    return val
-                                return 0.0
-                        
-                            total_weight = sum(float(cfg.get("weight", 1.0)) for cfg in metrics_cfg.values())
-                            if total_weight == 0:
-                                return 0.0
-                        
-                            weighted_sum = 0.0
-                            for m_name, cfg in metrics_cfg.items():
-                                val = metrics_payload.get(m_name, 0.0)
-                                if math.isnan(val) or math.isinf(val):
-                                    val = 0.0
-                                m_name_clean = m_name.lower().strip()
-                                if m_name_clean in {"logloss", "brier_score", "rmse", "mae", "mse", "mel_lsd", "fid", "lpips", "niqe", "ter", "mape", "median_ae"}:
-                                    if m_name_clean == "brier_score":
-                                        norm_val = 1.0 - val
-                                    else:
-                                        norm_val = 1.0 / (1.0 + val) if val != -1.0 else 0.0
-                                else:
-                                    norm_val = val
-                                if math.isnan(norm_val) or math.isinf(norm_val):
-                                    norm_val = 0.0
-                                weight = float(cfg.get("weight", 1.0))
-                                weighted_sum += norm_val * weight
-                            return weighted_sum / total_weight
-                    
                         public_score = calculate_weighted_score(m_pub, metrics_cfg)
                         private_score = calculate_weighted_score(m_priv, metrics_cfg)
                         metrics_payload_pub = m_pub
@@ -845,4 +841,3 @@ def register_worker_specs(sender, **kwargs):
             logger.warning("Error fetching/preloading active datasets: %s", e)
     except Exception as e:
         print(f"[NeuroBench] Failed to register specs: {e}")
-

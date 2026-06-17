@@ -146,9 +146,21 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     
 def _maybe_queue_baseline(task, challenge, admin_id):
     """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
-    # Remove old baseline submissions for this task
+    # Remove old baseline submissions for this task and their physical files
+    import os
+    old_baselines = Submission.query.filter_by(task_id=task.id, is_baseline=True).all()
+    paths_to_delete = [(s.code_storage_path, s.log_storage_path) for s in old_baselines]
+
     Submission.query.filter_by(task_id=task.id, is_baseline=True).delete(synchronize_session=False)
     db.session.commit()
+    
+    for code_path, log_path in paths_to_delete:
+        if code_path and os.path.exists(code_path):
+            try: os.remove(code_path)
+            except OSError: pass
+        if log_path and os.path.exists(log_path):
+            try: os.remove(log_path)
+            except OSError: pass
     
     # Parse and submit new baseline if notebook exists
     baseline_cells = []
@@ -951,67 +963,71 @@ def submit_task_code(task_id):
     if not selected_cells or not isinstance(selected_cells, list):
         return jsonify({"error": "selected_cells list is required."}), 400
         
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    submission_count = Submission.query.filter(
-        Submission.user_id == user_id,
-        Submission.challenge_id == challenge.id,
-        Submission.created_at >= today_start
-    ).with_for_update().count()
+    from cache_utils import cache_lock
+    lock_key = f"submit_lock:user_{user_id}:task_{task_id}"
     
-    if submission_count >= challenge.max_eval_requests:
-        return jsonify({
-            "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day."
-        }), 429
-        
-    if task.max_submissions_per_period and task.submission_period_hours:
-        period_start = datetime.utcnow() - timedelta(hours=task.submission_period_hours)
-        sub_count = Submission.query.filter(
+    with cache_lock(lock_key, ttl=5):
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        submission_count = Submission.query.filter(
             Submission.user_id == user_id,
-            Submission.task_id == task.id,
-            Submission.created_at >= period_start
-        ).count()
-        if sub_count >= task.max_submissions_per_period:
+            Submission.challenge_id == challenge.id,
+            Submission.created_at >= today_start
+        ).with_for_update().count()
+        
+        if submission_count >= challenge.max_eval_requests:
             return jsonify({
-                "error": f"Task limit reached. You can only make {task.max_submissions_per_period} submissions per {task.submission_period_hours} hours."
+                "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day."
             }), 429
             
-    passed, err_msg = check_execution_rules(task, selected_cells)
-    if not passed:
+        if task.max_submissions_per_period and task.submission_period_hours:
+            period_start = datetime.utcnow() - timedelta(hours=task.submission_period_hours)
+            sub_count = Submission.query.filter(
+                Submission.user_id == user_id,
+                Submission.task_id == task.id,
+                Submission.created_at >= period_start
+            ).count()
+            if sub_count >= task.max_submissions_per_period:
+                return jsonify({
+                    "error": f"Task limit reached. You can only make {task.max_submissions_per_period} submissions per {task.submission_period_hours} hours."
+                }), 429
+                
+        passed, err_msg = check_execution_rules(task, selected_cells)
+        if not passed:
+            submission = Submission(
+                user_id=user_id,
+                challenge_id=challenge.id,
+                task_id=task.id,
+                status='failed',
+                detailed_status='failed',
+                code_cells=json.dumps(selected_cells),
+                public_score=0.0,
+                private_score=0.0,
+                logs=f"--- Rule Check Failed ---\n{err_msg}",
+                execution_time_ms=0
+            )
+            db.session.add(submission)
+            db.session.commit()
+            publish_submissions_update(submission.task_id, submission.user_id)
+            publish_leaderboard_update(submission.task_id)
+            return jsonify({
+                "message": "Submission received but failed rule check.",
+                "submission_id": submission.id,
+                "status": submission.status,
+                "error": err_msg
+            }), 200
+            
+        priority = calculate_submission_priority(user_id, user_role)
+        
         submission = Submission(
             user_id=user_id,
             challenge_id=challenge.id,
             task_id=task.id,
-            status='failed',
-            detailed_status='failed',
-            code_cells=json.dumps(selected_cells),
-            public_score=0.0,
-            private_score=0.0,
-            logs=f"--- Rule Check Failed ---\n{err_msg}",
-            execution_time_ms=0
+            status='queued',
+            detailed_status='queued',
+            code_cells=json.dumps(selected_cells)
         )
         db.session.add(submission)
         db.session.commit()
-        publish_submissions_update(submission.task_id, submission.user_id)
-        publish_leaderboard_update(submission.task_id)
-        return jsonify({
-            "message": "Submission received but failed rule check.",
-            "submission_id": submission.id,
-            "status": submission.status,
-            "error": err_msg
-        }), 200
-        
-    priority = calculate_submission_priority(user_id, user_role)
-    
-    submission = Submission(
-        user_id=user_id,
-        challenge_id=challenge.id,
-        task_id=task.id,
-        status='queued',
-        detailed_status='queued',
-        code_cells=json.dumps(selected_cells)
-    )
-    db.session.add(submission)
-    db.session.commit()
     
     from cache_utils import invalidate_leaderboard_cache
     invalidate_leaderboard_cache(submission.challenge_id)

@@ -53,7 +53,7 @@ def get_client_ip():
 def login():
     """
     Authenticate a user and receive a session cookie.
-    Password must be SHA-256 hashed client-side before sending.
+    Password must be sent as plaintext; the server hashes it.
     Sets httpOnly cookie `auth_token` on success.
     Rate limited: 5 failed attempts per username+IP per 60 seconds.
     ---
@@ -75,8 +75,8 @@ def login():
                   example: "admin_1c15d4d7"
                 password:
                   type: string
-                  description: SHA-256 hash of the plaintext password
-                  example: "a1b2c3..."
+                  description: Plaintext password
+                  example: "mysecurepassword123"
     responses:
       200:
         description: Login successful. httpOnly cookie set.
@@ -140,7 +140,10 @@ def login():
         
     user = User.query.filter(User.username == username).first()
     
-    if not user or not check_password_hash(user.password_hash, password):
+    import hashlib
+    client_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    if not user or not check_password_hash(user.password_hash, client_hash):
         record_failure(rate_limit_key)
         return jsonify({
             "error": "Invalid credentials.",

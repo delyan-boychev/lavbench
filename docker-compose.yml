@@ -8,7 +8,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lavbench_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lavbench_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
       POSTGRES_SHARED_BUFFERS: 256MB
       POSTGRES_MAX_CONNECTIONS: 100
@@ -39,7 +39,16 @@ services:
     image: redis:alpine
     container_name: lavbench_redis
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru
+        else
+          echo "REDIS_PASSWORD is required in .env" && exit 1
+        fi
+      '
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     deploy:
       resources:
         limits:
@@ -51,7 +60,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,10 +72,10 @@ services:
     container_name: lavbench_backend
     restart: always
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:lavbench_pass@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis_password@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis_password@redis:6379/0}
-      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - WORKER_SECRET_KEY=${WORKER_SECRET_KEY:-replace-with-secure-worker-token}
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
@@ -106,10 +115,10 @@ services:
     restart: always
     command: celery -A tasks.celery beat --loglevel=info
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:lavbench_pass@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:redis_password@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:redis_password@redis:6379/0}
-      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - WORKER_SECRET_KEY=${WORKER_SECRET_KEY:-replace-with-secure-worker-token}
       - HF_CACHE_DIR=/app/hf_cache
     depends_on:

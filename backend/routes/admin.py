@@ -14,7 +14,7 @@ import zipfile
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, current_app, Response, stream_with_context
 from werkzeug.security import generate_password_hash
-from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, encrypt_field, is_metric_lower_better
+from models import db, User, Challenge, Submission, Task, generate_pseudonym, decrypt_field, is_metric_lower_better
 from auth_utils import role_required
 from evaluation_engine import AVAILABLE_METRICS
 

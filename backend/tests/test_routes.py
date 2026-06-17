@@ -1461,10 +1461,12 @@ class TestRouteLevelLogic(unittest.TestCase):
         db.session.commit()
 
         # competitor logins: should return 403 Forbidden
+        import hashlib
         from werkzeug.security import generate_password_hash
-        self.competitor.password_hash = generate_password_hash("my-competitor-password", method="pbkdf2:sha256")
+        client_hash = hashlib.sha256("my-competitor-password".encode()).hexdigest()
+        self.competitor.password_hash = generate_password_hash(client_hash, method="pbkdf2:sha256")
         db.session.commit()
-        
+
         login_res = self.client.post(
             '/api/auth/login',
             data=json.dumps({

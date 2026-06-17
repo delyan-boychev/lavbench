@@ -109,18 +109,6 @@ def revoke_token(token):
     except Exception:
         pass
 
-def is_token_revoked(token):
-    try:
-        if token.startswith("Bearer "):
-            token = token[7:]
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        jti = payload.get("jti")
-        if jti and _redis_exists(f"revoked:{jti}"):
-            return True
-    except Exception:
-        pass
-    return False
-
 def _fetch_current_role(user_id):
     try:
         from models import db, User

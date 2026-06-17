@@ -3,16 +3,6 @@ import api from './services/ApiService';
 
 const AuthContext = createContext(null);
 
-// Native browser Web Crypto API SHA-256 hash helper
-const hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-};
-
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -58,11 +48,10 @@ export const AuthProvider = ({ children }) => {
     setAuthError('');
     try {
       let finalPassword = password || '';
-      const hashedPassword = await hashPassword(finalPassword);
       
       const { ok, data } = await api.post('/auth/login', { 
         username: (identifier || '').trim(), 
-        password: hashedPassword 
+        password: finalPassword 
       });
       
       if (ok) {

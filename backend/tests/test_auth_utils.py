@@ -8,7 +8,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-for-unit-tests-do-not-use-in-product
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from auth_utils import generate_token, verify_token, login_required, role_required, generate_worker_token, verify_worker_token, SECRET_KEY, rate_limit, revoke_token, is_token_revoked
+from auth_utils import generate_token, verify_token, login_required, role_required, generate_worker_token, verify_worker_token, SECRET_KEY, rate_limit, revoke_token
 from flask import Flask, request, jsonify
 
 class TestAuthUtils(unittest.TestCase):
@@ -261,11 +261,6 @@ class TestTokenRevocation(unittest.TestCase):
         result = verify_token(token)
         self.assertIsNotNone(result)
 
-    def test_is_token_revoked_true(self):
-        token = generate_token(50, 'competitor')
-        self.assertFalse(is_token_revoked(token))
-        revoke_token(token)
-        self.assertTrue(is_token_revoked(token))
 
 
 class TestFetchCurrentRole(unittest.TestCase):
