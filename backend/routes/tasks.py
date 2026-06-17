@@ -91,6 +91,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
     
     from auth_utils import generate_worker_token
+    from tasks import evaluate_submission
     time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
     worker_secret_key = generate_worker_token(submission.id, task.id, time_limit + 600)
     
@@ -1568,6 +1569,8 @@ def report_worker_progress(submission_id):
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return jsonify({"error": f"Invalid status value: {status_val}"}), 400
         submission.status = status_val
+    if submission.executed_at is None:
+        submission.executed_at = datetime.utcnow()
     if "detailed_status" in data:
         submission.detailed_status = data["detailed_status"]
     if "logs" in data:
