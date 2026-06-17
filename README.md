@@ -4,7 +4,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/source/_static/brand_logo_dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/source/_static/brand_logo.svg">
-    <img src="docs/source/_static/brand_logo.svg" alt="LavBench" width="200">
+    <img src="docs/source/_static/brand_logo.svg" alt="LavBench" width="300">
   </picture>
 </div>
 

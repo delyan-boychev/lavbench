@@ -71,7 +71,7 @@ export default function Logo({ size = 'md' }) {
       
       {/* Refined Typography */}
       <span style={{ fontFamily: 'system-ui, sans-serif', fontSize: textSize, letterSpacing: '-0.03em', display: 'flex', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700, color: '#ffffff' }}>Lav</span>
+        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Lav</span>
         <span style={{ fontWeight: 500, color: '#f59e0b' }}>Bench</span>
       </span>
     </div>
