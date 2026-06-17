@@ -1,0 +1,8 @@
+{% extends "!layout.html" %}
+
+{% block mobile_nav %}
+  <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+  <a href="{{ pathto(master_doc) }}">
+    <img src="{{ pathto('_static/brand_logo_dark.svg', 1) }}" class="logo" alt="{{ _('LavBench') }}"/>
+  </a>
+{% endblock %}
