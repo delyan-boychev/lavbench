@@ -13,7 +13,7 @@ from evaluation_engine import (
     compute_map_detection, compute_psnr, compute_ssim, compute_audio_snr,
     compute_mel_lsd, compute_segmentation_iou, compute_segmentation_dice,
     compute_oks, compute_pck, compute_ndcg_at_k, compute_retrieval_metrics,
-    evaluate_predictions, validate_parquet_schema
+    evaluate_predictions, validate_parquet_schema, validate_parquet_schema_columns
 )
 
 
@@ -645,3 +645,42 @@ class TestEvaluatePredictionsEdgeCases(unittest.TestCase):
         df_labels = pd.DataFrame({"id": [1, 2]})
         with self.assertRaises(ValueError):
             evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0}})
+
+
+class TestValidateParquetSchemaColumns(unittest.TestCase):
+    def test_valid_submission_columns(self):
+        ok, msg = validate_parquet_schema_columns(["id", "prediction"], is_submission=True)
+        self.assertTrue(ok)
+        self.assertIsNone(msg)
+
+    def test_valid_labels_columns(self):
+        ok, msg = validate_parquet_schema_columns(["id", "label"], is_submission=False)
+        self.assertTrue(ok)
+        self.assertIsNone(msg)
+
+    def test_missing_id_submission(self):
+        ok, msg = validate_parquet_schema_columns(["prediction"], is_submission=True)
+        self.assertFalse(ok)
+        self.assertIn("Submission", msg)
+        self.assertIn("missing required column", msg)
+
+    def test_missing_id_labels(self):
+        ok, msg = validate_parquet_schema_columns(["label"], is_submission=False)
+        self.assertFalse(ok)
+        self.assertIn("Labels/Ground Truth", msg)
+        self.assertIn("missing required column", msg)
+
+    def test_empty_columns(self):
+        ok, msg = validate_parquet_schema_columns([], is_submission=True)
+        self.assertFalse(ok)
+        self.assertIn("Submission", msg)
+
+    def test_multiple_columns_with_id(self):
+        ok, msg = validate_parquet_schema_columns(["id", "col1", "col2", "col3"], is_submission=True)
+        self.assertTrue(ok)
+        self.assertIsNone(msg)
+
+    def test_only_id_column(self):
+        ok, msg = validate_parquet_schema_columns(["id"], is_submission=True)
+        self.assertTrue(ok)
+        self.assertIsNone(msg)

@@ -293,5 +293,157 @@ class TestRegisterUser(unittest.TestCase):
         self.assertEqual(user.role, "jury")
 
 
+class TestGetUsers(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self.admin = User(username="admin", password_hash="x", role="admin", alias_id="A1")
+        db.session.add(self.admin)
+        self.comp = User(username="comp1", password_hash="x", role="competitor", alias_id="C1")
+        db.session.add(self.comp)
+        db.session.commit()
+        self.admin_token = generate_token(self.admin.id, role="admin")
+        self.comp_token = generate_token(self.comp.id, role="competitor")
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.app_context.pop()
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_admin_can_list_users(self):
+        resp = self.client.get("/api/admin/users", headers=self._auth(self.admin_token))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("items", data)
+        self.assertGreaterEqual(len(data["items"]), 2)
+
+    def test_competitor_cannot_list_users(self):
+        resp = self.client.get("/api/admin/users", headers=self._auth(self.comp_token))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_filter_by_role(self):
+        resp = self.client.get("/api/admin/users?role=admin", headers=self._auth(self.admin_token))
+        data = resp.get_json()
+        for u in data["items"]:
+            self.assertEqual(u["role"], "admin")
+
+    def test_pagination(self):
+        for i in range(15):
+            u = User(username=f"user{i}", password_hash="x", role="competitor", alias_id=f"U{i}")
+            db.session.add(u)
+        db.session.commit()
+        resp = self.client.get("/api/admin/users?page=1&per_page=5", headers=self._auth(self.admin_token))
+        data = resp.get_json()
+        self.assertEqual(len(data["items"]), 5)
+        self.assertEqual(data["page"], 1)
+
+
+class TestDeleteUser(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self.admin = User(username="admin", password_hash="x", role="admin", alias_id="A1")
+        db.session.add(self.admin)
+        self.target = User(username="target", password_hash="x", role="competitor", alias_id="T1")
+        db.session.add(self.target)
+        db.session.commit()
+        self.admin_token = generate_token(self.admin.id, role="admin")
+        self.comp_token = generate_token(self.target.id, role="competitor")
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.app_context.pop()
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_admin_can_delete_user(self):
+        resp = self.client.delete(f"/api/admin/users/{self.target.id}", headers=self._auth(self.admin_token))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_competitor_cannot_delete_user(self):
+        resp = self.client.delete(f"/api/admin/users/{self.target.id}", headers=self._auth(self.comp_token))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cannot_delete_self(self):
+        resp = self.client.delete(f"/api/admin/users/{self.admin.id}", headers=self._auth(self.admin_token))
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_nonexistent_user(self):
+        resp = self.client.delete("/api/admin/users/99999", headers=self._auth(self.admin_token))
+        self.assertEqual(resp.status_code, 404)
+
+
+class TestUpdateUser(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self.admin = User(username="admin", password_hash="x", role="admin", alias_id="A1")
+        db.session.add(self.admin)
+        self.target = User(username="target", password_hash="x", role="competitor", alias_id="T1")
+        db.session.add(self.target)
+        db.session.commit()
+        self.admin_token = generate_token(self.admin.id, role="admin")
+        self.comp_token = generate_token(self.target.id, role="competitor")
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.app_context.pop()
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_admin_can_update_user_email(self):
+        resp = self.client.put(
+            f"/api/admin/users/{self.target.id}",
+            json={"email": "updated@test.com"},
+            headers=self._auth(self.admin_token)
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(db.session.get(User, self.target.id).email, "updated@test.com")
+
+    def test_admin_can_set_is_anonymous(self):
+        resp = self.client.put(
+            f"/api/admin/users/{self.target.id}",
+            json={"is_anonymous": True},
+            headers=self._auth(self.admin_token)
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(db.session.get(User, self.target.id).is_anonymous)
+
+    def test_competitor_cannot_update_user(self):
+        resp = self.client.put(
+            f"/api/admin/users/{self.target.id}",
+            json={"role": "jury"},
+            headers=self._auth(self.comp_token)
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_update_nonexistent_user(self):
+        resp = self.client.put(
+            "/api/admin/users/99999",
+            json={"role": "jury"},
+            headers=self._auth(self.admin_token)
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
 if __name__ == '__main__':
     unittest.main()
