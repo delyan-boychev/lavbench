@@ -41,7 +41,11 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 ```bash
 # 1. Configure
 cp .env.example .env
-# Edit .env — set SECRET_KEY and any other necessary values
+# Edit .env — set SECRET_KEY, ENCRYPTION_KEY, and any other necessary values
+# Generate ENCRYPTION_KEY: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# Also run setup-admin.py after first deploy to create an admin user
+python backend/setup-admin.py
 
 # 2. Launch
 ./scripts/deploy-debug.sh
@@ -121,6 +125,7 @@ lavbench/
 │   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
 │   ├── tasks.py                 # Celery task definitions + beat schedule
 │   ├── Dockerfile               # Backend container
+│   ├── setup-admin.py            # Creates admin user account + admin_credentials.txt
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks

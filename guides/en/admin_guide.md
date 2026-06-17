@@ -2,6 +2,19 @@
 
 Welcome to the LavBench Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform.
 
+### Initial Setup
+
+After deploying the platform, create the admin account:
+
+```bash
+python backend/setup-admin.py
+```
+
+This drops and recreates the database, generates a random admin username and master key, and saves them to `admin_credentials.txt` in the project root. Use those credentials on the login page with the "Sign In as Administrator" checkbox enabled.
+
+> [!IMPORTANT]
+> Run this only once on a fresh database. Re-running it resets all data.
+
 ## Table of Contents
 1. [Challenge Lifecycle Management](#1-challenge-lifecycle-management)
 2. [Sandbox Customization & Resource Limits](#2-sandbox-customization--resource-limits)
