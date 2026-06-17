@@ -143,7 +143,7 @@ The **Cluster** badge in the navbar shows worker node status in real-time via SS
 - Red: workers are disconnected.
 - Click for a modal showing per-worker specs (CPU cores, RAM, GPU type, VRAM, concurrency).
 
-Workers run directly on the host machine via `start_worker.sh` — they are NOT part of Docker Compose because they require access to the host's Docker CLI to build and spawn sandbox containers dynamically.
+Workers run directly on the host machine via `scripts/start-worker.sh` — they are NOT part of Docker Compose because they require access to the host's Docker CLI to build and spawn sandbox containers dynamically.
 
 ### Worker Specs Registration
 When a worker node starts, it automatically registers its hardware specs in Redis. These appear in the cluster modal dashboard. If Redis is unavailable, worker specs will not be registered until the next worker restart.

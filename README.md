@@ -44,8 +44,7 @@ cp .env.example .env
 # Edit .env — set SECRET_KEY and any other necessary values
 
 # 2. Launch
-chmod +x deploy_debug.sh
-./deploy_debug.sh
+./scripts/deploy-debug.sh
 
 # 3. Open
 # Frontend -> http://localhost:5173
@@ -75,9 +74,9 @@ flowchart TD
     %% Worker Nodes
     subgraph Workers [Worker Pool]
         direction TB
-        Redis -->|Pulls Tasks| GPU[GPU Worker<br>start_worker.sh 0]
-        Redis -->|Pulls Tasks| CPU1[CPU Worker<br>start_worker.sh]
-        Redis -->|Pulls Tasks| CPU2[CPU Worker<br>start_worker.sh]
+        Redis -->|Pulls Tasks| GPU[GPU Worker<br>scripts/start-worker.sh 0]
+        Redis -->|Pulls Tasks| CPU1[CPU Worker<br>scripts/start-worker.sh]
+        Redis -->|Pulls Tasks| CPU2[CPU Worker<br>scripts/start-worker.sh]
     end
 
     %% Execution Sandbox
@@ -101,7 +100,7 @@ flowchart TD
 | **PostgreSQL** | Primary database for users, challenges, tasks, and submissions | `5432` |
 | **Redis** | Celery message broker, SSE pub/sub, caching, and rate limiting | `6379` |
 | **Flask API** | REST API and SSE streaming endpoints | `5001` |
-| **Celery Worker** | Runs on the host via `start_worker.sh` to build Docker sandboxes and execute submissions | — |
+| **Celery Worker** | Runs on the host via `scripts/start-worker.sh` to build Docker sandboxes and execute submissions | — |
 | **Celery Beat** | Handles periodic tasks like the submission watchdog and automated backups | — |
 | **Nginx/React** | Static file serving and API reverse proxy | `80` |
 
@@ -141,10 +140,10 @@ lavbench/
 │   ├── tsconfig.json            # TypeScript config for JSDoc type checking
 │   └── nginx.conf               # Nginx configuration
 ├── guides/                      # User documentation (student, jury, admin, API)
+├── docs/                        # Project documentation (Sphinx, architecture)
+├── scripts/                     # Deployment and worker launcher scripts
 ├── docker-compose.yml           # Docker Compose (db, redis, backend, beat, frontend)
-├── deploy_debug.sh              # Local dev launcher
-├── deploy_docker.sh             # Production deployment
-├── start_worker.sh              # Remote GPU/CPU worker bootstrap
+├── Makefile                     # Top-level targets (deploy-docker, deploy-debug, start-worker, docs)
 ├── .env.example                 # Environment template
 ├── LICENSE                      # AGPL v3
 └── NOTICE                       # Copyright notice
@@ -226,8 +225,7 @@ cd docs && make html
 ### Docker Compose
 
 ```bash
-chmod +x deploy_docker.sh
-./deploy_docker.sh
+./scripts/deploy-docker.sh
 ```
 Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
 
@@ -237,13 +235,13 @@ Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No dire
 
 ```bash
 # General Syntax
-./start_worker.sh <REDIS_URL> [GPU_ID]
+make start-worker REDIS_URL=redis://... [GPU_ID=0]
 
 # GPU worker example
-./start_worker.sh redis://:password@server:6379/0 0
+make start-worker REDIS_URL=redis://:password@server:6379/0 GPU_ID=0
 
 # CPU worker example
-./start_worker.sh redis://:password@server:6379/0
+make start-worker REDIS_URL=redis://:password@server:6379/0
 ```
 
 ---

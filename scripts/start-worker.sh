@@ -1,8 +1,8 @@
 #!/bin/bash
-# start_worker.sh
+# scripts/start-worker.sh
 # Decoupled Startup Script for Remote Celery GPU/CPU Workers
-# Usage: ./start_worker.sh <REDIS_URL> [GPU_ID]
-# Example: ./start_worker.sh redis://worker_user:secure_password@shared-redis:6379/0 0
+# Usage: make start-worker REDIS_URL=redis://... [GPU_ID=0]
+# Example: make start-worker REDIS_URL=redis://worker_user:secure_password@shared-redis:6379/0 GPU_ID=0
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <REDIS_URL> [GPU_ID]"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# deploy_docker.sh - Run the National AI Competition Platform fully in Docker containers.
+# scripts/deploy-docker.sh - Run LavBench fully in Docker Compose.
 
 # Exit on error
 set -e

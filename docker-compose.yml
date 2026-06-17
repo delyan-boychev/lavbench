@@ -108,7 +108,7 @@ services:
       start_period: 20s
 
   # 4. Celery Beat (watchdog + backup scheduler — no Docker needed)
-  # Workers run on host via: ./start_worker.sh <REDIS_URL>
+  # Workers run on host via: make start-worker REDIS_URL=redis://...
   celery_beat:
     build: ./backend
     container_name: lavbench_beat

@@ -9,7 +9,7 @@ Browser (React) → Nginx (port 80) → Flask API (port 5001)
                                         └── Celery Beat (watchdog, backup scheduler)
 
 Celery Workers (host, not Docker):
-  start_worker.sh → Redis broker → Docker Sandbox execution → API callback
+  scripts/start-worker.sh → Redis broker → Docker Sandbox execution → API callback
 ```
 
 ## Components
@@ -22,7 +22,7 @@ Celery Workers (host, not Docker):
 | **Cache/Broker** | Redis | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation |
 | **Task Queue** | Celery | Async job dispatch (evaluation, backups) |
 | **Scheduler** | Celery Beat | Watchdog (stuck submissions), automated backups |
-| **Worker** | `start_worker.sh` on host | Docker-in-Docker sandbox execution |
+| **Worker** | `scripts/start-worker.sh` on host | Docker-in-Docker sandbox execution |
 
 ## Authentication Flow
 

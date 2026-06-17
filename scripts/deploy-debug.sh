@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# deploy_debug.sh - Run the National AI Competition Platform locally in host debug mode.
+# scripts/deploy-debug.sh - Run LavBench locally in host debug mode.
 
 # Terminate all background jobs in the process group on exit
 cleanup() {
