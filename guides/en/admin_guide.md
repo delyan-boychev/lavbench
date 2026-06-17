@@ -80,7 +80,7 @@ Efficiently onboard entire classrooms or competition cohorts via the `/admin` po
 1. Navigate to the **Users** tab.
 2. Click **Import CSV**.
 3. Format requirements:
-   ```csv
+   ```text
    username,email,password,name,surname,class_number,school,city,challenge_id
    student_a,studA@ai.edu,TempPass1,Alice,Smith,12,Tech High,Sofia,1
    ```

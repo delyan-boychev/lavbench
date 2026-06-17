@@ -1,3 +1,5 @@
+"""Service-layer functions for challenge CRUD, archiving, and export."""
+
 import csv
 import io
 from datetime import datetime
@@ -6,6 +8,7 @@ from services.submission_service import get_best_submission
 from services.leaderboard_service import build_and_cache_leaderboard
 
 def generate_scores_csv(challenge):
+    """Build a CSV string with per-competitor scores across all tasks in a challenge."""
     tasks = challenge.tasks
     competitors = User.query.filter_by(role='competitor', challenge_id=challenge.id).all()
     

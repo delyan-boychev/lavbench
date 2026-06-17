@@ -1,3 +1,5 @@
+"""Celery task definitions and beat schedule for async evaluation and backups."""
+
 import os
 import time
 import logging
@@ -51,6 +53,7 @@ from task_modules.leaderboard import run_recalculate_all_leaderboards
     retry_jitter=True
 )
 def evaluate_submission(self, submission_id, metadata=None):
+    """Celery task: run a student submission through the evaluation pipeline in Docker."""
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except Exception as e:
@@ -66,21 +69,25 @@ def evaluate_submission(self, submission_id, metadata=None):
 
 @celery.task
 def recalculate_all_leaderboards():
+    """Celery task: rebuild leaderboard cache for all active challenges."""
     if RUNNING_AS_WORKER: return
     return run_recalculate_all_leaderboards(app)
 
 @celery.task
 def register_worker_specs():
+    """Celery task: register worker node specs (CPU/GPU/memory) in Redis."""
     return run_register_worker_specs(celery)
 
 @celery.task
 def run_backup(auto=True, challenge_id=None, state=None):
+    """Celery task: create a pg_dump+uploads tarball backup."""
     if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
     if not app: return {"error": "no_app"}
     return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state)
 
 @celery.task
 def check_and_backup():
+    """Celery beat task: check deadlines and trigger backups (20min active / 6h idle)."""
     if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
     if not app: return {"error": "no_app"}
     with app.app_context():
@@ -135,6 +142,7 @@ def check_and_backup():
 # Runs every 5 minutes. Only the main server process runs this (not remote workers).
 @celery.task
 def watchdog_stuck_submissions():
+    """Celery beat task: recover fallback results and time-out stuck submissions."""
     if RUNNING_AS_WORKER:
         return {"skipped": "running_as_remote_worker"}
     if not app:

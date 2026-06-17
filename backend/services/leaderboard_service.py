@@ -1,3 +1,5 @@
+"""Service-layer functions for leaderboard computation and caching."""
+
 import json
 import time
 from datetime import datetime
@@ -7,6 +9,7 @@ from models import db, Challenge, Submission, User, Task, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
+    """Compute, cache, and return the leaderboard for a challenge. Uses a distributed lock."""
     from cache_utils import set_cached, get_cached, cache_lock
     
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"

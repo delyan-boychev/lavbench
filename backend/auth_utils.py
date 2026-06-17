@@ -1,3 +1,5 @@
+"""JWT authentication, token verification, rate limiting, and authorization utilities."""
+
 import os
 import sys
 import logging
@@ -82,6 +84,7 @@ def clear_auth_cookie(response):
 SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
 
 def generate_token(user_id, role):
+    """Create a signed JWT with user id, role, and unique jti for revocation."""
     payload = {
         "sub": str(user_id),
         "role": role,
@@ -92,6 +95,7 @@ def generate_token(user_id, role):
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 def revoke_token(token):
+    """Add the token's jti to the Redis revocation blacklist for its remaining lifetime."""
     try:
         if token.startswith("Bearer "):
             token = token[7:]
@@ -121,6 +125,7 @@ def _fetch_current_role(user_id):
     return None
 
 def verify_token(token):
+    """Decode and verify a JWT. Checks revocation blacklist and DB role (live role sync)."""
     if not token:
         return None
     try:
@@ -142,6 +147,7 @@ def verify_token(token):
         return None
 
 def login_required(f):
+    """Decorator: requires a valid JWT (cookie/header/query). Injects request.user."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = _extract_token()
@@ -153,6 +159,7 @@ def login_required(f):
     return decorated
 
 def role_required(allowed_roles):
+    """Decorator: requires JWT + role membership in allowed_roles (list of strings)."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -169,6 +176,7 @@ def role_required(allowed_roles):
 # --- Rate limiting ---
 
 def rate_limit(max_requests=60, window_seconds=60, per_user=True):
+    """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -203,6 +211,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
 
 
 def generate_worker_token(submission_id, task_id, expires_in_sec):
+    """Create a short-lived JWT so workers can authenticate back to the server."""
     payload = {
         "sub": str(submission_id),
         "task_id": task_id,
@@ -213,6 +222,7 @@ def generate_worker_token(submission_id, task_id, expires_in_sec):
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 def verify_worker_token(token, submission_id=None, task_id=None):
+    """Verify a worker JWT or bootstrap key. Optionally scoped to submission_id/task_id."""
     if not token:
         return False
     # Worker bootstrapping (active-datasets preloading) uses raw WORKER_SECRET_KEY

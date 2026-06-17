@@ -4,27 +4,31 @@
   <img src="frontend/public/favicon.svg" alt="LavBench Logo" width="128" height="128" />
 </div>
 
-[![License](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL%20v3-blue.svg" alt="License"></a>
+  <a href="https://github.com/delyan-boychev/lavbench/actions/workflows/ci.yml"><img src="https://github.com/delyan-boychev/lavbench/actions/workflows/ci.yml/badge.svg" alt="LavBench CI"></a>
+</p>
 
-A secure, sandboxed machine learning competition platform. Participants submit Jupyter notebooks or raw Python code which are executed in isolated Docker containers under strict resource constraints. Real-time leaderboards stream via SSE, with double-blind review for anonymous jury scoring.
+**LavBench** derives its name from the "Lav" (Lion), a proud national symbol of Bulgaria. 
 
-Created by the Bulgarian Team. Contributions and use by others are welcome.
+It is a secure, sandboxed machine learning competition platform. Participants submit Jupyter notebooks or raw Python code which are executed in isolated Docker containers under strict resource constraints. Real-time leaderboards stream via SSE, with double-blind review for anonymous jury scoring.
+
+Created by the Bulgarian Team. Contributions and use by others are highly welcome.
 
 ---
 
 ## Features
 
-- **Sandboxed Execution** — User code runs in throwaway Docker containers with `--network none`, CPU/RAM/process limits, and `tmpfs` mounts
-- **Double-Blind Review** — Competitor demographics encrypted at rest (Fernet), only revealed after scores are finalized
-- **Live Leaderboards** — Server-Sent Events push real-time score updates to all connected clients
-- **Multi-Stage Competitions** — Stages with independent deadlines, grace periods, and score visibility controls
-- **Custom Evaluators** — Jury can upload Python evaluation scripts with per-metric weighting and configuration
-- **GPU/CPU Routing** — Celery queue routing separates GPU and CPU workloads across worker pools
-- **Automated Backups** — Database + uploaded files backed up every 20 minutes during active competitions (every 6 hours when idle), with competition lifecycle snapshots
-- **i18n** — English and Bulgarian *(contributions for additional languages are welcome)*
-- **Security** — httpOnly cookie auth, token revocation with Redis blacklist, rate limiting, encrypted PII, ProxyFix for trusted reverse proxies
-- **Typed API** — OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls
-- **Type Checking** — `tsc --noEmit` verifies all JSDoc annotations + component props, 0 errors in CI
+* **Sandboxed Execution:** User code runs in throwaway Docker containers with `--network none`, CPU/RAM/process limits, and `tmpfs` mounts.
+* **Double-Blind Review:** Competitor demographics are encrypted at rest (Fernet) and only revealed after scores are finalized.
+* **Live Leaderboards:** Server-Sent Events push real-time score updates to all connected clients.
+* **Multi-Stage Competitions:** Support for stages with independent deadlines, grace periods, and score visibility controls.
+* **Custom Evaluators:** Jury members can upload Python evaluation scripts with per-metric weighting and configuration.
+* **GPU/CPU Routing:** Celery queue routing intelligently separates GPU and CPU workloads across different worker pools.
+* **Automated Backups:** Database and uploaded files are backed up every 20 minutes during active competitions (every 6 hours when idle), including competition lifecycle snapshots.
+* **i18n Support:** Available in English and Bulgarian (contributions for additional languages are welcome).
+* **Strict Security:** Includes httpOnly cookie auth, token revocation with a Redis blacklist, rate limiting, encrypted PII, and ProxyFix for trusted reverse proxies.
+* **Typed API & Validation:** OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls. `tsc --noEmit` verifies all JSDoc annotations and component props.
 
 ---
 
@@ -33,70 +37,75 @@ Created by the Bulgarian Team. Contributions and use by others are welcome.
 ```bash
 # 1. Configure
 cp .env.example .env
-# Edit .env — set SECRET_KEY and any other values
+# Edit .env — set SECRET_KEY and any other necessary values
 
 # 2. Launch
 chmod +x deploy_debug.sh
 ./deploy_debug.sh
 
 # 3. Open
-# Frontend → http://localhost:5173
-# API      → http://localhost:5001/api
+# Frontend -> http://localhost:5173
+# API      -> http://localhost:5001/api
 ```
 
-Press `Ctrl+C` to stop all services.
+Press `Ctrl+C` in your terminal to gracefully stop all services.
 
 ---
 
 ## Architecture
 
-```
-┌──────────┐     ┌──────────────┐     ┌──────────────┐
-│  Browser  │────▶│  Nginx/React  │────▶│  Flask API    │
-│  (React)  │◀────│  (Port 80)    │◀────│  (Port 5001)  │
-└──────────┘     └──────────────┘     └──────┬───────┘
-                                              │
-                    ┌─────────────────────────┼─────────────────────────┐
-                    │                         │                         │
-              ┌─────▼─────┐           ┌──────▼──────┐          ┌──────▼──────┐
-              │ PostgreSQL │           │    Redis     │          │ Celery Beat │
-              │   (DB)     │           │  (Broker +   │          │ (Scheduler) │
-              └───────────┘           │   Cache)     │          └─────────────┘
-                                      └──────┬──────┘
-                                              │
-                              ┌───────────────┼───────────────┐
-                              │               │               │
-                       ┌──────▼──────┐ ┌─────▼─────┐  ┌──────▼──────┐
-                       │  GPU Worker  │ │ CPU Worker │  │ CPU Worker  │
-                       │ (start_worker│ │(start_worker│  │(start_worker│
-                       │   .sh 0)     │ │   .sh)     │  │   .sh)      │
-                       └──────┬──────┘ └─────┬─────┘  └──────┬──────┘
-                              │               │               │
-                              └───────────────┼───────────────┘
-                                              │
-                                    ┌─────────▼─────────┐
-                                    │  Docker Sandbox     │
-                                    │  (--network none)   │
-                                    │  CPU/RAM/PIDs limit │
-                                    └────────────────────┘
+```mermaid
+flowchart TD
+    %% Client & Gateway
+    Client([Browser<br>React]) <-->|HTTP / SSE| Nginx[Nginx<br>Port 80]
+    Nginx <-->|Reverse Proxy| API[Flask API<br>Port 5001]
+
+    %% Core Data & Message Broker
+    subgraph Core [Backend Infrastructure]
+        direction TB
+        API -->|Read/Write| DB[(PostgreSQL<br>Primary DB)]
+        API <-->|Queue / PubSub| Redis[(Redis<br>Broker & Cache)]
+        Beat([Celery Beat<br>Scheduler]) -->|Triggers| Redis
+    end
+
+    %% Worker Nodes
+    subgraph Workers [Worker Pool]
+        direction TB
+        Redis -->|Pulls Tasks| GPU[GPU Worker<br>start_worker.sh 0]
+        Redis -->|Pulls Tasks| CPU1[CPU Worker<br>start_worker.sh]
+        Redis -->|Pulls Tasks| CPU2[CPU Worker<br>start_worker.sh]
+    end
+
+    %% Execution Sandbox
+    subgraph Execution [Sandboxed Environment]
+        GPU --> Sandbox
+        CPU1 --> Sandbox
+        CPU2 --> Sandbox
+        Sandbox{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
+    end
+
+    %% Styling (Optional but keeps it clean)
+    classDef default fill:#1e293b,stroke:#cbd5e1,stroke-width:1px,color:#f8fafc;
+    classDef database fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    class DB,Redis database;
 ```
 
-**Components**:
+### Components
 
 | Service | Role | Port |
 |---------|------|------|
-| **PostgreSQL** | Primary database — users, challenges, tasks, submissions | 5432 |
-| **Redis** | Celery message broker, SSE pub/sub, caching, rate limiting | 6379 |
-| **Flask API** | REST API + SSE streaming endpoints | 5001 |
-| **Celery Worker** | Runs on host via `start_worker.sh` — builds Docker sandboxes, executes submissions | — |
-| **Celery Beat** | Periodic tasks — watchdog (stuck submissions), automated backups | — |
-| **Nginx/React** | Static file serving + API reverse proxy | 80 |
+| **PostgreSQL** | Primary database for users, challenges, tasks, and submissions | `5432` |
+| **Redis** | Celery message broker, SSE pub/sub, caching, and rate limiting | `6379` |
+| **Flask API** | REST API and SSE streaming endpoints | `5001` |
+| **Celery Worker** | Runs on the host via `start_worker.sh` to build Docker sandboxes and execute submissions | — |
+| **Celery Beat** | Handles periodic tasks like the submission watchdog and automated backups | — |
+| **Nginx/React** | Static file serving and API reverse proxy | `80` |
 
 ---
 
 ## Project Structure
 
-```
+```text
 lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
@@ -109,14 +118,7 @@ lavbench/
 │   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
 │   ├── tasks.py                 # Celery task definitions + beat schedule
 │   ├── Dockerfile               # Backend container
-│   ├── routes/                  # Flask blueprints
-│   │   ├── admin.py             # Admin dashboard, user management, backups
-│   │   ├── auth.py              # Login, logout, rate limiting
-│   │   ├── challenges.py        # Challenge CRUD, stages, finalize
-│   │   ├── submissions.py       # Notebook parsing, submission pipeline
-│   │   ├── tasks.py             # Task CRUD, worker endpoints
-│   │   ├── leaderboard.py       # Leaderboard + manual points
-│   │   └── docs.py              # In-app documentation
+│   ├── routes/                  # Flask blueprints (admin, auth, challenges, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks
 │   └── tests/                   # Backend tests (pytest, 120 tests)
@@ -154,49 +156,63 @@ Copy and edit the environment file:
 cp .env.example .env
 ```
 
-| Variable | Description | Default / Example |
-|----------|-------------|-------------------|
+| Variable | Description | Example / Requirement |
+|----------|-------------|-----------------------|
 | `SECRET_KEY` | Flask secret for JWT signing | **Required** — generate a random 64+ char string |
-| `DATABASE_URL` | PostgreSQL connection | `postgresql://user:pass@localhost:5432/dbname` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/dbname` |
 | `CELERY_BROKER_URL` | Redis broker for Celery | `redis://localhost:6379/0` |
 | `CELERY_RESULT_BACKEND` | Redis result backend | `redis://localhost:6379/0` |
-| `WORKER_SECRET_KEY` | Shared secret for worker ↔ server auth | **Required for workers** |
-| `ENCRYPTION_KEY` | Fernet key for PII encryption | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `HF_CACHE_DIR` | HuggingFace dataset cache | `./backend/hf_cache` |
+| `WORKER_SECRET_KEY` | Shared secret for worker to server auth | **Required for workers** |
+| `ENCRYPTION_KEY` | Fernet key for PII encryption | Run: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `HF_CACHE_DIR` | HuggingFace dataset cache directory | `./backend/hf_cache` |
 | `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:80` |
 | `MAIN_SERVER_URL` | Server URL for worker callbacks | `http://localhost:5001` |
 | `FLASK_DEBUG` | Enable Flask debug mode | `false` |
-| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after deadline | `60` |
+| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after a deadline | `60` |
 
 ---
 
 ## Testing
 
-### Backend
+### Backend Testing
 
 ```bash
 cd backend
 micromamba run -n lavbench_backend python -m pytest tests/ -v
 ```
+Includes 120 tests covering routes, auth, evaluation, caching, rate limiting, and models.
 
-120 tests covering routes, auth, evaluation, caching, rate limiting, and models.
+### Sphinx Documentation
 
-### Frontend
+```bash
+cd docs
+pip install -r requirements.txt
+make html        # generates build/ (open docs/build/index.html)
+make clean       # removes build/
+```
+
+The Sphinx build runs automatically in CI (`.github/workflows/ci.yml`) and deploys to [Read the Docs](https://lavbench.readthedocs.io/) on push to `main`.
+
+### Frontend Testing
 
 ```bash
 cd frontend
 
-# Unit / component tests
-npm run test       # vitest — 149 tests
+# Unit / component tests (vitest — 149 tests)
+npm run test
 
 # Type checking (JSDoc annotations + component props)
 npm run check-types
 
-# Translation integrity (missing keys, symmetry, orphaned keys)
+# Translation integrity (finds missing keys, symmetry, orphaned keys)
 python3 scripts/check_translations.py
 
 # Regenerate API types after backend spec changes
 python3 scripts/_annotate_types.py
+
+# Build Sphinx documentation
+pip install -r docs/requirements.txt
+cd docs && make html
 ```
 
 ---
@@ -209,56 +225,51 @@ python3 scripts/_annotate_types.py
 chmod +x deploy_docker.sh
 ./deploy_docker.sh
 ```
-
 Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
 
 ### Remote Workers
 
+Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No direct database access is needed.
+
 ```bash
+# General Syntax
 ./start_worker.sh <REDIS_URL> [GPU_ID]
 
-# GPU worker
+# GPU worker example
 ./start_worker.sh redis://:password@server:6379/0 0
 
-# CPU worker
+# CPU worker example
 ./start_worker.sh redis://:password@server:6379/0
 ```
 
-Workers require Docker and NVIDIA Container Toolkit (for GPU). No database access needed.
-
 ---
 
-## Security
+## Security Highlights
 
 | Layer | Mechanism |
 |-------|-----------|
-| **Authentication** | httpOnly cookies with JWTs (XSS-immune), 24h expiry |
-| **Authorization** | Role-based (admin, jury, competitor) with DB-backed role lookup |
-| **Token Revocation** | Redis blacklist with `jti` — logout instantly invalidates tokens |
-| **Rate Limiting** | Lua atomic counters per-user per-endpoint, Redis-down fails open |
-| **PII Encryption** | Fernet symmetric encryption for competitor demographics |
-| **Sandbox** | `--network none`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, RAM limits |
-| **Ground Truth** | `labels.parquet` never mounted into evaluation sandbox |
-| **IP Trust** | `ProxyFix` middleware — only trusts `X-Forwarded-For` from Nginx |
-| **HF API Keys** | Fetched on-demand by workers via authenticated API, never in Redis |
-
----
-
-## License
-
-[GNU Affero General Public License v3.0](LICENSE)
+| **Authentication** | httpOnly cookies with JWTs (XSS-immune), 24h expiry. |
+| **Authorization** | Role-based (admin, jury, competitor) with DB-backed role lookup. |
+| **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens. |
+| **Rate Limiting** | Lua atomic counters per-user and per-endpoint; fails open if Redis is down. |
+| **PII Encryption** | Fernet symmetric encryption secures competitor demographics at rest. |
+| **Sandbox** | Strict container limits: `--network none`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, and RAM limits. |
+| **Ground Truth** | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox. |
+| **IP Trust** | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted. |
+| **HF API Keys** | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis. |
 
 ---
 
 ## Documentation
 
-| Guide | Audience |
-|-------|----------|
-| [Student Guide](guides/en/student_guide.md) | Competitors — logging in, understanding tasks, submitting notebooks, leaderboard |
-| [Jury Guide](guides/en/jury_guide.md) | Jury members — monitoring, manual scoring, competitor registration, exports |
-| [Admin Guide](guides/en/admin_guide.md) | Administrators — challenge/task management, backups, worker health, user admin |
-| [API Reference](http://localhost:5001/apidocs) | Developers — interactive Swagger UI with all 65 endpoints |
-| [Translation Check](frontend/scripts/check_translations.py) | Developers — validates i18n keys across en/bg, finds missing/orphaned keys |
+| Guide | Target Audience | Focus Areas |
+|-------|-----------------|-------------|
+| [Student Guide](guides/en/student_guide.md) | Competitors | Logging in, understanding tasks, submitting notebooks, leaderboard navigation. |
+| [Jury Guide](guides/en/jury_guide.md) | Jury Members | Monitoring submissions, manual scoring, competitor registration, exports. |
+| [Admin Guide](guides/en/admin_guide.md) | Administrators | Challenge/task management, backups, worker health monitoring, user administration. |
+| [API Reference](http://localhost:5001/apidocs) | Developers | Interactive Swagger UI detailing all 65 backend endpoints. |
+| [Translation Check](frontend/scripts/check_translations.py) | Developers | Validates i18n keys across EN/BG, highlighting missing or orphaned entries. |
+| [Sphinx Documentation](https://lavbench.readthedocs.io/) | Developers | Full auto-generated API reference (autodoc) and rendered OpenAPI spec. |
 
 ---
 
@@ -266,22 +277,23 @@ Workers require Docker and NVIDIA Container Toolkit (for GPU). No database acces
 
 ### Pull Request Checklist
 
-1. **Run all tests**: `npm run test` (frontend) + `python -m pytest tests/` (backend)
-2. **Keep types clean**: `npm run check-types` must pass (0 errors)
-3. **Check translations**: `python3 scripts/check_translations.py` must show 0 missing keys
-4. **Regenerate API types** if you changed backend endpoints:
-   ```bash
-   # Start the backend on port 5001, then:
-   npm run generate-api-types
-   python3 scripts/_annotate_types.py
-   ```
-5. **Follow existing patterns** — use `@type` JSDoc annotations for API responses, keep component props with defaults, use `tsc --noEmit` for validation
+1.  **Create tests for new code:** When adding new API endpoints, React components, or services, you must create accompanying tests to maintain our high coverage standard.
+2.  **Run all tests:** `npm run test` (frontend) and `python -m pytest tests/` (backend).
+3.  **Verify type integrity:** `npm run check-types` must pass with 0 errors.
+4.  **Check translations:** `python3 scripts/check_translations.py` must show 0 missing keys.
+5.  **Regenerate API types** if backend endpoints are modified:
+    ```bash
+    # Start the backend on port 5001, then run:
+    npm run generate-api-types
+    python3 scripts/_annotate_types.py
+    ```
+6.  **Adhere to project patterns:** Use `@type` JSDoc annotations for API responses, maintain component prop defaults, and rely on `tsc --noEmit` for validation.
 
-### Type System
+### Frontend Type System
 
-The frontend uses **JSDoc `@type` annotations** (not full TypeScript) referencing a generated `types/api.d.ts` file:
+The frontend leverages **JSDoc `@type` annotations** rather than raw TypeScript, referencing an auto-generated `types/api.d.ts` file:
 
-```
+```text
 Backend flasgger docstrings
        │
        ▼
@@ -297,18 +309,15 @@ Backend flasgger docstrings
   tsc --noEmit                   (validates all types)
 ```
 
-**Key conventions**:
-- API response types use `paths['/api/endpoint']['method']['responses']['200']['content']['application/json']`
-- Component props use default values (`prop = 'default'`) to keep them optional
-- Service wrappers use `(...args: any[]) => Promise<{ok, data: Type}>`
-- Translations use dot-notation keys (`section.subsection.key`) matching the JSON structure
-- Never use `@ts-ignore` or `@type {any}` — use specific type assertions or narrow types with `typeof` guards
+**Key Conventions:**
+* API response types utilize precise paths: `paths['/api/endpoint']['method']['responses']['200']['content']['application/json']`
+* Component props must use default values (e.g., `prop = 'default'`) to maintain optionality.
+* Service wrappers follow the signature: `(...args: any[]) => Promise<{ok, data: Type}>`
+* Translations rely on dot-notation keys (e.g., `section.subsection.key`) mapping to the JSON structure.
+* Never use `@ts-ignore` or `@type {any}`. Instead, utilize specific type assertions or narrow types with `typeof` guards.
 
-### Project Structure
+---
 
-New code should follow the existing directory layout:
-- **Backend routes**: `backend/routes/<feature>.py` with flasgger docstrings
-- **Frontend components**: `frontend/src/components/<domain>/<Component>.jsx`
-- **Frontend pages**: `frontend/src/pages/<Page>.jsx`
-- **Services**: `frontend/src/services/<Service>.js`
-- **Translations**: `frontend/public/locales/{en,bg}/translation.json`
+## License
+
+Released under the [GNU Affero General Public License v3.0](LICENSE).

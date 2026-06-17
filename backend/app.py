@@ -1,3 +1,5 @@
+"""Flask application factory and Swagger/OpenAPI configuration."""
+
 import os
 import json
 from datetime import datetime, timedelta

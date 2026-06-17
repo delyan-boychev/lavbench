@@ -1,3 +1,5 @@
+"""Celery task for system maintenance — cleanup, watchdog, diagnostics."""
+
 import os
 import glob
 import json

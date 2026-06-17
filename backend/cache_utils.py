@@ -1,3 +1,5 @@
+"""Redis connection pool, distributed cache locking, and dead-letter logging."""
+
 import os
 import json
 import uuid
@@ -91,6 +93,7 @@ def log_dead_letter(submission_id, task_id=None, challenge_id=None, error=None):
 
 
 def get_cached(key):
+    """Get a JSON-deserialized value from Redis by key. Returns None on miss/error."""
     r = get_redis_client()
     if not r:
         return None
@@ -104,6 +107,7 @@ def get_cached(key):
 
 
 def set_cached(key, value, timeout=300):
+    """JSON-serialize and store a value in Redis with an expiry TTL."""
     r = get_redis_client()
     if not r:
         return False
@@ -116,6 +120,7 @@ def set_cached(key, value, timeout=300):
 
 
 def delete_cached(key):
+    """Delete a key from Redis. Returns True if deleted, False on error."""
     r = get_redis_client()
     if not r:
         return False
@@ -128,6 +133,7 @@ def delete_cached(key):
 
 
 def invalidate_challenge_cache(challenge_id=None):
+    """Clear cached challenge listings and (optionally) a specific challenge entry."""
     delete_cached("challenges:all")
     if challenge_id:
         delete_cached(f"challenge:{challenge_id}")
@@ -135,6 +141,7 @@ def invalidate_challenge_cache(challenge_id=None):
 
 
 def invalidate_leaderboard_cache(challenge_id):
+    """Clear frozen and unfrozen leaderboard cache for a given challenge."""
     if challenge_id:
         delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
         delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")

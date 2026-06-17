@@ -1,3 +1,5 @@
+"""Application configuration loaded from environment variables."""
+
 import os
 import sys
 from dotenv import load_dotenv

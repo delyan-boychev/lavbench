@@ -1,3 +1,5 @@
+"""Celery task for executing student submissions in Docker sandboxes."""
+
 import os
 import json
 import subprocess

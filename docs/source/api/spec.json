@@ -1,0 +1,2797 @@
+{
+  "components": {
+    "schemas": {
+      "Cell": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "code",
+              "markdown"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Challenge": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "double_blind": {
+            "type": "boolean"
+          },
+          "end_time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "gpu_required": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_archived": {
+            "type": "boolean"
+          },
+          "is_frozen": {
+            "type": "boolean"
+          },
+          "max_eval_requests": {
+            "type": "integer"
+          },
+          "ram_limit_mb": {
+            "type": "integer"
+          },
+          "scores_finalized": {
+            "type": "boolean"
+          },
+          "start_time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "time_limit_sec": {
+            "type": "integer"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "code": {
+            "description": "Machine-readable error code",
+            "example": "ERR_INVALID_CREDENTIALS",
+            "type": "string"
+          },
+          "error": {
+            "description": "Human-readable error message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ],
+        "type": "object"
+      },
+      "Submission": {
+        "properties": {
+          "challenge_id": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detailed_status": {
+            "type": "string"
+          },
+          "executed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "execution_time_ms": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "is_baseline": {
+            "type": "boolean"
+          },
+          "is_final_selection": {
+            "type": "boolean"
+          },
+          "private_score": {
+            "type": "number"
+          },
+          "public_score": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "task_title": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "type": "object"
+      },
+      "Task": {
+        "properties": {
+          "apt_packages": {
+            "type": "string"
+          },
+          "ban_magic_commands": {
+            "type": "boolean"
+          },
+          "banned_imports": {
+            "type": "string"
+          },
+          "base_docker_image": {
+            "type": "string"
+          },
+          "challenge_id": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "gpu_required": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "max_submissions_per_period": {
+            "type": "integer"
+          },
+          "metrics_config": {
+            "type": "object"
+          },
+          "pip_requirements": {
+            "type": "string"
+          },
+          "ram_limit_mb": {
+            "type": "integer"
+          },
+          "stage_id": {
+            "type": "integer"
+          },
+          "submission_period_hours": {
+            "type": "integer"
+          },
+          "time_limit_sec": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "whitelisted_imports": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "User": {
+        "properties": {
+          "alias_id": {
+            "description": "Pseudonym for leaderboard display",
+            "type": "string"
+          },
+          "challenge_id": {
+            "type": "integer"
+          },
+          "city": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "grade": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "is_anonymous": {
+            "type": "boolean"
+          },
+          "manual_points": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "competitor",
+              "jury",
+              "admin"
+            ],
+            "type": "string"
+          },
+          "school": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "description": "Session cookie required for most endpoints.",
+        "in": "cookie",
+        "name": "auth_token",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Machine Learning Competition Platform \u2014 REST + SSE Endpoints",
+    "title": "LavBench API",
+    "version": "1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/admin/backups": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List all system backups with filenames, sizes, and timestamps.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/backups/force": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Trigger an immediate manual backup of the database and uploaded files.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/backups/live": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream backup events in real-time via Server-Sent Events.",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/admin/backups/{filename}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Delete a manual backup file. Auto-backups cannot be deleted.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/backups/{filename}/download": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Download a specific backup archive file.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/backups": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List competition lifecycle backups for a specific challenge.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/backups/{filename}/download": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Download a competition lifecycle backup file.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/download-scores-csv": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Generate and download a CSV of all competitor scores for a challenge.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/download-submissions-zip": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Download all completed student submissions as a ZIP archive.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/reset-all-passwords": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Generate new passwords for all competitors in a challenge.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/dead-letters": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Inspect the dead letter queue of permanently failed submission evaluations.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/import-competitors-csv": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Bulk import competitors from a CSV file.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/metrics": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List all built-in evaluation metrics available for task configuration.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/register-competitor": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Register a new competitor with auto-generated credentials.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/register-user": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Register a new user account with specified role and demographics.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List and search users with pagination. Supports filtering by role and challenge.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Permanently delete a user and all their submissions.",
+        "tags": [
+          "Admin"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Update user profile fields. Jury members have restricted edit access.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}/reset-password": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Generate a new random password for a specific user.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/workers/stats": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get detailed worker cluster statistics including CPU, RAM, GPU specs.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/workers/stats/live": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream real-time worker cluster statistics via Server-Sent Events.",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "description": "Password must be SHA-256 hashed client-side before sending.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>",
+        "parameters": [
+          {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "password": {
+                      "description": "SHA-256 hash of the plaintext password",
+                      "example": "a1b2c3...",
+                      "type": "string"
+                    },
+                    "username": {
+                      "description": "Username or email",
+                      "example": "admin_1c15d4d7",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "password"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "in": "body",
+            "name": "body",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "example": "Logged in successfully.",
+                      "type": "string"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Login successful. httpOnly cookie set.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "auth_token=httpOnly; SameSite=Strict",
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing username or password"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Competition archived (competitor login only)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rate limited (5 failures per 60s per username+IP)"
+          }
+        },
+        "summary": "Authenticate a user and receive a session cookie.",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "example": "Logged out successfully.",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Logged out successfully. Cookie cleared, token revoked."
+          }
+        },
+        "summary": "Log out the current user. Clears the httpOnly cookie and revokes the JWT token.",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "Requires valid httpOnly cookie or Authorization header.<br/>",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Current user profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized \u2014 missing, expired, or revoked token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "User not found (deleted after token was issued)"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the current authenticated user's profile.",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/challenges": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List all available challenges with their tasks and stages.",
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Create a new competition with start/end times, resource limits, and privacy settings.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Permanently delete a challenge including all its tasks, submissions, and competition backups.",
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get detailed information about a specific challenge.",
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Update the configuration of an existing challenge.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/archive": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Toggle archive state. Archived challenges are hidden from competitors.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/export-results": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Export comprehensive competition results as CSV with ranks, scores, and audit log.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/finalize": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Finalize the competition scores. Locks rankings and reveals competitor identities.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/leaderboard": {
+      "get": {
+        "description": "Competitors only see their own challenge, and frozen/finalized rules apply.<br/>",
+        "parameters": [
+          {
+            "description": "ID of the challenge",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Leaderboard data returned"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied for competitor"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Challenge not found"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the leaderboard for a specific challenge.",
+        "tags": [
+          "Leaderboard"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/manual-points": {
+      "post": {
+        "description": "Admins and Jury members only.<br/>",
+        "parameters": [
+          {
+            "description": "ID of the challenge",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "points": {
+                      "type": "object"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "in": "body",
+            "name": "body",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Manual points saved successfully"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "User or Challenge not found"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Save manual points for a user in a challenge.",
+        "tags": [
+          "Leaderboard"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/parse-notebook": {
+      "post": {
+        "description": "5MB file limit. Returns a list of cell objects with type and source.<br/>",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Jupyter Notebook .ipynb file (max 5MB)",
+            "in": "formData",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "type": "file"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "cells": {
+                      "items": {
+                        "$ref": "#/components/schemas/Cell"
+                      },
+                      "type": "array"
+                    },
+                    "filename": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Notebook parsed successfully"
+          },
+          "400": {
+            "description": "Invalid file type, file too large, or parse error",
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "403": {
+            "description": "Not registered for this challenge",
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "summary": "Upload and parse a Jupyter Notebook (.ipynb) to preview cells.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/stages": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Add a new stage to a challenge with its own deadline and score visibility rules.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/stages/{stage_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Remove a stage from a challenge.",
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Update an existing stage configuration.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/stages/{stage_id}/finalize": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Finalize a specific stage. Locks stage scores.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/submissions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of submissions"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get paginated submissions for a challenge.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/submit": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "selected_cells": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "task_id": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "in": "body",
+            "name": "body",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission received and queued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied or challenge frozen"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Submit parsed code cells for a task.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/tasks": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Create a new evaluation task with resource limits, metrics, and test data files.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/test-competition": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Create a test competition that starts immediately for testing purposes.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/docs/admin": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Language code (e.g. 'en', 'bg')",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Returns the rendered guide"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the admin documentation guide.",
+        "tags": [
+          "Docs"
+        ]
+      }
+    },
+    "/api/docs/jury": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Language code (e.g. 'en', 'bg')",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Returns the rendered guide"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the jury documentation guide.",
+        "tags": [
+          "Docs"
+        ]
+      }
+    },
+    "/api/docs/student": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Language code (e.g. 'en', 'bg')",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Returns the rendered guide"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the student documentation guide.",
+        "tags": [
+          "Docs"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Verifies database connectivity.<br/>",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "database": {
+                      "example": "connected",
+                      "type": "string"
+                    },
+                    "status": {
+                      "example": "ok",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service healthy"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "example": "error",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Database unreachable"
+          }
+        },
+        "summary": "Health check for Docker and load balancer monitoring.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission details"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission not found"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get details of a specific submission.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/logs/live": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "SSE stream of logs"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission not found"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream live logs for a submission using Server-Sent Events (SSE).",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/select-final": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission selected as final"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Selection window closed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Submission not found"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Select a submission as the final one for scoring.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Remove a task and all its submissions from a challenge.",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "API endpoint.",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Update an existing task configuration including files and evaluator scripts.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/download/{filename}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Download a resource file attached to a task.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/leaderboard": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get cached leaderboard data for a specific task.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/leaderboard/live": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream live task leaderboard updates via SSE.",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/submissions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List submissions for a specific task with pagination.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/submissions/live": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream live task submission updates via SSE.",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/submit": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Submit code cells for execution under a specific task.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker-status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get current worker cluster health status with specs.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker-status/live": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream worker cluster health status via SSE.",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/worker/active-datasets": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List all HuggingFace datasets used by active challenges for worker preloading.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/report/{submission_id}": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Worker callback to report submission status and scores.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/tasks/{task_id}/files/{filename}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Worker endpoint to securely download task resource files.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/tasks/{task_id}/hf-key": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Worker endpoint to fetch the HuggingFace API key for a task.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Login, logout, session management",
+      "name": "Auth"
+    },
+    {
+      "description": "Competition CRUD, stages, finalize, archive, export",
+      "name": "Challenges"
+    },
+    {
+      "description": "Notebook parsing, submit, select final, logs",
+      "name": "Submissions"
+    },
+    {
+      "description": "Task CRUD, file uploads, evaluation configuration",
+      "name": "Tasks"
+    },
+    {
+      "description": "Rankings, manual points, score corrections",
+      "name": "Leaderboard"
+    },
+    {
+      "description": "User management, backups, workers, dead letters",
+      "name": "Admin"
+    },
+    {
+      "description": "Real-time Server-Sent Event streams",
+      "name": "SSE Streaming"
+    },
+    {
+      "description": "In-app guide endpoints",
+      "name": "Docs"
+    }
+  ]
+}

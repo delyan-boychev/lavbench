@@ -1,3 +1,5 @@
+"""Service-layer functions for submission creation, validation, and status management."""
+
 import os
 import json
 import ast
@@ -5,6 +7,7 @@ from datetime import datetime
 from models import db, Submission, is_metric_lower_better
 
 def extract_code_from_cells(cells_list):
+    """Extract source code strings from a list of cell dicts (from notebook JSON)."""
     if not cells_list:
         return []
     extracted = []
@@ -22,6 +25,7 @@ def extract_code_from_cells(cells_list):
     return extracted
 
 def extract_code_from_notebook(filepath):
+    """Open a .ipynb file and return all code cell sources as a list of strings."""
     try:
         with open(filepath, "r") as f:
             data = json.load(f)
@@ -38,6 +42,7 @@ def extract_code_from_notebook(filepath):
         return []
 
 def check_execution_rules(task, cells_list):
+    """Validate student code against task rules: banned magic commands, banned/whitelisted imports."""
     extracted_cells = extract_code_from_cells(cells_list)
     combined_code = "\n".join(extracted_cells)
     
@@ -88,6 +93,7 @@ def check_execution_rules(task, cells_list):
     return True, None
 
 def calculate_submission_priority(user_id, role):
+    """Return a priority integer: 9 for admin/jury, decaying from 6 for competitors per daily count."""
     if role in ['admin', 'jury']:
         return 9
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)

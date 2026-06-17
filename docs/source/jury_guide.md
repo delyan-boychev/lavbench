@@ -1,0 +1,1 @@
+../../guides/en/jury_guide.md

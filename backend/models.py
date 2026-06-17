@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM models for User, Challenge, Task, Submission, and related entities."""
+
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import logging
@@ -30,6 +32,7 @@ else:
     cipher_suite = Fernet(DERIVED_KEY)
 
 def encrypt_field(text):
+    """Encrypt a plaintext string using Fernet symmetric encryption."""
     if not text:
         return None
     try:
@@ -39,6 +42,7 @@ def encrypt_field(text):
         return None
 
 def decrypt_field(cipher_text):
+    """Decrypt a Fernet-encrypted ciphertext back to plaintext."""
     if not cipher_text:
         return None
     try:
@@ -77,17 +81,21 @@ METRIC_LOWER_IS_BETTER = {
 }
 
 def is_metric_lower_better(metric_name):
+    """Return True if the given metric name is lower-is-better (e.g. logloss, rmse)."""
     if not metric_name:
         return False
     return METRIC_LOWER_IS_BETTER.get(metric_name.lower().strip(), False)
 
 def generate_pseudonym():
+    """Generate a random pseudonym like 'Quantum-Falcon-342' for blind review."""
     adj = random.choice(ADJECTIVES)
     noun = random.choice(NOUNS)
     num = random.randint(100, 999)
     return f"{adj}-{noun}-{num}"
 
 class User(db.Model):
+    """Registered user — competitor, jury, or admin. Stores encrypted demographics."""
+
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -200,6 +208,8 @@ class User(db.Model):
         }
 
 class Challenge(db.Model):
+    """A machine learning competition with stages, tasks, participants, and scoring rules."""
+
     __tablename__ = 'challenges'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -295,6 +305,8 @@ class Challenge(db.Model):
         }
 
 class Stage(db.Model):
+    """A phase within a challenge (e.g. qualification, finals) with its own time window."""
+
     __tablename__ = 'stages'
     
     __table_args__ = (
@@ -331,6 +343,8 @@ class Stage(db.Model):
         }
 
 class Task(db.Model):
+    """An individual problem within a challenge — has metrics config, files, time limits."""
+
     __tablename__ = 'tasks'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -450,6 +464,8 @@ class Task(db.Model):
         }
 
 class Submission(db.Model):
+    """A student's notebook/code submission with status, scores, logs, and execution metadata."""
+
     __tablename__ = 'submissions'
     
     __table_args__ = (
@@ -614,6 +630,8 @@ def _delete_submission_files(mapper, connection, target):
             pass
 
 class AuditLog(db.Model):
+    """Audit trail for administrative actions (create, update, delete, archive, finalize)."""
+
     __tablename__ = 'audit_logs'
     
     id = db.Column(db.Integer, primary_key=True)

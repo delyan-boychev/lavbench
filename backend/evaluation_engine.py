@@ -1,3 +1,5 @@
+"""Parquet-based evaluation engine for comparing student submissions against labels."""
+
 import os
 import json
 import math
@@ -110,6 +112,7 @@ def calculate_lcs(x, y):
 
 # NLP Metric Fallbacks
 def compute_bleu(ref, hyp):
+    """Compute BLEU score for machine translation quality."""
     try:
         from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
         cc = SmoothingFunction()
@@ -124,6 +127,7 @@ def compute_bleu(ref, hyp):
         return overlap / max(len(ref_words), len(hyp_words))
 
 def compute_rouge_l(ref, hyp):
+    """Compute ROUGE-L (Longest Common Subsequence) for summarization evaluation."""
     try:
         from rouge_score import rouge_scorer
         scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
@@ -142,6 +146,7 @@ def compute_rouge_l(ref, hyp):
         return (2 * precision * recall) / (precision + recall)
 
 def compute_meteor(ref, hyp):
+    """Compute METEOR score for machine translation evaluation."""
     try:
         from nltk.translate.meteor_score import meteor_score
         # nltk meteor_score expects token lists
@@ -155,6 +160,7 @@ def compute_meteor(ref, hyp):
         return len(r.intersection(h)) / len(r.union(h))
 
 def compute_chrf(ref, hyp, beta=3):
+    """Compute chrF (character n-gram F-score) for translation quality."""
     try:
         from nltk.translate.chrf_score import sentence_chrf
         return sentence_chrf(ref, hyp, beta=beta)
@@ -166,6 +172,7 @@ def compute_chrf(ref, hyp, beta=3):
         return len(ref_chars.intersection(hyp_chars)) / len(ref_chars.union(hyp_chars))
 
 def compute_ter(ref, hyp):
+    """Compute Translation Edit Rate (TER) — higher is worse, 0 = perfect."""
     ref_words = ref.split()
     hyp_words = hyp.split()
     m, n = len(ref_words), len(hyp_words)
@@ -185,6 +192,7 @@ def compute_ter(ref, hyp):
     return min(1.0, dp[m][n] / m)
 
 def compute_bertscore(refs, hyps):
+    """Compute BERTScore — precision, recall, F1 based on BERT embeddings."""
     try:
         from bert_score import score
         P, R, F1 = score(hyps, refs, lang="en", verbose=False)
@@ -266,6 +274,7 @@ def compute_map_detection(y_true, y_pred, iou_threshold=0.5):
 
 # CV Signal Quality / Image & Audio Quality Metrics
 def compute_psnr(ref_bytes_list, hyp_bytes_list):
+    """Compute Peak Signal-to-Noise Ratio for image reconstruction quality."""
     psnr_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
         if not ref or not hyp:
@@ -301,6 +310,7 @@ def compute_psnr(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(psnr_scores))
 
 def compute_ssim(ref_bytes_list, hyp_bytes_list):
+    """Compute Structural Similarity Index for image quality assessment."""
     ssim_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
         if not ref or not hyp:
@@ -335,6 +345,7 @@ def compute_ssim(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(ssim_scores))
 
 def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
+    """Compute Signal-to-Noise Ratio for audio quality assessment."""
     snr_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
         if not ref or not hyp:
@@ -358,6 +369,7 @@ def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(snr_scores))
 
 def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
+    """Compute Mel-scale Log Spectral Distance for audio quality."""
     lsd_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
         if not ref or not hyp:
@@ -387,6 +399,7 @@ def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
 
 # Segmentation Helpers
 def compute_segmentation_iou(y_true, y_pred):
+    """Compute Intersection over Union for image segmentation."""
     iou_scores = []
     for t, p in zip(y_true, y_pred):
         if not t or not p:
@@ -402,6 +415,7 @@ def compute_segmentation_iou(y_true, y_pred):
     return float(np.mean(iou_scores))
 
 def compute_segmentation_dice(y_true, y_pred):
+    """Compute Dice coefficient for image segmentation overlap."""
     dice_scores = []
     for t, p in zip(y_true, y_pred):
         if not t or not p:
@@ -418,6 +432,7 @@ def compute_segmentation_dice(y_true, y_pred):
 
 # Keypoints / OKS
 def compute_oks(y_true, y_pred):
+    """Compute Object Keypoint Similarity for pose estimation."""
     oks_scores = []
     for t, p in zip(y_true, y_pred):
         try:
@@ -439,6 +454,7 @@ def compute_oks(y_true, y_pred):
     return float(np.mean(oks_scores))
 
 def compute_pck(y_true, y_pred, threshold=0.05):
+    """Compute Percentage of Correct Keypoints for pose estimation."""
     pck_scores = []
     for t, p in zip(y_true, y_pred):
         try:
@@ -456,6 +472,7 @@ def compute_pck(y_true, y_pred, threshold=0.05):
 
 # Retrieval NDCG/MRR
 def compute_ndcg_at_k(relevance_scores, k=10):
+    """Compute Normalized Discounted Cumulative Gain for ranking quality."""
     relevance_scores = np.asarray(relevance_scores, dtype=np.float64)[:k]
     if relevance_scores.size == 0:
         return 0.0

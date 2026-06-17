@@ -1,3 +1,5 @@
+"""Worker runtime utilities — Docker sandbox execution, status reporting."""
+
 import os
 import subprocess
 import time
@@ -84,6 +86,8 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
 MAX_LOG_LINES = 10000
 
 class StreamingLogList(list):
+    """A list subclass that publishes each appended log line via SSE in real time."""
+
     def __init__(self, submission_id):
         super().__init__()
         self.submission_id = submission_id
@@ -99,11 +103,14 @@ class StreamingLogList(list):
             logger.exception("[StreamingLogList Error] Failed to publish log line to Redis")
 
 class MockModel:
+    """A simple dict-like object for passing metadata without a real ORM model."""
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
 def report_status_to_server(metadata, status, detailed_status, logs=None, public_score=None, private_score=None, execution_time_ms=None, metrics_payload_pub=None, metrics_payload_priv=None, gpu_node=None, max_retries=3, backoff_factor=2):
+    """POST submission status/scores back to the main server with exponential backoff retry."""
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
         return False
     url = f"{metadata['main_server_url']}/api/worker/report/{metadata['submission_id']}"
@@ -149,6 +156,7 @@ def report_status_to_server(metadata, status, detailed_status, logs=None, public
     return False
 
 def download_task_files_to_dir(metadata, temp_dir, logs):
+    """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
         return
     files_list = metadata.get("task_files", [])
@@ -180,6 +188,7 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
             logs.append(f"Error downloading task file '{filename}': {str(e)}")
 
 def download_labels_parquet_to_dir(metadata, labels_dir, logs):
+    """Download labels.parquet securely from the server for evaluation comparison."""
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
         return None
     files_list = metadata.get("task_files", [])

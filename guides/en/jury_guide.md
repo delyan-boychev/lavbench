@@ -42,7 +42,7 @@ For large groups:
 1. Go to the **Admin Panel** → **Competitor Registration** tab
 2. Click **Import CSV**
 3. Upload a CSV file with the following columns:
-```csv
+```text
    name,surname,grade,school,city,challenge_id,is_anonymous
    Alice,Smith,12,High School,Sofia,1,false
    Bob,Jones,11,Academy,Plovdiv,1,false

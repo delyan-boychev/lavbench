@@ -1,3 +1,5 @@
+"""Server-Sent Events (SSE) publish/subscribe helpers for real-time updates."""
+
 import json
 import logging
 from cache_utils import get_redis_client
@@ -10,6 +12,7 @@ def _redis():
 
 
 def publish_leaderboard_update(task_id):
+    """Publish a leaderboard-changed event to Redis channel for SSE consumers."""
     if not task_id:
         return
     try:
@@ -21,6 +24,7 @@ def publish_leaderboard_update(task_id):
 
 
 def publish_submissions_update(task_id, user_id):
+    """Publish a submission-list-changed event for a specific task+user."""
     if not task_id or not user_id:
         return
     try:
@@ -32,6 +36,7 @@ def publish_submissions_update(task_id, user_id):
 
 
 def publish_submission_log(submission_id, log_line):
+    """Append a log line to the submission's Redis list and publish to its SSE channel."""
     if not submission_id:
         return
     try:
@@ -47,6 +52,7 @@ def publish_submission_log(submission_id, log_line):
 
 
 def clear_submission_logs(submission_id):
+    """Delete the Redis log list for a submission."""
     if not submission_id:
         return
     try:

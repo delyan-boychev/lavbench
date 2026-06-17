@@ -1,3 +1,5 @@
+"""Jinja2 templates for Dockerfiles used in sandbox execution."""
+
 import os
 from jinja2 import Environment
 
