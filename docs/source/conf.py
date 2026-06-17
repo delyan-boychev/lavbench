@@ -9,9 +9,9 @@ os.environ.setdefault('SECRET_KEY', 'dev_key_32charsMinForHMACKey!!')
 os.environ.setdefault('ENCRYPTION_KEY', 'M0uOruyloVEFHy1NgSleQ4dEvt7JZaJyZS8aOP3Xc_s=')
 
 project = 'LavBench'
-copyright = '2026, Bulgarian Team'
-author = 'Bulgarian Team'
-release = '1.0'
+copyright = '2026, Delyan Boychev & Bulgarian AI Olympiad Committee'
+author = 'Delyan Boychev & Bulgarian AI Olympiad Committee'
+release = os.environ.get('READTHEDOCS_VERSION', '1.0-dev')
 
 extensions = [
     'myst_parser',
