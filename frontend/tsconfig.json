@@ -8,8 +8,10 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": false,
-    "baseUrl": "src",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "*": ["./src/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.*", "src/**/__tests__/**"]

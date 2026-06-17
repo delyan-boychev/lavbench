@@ -52,7 +52,7 @@ jobs:
           DATABASE_URL: postgresql://user:pass@localhost:5432/dbname
           CELERY_BROKER_URL: redis://localhost:6379/0
           SECRET_KEY: test_secret_key_that_is_at_least_32_characters_long_for_security
-          ENCRYPTION_KEY: test_encryption_key_that_is_long_enough
+          ENCRYPTION_KEY: M0uOruyloVEFHy1NgSleQ4dEvt7JZaJyZS8aOP3Xc_s=
         run: |
           cd backend
           python -m pytest tests/ -v
