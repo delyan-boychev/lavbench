@@ -48,6 +48,23 @@ To safeguard the execution cluster and ensure fair play, every task must be expl
 * **Time Limit:** (Seconds) The maximum wall-clock runtime for the Celery process. Exceeding this triggers a Timeout failure.
 * **Requires GPU:** A boolean flag that routes the execution job specifically to the high-performance hardware accelerator (GPU) Celery queue.
 
+### Sandbox Security
+
+Every submission executes in a hardened Docker container with enforced isolation:
+
+| Restriction | Purpose |
+|-------------|---------|
+| `--network none` | Blocks all network access — no data exfiltration or downloads |
+| `--cap-drop ALL` | Removes all Linux capabilities — no raw sockets, `mount()`, `ptrace()`, or privilege escalation |
+| `--read-only` | Root filesystem is read-only — student code cannot modify system binaries |
+| `--no-new-privileges` | Prevents suid binary escalation |
+| `--tmpfs /tmp:noexec,nosuid,size=128m` | In-memory, size-capped temp — cannot fill host disk |
+| `--memory-swap` = RAM limit | Disables swap — no memory pressure bypass |
+| `--pids-limit 64` | Prevents fork bombs |
+| `--ulimit nofile=256:256` | Limits open file descriptors |
+| `--cpus 2` | Limits CPU to 2 cores |
+
+
 ### Custom Docker Image Setup
 * **Base Image:** Provide a valid public Docker registry image (e.g., `pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime`).
 * **Apt Packages:** A comma-separated list of Ubuntu packages to install (e.g., `libglib2.0-0, build-essential`).

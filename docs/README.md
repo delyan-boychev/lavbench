@@ -20,7 +20,7 @@ python3 scripts/_annotate_types.py  # Inject JSDoc @type annotations
 npm run check-types              # tsc --noEmit — verify 0 errors
 ```
 
-This pipeline generates `src/types/api.d.ts` (full type definitions for all 65 endpoints), injects `@type` annotations into all `api.get/post/put/delete/fetch` call sites, and validates everything with TypeScript's `checkJs` mode.
+This pipeline generates `src/types/api.d.ts` (full type definitions for all ~68 endpoints), injects `@type` annotations into all `api.get/post/put/delete/fetch` call sites, and validates everything with TypeScript's `checkJs` mode.
 
 ### Key things to know
 

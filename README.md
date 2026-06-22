@@ -23,7 +23,7 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ## Features
 
-* **Sandboxed Execution:** User code runs in throwaway Docker containers with `--network none`, CPU/RAM/process limits, and `tmpfs` mounts.
+* **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
 * **Double-Blind Review:** Competitor demographics are encrypted at rest (Fernet) and only revealed after scores are finalized.
 * **Live Leaderboards:** Server-Sent Events push real-time score updates to all connected clients.
 * **Multi-Stage Competitions:** Support for stages with independent deadlines, grace periods, and score visibility controls.
@@ -188,7 +188,7 @@ cp .env.example .env
 cd backend
 micromamba run -n lavbench_backend python -m pytest tests/ -v
 ```
-Includes 120 tests covering routes, auth, evaluation, caching, rate limiting, and models.
+Includes ~780 tests covering routes, auth, evaluation, caching, rate limiting, and models.
 
 ### Sphinx Documentation
 
@@ -206,7 +206,7 @@ The Sphinx build runs automatically in CI (`.github/workflows/ci.yml`) and deplo
 ```bash
 cd frontend
 
-# Unit / component tests (vitest — 149 tests)
+# Unit / component tests (vitest — 362 tests)
 npm run test
 
 # Type checking (JSDoc annotations + component props)
@@ -260,7 +260,7 @@ make start-worker REDIS_URL=redis://:password@server:6379/0
 | **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens. |
 | **Rate Limiting** | Lua atomic counters per-user and per-endpoint; fails open if Redis is down. |
 | **PII Encryption** | Fernet symmetric encryption secures competitor demographics at rest. |
-| **Sandbox** | Strict container limits: `--network none`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, and RAM limits. |
+| **Sandbox** | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. |
 | **Ground Truth** | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox. |
 | **IP Trust** | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted. |
 | **HF API Keys** | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis. |
@@ -274,7 +274,7 @@ make start-worker REDIS_URL=redis://:password@server:6379/0
 | [Student Guide](guides/en/student_guide.md) | Competitors | Logging in, understanding tasks, submitting notebooks, leaderboard navigation. |
 | [Jury Guide](guides/en/jury_guide.md) | Jury Members | Monitoring submissions, manual scoring, competitor registration, exports. |
 | [Admin Guide](guides/en/admin_guide.md) | Administrators | Challenge/task management, backups, worker health monitoring, user administration. |
-| [API Reference](http://localhost:5001/apidocs) | Developers | Interactive Swagger UI detailing all 65 backend endpoints. |
+| [API Reference](http://localhost:5001/apidocs) | Developers | Interactive Swagger UI detailing all 68 backend endpoints. |
 | [Translation Check](frontend/scripts/check_translations.py) | Developers | Validates i18n keys across EN/BG, highlighting missing or orphaned entries. |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/) | Developers | Full auto-generated API reference (autodoc) and rendered OpenAPI spec. |
 
@@ -282,46 +282,7 @@ make start-worker REDIS_URL=redis://:password@server:6379/0
 
 ## Contributing
 
-### Pull Request Checklist
-
-1.  **Create tests for new code:** When adding new API endpoints, React components, or services, you must create accompanying tests to maintain our high coverage standard.
-2.  **Run all tests:** `npm run test` (frontend) and `python -m pytest tests/` (backend).
-3.  **Verify type integrity:** `npm run check-types` must pass with 0 errors.
-4.  **Check translations:** `python3 scripts/check_translations.py` must show 0 missing keys.
-5.  **Regenerate API types** if backend endpoints are modified:
-    ```bash
-    # Start the backend on port 5001, then run:
-    npm run generate-api-types
-    python3 scripts/_annotate_types.py
-    ```
-6.  **Adhere to project patterns:** Use `@type` JSDoc annotations for API responses, maintain component prop defaults, and rely on `tsc --noEmit` for validation.
-
-### Frontend Type System
-
-The frontend leverages **JSDoc `@type` annotations** rather than raw TypeScript, referencing an auto-generated `types/api.d.ts` file:
-
-```text
-Backend flasgger docstrings
-       │
-       ▼
-  openapi-typescript
-       │
-       ▼
-  frontend/src/types/api.d.ts    (auto-generated)
-       │
-       ▼
-  scripts/_annotate_types.py     (injects @type annotations)
-       │
-       ▼
-  tsc --noEmit                   (validates all types)
-```
-
-**Key Conventions:**
-* API response types utilize precise paths: `paths['/api/endpoint']['method']['responses']['200']['content']['application/json']`
-* Component props must use default values (e.g., `prop = 'default'`) to maintain optionality.
-* Service wrappers follow the signature: `(...args: any[]) => Promise<{ok, data: Type}>`
-* Translations rely on dot-notation keys (e.g., `section.subsection.key`) mapping to the JSON structure.
-* Never use `@ts-ignore` or `@type {any}`. Instead, utilize specific type assertions or narrow types with `typeof` guards.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full pull request checklist, setup guide, code conventions, and type system overview.
 
 ---
 

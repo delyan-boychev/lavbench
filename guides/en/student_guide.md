@@ -57,7 +57,7 @@ Look at the "Execution Rules" section to see:
 
 ## 3. How Evaluation Works
 
-Your code runs in a secure Docker container (sandbox) with the datasets you downloaded. The platform calculates your metrics by **comparing the file with your predictions against the hidden ground truth file**.
+Your code runs in a hardened Docker container (sandbox) with the datasets you downloaded. The sandbox is fully isolated: no network access, no Linux capabilities, no privilege escalation, and a read-only filesystem (only `/app/` and `/tmp/` are writable). The platform calculates your metrics by **comparing the file with your predictions against the hidden ground truth file**.
 
 ### What You Need to Do
 
