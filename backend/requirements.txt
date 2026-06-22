@@ -96,7 +96,7 @@ greenlet==3.2.5
     # via
     #   gevent
     #   sqlalchemy
-gunicorn==23.0.0
+gunicorn==26.0.0
     # via -r requirements.in
 h11==0.16.0
     # via httpcore
