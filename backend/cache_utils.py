@@ -18,7 +18,7 @@ def get_redis_client():
     global _pool
     if _pool is None:
         broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=30)
+        _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=100)
     return redis_lib.Redis(connection_pool=_pool)
 
 

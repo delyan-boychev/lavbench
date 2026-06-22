@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
@@ -16,7 +16,7 @@ export default function BackupManager({ challengeId }) {
     ? `/api/admin/challenges/${challengeId}/backups`
     : '/api/admin/backups';
 
-  const loadBackups = async () => {
+  const loadBackups = useCallback(async () => {
     try {
       const { ok, data } = await api.get(listUrl);
       if (ok) setBackups(data.backups || []);
@@ -24,7 +24,7 @@ export default function BackupManager({ challengeId }) {
       /* noop */
     }
     setLoading(false);
-  };
+  }, [listUrl, challengeId]);
 
   useEffect(() => {
     loadBackups();
@@ -51,9 +51,6 @@ export default function BackupManager({ challengeId }) {
       } catch (e) {
         console.error('Backup SSE parse error:', e);
       }
-    };
-    eventSource.onerror = () => {
-      eventSource.close();
     };
     return () => eventSource.close();
   }, [challengeId, loadBackups]);
