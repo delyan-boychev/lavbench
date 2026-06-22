@@ -1,4 +1,4 @@
-"""JWT authentication, token verification, rate limiting, and authorization utilities."""
+"""Authentication, token verification, rate limiting, and authorization utilities."""
 
 import os
 import sys
@@ -293,46 +293,48 @@ def csrf_required(f):
     return decorated
 
 
-def generate_worker_token(submission_id, task_id, expires_in_sec):
-    """Create a short-lived JWT so workers can authenticate back to the server."""
-    payload = {
-        "sub": str(submission_id),
-        "task_id": task_id,
-        "role": "worker_submission",
-        "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
-        "iat": datetime.utcnow(),
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+def check_worker_auth(token):
+    """Verify a worker request using Ed25519 asymmetric signature verification.
 
+    The worker signs a nonce with its private key.  The server verifies the
+    signature using the public key.  No shared secret, no JWT, no expiration
+    — the server never sees the private key.
 
-def generate_worker_bootstrap_token(worker_id="worker", expires_in_sec=3600):
-    """Create a short-lived JWT for worker bootstrap (active-datasets, hf-key)."""
-    payload = {
-        "sub": worker_id,
-        "role": "worker_bootstrap",
-        "jti": uuid.uuid4().hex,
-        "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
-        "iat": datetime.utcnow(),
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    Token format:  {nonce}.{base64_signature}
+    Nonce format:  {submission_id}:{unix_timestamp}
 
+    The timestamp must be within 300 seconds (5 min) of server time to
+    prevent replay attacks.
 
-def verify_worker_token(token, submission_id=None, task_id=None):
-    """Verify a worker JWT. Optionally scoped to submission_id/task_id."""
-    if not token:
+    Returns True if the token is valid, False otherwise.
+    """
+    import base64
+    import time
+
+    pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY")
+    if not pub_key_b64 or not token:
         return False
+
     try:
-        if token.startswith("Bearer "):
-            token = token[7:]
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        role = payload.get("role")
-        if role not in ("worker_submission", "worker_bootstrap"):
-            return False
-        if role == "worker_submission":
-            if submission_id is not None and payload.get("sub") != str(submission_id):
-                return False
-            if task_id is not None and payload.get("task_id") != task_id:
-                return False
-        return True
-    except Exception:
+        nonce, sig_b64 = token.split(".", 1)
+    except ValueError:
         return False
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+
+        pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_key_b64))
+        pub_key.verify(base64.b64decode(sig_b64), nonce.encode())
+    except (InvalidSignature, ValueError, Exception):
+        return False
+
+    # Replay protection: nonce must be within 5 minutes of server time
+    try:
+        ts = int(nonce.rsplit(":", 1)[-1])
+        if abs(time.time() - ts) > 300:
+            return False
+    except (ValueError, IndexError):
+        return False
+
+    return True

@@ -1,16 +1,20 @@
 import os
 import json
+import base64
+import time
 from datetime import datetime, timedelta
 
 import pytest
 from models import db, User, Challenge, Task, Submission
-from auth_utils import generate_token, generate_worker_token
+from auth_utils import generate_token
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 class TestWorkerEndpoints:
     @pytest.fixture(autouse=True)
-    def setup(self, client, db_session, app_ctx, redis_flush):
+    def setup(self, client, db_session, app_ctx, redis_flush, monkeypatch):
         self.client = client
+        self._monkeypatch = monkeypatch
         import shutil
 
         upload_folder = os.path.join(os.path.dirname(__file__), "..", "test_uploads")
@@ -67,9 +71,15 @@ class TestWorkerEndpoints:
         db.session.add(self.submission)
         db.session.commit()
 
-        self.worker_token = generate_worker_token(
-            submission_id=self.submission.id, task_id=self.task.id, expires_in_sec=600
+        # Generate test Ed25519 keypair and sign a nonce for worker auth
+        self._worker_key = Ed25519PrivateKey.generate()
+        self._monkeypatch.setenv(
+            "WORKER_PUBLIC_KEY",
+            base64.b64encode(self._worker_key.public_key().public_bytes_raw()).decode(),
         )
+        nonce = f"{self.submission.id}:{int(time.time())}"
+        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
+        self.worker_token = f"{nonce}.{sig}"
 
         self.admin = User(
             username="test_admin",
@@ -199,7 +209,7 @@ class TestWorkerEndpoints:
         resp = self.client.get(
             "/api/worker/tasks/99999/files/data.csv", headers={"X-Worker-Token": self.worker_token}
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 404
 
     def test_get_active_datasets(self):
         resp = self.client.get(

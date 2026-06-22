@@ -112,7 +112,6 @@ class TestReportStatusToServer:
         result = report_status_to_server(
             {
                 "main_server_url": "http://test:5001",
-                "worker_secret_key": "secret",
                 "submission_id": 1,
             },
             "completed",
@@ -126,7 +125,6 @@ class TestReportStatusToServer:
         result = report_status_to_server(
             {
                 "main_server_url": "http://test:5001",
-                "worker_secret_key": "secret",
                 "submission_id": 1,
             },
             "completed",
@@ -142,7 +140,6 @@ class TestReportStatusToServer:
         result = report_status_to_server(
             {
                 "main_server_url": "http://test:5001",
-                "worker_secret_key": "secret",
                 "submission_id": 1,
             },
             "completed",
@@ -163,7 +160,6 @@ class TestReportStatusToServer:
         report_status_to_server(
             {
                 "main_server_url": "http://test:5001",
-                "worker_secret_key": "secret",
                 "submission_id": 1,
             },
             "completed",
@@ -179,7 +175,6 @@ class TestReportStatusToServer:
         report_status_to_server(
             {
                 "main_server_url": "http://test:5001",
-                "worker_secret_key": "secret",
                 "submission_id": 1,
             },
             "completed",
@@ -201,7 +196,6 @@ class TestDownloadTaskFilesToDir:
         mock_get.return_value.content = b"file content"
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [{"filename": "data.csv"}],
             "task_id": 5,
         }
@@ -216,7 +210,6 @@ class TestDownloadTaskFilesToDir:
     def test_skips_labels_parquet(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [{"filename": "labels.parquet"}],
             "task_id": 5,
         }
@@ -236,7 +229,6 @@ class TestDownloadTaskFilesToDir:
         logs = []
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [{"filename": "data.csv"}],
             "task_id": 5,
         }
@@ -248,7 +240,6 @@ class TestDownloadTaskFilesToDir:
     def test_empty_files_list(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [],
             "task_id": 5,
         }
@@ -264,7 +255,6 @@ class TestDownloadLabelsParquetToDir:
         mock_get.return_value.content = b"labels data"
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [{"filename": "labels.parquet"}],
             "task_id": 5,
         }
@@ -279,7 +269,6 @@ class TestDownloadLabelsParquetToDir:
     def test_no_labels_file_returns_none(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
-            "worker_secret_key": "secret",
             "task_files": [{"filename": "data.csv"}],
             "task_id": 5,
         }

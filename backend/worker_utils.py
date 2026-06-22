@@ -10,26 +10,28 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def _refresh_worker_token(main_server_url):
-    """Re-authenticate with the main server using WORKER_SECRET_KEY.
+def _sign_worker_token(submission_id):
+    """Create an Ed25519-signed token for authenticating to the main server.
 
-    Returns a fresh JWT on success, or None on failure.
+    The worker reads WORKER_PRIVATE_KEY from its environment, signs a nonce
+    containing the submission_id and current timestamp, and returns the token
+    as ``nonce.base64_signature`` for use in the X-Worker-Token header.
     """
-    raw_secret = os.environ.get("WORKER_SECRET_KEY", "")
-    if not raw_secret:
-        return None
+    import base64 as _b64
+
+    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY", "")
+    if not priv_key_b64:
+        return ""
     try:
-        url = f"{main_server_url.rstrip('/')}/api/worker/bootstrap-token"
-        res = requests.post(
-            url,
-            json={"secret": raw_secret},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            return res.json().get("token")
-    except Exception as e:
-        logger.warning("Failed to refresh worker token: %s", e)
-    return None
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        private_key = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(priv_key_b64))
+        nonce = f"{submission_id}:{int(time.time())}"
+        signature = private_key.sign(nonce.encode())
+        return f"{nonce}.{_b64.b64encode(signature).decode()}"
+    except Exception as exc:
+        logger.warning("Failed to sign worker token: %s", exc)
+        return ""
 
 
 def run_command_streaming(cmd, logs_list, time_limit=None):
@@ -152,9 +154,14 @@ def report_status_to_server(
     backoff_factor=2,
 ):
     """POST submission status/scores back to the main server with exponential backoff retry."""
-    if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
+    if not metadata or "main_server_url" not in metadata:
         return False
-    url = f"{metadata['main_server_url']}/api/worker/report/{metadata['submission_id']}"
+
+    submission_id = metadata.get("submission_id", "unknown")
+    url = f"{metadata['main_server_url']}/api/worker/report/{submission_id}"
+    token = _sign_worker_token(submission_id)
+    headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
+
     payload = {"status": status, "detailed_status": detailed_status}
     if logs is not None:
         if isinstance(logs, list):
@@ -174,25 +181,11 @@ def report_status_to_server(
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
 
-    main_server_url = metadata["main_server_url"]
-
     for attempt in range(max_retries):
-        # On 401, refresh the JWT and retry once per attempt cycle
-        token = metadata["worker_secret_key"]
-        headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
-
         try:
             res = requests.post(url, json=payload, headers=headers, timeout=10)
             if res.status_code == 200:
                 return True
-            if res.status_code == 401:
-                new_token = _refresh_worker_token(main_server_url)
-                if new_token:
-                    metadata["worker_secret_key"] = new_token
-                    headers = {"X-Worker-Token": new_token, "Content-Type": "application/json"}
-                    res = requests.post(url, json=payload, headers=headers, timeout=10)
-                    if res.status_code == 200:
-                        return True
             logger.warning(
                 "Server returned status %s for report attempt %s", res.status_code, attempt + 1
             )
@@ -213,14 +206,17 @@ def report_status_to_server(
 
 def download_task_files_to_dir(metadata, temp_dir, logs):
     """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
-    if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
+    if not metadata or "main_server_url" not in metadata:
         return
     files_list = metadata.get("task_files", [])
     if not files_list:
         return
 
     task_id = metadata.get("task_id")
+    submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
+    token = _sign_worker_token(submission_id)
+    headers = {"X-Worker-Token": token}
     is_unified = True
     for f in files_list:
         filename = f["filename"]
@@ -228,16 +224,9 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
             continue  # Do NOT download labels.parquet to sandbox temp_dir!
 
         url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
-        headers = {"X-Worker-Token": metadata["worker_secret_key"]}
         try:
             logs.append(f"Downloading task file '{filename}' from server...")
             res = requests.get(url, headers=headers, timeout=30)
-            if res.status_code == 401:
-                new_token = _refresh_worker_token(main_server_url)
-                if new_token:
-                    metadata["worker_secret_key"] = new_token
-                    headers = {"X-Worker-Token": new_token}
-                    res = requests.get(url, headers=headers, timeout=30)
             if res.status_code == 200:
                 dest_file = os.path.join(temp_dir, filename)
                 with open(dest_file, "wb") as df:
@@ -253,28 +242,24 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
 
 def download_labels_parquet_to_dir(metadata, labels_dir, logs):
     """Download labels.parquet securely from the server for evaluation comparison."""
-    if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
+    if not metadata or "main_server_url" not in metadata:
         return None
     files_list = metadata.get("task_files", [])
     if not files_list:
         return None
 
     task_id = metadata.get("task_id")
+    submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
+    token = _sign_worker_token(submission_id)
+    headers = {"X-Worker-Token": token}
     for f in files_list:
         filename = f["filename"]
         if filename == "labels.parquet":
             url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
-            headers = {"X-Worker-Token": metadata["worker_secret_key"]}
             try:
                 logs.append("Downloading labels.parquet securely from server...")
                 res = requests.get(url, headers=headers, timeout=30)
-                if res.status_code == 401:
-                    new_token = _refresh_worker_token(main_server_url)
-                    if new_token:
-                        metadata["worker_secret_key"] = new_token
-                        headers = {"X-Worker-Token": new_token}
-                        res = requests.get(url, headers=headers, timeout=30)
                 if res.status_code == 200:
                     dest_file = os.path.join(labels_dir, filename)
                     with open(dest_file, "wb") as df:

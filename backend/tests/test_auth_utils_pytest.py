@@ -10,8 +10,7 @@ from auth_utils import (
     verify_token,
     login_required,
     role_required,
-    generate_worker_token,
-    verify_worker_token,
+    check_worker_auth,
     SECRET_KEY,
     rate_limit,
     revoke_token,
@@ -59,29 +58,55 @@ class TestAuthUtils:
         tampered = token[: len(token) // 2] + "AAAA" + token[len(token) // 2 + 4 :]
         assert verify_token(tampered) is None
 
-    def test_generate_worker_token_has_correct_claims(self):
-        token = generate_worker_token(100, 200, 600)
-        result = verify_worker_token(token, submission_id=100, task_id=200)
-        assert result
+    def test_check_worker_auth_valid_signature(self, monkeypatch):
+        import base64, time
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    def test_verify_worker_token_rejects_wrong_submission_id(self):
-        token = generate_worker_token(100, 200, 600)
-        result = verify_worker_token(token, submission_id=999, task_id=200)
-        assert result is False
+        k = Ed25519PrivateKey.generate()
+        monkeypatch.setenv(
+            "WORKER_PUBLIC_KEY",
+            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
+        )
+        nonce = f"100:{int(time.time())}"
+        sig = base64.b64encode(k.sign(nonce.encode())).decode()
+        token = f"{nonce}.{sig}"
+        assert check_worker_auth(token) is True
 
-    def test_verify_worker_token_rejects_wrong_task_id(self):
-        token = generate_worker_token(100, 200, 600)
-        result = verify_worker_token(token, submission_id=100, task_id=999)
-        assert result is False
+    def test_check_worker_auth_wrong_signature(self, monkeypatch):
+        import base64, time
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    def test_verify_worker_token_rejects_empty_token(self):
-        assert verify_worker_token("") is False
-        assert verify_worker_token(None) is False
+        k = Ed25519PrivateKey.generate()
+        monkeypatch.setenv(
+            "WORKER_PUBLIC_KEY",
+            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
+        )
+        nonce = f"100:{int(time.time())}"
+        sig = base64.b64encode(b"wrong" * 8).decode()
+        token = f"{nonce}.{sig}"
+        assert check_worker_auth(token) is False
 
-    def test_verify_worker_token_rejects_non_worker_token(self):
-        token = generate_token(42, "competitor")
-        result = verify_worker_token(token, submission_id=42, task_id=100)
-        assert result is False
+    def test_check_worker_auth_expired_nonce(self, monkeypatch):
+        import base64, time
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        k = Ed25519PrivateKey.generate()
+        monkeypatch.setenv(
+            "WORKER_PUBLIC_KEY",
+            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
+        )
+        old_ts = int(time.time()) - 600
+        nonce = f"100:{old_ts}"
+        sig = base64.b64encode(k.sign(nonce.encode())).decode()
+        token = f"{nonce}.{sig}"
+        assert check_worker_auth(token) is False
+
+    def test_check_worker_auth_missing_public_key(self):
+        assert check_worker_auth("anything") is False
+
+    def test_check_worker_auth_empty_token(self):
+        assert check_worker_auth("") is False
+        assert check_worker_auth(None) is False
 
     def test_login_required_blocks_unauthenticated(self):
         app = Flask(__name__)

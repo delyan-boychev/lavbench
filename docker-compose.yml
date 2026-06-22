@@ -74,6 +74,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
+      - WORKER_PUBLIC_KEY=${WORKER_PUBLIC_KEY:-}
     depends_on:
       db:
         condition: service_healthy

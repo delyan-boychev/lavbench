@@ -33,21 +33,6 @@ if [ ! -z "$2" ]; then
     echo "--> Configuring worker for GPU device: $2"
 fi
 
-# Obtain a bootstrap token from the main server
-if [ -n "${MAIN_SERVER_URL:-}" ] && [ -n "${WORKER_SECRET_KEY:-}" ]; then
-    echo "--> Obtaining worker bootstrap token from $MAIN_SERVER_URL..."
-    TOKEN_RESPONSE=$(curl -s -X POST "$MAIN_SERVER_URL/api/worker/bootstrap-token" \
-        -H "Content-Type: application/json" \
-        -d "{\"secret\": \"$WORKER_SECRET_KEY\"}")
-    WORKER_BOOTSTRAP_TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
-    if [ -n "$WORKER_BOOTSTRAP_TOKEN" ]; then
-        export WORKER_BOOTSTRAP_TOKEN
-        echo "--> Bootstrap token acquired successfully."
-    else
-        echo "--> WARNING: Failed to obtain bootstrap token. Worker may not access bootstrap endpoints."
-    fi
-fi
-
 # 1. Micromamba environment setup (required)
 if ! command -v micromamba &> /dev/null; then
     echo "[ERROR] micromamba is required. Install it first:"

@@ -10,59 +10,7 @@ from werkzeug.security import generate_password_hash
 from models import db, User, Challenge, Task
 
 # =============================================================================
-# Area 1: Worker Bootstrap Token
-# =============================================================================
-
-
-class TestWorkerBootstrapToken:
-    """POST /api/worker/bootstrap-token"""
-
-    def test_valid_secret_via_header(self, client, monkeypatch):
-        monkeypatch.setenv("WORKER_SECRET_KEY", "supersecret")
-        resp = client.post(
-            "/api/worker/bootstrap-token",
-            headers={"X-Worker-Secret": "supersecret"},
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "token" in data
-        assert data["expires_in"] == 3600
-
-    def test_valid_secret_via_json_body(self, client, monkeypatch):
-        monkeypatch.setenv("WORKER_SECRET_KEY", "supersecret")
-        resp = client.post(
-            "/api/worker/bootstrap-token",
-            json={"secret": "supersecret"},
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "token" in data
-
-    def test_invalid_secret(self, client, monkeypatch):
-        monkeypatch.setenv("WORKER_SECRET_KEY", "supersecret")
-        resp = client.post(
-            "/api/worker/bootstrap-token",
-            headers={"X-Worker-Secret": "wrong"},
-        )
-        assert resp.status_code == 401
-        assert "Unauthorized" in resp.get_json()["error"]
-
-    def test_missing_secret(self, client, monkeypatch):
-        monkeypatch.setenv("WORKER_SECRET_KEY", "supersecret")
-        resp = client.post("/api/worker/bootstrap-token", json={})
-        assert resp.status_code == 401
-
-    def test_no_env_var_set(self, client, monkeypatch):
-        monkeypatch.delenv("WORKER_SECRET_KEY", raising=False)
-        resp = client.post(
-            "/api/worker/bootstrap-token",
-            headers={"X-Worker-Secret": "anything"},
-        )
-        assert resp.status_code == 401
-
-
-# =============================================================================
-# Area 2: Task File Download
+# Area 1: Task File Download
 # =============================================================================
 
 from flask import Response

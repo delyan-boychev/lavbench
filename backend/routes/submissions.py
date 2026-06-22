@@ -359,7 +359,6 @@ def submit_code(challenge_id):
     # Trigger Celery Task asynchronously
     from tasks import evaluate_submission
     from services.submission_service import extract_code_from_cells, calculate_submission_priority
-    from auth_utils import generate_worker_token
 
     task_files_list = []
     if task.files:
@@ -370,9 +369,6 @@ def submit_code(challenge_id):
 
     hf_token = task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-
-    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
-    worker_token = generate_worker_token(submission.id, task.id, time_limit + 600)
 
     gpu_required = False
     if task.gpu_required is not None:
@@ -385,7 +381,7 @@ def submit_code(challenge_id):
         "task_id": task.id,
         "challenge_id": challenge.id,
         "user_code": "\n\n".join(extract_code_from_cells(selected_cells)),
-        "time_limit": time_limit,
+        "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
         "gpu_required": gpu_required,
         "base_docker_image": task.base_docker_image,
@@ -414,7 +410,6 @@ def submit_code(challenge_id):
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-        "worker_secret_key": worker_token,
     }
 
     priority = calculate_submission_priority(user_id, user_role)

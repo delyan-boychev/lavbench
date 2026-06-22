@@ -227,8 +227,8 @@ class TestQueueSystemSubmission:
             self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
         )
         metadata = mock_apply.call_args[1]["args"][1]
-        assert "worker_secret_key" in metadata
-        assert isinstance(metadata["worker_secret_key"], str)
+        assert "submission_id" in metadata
+        assert "main_server_url" in metadata
 
     @patch("tasks.evaluate_submission.apply_async")
     @patch("routes.tasks.os.path.exists")
@@ -807,7 +807,7 @@ class TestWorkerDownloadTaskFile:
         db.session.commit()
         self._upload_dir = self.app.config["UPLOAD_FOLDER"]
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_downloads_file_with_valid_token(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(
@@ -816,7 +816,7 @@ class TestWorkerDownloadTaskFile:
         )
         assert resp.status_code == 200
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -825,7 +825,7 @@ class TestWorkerDownloadTaskFile:
         )
         assert resp.status_code == 401
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_404_for_nonexistent_file(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(
@@ -864,7 +864,7 @@ class TestGetActiveDatasets:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_datasets_from_custom_eval(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
@@ -872,7 +872,7 @@ class TestGetActiveDatasets:
         data = resp.get_json()
         assert "dataset1" in data["datasets"]
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_skips_archived_challenges(self, mock_verify):
         mock_verify.return_value = True
         self.challenge.is_archived = True
@@ -882,7 +882,7 @@ class TestGetActiveDatasets:
         data = resp.get_json()
         assert data["datasets"] == []
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "bad"})
@@ -916,7 +916,7 @@ class TestGetTaskHfKey:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_hf_key(self, mock_verify):
         mock_verify.return_value = True
         with patch.object(Task, "get_hf_api_key", return_value="my-key"):
@@ -927,7 +927,7 @@ class TestGetTaskHfKey:
         data = resp.get_json()
         assert data["hf_key"] == "my-key"
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -935,7 +935,7 @@ class TestGetTaskHfKey:
         )
         assert resp.status_code == 401
 
-    @patch("auth_utils.verify_worker_token")
+    @patch("auth_utils.check_worker_auth")
     def test_returns_404_for_nonexistent_task(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(

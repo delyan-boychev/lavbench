@@ -106,11 +106,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
 
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
-    from auth_utils import generate_worker_token
     from tasks import evaluate_submission
-
-    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
-    worker_secret_key = generate_worker_token(submission.id, task.id, time_limit + 600)
 
     gpu_required = False
     if task.gpu_required is not None:
@@ -152,7 +148,6 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-        "worker_secret_key": worker_secret_key,
     }
 
     if task.custom_eval_code:
@@ -1314,11 +1309,6 @@ def submit_task_code(task_id):
 
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
-    from auth_utils import generate_worker_token
-
-    time_limit = task.time_limit_sec or challenge.time_limit_sec or 300
-    worker_secret_key = generate_worker_token(submission.id, task.id, time_limit + 600)
-
     metadata = {
         "submission_id": submission.id,
         "task_id": task.id,
@@ -1353,7 +1343,6 @@ def submit_task_code(task_id):
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-        "worker_secret_key": worker_secret_key,
     }
 
     if task.custom_eval_code:
@@ -1872,10 +1861,10 @@ def report_worker_progress(submission_id):
             schema:
               type: object
     """
-    token = request.headers.get("X-Worker-Token") or os.environ.get("WORKER_BOOTSTRAP_TOKEN")
-    from auth_utils import verify_worker_token
+    token = request.headers.get("X-Worker-Token")
+    from auth_utils import check_worker_auth
 
-    if not verify_worker_token(token):
+    if not check_worker_auth(token):
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.json or {}
@@ -1958,9 +1947,9 @@ def worker_download_task_file(task_id, filename):
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import verify_worker_token
+    from auth_utils import check_worker_auth
 
-    if not verify_worker_token(token, task_id=task_id):
+    if not check_worker_auth(token):
         return jsonify({"error": "Unauthorized"}), 401
 
     task = db.get_or_404(Task, task_id)
@@ -1982,36 +1971,6 @@ def worker_download_task_file(task_id, filename):
     return send_from_directory(task_upload_dir, saved_name)
 
 
-@tasks_bp.route("/worker/bootstrap-token", methods=["POST"])
-def worker_bootstrap_token():
-    """
-    Exchange a WORKER_SECRET_KEY for a short-lived JWT for bootstrap endpoints.
-    ---
-    tags:
-      - Tasks
-    parameters:
-      - in: header
-        name: X-Worker-Secret
-        schema:
-          type: string
-        required: true
-        description: Worker secret key from environment
-    responses:
-      200:
-        description: JWT token returned
-      401:
-        description: Invalid secret
-    """
-    worker_secret = request.headers.get("X-Worker-Secret") or (request.json or {}).get("secret")
-    expected_secret = os.environ.get("WORKER_SECRET_KEY")
-    if not expected_secret or worker_secret != expected_secret:
-        return jsonify({"error": "Unauthorized"}), 401
-    from auth_utils import generate_worker_bootstrap_token
-
-    token = generate_worker_bootstrap_token()
-    return jsonify({"token": token, "expires_in": 3600}), 200
-
-
 @tasks_bp.route("/worker/active-datasets", methods=["GET"])
 def get_active_datasets():
     """
@@ -2031,9 +1990,9 @@ def get_active_datasets():
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import verify_worker_token
+    from auth_utils import check_worker_auth
 
-    if not verify_worker_token(token):
+    if not check_worker_auth(token):
         return jsonify({"error": "Unauthorized"}), 401
 
     active_challenges = Challenge.query.filter_by(is_archived=False).all()
@@ -2112,10 +2071,10 @@ def get_task_hf_key(task_id):
             schema:
               type: object
     """
-    token = request.headers.get("X-Worker-Token") or os.environ.get("WORKER_BOOTSTRAP_TOKEN")
-    from auth_utils import verify_worker_token
+    token = request.headers.get("X-Worker-Token")
+    from auth_utils import check_worker_auth
 
-    if not verify_worker_token(token):
+    if not check_worker_auth(token):
         return jsonify({"error": "Unauthorized"}), 401
     task = db.session.get(Task, task_id)
     if not task:
