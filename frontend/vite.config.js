@@ -70,10 +70,10 @@ export default defineConfig({
         'src/main.jsx',
       ],
       thresholds: {
-        lines: 55,
+        lines: 60,
         functions: 55,
         branches: 55,
-        statements: 55,
+        statements: 60,
       },
     },
   }
