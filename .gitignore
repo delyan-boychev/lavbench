@@ -83,3 +83,4 @@ docs/source/api_spec.rst
 backend/uploads/
 backend/hf_cache/
 mock_docker_run.log
+backend/examples/

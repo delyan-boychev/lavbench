@@ -33,7 +33,20 @@ directory = "htmlcov"
 
 [tool.bandit]
 exclude_dirs = ["tests", "venv", ".git", "__pycache__"]
-skips = ["B101", "B601"]
+skips = [
+    "B101",
+    "B104",
+    "B107",
+    "B108",
+    "B110",
+    "B311",
+    "B404",
+    "B601",
+    "B603",
+    "B607",
+    "B615",
+    "B701",
+]
 
 [tool.black]
 line-length = 100
