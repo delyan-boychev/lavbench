@@ -64,7 +64,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install black
+      - run: pip install "black==26.5.1"
       - run: black --check --config backend/pyproject.toml backend/
 
   frontend-lint:

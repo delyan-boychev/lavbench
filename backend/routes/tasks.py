@@ -20,7 +20,6 @@ from models import db, Challenge, Task, User, Submission, decrypt_field, is_metr
 from auth_utils import login_required, role_required, rate_limit
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
-
 tasks_bp = Blueprint("tasks", __name__)
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file

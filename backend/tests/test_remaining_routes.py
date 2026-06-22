@@ -9,7 +9,6 @@ from werkzeug.security import generate_password_hash
 
 from models import db, User, Challenge, Task
 
-
 # =============================================================================
 # Area 1: Worker Bootstrap Token
 # =============================================================================

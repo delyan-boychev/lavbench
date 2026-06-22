@@ -27,7 +27,6 @@ from app import create_app
 from models import db, User, Challenge, Task, Submission, Stage, AuditLog
 from auth_utils import generate_token
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # App & Context
 # ═══════════════════════════════════════════════════════════════════════════

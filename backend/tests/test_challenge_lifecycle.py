@@ -8,7 +8,6 @@ import pytest
 
 from models import Challenge
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Finalize endpoint:  POST /challenges/<id>/finalize
 # Requires role: jury
