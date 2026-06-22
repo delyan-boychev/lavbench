@@ -189,6 +189,11 @@ def report_status_to_server(
             res = requests.post(url, json=payload, headers=headers, timeout=10)
             if res.status_code == 200:
                 return True
+            if res.status_code == 404:
+                logger.warning(
+                    "Submission %s not found on server (404) — stopping retries", submission_id
+                )
+                return False
             logger.warning(
                 "Server returned status %s for report attempt %s", res.status_code, attempt + 1
             )
