@@ -211,23 +211,6 @@ def report_status_to_server(
     return False
 
 
-def _make_authenticated_request(method, url, metadata, **kwargs):
-    """Make an HTTP request with worker token, refreshing on 401."""
-    main_server_url = metadata.get("main_server_url", "")
-    token = metadata.get("worker_secret_key", "")
-    headers = kwargs.pop("headers", {})
-    headers["X-Worker-Token"] = token
-
-    res = requests.request(method, url, headers=headers, **kwargs)
-    if res.status_code == 401:
-        new_token = _refresh_worker_token(main_server_url)
-        if new_token:
-            metadata["worker_secret_key"] = new_token
-            headers["X-Worker-Token"] = new_token
-            res = requests.request(method, url, headers=headers, **kwargs)
-    return res
-
-
 def download_task_files_to_dir(metadata, temp_dir, logs):
     """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
@@ -237,16 +220,24 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
         return
 
     task_id = metadata.get("task_id")
+    main_server_url = metadata["main_server_url"]
     is_unified = True
     for f in files_list:
         filename = f["filename"]
         if is_unified and filename == "labels.parquet":
             continue  # Do NOT download labels.parquet to sandbox temp_dir!
 
-        url = f"{metadata['main_server_url']}/api/worker/tasks/{task_id}/files/{filename}"
+        url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
+        headers = {"X-Worker-Token": metadata["worker_secret_key"]}
         try:
             logs.append(f"Downloading task file '{filename}' from server...")
-            res = _make_authenticated_request("GET", url, metadata, timeout=30)
+            res = requests.get(url, headers=headers, timeout=30)
+            if res.status_code == 401:
+                new_token = _refresh_worker_token(main_server_url)
+                if new_token:
+                    metadata["worker_secret_key"] = new_token
+                    headers = {"X-Worker-Token": new_token}
+                    res = requests.get(url, headers=headers, timeout=30)
             if res.status_code == 200:
                 dest_file = os.path.join(temp_dir, filename)
                 with open(dest_file, "wb") as df:
@@ -269,13 +260,21 @@ def download_labels_parquet_to_dir(metadata, labels_dir, logs):
         return None
 
     task_id = metadata.get("task_id")
+    main_server_url = metadata["main_server_url"]
     for f in files_list:
         filename = f["filename"]
         if filename == "labels.parquet":
-            url = f"{metadata['main_server_url']}/api/worker/tasks/{task_id}/files/{filename}"
+            url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
+            headers = {"X-Worker-Token": metadata["worker_secret_key"]}
             try:
                 logs.append("Downloading labels.parquet securely from server...")
-                res = _make_authenticated_request("GET", url, metadata, timeout=30)
+                res = requests.get(url, headers=headers, timeout=30)
+                if res.status_code == 401:
+                    new_token = _refresh_worker_token(main_server_url)
+                    if new_token:
+                        metadata["worker_secret_key"] = new_token
+                        headers = {"X-Worker-Token": new_token}
+                        res = requests.get(url, headers=headers, timeout=30)
                 if res.status_code == 200:
                     dest_file = os.path.join(labels_dir, filename)
                     with open(dest_file, "wb") as df:
