@@ -23,23 +23,12 @@ import { formatMetricName } from '../utils/metrics';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName };
 
-
-
-
 export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { 
-    challenges, 
-    selectedChallenge, 
-    fetchChallenges, 
-    showToast,
-    confirm
-  } = useApp();
+  const { challenges, selectedChallenge, fetchChallenges, showToast, confirm } = useApp();
 
   const API_BASE = '/api';
-
-
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -60,10 +49,10 @@ export default function AdminPanel() {
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
-        hour12: false
+        hour12: false,
       });
       const parts = formatter.formatToParts(d);
-      const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+      const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
       const tzLabel = (timezone || 'UTC').replace(/_/g, ' ');
       return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
     } catch {
@@ -75,7 +64,7 @@ export default function AdminPanel() {
 
   const isChallengeStarted = (challengeId) => {
     if (!challengeId) return false;
-    const challenge = challenges.find(c => c.id.toString() === challengeId.toString());
+    const challenge = challenges.find((c) => c.id.toString() === challengeId.toString());
     if (!challenge || !challenge.start_time) return false;
     return new Date() >= new Date(challenge.start_time);
   };
@@ -86,7 +75,7 @@ export default function AdminPanel() {
     const h = Math.floor((seconds % (3600 * 24)) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    
+
     const parts = [];
     if (d > 0) parts.push(`${d}d`);
     if (h > 0) parts.push(`${h}h`);
@@ -107,7 +96,7 @@ export default function AdminPanel() {
     end_time: '',
     is_frozen: false,
     double_blind: true,
-    timezone: 'UTC'
+    timezone: 'UTC',
   });
 
   // Edit Challenge State
@@ -136,7 +125,7 @@ export default function AdminPanel() {
     public_eval_percentage: 30,
     max_submissions_per_period: '',
     submission_period_hours: '',
-    stage_id: ''
+    stage_id: '',
   });
 
   // Task Upload Files
@@ -151,7 +140,7 @@ export default function AdminPanel() {
     title: '',
     stage_number: '',
     start_time: '',
-    end_time: ''
+    end_time: '',
   });
 
   const [finalizingStage, setFinalizingStage] = useState(null);
@@ -159,7 +148,7 @@ export default function AdminPanel() {
     finalize_type: 'visible',
     reveal_public: true,
     reveal_private: false,
-    reveal_points: false
+    reveal_points: false,
   });
 
   // Manual Competitor Register State
@@ -170,7 +159,7 @@ export default function AdminPanel() {
     school: '',
     city: '',
     challenge_id: '',
-    is_anonymous: false
+    is_anonymous: false,
   });
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [resetCredentials, setResetCredentials] = useState(null);
@@ -191,7 +180,7 @@ export default function AdminPanel() {
     school: '',
     city: '',
     challenge_id: '',
-    is_anonymous: false
+    is_anonymous: false,
   });
   const [generatedUserCredentials, setGeneratedUserCredentials] = useState(null);
 
@@ -207,7 +196,7 @@ export default function AdminPanel() {
     school: '',
     city: '',
     challenge_id: '',
-    is_anonymous: false
+    is_anonymous: false,
   });
 
   // CSV Import State
@@ -246,7 +235,7 @@ export default function AdminPanel() {
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/metrics`, {
-        headers: {}
+        headers: {},
       });
       if (res.ok) {
         /** @type {import('../types/api').paths['/api/admin/metrics']['get']['responses']['200']['content']['application/json']} */
@@ -258,7 +247,6 @@ export default function AdminPanel() {
     }
   };
 
-   
   useEffect(() => {
     if (currentUser) {
       fetchAvailableMetrics(); // eslint-disable-line react-hooks/set-state-in-effect
@@ -266,14 +254,14 @@ export default function AdminPanel() {
   }, [currentUser]);
 
   // Worker stats via SSE (persistent connection, no polling)
-   
+
   useEffect(() => {
     if (adminSubTab !== 'workers-stats') return;
-    
+
     setWorkerStatsLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     const sseUrl = `/api/admin/workers/stats/live`;
     const eventSource = new EventSource(sseUrl);
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -285,16 +273,16 @@ export default function AdminPanel() {
         }
         setWorkerStatsLoading(false);
       } catch (e) {
-        console.error("Worker stats SSE parse error:", e);
+        console.error('Worker stats SSE parse error:', e);
       }
     };
-    
+
     eventSource.onerror = () => {
       setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
       setWorkerStatsLoading(false);
       eventSource.close();
     };
-    
+
     return () => eventSource.close();
   }, [adminSubTab]);
 
@@ -303,9 +291,12 @@ export default function AdminPanel() {
   const fetchUsers = async () => {
     try {
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`, {
-        headers: {}
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/users?page=${usersPage}&per_page=10&search=${userSearch}`,
+        {
+          headers: {},
+        },
+      );
       if (res.ok) {
         /** @type {import('../types/api').paths['/api/admin/users']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
@@ -323,9 +314,12 @@ export default function AdminPanel() {
     if (!selectedChallenge) return;
     try {
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`, {
-        headers: {}
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/users?page=${competitorsPage}&per_page=10&role=competitor&challenge_id=${selectedChallenge.id}&search=${competitorSearch}`,
+        {
+          headers: {},
+        },
+      );
       if (res.ok) {
         /** @type {import('../types/api').paths['/api/admin/users']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
@@ -343,7 +337,7 @@ export default function AdminPanel() {
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
-        headers: {}
+        headers: {},
       });
       if (res.ok) {
         /** @type {import('../types/api').paths['/api/challenges']['get']['responses']['200']['content']['application/json']} */
@@ -353,7 +347,7 @@ export default function AdminPanel() {
           setChallengesTotal(data.total);
           setChallengesPages(data.pages);
         } else {
-          setPaginatedChallengesList(/** @type {any[]} */(data || []));
+          setPaginatedChallengesList(/** @type {any[]} */ (data || []));
           setChallengesTotal(data?.length || 0);
           setChallengesPages(1);
         }
@@ -366,7 +360,6 @@ export default function AdminPanel() {
     }
   };
 
-   
   useEffect(() => {
     if (adminSubTab === 'user-management') {
       fetchUsers(); // eslint-disable-line react-hooks/set-state-in-effect
@@ -409,7 +402,7 @@ export default function AdminPanel() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newChallenge)
+        body: JSON.stringify(newChallenge),
       });
       /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -426,7 +419,7 @@ export default function AdminPanel() {
           end_time: '',
           is_frozen: false,
           double_blind: true,
-          timezone: 'UTC'
+          timezone: 'UTC',
         });
         fetchChallenges();
         fetchPaginatedChallenges();
@@ -448,7 +441,7 @@ export default function AdminPanel() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(updated)
+        body: JSON.stringify(updated),
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -471,14 +464,14 @@ export default function AdminPanel() {
   const handleDeleteChallenge = async (id, title) => {
     const ok = await confirm({
       title: t('admin.confirm.delete_competition_title'),
-      message: t('admin.confirm.delete_competition_message', { title })
+      message: t('admin.confirm.delete_competition_message', { title }),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
         method: 'DELETE',
-        headers: {}
+        headers: {},
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['delete']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -499,14 +492,14 @@ export default function AdminPanel() {
   const handleFinalize = async (id) => {
     const ok = await confirm({
       title: t('admin.confirm.finalize_scores_title'),
-      message: t('admin.confirm.finalize_scores_message')
+      message: t('admin.confirm.finalize_scores_message'),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/finalize`, {
         method: 'POST',
-        headers: {}
+        headers: {},
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/finalize']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -515,10 +508,10 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.scores_finalize_failed'), "rose");
+        showToast(data.error || t('admin.notifications.scores_finalize_failed'), 'rose');
       }
     } catch {
-      showToast(t('admin.notifications.network_error_finalize_scores'), "rose");
+      showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
     }
   };
 
@@ -528,7 +521,7 @@ export default function AdminPanel() {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
         method: 'POST',
-        headers: {}
+        headers: {},
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -537,10 +530,10 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.archive_failed'), "rose");
+        showToast(data.error || t('admin.notifications.archive_failed'), 'rose');
       }
     } catch {
-      showToast(t('admin.notifications.network_error'), "rose");
+      showToast(t('admin.notifications.network_error'), 'rose');
     }
   };
 
@@ -548,14 +541,14 @@ export default function AdminPanel() {
   const handleCreateTestCompetition = async (id) => {
     const ok = await confirm({
       title: t('admin.confirm.schedule_test_title'),
-      message: t('admin.confirm.schedule_test_message')
+      message: t('admin.confirm.schedule_test_message'),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${id}/test-competition`, {
         method: 'POST',
-        headers: {}
+        headers: {},
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/test-competition']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -564,10 +557,10 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.test_competition_schedule_failed'), "rose");
+        showToast(data.error || t('admin.notifications.test_competition_schedule_failed'), 'rose');
       }
     } catch {
-      showToast(t('admin.notifications.network_error_schedule_test'), "rose");
+      showToast(t('admin.notifications.network_error_schedule_test'), 'rose');
     }
   };
 
@@ -578,7 +571,7 @@ export default function AdminPanel() {
       title: '',
       stage_number: '',
       start_time: '',
-      end_time: ''
+      end_time: '',
     });
     setIsCreatingStage(true);
   };
@@ -588,9 +581,12 @@ export default function AdminPanel() {
     setEditingStage(stage);
     setStageForm({
       title: stage.title || '',
-      stage_number: stage.stage_number !== null && stage.stage_number !== undefined ? stage.stage_number.toString() : '',
+      stage_number:
+        stage.stage_number !== null && stage.stage_number !== undefined
+          ? stage.stage_number.toString()
+          : '',
       start_time: formatDateTimeLocal(stage.start_time),
-      end_time: formatDateTimeLocal(stage.end_time)
+      end_time: formatDateTimeLocal(stage.end_time),
     });
   };
 
@@ -601,7 +597,7 @@ export default function AdminPanel() {
       finalize_type: 'visible',
       reveal_public: true,
       reveal_private: false,
-      reveal_points: false
+      reveal_points: false,
     });
   };
 
@@ -612,7 +608,7 @@ export default function AdminPanel() {
         title: stageForm.title,
         stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
         start_time: stageForm.start_time,
-        end_time: stageForm.end_time
+        end_time: stageForm.end_time,
       };
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
@@ -620,7 +616,7 @@ export default function AdminPanel() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -644,16 +640,19 @@ export default function AdminPanel() {
         title: stageForm.title,
         stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
         start_time: stageForm.start_time,
-        end_time: stageForm.end_time
+        end_time: stageForm.end_time,
       };
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+      const res = await api.fetch(
+        `${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload)
-      });
+      );
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
@@ -672,14 +671,14 @@ export default function AdminPanel() {
   const handleDeleteStage = async (challengeId, stageId, title) => {
     const ok = await confirm({
       title: t('admin.confirm.delete_stage_title'),
-      message: t('admin.confirm.delete_stage_message', { title })
+      message: t('admin.confirm.delete_stage_message', { title }),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
         method: 'DELETE',
-        headers: {}
+        headers: {},
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['delete']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -702,16 +701,19 @@ export default function AdminPanel() {
         finalize_type: stageFinalizeForm.finalize_type,
         reveal_public: stageFinalizeForm.reveal_public,
         reveal_private: stageFinalizeForm.reveal_private,
-        reveal_points: stageFinalizeForm.reveal_points
+        reveal_points: stageFinalizeForm.reveal_points,
       };
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const res = await api.fetch(
+        `${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload)
-      });
+      );
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}/finalize']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
@@ -749,7 +751,7 @@ export default function AdminPanel() {
       public_eval_percentage: 30,
       max_submissions_per_period: '',
       submission_period_hours: '',
-      stage_id: ''
+      stage_id: '',
     });
     setTaskFiles([]);
     setBaselineFile(null);
@@ -770,13 +772,24 @@ export default function AdminPanel() {
       banned_imports: task.banned_imports || '',
       whitelisted_imports: task.whitelisted_imports || '',
       metrics_config: task.metrics_config ? JSON.stringify(task.metrics_config) : '',
-      hf_datasets_raw: task.hf_datasets ? (Array.isArray(task.hf_datasets) ? task.hf_datasets.join(', ') : '') : '',
-      hf_models_raw: task.hf_models ? (Array.isArray(task.hf_models) ? task.hf_models.join(', ') : '') : '',
+      hf_datasets_raw: task.hf_datasets
+        ? Array.isArray(task.hf_datasets)
+          ? task.hf_datasets.join(', ')
+          : ''
+        : '',
+      hf_models_raw: task.hf_models
+        ? Array.isArray(task.hf_models)
+          ? task.hf_models.join(', ')
+          : ''
+        : '',
       hf_api_key: '', // Keep empty for input security
       public_eval_percentage: task.public_eval_percentage || 30,
-      max_submissions_per_period: task.max_submissions_per_period !== null ? task.max_submissions_per_period : '',
-      submission_period_hours: task.submission_period_hours !== null ? task.submission_period_hours : '',
-      stage_id: task.stage_id !== null && task.stage_id !== undefined ? task.stage_id.toString() : ''
+      max_submissions_per_period:
+        task.max_submissions_per_period !== null ? task.max_submissions_per_period : '',
+      submission_period_hours:
+        task.submission_period_hours !== null ? task.submission_period_hours : '',
+      stage_id:
+        task.stage_id !== null && task.stage_id !== undefined ? task.stage_id.toString() : '',
     });
     setEditingTask(task);
     setTaskFiles([]);
@@ -785,50 +798,61 @@ export default function AdminPanel() {
 
   const prepareTaskFormData = () => {
     const formData = new FormData();
-    formData.append("title", taskForm.title);
-    formData.append("description", taskForm.description);
-    
-    if (taskForm.ram_limit_mb) formData.append("ram_limit_mb", taskForm.ram_limit_mb);
-    if (taskForm.time_limit_sec) formData.append("time_limit_sec", String(taskForm.time_limit_sec));
-    formData.append("gpu_required", String(taskForm.gpu_required));
-    
-    formData.append("base_docker_image", taskForm.base_docker_image);
-    formData.append("apt_packages", taskForm.apt_packages);
-    formData.append("pip_requirements", taskForm.pip_requirements);
-    
-    formData.append("ban_magic_commands", String(taskForm.ban_magic_commands));
-    formData.append("banned_imports", taskForm.banned_imports);
+    formData.append('title', taskForm.title);
+    formData.append('description', taskForm.description);
+
+    if (taskForm.ram_limit_mb) formData.append('ram_limit_mb', taskForm.ram_limit_mb);
+    if (taskForm.time_limit_sec) formData.append('time_limit_sec', String(taskForm.time_limit_sec));
+    formData.append('gpu_required', String(taskForm.gpu_required));
+
+    formData.append('base_docker_image', taskForm.base_docker_image);
+    formData.append('apt_packages', taskForm.apt_packages);
+    formData.append('pip_requirements', taskForm.pip_requirements);
+
+    formData.append('ban_magic_commands', String(taskForm.ban_magic_commands));
+    formData.append('banned_imports', taskForm.banned_imports);
     let cleanMetricsConfig = taskForm.metrics_config;
     try {
       const parsed = JSON.parse(taskForm.metrics_config);
       if (parsed && typeof parsed === 'object') {
-        Object.keys(parsed).forEach(k => {
+        Object.keys(parsed).forEach((k) => {
           if (parsed[k] && parsed[k].options_raw !== undefined) {
             delete parsed[k].options_raw;
           }
         });
         cleanMetricsConfig = JSON.stringify(parsed);
       }
-    } catch { /* noop */ }
-    formData.append("metrics_config", cleanMetricsConfig);
-    
-    if (taskForm.hf_api_key) formData.append("hf_api_key", taskForm.hf_api_key);
-    formData.append("public_eval_percentage", String(taskForm.public_eval_percentage));
-    
-    formData.append("whitelisted_imports", taskForm.whitelisted_imports);
-    const datasetsArray = taskForm.hf_datasets_raw 
-      ? taskForm.hf_datasets_raw.split(',').map(s => s.trim()).filter(Boolean) 
-      : [];
-    formData.append("hf_datasets", JSON.stringify(datasetsArray));
+    } catch {
+      /* noop */
+    }
+    formData.append('metrics_config', cleanMetricsConfig);
 
-    const modelsArray = taskForm.hf_models_raw 
-      ? taskForm.hf_models_raw.split(',').map(s => s.trim()).filter(Boolean) 
+    if (taskForm.hf_api_key) formData.append('hf_api_key', taskForm.hf_api_key);
+    formData.append('public_eval_percentage', String(taskForm.public_eval_percentage));
+
+    formData.append('whitelisted_imports', taskForm.whitelisted_imports);
+    const datasetsArray = taskForm.hf_datasets_raw
+      ? taskForm.hf_datasets_raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [];
-    formData.append("hf_models", JSON.stringify(modelsArray));
-    
-    if (taskForm.max_submissions_per_period) formData.append("max_submissions_per_period", taskForm.max_submissions_per_period);
-    if (taskForm.submission_period_hours) formData.append("submission_period_hours", taskForm.submission_period_hours);
-    if (taskForm.stage_id !== undefined && taskForm.stage_id !== null) formData.append("stage_id", taskForm.stage_id);
+    formData.append('hf_datasets', JSON.stringify(datasetsArray));
+
+    const modelsArray = taskForm.hf_models_raw
+      ? taskForm.hf_models_raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    formData.append('hf_models', JSON.stringify(modelsArray));
+
+    if (taskForm.max_submissions_per_period)
+      formData.append('max_submissions_per_period', taskForm.max_submissions_per_period);
+    if (taskForm.submission_period_hours)
+      formData.append('submission_period_hours', taskForm.submission_period_hours);
+    if (taskForm.stage_id !== undefined && taskForm.stage_id !== null)
+      formData.append('stage_id', taskForm.stage_id);
 
     // Regular task resource files (up to 5)
     taskFiles.forEach((file, idx) => {
@@ -836,7 +860,7 @@ export default function AdminPanel() {
     });
 
     // Special uploads
-    if (baselineFile) formData.append("baseline_notebook", baselineFile);
+    if (baselineFile) formData.append('baseline_notebook', baselineFile);
 
     return formData;
   };
@@ -846,7 +870,7 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!selectedChallenge) return;
 
-    const hasLabels = taskFiles.some(f => f.name === 'labels.parquet');
+    const hasLabels = taskFiles.some((f) => f.name === 'labels.parquet');
     if (!hasLabels) {
       showToast(t('admin.tasks.labels_parquet_required'), 'rose');
       return;
@@ -860,7 +884,7 @@ export default function AdminPanel() {
       const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
         method: 'POST',
         headers: {},
-        body: formData
+        body: formData,
       });
       /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -888,12 +912,14 @@ export default function AdminPanel() {
       if (!editingTask.files) return false;
       const filesArr = Array.isArray(editingTask.files)
         ? editingTask.files
-        : (typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
-            ? JSON.parse(editingTask.files)
-            : []);
-      return filesArr.some(f => f.filename === 'labels.parquet' && !deletedNames.includes(f.filename));
+        : typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
+          ? JSON.parse(editingTask.files)
+          : [];
+      return filesArr.some(
+        (f) => f.filename === 'labels.parquet' && !deletedNames.includes(f.filename),
+      );
     })();
-    const newLabels = taskFiles.some(f => f.name === 'labels.parquet');
+    const newLabels = taskFiles.some((f) => f.name === 'labels.parquet');
     if (!existingLabels && !newLabels) {
       showToast(t('admin.tasks.labels_parquet_required'), 'rose');
       return;
@@ -902,7 +928,7 @@ export default function AdminPanel() {
     setSavingTask(true);
     const formData = prepareTaskFormData();
     if (deletedNames.length > 0) {
-      formData.append("deleted_files", JSON.stringify(deletedNames));
+      formData.append('deleted_files', JSON.stringify(deletedNames));
     }
 
     try {
@@ -910,7 +936,7 @@ export default function AdminPanel() {
       const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
         method: 'PUT',
         headers: {},
-        body: formData
+        body: formData,
       });
       /** @type {import('../types/api').paths['/api/tasks/{task_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -932,14 +958,14 @@ export default function AdminPanel() {
   const handleDeleteTask = async (taskId, title) => {
     const ok = await confirm({
       title: t('admin.confirm.delete_task_title'),
-      message: t('admin.confirm.delete_task_message', { title })
+      message: t('admin.confirm.delete_task_message', { title }),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'DELETE',
-        headers: {}
+        headers: {},
       });
       if (res.ok) {
         showToast(t('admin.notifications.task_deleted', { title }));
@@ -973,7 +999,7 @@ export default function AdminPanel() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newCompetitor)
+        body: JSON.stringify(newCompetitor),
       });
       /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -982,9 +1008,17 @@ export default function AdminPanel() {
           username: data.generated_username,
           password: data.generated_password,
           name: newCompetitor.name,
-          surname: newCompetitor.surname
+          surname: newCompetitor.surname,
         });
-        setNewCompetitor({ name: '', surname: '', grade: '', school: '', city: '', challenge_id: '', is_anonymous: false });
+        setNewCompetitor({
+          name: '',
+          surname: '',
+          grade: '',
+          school: '',
+          city: '',
+          challenge_id: '',
+          is_anonymous: false,
+        });
         showToast(t('admin.notifications.competitor_registered'));
         fetchCompetitors();
       } else {
@@ -1008,7 +1042,9 @@ export default function AdminPanel() {
     const hashPassword = async (p) => {
       const msgBuffer = new TextEncoder().encode(p);
       const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
     };
 
     try {
@@ -1022,7 +1058,7 @@ export default function AdminPanel() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
       /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -1033,7 +1069,7 @@ export default function AdminPanel() {
           password: data.generated_password,
           role: newUser.role,
           name: newUser.name,
-          surname: newUser.surname
+          surname: newUser.surname,
         });
         setNewUser({
           username: '',
@@ -1046,7 +1082,7 @@ export default function AdminPanel() {
           school: '',
           city: '',
           challenge_id: '',
-          is_anonymous: false
+          is_anonymous: false,
         });
         fetchUsers();
       } else {
@@ -1061,14 +1097,14 @@ export default function AdminPanel() {
   const handleDeleteUser = async (userId, username) => {
     const ok = await confirm({
       title: t('admin.confirm.delete_user_title'),
-      message: t('admin.confirm.delete_user_message', { username })
+      message: t('admin.confirm.delete_user_message', { username }),
     });
     if (!ok) return;
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
-        headers: {}
+        headers: {},
       });
       if (res.ok) {
         showToast(t('admin.notifications.user_deleted', { username }));
@@ -1105,11 +1141,15 @@ export default function AdminPanel() {
       const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
         method: 'POST',
         headers: {},
-        body: fd
+        body: fd,
       });
       const data = await res.json();
       if (res.ok) {
-        showToast(t('admin.notifications.imported_competitors_success', { count: data.competitors?.length || 0 }));
+        showToast(
+          t('admin.notifications.imported_competitors_success', {
+            count: data.competitors?.length || 0,
+          }),
+        );
         setImportedCompetitors(data.competitors || []);
         setCsvFile(null);
         fetchCompetitors();
@@ -1129,9 +1169,12 @@ export default function AdminPanel() {
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`, {
-        headers: {}
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`,
+        {
+          headers: {},
+        },
+      );
       if (!res.ok) {
         const errData = await res.json();
         showToast(errData.error || t('admin.notifications.download_scores_failed'), 'rose');
@@ -1155,9 +1198,12 @@ export default function AdminPanel() {
   const handleDownloadSubmissionsZip = async (challengeId, challengeTitle) => {
     try {
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`, {
-        headers: {}
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`,
+        {
+          headers: {},
+        },
+      );
       if (!res.ok) {
         const errData = await res.json();
         showToast(errData.error || t('admin.notifications.download_submissions_failed'), 'rose');
@@ -1180,7 +1226,7 @@ export default function AdminPanel() {
   const handleExportChallenge = async (challengeId, challengeTitle) => {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
-        headers: {}
+        headers: {},
       });
       if (!res.ok) {
         showToast('Failed to export challenge.', 'rose');
@@ -1234,7 +1280,7 @@ export default function AdminPanel() {
       school: user.school || '',
       city: user.city || '',
       challenge_id: user.challenge_id ? user.challenge_id.toString() : '',
-      is_anonymous: user.is_anonymous || false
+      is_anonymous: user.is_anonymous || false,
     });
   };
 
@@ -1256,9 +1302,9 @@ export default function AdminPanel() {
           grade: editUserForm.grade || null,
           school: editUserForm.school || null,
           city: editUserForm.city || null,
-          challenge_id: editUserForm.challenge_id === "" ? "" : parseInt(editUserForm.challenge_id),
-          is_anonymous: editUserForm.is_anonymous
-        })
+          challenge_id: editUserForm.challenge_id === '' ? '' : parseInt(editUserForm.challenge_id),
+          is_anonymous: editUserForm.is_anonymous,
+        }),
       });
       /** @type {import('../types/api').paths['/api/admin/users/{user_id}']['put']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -1278,7 +1324,7 @@ export default function AdminPanel() {
   const handleResetUserPassword = async (userId, displayName) => {
     const ok = await confirm({
       title: t('admin.confirm.reset_password_title'),
-      message: t('admin.confirm.reset_password_message', { displayName })
+      message: t('admin.confirm.reset_password_message', { displayName }),
     });
     if (!ok) return;
     try {
@@ -1287,7 +1333,7 @@ export default function AdminPanel() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
       });
       /** @type {import('../types/api').paths['/api/admin/users/{user_id}/reset-password']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
@@ -1304,45 +1350,52 @@ export default function AdminPanel() {
   };
 
   const handleBulkResetPasswords = async () => {
-    const activeChallenges = challenges.filter(c => currentUser.role === 'admin' || !isChallengeStarted(c.id));
+    const activeChallenges = challenges.filter(
+      (c) => currentUser.role === 'admin' || !isChallengeStarted(c.id),
+    );
     if (activeChallenges.length === 0) {
       showToast(t('admin.notifications.no_eligible_competitions'), 'rose');
       return;
     }
-    
-    const optionsStr = activeChallenges.map(c => `ID ${c.id}: ${c.title}`).join('\n');
+
+    const optionsStr = activeChallenges.map((c) => `ID ${c.id}: ${c.title}`).join('\n');
     const input = await confirm({
       title: t('admin.confirm.bulk_reset_title'),
       message: t('admin.confirm.bulk_reset_message', { optionsStr }),
       isPrompt: true,
-      placeholder: t('admin.confirm.bulk_reset_placeholder')
+      placeholder: t('admin.confirm.bulk_reset_placeholder'),
     });
     if (input === null) return;
-    
+
     const selectedId = input.trim();
-    const challenge = activeChallenges.find(c => c.id.toString() === selectedId);
+    const challenge = activeChallenges.find((c) => c.id.toString() === selectedId);
     if (!challenge) {
       showToast(t('admin.notifications.invalid_competition_id'), 'rose');
       return;
     }
-    
+
     const ok = await confirm({
       title: t('admin.confirm.confirm_bulk_reset_title'),
-      message: t('admin.confirm.confirm_bulk_reset_message', { title: challenge.title })
+      message: t('admin.confirm.confirm_bulk_reset_message', { title: challenge.title }),
     });
     if (!ok) return;
-    
+
     try {
       /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
       const data = await res.json();
       if (res.ok) {
-        showToast(t('admin.notifications.bulk_reset_success', { count: data.reset_accounts?.length }));
+        showToast(
+          t('admin.notifications.bulk_reset_success', { count: data.reset_accounts?.length }),
+        );
         setBulkResetCredentials(data.reset_accounts || []);
         setResetCredentials(null);
       } else {
@@ -1356,14 +1409,15 @@ export default function AdminPanel() {
   const filteredUsers = allUsers;
   const _filteredCompetitors = competitorsList; // eslint-disable-line no-unused-vars
 
-  const isManualRegisterDisabled = currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
+  const isManualRegisterDisabled =
+    currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
   const isCSVImportDisabled = currentUser.role === 'jury' && isChallengeStarted(csvChallengeId);
-  const isEditDisabled = currentUser.role === 'jury' && isChallengeStarted(editUserForm.challenge_id);
+  const isEditDisabled =
+    currentUser.role === 'jury' && isChallengeStarted(editUserForm.challenge_id);
 
   // Render components
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-fadein">
-      
       <SidebarNav
         adminSubTab={adminSubTab}
         setAdminSubTab={setAdminSubTab}
@@ -1377,296 +1431,474 @@ export default function AdminPanel() {
 
       {/* Main Workspace Work Areas */}
       <div className="lg:col-span-3">
-
         {/* 1. COMPETITION & TASK CONFIGURATION */}
-        {adminSubTab === 'competition-mgmt' && !isCreatingTask && !editingTask && !isCreatingStage && !editingStage && !finalizingStage && (
-          <div className="flex flex-col gap-6">
-            
-            {editingChallenge ? (
-              <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-                <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-                  <h2 className="text-xl font-bold text-white">{t('admin.edit_competition', { title: editingChallenge.title })}</h2>
-                </div>
-                <form 
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const res = await handleUpdateChallenge(editingChallenge.id, editingChallenge);
-                    if (res.success) setEditingChallenge(null);
-                  }}
-                  className="flex flex-col gap-4"
-                >
-                  <InputField 
-                    label={t('admin.competition_title')} 
-                    value={editingChallenge.title} 
-                    onChange={(e) => setEditingChallenge({ ...editingChallenge, title: e.target.value })} 
-                    required 
-                  />
-                  <InputField
-                    multiline
-                    label={t('admin.description')}
-                    value={editingChallenge.description}
-                    onChange={(e) => setEditingChallenge({ ...editingChallenge, description: e.target.value })}
-                    rows={4}
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <InputField 
-                      label={t('admin.daily_limits')} 
-                      type="number"
-                      value={editingChallenge.max_eval_requests} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, max_eval_requests: parseInt(e.target.value) || 0 })} 
-                    />
-                    <InputField 
-                      label={t('admin.ram_limit_override')} 
-                      type="number"
-                      value={editingChallenge.ram_limit_mb} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, ram_limit_mb: parseInt(e.target.value) || 0 })} 
-                    />
-                    <InputField 
-                      label={t('admin.time_limit_override')} 
-                      type="number"
-                      value={editingChallenge.time_limit_sec} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, time_limit_sec: parseInt(e.target.value) || 0 })} 
-                    />
+        {adminSubTab === 'competition-mgmt' &&
+          !isCreatingTask &&
+          !editingTask &&
+          !isCreatingStage &&
+          !editingStage &&
+          !finalizingStage && (
+            <div className="flex flex-col gap-6">
+              {editingChallenge ? (
+                <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
+                  <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                    <h2 className="text-xl font-bold text-white">
+                      {t('admin.edit_competition', { title: editingChallenge.title })}
+                    </h2>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <InputField 
-                      label={t('admin.stages.start_time_label')} 
-                      type="datetime-local"
-                      value={formatDateTimeLocal(editingChallenge.start_time)} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, start_time: e.target.value })} 
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const res = await handleUpdateChallenge(
+                        editingChallenge.id,
+                        editingChallenge,
+                      );
+                      if (res.success) setEditingChallenge(null);
+                    }}
+                    className="flex flex-col gap-4"
+                  >
+                    <InputField
+                      label={t('admin.competition_title')}
+                      value={editingChallenge.title}
+                      onChange={(e) =>
+                        setEditingChallenge({ ...editingChallenge, title: e.target.value })
+                      }
                       required
                     />
-                    <InputField 
-                      label={t('admin.stages.end_time_label')} 
-                      type="datetime-local"
-                      value={formatDateTimeLocal(editingChallenge.end_time)} 
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, end_time: e.target.value })} 
-                      required
+                    <InputField
+                      multiline
+                      label={t('admin.description')}
+                      value={editingChallenge.description}
+                      onChange={(e) =>
+                        setEditingChallenge({ ...editingChallenge, description: e.target.value })
+                      }
+                      rows={4}
                     />
-                    <SelectField
-                      label={t('admin.timezone_choose')}
-                      value={editingChallenge.timezone || 'UTC'}
-                      onChange={(val) => setEditingChallenge({ ...editingChallenge, timezone: val })}
-                      options={TIMEZONES}
-                      required
-                    />
-                  </div>
-                  <div className="flex flex-col gap-3 mt-2.5">
-                    <ToggleField 
-                      label={t('admin.requires_gpu_sandbox')}
-                      id="edit-gpu"
-                      checked={editingChallenge.gpu_required}
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, gpu_required: e.target.checked })}
-                    />
-                    <ToggleField 
-                      label={t('admin.double_blind_eval')}
-                      id="edit-double-blind"
-                      checked={editingChallenge.double_blind !== false}
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, double_blind: e.target.checked })}
-                    />
-                    <ToggleField 
-                      label={t('admin.freeze_label')}
-                      id="edit-is-frozen"
-                      checked={editingChallenge.is_frozen || false}
-                      onChange={(e) => setEditingChallenge({ ...editingChallenge, is_frozen: e.target.checked })}
-                    />
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    <Button type="submit" variant="primary">{t('admin.stages.save_changes_btn')}</Button>
-                    <Button onClick={() => setEditingChallenge(null)} variant="secondary">{t('common.cancel')}</Button>
-                  </div>
-                </form>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-6">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h1 className="text-xl font-bold text-white">{t('admin.active_competitions')}</h1>
-                  <Button variant="primary" onClick={initCreateTask} disabled={!selectedChallenge}><Plus size={16} />{t('admin.add_task')}</Button>
-                </div>
-                
-                {paginatedChallengesList.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">{t('admin.no_competitions_created')}</p>
-                ) : (
-                  paginatedChallengesList.map(c => (
-                    <div key={c.id} className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col gap-4">
-                      <div className="flex flex-wrap justify-between items-start gap-4">
-                        <div>
-                          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                            {c.title}
-                            {c.is_archived && <span className="text-[10px] bg-slate-800 border border-white/5 text-slate-400 px-2 py-0.5 rounded-full font-bold">{t('admin.archived')}</span>}
-                          </h2>
-                          <p className="text-xs text-slate-400 mt-1">{c.description || t('admin.no_description')}</p>
-                        </div>
-                        
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="secondary" onClick={() => setEditingChallenge(c)}>{t('admin.stages.edit')}</Button>
-                          <Button 
-                            variant="secondary" 
-                            onClick={() => handleArchiveToggle(c.id)}
-                          >
-                            {c.is_archived ? t('admin.restore') : t('admin.archive')}
-                          </Button>
-                          {!c.title.startsWith("Test:") && (
-                            <Button 
-                              variant="secondary" 
-                              onClick={() => handleCreateTestCompetition(c.id)}
-                            >
-                              {t('admin.schedule_test')}
-                            </Button>
-                          )}
-                          {c.scores_finalized && (
-                            <>
-                              <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">{t('leaderboard.finalized')}</span>
-                              <Button variant="accent" onClick={() => handleDownloadScores(c.id, c.title)}>
-                                {t('admin.download_csv_scores')}
-                              </Button>
-                              <Button variant="accent" onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}>
-                                {t('admin.download_submissions_zip')}
-                              </Button>
-                            </>
-                          )}
-                          {!c.scores_finalized && currentUser.role === 'jury' && (
-                            <Button 
-                              variant="accent" 
-                              onClick={() => handleFinalize(c.id)}
-                              disabled={c.stages && c.stages.some(st => !st.is_finalized)}
-                              title={c.stages && c.stages.some(st => !st.is_finalized) ? t('leaderboard.finalize_disabled_tooltip') : ""}
-                            >
-                              {t('admin.finalize_challenge')}
-                            </Button>
-                          )}
-                          <Button variant="secondary" onClick={() => handleExportChallenge(c.id, c.title)}>
-                            {t('admin.export_challenge')}
-                          </Button>
-                          <input
-                            ref={importFileRef}
-                            type="file"
-                            accept=".json"
-                            className="hidden"
-                            onChange={handleImportChallenge}
-                          />
-                          <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
-                            {t('admin.import_challenge')}
-                          </Button>
-                          <Button variant="danger" onClick={() => handleDeleteChallenge(c.id, c.title)}>{t('admin.stages.delete')}</Button>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-white/5 pt-4 mt-2">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">{t('admin.tasks_in_competition', { count: c.tasks ? c.tasks.length : 0 })}</h3>
-                        {c.tasks?.length === 0 ? (
-                          <p className="text-xs text-slate-500 italic">{t('admin.no_tasks_created')}</p>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {c.tasks?.map(task => (
-                              <div key={task.id} className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs">
-                                <div>
-                                  <span className="font-bold text-slate-200">{task.title}</span>
-                                  <span className="text-[10px] text-slate-500 ml-2">{t('admin.public_eval_split', { percentage: task.public_eval_percentage || 30 })}</span>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button variant="secondary" onClick={() => initEditTask(task)}>{t('admin.edit_config')}</Button>
-                                  <Button variant="danger" onClick={() => handleDeleteTask(task.id, task.title)}>{t('admin.stages.delete')}</Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="border-t border-white/5 pt-4 mt-2">
-                        <div className="flex justify-between items-center mb-3">
-                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('admin.stages.stages_in_competition', { count: c.stages ? c.stages.length : 0 })}</h3>
-                          <Button variant="primary" className="py-1 px-3 text-[10px]" onClick={() => initCreateStage(c.id)}><Plus size={14} />{t('admin.stages.add_stage')}</Button>
-                        </div>
-                        {c.stages?.length === 0 ? (
-                          <p className="text-xs text-slate-500 italic">{t('admin.stages.no_stages')}</p>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {c.stages?.map(st => (
-                              <div key={st.id} className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs">
-                                <div>
-                                  <span className="font-bold text-slate-200">{t('admin.stages.stage_label', { number: st.stage_number, title: st.title })}</span>
-                                  <span className="text-[10px] text-indigo-400 ml-3">
-                                    {formatDateTime(st.start_time, c.timezone)} {t('common.to')} {formatDateTime(st.end_time, c.timezone)}
-                                  </span>
-                                  {st.is_finalized && (
-                                    <span className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}>
-                                      {t('admin.stages.finalized_type', { type: st.finalize_type })}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button variant="secondary" className="py-1 px-2.5" onClick={() => initEditStage(c.id, st)}>{t('admin.stages.edit')}</Button>
-                                  {!st.is_finalized && (
-                                    <Button variant="accent" className="py-1 px-2.5" onClick={() => initFinalizeStage(c.id, st)}>{t('admin.stages.finalize')}</Button>
-                                  )}
-                                  <Button variant="danger" className="py-1 px-2.5" onClick={() => handleDeleteStage(c.id, st.id, st.title)}>{t('admin.stages.delete')}</Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <InputField
+                        label={t('admin.daily_limits')}
+                        type="number"
+                        value={editingChallenge.max_eval_requests}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            max_eval_requests: parseInt(e.target.value) || 0,
+                          })
+                        }
+                      />
+                      <InputField
+                        label={t('admin.ram_limit_override')}
+                        type="number"
+                        value={editingChallenge.ram_limit_mb}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            ram_limit_mb: parseInt(e.target.value) || 0,
+                          })
+                        }
+                      />
+                      <InputField
+                        label={t('admin.time_limit_override')}
+                        type="number"
+                        value={editingChallenge.time_limit_sec}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            time_limit_sec: parseInt(e.target.value) || 0,
+                          })
+                        }
+                      />
                     </div>
-                  ))
-                )}
-                
-                <Pagination
-                  page={challengesPage}
-                  pages={challengesPages}
-                  total={challengesTotal}
-                  perPage={5}
-                  onPageChange={setChallengesPage}
-                  itemName={t('admin.competitions_pagination_item')}
-                />
-              </div>
-            )}
-          </div>
-        )}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <InputField
+                        label={t('admin.stages.start_time_label')}
+                        type="datetime-local"
+                        value={formatDateTimeLocal(editingChallenge.start_time)}
+                        onChange={(e) =>
+                          setEditingChallenge({ ...editingChallenge, start_time: e.target.value })
+                        }
+                        required
+                      />
+                      <InputField
+                        label={t('admin.stages.end_time_label')}
+                        type="datetime-local"
+                        value={formatDateTimeLocal(editingChallenge.end_time)}
+                        onChange={(e) =>
+                          setEditingChallenge({ ...editingChallenge, end_time: e.target.value })
+                        }
+                        required
+                      />
+                      <SelectField
+                        label={t('admin.timezone_choose')}
+                        value={editingChallenge.timezone || 'UTC'}
+                        onChange={(val) =>
+                          setEditingChallenge({ ...editingChallenge, timezone: val })
+                        }
+                        options={TIMEZONES}
+                        required
+                      />
+                    </div>
+                    <div className="flex flex-col gap-3 mt-2.5">
+                      <ToggleField
+                        label={t('admin.requires_gpu_sandbox')}
+                        id="edit-gpu"
+                        checked={editingChallenge.gpu_required}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            gpu_required: e.target.checked,
+                          })
+                        }
+                      />
+                      <ToggleField
+                        label={t('admin.double_blind_eval')}
+                        id="edit-double-blind"
+                        checked={editingChallenge.double_blind !== false}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            double_blind: e.target.checked,
+                          })
+                        }
+                      />
+                      <ToggleField
+                        label={t('admin.freeze_label')}
+                        id="edit-is-frozen"
+                        checked={editingChallenge.is_frozen || false}
+                        onChange={(e) =>
+                          setEditingChallenge({ ...editingChallenge, is_frozen: e.target.checked })
+                        }
+                      />
+                    </div>
+                    <div className="flex gap-3 mt-4">
+                      <Button type="submit" variant="primary">
+                        {t('admin.stages.save_changes_btn')}
+                      </Button>
+                      <Button onClick={() => setEditingChallenge(null)} variant="secondary">
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <h1 className="text-xl font-bold text-white">
+                      {t('admin.active_competitions')}
+                    </h1>
+                    <Button
+                      variant="primary"
+                      onClick={initCreateTask}
+                      disabled={!selectedChallenge}
+                    >
+                      <Plus size={16} />
+                      {t('admin.add_task')}
+                    </Button>
+                  </div>
+
+                  {paginatedChallengesList.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic">
+                      {t('admin.no_competitions_created')}
+                    </p>
+                  ) : (
+                    paginatedChallengesList.map((c) => (
+                      <div
+                        key={c.id}
+                        className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col gap-4"
+                      >
+                        <div className="flex flex-wrap justify-between items-start gap-4">
+                          <div>
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                              {c.title}
+                              {c.is_archived && (
+                                <span className="text-[10px] bg-slate-800 border border-white/5 text-slate-400 px-2 py-0.5 rounded-full font-bold">
+                                  {t('admin.archived')}
+                                </span>
+                              )}
+                            </h2>
+                            <p className="text-xs text-slate-400 mt-1">
+                              {c.description || t('admin.no_description')}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
+                              {t('admin.stages.edit')}
+                            </Button>
+                            <Button variant="secondary" onClick={() => handleArchiveToggle(c.id)}>
+                              {c.is_archived ? t('admin.restore') : t('admin.archive')}
+                            </Button>
+                            {!c.title.startsWith('Test:') && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleCreateTestCompetition(c.id)}
+                              >
+                                {t('admin.schedule_test')}
+                              </Button>
+                            )}
+                            {c.scores_finalized && (
+                              <>
+                                <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">
+                                  {t('leaderboard.finalized')}
+                                </span>
+                                <Button
+                                  variant="accent"
+                                  onClick={() => handleDownloadScores(c.id, c.title)}
+                                >
+                                  {t('admin.download_csv_scores')}
+                                </Button>
+                                <Button
+                                  variant="accent"
+                                  onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
+                                >
+                                  {t('admin.download_submissions_zip')}
+                                </Button>
+                              </>
+                            )}
+                            {!c.scores_finalized && currentUser.role === 'jury' && (
+                              <Button
+                                variant="accent"
+                                onClick={() => handleFinalize(c.id)}
+                                disabled={c.stages && c.stages.some((st) => !st.is_finalized)}
+                                title={
+                                  c.stages && c.stages.some((st) => !st.is_finalized)
+                                    ? t('leaderboard.finalize_disabled_tooltip')
+                                    : ''
+                                }
+                              >
+                                {t('admin.finalize_challenge')}
+                              </Button>
+                            )}
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleExportChallenge(c.id, c.title)}
+                            >
+                              {t('admin.export_challenge')}
+                            </Button>
+                            <input
+                              ref={importFileRef}
+                              type="file"
+                              accept=".json"
+                              className="hidden"
+                              onChange={handleImportChallenge}
+                            />
+                            <Button
+                              variant="secondary"
+                              onClick={() => importFileRef.current?.click()}
+                            >
+                              {t('admin.import_challenge')}
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={() => handleDeleteChallenge(c.id, c.title)}
+                            >
+                              {t('admin.stages.delete')}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-white/5 pt-4 mt-2">
+                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                            {t('admin.tasks_in_competition', {
+                              count: c.tasks ? c.tasks.length : 0,
+                            })}
+                          </h3>
+                          {c.tasks?.length === 0 ? (
+                            <p className="text-xs text-slate-500 italic">
+                              {t('admin.no_tasks_created')}
+                            </p>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {c.tasks?.map((task) => (
+                                <div
+                                  key={task.id}
+                                  className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                                >
+                                  <div>
+                                    <span className="font-bold text-slate-200">{task.title}</span>
+                                    <span className="text-[10px] text-slate-500 ml-2">
+                                      {t('admin.public_eval_split', {
+                                        percentage: task.public_eval_percentage || 30,
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button variant="secondary" onClick={() => initEditTask(task)}>
+                                      {t('admin.edit_config')}
+                                    </Button>
+                                    <Button
+                                      variant="danger"
+                                      onClick={() => handleDeleteTask(task.id, task.title)}
+                                    >
+                                      {t('admin.stages.delete')}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="border-t border-white/5 pt-4 mt-2">
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                              {t('admin.stages.stages_in_competition', {
+                                count: c.stages ? c.stages.length : 0,
+                              })}
+                            </h3>
+                            <Button
+                              variant="primary"
+                              className="py-1 px-3 text-[10px]"
+                              onClick={() => initCreateStage(c.id)}
+                            >
+                              <Plus size={14} />
+                              {t('admin.stages.add_stage')}
+                            </Button>
+                          </div>
+                          {c.stages?.length === 0 ? (
+                            <p className="text-xs text-slate-500 italic">
+                              {t('admin.stages.no_stages')}
+                            </p>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {c.stages?.map((st) => (
+                                <div
+                                  key={st.id}
+                                  className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                                >
+                                  <div>
+                                    <span className="font-bold text-slate-200">
+                                      {t('admin.stages.stage_label', {
+                                        number: st.stage_number,
+                                        title: st.title,
+                                      })}
+                                    </span>
+                                    <span className="text-[10px] text-indigo-400 ml-3">
+                                      {formatDateTime(st.start_time, c.timezone)} {t('common.to')}{' '}
+                                      {formatDateTime(st.end_time, c.timezone)}
+                                    </span>
+                                    {st.is_finalized && (
+                                      <span
+                                        className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
+                                      >
+                                        {t('admin.stages.finalized_type', {
+                                          type: st.finalize_type,
+                                        })}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="secondary"
+                                      className="py-1 px-2.5"
+                                      onClick={() => initEditStage(c.id, st)}
+                                    >
+                                      {t('admin.stages.edit')}
+                                    </Button>
+                                    {!st.is_finalized && (
+                                      <Button
+                                        variant="accent"
+                                        className="py-1 px-2.5"
+                                        onClick={() => initFinalizeStage(c.id, st)}
+                                      >
+                                        {t('admin.stages.finalize')}
+                                      </Button>
+                                    )}
+                                    <Button
+                                      variant="danger"
+                                      className="py-1 px-2.5"
+                                      onClick={() => handleDeleteStage(c.id, st.id, st.title)}
+                                    >
+                                      {t('admin.stages.delete')}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  <Pagination
+                    page={challengesPage}
+                    pages={challengesPages}
+                    total={challengesTotal}
+                    perPage={5}
+                    onPageChange={setChallengesPage}
+                    itemName={t('admin.competitions_pagination_item')}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Stage Create/Edit Form */}
         {adminSubTab === 'competition-mgmt' && (isCreatingStage || editingStage) && (
           <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
               <h2 className="text-xl font-bold text-white">
-                {isCreatingStage ? t('admin.stages.create_stage_modal_title') : t('admin.stages.edit_stage_modal_title', { title: editingStage?.title })}
+                {isCreatingStage
+                  ? t('admin.stages.create_stage_modal_title')
+                  : t('admin.stages.edit_stage_modal_title', { title: editingStage?.title })}
               </h2>
             </div>
-            
-            <form onSubmit={isCreatingStage ? handleSaveCreateStage : handleSaveUpdateStage} className="flex flex-col gap-4">
-              <InputField 
-                label={t('admin.stages.stage_title_label')} 
-                value={stageForm.title} 
-                onChange={(e) => setStageForm({ ...stageForm, title: e.target.value })} 
-                required 
+
+            <form
+              onSubmit={isCreatingStage ? handleSaveCreateStage : handleSaveUpdateStage}
+              className="flex flex-col gap-4"
+            >
+              <InputField
+                label={t('admin.stages.stage_title_label')}
+                value={stageForm.title}
+                onChange={(e) => setStageForm({ ...stageForm, title: e.target.value })}
+                required
               />
-              <InputField 
-                label={t('admin.stages.stage_number_optional')} 
+              <InputField
+                label={t('admin.stages.stage_number_optional')}
                 type="number"
-                value={stageForm.stage_number} 
-                onChange={(e) => setStageForm({ ...stageForm, stage_number: e.target.value })} 
+                value={stageForm.stage_number}
+                onChange={(e) => setStageForm({ ...stageForm, stage_number: e.target.value })}
                 placeholder={t('admin.stages.edit_stage_number_placeholder')}
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InputField 
-                  label={t('admin.stages.start_time_label')} 
+                <InputField
+                  label={t('admin.stages.start_time_label')}
                   type="datetime-local"
-                  value={stageForm.start_time} 
-                  onChange={(e) => setStageForm({ ...stageForm, start_time: e.target.value })} 
+                  value={stageForm.start_time}
+                  onChange={(e) => setStageForm({ ...stageForm, start_time: e.target.value })}
                   required
                 />
-                <InputField 
-                  label={t('admin.stages.end_time_label')} 
+                <InputField
+                  label={t('admin.stages.end_time_label')}
                   type="datetime-local"
-                  value={stageForm.end_time} 
-                  onChange={(e) => setStageForm({ ...stageForm, end_time: e.target.value })} 
+                  value={stageForm.end_time}
+                  onChange={(e) => setStageForm({ ...stageForm, end_time: e.target.value })}
                   required
                 />
               </div>
               <div className="flex gap-3 mt-4">
-                <Button type="submit" variant="primary">{isCreatingStage ? t('admin.stages.create_stage_btn') : t('admin.stages.save_changes_btn')}</Button>
-                <Button onClick={() => { setIsCreatingStage(false); setEditingStage(null); }} variant="secondary">{t('common.cancel')}</Button>
+                <Button type="submit" variant="primary">
+                  {isCreatingStage
+                    ? t('admin.stages.create_stage_btn')
+                    : t('admin.stages.save_changes_btn')}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsCreatingStage(false);
+                    setEditingStage(null);
+                  }}
+                  variant="secondary"
+                >
+                  {t('common.cancel')}
+                </Button>
               </div>
             </form>
           </div>
@@ -1680,28 +1912,34 @@ export default function AdminPanel() {
                 {t('admin.stages.finalize_stage_modal_title', { title: finalizingStage.title })}
               </h2>
             </div>
-            
+
             <form onSubmit={handleSaveFinalizeStage} className="flex flex-col gap-6">
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-slate-300">{t('admin.stages.finalize_type_label')}</label>
+                <label className="text-xs font-semibold text-slate-300">
+                  {t('admin.stages.finalize_type_label')}
+                </label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                    <input 
-                      type="radio" 
-                      name="finalize_type" 
-                      value="visible" 
+                    <input
+                      type="radio"
+                      name="finalize_type"
+                      value="visible"
                       checked={stageFinalizeForm.finalize_type === 'visible'}
-                      onChange={() => setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })}
+                      onChange={() =>
+                        setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })
+                      }
                     />
                     {t('admin.stages.finalize_type_visible')}
                   </label>
                   <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                    <input 
-                      type="radio" 
-                      name="finalize_type" 
-                      value="internal" 
+                    <input
+                      type="radio"
+                      name="finalize_type"
+                      value="internal"
                       checked={stageFinalizeForm.finalize_type === 'internal'}
-                      onChange={() => setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })}
+                      onChange={() =>
+                        setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })
+                      }
                     />
                     {t('admin.stages.finalize_type_internal')}
                   </label>
@@ -1710,31 +1948,52 @@ export default function AdminPanel() {
 
               {stageFinalizeForm.finalize_type === 'visible' && (
                 <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
-                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">{t('admin.stages.visibility_rules_students')}</h4>
-                  <ToggleField 
+                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">
+                    {t('admin.stages.visibility_rules_students')}
+                  </h4>
+                  <ToggleField
                     label={t('admin.stages.reveal_public_split')}
                     id="stage-reveal-public"
                     checked={stageFinalizeForm.reveal_public}
-                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_public: e.target.checked })}
+                    onChange={(e) =>
+                      setStageFinalizeForm({
+                        ...stageFinalizeForm,
+                        reveal_public: e.target.checked,
+                      })
+                    }
                   />
-                  <ToggleField 
+                  <ToggleField
                     label={t('admin.stages.reveal_private_split')}
                     id="stage-reveal-private"
                     checked={stageFinalizeForm.reveal_private}
-                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_private: e.target.checked })}
+                    onChange={(e) =>
+                      setStageFinalizeForm({
+                        ...stageFinalizeForm,
+                        reveal_private: e.target.checked,
+                      })
+                    }
                   />
-                  <ToggleField 
+                  <ToggleField
                     label={t('admin.stages.reveal_total_points')}
                     id="stage-reveal-points"
                     checked={stageFinalizeForm.reveal_points}
-                    onChange={(e) => setStageFinalizeForm({ ...stageFinalizeForm, reveal_points: e.target.checked })}
+                    onChange={(e) =>
+                      setStageFinalizeForm({
+                        ...stageFinalizeForm,
+                        reveal_points: e.target.checked,
+                      })
+                    }
                   />
                 </div>
               )}
 
               <div className="flex gap-3 mt-4">
-                <Button type="submit" variant="primary">{t('admin.stages.finalize_stage_btn')}</Button>
-                <Button onClick={() => setFinalizingStage(null)} variant="secondary">{t('common.cancel')}</Button>
+                <Button type="submit" variant="primary">
+                  {t('admin.stages.finalize_stage_btn')}
+                </Button>
+                <Button onClick={() => setFinalizingStage(null)} variant="secondary">
+                  {t('common.cancel')}
+                </Button>
               </div>
             </form>
           </div>
@@ -1742,37 +2001,38 @@ export default function AdminPanel() {
 
         {/* 2. TASK EDITING OR CREATION (The Sandbox + HF + Rules form) */}
         {adminSubTab === 'competition-mgmt' && (isCreatingTask || editingTask) && (
-          <TaskForm 
-              taskForm={taskForm}
-              setTaskForm={setTaskForm}
-              isCreatingTask={isCreatingTask}
-              editingTask={editingTask}
-              setEditingTask={setEditingTask}
-              setIsCreatingTask={setIsCreatingTask}
-              handleSaveCreateTask={handleSaveCreateTask}
-              handleSaveUpdateTask={handleSaveUpdateTask}
-              challenges={challenges}
-              selectedChallenge={selectedChallenge}
-              availableMetrics={availableMetrics}
-              formatMetricName={formatMetricName}
-              taskFiles={taskFiles}
-              setTaskFiles={setTaskFiles}
-              baselineFile={baselineFile}
-              setBaselineFile={setBaselineFile}
-              formatDateTime={formatDateTime}
-              savingTask={savingTask}
-            />
+          <TaskForm
+            taskForm={taskForm}
+            setTaskForm={setTaskForm}
+            isCreatingTask={isCreatingTask}
+            editingTask={editingTask}
+            setEditingTask={setEditingTask}
+            setIsCreatingTask={setIsCreatingTask}
+            handleSaveCreateTask={handleSaveCreateTask}
+            handleSaveUpdateTask={handleSaveUpdateTask}
+            challenges={challenges}
+            selectedChallenge={selectedChallenge}
+            availableMetrics={availableMetrics}
+            formatMetricName={formatMetricName}
+            taskFiles={taskFiles}
+            setTaskFiles={setTaskFiles}
+            baselineFile={baselineFile}
+            setBaselineFile={setBaselineFile}
+            formatDateTime={formatDateTime}
+            savingTask={savingTask}
+          />
         )}
 
         {/* 3. CREATE NEW COMPETITIONS */}
-        {adminSubTab === 'challenge-config' && (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <ChallengeConfig
-            handleCreateChallenge={handleCreateChallenge}
-            newChallenge={newChallenge}
-            setNewChallenge={setNewChallenge}
-            timezones={TIMEZONES}
-          />
-        )}
+        {adminSubTab === 'challenge-config' &&
+          (currentUser.role === 'admin' || currentUser.role === 'jury') && (
+            <ChallengeConfig
+              handleCreateChallenge={handleCreateChallenge}
+              newChallenge={newChallenge}
+              setNewChallenge={setNewChallenge}
+              timezones={TIMEZONES}
+            />
+          )}
 
         {/* 4. COMPETITOR REGISTRATION MODULE (JURY/ADMIN) */}
         {adminSubTab === 'competitor-reg' && (
@@ -1823,9 +2083,14 @@ export default function AdminPanel() {
         )}
 
         {/* 6. COMPETITION BACKUPS (inside competition detail view) */}
-        {adminSubTab === 'competition-mgmt' && currentUser.role === 'admin' && selectedChallenge && !isCreatingTask && !editingTask && !isCreatingStage && !editingStage && !finalizingStage && (
-          <BackupManager challengeId={selectedChallenge.id} />
-        )}
+        {adminSubTab === 'competition-mgmt' &&
+          currentUser.role === 'admin' &&
+          selectedChallenge &&
+          !isCreatingTask &&
+          !editingTask &&
+          !isCreatingStage &&
+          !editingStage &&
+          !finalizingStage && <BackupManager challengeId={selectedChallenge.id} />}
 
         {/* 6. SYSTEM USER MANAGEMENT */}
         {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
@@ -1848,16 +2113,16 @@ export default function AdminPanel() {
         )}
 
         {/* 7. WORKERS MONITORING MODULE */}
-        {adminSubTab === 'workers-stats' && (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <WorkersStats
-            workerStats={workerStats}
-            workerStatsLoading={workerStatsLoading}
-            workerStatsError={workerStatsError}
-            fetchWorkerStats={fetchWorkerStats}
-            formatUptime={formatUptime}
-          />
-        )}
-
+        {adminSubTab === 'workers-stats' &&
+          (currentUser.role === 'admin' || currentUser.role === 'jury') && (
+            <WorkersStats
+              workerStats={workerStats}
+              workerStatsLoading={workerStatsLoading}
+              workerStatsError={workerStatsError}
+              fetchWorkerStats={fetchWorkerStats}
+              formatUptime={formatUptime}
+            />
+          )}
       </div>
     </div>
   );

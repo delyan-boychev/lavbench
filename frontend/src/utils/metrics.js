@@ -44,7 +44,7 @@ export const formatMetricName = (name) => {
 
   return formatted
     .split(' ')
-    .map(word => {
+    .map((word) => {
       const lower = word.toLowerCase();
       if (specialWords[lower] !== undefined) {
         return specialWords[lower];

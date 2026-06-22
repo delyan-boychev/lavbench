@@ -18,9 +18,9 @@ RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER") == "true"
 
 if RUNNING_AS_WORKER:
     celery = Celery(
-        'tasks',
-        broker=os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
-        backend=os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+        "tasks",
+        broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+        backend=os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
     )
     app = None
     db = None
@@ -29,16 +29,16 @@ if RUNNING_AS_WORKER:
 else:
     from app import create_app
     from models import db, Submission, Challenge
+
     app = create_app()
     celery = Celery(
-        'tasks',
-        broker=app.config['CELERY_BROKER_URL'],
-        backend=app.config['CELERY_RESULT_BACKEND']
+        "tasks", broker=app.config["CELERY_BROKER_URL"], backend=app.config["CELERY_RESULT_BACKEND"]
     )
 
 from task_modules.submission_runner import run_eval_submission
 from task_modules.system import run_register_worker_specs, run_backup as _do_backup
 from task_modules.leaderboard import run_recalculate_all_leaderboards
+
 
 @celery.task(
     bind=True,
@@ -50,7 +50,7 @@ from task_modules.leaderboard import run_recalculate_all_leaderboards
     max_retries=3,
     retry_backoff=True,
     retry_backoff_max=600,
-    retry_jitter=True
+    retry_jitter=True,
 )
 def evaluate_submission(self, submission_id, metadata=None):
     """Celery task: run a student submission through the evaluation pipeline in Docker."""
@@ -58,6 +58,7 @@ def evaluate_submission(self, submission_id, metadata=None):
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except Exception as e:
         from cache_utils import log_dead_letter
+
         log_dead_letter(
             submission_id,
             task_id=metadata.get("task_id") if metadata else None,
@@ -70,36 +71,45 @@ def evaluate_submission(self, submission_id, metadata=None):
 @celery.task
 def recalculate_all_leaderboards():
     """Celery task: rebuild leaderboard cache for all active challenges."""
-    if RUNNING_AS_WORKER: return
+    if RUNNING_AS_WORKER:
+        return
     return run_recalculate_all_leaderboards(app)
+
 
 @celery.task
 def register_worker_specs():
     """Celery task: register worker node specs (CPU/GPU/memory) in Redis."""
     return run_register_worker_specs(celery)
 
+
 @celery.task
 def run_backup(auto=True, challenge_id=None, state=None):
     """Celery task: create a pg_dump+uploads tarball backup."""
-    if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
-    if not app: return {"error": "no_app"}
+    if RUNNING_AS_WORKER:
+        return {"skipped": "remote_worker"}
+    if not app:
+        return {"error": "no_app"}
     return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state)
+
 
 @celery.task
 def check_and_backup():
     """Celery beat task: check deadlines and trigger backups (20min active / 6h idle)."""
-    if RUNNING_AS_WORKER: return {"skipped": "remote_worker"}
-    if not app: return {"error": "no_app"}
+    if RUNNING_AS_WORKER:
+        return {"skipped": "remote_worker"}
+    if not app:
+        return {"error": "no_app"}
     with app.app_context():
         from config import Config
+
         now = datetime.utcnow()
         grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
         window = timedelta(minutes=20)
 
         from models import Challenge
+
         challenges = Challenge.query.filter(
-            Challenge.is_active == True,
-            Challenge.is_archived == False
+            Challenge.is_active == True, Challenge.is_archived == False
         ).all()
 
         active_count = 0
@@ -108,22 +118,37 @@ def check_and_backup():
                 active_count += 1
 
             # Grace period just ended
-            if c.end_time and not c.scores_finalized and c.end_time + grace < now and c.end_time + grace > now - window:
+            if (
+                c.end_time
+                and not c.scores_finalized
+                and c.end_time + grace < now
+                and c.end_time + grace > now - window
+            ):
                 run_backup.delay(auto=True, challenge_id=c.id, state="grace_ended")
 
             # Submission deadline just passed
-            elif c.end_time and not c.scores_finalized and c.end_time < now and c.end_time > now - window:
+            elif (
+                c.end_time
+                and not c.scores_finalized
+                and c.end_time < now
+                and c.end_time > now - window
+            ):
                 run_backup.delay(auto=True, challenge_id=c.id, state="submission_ended")
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
         from cache_utils import get_redis_client, get_cached, set_cached
+
         r = get_redis_client()
         if r:
             last_ts = get_cached(last_key)
             should_run = False
             if last_ts:
-                last = datetime.fromisoformat(last_ts) if isinstance(last_ts, str) else datetime.utcfromtimestamp(float(last_ts))
+                last = (
+                    datetime.fromisoformat(last_ts)
+                    if isinstance(last_ts, str)
+                    else datetime.utcfromtimestamp(float(last_ts))
+                )
                 interval = timedelta(hours=6)
                 if active_count > 0:
                     interval = timedelta(minutes=20)
@@ -137,6 +162,7 @@ def check_and_backup():
 
     return {"active_competitions": active_count}
 
+
 # Periodic watchdog: marks submissions as failed if stuck in queued/running for too long
 # Also recovers results from Redis fallback (workers that completed but couldn't reach the server).
 # Runs every 5 minutes. Only the main server process runs this (not remote workers).
@@ -149,16 +175,19 @@ def watchdog_stuck_submissions():
         return {"skipped": "no_app_context"}
     with app.app_context():
         import json
-        
+
         # 1. Recover fallback results from Redis (workers that finished but couldn't reach server)
         recovered = 0
         try:
             from cache_utils import get_redis_client
+
             r = get_redis_client()
             if not r:
                 return {"error": "redis_unavailable"}
             stuck = Submission.query.filter(
-                Submission.status.in_(['queued', 'running', 'building_env', 'running_inference', 'evaluating'])
+                Submission.status.in_(
+                    ["queued", "running", "building_env", "running_inference", "evaluating"]
+                )
             ).all()
             for sub in stuck:
                 fallback_key = f"submission:{sub.id}:fallback"
@@ -182,19 +211,23 @@ def watchdog_stuck_submissions():
                         r.delete(fallback_key)
                         recovered += 1
                     except Exception as e:
-                        logger.error("Watchdog: failed to recover fallback for submission %s: %s", sub.id, e)
+                        logger.error(
+                            "Watchdog: failed to recover fallback for submission %s: %s", sub.id, e
+                        )
         except Exception as e:
             logger.error("Watchdog: Redis connection error: %s", e)
-        
+
         # 2. Time out stuck submissions with dynamic per-task timeout
         timed_out_candidates = Submission.query.filter(
-            Submission.status.in_(['queued', 'running', 'building_env', 'running_inference', 'evaluating']),
-            Submission.executed_at.is_(None)
+            Submission.status.in_(
+                ["queued", "running", "building_env", "running_inference", "evaluating"]
+            ),
+            Submission.executed_at.is_(None),
         ).all()
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(['running', 'building_env', 'running_inference', 'evaluating']),
-            Submission.executed_at.isnot(None)
+            Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
+            Submission.executed_at.isnot(None),
         ).all()
         now = datetime.utcnow()
         timeout_count = 0
@@ -206,20 +239,21 @@ def watchdog_stuck_submissions():
                 max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
                 if now - sub.executed_at <= max_runtime:
                     continue
-                reason = f'task time limit ({task_time_limit}s) exceeded'
+                reason = f"task time limit ({task_time_limit}s) exceeded"
             else:
                 if now - sub.created_at <= timedelta(minutes=10):
                     continue
-                reason = 'never picked up by a worker (10m+ queued)'
-            sub.status = 'failed'
-            sub.detailed_status = 'failed'
-            sub.logs = (sub.logs or '') + f'\n[WATCHDOG] Submission timed out — {reason}.'
+                reason = "never picked up by a worker (10m+ queued)"
+            sub.status = "failed"
+            sub.detailed_status = "failed"
+            sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
             timeout_count += 1
-        
+
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
             # Invalidate leaderboard cache for affected challenges
             from cache_utils import invalidate_leaderboard_cache
+
             challenge_ids = set()
             for sub in stuck:
                 if sub.challenge_id:
@@ -228,16 +262,17 @@ def watchdog_stuck_submissions():
                 invalidate_leaderboard_cache(cid)
         return {"recovered": recovered, "timed_out": timeout_count}
 
+
 # Celery Beat schedule for periodic tasks
 # watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
 celery.conf.beat_schedule = {
-    'watchdog-every-5m': {
-        'task': 'tasks.watchdog_stuck_submissions',
-        'schedule': 300.0,
+    "watchdog-every-5m": {
+        "task": "tasks.watchdog_stuck_submissions",
+        "schedule": 300.0,
     },
-    'backup-check-every-20m': {
-        'task': 'tasks.check_and_backup',
-        'schedule': 1200.0,
+    "backup-check-every-20m": {
+        "task": "tasks.check_and_backup",
+        "schedule": 1200.0,
     },
 }

@@ -44,7 +44,6 @@ describe('NotebookSubmit Component', () => {
   it('renders judge/admin session banner when role is not competitor', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'admin' },
-      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
@@ -55,7 +54,6 @@ describe('NotebookSubmit Component', () => {
   it('renders competition closed banner if challenge is inactive', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     const inactiveChallenge = { ...challenge, is_active: false };
@@ -66,7 +64,6 @@ describe('NotebookSubmit Component', () => {
   it('renders competition closed banner if challenge is archived', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     const archivedChallenge = { ...challenge, is_archived: true };
@@ -77,7 +74,6 @@ describe('NotebookSubmit Component', () => {
   it('renders upload panel normally for active competitor', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
@@ -88,11 +84,10 @@ describe('NotebookSubmit Component', () => {
   it('validates file extension upon upload selection', () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
-    
+
     // Query file input element
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
 
@@ -107,7 +102,6 @@ describe('NotebookSubmit Component', () => {
   it('calls parseNotebook on valid .ipynb selection and updates cell list', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     const cellsMock = [
@@ -128,7 +122,7 @@ describe('NotebookSubmit Component', () => {
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['{}'], 'my_solution.ipynb', { type: 'application/json' });
-    
+
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
     expect(ChallengeService.parseNotebook).toHaveBeenCalledWith(10, validFile);
@@ -145,7 +139,6 @@ describe('NotebookSubmit Component', () => {
   it('handles parseNotebook server error response gracefully', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     ChallengeService.parseNotebook.mockResolvedValue({
@@ -157,7 +150,7 @@ describe('NotebookSubmit Component', () => {
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['invalidjson'], 'my_solution.ipynb', { type: 'application/json' });
-    
+
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
     await vi.waitFor(() => {
@@ -168,7 +161,6 @@ describe('NotebookSubmit Component', () => {
   it('handles parseNotebook network throw exception gracefully', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
     ChallengeService.parseNotebook.mockRejectedValue(new Error('DNS failure'));
@@ -177,7 +169,7 @@ describe('NotebookSubmit Component', () => {
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['{}'], 'my_solution.ipynb', { type: 'application/json' });
-    
+
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
     await vi.waitFor(() => {
@@ -188,12 +180,9 @@ describe('NotebookSubmit Component', () => {
   it('verifies cell selection changes, submit button disabled checks, and execution submission calls', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
-      
     });
 
-    const cellsMock = [
-      { id: 1, type: 'code', source: 'import numpy as np' },
-    ];
+    const cellsMock = [{ id: 1, type: 'code', source: 'import numpy as np' }];
 
     ChallengeService.parseNotebook.mockResolvedValue({
       ok: true,

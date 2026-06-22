@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, User, Challenge, Task, Submission, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard, get_task_leaderboard_data
@@ -23,7 +23,7 @@ class TestBuildAndCacheLeaderboard:
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
             is_frozen=False,
-            scores_finalized=False
+            scores_finalized=False,
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -35,7 +35,7 @@ class TestBuildAndCacheLeaderboard:
             time_limit_sec=300,
             ram_limit_mb=512,
             max_submissions_per_period=10,
-            metrics_config={"accuracy": {"weight": 1.0, "higher_is_better": True}}
+            metrics_config={"accuracy": {"weight": 1.0, "higher_is_better": True}},
         )
         db_session.add(self.task)
 
@@ -46,7 +46,7 @@ class TestBuildAndCacheLeaderboard:
             time_limit_sec=300,
             ram_limit_mb=512,
             max_submissions_per_period=10,
-            metrics_config={"mse": {"weight": 1.0, "higher_is_better": False}}
+            metrics_config={"mse": {"weight": 1.0, "higher_is_better": False}},
         )
         db_session.add(self.task2)
         db_session.commit()
@@ -57,15 +57,16 @@ class TestBuildAndCacheLeaderboard:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id=f"User-{username}",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         comp.set_demographics(name or username, surname or "Test", "12", "School", "City")
         db.session.add(comp)
         db.session.commit()
         return comp
 
-    def _create_submission(self, user_id, task_id, public_score, private_score,
-                           status='completed', execution_time_ms=0):
+    def _create_submission(
+        self, user_id, task_id, public_score, private_score, status="completed", execution_time_ms=0
+    ):
         sub = Submission(
             challenge_id=self.challenge.id,
             task_id=task_id,
@@ -74,8 +75,8 @@ class TestBuildAndCacheLeaderboard:
             public_score=public_score,
             private_score=private_score,
             execution_time_ms=execution_time_ms,
-            code_cells='[]',
-            created_at=datetime.utcnow()
+            code_cells="[]",
+            created_at=datetime.utcnow(),
         )
         db.session.add(sub)
         db.session.commit()
@@ -172,7 +173,7 @@ class TestGetTaskLeaderboardData:
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
             is_frozen=False,
-            scores_finalized=False
+            scores_finalized=False,
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -184,7 +185,7 @@ class TestGetTaskLeaderboardData:
             time_limit_sec=300,
             ram_limit_mb=512,
             max_submissions_per_period=10,
-            metrics_config={"accuracy": {"weight": 1.0, "higher_is_better": True}}
+            metrics_config={"accuracy": {"weight": 1.0, "higher_is_better": True}},
         )
         db_session.add(self.task)
         db_session.commit()
@@ -202,7 +203,7 @@ class TestGetTaskLeaderboardData:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Comp-001",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         db_session.add(comp)
         db_session.commit()
@@ -219,12 +220,12 @@ class TestGetTaskLeaderboardData:
             challenge_id=self.challenge.id,
             task_id=self.task.id,
             user_id=0,
-            status='completed',
+            status="completed",
             is_baseline=True,
             public_score=0.95,
             private_score=0.90,
-            code_cells='[]',
-            created_at=datetime.utcnow()
+            code_cells="[]",
+            created_at=datetime.utcnow(),
         )
         db.session.add(baseline)
         db.session.commit()

@@ -13,17 +13,38 @@ import { useLocation } from 'react-router-dom';
 
 function SunIcon() {
   return (
-    <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="15"
+      height="15"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="12" cy="12" r="5" />
-      <path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      <path
+        strokeLinecap="round"
+        d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+      />
     </svg>
   );
 }
 
 function MoonIcon() {
   return (
-    <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+    <svg
+      width="15"
+      height="15"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
+      />
     </svg>
   );
 }
@@ -60,10 +81,10 @@ export default function Navbar() {
     if (!selectedChallenge?.stages) return null;
     const now = nowMs;
     const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
-    return selectedChallenge.stages.find(st => {
+    return selectedChallenge.stages.find((st) => {
       const start = new Date(st.start_time).getTime();
       const end = new Date(st.end_time).getTime();
-      return now >= start && now <= (end + graceMs) && !st.is_finalized;
+      return now >= start && now <= end + graceMs && !st.is_finalized;
     });
   }, [selectedChallenge, nowMs]);
 
@@ -76,7 +97,7 @@ export default function Navbar() {
       const start = new Date(selectedChallenge.start_time).getTime();
       const end = new Date(selectedChallenge.end_time).getTime();
       const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
-      if (now >= start && now <= (end + graceMs) && !selectedChallenge.scores_finalized) {
+      if (now >= start && now <= end + graceMs && !selectedChallenge.scores_finalized) {
         return end - now;
       }
     }
@@ -85,13 +106,13 @@ export default function Navbar() {
 
   const renderNavbarTimer = () => {
     if (timeRemainingMs === null) return null;
-    
+
     const graceMs = (selectedChallenge?.deadline_grace_period_seconds || 60) * 1000;
     const isGracePeriod = timeRemainingMs < 0;
-    
+
     let color = '#10b981'; // Green
     let isFlashing = false;
-    
+
     if (isGracePeriod) {
       color = '#f97316'; // Amber/Orange
       isFlashing = true;
@@ -106,7 +127,7 @@ export default function Navbar() {
         color = '#f59e0b'; // Yellow
       }
     }
-    
+
     let timeStr;
     if (isGracePeriod) {
       const remainingGraceSecs = Math.ceil((graceMs + timeRemainingMs) / 1000);
@@ -118,17 +139,21 @@ export default function Navbar() {
       const seconds = totalSecs % 60;
       timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
-    
-    const labelStr = isGracePeriod 
+
+    const labelStr = isGracePeriod
       ? t('nav.grace_period')
-      : (activeStage ? t('nav.stage_time_left', { stage: activeStage.stage_number }) : t('nav.time_left'));
-      
+      : activeStage
+        ? t('nav.stage_time_left', { stage: activeStage.stage_number })
+        : t('nav.time_left');
+
     const titleStr = isGracePeriod
       ? t('nav.grace_period_title')
-      : (activeStage ? t('nav.stage_time_left_title', { stage: activeStage.stage_number }) : t('nav.time_left_title'));
-      
+      : activeStage
+        ? t('nav.stage_time_left_title', { stage: activeStage.stage_number })
+        : t('nav.time_left_title');
+
     return (
-      <div 
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -146,10 +171,23 @@ export default function Navbar() {
         className={isFlashing ? 'animate-flash-red' : ''}
         title={titleStr}
       >
-        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          width="13"
+          height="13"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
-        <span>{labelStr}: {timeStr}</span>
+        <span>
+          {labelStr}: {timeStr}
+        </span>
       </div>
     );
   };
@@ -167,23 +205,27 @@ export default function Navbar() {
 
   React.useEffect(() => {
     if (!isDocsModalOpen) return;
-    
+
     const fetchDoc = async () => {
       setDocLoading(true);
       setDocError(null);
       try {
         /** @type {Response} */
         const res = await api.fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
-          headers: { 
-            'Accept-Language': i18n.language || 'en'
-          }
+          headers: {
+            'Accept-Language': i18n.language || 'en',
+          },
         });
         if (res.ok) {
           const data = await res.json();
           setDocContent(data.content);
         } else {
           const errData = await res.json();
-          setDocError(errData.code ? t(`api.${errData.code}`, errData.error || t('nav.failed_fetch_docs')) : (errData.error || t('nav.failed_fetch_docs')));
+          setDocError(
+            errData.code
+              ? t(`api.${errData.code}`, errData.error || t('nav.failed_fetch_docs'))
+              : errData.error || t('nav.failed_fetch_docs'),
+          );
         }
       } catch {
         setDocError(t('nav.failed_fetch_docs_network'));
@@ -191,7 +233,7 @@ export default function Navbar() {
         setDocLoading(false);
       }
     };
-    
+
     fetchDoc();
   }, [isDocsModalOpen, activeDocTab]);
 
@@ -202,20 +244,22 @@ export default function Navbar() {
 
   React.useEffect(() => {
     const eventSource = new EventSource('/api/worker-status/live');
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         setWorkerStatus(data.status);
         setClusters(data.clusters || []);
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     };
-    
+
     eventSource.onerror = () => {
       setWorkerStatus('offline');
       setClusters([]);
     };
-    
+
     return () => eventSource.close();
   }, []);
 
@@ -231,42 +275,45 @@ export default function Navbar() {
     ? `${currentUser.name} ${currentUser.surname || ''}`.trim()
     : currentUser?.username;
 
-
-
   return (
-    <header style={{
-      background: 'var(--bg-nav)',
-      borderBottom: '1px solid var(--border)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      backdropFilter: 'blur(10px)',
-      WebkitBackdropFilter: 'blur(10px)',
-    }}>
-      <div style={{
-        maxWidth: 1400,
-        margin: '0 auto',
-        padding: '0 12px',
-        height: 56,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-      }}>
+    <header
+      style={{
+        background: 'var(--bg-nav)',
+        borderBottom: '1px solid var(--border)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1400,
+          margin: '0 auto',
+          padding: '0 12px',
+          height: 56,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+        }}
+      >
         {/* Left: Logo */}
         <Logo size="lg" />
 
         {/* Center: Timer + Cluster + Docs (hidden on mobile) */}
         <div className="hidden lg:flex" style={{ gap: 10, alignItems: 'center' }}>
           {renderNavbarTimer()}
-          <button 
-            onClick={() => setIsModalOpen(prev => !prev)}
+          <button
+            onClick={() => setIsModalOpen((prev) => !prev)}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
               padding: '4px 12px',
-              background: workerStatus === 'online' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              background:
+                workerStatus === 'online' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
               border: `1px solid ${workerStatus === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
               borderRadius: 'var(--radius-sm)',
               fontSize: '0.72rem',
@@ -279,22 +326,26 @@ export default function Navbar() {
             className="hover:scale-[1.02] active:scale-[0.98] select-none"
             title={t('nav.cluster_info_title')}
           >
-            <span style={{ 
-              position: 'relative',
-              display: 'flex',
-              width: 8, 
-              height: 8, 
-            }}>
+            <span
+              style={{
+                position: 'relative',
+                display: 'flex',
+                width: 8,
+                height: 8,
+              }}
+            >
               {workerStatus === 'online' && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               )}
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
+              ></span>
             </span>
             {t('nav.cluster')}
           </button>
 
           {currentUser && (
-            <button 
+            <button
               onClick={() => setIsDocsModalOpen(true)}
               style={{
                 display: 'flex',
@@ -314,8 +365,19 @@ export default function Navbar() {
               className="hover:scale-[1.02] active:scale-[0.98] select-none"
               title={t('nav.docs_title')}
             >
-              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              <svg
+                width="13"
+                height="13"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                />
               </svg>
               {t('nav.docs')}
             </button>
@@ -326,15 +388,29 @@ export default function Navbar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* User info (mobile — name / role / alias; hidden under 450px) */}
           {currentUser && !isNarrow && (
-            <div className="flex lg:hidden" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+            <div
+              className="flex lg:hidden"
+              style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}
+            >
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                }}
+              >
                 {displayName}
               </span>
               <Badge status={currentUser.role} />
-              <span style={{
-                fontSize: '0.65rem', color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)', lineHeight: 1.2,
-              }}>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: 1.2,
+                }}
+              >
                 {currentUser.alias_id}
               </span>
             </div>
@@ -342,15 +418,29 @@ export default function Navbar() {
 
           {/* User info (desktop) */}
           {currentUser && (
-            <div className="hidden lg:flex" style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+            <div
+              className="hidden lg:flex"
+              style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}
+            >
+              <span
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                }}
+              >
                 {displayName}
               </span>
               <Badge status={currentUser.role} />
-              <span style={{
-                fontSize: '0.65rem', color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)', lineHeight: 1.2,
-              }}>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: 1.2,
+                }}
+              >
                 {currentUser.alias_id}
               </span>
             </div>
@@ -359,20 +449,41 @@ export default function Navbar() {
           {/* Mobile menu toggle */}
           <button
             className="flex lg:hidden"
-            onClick={() => setMobileMenuOpen(prev => !prev)}
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
             style={{
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', transition: 'all 0.15s ease', flexShrink: 0,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              width: 32,
+              height: 32,
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
           >
             {mobileMenuOpen ? (
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             ) : (
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             )}
@@ -389,15 +500,24 @@ export default function Navbar() {
               color: 'var(--text-secondary)',
               fontSize: '0.72rem',
               fontWeight: 700,
-              width: 32, height: 32,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
               userSelect: 'none',
               flexShrink: 0,
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--text-primary)';
+              e.currentTarget.style.borderColor = 'var(--border-hover)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--text-secondary)';
+              e.currentTarget.style.borderColor = 'var(--border)';
+            }}
           >
             {i18n.language.startsWith('bg') ? 'EN' : 'BG'}
           </button>
@@ -411,31 +531,59 @@ export default function Navbar() {
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-sm)',
               color: 'var(--text-secondary)',
-              width: 32, height: 32,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
               flexShrink: 0,
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--text-primary)';
+              e.currentTarget.style.borderColor = 'var(--border-hover)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--text-secondary)';
+              e.currentTarget.style.borderColor = 'var(--border)';
+            }}
           >
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>
 
           {/* Logout (desktop — icon only) */}
-          <button onClick={handleLogout}
+          <button
+            onClick={handleLogout}
             className="hidden lg:inline-flex"
             title={t('nav.sign_out')}
             style={{
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-              width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', transition: 'all 0.15s ease', flexShrink: 0,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              width: 32,
+              height: 32,
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
           >
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <svg
+              width="15"
+              height="15"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+              />
             </svg>
           </button>
         </div>
@@ -443,34 +591,52 @@ export default function Navbar() {
 
       {/* Mobile dropdown menu */}
       {mobileMenuOpen && (
-        <div className="flex lg:hidden" style={{
-          background: 'var(--bg-nav)', borderTop: '1px solid var(--border)',
-          padding: '12px 12px', flexDirection: 'column', gap: 8,
-        }}>
+        <div
+          className="flex lg:hidden"
+          style={{
+            background: 'var(--bg-nav)',
+            borderTop: '1px solid var(--border)',
+            padding: '12px 12px',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
           {currentUser && (
             <div style={{ padding: '4px 8px', textAlign: 'center' }}>
               {isNarrow ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                >
+                  <span
+                    style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}
+                  >
                     {displayName}
                   </span>
                   <Badge status={currentUser.role} />
-                  <span style={{
-                    fontSize: '0.78rem', color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                  }}>
+                  <span
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
                     {currentUser.alias_id}
                   </span>
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div
+                    style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}
+                  >
                     {displayName}
                   </div>
-                  <span style={{
-                    fontSize: '0.78rem', color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                  }}>
+                  <span
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
                     {currentUser.alias_id}
                   </span>
                 </>
@@ -478,30 +644,72 @@ export default function Navbar() {
             </div>
           )}
           {renderNavbarTimer()}
-          <button 
-            onClick={() => { setIsModalOpen(true); setMobileMenuOpen(false); }}
+          <button
+            onClick={() => {
+              setIsModalOpen(true);
+              setMobileMenuOpen(false);
+            }}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
-              color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 14px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              width: '100%',
+              justifyContent: 'center',
             }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: workerStatus === 'online' ? '#10b981' : '#ef4444' }}></span>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: workerStatus === 'online' ? '#10b981' : '#ef4444',
+              }}
+            ></span>
             {t('nav.cluster')}
           </button>
           {currentUser && (
-            <button 
-              onClick={() => { setIsDocsModalOpen(true); setMobileMenuOpen(false); }}
+            <button
+              onClick={() => {
+                setIsDocsModalOpen(true);
+                setMobileMenuOpen(false);
+              }}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
-                color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 14px',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                width: '100%',
+                justifyContent: 'center',
               }}
             >
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              <svg
+                width="14"
+                height="14"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                />
               </svg>
               {t('nav.docs')}
             </button>
@@ -509,42 +717,59 @@ export default function Navbar() {
           <button
             onClick={handleLogout}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', fontWeight: 600,
-              color: 'var(--text-primary)', cursor: 'pointer', width: '100%', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 14px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              width: '100%',
+              justifyContent: 'center',
             }}
           >
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <svg
+              width="14"
+              height="14"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+              />
             </svg>
             {t('nav.sign_out')}
           </button>
         </div>
       )}
 
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         title={t('nav.cluster_info_title')}
         size="md"
-        footer={(
-          <button 
-            className="btn btn-secondary btn-sm px-4" 
-            onClick={() => setIsModalOpen(false)}
-          >
+        footer={
+          <button className="btn btn-secondary btn-sm px-4" onClick={() => setIsModalOpen(false)}>
             {t('nav.close')}
           </button>
-        )}
+        }
       >
         <div className="flex flex-col gap-4 text-xs text-left">
-          <p className="text-slate-400">
-            {t('nav.cluster_info_desc')}
-          </p>
+          <p className="text-slate-400">{t('nav.cluster_info_desc')}</p>
 
           {/* Cluster Status Summary Info Card */}
           <div className="bg-slate-950/60 border border-indigo-500/10 p-4 rounded-xl flex flex-col gap-2">
-            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">{t('nav.cluster_status_summary')}</h4>
+            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">
+              {t('nav.cluster_status_summary')}
+            </h4>
             <div className="grid grid-cols-2 gap-3 text-slate-300">
               <div className="flex justify-between border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.system_status')}</span>
@@ -557,7 +782,9 @@ export default function Navbar() {
               <div className="flex justify-between">
                 <span className="text-slate-400">{t('nav.global_concurrency')}</span>
                 <span className="font-bold text-slate-100">
-                  {t('nav.global_parallel_tasks', { count: clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0) })}
+                  {t('nav.global_parallel_tasks', {
+                    count: clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0),
+                  })}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -566,7 +793,7 @@ export default function Navbar() {
               </div>
             </div>
           </div>
-          
+
           {clusters.length === 0 ? (
             <div className="text-center py-8 text-slate-500 italic bg-slate-950/20 border border-white/5 rounded-xl">
               {t('nav.no_nodes_connected')}
@@ -574,20 +801,31 @@ export default function Navbar() {
           ) : (
             <div className="flex flex-col gap-3">
               {clusters.map((cluster, idx) => (
-                <div key={cluster.name || idx} className="bg-slate-950/40 border border-white/5 p-4 rounded-xl flex flex-col gap-3">
+                <div
+                  key={cluster.name || idx}
+                  className="bg-slate-950/40 border border-white/5 p-4 rounded-xl flex flex-col gap-3"
+                >
                   <div className="flex justify-between items-center">
-                    <span className="font-mono text-indigo-400 font-bold text-sm">{cluster.name}</span>
-                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
-                      cluster.type === 'GPU' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-300'
-                    }`}>
+                    <span className="font-mono text-indigo-400 font-bold text-sm">
+                      {cluster.name}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
+                        cluster.type === 'GPU'
+                          ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-300'
+                      }`}
+                    >
                       {t('nav.node_type', { type: cluster.type })}
                     </span>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-slate-300 font-medium">
                     <div className="flex justify-between border-b border-white/5 pb-1">
                       <span className="text-slate-500 font-semibold">{t('nav.concurrency')}</span>
-                      <span className="font-bold text-slate-200">{t('nav.parallel_tasks', { count: cluster.concurrency })}</span>
+                      <span className="font-bold text-slate-200">
+                        {t('nav.parallel_tasks', { count: cluster.concurrency })}
+                      </span>
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
                       <span className="text-slate-500 font-semibold">{t('nav.ram_limit')}</span>
@@ -595,11 +833,20 @@ export default function Navbar() {
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
                       <span className="text-slate-500 font-semibold">{t('nav.gpu_model')}</span>
-                      <span className="font-bold text-slate-200 truncate max-w-[140px] text-right" title={cluster.gpu_type}>{cluster.gpu_type}</span>
+                      <span
+                        className="font-bold text-slate-200 truncate max-w-[140px] text-right"
+                        title={cluster.gpu_type}
+                      >
+                        {cluster.gpu_type}
+                      </span>
                     </div>
                     <div className="flex justify-between border-b border-white/5 pb-1">
                       <span className="text-slate-500 font-semibold">{t('nav.vram_limit')}</span>
-                      <span className="font-bold text-slate-200">{cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null ? `${cluster.vram_gb} GB` : 'N/A'}</span>
+                      <span className="font-bold text-slate-200">
+                        {cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null
+                          ? `${cluster.vram_gb} GB`
+                          : 'N/A'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -616,26 +863,26 @@ export default function Navbar() {
         title={t('nav.docs_title')}
         size="2xl"
         bodyScrollable={false}
-        footer={(
-          <button 
-            className="btn btn-secondary btn-sm px-4" 
+        footer={
+          <button
+            className="btn btn-secondary btn-sm px-4"
             onClick={() => setIsDocsModalOpen(false)}
           >
             {t('nav.close')}
           </button>
-        )}
+        }
       >
         <div className="flex flex-col gap-4 text-left flex-1 min-h-0">
           {/* Tabs header - scrollable horizontally on small viewports */}
           {docTabs.length > 1 && (
             <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto scrollbar-none whitespace-nowrap flex-shrink-0">
-              {docTabs.map(tab => (
+              {docTabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveDocTab(tab.id)}
                   className={`px-3 py-1.5 rounded-lg font-semibold transition-all duration-200 cursor-pointer ${
-                    activeDocTab === tab.id 
-                      ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' 
+                    activeDocTab === tab.id
+                      ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
                   }`}
                 >
@@ -644,7 +891,7 @@ export default function Navbar() {
               ))}
             </div>
           )}
-          
+
           {/* Scrollable Doc Content Area */}
           <div className="flex-1 overflow-y-auto pr-3 scrollbar-thin min-h-0">
             {docLoading ? (

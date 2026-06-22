@@ -6,7 +6,7 @@ import ChallengeConfig from './ChallengeConfig';
 describe('ChallengeConfig Component', () => {
   const mockTimezones = [
     { value: 'UTC', label: 'UTC' },
-    { value: 'Europe/Sofia', label: 'Europe/Sofia' }
+    { value: 'Europe/Sofia', label: 'Europe/Sofia' },
   ];
 
   const mockNewChallenge = {
@@ -20,7 +20,7 @@ describe('ChallengeConfig Component', () => {
     end_time: '2026-06-15T12:00',
     timezone: 'UTC',
     double_blind: true,
-    is_frozen: false
+    is_frozen: false,
   };
 
   it('renders input fields with initial values', () => {
@@ -33,7 +33,7 @@ describe('ChallengeConfig Component', () => {
         newChallenge={mockNewChallenge}
         setNewChallenge={setNewChallenge}
         timezones={mockTimezones}
-      />
+      />,
     );
 
     expect(screen.getByLabelText(/Competition Title/i)).toHaveValue('Test Competition');
@@ -54,15 +54,13 @@ describe('ChallengeConfig Component', () => {
         newChallenge={mockNewChallenge}
         setNewChallenge={setNewChallenge}
         timezones={mockTimezones}
-      />
+      />,
     );
 
     const titleInput = screen.getByLabelText(/Competition Title/i);
     fireEvent.change(titleInput, { target: { value: 'New Title' } });
 
-    expect(setNewChallenge).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'New Title' })
-    );
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ title: 'New Title' }));
   });
 
   it('submits form and triggers handleCreateChallenge', () => {
@@ -75,7 +73,7 @@ describe('ChallengeConfig Component', () => {
         newChallenge={mockNewChallenge}
         setNewChallenge={setNewChallenge}
         timezones={mockTimezones}
-      />
+      />,
     );
 
     const submitBtn = screen.getByRole('button', { name: /Create Competition/i });

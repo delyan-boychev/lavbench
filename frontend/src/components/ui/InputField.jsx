@@ -37,7 +37,8 @@ export default function InputField({
     <div className={`flex flex-col gap-1.5 ${className}`}>
       {label && (
         <label htmlFor={inputId} className="text-xs font-semibold text-slate-300">
-          {label}{required && <span className="text-rose-500 ml-1">*</span>}
+          {label}
+          {required && <span className="text-rose-500 ml-1">*</span>}
         </label>
       )}
       {multiline ? (

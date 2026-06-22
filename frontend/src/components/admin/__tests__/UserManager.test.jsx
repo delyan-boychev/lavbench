@@ -6,14 +6,22 @@ vi.mock('../../ui/InputField', () => ({
   default: ({ label, value, onChange, type, placeholder, required }) => (
     <div>
       {label && <label>{label}</label>}
-      <input type={type || 'text'} value={value} onChange={onChange} placeholder={placeholder} required={required} />
+      <input
+        type={type || 'text'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+      />
     </div>
   ),
 }));
 
 vi.mock('../../ui/Button', () => ({
   default: ({ children, type, variant, className, disabled }) => (
-    <button type={type} data-variant={variant} className={className} disabled={disabled}>{children}</button>
+    <button type={type} data-variant={variant} className={className} disabled={disabled}>
+      {children}
+    </button>
   ),
 }));
 
@@ -22,7 +30,11 @@ vi.mock('../../ui/SelectField', () => ({
     <div>
       <label>{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)} required={required}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </div>
   ),
@@ -40,7 +52,9 @@ vi.mock('../../ui/ToggleField', () => ({
 vi.mock('../../ui/Pagination', () => ({
   default: ({ page, pages, total, onPageChange: _onPageChange, itemName: _itemName }) => (
     <div>
-      <span data-testid="page-info">{page}/{pages}</span>
+      <span data-testid="page-info">
+        {page}/{pages}
+      </span>
       <span data-testid="total">{total}</span>
     </div>
   ),
@@ -49,9 +63,21 @@ vi.mock('../../ui/Pagination', () => ({
 import UserManager from '../UserManager';
 
 const baseProps = {
-  newUser: { username: '', email: '', password: '', name: '', surname: '', role: 'competitor', grade: '', school: '', city: '', challenge_id: '', is_anonymous: false },
+  newUser: {
+    username: '',
+    email: '',
+    password: '',
+    name: '',
+    surname: '',
+    role: 'competitor',
+    grade: '',
+    school: '',
+    city: '',
+    challenge_id: '',
+    is_anonymous: false,
+  },
   setNewUser: vi.fn(),
-  handleRegisterUser: vi.fn(e => e.preventDefault()),
+  handleRegisterUser: vi.fn((e) => e.preventDefault()),
   generatedUserCredentials: null,
   allUsers: [],
   userSearch: '',
@@ -81,11 +107,24 @@ describe('UserManager', () => {
     expect(screen.getByText('Grade')).toBeInTheDocument();
     expect(screen.getByText('School')).toBeInTheDocument();
     expect(screen.getByText('City')).toBeInTheDocument();
-    expect(screen.getByText('Anonymous (Hide name/school/city from other students)')).toBeInTheDocument();
+    expect(
+      screen.getByText('Anonymous (Hide name/school/city from other students)'),
+    ).toBeInTheDocument();
   });
 
   it('shows generated user credentials when provided', () => {
-    render(<UserManager {...baseProps} generatedUserCredentials={{ username: 'newadmin', password: 'sec123', role: 'jury', name: 'Jane', surname: 'Doe' }} />);
+    render(
+      <UserManager
+        {...baseProps}
+        generatedUserCredentials={{
+          username: 'newadmin',
+          password: 'sec123',
+          role: 'jury',
+          name: 'Jane',
+          surname: 'Doe',
+        }}
+      />,
+    );
     expect(screen.getByText('newadmin')).toBeInTheDocument();
     expect(screen.getByText('sec123')).toBeInTheDocument();
   });
@@ -97,8 +136,24 @@ describe('UserManager', () => {
 
   it('renders user accounts list table', () => {
     const users = [
-      { id: 1, username: 'admin1', name: 'Admin', surname: 'One', email: 'admin@test.com', role: 'admin', is_anonymous: false },
-      { id: 2, username: 'jury1', name: 'Jury', surname: 'One', email: 'jury@test.com', role: 'jury', is_anonymous: false },
+      {
+        id: 1,
+        username: 'admin1',
+        name: 'Admin',
+        surname: 'One',
+        email: 'admin@test.com',
+        role: 'admin',
+        is_anonymous: false,
+      },
+      {
+        id: 2,
+        username: 'jury1',
+        name: 'Jury',
+        surname: 'One',
+        email: 'jury@test.com',
+        role: 'jury',
+        is_anonymous: false,
+      },
     ];
     render(<UserManager {...baseProps} allUsers={users} />);
     expect(screen.getByText('admin1')).toBeInTheDocument();
@@ -107,7 +162,15 @@ describe('UserManager', () => {
 
   it('shows current admin label for own user', () => {
     const users = [
-      { id: 1, username: 'admin1', name: 'Admin', surname: 'One', email: '', role: 'admin', is_anonymous: false },
+      {
+        id: 1,
+        username: 'admin1',
+        name: 'Admin',
+        surname: 'One',
+        email: '',
+        role: 'admin',
+        is_anonymous: false,
+      },
     ];
     render(<UserManager {...baseProps} allUsers={users} currentUser={{ id: 1, role: 'admin' }} />);
     expect(screen.getByText('Current Admin')).toBeInTheDocument();
@@ -115,7 +178,15 @@ describe('UserManager', () => {
 
   it('shows delete button for other users', () => {
     const users = [
-      { id: 2, username: 'other', name: 'Other', surname: 'User', email: '', role: 'competitor', is_anonymous: false },
+      {
+        id: 2,
+        username: 'other',
+        name: 'Other',
+        surname: 'User',
+        email: '',
+        role: 'competitor',
+        is_anonymous: false,
+      },
     ];
     const handleDeleteUser = vi.fn();
     render(<UserManager {...baseProps} allUsers={users} handleDeleteUser={handleDeleteUser} />);
@@ -126,7 +197,15 @@ describe('UserManager', () => {
 
   it('shows anonymous badge for users with is_anonymous', () => {
     const users = [
-      { id: 2, username: 'anon', name: 'Anon', surname: 'User', email: '', role: 'competitor', is_anonymous: true },
+      {
+        id: 2,
+        username: 'anon',
+        name: 'Anon',
+        surname: 'User',
+        email: '',
+        role: 'competitor',
+        is_anonymous: true,
+      },
     ];
     render(<UserManager {...baseProps} allUsers={users} />);
     const anonBadges = screen.getAllByText('Anon');
@@ -135,7 +214,13 @@ describe('UserManager', () => {
 
   it('renders pagination info for users list', () => {
     const users = Array.from({ length: 5 }, (_, i) => ({
-      id: i, username: `u${i}`, name: '', surname: '', email: '', role: 'competitor', is_anonymous: false,
+      id: i,
+      username: `u${i}`,
+      name: '',
+      surname: '',
+      email: '',
+      role: 'competitor',
+      is_anonymous: false,
     }));
     render(<UserManager {...baseProps} allUsers={users} usersPages={3} usersTotal={15} />);
     expect(screen.getByTestId('page-info')).toBeInTheDocument();

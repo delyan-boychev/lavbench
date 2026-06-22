@@ -3,9 +3,16 @@ import sys
 import json
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from cache_utils import cache_lock, log_dead_letter, get_redis_client, get_cached, set_cached, delete_cached
+from cache_utils import (
+    cache_lock,
+    log_dead_letter,
+    get_redis_client,
+    get_cached,
+    set_cached,
+    delete_cached,
+)
 
 
 class TestCacheLock:

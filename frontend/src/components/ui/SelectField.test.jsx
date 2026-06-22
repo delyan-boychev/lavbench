@@ -11,12 +11,7 @@ describe('SelectField Component', () => {
 
   it('renders select with label and options', () => {
     render(
-      <SelectField
-        label="Select Option"
-        options={options}
-        value="option1"
-        onChange={() => {}}
-      />
+      <SelectField label="Select Option" options={options} value="option1" onChange={() => {}} />,
     );
     expect(screen.getByText('Select Option')).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeInTheDocument();
@@ -30,21 +25,25 @@ describe('SelectField Component', () => {
 
   it('triggers onChange handler when option is selected', () => {
     const handleChange = vi.fn();
-    render(<SelectField label="Choose" options={options} value="option1" onChange={handleChange} />);
-    
+    render(
+      <SelectField label="Choose" options={options} value="option1" onChange={handleChange} />,
+    );
+
     // Click button to open dropdown
     const btn = screen.getByRole('button');
     fireEvent.click(btn);
-    
+
     // Click Option 2 in the dropdown menu
     const option2Btn = screen.getByText('Option 2');
     fireEvent.click(option2Btn);
-    
+
     expect(handleChange).toHaveBeenCalledWith('option2');
   });
 
   it('respects the disabled state', () => {
-    render(<SelectField label="Disabled Select" options={options} disabled={true} onChange={() => {}} />);
+    render(
+      <SelectField label="Disabled Select" options={options} disabled={true} onChange={() => {}} />,
+    );
     expect(screen.getByRole('button')).toBeDisabled();
   });
 });

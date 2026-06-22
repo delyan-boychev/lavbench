@@ -82,12 +82,14 @@ describe('AdminPanel - Column Config & Metrics', () => {
     vi.clearAllMocks();
 
     global.EventSource = class {
-      constructor(url) { this.url = url; this.close = vi.fn(); }
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+      }
     };
 
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
-      
     });
 
     useApp.mockReturnValue({
@@ -171,7 +173,9 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
     // Find the "Add Evaluation Metric" select (it contains the "+" text)
     const metricSelects = screen.getAllByRole('combobox');
-    const addMetric = metricSelects.find(s => s.querySelector('option')?.textContent?.includes('Add'));
+    const addMetric = metricSelects.find((s) =>
+      s.querySelector('option')?.textContent?.includes('Add'),
+    );
     expect(addMetric).toBeDefined();
   });
 
@@ -192,16 +196,16 @@ describe('AdminPanel - Column Config & Metrics', () => {
     });
 
     // Add chrf metric (has Beta parameter)
-    // Wait for metrics to load (ChrF option appears)  
+    // Wait for metrics to load (ChrF option appears)
     await vi.waitFor(() => {
       const chrFOption = document.querySelector('option[value="chrf"]');
       expect(chrFOption).not.toBeNull();
     });
 
     // Find the add metric select by its default placeholder option
-    const addMetricSelect = screen.getAllByRole('combobox').find(
-      s => s.querySelector('option[value=""]')?.textContent?.includes('Add')
-    );
+    const addMetricSelect = screen
+      .getAllByRole('combobox')
+      .find((s) => s.querySelector('option[value=""]')?.textContent?.includes('Add'));
     expect(addMetricSelect).not.toBeNull();
 
     await act(async () => {
@@ -211,16 +215,16 @@ describe('AdminPanel - Column Config & Metrics', () => {
     // Wait for beta parameter select to appear
     await vi.waitFor(() => {
       const allCombos = screen.getAllByRole('combobox');
-      const found = allCombos.find(s =>
-        Array.from(s.options).some(o => o.value === '1' || o.value === '2' || o.value === '3')
+      const found = allCombos.find((s) =>
+        Array.from(s.options).some((o) => o.value === '1' || o.value === '2' || o.value === '3'),
       );
       expect(found).toBeDefined();
     });
 
     // Find the beta select (one of the parameter selects)
     const allCombos = screen.getAllByRole('combobox');
-    const betaSelect = allCombos.find(s =>
-      Array.from(s.options).some(o => o.value === '1' || o.value === '2' || o.value === '3')
+    const betaSelect = allCombos.find((s) =>
+      Array.from(s.options).some((o) => o.value === '1' || o.value === '2' || o.value === '3'),
     );
     expect(betaSelect).toBeInTheDocument();
     expect(betaSelect.value).toBe('1');
@@ -248,13 +252,27 @@ describe('AdminPanel - Column Config & Metrics', () => {
     });
 
     // Add metrics up to the limit
-    const allMetrics = ['accuracy', 'f1', 'precision', 'recall', 'cohen_kappa',
-      'matthews_corrcoef', 'rmse', 'mae', 'r_squared', 'mape'];
-    
+    const allMetrics = [
+      'accuracy',
+      'f1',
+      'precision',
+      'recall',
+      'cohen_kappa',
+      'matthews_corrcoef',
+      'rmse',
+      'mae',
+      'r_squared',
+      'mape',
+    ];
+
     for (const metric of allMetrics.slice(0, 10)) {
-      const addSelect = screen.getAllByRole('combobox').find(
-        s => Array.from(s.options).some(o => o.textContent === 'Accuracy' || o.textContent === formatMetricName(metric))
-      );
+      const addSelect = screen
+        .getAllByRole('combobox')
+        .find((s) =>
+          Array.from(s.options).some(
+            (o) => o.textContent === 'Accuracy' || o.textContent === formatMetricName(metric),
+          ),
+        );
       if (addSelect) {
         await act(async () => {
           fireEvent.change(addSelect, { target: { value: metric } });
@@ -263,9 +281,9 @@ describe('AdminPanel - Column Config & Metrics', () => {
     }
 
     // The add metric dropdown should be disabled
-    const addSelect = screen.getAllByRole('combobox').find(
-      s => Array.from(s.options).some(o => o.value === '')
-    );
+    const addSelect = screen
+      .getAllByRole('combobox')
+      .find((s) => Array.from(s.options).some((o) => o.value === ''));
     expect(addSelect).toBeDefined();
     // After 10 metrics the dropdown should be disabled
   });
@@ -287,9 +305,9 @@ describe('AdminPanel - Column Config & Metrics', () => {
     });
 
     // Add accuracy metric
-    const addSelect = screen.getAllByRole('combobox').find(
-      s => Array.from(s.options).some(o => o.textContent === 'Accuracy')
-    );
+    const addSelect = screen
+      .getAllByRole('combobox')
+      .find((s) => Array.from(s.options).some((o) => o.textContent === 'Accuracy'));
     if (addSelect) {
       await act(async () => {
         fireEvent.change(addSelect, { target: { value: 'accuracy' } });
@@ -315,16 +333,31 @@ describe('AdminPanel - Column Config & Metrics', () => {
 function formatMetricName(name) {
   if (!name) return '';
   const specialWords = {
-    f1: 'F1', rmse: 'RMSE', mae: 'MAE', chrf: 'ChrF', bleu: 'BLEU',
-    rouge: 'ROUGE', meteor: 'METEOR', ter: 'TER', mrr: 'MRR',
-    ndcg: 'NDCG', map: 'mAP', iou: 'IoU', auc: 'AUC', roc: 'ROC',
-    mape: 'MAPE', ae: 'AE',
+    f1: 'F1',
+    rmse: 'RMSE',
+    mae: 'MAE',
+    chrf: 'ChrF',
+    bleu: 'BLEU',
+    rouge: 'ROUGE',
+    meteor: 'METEOR',
+    ter: 'TER',
+    mrr: 'MRR',
+    ndcg: 'NDCG',
+    map: 'mAP',
+    iou: 'IoU',
+    auc: 'AUC',
+    roc: 'ROC',
+    mape: 'MAPE',
+    ae: 'AE',
   };
   let formatted = name.replace(/_/g, ' ');
   if (formatted.toLowerCase() === 'map 50 95') return 'mAP 50-95';
-  return formatted.split(' ').map(word => {
-    const lower = word.toLowerCase();
-    if (specialWords[lower] !== undefined) return specialWords[lower];
-    return word.charAt(0).toUpperCase() + word.slice(1);
-  }).join(' ');
+  return formatted
+    .split(' ')
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (specialWords[lower] !== undefined) return specialWords[lower];
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
 }

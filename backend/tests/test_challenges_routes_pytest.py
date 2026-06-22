@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, User, Challenge, Stage
 from auth_utils import generate_token
@@ -19,7 +19,7 @@ class TestCreateChallenge:
             username="create_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Create-Admin-001"
+            alias_id="Create-Admin-001",
         )
         db_session.add(self.admin)
 
@@ -27,7 +27,7 @@ class TestCreateChallenge:
             username="create_comp",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="Create-Comp-001"
+            alias_id="Create-Comp-001",
         )
         db_session.add(self.competitor)
         db_session.commit()
@@ -49,16 +49,16 @@ class TestCreateChallenge:
             "time_limit_sec": 300,
             "gpu_required": False,
             "double_blind": True,
-            "timezone": "UTC"
+            "timezone": "UTC",
         }
 
     def test_create_challenge_success(self, client):
         payload = self._valid_payload()
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 201
         data = res.get_json()
@@ -76,10 +76,10 @@ class TestCreateChallenge:
         payload = self._valid_payload()
         payload.pop("title")
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "title is required" in res.get_json()["error"].lower()
@@ -88,10 +88,10 @@ class TestCreateChallenge:
         payload = self._valid_payload()
         payload.pop("start_time")
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "start time and end time are required" in res.get_json()["error"].lower()
@@ -101,10 +101,10 @@ class TestCreateChallenge:
         payload["start_time"] = (datetime.utcnow() + timedelta(hours=24)).isoformat()
         payload["end_time"] = (datetime.utcnow() + timedelta(hours=1)).isoformat()
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "end time must be after start time" in res.get_json()["error"].lower()
@@ -113,10 +113,10 @@ class TestCreateChallenge:
         payload = self._valid_payload()
         payload["max_eval_requests"] = 0
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "at least 1" in res.get_json()["error"].lower()
@@ -125,10 +125,10 @@ class TestCreateChallenge:
         payload = self._valid_payload()
         payload["ram_limit_mb"] = 64
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "at least 128" in res.get_json()["error"].lower()
@@ -136,10 +136,10 @@ class TestCreateChallenge:
     def test_create_challenge_competitor_forbidden(self, client):
         payload = self._valid_payload()
         res = client.post(
-            '/api/challenges',
+            "/api/challenges",
             data=json.dumps(payload),
-            content_type='application/json',
-            headers=self._auth(self.competitor_token)
+            content_type="application/json",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 403
         assert "requires role" in res.get_json()["error"].lower()
@@ -152,7 +152,7 @@ class TestUpdateChallenge:
             username="upd_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Upd-Admin-001"
+            alias_id="Upd-Admin-001",
         )
         db_session.add(self.admin)
 
@@ -160,7 +160,7 @@ class TestUpdateChallenge:
             username="upd_comp",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="Upd-Comp-001"
+            alias_id="Upd-Comp-001",
         )
         db_session.add(self.competitor)
 
@@ -174,7 +174,7 @@ class TestUpdateChallenge:
             start_time=datetime.utcnow() + timedelta(hours=1),
             end_time=datetime.utcnow() + timedelta(hours=24),
             double_blind=True,
-            timezone="UTC"
+            timezone="UTC",
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -187,93 +187,95 @@ class TestUpdateChallenge:
 
     def test_update_challenge_title(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"title": "Updated Title"}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert res.get_json()["title"] == "Updated Title"
 
     def test_update_challenge_description(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"description": "New description"}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert res.get_json()["description"] == "New description"
 
     def test_update_challenge_max_eval_requests(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"max_eval_requests": 20}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert res.get_json()["max_eval_requests"] == 20
 
     def test_update_challenge_invalid_max_eval_requests(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"max_eval_requests": 0}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "at least 1" in res.get_json()["error"].lower()
 
     def test_update_challenge_invalid_ram(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"ram_limit_mb": 64}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "at least 128" in res.get_json()["error"].lower()
 
     def test_update_challenge_invalid_time_limit(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"time_limit_sec": 0}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "at least 1" in res.get_json()["error"].lower()
 
     def test_update_challenge_gpu_required(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"gpu_required": False}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert res.get_json()["gpu_required"] is False
 
     def test_update_challenge_dates_invalid_order(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
-            data=json.dumps({
-                "start_time": (datetime.utcnow() + timedelta(hours=10)).isoformat(),
-                "end_time": (datetime.utcnow() + timedelta(hours=5)).isoformat()
-            }),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}",
+            data=json.dumps(
+                {
+                    "start_time": (datetime.utcnow() + timedelta(hours=10)).isoformat(),
+                    "end_time": (datetime.utcnow() + timedelta(hours=5)).isoformat(),
+                }
+            ),
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 400
         assert "end time must be after start time" in res.get_json()["error"].lower()
 
     def test_update_challenge_is_frozen_and_double_blind(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"is_frozen": True, "double_blind": False}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -282,19 +284,19 @@ class TestUpdateChallenge:
 
     def test_update_challenge_competitor_forbidden(self, client):
         res = client.put(
-            f'/api/challenges/{self.challenge.id}',
+            f"/api/challenges/{self.challenge.id}",
             data=json.dumps({"title": "Hacked"}),
-            content_type='application/json',
-            headers=self._auth(self.competitor_token)
+            content_type="application/json",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 403
 
     def test_update_challenge_not_found(self, client):
         res = client.put(
-            '/api/challenges/99999',
+            "/api/challenges/99999",
             data=json.dumps({"title": "Nope"}),
-            content_type='application/json',
-            headers=self._auth(self.admin_token)
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 404
 
@@ -306,7 +308,7 @@ class TestArchiveChallenge:
             username="arch_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Arch-Admin-001"
+            alias_id="Arch-Admin-001",
         )
         db_session.add(self.admin)
 
@@ -314,7 +316,7 @@ class TestArchiveChallenge:
             username="arch_comp",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="Arch-Comp-001"
+            alias_id="Arch-Comp-001",
         )
         db_session.add(self.competitor)
 
@@ -337,8 +339,7 @@ class TestArchiveChallenge:
     def test_archive_challenge_toggle_on(self, client):
         assert self.challenge.is_archived is False
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/archive',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/archive", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -349,8 +350,7 @@ class TestArchiveChallenge:
         self.challenge.is_archived = True
         db_session.commit()
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/archive',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/archive", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -359,16 +359,13 @@ class TestArchiveChallenge:
 
     def test_archive_challenge_competitor_forbidden(self, client):
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/archive',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/archive",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 403
 
     def test_archive_challenge_not_found(self, client):
-        res = client.post(
-            '/api/challenges/99999/archive',
-            headers=self._auth(self.admin_token)
-        )
+        res = client.post("/api/challenges/99999/archive", headers=self._auth(self.admin_token))
         assert res.status_code == 404
 
 
@@ -379,7 +376,7 @@ class TestDeleteStage:
             username="stage_del_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Stage-Del-Admin"
+            alias_id="Stage-Del-Admin",
         )
         db_session.add(self.admin)
 
@@ -387,7 +384,7 @@ class TestDeleteStage:
             username="stage_del_comp",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="Stage-Del-Comp"
+            alias_id="Stage-Del-Comp",
         )
         db_session.add(self.competitor)
 
@@ -418,8 +415,8 @@ class TestDeleteStage:
 
     def test_delete_stage_success(self, client, db_session):
         res = client.delete(
-            f'/api/challenges/{self.challenge.id}/stages/{self.stage.id}',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/stages/{self.stage.id}",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert "deleted" in res.get_json()["message"].lower()
@@ -429,23 +426,20 @@ class TestDeleteStage:
 
     def test_delete_stage_competitor_forbidden(self, client):
         res = client.delete(
-            f'/api/challenges/{self.challenge.id}/stages/{self.stage.id}',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/stages/{self.stage.id}",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 403
 
     def test_delete_stage_not_found(self, client):
         res = client.delete(
-            f'/api/challenges/{self.challenge.id}/stages/99999',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/stages/99999",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 404
 
     def test_delete_stage_challenge_not_found(self, client):
-        res = client.delete(
-            '/api/challenges/99999/stages/1',
-            headers=self._auth(self.admin_token)
-        )
+        res = client.delete("/api/challenges/99999/stages/1", headers=self._auth(self.admin_token))
         assert res.status_code == 404
 
 
@@ -456,7 +450,7 @@ class TestListChallenges:
             username="list_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="List-Admin"
+            alias_id="List-Admin",
         )
         db_session.add(self.admin)
 
@@ -464,7 +458,7 @@ class TestListChallenges:
             username="list_comp",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="List-Comp"
+            alias_id="List-Comp",
         )
         db_session.add(self.competitor)
 
@@ -492,10 +486,7 @@ class TestListChallenges:
         return {"Authorization": f"Bearer {token}"}
 
     def test_list_challenges_admin_non_paginated(self, client):
-        res = client.get(
-            '/api/challenges',
-            headers=self._auth(self.admin_token)
-        )
+        res = client.get("/api/challenges", headers=self._auth(self.admin_token))
         assert res.status_code == 200
         data = res.get_json()
         assert isinstance(data, list)
@@ -505,10 +496,7 @@ class TestListChallenges:
         assert "Challenge Beta" in titles
 
     def test_list_challenges_admin_paginated(self, client):
-        res = client.get(
-            '/api/challenges?page=1&per_page=1',
-            headers=self._auth(self.admin_token)
-        )
+        res = client.get("/api/challenges?page=1&per_page=1", headers=self._auth(self.admin_token))
         assert res.status_code == 200
         data = res.get_json()
         assert "items" in data
@@ -520,9 +508,6 @@ class TestListChallenges:
         assert data["total"] == 2
 
     def test_list_challenges_competitor_not_registered(self, client):
-        res = client.get(
-            '/api/challenges',
-            headers=self._auth(self.competitor_token)
-        )
+        res = client.get("/api/challenges", headers=self._auth(self.competitor_token))
         assert res.status_code == 200
         assert res.get_json() == []

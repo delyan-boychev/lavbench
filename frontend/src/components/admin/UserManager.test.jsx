@@ -14,12 +14,26 @@ describe('UserManager Component', () => {
     school: '',
     city: '',
     challenge_id: '',
-    is_anonymous: false
+    is_anonymous: false,
   };
 
   const mockUsers = [
-    { id: 1, username: 'admin', name: 'System', surname: 'Admin', role: 'admin', email: 'admin@test.com' },
-    { id: 2, username: 'jury1', name: 'Jury', surname: 'Member', role: 'jury', email: 'jury@test.com' }
+    {
+      id: 1,
+      username: 'admin',
+      name: 'System',
+      surname: 'Admin',
+      role: 'admin',
+      email: 'admin@test.com',
+    },
+    {
+      id: 2,
+      username: 'jury1',
+      name: 'Jury',
+      surname: 'Member',
+      role: 'jury',
+      email: 'jury@test.com',
+    },
   ];
 
   const mockCurrentUser = { id: 1, username: 'admin', role: 'admin' };
@@ -48,7 +62,7 @@ describe('UserManager Component', () => {
         setUsersPage={setUsersPage}
         challenges={mockChallenges}
         currentUser={mockCurrentUser}
-      />
+      />,
     );
 
     // Form headers
@@ -88,7 +102,7 @@ describe('UserManager Component', () => {
         setUsersPage={setUsersPage}
         challenges={mockChallenges}
         currentUser={mockCurrentUser}
-      />
+      />,
     );
 
     const deleteBtn = screen.getByRole('button', { name: /Delete/i });
@@ -120,7 +134,7 @@ describe('UserManager Component', () => {
         setUsersPage={setUsersPage}
         challenges={mockChallenges}
         currentUser={mockCurrentUser}
-      />
+      />,
     );
 
     const submitBtn = screen.getByRole('button', { name: /Register User/i });

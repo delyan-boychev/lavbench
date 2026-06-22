@@ -53,7 +53,7 @@ describe('Logo Component', () => {
     mockUseApp.mockReturnValue({ theme: 'dark' });
     render(<Logo size="lg" />);
     const img = screen.getByRole('img');
-    expect(img).toHaveAttribute("height", "52");
+    expect(img).toHaveAttribute('height', '52');
   });
 
   it('renders at xl size', () => {

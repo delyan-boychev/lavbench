@@ -8,29 +8,20 @@ describe('EmptyState Component', () => {
     render(
       <EmptyState message="Nothing here">
         <span data-testid="child-el">Extra content</span>
-      </EmptyState>
+      </EmptyState>,
     );
     expect(screen.getByText('Nothing here')).toBeInTheDocument();
     expect(screen.getByTestId('child-el')).toBeInTheDocument();
   });
 
   it('renders icon if provided', () => {
-    render(
-      <EmptyState 
-        icon={<span data-testid="icon-el">Icon</span>}
-        message="No items found"
-      />
-    );
+    render(<EmptyState icon={<span data-testid="icon-el">Icon</span>} message="No items found" />);
     expect(screen.getByTestId('icon-el')).toBeInTheDocument();
   });
 
   it('respects minHeight and surface props', () => {
     const { container } = render(
-      <EmptyState 
-        message="Custom config" 
-        minHeight={350} 
-        surface={false} 
-      />
+      <EmptyState message="Custom config" minHeight={350} surface={false} />,
     );
     const mainDiv = container.firstChild;
     expect(mainDiv).toHaveClass('empty-state');

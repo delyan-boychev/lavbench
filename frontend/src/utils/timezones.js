@@ -33,7 +33,7 @@ const getTimezones = () => {
       'Pacific/Auckland',
     ];
   }
-  return zones.map(zone => ({
+  return zones.map((zone) => ({
     value: zone,
     label: zone.replace(/_/g, ' '),
   }));

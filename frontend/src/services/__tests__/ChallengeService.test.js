@@ -163,7 +163,7 @@ describe('ChallengeService', () => {
 
       expect(api.postForm).toHaveBeenCalledWith(
         '/challenges/1/parse-notebook',
-        expect.any(FormData)
+        expect.any(FormData),
       );
       const fd = api.postForm.mock.calls[0][1];
       expect(fd.get('file')).toBe(file);
@@ -172,7 +172,11 @@ describe('ChallengeService', () => {
 
     it('handles parse error', async () => {
       const file = new File(['invalid'], 'bad.ipynb', { type: 'application/json' });
-      api.postForm.mockResolvedValue({ ok: false, status: 422, data: { error: 'Invalid notebook' } });
+      api.postForm.mockResolvedValue({
+        ok: false,
+        status: 422,
+        data: { error: 'Invalid notebook' },
+      });
 
       const result = await ChallengeService.parseNotebook(1, file);
 

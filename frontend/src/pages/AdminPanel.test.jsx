@@ -5,7 +5,6 @@ import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import AdminPanel from './AdminPanel';
 
-
 // Mock AuthContext
 vi.mock('../AuthContext', () => ({
   useAuth: vi.fn(),
@@ -20,28 +19,28 @@ const mockSystemStats = {
   connected_workers_count: 1,
   workers: [
     {
-      name: "celery@gpu-worker-test",
-      status: "online",
+      name: 'celery@gpu-worker-test',
+      status: 'online',
       pid: 9999,
       uptime: 3600,
       pool_size: 8,
       total_tasks_processed: 42,
       active_tasks_count: 1,
       reserved_tasks_count: 0,
-      active_tasks: [{ id: "test-task-1", name: "tasks.evaluate_submission" }],
+      active_tasks: [{ id: 'test-task-1', name: 'tasks.evaluate_submission' }],
       reserved_tasks: [],
-      registered_tasks: ["tasks.evaluate_submission"],
+      registered_tasks: ['tasks.evaluate_submission'],
       rusage: {
         maxrss_mb: 256.5,
         utime_sec: 1.25,
-        stime_sec: 0.75
+        stime_sec: 0.75,
       },
       broker: {
-        transport: "redis",
-        hostname: "localhost",
-        port: 6379
-      }
-    }
+        transport: 'redis',
+        hostname: 'localhost',
+        port: 6379,
+      },
+    },
   ],
   system: {
     cpu_count: 16,
@@ -50,18 +49,18 @@ const mockSystemStats = {
       total_gb: 32.0,
       used_gb: 16.0,
       free_gb: 16.0,
-      percent_used: 50.0
+      percent_used: 50.0,
     },
     disk: {
       total_gb: 500.0,
       used_gb: 250.0,
       free_gb: 250.0,
-      percent_used: 50.0
+      percent_used: 50.0,
     },
-    os: "Linux",
-    platform_release: "5.15.0",
-    python_version: "3.10.5"
-  }
+    os: 'Linux',
+    platform_release: '5.15.0',
+    python_version: '3.10.5',
+  },
 };
 
 describe('AdminPanel Page - Workers & Resources', () => {
@@ -78,10 +77,9 @@ describe('AdminPanel Page - Workers & Resources', () => {
       fetchChallenges: mockFetchChallenges,
       showToast: mockShowToast,
     });
-    
+
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },
-      
     });
 
     global.EventSource = class {
@@ -122,7 +120,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     render(<AdminPanel />);
     expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
     expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
-    
+
     // Wait for on-mount fetch promises to resolve and state updates to run
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
@@ -136,9 +134,9 @@ describe('AdminPanel Page - Workers & Resources', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    
+
     const workersTabBtn = screen.getByText('Workers & Resources');
-    
+
     await act(async () => {
       fireEvent.click(workersTabBtn);
     });
@@ -173,7 +171,16 @@ describe('AdminPanel Page - Workers & Resources', () => {
 
   it('handles SSE errors gracefully', async () => {
     global.EventSource = class {
-      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onerror) { act(() => { this.onerror(new Event('error')); }); } }, 10); }
+      constructor() {
+        this.close = vi.fn();
+        setTimeout(() => {
+          if (this.onerror) {
+            act(() => {
+              this.onerror(new Event('error'));
+            });
+          }
+        }, 10);
+      }
     };
 
     render(<AdminPanel />);
@@ -198,5 +205,4 @@ describe('AdminPanel Page - Workers & Resources', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
   });
-
 });

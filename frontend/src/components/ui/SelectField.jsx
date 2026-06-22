@@ -16,7 +16,6 @@ export default function SelectField({
   const [error, setError] = useState(false);
   const selectRef = useRef(null);
 
-   
   useEffect(() => {
     if (value) setError(false);
   }, [value]);
@@ -30,7 +29,8 @@ export default function SelectField({
     <div className={`flex flex-col gap-1.5 ${className}`} style={{ position: 'relative' }}>
       {label && (
         <span className="text-xs font-semibold text-slate-300">
-          {label}{required && <span className="text-rose-500 ml-1">*</span>}
+          {label}
+          {required && <span className="text-rose-500 ml-1">*</span>}
         </span>
       )}
       <CustomSelect
@@ -49,12 +49,23 @@ export default function SelectField({
           onChange={() => {}}
           onInvalid={handleInvalid}
           tabIndex={-1}
-          style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: '100%', height: '100%', top: 0, left: 0, zIndex: -1 }}
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            pointerEvents: 'none',
+            width: '100%',
+            height: '100%',
+            top: 0,
+            left: 0,
+            zIndex: -1,
+          }}
           aria-hidden="true"
         >
           <option value="">{placeholder || ''}</option>
-          {options.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
           ))}
         </select>
       )}

@@ -63,7 +63,7 @@ class ApiService {
     const isForm = options.body instanceof FormData;
     const method = options.method || 'GET';
     const defaultHeaders = this.#getHeaders(isForm, method);
-    
+
     const mergedHeaders = { ...defaultHeaders, ...options.headers };
     if (isForm && mergedHeaders['Content-Type']) {
       delete mergedHeaders['Content-Type'];
@@ -76,7 +76,7 @@ class ApiService {
 
     const res = await fetch(finalUrl, {
       ...options,
-      headers: mergedHeaders
+      headers: mergedHeaders,
     });
 
     if (res.status === 401) {
@@ -93,11 +93,19 @@ class ApiService {
   }
 
   async post(path, body) {
-    return this.#csrfAwareRequest('POST', path, body !== undefined ? JSON.stringify(body) : undefined);
+    return this.#csrfAwareRequest(
+      'POST',
+      path,
+      body !== undefined ? JSON.stringify(body) : undefined,
+    );
   }
 
   async put(path, body) {
-    return this.#csrfAwareRequest('PUT', path, body !== undefined ? JSON.stringify(body) : undefined);
+    return this.#csrfAwareRequest(
+      'PUT',
+      path,
+      body !== undefined ? JSON.stringify(body) : undefined,
+    );
   }
 
   async delete(path) {

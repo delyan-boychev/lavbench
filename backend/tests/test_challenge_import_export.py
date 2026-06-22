@@ -20,16 +20,21 @@ from models import db, User, Challenge, Task, Stage
 # Fixtures
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @pytest.fixture
 def challenge_with_stages_and_tasks(db_session, sample_challenge):
     ch = sample_challenge
     stage1 = Stage(
-        challenge_id=ch.id, stage_number=1, title="Stage 1",
+        challenge_id=ch.id,
+        stage_number=1,
+        title="Stage 1",
         start_time=datetime.utcnow() - timedelta(days=1),
         end_time=datetime.utcnow() + timedelta(days=1),
     )
     stage2 = Stage(
-        challenge_id=ch.id, stage_number=2, title="Stage 2",
+        challenge_id=ch.id,
+        stage_number=2,
+        title="Stage 2",
         start_time=datetime.utcnow() + timedelta(days=2),
         end_time=datetime.utcnow() + timedelta(days=5),
     )
@@ -37,14 +42,19 @@ def challenge_with_stages_and_tasks(db_session, sample_challenge):
     db_session.flush()
 
     task1 = Task(
-        challenge_id=ch.id, stage_id=stage1.id,
-        title="Task A", base_docker_image="python:3.10-slim",
-        time_limit_sec=300, ram_limit_mb=512,
+        challenge_id=ch.id,
+        stage_id=stage1.id,
+        title="Task A",
+        base_docker_image="python:3.10-slim",
+        time_limit_sec=300,
+        ram_limit_mb=512,
     )
     task2 = Task(
-        challenge_id=ch.id, title="Task B (no stage)",
+        challenge_id=ch.id,
+        title="Task B (no stage)",
         base_docker_image="python:3.11-slim",
-        time_limit_sec=600, ram_limit_mb=1024,
+        time_limit_sec=600,
+        ram_limit_mb=1024,
     )
     db_session.add_all([task1, task2])
     db_session.flush()
@@ -55,13 +65,16 @@ def challenge_with_stages_and_tasks(db_session, sample_challenge):
 # Export challenge (GET /api/challenges/<id>/export)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestExportChallenge:
     """GET /api/challenges/<id>/export"""
 
-    def test_export_challenge_as_admin(self, client, auth_headers, tokens, challenge_with_stages_and_tasks):
+    def test_export_challenge_as_admin(
+        self, client, auth_headers, tokens, challenge_with_stages_and_tasks
+    ):
         ch = challenge_with_stages_and_tasks
         res = client.get(
-            f'/api/challenges/{ch.id}/export',
+            f"/api/challenges/{ch.id}/export",
             headers=auth_headers(tokens.admin),
         )
         assert res.status_code == 200
@@ -73,22 +86,27 @@ class TestExportChallenge:
         assert len(data["tasks"]) == 2
         assert len(data["stages"]) == 2
 
-    def test_export_challenge_as_jury(self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user):
+    def test_export_challenge_as_jury(
+        self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user
+    ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export", role="jury")
         from auth_utils import generate_token
+
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
-            f'/api/challenges/{ch.id}/export',
+            f"/api/challenges/{ch.id}/export",
             headers=auth_headers(jury_token),
         )
         assert res.status_code == 200
         data = res.get_json()
         assert data["title"] == ch.title
 
-    def test_export_challenge_competitor_forbidden(self, client, auth_headers, tokens, sample_challenge):
+    def test_export_challenge_competitor_forbidden(
+        self, client, auth_headers, tokens, sample_challenge
+    ):
         res = client.get(
-            f'/api/challenges/{sample_challenge.id}/export',
+            f"/api/challenges/{sample_challenge.id}/export",
             headers=auth_headers(tokens.competitor),
         )
         assert res.status_code == 403
@@ -96,7 +114,7 @@ class TestExportChallenge:
 
     def test_export_challenge_not_found(self, client, auth_headers, tokens):
         res = client.get(
-            '/api/challenges/99999/export',
+            "/api/challenges/99999/export",
             headers=auth_headers(tokens.admin),
         )
         assert res.status_code == 404
@@ -105,6 +123,7 @@ class TestExportChallenge:
 # ═══════════════════════════════════════════════════════════════════════════
 # Import challenge (POST /api/challenges/import)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestImportChallenge:
     """POST /api/challenges/import"""
@@ -147,9 +166,9 @@ class TestImportChallenge:
         if payload is None:
             payload = self.EXPORT_PAYLOAD
         return client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             data=json.dumps(payload),
-            content_type='application/json',
+            content_type="application/json",
             headers=headers,
         )
 
@@ -166,7 +185,7 @@ class TestImportChallenge:
     def test_import_challenge_success_file_upload(self, client, csrf_headers, tokens):
         payload_bytes = json.dumps(self.EXPORT_PAYLOAD).encode("utf-8")
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             headers={
                 "Authorization": f"Bearer {tokens.admin}",
                 "X-CSRF-Token": "test-csrf-token",
@@ -178,7 +197,9 @@ class TestImportChallenge:
         data = res.get_json()
         assert data["title"] == "Imported Challenge"
 
-    def test_import_challenge_stages_and_tasks_created(self, client, csrf_headers, tokens, db_session):
+    def test_import_challenge_stages_and_tasks_created(
+        self, client, csrf_headers, tokens, db_session
+    ):
         headers = csrf_headers(tokens.admin)
         res = self._import_json(client, headers)
         assert res.status_code == 201
@@ -202,9 +223,9 @@ class TestImportChallenge:
     def test_import_challenge_invalid_json(self, client, csrf_headers, tokens):
         headers = csrf_headers(tokens.admin)
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             data=b"not valid json",
-            content_type='application/json',
+            content_type="application/json",
             headers=headers,
         )
         assert res.status_code == 400
@@ -213,9 +234,9 @@ class TestImportChallenge:
     def test_import_challenge_not_a_dict(self, client, csrf_headers, tokens):
         headers = csrf_headers(tokens.admin)
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             data=json.dumps(["not", "a", "dict"]),
-            content_type='application/json',
+            content_type="application/json",
             headers=headers,
         )
         assert res.status_code == 400
@@ -224,9 +245,9 @@ class TestImportChallenge:
     def test_import_challenge_no_data(self, client, csrf_headers, tokens):
         headers = csrf_headers(tokens.admin)
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             data=b"",
-            content_type='application/json',
+            content_type="application/json",
             headers=headers,
         )
         assert res.status_code == 400
@@ -239,7 +260,7 @@ class TestImportChallenge:
             "Cookie": "csrf_token=test-csrf-token",
         }
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             headers=headers,
             data={"wrong_field": (io.BytesIO(b"{}"), "challenge.json")},
         )
@@ -253,7 +274,7 @@ class TestImportChallenge:
             "Cookie": "csrf_token=test-csrf-token",
         }
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             headers=headers,
             data={"file": (io.BytesIO(b"{}"), "data.csv")},
         )
@@ -266,10 +287,13 @@ class TestImportChallenge:
         assert res.status_code == 403
         assert "role" in res.get_json()["error"].lower()
 
-    def test_import_challenge_jury_forbidden(self, client, db_session, csrf_headers, challenge_with_stages_and_tasks, create_user):
+    def test_import_challenge_jury_forbidden(
+        self, client, db_session, csrf_headers, challenge_with_stages_and_tasks, create_user
+    ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_noimport", role="jury")
         from auth_utils import generate_token
+
         jury_token = generate_token(jury.id, jury.role)
         headers = {
             "Authorization": f"Bearer {jury_token}",
@@ -277,9 +301,9 @@ class TestImportChallenge:
             "Cookie": "csrf_token=test-csrf-token",
         }
         res = client.post(
-            '/api/challenges/import',
+            "/api/challenges/import",
             data=json.dumps(self.EXPORT_PAYLOAD),
-            content_type='application/json',
+            content_type="application/json",
             headers=headers,
         )
         assert res.status_code == 403
@@ -290,34 +314,42 @@ class TestImportChallenge:
 # Export results CSV (GET /api/challenges/<id>/export-results)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestExportResultsCsv:
     """GET /api/challenges/<id>/export-results"""
 
-    def test_export_results_as_admin(self, client, auth_headers, tokens, challenge_with_stages_and_tasks):
+    def test_export_results_as_admin(
+        self, client, auth_headers, tokens, challenge_with_stages_and_tasks
+    ):
         ch = challenge_with_stages_and_tasks
         res = client.get(
-            f'/api/challenges/{ch.id}/export-results',
+            f"/api/challenges/{ch.id}/export-results",
             headers=auth_headers(tokens.admin),
         )
         assert res.status_code == 200
         assert res.mimetype == "text/csv"
         assert "Rank,Username,Alias ID" in res.data.decode("utf-8")
 
-    def test_export_results_as_jury(self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user):
+    def test_export_results_as_jury(
+        self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user
+    ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export_csv", role="jury")
         from auth_utils import generate_token
+
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
-            f'/api/challenges/{ch.id}/export-results',
+            f"/api/challenges/{ch.id}/export-results",
             headers=auth_headers(jury_token),
         )
         assert res.status_code == 200
         assert res.mimetype == "text/csv"
 
-    def test_export_results_competitor_forbidden(self, client, auth_headers, tokens, sample_challenge):
+    def test_export_results_competitor_forbidden(
+        self, client, auth_headers, tokens, sample_challenge
+    ):
         res = client.get(
-            f'/api/challenges/{sample_challenge.id}/export-results',
+            f"/api/challenges/{sample_challenge.id}/export-results",
             headers=auth_headers(tokens.competitor),
         )
         assert res.status_code == 403
@@ -325,15 +357,17 @@ class TestExportResultsCsv:
 
     def test_export_results_not_found(self, client, auth_headers, tokens):
         res = client.get(
-            '/api/challenges/99999/export-results',
+            "/api/challenges/99999/export-results",
             headers=auth_headers(tokens.admin),
         )
         assert res.status_code == 404
 
-    def test_export_results_includes_audit_section(self, client, auth_headers, tokens, challenge_with_stages_and_tasks):
+    def test_export_results_includes_audit_section(
+        self, client, auth_headers, tokens, challenge_with_stages_and_tasks
+    ):
         ch = challenge_with_stages_and_tasks
         res = client.get(
-            f'/api/challenges/{ch.id}/export-results',
+            f"/api/challenges/{ch.id}/export-results",
             headers=auth_headers(tokens.admin),
         )
         csv_text = res.data.decode("utf-8")
@@ -343,6 +377,7 @@ class TestExportResultsCsv:
 # ═══════════════════════════════════════════════════════════════════════════
 # Import competitors CSV (POST /api/admin/import-competitors-csv)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestImportCompetitorsCsv:
     """POST /api/admin/import-competitors-csv"""
@@ -357,7 +392,7 @@ class TestImportCompetitorsCsv:
         if csv_data is None:
             csv_data = self.VALID_CSV
         return client.post(
-            f'/api/admin/import-competitors-csv?challenge_id={challenge_id}',
+            f"/api/admin/import-competitors-csv?challenge_id={challenge_id}",
             headers={"Authorization": f"Bearer {token}"},
             data={"file": (io.BytesIO(csv_data.encode("utf-8")), filename)},
         )
@@ -371,15 +406,20 @@ class TestImportCompetitorsCsv:
         assert data["competitors"][0]["name"] == "Alice"
         assert data["competitors"][1]["name"] == "Bob"
 
-    def test_import_competitors_as_jury(self, client, db_session, sample_future_challenge, create_user):
+    def test_import_competitors_as_jury(
+        self, client, db_session, sample_future_challenge, create_user
+    ):
         jury = create_user(username="jury_csv", role="jury")
         from auth_utils import generate_token
+
         jury_token = generate_token(jury.id, jury.role)
         res = self._upload_csv(client, sample_future_challenge.id, jury_token)
         assert res.status_code == 201
         assert len(res.get_json()["competitors"]) == 2
 
-    def test_import_competitors_creates_users_in_db(self, client, tokens, sample_challenge, db_session):
+    def test_import_competitors_creates_users_in_db(
+        self, client, tokens, sample_challenge, db_session
+    ):
         res = self._upload_csv(client, sample_challenge.id, tokens.admin)
         assert res.status_code == 201
 
@@ -392,7 +432,7 @@ class TestImportCompetitorsCsv:
 
     def test_import_competitors_no_challenge_id(self, client, tokens):
         res = client.post(
-            '/api/admin/import-competitors-csv',
+            "/api/admin/import-competitors-csv",
             headers={"Authorization": f"Bearer {tokens.admin}"},
             data={"file": (io.BytesIO(self.VALID_CSV.encode("utf-8")), "competitors.csv")},
         )
@@ -406,7 +446,7 @@ class TestImportCompetitorsCsv:
 
     def test_import_competitors_no_file(self, client, tokens, sample_challenge):
         res = client.post(
-            f'/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}',
+            f"/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}",
             headers={"Authorization": f"Bearer {tokens.admin}"},
         )
         assert res.status_code == 400
@@ -414,7 +454,7 @@ class TestImportCompetitorsCsv:
 
     def test_import_competitors_wrong_extension(self, client, tokens, sample_challenge):
         res = client.post(
-            f'/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}',
+            f"/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}",
             headers={"Authorization": f"Bearer {tokens.admin}"},
             data={"file": (io.BytesIO(b"a,b\n1,2"), "data.json")},
         )
@@ -423,7 +463,7 @@ class TestImportCompetitorsCsv:
 
     def test_import_competitors_invalid_csv(self, client, tokens, sample_challenge):
         res = client.post(
-            f'/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}',
+            f"/api/admin/import-competitors-csv?challenge_id={sample_challenge.id}",
             headers={"Authorization": f"Bearer {tokens.admin}"},
             data={"file": (io.BytesIO(b"\xff\xfe\x00\x01"), "competitors.csv")},
         )
@@ -441,22 +481,15 @@ class TestImportCompetitorsCsv:
         assert "role" in res.get_json()["error"].lower()
 
     def test_import_competitors_skips_empty_rows(self, client, tokens, sample_challenge):
-        csv_data = (
-            "name,surname\n"
-            "Alice,Smith\n"
-            ",\n"
-            "Bob,Jones\n"
-        )
+        csv_data = "name,surname\n" "Alice,Smith\n" ",\n" "Bob,Jones\n"
         res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data)
         assert res.status_code == 201
         assert len(res.get_json()["competitors"]) == 2
 
-    def test_import_competitors_with_anonymity_flag(self, client, tokens, sample_challenge, db_session):
-        csv_data = (
-            "name,surname,is_anonymous\n"
-            "Alice,Smith,1\n"
-            "Bob,Jones,0\n"
-        )
+    def test_import_competitors_with_anonymity_flag(
+        self, client, tokens, sample_challenge, db_session
+    ):
+        csv_data = "name,surname,is_anonymous\n" "Alice,Smith,1\n" "Bob,Jones,0\n"
         res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data)
         assert res.status_code == 201
         data = res.get_json()

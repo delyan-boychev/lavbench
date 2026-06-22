@@ -9,13 +9,24 @@ logger = logging.getLogger(__name__)
 
 def get_client_ip():
     if request.headers.getlist("X-Forwarded-For"):
-        return request.headers.getlist("X-Forwarded-For")[0].split(',')[0].strip()
+        return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
 
 
-def log_action(admin_id, action_type, target_type, target_id=None, details=None, target_user_id=None, task_id=None, old_score=None, new_score=None, reason=None):
+def log_action(
+    admin_id,
+    action_type,
+    target_type,
+    target_id=None,
+    details=None,
+    target_user_id=None,
+    task_id=None,
+    old_score=None,
+    new_score=None,
+    reason=None,
+):
     """Log an admin action to the audit_logs table.
-    
+
     Args:
         admin_id: ID of the admin performing the action
         action_type: create, update, delete, finalize, archive, import, reset_password
@@ -40,9 +51,14 @@ def log_action(admin_id, action_type, target_type, target_id=None, details=None,
             task_id=task_id,
             old_score=old_score,
             new_score=new_score,
-            reason=reason
+            reason=reason,
         )
         db.session.add(entry)
         db.session.flush()
     except Exception:
-        logger.exception("Failed to write audit log for action_type=%s target_type=%s target_id=%s", action_type, target_type, target_id)
+        logger.exception(
+            "Failed to write audit log for action_type=%s target_type=%s target_id=%s",
+            action_type,
+            target_type,
+            target_id,
+        )

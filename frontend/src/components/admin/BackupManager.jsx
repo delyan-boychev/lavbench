@@ -22,7 +22,9 @@ export default function BackupManager({ challengeId }) {
     try {
       const { ok, data } = await api.get(listUrl);
       if (ok) setBackups(data.backups || []);
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     setLoading(false);
   };
 
@@ -34,8 +36,13 @@ export default function BackupManager({ challengeId }) {
         const data = JSON.parse(event.data);
         if (data.backups) {
           const filtered = challengeId
-            ? data.backups.filter(b => b.filename.includes(challengeId))
-            : data.backups.filter(b => !b.filename.includes('submission_ended') && !b.filename.includes('grace_ended') && !b.filename.includes('finalized'));
+            ? data.backups.filter((b) => b.filename.includes(challengeId))
+            : data.backups.filter(
+                (b) =>
+                  !b.filename.includes('submission_ended') &&
+                  !b.filename.includes('grace_ended') &&
+                  !b.filename.includes('finalized'),
+              );
           setBackups(filtered);
           setLoading(false);
         }
@@ -44,7 +51,7 @@ export default function BackupManager({ challengeId }) {
           loadBackups();
         }
       } catch (e) {
-        console.error("Backup SSE parse error:", e);
+        console.error('Backup SSE parse error:', e);
       }
     };
     eventSource.onerror = () => {
@@ -68,7 +75,9 @@ export default function BackupManager({ challengeId }) {
       /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/{filename}']['delete']['responses']['200']['content']['application/json'] }>} */
       await api.delete(`/api/admin/backups/${filename}`);
       loadBackups();
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
   };
 
   const handleDownload = (filename) => {
@@ -77,8 +86,11 @@ export default function BackupManager({ challengeId }) {
   };
 
   const formatDate = (iso) => {
-    try { return new Date(iso).toLocaleString(); }
-    catch { return iso; }
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
   };
 
   const stateLabel = (filename) => {
@@ -92,7 +104,9 @@ export default function BackupManager({ challengeId }) {
     <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-white">
-          {challengeId ? t('admin.backups.competition_backups') : t('admin.backups.database_backups_security')}
+          {challengeId
+            ? t('admin.backups.competition_backups')
+            : t('admin.backups.database_backups_security')}
         </h2>
         {!challengeId && (
           <Button variant="accent" onClick={handleForce} disabled={forcing}>
@@ -107,8 +121,11 @@ export default function BackupManager({ challengeId }) {
         <EmptyState message={t('admin.backups.no_backups')} />
       ) : (
         <div className="flex flex-col gap-3">
-          {backups.map(b => (
-            <div key={b.filename} className="flex items-center justify-between gap-4 bg-slate-900/40 border border-white/5 p-4 rounded-xl flex-wrap">
+          {backups.map((b) => (
+            <div
+              key={b.filename}
+              className="flex items-center justify-between gap-4 bg-slate-900/40 border border-white/5 p-4 rounded-xl flex-wrap"
+            >
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="font-bold text-slate-200 text-sm truncate">{b.filename}</span>
                 <div className="flex gap-3 text-xs text-slate-500">

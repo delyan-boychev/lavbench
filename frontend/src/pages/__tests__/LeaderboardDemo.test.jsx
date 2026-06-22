@@ -25,7 +25,9 @@ describe('LeaderboardDemo', () => {
 
   it('renders 10 participant entries', () => {
     render(<LeaderboardDemo />);
-    const rows = screen.getAllByText(/Alpha-Titan|Quantum-Falcon|Stellar-Voyager|Cyber-Phoenix|Neon-Warrior|Pixel-Gladiator|Shadow-Ninja|Thunder-Dragon|Ice-Wizard|Blaze-Knight/);
+    const rows = screen.getAllByText(
+      /Alpha-Titan|Quantum-Falcon|Stellar-Voyager|Cyber-Phoenix|Neon-Warrior|Pixel-Gladiator|Shadow-Ninja|Thunder-Dragon|Ice-Wizard|Blaze-Knight/,
+    );
     expect(rows).toHaveLength(10);
   });
 
@@ -45,11 +47,17 @@ describe('LeaderboardDemo', () => {
 
   it('shuffles on button click', () => {
     render(<LeaderboardDemo />);
-    const initialText = screen.getAllByText(/-\d{3}/).map(el => el.textContent).join(',');
+    const initialText = screen
+      .getAllByText(/-\d{3}/)
+      .map((el) => el.textContent)
+      .join(',');
 
     fireEvent.click(screen.getByRole('button', { name: /shuffle now/i }));
 
-    const afterClick = screen.getAllByText(/-\d{3}/).map(el => el.textContent).join(',');
+    const afterClick = screen
+      .getAllByText(/-\d{3}/)
+      .map((el) => el.textContent)
+      .join(',');
     expect(afterClick).not.toBe(initialText);
   });
 

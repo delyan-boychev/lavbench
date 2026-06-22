@@ -10,7 +10,11 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     /** @type {Promise<{ ok: boolean, data: import('./types/api').paths['/api/auth/logout']['post']['responses']['200']['content']['application/json'] }>} */
-    try { await api.post('/auth/logout'); } catch { /* ignore network errors on logout */ }
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      /* ignore network errors on logout */
+    }
     setCurrentUser(null);
     setAuthLoading(false);
   }, []);
@@ -48,18 +52,22 @@ export const AuthProvider = ({ children }) => {
     setAuthError('');
     try {
       let finalPassword = password || '';
-      
-      const { ok, data } = await api.post('/auth/login', { 
-        username: (identifier || '').trim(), 
-        password: finalPassword 
+
+      const { ok, data } = await api.post('/auth/login', {
+        username: (identifier || '').trim(),
+        password: finalPassword,
       });
-      
+
       if (ok) {
         setCurrentUser(data.user);
         await api.refreshCsrfToken();
         return { success: true };
       } else {
-        setAuthError(/** @type {string} */(data?.code ? { code: data.code, error: data.error } : 'auth.failed'));
+        setAuthError(
+          /** @type {string} */ (
+            data?.code ? { code: data.code, error: data.error } : 'auth.failed'
+          ),
+        );
         return { success: false, error: data?.error };
       }
     } catch {
@@ -75,15 +83,17 @@ export const AuthProvider = ({ children }) => {
   }, [fetchUser]);
 
   return (
-    <AuthContext.Provider value={{
-      currentUser,
-      authLoading,
-      authError,
-      login,
-      logout,
-      setAuthError,
-      fetchUser
-    }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        authLoading,
+        authError,
+        login,
+        logout,
+        setAuthError,
+        fetchUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

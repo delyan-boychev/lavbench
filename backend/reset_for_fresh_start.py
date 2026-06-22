@@ -41,17 +41,13 @@ def reset_and_create_admin():
         db.session.add(admin)
         db.session.commit()
 
-        creds_path = os.path.join(
-            os.path.dirname(backend_path), "admin_credentials.txt"
-        )
+        creds_path = os.path.join(os.path.dirname(backend_path), "admin_credentials.txt")
         try:
             with open(creds_path, "w") as f:
                 f.write("=" * 50 + "\n")
                 f.write("      LAVBENCH ADMIN CREDENTIALS\n")
                 f.write("=" * 50 + "\n")
-                f.write(
-                    f"Generated On   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-                )
+                f.write(f"Generated On   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
                 f.write(f"Admin Username : {admin_username}\n")
                 f.write(f"Master Key     : {raw_key}\n\n")
                 f.write("Keep this file secure. Enter these credentials on the\n")

@@ -7,12 +7,15 @@ describe('ApiService', () => {
   beforeEach(async () => {
     mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
-    vi.stubGlobal('CustomEvent', class extends Event {
-      constructor(type, init) {
-        super(type, init);
-        Object.assign(this, init?.detail || {});
-      }
-    });
+    vi.stubGlobal(
+      'CustomEvent',
+      class extends Event {
+        constructor(type, init) {
+          super(type, init);
+          Object.assign(this, init?.detail || {});
+        }
+      },
+    );
     const mod = await import('../../services/ApiService');
     api = mod.default;
   });
@@ -23,27 +26,47 @@ describe('ApiService', () => {
 
   describe('get()', () => {
     it('sends a GET request with correct URL prefix', async () => {
-      mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: 'test' }) });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: 'test' }),
+      });
       await api.get('/test');
       expect(mockFetch).toHaveBeenCalledWith('/api/test', expect.any(Object));
     });
 
     it('returns structured response with ok, status, data', async () => {
-      mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ result: 42 }) });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ result: 42 }),
+      });
       const result = await api.get('/test');
-      expect(result).toEqual({ ok: true, status: 200, data: { result: 42 }, res: expect.any(Object) });
+      expect(result).toEqual({
+        ok: true,
+        status: 200,
+        data: { result: 42 },
+        res: expect.any(Object),
+      });
     });
   });
 
   describe('post()', () => {
     it('sends POST with JSON body', async () => {
-      mockFetch.mockResolvedValue({ ok: true, status: 201, json: () => Promise.resolve({ id: 1 }) });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: () => Promise.resolve({ id: 1 }),
+      });
       const result = await api.post('/create', { name: 'test' });
-      expect(mockFetch).toHaveBeenCalledWith('/api/create', expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name: 'test' }),
-      }));
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/create',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ name: 'test' }),
+        }),
+      );
       expect(result.ok).toBe(true);
     });
 

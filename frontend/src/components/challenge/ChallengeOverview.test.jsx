@@ -24,7 +24,9 @@ describe('ChallengeOverview Component', () => {
     render(<ChallengeOverview challenge={challenge} />);
 
     expect(screen.getByText('Image Classification Benchmark')).toBeInTheDocument();
-    expect(screen.getByText('Classify images in a restricted RAM environment.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Classify images in a restricted RAM environment.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
 
     // Verify stats cards are rendered
@@ -82,14 +84,16 @@ describe('ChallengeOverview Component', () => {
           start_time: '2026-06-13T18:00:00Z',
           end_time: '2026-06-13T20:00:00Z',
           is_finalized: false,
-        }
-      ]
+        },
+      ],
     };
 
     render(<ChallengeOverview challenge={challenge} />);
 
     // In Europe/Sofia (UTC+3 in June), 18:00 UTC is 21:00 Sofia time
-    expect(screen.getAllByText(/2026-06-13 21:00 \(Europe\/Sofia\)/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/2026-06-13 21:00 \(Europe\/Sofia\)/).length).toBeGreaterThanOrEqual(
+      1,
+    );
     expect(screen.getByText(/2026-06-14 21:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
     expect(screen.getByText(/to 2026-06-13 23:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
   });

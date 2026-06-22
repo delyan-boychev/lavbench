@@ -12,7 +12,9 @@ function Bomb({ shouldThrow }) {
 
 describe('ErrorBoundary', () => {
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => { /* noop */ });
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      /* noop */
+    });
     vi.stubGlobal('window', {
       location: { reload: vi.fn() },
     });
@@ -27,7 +29,7 @@ describe('ErrorBoundary', () => {
     render(
       <ErrorBoundary>
         <div data-testid="child">Hello</div>
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
     expect(screen.getByTestId('child')).toHaveTextContent('Hello');
   });
@@ -39,7 +41,7 @@ describe('ErrorBoundary', () => {
       render(
         <ErrorBoundary>
           <Bomb shouldThrow={true} />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
       expect(screen.getByText('Something went wrong')).toBeTruthy();
       expect(screen.getByText('Refresh Page')).toBeTruthy();
@@ -55,7 +57,7 @@ describe('ErrorBoundary', () => {
       render(
         <ErrorBoundary fallback={<div data-testid="custom">Custom Error UI</div>}>
           <Bomb shouldThrow={true} />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
       expect(screen.getByTestId('custom')).toHaveTextContent('Custom Error UI');
     } finally {
@@ -74,7 +76,7 @@ describe('ErrorBoundary', () => {
       render(
         <ErrorBoundary>
           <Bomb shouldThrow={true} />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
       screen.getByText('Refresh Page').click();
       expect(reloadMock).toHaveBeenCalled();
@@ -90,7 +92,7 @@ describe('ErrorBoundary', () => {
       render(
         <ErrorBoundary>
           <Bomb shouldThrow={true} />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
       expect(errorSpy).toHaveBeenCalled();
     } finally {

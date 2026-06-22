@@ -12,15 +12,22 @@ class TestAuditService:
 
     def _log(self, **kwargs):
         from services.audit_service import log_action
+
         with self.app.test_request_context():
             log_action(admin_id=self.admin.id, **kwargs)
 
     def _query(self, **kwargs):
         from models import AuditLog
+
         return AuditLog.query.filter_by(**kwargs)
 
     def test_log_action_creates_entry(self):
-        self._log(action_type="create", target_type="challenge", target_id=42, details={"title": "New Challenge"})
+        self._log(
+            action_type="create",
+            target_type="challenge",
+            target_id=42,
+            details={"title": "New Challenge"},
+        )
         entry = self._query(action_type="create").first()
         assert entry is not None
         assert entry.admin_id == self.admin.id
@@ -30,9 +37,16 @@ class TestAuditService:
         assert entry.ip_address is not None
 
     def test_log_action_with_legacy_fields(self):
-        self._log(action_type="update", target_type="submission", target_id=7,
-                  target_user_id=self.admin.id, task_id=3, old_score=0.5, new_score=0.9,
-                  reason="Recalculation")
+        self._log(
+            action_type="update",
+            target_type="submission",
+            target_id=7,
+            target_user_id=self.admin.id,
+            task_id=3,
+            old_score=0.5,
+            new_score=0.9,
+            reason="Recalculation",
+        )
         entry = self._query(action_type="update").first()
         assert entry.target_user_id == self.admin.id
         assert entry.task_id == 3
@@ -52,16 +66,19 @@ class TestAuditService:
 
     def test_get_client_ip_returns_remote_addr(self, app):
         from services.audit_service import get_client_ip
+
         with app.test_request_context():
             assert get_client_ip() == "127.0.0.1"
 
     def test_get_client_ip_forwarded_for(self, app):
         from services.audit_service import get_client_ip
+
         with app.test_request_context(headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}):
             assert get_client_ip() == "10.0.0.1"
 
     def test_get_client_ip_forwarded_for_single(self, app):
         from services.audit_service import get_client_ip
+
         with app.test_request_context(headers={"X-Forwarded-For": "203.0.113.5"}):
             assert get_client_ip() == "203.0.113.5"
 

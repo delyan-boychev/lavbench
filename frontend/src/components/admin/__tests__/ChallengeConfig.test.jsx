@@ -7,7 +7,13 @@ vi.mock('../../ui/InputField', () => ({
     <div>
       {label && <label>{label}</label>}
       {multiline ? (
-        <textarea data-testid="textarea" value={value} onChange={onChange} rows={rows} required={required} />
+        <textarea
+          data-testid="textarea"
+          value={value}
+          onChange={onChange}
+          rows={rows}
+          required={required}
+        />
       ) : (
         <input type={type || 'text'} value={value} onChange={onChange} required={required} />
       )}
@@ -17,7 +23,9 @@ vi.mock('../../ui/InputField', () => ({
 
 vi.mock('../../ui/Button', () => ({
   default: ({ children, type, variant, className, disabled }) => (
-    <button type={type} data-variant={variant} className={className} disabled={disabled}>{children}</button>
+    <button type={type} data-variant={variant} className={className} disabled={disabled}>
+      {children}
+    </button>
   ),
 }));
 
@@ -26,7 +34,11 @@ vi.mock('../../ui/SelectField', () => ({
     <div>
       <label>{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)} required={required}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </div>
   ),
@@ -44,7 +56,7 @@ vi.mock('../../ui/ToggleField', () => ({
 import ChallengeConfig from '../ChallengeConfig';
 
 const defaultProps = {
-  handleCreateChallenge: vi.fn(e => e.preventDefault()),
+  handleCreateChallenge: vi.fn((e) => e.preventDefault()),
   newChallenge: {
     title: '',
     description: '',
@@ -84,7 +96,7 @@ describe('ChallengeConfig', () => {
   });
 
   it('calls handleCreateChallenge on form submit', () => {
-    const handleCreateChallenge = vi.fn(e => e.preventDefault());
+    const handleCreateChallenge = vi.fn((e) => e.preventDefault());
     render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
     fireEvent.submit(screen.getByRole('button', { name: /create/i }));
     expect(handleCreateChallenge).toHaveBeenCalled();
@@ -97,7 +109,12 @@ describe('ChallengeConfig', () => {
   });
 
   it('gpu toggle is unchecked when gpu_required is false', () => {
-    render(<ChallengeConfig {...defaultProps} newChallenge={{ ...defaultProps.newChallenge, gpu_required: false }} />);
+    render(
+      <ChallengeConfig
+        {...defaultProps}
+        newChallenge={{ ...defaultProps.newChallenge, gpu_required: false }}
+      />,
+    );
     const gpuCheckbox = screen.getByLabelText('Requires GPU Workers');
     expect(gpuCheckbox.checked).toBe(false);
   });

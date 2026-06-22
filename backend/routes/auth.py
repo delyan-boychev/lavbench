@@ -3,9 +3,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from models import db, User
 from auth_utils import generate_token, login_required, set_auth_cookie, clear_auth_cookie
 
-auth_bp = Blueprint('auth', __name__)
+auth_bp = Blueprint("auth", __name__)
 
 import time
+
 
 def _login_rate_limit_exceeded(username, ip):
     """
@@ -15,30 +16,33 @@ def _login_rate_limit_exceeded(username, ip):
     """
     try:
         from cache_utils import get_redis_client
+
         r = get_redis_client()
         if not r:
             return False
-        
+
         now = time.time()
         window = 60
-        
+
         user_key = f"login_failures:user:{username}"
         ip_key = f"login_failures:ip:{ip}"
-        
+
         r.zremrangebyscore(user_key, 0, now - window)
         r.zremrangebyscore(ip_key, 0, now - window)
-        
+
         user_failures = r.zcard(user_key)
         ip_failures = r.zcard(ip_key)
-        
+
         return user_failures >= 5 or ip_failures >= 30
     except Exception:
         return False
+
 
 def _record_login_failure(username, ip):
     """Record a failed login attempt in sliding window."""
     try:
         from cache_utils import get_redis_client
+
         r = get_redis_client()
         if not r:
             return
@@ -50,10 +54,12 @@ def _record_login_failure(username, ip):
     except Exception:
         pass
 
+
 def _clear_login_failures(username, ip):
     """Clear failure records on successful login."""
     try:
         from cache_utils import get_redis_client
+
         r = get_redis_client()
         if not r:
             return
@@ -62,12 +68,14 @@ def _clear_login_failures(username, ip):
     except Exception:
         pass
 
+
 def get_client_ip():
     if request.headers.getlist("X-Forwarded-For"):
-        return request.headers.getlist("X-Forwarded-For")[0].split(',')[0].strip()
+        return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
 
-@auth_bp.route('/login', methods=['POST'])
+
+@auth_bp.route("/login", methods=["POST"])
 def login():
     """
     Authenticate a user and receive a session cookie.
@@ -140,58 +148,67 @@ def login():
     data = request.json or {}
     username = data.get("username")
     password = data.get("password")
-    
+
     if not username or not password:
-        return jsonify({
-            "error": "Missing username or password.",
-            "code": "ERR_MISSING_CREDENTIALS"
-        }), 400
-        
+        return (
+            jsonify({"error": "Missing username or password.", "code": "ERR_MISSING_CREDENTIALS"}),
+            400,
+        )
+
     ip = get_client_ip()
-        
+
     if _login_rate_limit_exceeded(username, ip):
-        return jsonify({
-            "error": "Too many failed login attempts. Please try again later.",
-            "code": "ERR_RATE_LIMIT_EXCEEDED"
-        }), 429
-        
+        return (
+            jsonify(
+                {
+                    "error": "Too many failed login attempts. Please try again later.",
+                    "code": "ERR_RATE_LIMIT_EXCEEDED",
+                }
+            ),
+            429,
+        )
+
     user = User.query.filter(User.username == username).first()
-    
+
     if not user or not check_password_hash(user.password_hash, password):
         # Check legacy format (SHA-256 wrapped). Migrate on successful match.
         import hashlib
+
         legacy_hash = hashlib.sha256(password.encode()).hexdigest()
         if not user or not check_password_hash(user.password_hash, legacy_hash):
             _record_login_failure(username, ip)
-            return jsonify({
-                "error": "Invalid credentials.",
-                "code": "ERR_INVALID_CREDENTIALS"
-            }), 401
-        # Migrate to new format
-            user.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+            return (
+                jsonify({"error": "Invalid credentials.", "code": "ERR_INVALID_CREDENTIALS"}),
+                401,
+            )
+            # Migrate to new format
+            user.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
         db.session.commit()
-        
+
     _clear_login_failures(username, ip)
-        
-    if user.role == 'competitor' and user.challenge_id:
+
+    if user.role == "competitor" and user.challenge_id:
         from models import Challenge
+
         challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_archived:
-            return jsonify({
-                "error": "This competition has been archived. Registered students are not allowed to log in.",
-                "code": "ERR_COMPETITION_ARCHIVED"
-            }), 403
-            
+            return (
+                jsonify(
+                    {
+                        "error": "This competition has been archived. Registered students are not allowed to log in.",
+                        "code": "ERR_COMPETITION_ARCHIVED",
+                    }
+                ),
+                403,
+            )
+
     user_data = user.to_dict(current_user_id=user.id)
-    resp = make_response(jsonify({
-        "message": "Logged in successfully.",
-        "user": user_data
-    }))
+    resp = make_response(jsonify({"message": "Logged in successfully.", "user": user_data}))
     set_auth_cookie(resp, user.id, user.role)
     return resp
 
 
-@auth_bp.route('/csrf-token', methods=['GET'])
+@auth_bp.route("/csrf-token", methods=["GET"])
 def get_csrf_token():
     """
     Get a CSRF token for state-changing requests.
@@ -212,10 +229,11 @@ def get_csrf_token():
                   type: string
     """
     from auth_utils import generate_csrf_token
+
     return generate_csrf_token()
 
 
-@auth_bp.route('/logout', methods=['POST'])
+@auth_bp.route("/logout", methods=["POST"])
 def logout():
     """
     Log out the current user. Clears the httpOnly cookie and revokes the JWT token.
@@ -239,7 +257,7 @@ def logout():
     return resp
 
 
-@auth_bp.route('/me', methods=['GET'])
+@auth_bp.route("/me", methods=["GET"])
 @login_required
 def me():
     """
@@ -275,8 +293,5 @@ def me():
     """
     user = db.session.get(User, request.user["user_id"])
     if not user:
-        return jsonify({
-            "error": "User not found.",
-            "code": "ERR_USER_NOT_FOUND"
-        }), 404
+        return jsonify({"error": "User not found.", "code": "ERR_USER_NOT_FOUND"}), 404
     return jsonify({"user": user.to_dict(current_user_id=user.id)})

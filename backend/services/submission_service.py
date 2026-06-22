@@ -6,6 +6,7 @@ import ast
 from datetime import datetime
 from models import db, Submission, is_metric_lower_better
 
+
 def extract_code_from_cells(cells_list):
     """Extract source code strings from a list of cell dicts (from notebook JSON)."""
     if not cells_list:
@@ -24,6 +25,7 @@ def extract_code_from_cells(cells_list):
             extracted.append(str(cell))
     return extracted
 
+
 def extract_code_from_notebook(filepath):
     """Open a .ipynb file and return all code cell sources as a list of strings."""
     try:
@@ -41,6 +43,7 @@ def extract_code_from_notebook(filepath):
     except Exception:
         return []
 
+
 def check_execution_rules(task, cells_list):
     """Validate student code against task rules: banned magic commands, banned/whitelisted imports."""
     extracted_cells = extract_code_from_cells(cells_list)
@@ -49,9 +52,9 @@ def check_execution_rules(task, cells_list):
     # Always-banned dynamic execution bypasses (unconditional — cannot be opted out)
     dangerous_patterns = [
         ("__import__(", "Rule Violation: Dynamic imports via __import__() are not allowed."),
-        ("exec(",      "Rule Violation: exec() is not allowed."),
-        ("eval(",      "Rule Violation: eval() is not allowed."),
-        ("compile(",   "Rule Violation: compile() is not allowed."),
+        ("exec(", "Rule Violation: exec() is not allowed."),
+        ("eval(", "Rule Violation: eval() is not allowed."),
+        ("compile(", "Rule Violation: compile() is not allowed."),
     ]
     for pattern, message in dangerous_patterns:
         if pattern in combined_code:
@@ -59,14 +62,17 @@ def check_execution_rules(task, cells_list):
 
     # Always-banned importlib bypass
     if "importlib" in combined_code and "import_module" in combined_code:
-        return False, "Rule Violation: Dynamic imports via importlib.import_module() are not allowed."
-    
+        return (
+            False,
+            "Rule Violation: Dynamic imports via importlib.import_module() are not allowed.",
+        )
+
     if task.ban_magic_commands:
         for line in combined_code.splitlines():
             stripped = line.strip()
             if stripped.startswith("!") or stripped.startswith("%"):
                 return False, "Rule Violation: Jupyter magic commands ('!' or '%') are banned."
-                
+
     if task.banned_imports:
         banned = [lib.strip().lower() for lib in task.banned_imports.split(",") if lib.strip()]
         if banned:
@@ -77,17 +83,25 @@ def check_execution_rules(task, cells_list):
                         for name in node.names:
                             root_import = name.name.split(".")[0].lower()
                             if root_import in banned:
-                                return False, f"Rule Violation: Import of library '{name.name}' is banned."
+                                return (
+                                    False,
+                                    f"Rule Violation: Import of library '{name.name}' is banned.",
+                                )
                     elif isinstance(node, ast.ImportFrom):
                         if node.module:
                             root_import = node.module.split(".")[0].lower()
                             if root_import in banned:
-                                return False, f"Rule Violation: Import from library '{node.module}' is banned."
+                                return (
+                                    False,
+                                    f"Rule Violation: Import from library '{node.module}' is banned.",
+                                )
             except SyntaxError:
                 pass
 
     if task.whitelisted_imports:
-        whitelisted = [lib.strip().lower() for lib in task.whitelisted_imports.split(",") if lib.strip()]
+        whitelisted = [
+            lib.strip().lower() for lib in task.whitelisted_imports.split(",") if lib.strip()
+        ]
         if whitelisted:
             try:
                 tree = ast.parse(combined_code)
@@ -96,30 +110,37 @@ def check_execution_rules(task, cells_list):
                         for name in node.names:
                             root_import = name.name.split(".")[0].lower()
                             if root_import not in whitelisted:
-                                return False, f"Rule Violation: Import of library '{name.name}' is not allowed by whitelist."
+                                return (
+                                    False,
+                                    f"Rule Violation: Import of library '{name.name}' is not allowed by whitelist.",
+                                )
                     elif isinstance(node, ast.ImportFrom):
                         if node.module:
                             root_import = node.module.split(".")[0].lower()
                             if root_import not in whitelisted:
-                                return False, f"Rule Violation: Import from library '{node.module}' is not allowed by whitelist."
+                                return (
+                                    False,
+                                    f"Rule Violation: Import from library '{node.module}' is not allowed by whitelist.",
+                                )
             except SyntaxError:
                 pass
-                
+
     return True, None
+
 
 def calculate_submission_priority(user_id, role):
     """Return a priority integer: 9 for admin/jury, decaying from 6 for competitors per daily count."""
-    if role in ['admin', 'jury']:
+    if role in ["admin", "jury"]:
         return 9
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     submission_count = Submission.query.filter(
-        Submission.user_id == user_id,
-        Submission.created_at >= today_start
+        Submission.user_id == user_id, Submission.created_at >= today_start
     ).count()
     if submission_count == 0:
         return 6
     priority = max(1, 6 - submission_count)
     return priority
+
 
 def get_best_submission(task, user_subs, challenge, is_lower_better=None):
     """
@@ -144,7 +165,11 @@ def get_best_submission(task, user_subs, challenge, is_lower_better=None):
         is_lower_better = False
         if task.metrics_config:
             try:
-                m_config = json.loads(task.metrics_config) if isinstance(task.metrics_config, str) else task.metrics_config
+                m_config = (
+                    json.loads(task.metrics_config)
+                    if isinstance(task.metrics_config, str)
+                    else task.metrics_config
+                )
                 for m_name, m_info in m_config.items():
                     if m_info.get("higher_is_better") is False or is_metric_lower_better(m_name):
                         is_lower_better = True
@@ -153,15 +178,30 @@ def get_best_submission(task, user_subs, challenge, is_lower_better=None):
                 pass
 
     if is_lower_better:
-        subs_sorted = sorted(user_subs, key=lambda x: (
-            x.private_score if x.private_score is not None else (x.public_score if x.public_score is not None else 999999),
-            x.execution_time_ms if x.execution_time_ms is not None else 999999
-        ))
+        subs_sorted = sorted(
+            user_subs,
+            key=lambda x: (
+                (
+                    x.private_score
+                    if x.private_score is not None
+                    else (x.public_score if x.public_score is not None else 999999)
+                ),
+                x.execution_time_ms if x.execution_time_ms is not None else 999999,
+            ),
+        )
     else:
-        subs_sorted = sorted(user_subs, key=lambda x: (
-            x.private_score if x.private_score is not None else (x.public_score if x.public_score is not None else -999999),
-            -(x.execution_time_ms if x.execution_time_ms is not None else 999999)
-        ), reverse=True)
+        subs_sorted = sorted(
+            user_subs,
+            key=lambda x: (
+                (
+                    x.private_score
+                    if x.private_score is not None
+                    else (x.public_score if x.public_score is not None else -999999)
+                ),
+                -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
+            ),
+            reverse=True,
+        )
 
     if subs_sorted:
         return subs_sorted[0]

@@ -24,7 +24,9 @@ describe('useDebounce', () => {
     rerender({ value: 'updated' });
     expect(result.current).toBe('initial');
 
-    act(() => { vi.advanceTimersByTime(300); });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
     expect(result.current).toBe('updated');
   });
 
@@ -36,7 +38,9 @@ describe('useDebounce', () => {
     rerender({ value: 'updated' });
     expect(result.current).toBe('initial');
 
-    act(() => { vi.advanceTimersByTime(299); });
+    act(() => {
+      vi.advanceTimersByTime(299);
+    });
     expect(result.current).toBe('initial');
   });
 
@@ -46,13 +50,19 @@ describe('useDebounce', () => {
     });
 
     rerender({ value: 'second' });
-    act(() => { vi.advanceTimersByTime(200); });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
 
     rerender({ value: 'third' });
-    act(() => { vi.advanceTimersByTime(200); });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(result.current).toBe('first');
 
-    act(() => { vi.advanceTimersByTime(100); });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
     expect(result.current).toBe('third');
   });
 
@@ -64,7 +74,9 @@ describe('useDebounce', () => {
     rerender({ value: 'updated' });
     expect(result.current).toBe('initial');
 
-    act(() => { vi.advanceTimersByTime(300); });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
     expect(result.current).toBe('updated');
   });
 });

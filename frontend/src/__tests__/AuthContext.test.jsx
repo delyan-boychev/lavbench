@@ -9,8 +9,12 @@ function TestConsumer() {
     <div>
       <span data-testid="loading">{String(auth.authLoading)}</span>
       <span data-testid="has-user">{String(!!auth.currentUser)}</span>
-      <button data-testid="login-btn" onClick={() => auth.login('testuser', 'password123')}>Login</button>
-      <button data-testid="logout-btn" onClick={() => auth.logout()}>Logout</button>
+      <button data-testid="login-btn" onClick={() => auth.login('testuser', 'password123')}>
+        Login
+      </button>
+      <button data-testid="logout-btn" onClick={() => auth.logout()}>
+        Logout
+      </button>
       <span data-testid="error">{String(auth.authError || '')}</span>
     </div>
   );
@@ -34,12 +38,15 @@ describe('AuthContext', () => {
         digest: vi.fn().mockResolvedValue(new Uint8Array(32).fill(0xab)),
       },
     });
-    vi.stubGlobal('CustomEvent', class extends Event {
-      constructor(type, init) {
-        super(type, init);
-        Object.assign(this, init?.detail || {});
-      }
-    });
+    vi.stubGlobal(
+      'CustomEvent',
+      class extends Event {
+        constructor(type, init) {
+          super(type, init);
+          Object.assign(this, init?.detail || {});
+        }
+      },
+    );
     mockGet.mockReset();
     mockPost.mockReset();
   });
@@ -49,7 +56,11 @@ describe('AuthContext', () => {
   });
 
   it('initializes with authLoading true and no user', async () => {
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('false');
     });
@@ -57,8 +68,15 @@ describe('AuthContext', () => {
   });
 
   it('loads user when cookie session exists', async () => {
-    mockGet.mockResolvedValue({ ok: true, data: { user: { id: 1, username: 'testuser', role: 'competitor' } } });
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    mockGet.mockResolvedValue({
+      ok: true,
+      data: { user: { id: 1, username: 'testuser', role: 'competitor' } },
+    });
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
     await waitFor(() => {
       expect(screen.getByTestId('has-user').textContent).toBe('true');
     });
@@ -66,9 +84,16 @@ describe('AuthContext', () => {
   });
 
   it('clears user on logout', async () => {
-    mockGet.mockResolvedValue({ ok: true, data: { user: { id: 1, username: 'testuser', role: 'competitor' } } });
+    mockGet.mockResolvedValue({
+      ok: true,
+      data: { user: { id: 1, username: 'testuser', role: 'competitor' } },
+    });
     mockPost.mockResolvedValue({ ok: true, data: {} });
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
     await waitFor(() => {
       expect(screen.getByTestId('has-user').textContent).toBe('true');
     });
@@ -86,7 +111,11 @@ describe('AuthContext', () => {
       data: { user: { id: 1, username: 'testuser', role: 'competitor' } },
     });
     mockGet.mockResolvedValue({ ok: false });
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId('loading').textContent).toBe('false'));
     await act(async () => {
       screen.getByTestId('login-btn').click();
@@ -102,7 +131,11 @@ describe('AuthContext', () => {
       data: { error: 'Invalid credentials', code: 'ERR_INVALID_CREDENTIALS' },
     });
 
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
 
     await act(async () => {
       screen.getByTestId('login-btn').click();

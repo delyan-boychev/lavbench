@@ -9,7 +9,6 @@ const AppContext = createContext(null);
 function ConfirmModal({ config }) {
   const [val, setVal] = useState('');
 
-   
   useEffect(() => {
     if (config.isOpen) {
       setVal('');
@@ -20,9 +19,9 @@ function ConfirmModal({ config }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 animate-fadein">
-      <div 
+      <div
         className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform scale-100 transition-all duration-200"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800">
@@ -72,7 +71,7 @@ function ConfirmModal({ config }) {
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
@@ -104,27 +103,37 @@ export const AppProvider = ({ children }) => {
     placeholder: '',
   });
 
-  const confirm = useCallback(({ title, message, confirmText = t('common.confirm'), cancelText = t('common.cancel'), isPrompt = false, placeholder = '' }) => {
-    return new Promise((resolve) => {
-      setConfirmConfig({
-        isOpen: true,
-        title,
-        message,
-        confirmText,
-        cancelText,
-        isPrompt,
-        placeholder,
-        onConfirm: (val) => {
-          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-          resolve(isPrompt ? val : true);
-        },
-        onCancel: () => {
-          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-          resolve(isPrompt ? null : false);
-        }
+  const confirm = useCallback(
+    ({
+      title,
+      message,
+      confirmText = t('common.confirm'),
+      cancelText = t('common.cancel'),
+      isPrompt = false,
+      placeholder = '',
+    }) => {
+      return new Promise((resolve) => {
+        setConfirmConfig({
+          isOpen: true,
+          title,
+          message,
+          confirmText,
+          cancelText,
+          isPrompt,
+          placeholder,
+          onConfirm: (val) => {
+            setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
+            resolve(isPrompt ? val : true);
+          },
+          onCancel: () => {
+            setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
+            resolve(isPrompt ? null : false);
+          },
+        });
       });
-    });
-  }, [t]);
+    },
+    [t],
+  );
 
   // Apply theme to <html> element
   useEffect(() => {
@@ -136,7 +145,7 @@ export const AppProvider = ({ children }) => {
     }
   }, [theme]);
 
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -150,8 +159,8 @@ export const AppProvider = ({ children }) => {
       if (ok) {
         setChallenges(data);
         if (data.length > 0) {
-          setSelectedChallengeState(prev => {
-            const keep = prev ? data.find(c => c.id === prev.id) : null;
+          setSelectedChallengeState((prev) => {
+            const keep = prev ? data.find((c) => c.id === prev.id) : null;
             return keep || data[0];
           });
         } else {
@@ -165,49 +174,58 @@ export const AppProvider = ({ children }) => {
   }, [currentUser]);
 
   // Fetch challenges when user logs in
-   
+
   useEffect(() => {
     if (currentUser) fetchChallenges();
-    else { setChallenges([]); setSelectedChallengeState(null); setSelectedTask(null); }
+    else {
+      setChallenges([]);
+      setSelectedChallengeState(null);
+      setSelectedTask(null);
+    }
   }, [currentUser, fetchChallenges]);
 
   // Reset task when the selected challenge changes (separate effect to avoid
   // calling setSelectedTask inside a state updater, which causes ordering flakes)
-   
+
   useEffect(() => {
     if (selectedChallenge) {
-      setSelectedTask(t => {
+      setSelectedTask((t) => {
         if (!t) return selectedChallenge.tasks?.[0] || null;
-        const found = selectedChallenge.tasks?.find(tk => tk.id === t.id);
+        const found = selectedChallenge.tasks?.find((tk) => tk.id === t.id);
         return found || selectedChallenge.tasks?.[0] || null;
       });
     }
   }, [selectedChallenge]);
 
   // Set selected challenge by ID - resets task to first of new challenge (fixes B7)
-  const setSelectedChallengeById = useCallback((id) => {
-    const c = challenges.find(ch => ch.id === id);
-    if (c) {
-      setSelectedChallengeState(c);
-      setSelectedTask(c.tasks?.[0] || null);
-    }
-  }, [challenges]);
+  const setSelectedChallengeById = useCallback(
+    (id) => {
+      const c = challenges.find((ch) => ch.id === id);
+      if (c) {
+        setSelectedChallengeState(c);
+        setSelectedTask(c.tasks?.[0] || null);
+      }
+    },
+    [challenges],
+  );
 
   return (
-    <AppContext.Provider value={{
-      challenges,
-      selectedChallenge,
-      setSelectedChallengeById,
-      setSelectedChallenge: setSelectedChallengeState,
-      selectedTask,
-      setSelectedTask,
-      theme,
-      toggleTheme,
-      toast,
-      showToast,
-      fetchChallenges,
-      confirm,
-    }}>
+    <AppContext.Provider
+      value={{
+        challenges,
+        selectedChallenge,
+        setSelectedChallengeById,
+        setSelectedChallenge: setSelectedChallengeState,
+        selectedTask,
+        setSelectedTask,
+        theme,
+        toggleTheme,
+        toast,
+        showToast,
+        fetchChallenges,
+        confirm,
+      }}
+    >
       {children}
       <ConfirmModal config={confirmConfig} />
     </AppContext.Provider>

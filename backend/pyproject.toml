@@ -34,3 +34,7 @@ directory = "htmlcov"
 [tool.bandit]
 exclude_dirs = ["tests", "venv", ".git", "__pycache__"]
 skips = ["B101", "B601"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]

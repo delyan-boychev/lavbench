@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export default function CustomSelect({ 
-  options = [], 
-  value, 
-  onChange, 
-  placeholder, 
+export default function CustomSelect({
+  options = [],
+  value,
+  onChange,
+  placeholder,
   disabled = false,
   error = false,
-  size = 'md'
+  size = 'md',
 }) {
   const { t } = useTranslation();
   const resolvedPlaceholder = placeholder || t('common.select_option');
@@ -23,8 +23,8 @@ export default function CustomSelect({
         setIsOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -40,16 +40,20 @@ export default function CustomSelect({
     }
   }, [isOpen]);
 
-  const selectedOption = options.find(opt => opt.value === value);
+  const selectedOption = options.find((opt) => opt.value === value);
   const isSm = size === 'sm';
 
-  const filteredOptions = options.filter(opt =>
-    (opt.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (opt.value || '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredOptions = options.filter(
+    (opt) =>
+      (opt.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (opt.value || '').toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
-    <div ref={containerRef} className="relative inline-block text-left z-[100] w-full min-w-[160px]">
+    <div
+      ref={containerRef}
+      className="relative inline-block text-left z-[100] w-full min-w-[160px]"
+    >
       <div>
         <button
           type="button"
@@ -57,9 +61,7 @@ export default function CustomSelect({
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center justify-between w-full px-3 text-slate-200 bg-slate-900 border rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
             error ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-800'
-          } ${
-            isSm ? 'py-1.5 text-xs font-semibold' : 'py-2 text-sm'
-          }`}
+          } ${isSm ? 'py-1.5 text-xs font-semibold' : 'py-2 text-sm'}`}
         >
           <span className="truncate mr-2">
             {selectedOption ? selectedOption.label : resolvedPlaceholder}
@@ -99,11 +101,13 @@ export default function CustomSelect({
                 {resolvedPlaceholder}
               </div>
             ) : filteredOptions.length === 0 ? (
-              <div className={`px-3 py-4 text-slate-500 italic text-center ${isSm ? 'text-xs' : 'text-sm'}`}>
+              <div
+                className={`px-3 py-4 text-slate-500 italic text-center ${isSm ? 'text-xs' : 'text-sm'}`}
+              >
                 {t('common.no_results')}
               </div>
             ) : (
-              filteredOptions.map(opt => (
+              filteredOptions.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
@@ -119,7 +123,13 @@ export default function CustomSelect({
                 >
                   <span className="truncate mr-2">{opt.label}</span>
                   {opt.value === value && (
-                    <svg className={`text-indigo-400 flex-shrink-0 ${isSm ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                    <svg
+                      className={`text-indigo-400 flex-shrink-0 ${isSm ? 'w-3.5 h-3.5' : 'w-4 h-4'}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}

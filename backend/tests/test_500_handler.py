@@ -21,6 +21,7 @@ def _make_test_app(register_json_handler=False):
         raise RuntimeError("Intentional crash for testing")
 
     if register_json_handler:
+
         @app.errorhandler(500)
         def handle_500(e):
             return jsonify({"error": "Internal server error.", "code": "ERR_INTERNAL"}), 500
@@ -93,6 +94,7 @@ class TestJsonErrorHandler:
     def test_real_app_returns_json_on_500(self, app, client, db_session):
         """The real app now has a JSON 500 handler registered."""
         from flask import Flask
+
         test_app = Flask(__name__)
         test_app.config["TESTING"] = True
         test_app.config["PROPAGATE_EXCEPTIONS"] = False

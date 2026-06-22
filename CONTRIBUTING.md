@@ -22,27 +22,37 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    # Frontend (vitest)
    cd frontend && npm run test
    ```
-3. **Verify type integrity** — `npm run check-types` must pass with 0 errors.
+3. **Format your code** — Both formatters run in CI and will block unformatted code:
+   ```bash
+   black backend/
+   cd frontend && npm run format
+   ```
+4. **Verify formatting** — Run format checks before pushing:
+   ```bash
+   black --check backend/
+   cd frontend && npm run format:check
+   ```
+5. **Verify type integrity** — `npm run check-types` must pass with 0 errors.
    ```bash
    cd frontend && npm run check-types
    ```
-4. **Check translations** — English and Bulgarian locale keys must be in sync:
+6. **Check translations** — English and Bulgarian locale keys must be in sync:
    ```bash
    python3 frontend/scripts/check_translations.py
    ```
-5. **Regenerate API types** if backend endpoints are modified:
+7. **Regenerate API types** if backend endpoints are modified:
    ```bash
    # Start the backend on port 5001, then run:
    cd frontend && npm run generate-api-types
    python3 frontend/scripts/_annotate_types.py
    ```
-6. **Adhere to project patterns** — Use `@type` JSDoc annotations for API responses, maintain component prop defaults, and rely on `tsc --noEmit` for validation.
+8. **Adhere to project patterns** — Use `@type` JSDoc annotations for API responses, maintain component prop defaults, and rely on `tsc --noEmit` for validation.
 
 ## Code Conventions
 
 ### Backend (Python)
 
-- Follow PEP 8, no line over 100 characters
+- Formatted with **Black** (line-length 100, configured in `backend/pyproject.toml`)
 - Tests in `backend/tests/`, one file per route module
 - Use pytest fixtures from `backend/conftest.py` for common setups
 - New routes go in `backend/routes/`, register blueprints in `backend/app.py`
@@ -50,6 +60,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 
 ### Frontend (JavaScript/React)
 
+- Formatted with **Prettier** (configured via `frontend/.prettierrc`)
 - **JSDoc `@type` annotations** over raw TypeScript — referencing `src/types/api.d.ts`
 - Component props must use default values (e.g., `prop = 'default'`) for optionality
 - Service wrappers follow the signature: `(...args: any[]) => Promise<{ok, data: Type}>`
@@ -61,6 +72,19 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 - Translation keys use dot-notation (e.g., `section.subsection.key`)
 - Keys map directly to the JSON structure in `public/locales/{en,bg}/translation.json`
 - Both English and Bulgarian locale files must always have matching keys
+
+## Pre-commit Hooks
+
+Formatting is enforced automatically via pre-commit hooks. Install once:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After that, `git commit` will run **Black** (Python) and **Prettier** (JS/CSS/JSON) automatically. If formatting fails, the commit is blocked — run the format commands, stage the changes, and commit again.
+
+The same checks run in CI (`backend-format` and `frontend-format` jobs) on every push and PR.
 
 ## Frontend Type System
 

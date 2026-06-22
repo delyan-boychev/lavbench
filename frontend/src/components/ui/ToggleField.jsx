@@ -4,11 +4,11 @@ export default function ToggleField({ label, id, checked, onChange, disabled = f
   return (
     <div className="flex items-center gap-2 select-none">
       <label className="relative inline-flex items-center cursor-pointer">
-        <input 
-          type="checkbox" 
+        <input
+          type="checkbox"
           id={id}
-          className="sr-only peer" 
-          checked={!!checked} 
+          className="sr-only peer"
+          checked={!!checked}
           onChange={onChange}
           disabled={disabled}
         />

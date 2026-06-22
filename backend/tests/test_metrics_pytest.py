@@ -5,15 +5,31 @@ import pytest
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evaluation_engine import (
-    calculate_lcs, compute_bleu, compute_rouge_l, compute_meteor,
-    compute_chrf, compute_ter, compute_bertscore, calculate_box_iou,
-    compute_map_detection, compute_psnr, compute_ssim, compute_audio_snr,
-    compute_mel_lsd, compute_segmentation_iou, compute_segmentation_dice,
-    compute_oks, compute_pck, compute_ndcg_at_k, compute_retrieval_metrics,
-    evaluate_predictions, validate_parquet_schema, validate_parquet_schema_columns
+    calculate_lcs,
+    compute_bleu,
+    compute_rouge_l,
+    compute_meteor,
+    compute_chrf,
+    compute_ter,
+    compute_bertscore,
+    calculate_box_iou,
+    compute_map_detection,
+    compute_psnr,
+    compute_ssim,
+    compute_audio_snr,
+    compute_mel_lsd,
+    compute_segmentation_iou,
+    compute_segmentation_dice,
+    compute_oks,
+    compute_pck,
+    compute_ndcg_at_k,
+    compute_retrieval_metrics,
+    evaluate_predictions,
+    validate_parquet_schema,
+    validate_parquet_schema_columns,
 )
 
 
@@ -219,11 +235,16 @@ class TestCalculateBoxIou:
 
 class TestComputeMapDetection:
     def test_empty_true(self):
-        ap = compute_map_detection([[]], [[{"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "score": 0.9, "label": "cat"}]])
+        ap = compute_map_detection(
+            [[]],
+            [[{"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "score": 0.9, "label": "cat"}]],
+        )
         assert ap == 0.0
 
     def test_empty_pred(self):
-        ap = compute_map_detection([[{"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "label": "cat"}]], [[]])
+        ap = compute_map_detection(
+            [[{"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "label": "cat"}]], [[]]
+        )
         assert ap == 0.0
 
     def test_both_empty(self):
@@ -264,6 +285,7 @@ class TestComputePsnr:
 
     def test_empty_lists(self):
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             score = compute_psnr([], [])
@@ -403,6 +425,7 @@ class TestComputeOks:
 
     def test_empty(self):
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             score = compute_oks([[]], [[]])
@@ -493,11 +516,9 @@ class TestComputeRetrievalMetrics:
 
     def test_multiple_queries(self):
         df_true = pd.DataFrame({"query_id": [1, 1, 2, 2], "doc_id": [10, 20, 30, 40]})
-        df_pred = pd.DataFrame({
-            "query_id": [1, 1, 2, 2],
-            "doc_id": [10, 20, 30, 40],
-            "score": [0.9, 0.8, 0.7, 0.6]
-        })
+        df_pred = pd.DataFrame(
+            {"query_id": [1, 1, 2, 2], "doc_id": [10, 20, 30, 40], "score": [0.9, 0.8, 0.7, 0.6]}
+        )
         result = compute_retrieval_metrics(df_true, df_pred, k=10)
         assert result["mrr"] == pytest.approx(1.0)
         assert result["recall_10"] == pytest.approx(1.0)
@@ -569,25 +590,33 @@ class TestEvaluatePredictionsEdgeCases:
     def test_f1_single_class(self):
         df_sub = pd.DataFrame({"id": [1, 2, 3], "prediction": [0, 0, 0]})
         df_labels = pd.DataFrame({"id": [1, 2, 3], "label": [0, 0, 0]})
-        result = evaluate_predictions(df_sub, df_labels, {"f1": {"weight": 1.0, "options": {"average": "macro"}}})
+        result = evaluate_predictions(
+            df_sub, df_labels, {"f1": {"weight": 1.0, "options": {"average": "macro"}}}
+        )
         assert isinstance(result["f1"], float)
 
     def test_custom_column(self):
         df_sub = pd.DataFrame({"id": [1], "my_pred": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "my_label": [0.5]})
-        result = evaluate_predictions(df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "my_label"}}})
+        result = evaluate_predictions(
+            df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "my_label"}}}
+        )
         assert "rmse" in result
 
     def test_custom_column_missing(self):
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "label": [0.5]})
-        result = evaluate_predictions(df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}})
+        result = evaluate_predictions(
+            df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}}
+        )
         assert result["rmse"] == 0.0
 
     def test_balanced_accuracy(self):
         df_sub = pd.DataFrame({"id": [1, 2, 3, 4], "prediction": [0, 0, 0, 1]})
         df_labels = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 0, 1, 1]})
-        result = evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0, "options": {"balanced": "true"}}})
+        result = evaluate_predictions(
+            df_sub, df_labels, {"accuracy": {"weight": 1.0, "options": {"balanced": "true"}}}
+        )
         assert "accuracy" in result
 
     def test_exact_match(self):
@@ -622,15 +651,39 @@ class TestEvaluatePredictionsEdgeCases:
             assert metric in result
 
     def test_retrieval_ndcg_k(self):
-        df_true = pd.DataFrame({"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "label": [1, 1]})
-        df_pred = pd.DataFrame({"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "score": [0.9, 0.8], "prediction": [0.9, 0.8]})
-        result = evaluate_predictions(df_pred, df_true, {"ndcg_k": {"weight": 1.0, "options": {"k": 5}}})
+        df_true = pd.DataFrame(
+            {"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "label": [1, 1]}
+        )
+        df_pred = pd.DataFrame(
+            {
+                "id": [1, 2],
+                "query_id": [1, 1],
+                "doc_id": [10, 20],
+                "score": [0.9, 0.8],
+                "prediction": [0.9, 0.8],
+            }
+        )
+        result = evaluate_predictions(
+            df_pred, df_true, {"ndcg_k": {"weight": 1.0, "options": {"k": 5}}}
+        )
         assert "ndcg_k" in result
 
     def test_retrieval_recall_k(self):
-        df_true = pd.DataFrame({"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "label": [1, 1]})
-        df_pred = pd.DataFrame({"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "score": [0.9, 0.8], "prediction": [0.9, 0.8]})
-        result = evaluate_predictions(df_pred, df_true, {"recall_k": {"weight": 1.0, "options": {"k": 5}}})
+        df_true = pd.DataFrame(
+            {"id": [1, 2], "query_id": [1, 1], "doc_id": [10, 20], "label": [1, 1]}
+        )
+        df_pred = pd.DataFrame(
+            {
+                "id": [1, 2],
+                "query_id": [1, 1],
+                "doc_id": [10, 20],
+                "score": [0.9, 0.8],
+                "prediction": [0.9, 0.8],
+            }
+        )
+        result = evaluate_predictions(
+            df_pred, df_true, {"recall_k": {"weight": 1.0, "options": {"k": 5}}}
+        )
         assert "recall_k" in result
 
     def test_no_prediction_columns(self):
@@ -675,7 +728,9 @@ class TestValidateParquetSchemaColumns:
         assert "Submission" in msg
 
     def test_multiple_columns_with_id(self):
-        ok, msg = validate_parquet_schema_columns(["id", "col1", "col2", "col3"], is_submission=True)
+        ok, msg = validate_parquet_schema_columns(
+            ["id", "col1", "col2", "col3"], is_submission=True
+        )
         assert ok
         assert msg is None
 

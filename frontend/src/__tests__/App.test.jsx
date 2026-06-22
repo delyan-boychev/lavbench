@@ -104,6 +104,6 @@ describe('App', () => {
     vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
     render(<App />);
     const navigates = screen.getAllByTestId('navigate');
-    expect(navigates.some(n => n.textContent === '/challenges')).toBe(true);
+    expect(navigates.some((n) => n.textContent === '/challenges')).toBe(true);
   });
 });

@@ -11,7 +11,9 @@ import hashlib
 from datetime import datetime, timedelta
 
 # ── Critical: set these BEFORE any app/model imports ──────────────────────
-os.environ.setdefault("SECRET_KEY", "conftest-test-secret-key-2024-abcdefgh")  # 32+ chars for HMAC-SHA256
+os.environ.setdefault(
+    "SECRET_KEY", "conftest-test-secret-key-2024-abcdefgh"
+)  # 32+ chars for HMAC-SHA256
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
@@ -29,6 +31,7 @@ from auth_utils import generate_token
 # ═══════════════════════════════════════════════════════════════════════════
 # App & Context
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture(scope="session")
 def app():
@@ -69,11 +72,13 @@ def db_session(app, app_ctx):
 # Redis flush (no-op when Redis is unavailable)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @pytest.fixture(scope="function")
 def redis_flush():
     """Flush Redis data before a test.  Safe to call when Redis is down."""
     try:
         from cache_utils import get_redis_client
+
         r = get_redis_client()
         if r:
             r.flushdb()
@@ -85,23 +90,28 @@ def redis_flush():
 # Auth helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @pytest.fixture
 def auth_headers():
     """Return a helper that builds ``Authorization: Bearer <token>`` headers."""
+
     def _make(token):
         return {"Authorization": f"Bearer {token}"}
+
     return _make
 
 
 @pytest.fixture
 def csrf_headers():
     """Return a helper that builds CSRF + Authorization headers."""
+
     def _make(token, csrf_token="test-csrf-token"):
         return {
             "Authorization": f"Bearer {token}",
             "X-CSRF-Token": csrf_token,
             "Cookie": "csrf_token=test-csrf-token",
         }
+
     return _make
 
 
@@ -109,9 +119,11 @@ def csrf_headers():
 # Factory fixture — creates a User with sensible defaults
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @pytest.fixture
 def create_user(db_session):
     """Factory fixture — call ``create_user(username=..., role=...)``."""
+
     def _make(
         username="testuser",
         password="testpass123",
@@ -133,12 +145,14 @@ def create_user(db_session):
         db_session.add(user)
         db_session.flush()
         return user
+
     return _make
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Common seed-data fixtures
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def sample_challenge(db_session):
@@ -271,10 +285,12 @@ def sample_comp_in_future_challenge(db_session, sample_future_challenge, create_
 @pytest.fixture
 def tokens(sample_competitor, sample_admin, sample_other_competitor):
     """JWT tokens for the three standard users."""
+
     class Tokens:
         competitor = generate_token(sample_competitor.id, "competitor")
         admin = generate_token(sample_admin.id, "admin")
         other = generate_token(sample_other_competitor.id, "competitor")
+
     return Tokens()
 
 

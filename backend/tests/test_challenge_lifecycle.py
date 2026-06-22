@@ -23,6 +23,7 @@ class TestFinalizeChallenge:
     ):
         jury = create_user(username="finalize-jury", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -31,11 +32,13 @@ class TestFinalizeChallenge:
 
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
-            data=json.dumps({
-                "reveal_public_scores": True,
-                "reveal_private_scores": True,
-                "reveal_points": True,
-            }),
+            data=json.dumps(
+                {
+                    "reveal_public_scores": True,
+                    "reveal_private_scores": True,
+                    "reveal_points": True,
+                }
+            ),
             content_type="application/json",
             headers=headers,
         )
@@ -46,9 +49,7 @@ class TestFinalizeChallenge:
         db_session.refresh(sample_challenge)
         assert sample_challenge.scores_finalized is True
 
-    def test_finalize_admin_forbidden(
-        self, client, db_session, sample_challenge, tokens
-    ):
+    def test_finalize_admin_forbidden(self, client, db_session, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.admin}"}
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
@@ -58,9 +59,7 @@ class TestFinalizeChallenge:
         )
         assert res.status_code == 403
 
-    def test_finalize_competitor_forbidden(
-        self, client, sample_challenge, tokens
-    ):
+    def test_finalize_competitor_forbidden(self, client, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.competitor}"}
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
@@ -70,11 +69,10 @@ class TestFinalizeChallenge:
         )
         assert res.status_code == 403
 
-    def test_finalize_challenge_not_found(
-        self, client, create_user
-    ):
+    def test_finalize_challenge_not_found(self, client, create_user):
         jury = create_user(username="finalize-jury-nf", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -91,6 +89,7 @@ class TestFinalizeChallenge:
     ):
         jury = create_user(username="finalize-jury-mp", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -111,6 +110,7 @@ class TestFinalizeChallenge:
     ):
         jury = create_user(username="finalize-jury-rf", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -139,6 +139,7 @@ class TestFinalizeChallenge:
     ):
         jury = create_user(username="finalize-jury-ro", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -147,11 +148,13 @@ class TestFinalizeChallenge:
 
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
-            data=json.dumps({
-                "reveal_public_scores": False,
-                "reveal_private_scores": False,
-                "reveal_points": False,
-            }),
+            data=json.dumps(
+                {
+                    "reveal_public_scores": False,
+                    "reveal_private_scores": False,
+                    "reveal_points": False,
+                }
+            ),
             content_type="application/json",
             headers=headers,
         )
@@ -198,6 +201,7 @@ class TestCreateTestCompetition:
     ):
         jury = create_user(username="testcomp-jury", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -208,9 +212,7 @@ class TestCreateTestCompetition:
         )
         assert res.status_code == 201
 
-    def test_test_competition_competitor_forbidden(
-        self, client, sample_challenge, tokens
-    ):
+    def test_test_competition_competitor_forbidden(self, client, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.competitor}"}
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/test-competition",
@@ -219,9 +221,7 @@ class TestCreateTestCompetition:
         )
         assert res.status_code == 403
 
-    def test_test_competition_challenge_not_found(
-        self, client, tokens
-    ):
+    def test_test_competition_challenge_not_found(self, client, tokens):
         headers = {"Authorization": f"Bearer {tokens.admin}"}
         res = client.post(
             "/api/challenges/99999/test-competition",
@@ -230,9 +230,7 @@ class TestCreateTestCompetition:
         )
         assert res.status_code == 404
 
-    def test_test_competition_unauthorized_no_token(
-        self, client, sample_challenge
-    ):
+    def test_test_competition_unauthorized_no_token(self, client, sample_challenge):
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/test-competition",
             content_type="application/json",
@@ -243,6 +241,7 @@ class TestCreateTestCompetition:
         self, client, db_session, sample_challenge, sample_task, tokens
     ):
         from datetime import datetime, timedelta
+
         expired = Challenge(
             title="Test: Old Expired (Warm-up)",
             description="Old test comp",
@@ -265,9 +264,7 @@ class TestCreateTestCompetition:
         still_exists = Challenge.query.filter_by(title="Test: Old Expired (Warm-up)").count()
         assert still_exists == 0, "Expired test competition was not cleaned up"
 
-        new_exists = Challenge.query.filter(
-            Challenge.title.like("Test: % (Warm-up)")
-        ).count()
+        new_exists = Challenge.query.filter(Challenge.title.like("Test: % (Warm-up)")).count()
         assert new_exists == 1, "Should have exactly one test competition remaining"
 
 
@@ -280,11 +277,10 @@ class TestCreateTestCompetition:
 class TestArchiveChallengePytest:
     """Additional archive edge-cases not covered by TestArchiveChallenge."""
 
-    def test_archive_jury_can_toggle(
-        self, client, db_session, sample_challenge, create_user
-    ):
+    def test_archive_jury_can_toggle(self, client, db_session, sample_challenge, create_user):
         jury = create_user(username="archive-jury", role="jury")
         from auth_utils import generate_token
+
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -305,9 +301,7 @@ class TestArchiveChallengePytest:
         db_session.refresh(sample_challenge)
         assert sample_challenge.is_archived is False
 
-    def test_archive_sets_computed_status(
-        self, client, db_session, sample_challenge, tokens
-    ):
+    def test_archive_sets_computed_status(self, client, db_session, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.admin}"}
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/archive",
@@ -316,9 +310,7 @@ class TestArchiveChallengePytest:
         assert res.status_code == 200
         assert res.get_json()["challenge"]["status"] == "archived"
 
-    def test_archive_challenge_persisted(
-        self, client, db_session, sample_challenge, tokens
-    ):
+    def test_archive_challenge_persisted(self, client, db_session, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.admin}"}
         client.post(
             f"/api/challenges/{sample_challenge.id}/archive",

@@ -59,7 +59,9 @@ describe('Login Page', () => {
     mockLogin.mockResolvedValue({ success: true });
     render(<Login />);
 
-    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), { target: { value: 'testuser' } });
+    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), {
+      target: { value: 'testuser' },
+    });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
 
     await act(async () => {
@@ -84,11 +86,17 @@ describe('Login Page', () => {
 
   it('shows loading state during authentication', async () => {
     let resolveLogin;
-    mockLogin.mockReturnValue(new Promise(resolve => { resolveLogin = resolve; }));
+    mockLogin.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogin = resolve;
+      }),
+    );
 
     render(<Login />);
 
-    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), { target: { value: 'testuser' } });
+    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), {
+      target: { value: 'testuser' },
+    });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
 
     act(() => {

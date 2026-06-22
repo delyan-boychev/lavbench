@@ -13,7 +13,7 @@ describe('CompetitorManager Component', () => {
     school: 'Math School',
     city: 'Sofia',
     challenge_id: '1',
-    is_anonymous: false
+    is_anonymous: false,
   };
 
   const mockCompetitorsList = [
@@ -28,8 +28,8 @@ describe('CompetitorManager Component', () => {
       grade: '10',
       school: 'Math School',
       city: 'Sofia',
-      challenge_id: 1
-    }
+      challenge_id: 1,
+    },
   ];
 
   const mockChallenges = [{ id: 1, title: 'AI Competition' }];
@@ -91,7 +91,7 @@ describe('CompetitorManager Component', () => {
         competitorsPages={1}
         competitorsTotal={1}
         setCompetitorsPage={setCompetitorsPage}
-      />
+      />,
     );
 
     // Form/Workspace headers
@@ -161,7 +161,7 @@ describe('CompetitorManager Component', () => {
         competitorsPages={1}
         competitorsTotal={1}
         setCompetitorsPage={setCompetitorsPage}
-      />
+      />,
     );
 
     const registerBtn = screen.getByRole('button', { name: /Generate Credentials/i });

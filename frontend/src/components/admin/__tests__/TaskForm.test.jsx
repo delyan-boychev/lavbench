@@ -238,7 +238,11 @@ describe('TaskForm', () => {
     it('renders no columns placeholder when no columns defined', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Evaluation'));
-      expect(screen.getByText('No columns defined. Add columns to describe the expected parquet structure.')).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'No columns defined. Add columns to describe the expected parquet structure.',
+        ),
+      ).toBeInTheDocument();
     });
 
     it('renders metrics with weight, column selector, and parameters', () => {
@@ -310,19 +314,25 @@ describe('TaskForm', () => {
     it('renders ban magic commands toggle', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Sandbox'));
-      expect(screen.getByText('Ban Jupyter magic command symbols (!) or (%) (Score 0 if found)')).toBeInTheDocument();
+      expect(
+        screen.getByText('Ban Jupyter magic command symbols (!) or (%) (Score 0 if found)'),
+      ).toBeInTheDocument();
     });
 
     it('renders banned imports input', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Sandbox'));
-      expect(screen.getByText('Banned Libraries list (comma-separated, checked via AST imports)')).toBeInTheDocument();
+      expect(
+        screen.getByText('Banned Libraries list (comma-separated, checked via AST imports)'),
+      ).toBeInTheDocument();
     });
 
     it('renders whitelisted imports input', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Sandbox'));
-      expect(screen.getByText('Whitelisted Libraries (comma-separated, always allowed)')).toBeInTheDocument();
+      expect(
+        screen.getByText('Whitelisted Libraries (comma-separated, always allowed)'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -434,7 +444,10 @@ describe('TaskForm', () => {
     });
 
     it('submit button shows save text when editing', () => {
-      renderTaskForm({ isCreatingTask: false, editingTask: { id: 1, title: 'Test', challenge_id: 1 } });
+      renderTaskForm({
+        isCreatingTask: false,
+        editingTask: { id: 1, title: 'Test', challenge_id: 1 },
+      });
       expect(screen.getByText('Save Changes')).toBeInTheDocument();
     });
 

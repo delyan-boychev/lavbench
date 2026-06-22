@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
@@ -20,7 +20,7 @@ class TestChallengeLeaderboardGetEndpoint:
             username="lb_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Admin-LB"
+            alias_id="Admin-LB",
         )
         db_session.add(self.admin)
 
@@ -35,7 +35,7 @@ class TestChallengeLeaderboardGetEndpoint:
             reveal_public_scores=True,
             reveal_private_scores=False,
             reveal_points=False,
-            scores_finalized=False
+            scores_finalized=False,
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -45,7 +45,7 @@ class TestChallengeLeaderboardGetEndpoint:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Alpha-Comp",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         self.competitor.set_demographics("Alice", "Smith", "10", "Test School", "Test City")
         db_session.add(self.competitor)
@@ -55,7 +55,7 @@ class TestChallengeLeaderboardGetEndpoint:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Beta-Comp",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         self.other_competitor.set_demographics("Bob", "Jones", "11", "Other School", "Other City")
         db_session.add(self.other_competitor)
@@ -67,7 +67,7 @@ class TestChallengeLeaderboardGetEndpoint:
             ram_limit_mb=4096,
             time_limit_sec=60,
             gpu_required=False,
-            files="[]"
+            files="[]",
         )
         db_session.add(self.task)
         db_session.commit()
@@ -79,12 +79,12 @@ class TestChallengeLeaderboardGetEndpoint:
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_competitor_registered_can_access(self, mock_build, client):
         mock_build.return_value = []
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -99,7 +99,7 @@ class TestChallengeLeaderboardGetEndpoint:
             description="Unrelated",
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2)
+            end_time=datetime.utcnow() + timedelta(hours=2),
         )
         db_session.add(other_challenge)
         db_session.commit()
@@ -109,77 +109,71 @@ class TestChallengeLeaderboardGetEndpoint:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Unreg",
-            challenge_id=other_challenge.id
+            challenge_id=other_challenge.id,
         )
         db_session.add(unreg_user)
         db_session.commit()
         unreg_token = generate_token(unreg_user.id, unreg_user.role)
 
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(unreg_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(unreg_token)
         )
         assert res.status_code == 403
         assert "not registered" in res.get_json()["error"].lower()
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_admin_can_access_any_leaderboard(self, mock_build, client):
         mock_build.return_value = []
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         data = res.get_json()
         assert "leaderboard" in data
 
     def test_challenge_not_found_returns_404(self, client):
-        res = client.get(
-            '/api/challenges/99999/leaderboard',
-            headers=self._auth(self.admin_token)
-        )
+        res = client.get("/api/challenges/99999/leaderboard", headers=self._auth(self.admin_token))
         assert res.status_code == 404
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_frozen_view_for_competitor(self, mock_build, client, db_session):
         self.challenge.is_frozen = True
         db_session.flush()
 
         mock_build.return_value = []
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 200
         mock_build.assert_called_once_with(self.challenge.id, True)
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_admin_gets_unfrozen_view_even_when_frozen(self, mock_build, client, db_session):
         self.challenge.is_frozen = True
         db_session.flush()
 
         mock_build.return_value = []
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         mock_build.assert_called_once_with(self.challenge.id, False)
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_admin_bypasses_cache(self, mock_build, client):
         mock_build.return_value = []
         from cache_utils import set_cached
+
         set_cached(f"leaderboard:raw:{self.challenge.id}:unfrozen", ["stale"], timeout=60)
 
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         mock_build.assert_called_once()
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_double_blind_hides_details_for_competitors(self, mock_build, client, db_session):
         self.challenge.double_blind = True
         db_session.flush()
@@ -192,13 +186,13 @@ class TestChallengeLeaderboardGetEndpoint:
                 "challenge_id": self.challenge.id,
                 "is_anonymous": False,
                 "name": "Bob",
-                "surname": "Jones"
+                "surname": "Jones",
             },
             "task_scores": {},
             "public_score": None,
             "private_score": None,
             "total_points": 0,
-            "has_submitted": False
+            "has_submitted": False,
         }
         entry_self = {
             "user": {
@@ -208,24 +202,26 @@ class TestChallengeLeaderboardGetEndpoint:
                 "challenge_id": self.challenge.id,
                 "is_anonymous": False,
                 "name": "Alice",
-                "surname": "Smith"
+                "surname": "Smith",
             },
             "task_scores": {},
             "public_score": None,
             "private_score": None,
             "total_points": 0,
-            "has_submitted": False
+            "has_submitted": False,
         }
         mock_build.return_value = [entry_other, entry_self]
 
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 200
         leaderboard = res.get_json()["leaderboard"]
 
-        other_item = next(item for item in leaderboard if item["user"]["id"] == self.other_competitor.id)
+        other_item = next(
+            item for item in leaderboard if item["user"]["id"] == self.other_competitor.id
+        )
         assert "name" not in other_item["user"]
         assert other_item["user"]["alias_id"] == "Beta-Comp"
 
@@ -233,7 +229,7 @@ class TestChallengeLeaderboardGetEndpoint:
         assert "name" in self_item["user"]
         assert self_item["user"]["name"] == "Alice"
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_scores_finalized_shows_all_details(self, mock_build, client, db_session):
         self.challenge.scores_finalized = True
         self.challenge.reveal_points = True
@@ -248,30 +244,29 @@ class TestChallengeLeaderboardGetEndpoint:
                 "is_anonymous": False,
                 "name": "Alice",
                 "surname": "Smith",
-                "manual_points": {}
+                "manual_points": {},
             },
             "task_scores": {},
             "public_score": 0.95,
             "private_score": 0.92,
             "total_points": 80,
-            "has_submitted": True
+            "has_submitted": True,
         }
         mock_build.return_value = [entry]
 
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.competitor_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 200
         data = res.get_json()
         assert data["is_finalized"] is True
 
-    @patch('routes.leaderboard.build_and_cache_leaderboard')
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_leaderboard_response_shape(self, mock_build, client):
         mock_build.return_value = []
         res = client.get(
-            f'/api/challenges/{self.challenge.id}/leaderboard',
-            headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -293,15 +288,12 @@ class TestManualPointsEndpoint:
             username="mp_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Admin-MP"
+            alias_id="Admin-MP",
         )
         db_session.add(self.admin)
 
         self.jury = User(
-            username="mp_jury",
-            password_hash="pbkdf2:sha256:...",
-            role="jury",
-            alias_id="Jury-MP"
+            username="mp_jury", password_hash="pbkdf2:sha256:...", role="jury", alias_id="Jury-MP"
         )
         db_session.add(self.jury)
 
@@ -311,7 +303,7 @@ class TestManualPointsEndpoint:
             max_eval_requests=10,
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
-            scores_finalized=False
+            scores_finalized=False,
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -321,7 +313,7 @@ class TestManualPointsEndpoint:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="MP-Comp",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         db_session.add(self.competitor)
 
@@ -332,7 +324,7 @@ class TestManualPointsEndpoint:
             ram_limit_mb=4096,
             time_limit_sec=60,
             gpu_required=False,
-            files="[]"
+            files="[]",
         )
         db_session.add(self.task)
         db_session.commit()
@@ -351,7 +343,7 @@ class TestManualPointsEndpoint:
             task_id=self.task.id,
             status="completed",
             public_score=0.8,
-            code_cells="[]"
+            code_cells="[]",
         )
         db_session.add(sub)
         db_session.commit()
@@ -364,12 +356,12 @@ class TestManualPointsEndpoint:
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 85},
-            "reason": "Good performance"
+            "reason": "Good performance",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -382,47 +374,40 @@ class TestManualPointsEndpoint:
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 75},
-            "reason": "Decent solution"
+            "reason": "Decent solution",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.jury_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
 
     def test_competitor_cannot_save_manual_points(self, client):
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(self.task.id): 50}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.competitor_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 403
 
     def test_missing_user_id_returns_400(self, client):
-        payload = {
-            "points": {str(self.task.id): 50}
-        }
+        payload = {"points": {str(self.task.id): 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
         assert "Missing" in res.get_json()["error"]
 
     def test_missing_points_dict_returns_400(self, client):
-        payload = {
-            "user_id": self.competitor.id
-        }
+        payload = {"user_id": self.competitor.id}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
 
@@ -432,19 +417,16 @@ class TestManualPointsEndpoint:
             description="Unrelated",
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2)
+            end_time=datetime.utcnow() + timedelta(hours=2),
         )
         db_session.add(other_challenge)
         db_session.commit()
 
-        payload = {
-            "user_id": 99999,
-            "points": {str(self.task.id): 50}
-        }
+        payload = {"user_id": 99999, "points": {str(self.task.id): 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 404
 
@@ -452,27 +434,21 @@ class TestManualPointsEndpoint:
         self.challenge.scores_finalized = True
         db_session.flush()
 
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(self.task.id): 50}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
         assert "reason" in res.get_json()["error"].lower()
 
     def test_invalid_task_id_returns_400(self, client):
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {"invalid": 50}
-        }
+        payload = {"user_id": self.competitor.id, "points": {"invalid": 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
 
@@ -482,44 +458,35 @@ class TestManualPointsEndpoint:
             title="Orphan Task",
             description="Not in this challenge",
             ram_limit_mb=1024,
-            time_limit_sec=60
+            time_limit_sec=60,
         )
         db_session.add(other_task)
         db_session.commit()
 
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(other_task.id): 50}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(other_task.id): 50}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
         assert "does not belong" in res.get_json()["error"].lower()
 
     def test_points_must_be_integer_returns_400(self, client):
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(self.task.id): 50.5}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50.5}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
 
     def test_points_out_of_bounds_returns_400(self, client):
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(self.task.id): 150}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 150}}
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
         assert "must be between 0 and 100" in res.get_json()["error"]
@@ -528,12 +495,12 @@ class TestManualPointsEndpoint:
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 50},
-            "reason": "Testing"
+            "reason": "Testing",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 400
         assert "no completed submissions" in res.get_json()["error"].lower()
@@ -544,12 +511,12 @@ class TestManualPointsEndpoint:
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 85},
-            "reason": "Initial scoring"
+            "reason": "Initial scoring",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -561,48 +528,45 @@ class TestManualPointsEndpoint:
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 70},
-            "reason": "First"
+            "reason": "First",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
 
         payload["points"] = {str(self.task.id): 90}
         payload["reason"] = "Second"
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
 
-    @patch('cache_utils.invalidate_leaderboard_cache')
+    @patch("cache_utils.invalidate_leaderboard_cache")
     def test_cache_invalidated_on_manual_points_save(self, mock_invalidate, client, db_session):
         self._seed_completed_submission(db_session)
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 80},
-            "reason": "Cache test"
+            "reason": "Cache test",
         }
         res = client.post(
-            f'/api/challenges/{self.challenge.id}/manual-points',
+            f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 200
         mock_invalidate.assert_called_once_with(self.challenge.id)
 
     def test_challenge_not_found_returns_404(self, client):
-        payload = {
-            "user_id": self.competitor.id,
-            "points": {str(self.task.id): 50}
-        }
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
-            '/api/challenges/99999/manual-points',
+            "/api/challenges/99999/manual-points",
             headers=self._auth(self.admin_token),
-            json=payload
+            json=payload,
         )
         assert res.status_code == 404

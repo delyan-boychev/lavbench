@@ -6,12 +6,7 @@ import ToggleField from './ToggleField';
 describe('ToggleField Component', () => {
   it('renders check box with label', () => {
     render(
-      <ToggleField
-        label="Test Toggle"
-        id="test-toggle"
-        checked={false}
-        onChange={() => {}}
-      />
+      <ToggleField label="Test Toggle" id="test-toggle" checked={false} onChange={() => {}} />,
     );
     expect(screen.getByText('Test Toggle')).toBeInTheDocument();
     const checkbox = screen.getByRole('checkbox');
@@ -22,12 +17,7 @@ describe('ToggleField Component', () => {
   it('triggers onChange handler when clicked', () => {
     const handleChange = vi.fn();
     render(
-      <ToggleField
-        label="Click Me"
-        id="click-toggle"
-        checked={false}
-        onChange={handleChange}
-      />
+      <ToggleField label="Click Me" id="click-toggle" checked={false} onChange={handleChange} />,
     );
     const checkbox = screen.getByRole('checkbox');
     fireEvent.click(checkbox);
@@ -42,7 +32,7 @@ describe('ToggleField Component', () => {
         checked={true}
         disabled={true}
         onChange={() => {}}
-      />
+      />,
     );
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).toBeDisabled();

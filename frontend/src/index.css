@@ -1,13 +1,14 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-:root, [data-theme='dark'] {
+:root,
+[data-theme='dark'] {
   color-scheme: dark;
-  
+
   /* Dark theme slate colors (default Tailwind slate colors) */
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
@@ -20,7 +21,7 @@
   --color-slate-800: #1e293b;
   --color-slate-900: #0f172a;
   --color-slate-950: #020617;
-  
+
   --custom-bg-dark: #0d0e18;
 
   /* Semantic variables for dark theme */
@@ -52,7 +53,7 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  
+
   /* Inverted slate colors for light theme */
   --color-slate-50: #0f172a;
   --color-slate-100: #1e293b;
@@ -65,7 +66,7 @@
   --color-slate-800: #f1f5f9;
   --color-slate-900: #ffffff;
   --color-slate-950: #f8fafc;
-  
+
   --custom-bg-dark: #ffffff;
 
   /* Semantic variables for light theme */
@@ -81,7 +82,7 @@
   --text-secondary: var(--color-slate-300);
   --text-muted: var(--color-slate-500);
   --accent: var(--color-indigo-600);
-  --accent-soft: rgba(79, 70, 229, 0.10);
+  --accent-soft: rgba(79, 70, 229, 0.1);
   --accent-border: var(--color-indigo-600);
   --accent-border-hover: var(--color-indigo-700);
 
@@ -96,16 +97,36 @@
 }
 
 /* ─── SEMANTIC UTILITY CLASSES (theme-aware) ────── */
-.text-primary { color: var(--text-primary) !important; }
-.text-secondary { color: var(--text-secondary) !important; }
-.text-muted { color: var(--text-muted) !important; }
-.bg-base { background-color: var(--bg-base) !important; }
-.bg-surface { background-color: var(--bg-surface) !important; }
-.bg-elevated { background-color: var(--bg-elevated) !important; }
-.bg-hover { background-color: var(--bg-hover) !important; }
-.border-default { border-color: var(--border) !important; }
-.bg-navbar { background-color: var(--bg-nav) !important; }
-.bg-topbar { background-color: var(--bg-bar) !important; }
+.text-primary {
+  color: var(--text-primary) !important;
+}
+.text-secondary {
+  color: var(--text-secondary) !important;
+}
+.text-muted {
+  color: var(--text-muted) !important;
+}
+.bg-base {
+  background-color: var(--bg-base) !important;
+}
+.bg-surface {
+  background-color: var(--bg-surface) !important;
+}
+.bg-elevated {
+  background-color: var(--bg-elevated) !important;
+}
+.bg-hover {
+  background-color: var(--bg-hover) !important;
+}
+.border-default {
+  border-color: var(--border) !important;
+}
+.bg-navbar {
+  background-color: var(--bg-nav) !important;
+}
+.bg-topbar {
+  background-color: var(--bg-bar) !important;
+}
 
 /* Light mode structural & utility overrides */
 [data-theme='light'] .bg-\[\#0d0e18\]:not([data-theme='dark'] *) {
@@ -120,7 +141,10 @@
   border-color: var(--color-slate-700) !important;
 }
 
-[data-theme='light'] .text-white:not([data-theme='dark'] *):not(button):not(button *):not(.btn):not(.btn *):not(.pill):not(.pill *):not(.badge):not(.badge *) {
+[data-theme='light']
+  .text-white:not([data-theme='dark'] *):not(button):not(button *):not(.btn):not(.btn *):not(
+    .pill
+  ):not(.pill *):not(.badge):not(.badge *) {
   color: var(--color-slate-100) !important;
 }
 
@@ -292,10 +316,19 @@ body {
 }
 
 /* ─── SCROLLBAR ─────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { @apply bg-slate-800 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-indigo-500/30; }
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-800 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-indigo-500/30;
+}
 
 /* ─── SURFACE UTILITIES ─────────────────────────── */
 .surface {
@@ -350,12 +383,24 @@ body {
   @apply text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none;
 }
 
-.pill-accent { @apply border-indigo-500/30 bg-indigo-500/10 text-indigo-400; }
-.pill-success { @apply border-emerald-500/30 bg-emerald-500/10 text-emerald-400; }
-.pill-warning { @apply border-amber-500/30 bg-amber-500/10 text-amber-400; }
-.pill-danger { @apply border-rose-500/30 bg-rose-500/10 text-rose-400; }
-.pill-info { @apply border-blue-500/30 bg-blue-500/10 text-blue-400; }
-.pill-muted { @apply border-slate-500/30 bg-slate-800 text-slate-400; }
+.pill-accent {
+  @apply border-indigo-500/30 bg-indigo-500/10 text-indigo-400;
+}
+.pill-success {
+  @apply border-emerald-500/30 bg-emerald-500/10 text-emerald-400;
+}
+.pill-warning {
+  @apply border-amber-500/30 bg-amber-500/10 text-amber-400;
+}
+.pill-danger {
+  @apply border-rose-500/30 bg-rose-500/10 text-rose-400;
+}
+.pill-info {
+  @apply border-blue-500/30 bg-blue-500/10 text-blue-400;
+}
+.pill-muted {
+  @apply border-slate-500/30 bg-slate-800 text-slate-400;
+}
 
 .empty-state {
   @apply flex flex-col items-center justify-center p-12 text-center text-slate-500 gap-2.5;
@@ -405,22 +450,56 @@ body {
   @apply fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-slate-800 p-4 rounded-lg shadow-2xl z-50 transition-all duration-300;
 }
 
-.prose { @apply text-slate-300 leading-relaxed text-sm; }
-.prose h1 { @apply text-lg font-bold mt-6 mb-3 text-slate-100; }
-.prose h2 { @apply text-base font-bold mt-5 mb-2 text-slate-100; }
-.prose h3 { @apply text-sm font-semibold mt-4 mb-2 text-slate-100; }
-.prose p { @apply my-2.5; }
-.prose ul, .prose ol { @apply pl-5 my-2.5 list-disc; }
-.prose li { @apply my-1; }
-.prose code { @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-indigo-400; }
-.prose pre { @apply bg-slate-950 border border-slate-800 rounded-lg p-3 overflow-x-auto my-3; }
-.prose pre code { @apply bg-transparent border-0 p-0 text-slate-200; }
-.prose blockquote { @apply border-l-2 border-slate-700 pl-4 my-3 italic text-slate-400; }
-.prose table { @apply w-full border-collapse my-3 text-xs; }
-.prose th, .prose td { @apply border border-slate-800 p-2.5 text-left; }
-.prose th { @apply bg-slate-800/40 text-slate-100 font-semibold; }
-.prose a { @apply text-indigo-400 hover:text-indigo-300 underline; }
-.prose strong { @apply text-slate-100 font-semibold; }
+.prose {
+  @apply text-slate-300 leading-relaxed text-sm;
+}
+.prose h1 {
+  @apply text-lg font-bold mt-6 mb-3 text-slate-100;
+}
+.prose h2 {
+  @apply text-base font-bold mt-5 mb-2 text-slate-100;
+}
+.prose h3 {
+  @apply text-sm font-semibold mt-4 mb-2 text-slate-100;
+}
+.prose p {
+  @apply my-2.5;
+}
+.prose ul,
+.prose ol {
+  @apply pl-5 my-2.5 list-disc;
+}
+.prose li {
+  @apply my-1;
+}
+.prose code {
+  @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-indigo-400;
+}
+.prose pre {
+  @apply bg-slate-950 border border-slate-800 rounded-lg p-3 overflow-x-auto my-3;
+}
+.prose pre code {
+  @apply bg-transparent border-0 p-0 text-slate-200;
+}
+.prose blockquote {
+  @apply border-l-2 border-slate-700 pl-4 my-3 italic text-slate-400;
+}
+.prose table {
+  @apply w-full border-collapse my-3 text-xs;
+}
+.prose th,
+.prose td {
+  @apply border border-slate-800 p-2.5 text-left;
+}
+.prose th {
+  @apply bg-slate-800/40 text-slate-100 font-semibold;
+}
+.prose a {
+  @apply text-indigo-400 hover:text-indigo-300 underline;
+}
+.prose strong {
+  @apply text-slate-100 font-semibold;
+}
 
 @keyframes fadeIn {
   from {
@@ -440,7 +519,8 @@ body {
 }
 
 @keyframes flashRed {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     text-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
   }

@@ -3,12 +3,14 @@
 import os
 from models import Challenge
 
+
 def run_recalculate_all_leaderboards(app):
     """
     Periodically recalculates and caches leaderboards for all active challenges
     to avoid synchronous cache invalidation and rebuild spikes.
     """
     from services.leaderboard_service import build_and_cache_leaderboard
+
     with app.app_context():
         # Get active or recent challenges
         active_challenges = Challenge.query.filter_by(is_archived=False).all()

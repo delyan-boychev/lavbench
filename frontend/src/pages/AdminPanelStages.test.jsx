@@ -5,7 +5,6 @@ import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import AdminPanel from './AdminPanel';
 
-
 // Mock AuthContext
 vi.mock('../AuthContext', () => ({
   useAuth: vi.fn(),
@@ -35,17 +34,16 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
         start_time: '2026-06-13T10:00:00Z',
         end_time: '2026-06-13T12:00:00Z',
         is_finalized: false,
-      }
+      },
     ],
     tasks: [],
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'jury_user', role: 'jury' },
-      
     });
 
     useApp.mockReturnValue({
@@ -64,7 +62,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
           json: async () => ({
             items: [mockStagesChallenge],
             total: 1,
-            pages: 1
+            pages: 1,
           }),
         });
       }
@@ -85,14 +83,14 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('triggers stage creation modal when "+ Add Stage" is clicked and handles submission', async () => {
     render(<AdminPanel />);
-    
+
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
     });
 
     const addStageBtn = screen.getByText('Add Stage');
     expect(addStageBtn).toBeInTheDocument();
-    
+
     fireEvent.click(addStageBtn);
 
     expect(screen.getByText('Create New Stage')).toBeInTheDocument();
@@ -101,14 +99,14 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     const stageNumInput = screen.getByLabelText(/Stage Number/i);
     const startInput = screen.getByLabelText(/Start Time/i);
     const endInput = screen.getByLabelText(/End Time/i);
-    
+
     fireEvent.change(titleInput, { target: { value: 'Stage 2' } });
     fireEvent.change(stageNumInput, { target: { value: '2' } });
     fireEvent.change(startInput, { target: { value: '2026-06-13T10:00' } });
     fireEvent.change(endInput, { target: { value: '2026-06-13T12:00' } });
 
     const submitBtn = screen.getByText('Create Stage');
-    
+
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -121,9 +119,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
           title: 'Stage 2',
           stage_number: 2,
           start_time: '2026-06-13T10:00',
-          end_time: '2026-06-13T12:00'
-        })
-      })
+          end_time: '2026-06-13T12:00',
+        }),
+      }),
     );
 
     expect(mockShowToast).toHaveBeenCalledWith('Stage created successfully!');
@@ -159,9 +157,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
           title: 'Stage 1 Renamed',
           stage_number: 1,
           start_time: '2026-06-13T10:00',
-          end_time: '2026-06-13T12:00'
-        })
-      })
+          end_time: '2026-06-13T12:00',
+        }),
+      }),
     );
 
     expect(mockShowToast).toHaveBeenCalledWith('Stage updated successfully!');
@@ -177,20 +175,22 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
     const stageRow = screen.getByText(/Stage 1\s*:\s*Stage 1/).closest('div').parentElement;
     const deleteBtn = within(stageRow).getByRole('button', { name: 'Delete' });
-    
+
     await act(async () => {
       fireEvent.click(deleteBtn);
     });
 
-    expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Delete Stage',
-    }));
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete Stage',
+      }),
+    );
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/challenges/1/stages/10'),
       expect.objectContaining({
-        method: 'DELETE'
-      })
+        method: 'DELETE',
+      }),
     );
 
     expect(mockShowToast).toHaveBeenCalledWith('Stage "Stage 1" deleted.');
@@ -210,7 +210,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     expect(screen.getByText('Finalize Stage: Stage 1')).toBeInTheDocument();
 
     const submitBtn = screen.getByRole('button', { name: 'Finalize Stage' });
-    
+
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -223,9 +223,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
           finalize_type: 'visible',
           reveal_public: true,
           reveal_private: false,
-          reveal_points: false
-        })
-      })
+          reveal_points: false,
+        }),
+      }),
     );
 
     expect(mockShowToast).toHaveBeenCalledWith('Stage finalized successfully!');

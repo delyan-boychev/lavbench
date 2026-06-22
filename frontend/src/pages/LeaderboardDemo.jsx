@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const NAMES = ['Alpha-Titan', 'Quantum-Falcon', 'Stellar-Voyager', 'Cyber-Phoenix', 'Neon-Warrior',
-  'Pixel-Gladiator', 'Shadow-Ninja', 'Thunder-Dragon', 'Ice-Wizard', 'Blaze-Knight'];
+const NAMES = [
+  'Alpha-Titan',
+  'Quantum-Falcon',
+  'Stellar-Voyager',
+  'Cyber-Phoenix',
+  'Neon-Warrior',
+  'Pixel-Gladiator',
+  'Shadow-Ninja',
+  'Thunder-Dragon',
+  'Ice-Wizard',
+  'Blaze-Knight',
+];
 
 function generateScores() {
   return NAMES.map((name, i) => ({
@@ -19,7 +29,9 @@ export default function LeaderboardDemo() {
 
   const shuffle = () => {
     const prev = {};
-    entries.forEach((e, i) => { prev[e.id] = i; });
+    entries.forEach((e, i) => {
+      prev[e.id] = i;
+    });
     setPrevRanks(prev);
     setEntries(generateScores());
   };
@@ -40,7 +52,9 @@ export default function LeaderboardDemo() {
     <div className="min-h-screen bg-slate-950 p-8 flex flex-col items-center gap-6 animate-fadein">
       <div className="text-center">
         <h1 className="text-2xl font-bold text-white mb-2">Leaderboard Animation Demo</h1>
-        <p className="text-sm text-slate-400">Scores shuffle every 3 seconds — watch the ranks change</p>
+        <p className="text-sm text-slate-400">
+          Scores shuffle every 3 seconds — watch the ranks change
+        </p>
       </div>
 
       <button
@@ -88,19 +102,21 @@ export default function LeaderboardDemo() {
               <div className="w-16 text-center">
                 {delta > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-emerald-400 font-bold text-xs animate-[slideUp_0.5s_ease-out]">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 4l-8 8h5v8h6v-8h5z" />
+                    </svg>
                     {delta}
                   </span>
                 )}
                 {delta < 0 && (
                   <span className="inline-flex items-center gap-0.5 text-rose-400 font-bold text-xs animate-[slideDown_0.5s_ease-out]">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 20l8-8h-5V4H9v8H4z"/></svg>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 20l8-8h-5V4H9v8H4z" />
+                    </svg>
                     {Math.abs(delta)}
                   </span>
                 )}
-                {delta === 0 && (
-                  <span className="text-slate-600 text-xs">—</span>
-                )}
+                {delta === 0 && <span className="text-slate-600 text-xs">—</span>}
               </div>
             </div>
           );

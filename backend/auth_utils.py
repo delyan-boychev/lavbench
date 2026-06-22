@@ -11,6 +11,7 @@ from flask import request, jsonify
 
 logger = logging.getLogger(__name__)
 
+
 def _require_env(key):
     val = os.environ.get(key)
     if not val:
@@ -18,12 +19,15 @@ def _require_env(key):
         sys.exit(1)
     return val
 
+
 def _redis_client():
     try:
         from cache_utils import get_redis_client
+
         return get_redis_client()
     except Exception:
         return None
+
 
 def _redis_exists(key):
     try:
@@ -35,8 +39,10 @@ def _redis_exists(key):
         pass
     return False
 
+
 AUTH_COOKIE_NAME = "auth_token"
 AUTH_COOKIE_MAX_AGE = 86400  # 24 hours
+
 
 def _extract_token():
     # 1. httpOnly cookie (primary method — browser auto-attaches, immune to XSS)
@@ -49,6 +55,7 @@ def _extract_token():
         return token
     return token
 
+
 def set_auth_cookie(response, user_id, role):
     token = generate_token(user_id, role)
     response.set_cookie(
@@ -58,26 +65,23 @@ def set_auth_cookie(response, user_id, role):
         httponly=True,
         samesite="Strict",
         secure=False,  # Set True when behind HTTPS
-        path="/"
+        path="/",
     )
     return token
+
 
 def clear_auth_cookie(response):
     token = _extract_token()
     if token:
         revoke_token(token)
     response.set_cookie(
-        AUTH_COOKIE_NAME,
-        "",
-        max_age=0,
-        httponly=True,
-        samesite="Strict",
-        secure=False,
-        path="/"
+        AUTH_COOKIE_NAME, "", max_age=0, httponly=True, samesite="Strict", secure=False, path="/"
     )
+
 
 # JWT Settings
 SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
+
 
 def generate_token(user_id, role):
     """Create a signed JWT with user id, role, and unique jti for revocation."""
@@ -85,10 +89,11 @@ def generate_token(user_id, role):
         "sub": str(user_id),
         "role": role,
         "jti": uuid.uuid4().hex,
-        "exp": datetime.utcnow() + timedelta(days=1), # Token valid for 24 hours
-        "iat": datetime.utcnow()
+        "exp": datetime.utcnow() + timedelta(days=1),  # Token valid for 24 hours
+        "iat": datetime.utcnow(),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
 
 def revoke_token(token):
     """Add the token's jti to the Redis revocation blacklist for its remaining lifetime."""
@@ -109,9 +114,11 @@ def revoke_token(token):
     except Exception:
         pass
 
+
 def _fetch_current_role(user_id):
     try:
         from models import db, User
+
         if db and db.session:
             user = db.session.get(User, user_id)
             if user:
@@ -119,6 +126,7 @@ def _fetch_current_role(user_id):
     except Exception:
         pass
     return None
+
 
 def verify_token(token):
     """Decode and verify a JWT. Checks revocation blacklist and DB role (live role sync)."""
@@ -142,25 +150,33 @@ def verify_token(token):
     except jwt.InvalidTokenError:
         return None
 
+
 def login_required(f):
     """Decorator: requires a valid JWT (cookie/header). Injects request.user."""
+
     @wraps(f)
     def decorated(*args, **kwargs):
         token = _extract_token()
         user_data = verify_token(token)
         if not user_data:
-            return jsonify({"error": "Unauthorized access. Token is missing, expired, or invalid."}), 401
+            return (
+                jsonify({"error": "Unauthorized access. Token is missing, expired, or invalid."}),
+                401,
+            )
         request.user = user_data
         if not verify_csrf_token():
-            return jsonify({
-                "error": "CSRF token missing or invalid.",
-                "code": "ERR_CSRF_FAILED"
-            }), 403
+            return (
+                jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                403,
+            )
         return f(*args, **kwargs)
+
     return decorated
+
 
 def role_required(allowed_roles):
     """Decorator: requires JWT + role membership in allowed_roles (list of strings)."""
+
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -170,19 +186,23 @@ def role_required(allowed_roles):
                 return jsonify({"error": f"Unauthorized. Requires role: {allowed_roles}"}), 403
             request.user = user_data
             if not verify_csrf_token():
-                return jsonify({
-                    "error": "CSRF token missing or invalid.",
-                    "code": "ERR_CSRF_FAILED"
-                }), 403
+                return (
+                    jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                    403,
+                )
             return f(*args, **kwargs)
+
         return decorated
+
     return decorator
 
 
 # --- Rate limiting ---
 
+
 def rate_limit(max_requests=60, window_seconds=60, per_user=True):
     """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters."""
+
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -190,7 +210,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
             if not r:
                 return f(*args, **kwargs)
             # Build key: rate:user_id:endpoint or rate:ip:endpoint
-            if per_user and hasattr(request, 'user') and request.user:
+            if per_user and hasattr(request, "user") and request.user:
                 identity = str(request.user["user_id"])
             else:
                 identity = request.remote_addr or "127.0.0.1"
@@ -205,18 +225,26 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                 """
                 current = r.eval(lua_script, 1, key, window_seconds)
                 if current > max_requests:
-                    return jsonify({
-                        "error": "Too many requests. Please slow down.",
-                        "code": "ERR_RATE_LIMITED"
-                    }), 429
+                    return (
+                        jsonify(
+                            {
+                                "error": "Too many requests. Please slow down.",
+                                "code": "ERR_RATE_LIMITED",
+                            }
+                        ),
+                        429,
+                    )
             except Exception:
                 pass  # Redis down — allow request through
             return f(*args, **kwargs)
+
         return decorated
+
     return decorator
 
 
 CSRF_COOKIE_NAME = "csrf_token"
+
 
 def generate_csrf_token():
     """Generate a CSRF token and set it as a non-httpOnly cookie."""
@@ -229,16 +257,19 @@ def generate_csrf_token():
         httponly=False,
         samesite="Strict",
         secure=False,
-        path="/"
+        path="/",
     )
     return response
+
 
 def verify_csrf_token():
     """Verify the X-CSRF-Token header matches the csrf_token cookie."""
     if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
         return True
     # Worker endpoints use token auth, skip CSRF
-    if request.headers.get("X-Worker-Token") or request.headers.get("Authorization", "").startswith("Bearer "):
+    if request.headers.get("X-Worker-Token") or request.headers.get("Authorization", "").startswith(
+        "Bearer "
+    ):
         return True
     header_token = request.headers.get("X-CSRF-Token")
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
@@ -246,16 +277,19 @@ def verify_csrf_token():
         return False
     return True
 
+
 def csrf_required(f):
     """Decorator: requires valid CSRF token for non-GET requests."""
+
     @wraps(f)
     def decorated(*args, **kwargs):
         if not verify_csrf_token():
-            return jsonify({
-                "error": "CSRF token missing or invalid.",
-                "code": "ERR_CSRF_FAILED"
-            }), 403
+            return (
+                jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                403,
+            )
         return f(*args, **kwargs)
+
     return decorated
 
 
@@ -266,9 +300,10 @@ def generate_worker_token(submission_id, task_id, expires_in_sec):
         "task_id": task_id,
         "role": "worker_submission",
         "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
-        "iat": datetime.utcnow()
+        "iat": datetime.utcnow(),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
 
 def generate_worker_bootstrap_token(worker_id="worker", expires_in_sec=3600):
     """Create a short-lived JWT for worker bootstrap (active-datasets, hf-key)."""
@@ -277,9 +312,10 @@ def generate_worker_bootstrap_token(worker_id="worker", expires_in_sec=3600):
         "role": "worker_bootstrap",
         "jti": uuid.uuid4().hex,
         "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
-        "iat": datetime.utcnow()
+        "iat": datetime.utcnow(),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
 
 def verify_worker_token(token, submission_id=None, task_id=None):
     """Verify a worker JWT. Optionally scoped to submission_id/task_id."""
@@ -300,5 +336,3 @@ def verify_worker_token(token, submission_id=None, task_id=None):
         return True
     except Exception:
         return False
-
-

@@ -48,28 +48,40 @@ describe('LeaderboardTable Component', () => {
 
   it('renders empty state message when data is empty', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    render(<LeaderboardTable data={[]} tasks={[]} challenge={{ scores_finalized: false }} loading={false} />);
+    render(
+      <LeaderboardTable
+        data={[]}
+        tasks={[]}
+        challenge={{ scores_finalized: false }}
+        loading={false}
+      />,
+    );
     expect(screen.getByText('No scored submissions yet. Be the first!')).toBeInTheDocument();
   });
 
   it('renders participant alias IDs instead of true identity when scores are not finalized', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
     const tasks = [{ id: 1, title: 'Task 1' }];
     const data = [
-      { 
-        rank: 1, 
-        public_score: 0.9876, 
+      {
+        rank: 1,
+        public_score: 0.9876,
         has_submitted: true,
         user: { id: 2, username: 'user_two', alias_id: 'Alias-002', name: 'John', surname: 'Doe' },
-        task_scores: { "1": { public_score: 0.9876 } }
+        task_scores: { 1: { public_score: 0.9876 } },
       },
-      { 
-        rank: 2, 
-        public_score: 0.8523, 
+      {
+        rank: 2,
+        public_score: 0.8523,
         has_submitted: true,
         user: { id: 1, username: 'user_one', alias_id: 'Alias-001', name: 'My', surname: 'Name' },
-        task_scores: { "1": { public_score: 0.8523 } }
+        task_scores: { 1: { public_score: 0.8523 } },
       },
     ];
 
@@ -83,32 +95,40 @@ describe('LeaderboardTable Component', () => {
 
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
     expect(screen.getByText('Alias-002')).toBeInTheDocument();
-    
+
     expect(screen.getAllByText('0.9876').length).toBeGreaterThan(0);
     expect(screen.getAllByText('0.8523').length).toBeGreaterThan(0);
   });
 
   it('reveals true identities, school, grade, and private scores when challenge is finalized and row is expanded', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { 
-      id: 12, 
-      title: 'Challenge A', 
-      scores_finalized: true, 
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: true,
       metric_name: 'Accuracy',
       reveal_public_scores: true,
       reveal_private_scores: true,
-      reveal_points: true 
+      reveal_points: true,
     };
     const tasks = [{ id: 1, title: 'Task 1' }];
     const data = [
-      { 
-        rank: 1, 
-        public_score: 0.9876, 
-        private_score: 0.9912, 
+      {
+        rank: 1,
+        public_score: 0.9876,
+        private_score: 0.9912,
         total_points: 95,
         has_submitted: true,
-        user: { id: 2, username: 'user_two', alias_id: 'Alias-002', name: 'John', surname: 'Doe', school: 'Math High School', grade: '10' },
-        task_scores: { "1": { public_score: 0.9876, private_score: 0.9912 } }
+        user: {
+          id: 2,
+          username: 'user_two',
+          alias_id: 'Alias-002',
+          name: 'John',
+          surname: 'Doe',
+          school: 'Math High School',
+          grade: '10',
+        },
+        task_scores: { 1: { public_score: 0.9876, private_score: 0.9912 } },
       },
     ];
 
@@ -118,7 +138,7 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(expandBtn);
 
     expect(screen.getAllByText('John Doe').length).toBe(2);
-    
+
     expect(screen.getByText('School:')).toBeInTheDocument();
     expect(screen.getByText('Math High School')).toBeInTheDocument();
     expect(screen.getByText('Grade:')).toBeInTheDocument();
@@ -129,9 +149,19 @@ describe('LeaderboardTable Component', () => {
 
   it('allows jury to finalize challenge scores', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 99, role: 'jury' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
     const data = [
-      { rank: 1, public_score: 0.9876, user: { id: 2, username: 'user_two', alias_id: 'Alias-002' }, task_scores: {} },
+      {
+        rank: 1,
+        public_score: 0.9876,
+        user: { id: 2, username: 'user_two', alias_id: 'Alias-002' },
+        task_scores: {},
+      },
     ];
 
     ChallengeService.finalize.mockResolvedValue({ ok: true });
@@ -150,7 +180,7 @@ describe('LeaderboardTable Component', () => {
     expect(ChallengeService.finalize).toHaveBeenCalledWith(12, {
       reveal_public_scores: true,
       reveal_private_scores: true,
-      reveal_points: true
+      reveal_points: true,
     });
 
     await vi.waitFor(() => {
@@ -161,14 +191,20 @@ describe('LeaderboardTable Component', () => {
 
   it('shows baseline badge and hides expand button for baseline entries', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy', double_blind: false };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+      double_blind: false,
+    };
     const data = [
-      { 
-        rank: 1, 
-        public_score: 0.9999, 
+      {
+        rank: 1,
+        public_score: 0.9999,
         is_baseline_entry: true,
         user: { id: 99, username: 'baseline', alias_id: 'BL-001' },
-        task_scores: {}
+        task_scores: {},
       },
     ];
 
@@ -179,12 +215,25 @@ describe('LeaderboardTable Component', () => {
 
   it('shows true name for other users when jury/admin view during blind mode', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy', double_blind: true };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+      double_blind: true,
+    };
     const data = [
-      { 
-        rank: 1, public_score: 0.95,
-        user: { id: 2, username: 'other_user', alias_id: 'Alias-002', name: 'Jane', surname: 'Smith' },
-        task_scores: {}
+      {
+        rank: 1,
+        public_score: 0.95,
+        user: {
+          id: 2,
+          username: 'other_user',
+          alias_id: 'Alias-002',
+          name: 'Jane',
+          surname: 'Smith',
+        },
+        task_scores: {},
       },
     ];
 
@@ -196,10 +245,23 @@ describe('LeaderboardTable Component', () => {
   it('calls onRefresh when refresh button is clicked', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
     const onRefresh = vi.fn();
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
-    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} onRefresh={onRefresh} />);
+    render(
+      <LeaderboardTable
+        data={data}
+        tasks={[]}
+        challenge={challenge}
+        loading={false}
+        onRefresh={onRefresh}
+      />,
+    );
     const refreshBtn = screen.getByTitle('Refresh');
     fireEvent.click(refreshBtn);
     expect(onRefresh).toHaveBeenCalled();
@@ -207,16 +269,34 @@ describe('LeaderboardTable Component', () => {
 
   it('shows normalized badge when isNormalized is true', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
-    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} isNormalized={true} />);
+    render(
+      <LeaderboardTable
+        data={data}
+        tasks={[]}
+        challenge={challenge}
+        loading={false}
+        isNormalized={true}
+      />,
+    );
     expect(screen.getByText('(normalized)')).toBeInTheDocument();
   });
 
   it('shows finalized pill when scores are finalized', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: true, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: true,
+      metric_name: 'Accuracy',
+    };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
@@ -225,16 +305,22 @@ describe('LeaderboardTable Component', () => {
 
   it('renders task tab buttons and switches view on click', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
     const tasks = [
       { id: 10, title: 'Task Alpha' },
       { id: 20, title: 'Task Beta' },
     ];
     const data = [
       {
-        rank: 1, public_score: 0.9,
+        rank: 1,
+        public_score: 0.9,
         user: { id: 1, username: 'me' },
-        task_scores: { "10": { public_score: 0.9 }, "20": { public_score: 0.8 } },
+        task_scores: { 10: { public_score: 0.9 }, 20: { public_score: 0.8 } },
       },
     ];
 
@@ -249,8 +335,15 @@ describe('LeaderboardTable Component', () => {
 
   it('hides finalize button for admin role', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
-    const data = [{ rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} }];
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
+    const data = [
+      { rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} },
+    ];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
     expect(screen.queryByText('Finalize & Reveal Identities')).not.toBeInTheDocument();
@@ -259,10 +352,15 @@ describe('LeaderboardTable Component', () => {
   it('disables finalize button when stages are not finalized', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
     const challenge = {
-      id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy',
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
       stages: [{ id: 1, is_finalized: false }],
     };
-    const data = [{ rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} }];
+    const data = [
+      { rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} },
+    ];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
     expect(screen.getByText('Finalize & Reveal Identities')).toBeDisabled();
@@ -270,8 +368,15 @@ describe('LeaderboardTable Component', () => {
 
   it('finalize modal cancel button closes modal', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
-    const data = [{ rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} }];
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
+    const data = [
+      { rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} },
+    ];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
     fireEvent.click(screen.getByText('Finalize & Reveal Identities'));
@@ -286,8 +391,15 @@ describe('LeaderboardTable Component', () => {
   it('toggles in finalize modal update the submission payload', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
     ChallengeService.finalize.mockResolvedValue({ ok: true });
-    const challenge = { id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy' };
-    const data = [{ rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} }];
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
+    };
+    const data = [
+      { rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} },
+    ];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
     fireEvent.click(screen.getByText('Finalize & Reveal Identities'));
@@ -314,17 +426,31 @@ describe('LeaderboardTable Component', () => {
     ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });
     const onRefresh = vi.fn();
     const challenge = {
-      id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy',
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
       double_blind: false,
     };
     const tasks = [{ id: 10, title: 'Task 1' }];
-    const data = [{
-      rank: 1, public_score: 0.9,
-      user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
-      task_scores: { "10": { public_score: 0.9 } },
-    }];
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
+        task_scores: { 10: { public_score: 0.9 } },
+      },
+    ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} onRefresh={onRefresh} />);
+    render(
+      <LeaderboardTable
+        data={data}
+        tasks={tasks}
+        challenge={challenge}
+        loading={false}
+        onRefresh={onRefresh}
+      />,
+    );
 
     fireEvent.click(screen.getByText('Task 1'));
 
@@ -335,7 +461,7 @@ describe('LeaderboardTable Component', () => {
     await waitFor(() => {
       expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
         user_id: 5,
-        points: { "10": 85 },
+        points: { 10: 85 },
       });
     });
     expect(onRefresh).toHaveBeenCalled();
@@ -344,15 +470,21 @@ describe('LeaderboardTable Component', () => {
   it('shows error toast when save manual points returns invalid input', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
     const challenge = {
-      id: 12, title: 'Challenge A', scores_finalized: false, metric_name: 'Accuracy',
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      metric_name: 'Accuracy',
       double_blind: false,
     };
     const tasks = [{ id: 10, title: 'Task 1' }];
-    const data = [{
-      rank: 1, public_score: 0.9,
-      user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
-      task_scores: { "10": { public_score: 0.9 } },
-    }];
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
+        task_scores: { 10: { public_score: 0.9 } },
+      },
+    ];
 
     render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
     fireEvent.click(screen.getByText('Task 1'));
@@ -362,7 +494,10 @@ describe('LeaderboardTable Component', () => {
     fireEvent.blur(pointsInput);
 
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Points must be an integer between 0 and 100', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Points must be an integer between 0 and 100',
+        'error',
+      );
     });
   });
 });

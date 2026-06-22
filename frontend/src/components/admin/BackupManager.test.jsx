@@ -16,7 +16,10 @@ describe('BackupManager Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.EventSource = class {
-      constructor(url) { this.url = url; this.close = vi.fn(); }
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+      }
     };
   });
 

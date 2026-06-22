@@ -20,7 +20,7 @@ export default function TabScrollContainer({ children }) {
     if (!el) return;
 
     checkScroll();
-    
+
     // Add event listeners
     el.addEventListener('scroll', checkScroll);
     window.addEventListener('resize', checkScroll);
@@ -42,7 +42,7 @@ export default function TabScrollContainer({ children }) {
     const scrollAmount = clientWidth * 0.75; // Scroll 75% of container width
     scrollRef.current.scrollBy({
       left: direction === 'left' ? -scrollAmount : scrollAmount,
-      behavior: 'smooth'
+      behavior: 'smooth',
     });
   };
 
@@ -56,7 +56,13 @@ export default function TabScrollContainer({ children }) {
           className="absolute left-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -ml-3"
           title={t('common.scroll_left')}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -67,16 +73,20 @@ export default function TabScrollContainer({ children }) {
         ref={scrollRef}
         className="w-full flex gap-2 overflow-x-auto scroll-smooth no-scrollbar"
         style={{
-          scrollbarWidth: 'none', /* Firefox */
-          msOverflowStyle: 'none', /* IE 10+ */
+          scrollbarWidth: 'none' /* Firefox */,
+          msOverflowStyle: 'none' /* IE 10+ */,
         }}
       >
         {/* Hide scrollbar for Webkit */}
-        <style dangerouslySetInnerHTML={{__html: `
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
           div::-webkit-scrollbar {
             display: none !important;
           }
-        `}} />
+        `,
+          }}
+        />
         {children}
       </div>
 
@@ -88,7 +98,13 @@ export default function TabScrollContainer({ children }) {
           className="absolute right-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -mr-3"
           title={t('common.scroll_right')}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>

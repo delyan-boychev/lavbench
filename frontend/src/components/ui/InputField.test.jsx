@@ -6,12 +6,7 @@ import InputField from './InputField';
 describe('InputField Component', () => {
   it('renders input with label and placeholder', () => {
     render(
-      <InputField
-        label="Username"
-        placeholder="Enter username"
-        value=""
-        onChange={() => {}}
-      />
+      <InputField label="Username" placeholder="Enter username" value="" onChange={() => {}} />,
     );
     expect(screen.getByLabelText('Username')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Enter username')).toBeInTheDocument();
@@ -23,17 +18,24 @@ describe('InputField Component', () => {
   });
 
   it('displays hint text when provided', () => {
-    render(<InputField label="Password" hint="Must be at least 8 characters" value="" onChange={() => {}} />);
+    render(
+      <InputField
+        label="Password"
+        hint="Must be at least 8 characters"
+        value=""
+        onChange={() => {}}
+      />,
+    );
     expect(screen.getByText('Must be at least 8 characters')).toBeInTheDocument();
   });
 
   it('triggers onChange handler when value changes', () => {
     const handleChange = vi.fn();
     render(<InputField label="Name" value="" onChange={handleChange} />);
-    
+
     const input = screen.getByLabelText('Name');
     fireEvent.change(input, { target: { value: 'John' } });
-    
+
     expect(handleChange).toHaveBeenCalledTimes(1);
   });
 

@@ -16,7 +16,14 @@ vi.mock('../../AuthContext', () => ({
 }));
 
 const mockChallenges = [
-  { id: 1, name: 'Challenge 1', tasks: [{ id: 10, title: 'Task 1' }, { id: 11, title: 'Task 2' }] },
+  {
+    id: 1,
+    name: 'Challenge 1',
+    tasks: [
+      { id: 10, title: 'Task 1' },
+      { id: 11, title: 'Task 2' },
+    ],
+  },
   { id: 2, name: 'Challenge 2', tasks: [{ id: 20, title: 'Task 3' }] },
 ];
 
@@ -33,12 +40,32 @@ function TestConsumer() {
       <span data-testid="toast-show">{String(app.toast.show)}</span>
       <span data-testid="toast-message">{app.toast.message}</span>
       <span data-testid="toast-type">{app.toast.type}</span>
-      <button data-testid="fetch-btn" onClick={app.fetchChallenges}>Fetch</button>
-      <button data-testid="select-challenge" onClick={() => app.setSelectedChallengeById(2)}>Select Challenge 2</button>
-      <button data-testid="select-task" onClick={() => app.setSelectedTask({ id: 20, title: 'Task 3' })}>Select Task</button>
-      <button data-testid="toggle-theme-btn" onClick={app.toggleTheme}>Toggle Theme</button>
-      <button data-testid="toast-btn" onClick={() => app.showToast('Test message', 'error')}>Show Toast</button>
-      <button data-testid="confirm-btn" onClick={async () => { await app.confirm({ title: 'Confirm?', message: 'Are you sure?' }); }}>Confirm</button>
+      <button data-testid="fetch-btn" onClick={app.fetchChallenges}>
+        Fetch
+      </button>
+      <button data-testid="select-challenge" onClick={() => app.setSelectedChallengeById(2)}>
+        Select Challenge 2
+      </button>
+      <button
+        data-testid="select-task"
+        onClick={() => app.setSelectedTask({ id: 20, title: 'Task 3' })}
+      >
+        Select Task
+      </button>
+      <button data-testid="toggle-theme-btn" onClick={app.toggleTheme}>
+        Toggle Theme
+      </button>
+      <button data-testid="toast-btn" onClick={() => app.showToast('Test message', 'error')}>
+        Show Toast
+      </button>
+      <button
+        data-testid="confirm-btn"
+        onClick={async () => {
+          await app.confirm({ title: 'Confirm?', message: 'Are you sure?' });
+        }}
+      >
+        Confirm
+      </button>
     </div>
   );
 }
@@ -47,7 +74,7 @@ function renderWithProvider() {
   return render(
     <AppProvider>
       <TestConsumer />
-    </AppProvider>
+    </AppProvider>,
   );
 }
 
@@ -95,7 +122,9 @@ describe('AppContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('selected-challenge').textContent).toBe('Challenge 1');
     });
-    act(() => { screen.getByTestId('select-challenge').click(); });
+    act(() => {
+      screen.getByTestId('select-challenge').click();
+    });
     await waitFor(() => {
       expect(screen.getByTestId('selected-challenge').textContent).toBe('Challenge 2');
     });
@@ -110,7 +139,9 @@ describe('AppContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('challenges-count').textContent).toBe('2');
     });
-    act(() => { screen.getByTestId('select-task').click(); });
+    act(() => {
+      screen.getByTestId('select-task').click();
+    });
     await waitFor(() => {
       expect(screen.getByTestId('selected-task').textContent).toBe('Task 3');
     });
@@ -122,9 +153,13 @@ describe('AppContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('theme').textContent).toBe('dark');
     });
-    act(() => { screen.getByTestId('toggle-theme-btn').click(); });
+    act(() => {
+      screen.getByTestId('toggle-theme-btn').click();
+    });
     expect(screen.getByTestId('theme').textContent).toBe('light');
-    act(() => { screen.getByTestId('toggle-theme-btn').click(); });
+    act(() => {
+      screen.getByTestId('toggle-theme-btn').click();
+    });
     expect(screen.getByTestId('theme').textContent).toBe('dark');
   });
 
@@ -137,12 +172,16 @@ describe('AppContext', () => {
 
     expect(screen.getByTestId('toast-show').textContent).toBe('false');
 
-    act(() => { screen.getByTestId('toast-btn').click(); });
+    act(() => {
+      screen.getByTestId('toast-btn').click();
+    });
     expect(screen.getByTestId('toast-show').textContent).toBe('true');
     expect(screen.getByTestId('toast-message').textContent).toBe('Test message');
     expect(screen.getByTestId('toast-type').textContent).toBe('error');
 
-    act(() => { vi.advanceTimersByTime(4000); });
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
     expect(screen.getByTestId('toast-show').textContent).toBe('false');
     vi.useRealTimers();
   });
@@ -158,7 +197,7 @@ describe('AppContext', () => {
     render(
       <AppProvider>
         <Capture />
-      </AppProvider>
+      </AppProvider>,
     );
 
     await waitFor(() => {

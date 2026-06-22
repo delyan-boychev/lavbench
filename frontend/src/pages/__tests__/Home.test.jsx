@@ -55,7 +55,7 @@ describe('Home Page', () => {
     render(<Home />);
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
     expect(screen.getByTestId('empty-state')).toHaveTextContent(
-      /No competition selected or active/
+      /No competition selected or active/,
     );
   });
 
@@ -71,9 +71,7 @@ describe('Home Page', () => {
     expect(screen.getByTestId('challenge-overview')).toBeInTheDocument();
     expect(screen.getByTestId('task-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
-    expect(screen.getByTestId('empty-state')).toHaveTextContent(
-      /No task selected/
-    );
+    expect(screen.getByTestId('empty-state')).toHaveTextContent(/No task selected/);
   });
 
   it('renders ChallengeOverview + TaskSidebar + TaskDetail + NotebookSubmit when challenge with tasks is selected', () => {

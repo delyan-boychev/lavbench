@@ -4,12 +4,14 @@ import json
 import pytest
 import tempfile
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services.submission_service import (
-    extract_code_from_cells, extract_code_from_notebook,
-    check_execution_rules, calculate_submission_priority,
-    get_best_submission
+    extract_code_from_cells,
+    extract_code_from_notebook,
+    check_execution_rules,
+    calculate_submission_priority,
+    get_best_submission,
 )
 
 
@@ -36,11 +38,7 @@ class TestExtractCodeFromCells:
         assert result == ["print('hello')"]
 
     def test_mixed_cells(self):
-        cells = [
-            {"source": ["a = 1"]},
-            "b = 2",
-            {"source": ["c = 3"]}
-        ]
+        cells = [{"source": ["a = 1"]}, "b = 2", {"source": ["c = 3"]}]
         result = extract_code_from_cells(cells)
         assert len(result) == 3
 
@@ -61,10 +59,10 @@ class TestExtractCodeFromNotebook:
             "cells": [
                 {"cell_type": "code", "source": ["print('hello')"]},
                 {"cell_type": "markdown", "source": ["# comment"]},
-                {"cell_type": "code", "source": ["x = 1"]}
+                {"cell_type": "code", "source": ["x = 1"]},
             ]
         }
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             json.dump(nb, f)
             fpath = f.name
         try:
@@ -77,7 +75,7 @@ class TestExtractCodeFromNotebook:
 
     def test_no_code_cells(self):
         nb = {"cells": [{"cell_type": "markdown", "source": ["# only comments"]}]}
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             json.dump(nb, f)
             fpath = f.name
         try:
@@ -88,7 +86,7 @@ class TestExtractCodeFromNotebook:
 
     def test_missing_cells_key(self):
         nb = {"metadata": {}}
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             json.dump(nb, f)
             fpath = f.name
         try:
@@ -98,7 +96,7 @@ class TestExtractCodeFromNotebook:
             os.unlink(fpath)
 
     def test_malformed_json(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             f.write("not json")
             fpath = f.name
         try:
@@ -113,7 +111,7 @@ class TestExtractCodeFromNotebook:
 
     def test_code_cell_with_string_source(self):
         nb = {"cells": [{"cell_type": "code", "source": "print('hello')"}]}
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             json.dump(nb, f)
             fpath = f.name
         try:
@@ -124,7 +122,7 @@ class TestExtractCodeFromNotebook:
 
     def test_list_as_cells_value(self):
         nb = {"cells": "not a list"}
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ipynb", delete=False) as f:
             json.dump(nb, f)
             fpath = f.name
         try:

@@ -6,16 +6,16 @@ import { Star } from 'lucide-react';
 import { formatLocalizedDate } from '../../utils/formatDate';
 import { useTranslation } from 'react-i18next';
 
-export default function SubmissionList({ 
-  submissions, 
-  selected, 
-  onSelect, 
+export default function SubmissionList({
+  submissions,
+  selected,
+  onSelect,
   loading,
   page,
   pages,
   total,
   perPage,
-  onPageChange
+  onPageChange,
 }) {
   const { t } = useTranslation();
 
@@ -34,12 +34,23 @@ export default function SubmissionList({
 
   if (!submissions || submissions.length === 0) {
     return (
-      <EmptyState 
-        minHeight={200} 
+      <EmptyState
+        minHeight={200}
         message={t('submissions.none_found')}
         icon={
-          <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" className="text-slate-500">
-            <path strokeLinecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          <svg
+            width="28"
+            height="28"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className="text-slate-500"
+          >
+            <path
+              strokeLinecap="round"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+            />
           </svg>
         }
       />
@@ -52,15 +63,15 @@ export default function SubmissionList({
         {t('submissions.title_with_count', { count: total || submissions.length })}
       </div>
       <div className="flex flex-col gap-1.5">
-        {submissions.map(sub => {
+        {submissions.map((sub) => {
           const isSelected = selected?.id === sub.id;
           return (
             <button
               key={sub.id}
               onClick={() => onSelect(sub)}
               className={`flex flex-col gap-1.5 p-3 rounded-lg text-left w-full transition-all duration-150 border cursor-pointer ${
-                isSelected 
-                  ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100' 
+                isSelected
+                  ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100'
                   : sub.is_final_selection
                     ? 'bg-slate-900/40 border-indigo-500/25 hover:bg-slate-800/60 text-slate-300'
                     : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
@@ -80,9 +91,7 @@ export default function SubmissionList({
               </div>
 
               <div className="flex justify-between items-center gap-2 w-full">
-                <span className="text-xs text-slate-400">
-                  {fmtTime(sub.created_at)}
-                </span>
+                <span className="text-xs text-slate-400">{fmtTime(sub.created_at)}</span>
                 {sub.public_score != null && (
                   <span className="font-mono text-xs font-bold text-indigo-400">
                     {Number(sub.public_score).toFixed(4)}

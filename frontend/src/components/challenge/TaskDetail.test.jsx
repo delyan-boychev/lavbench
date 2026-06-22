@@ -110,12 +110,16 @@ describe('TaskDetail Component', () => {
   it('renders jury custom evaluator notice when evaluator_script_path is present', () => {
     const taskWithCustomEval = {
       ...taskMock,
-      evaluator_script_path: '/path/to/evaluator.py'
+      evaluator_script_path: '/path/to/evaluator.py',
     };
 
     render(<TaskDetail task={taskWithCustomEval} />);
 
     expect(screen.getByText('Jury Custom Evaluator Active')).toBeInTheDocument();
-    expect(screen.getByText(/This task uses a custom evaluator. Please ensure your submission defines the entry-point/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /This task uses a custom evaluator. Please ensure your submission defines the entry-point/,
+      ),
+    ).toBeInTheDocument();
   });
 });

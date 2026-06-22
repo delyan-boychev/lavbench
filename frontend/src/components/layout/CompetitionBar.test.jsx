@@ -21,11 +21,7 @@ vi.mock('../ui/CustomSelect', () => ({
   default: ({ options, value, onChange, placeholder }) => (
     <div data-testid="mock-custom-select">
       <span data-testid="select-placeholder">{placeholder}</span>
-      <select
-        data-testid="select-element"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <select data-testid="select-element" value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
@@ -62,7 +58,7 @@ describe('CompetitionBar Component', () => {
     render(
       <BrowserRouter>
         <CompetitionBar />
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.getByTestId('mock-custom-select')).toBeInTheDocument();
@@ -84,11 +80,11 @@ describe('CompetitionBar Component', () => {
     render(
       <BrowserRouter>
         <CompetitionBar />
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.queryByTestId('mock-custom-select')).not.toBeInTheDocument();
-    
+
     const badge = screen.getByTestId('student-competition-label');
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent('Challenge Alpha');
@@ -109,7 +105,7 @@ describe('CompetitionBar Component', () => {
     render(
       <BrowserRouter>
         <CompetitionBar />
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     const badge = screen.getByTestId('student-competition-label');

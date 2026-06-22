@@ -5,7 +5,6 @@ import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Navbar from './Navbar';
 
-
 // Mock AuthContext
 vi.mock('../../AuthContext', () => ({
   useAuth: vi.fn(),
@@ -44,13 +43,22 @@ describe('Navbar Component', () => {
       showToast: mockShowToast,
     });
     global.EventSource = class {
-      constructor(url) { this.url = url; this.close = vi.fn(); }
+      constructor(url) {
+        this.url = url;
+        this.close = vi.fn();
+      }
     };
   });
 
   it('renders logo and user info when logged in', async () => {
     useAuth.mockReturnValue({
-      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123', name: 'John', surname: 'Doe' },
+      currentUser: {
+        username: 'testuser',
+        role: 'competitor',
+        alias_id: 'Alias-123',
+        name: 'John',
+        surname: 'Doe',
+      },
       logout: mockLogout,
     });
 
@@ -60,7 +68,7 @@ describe('Navbar Component', () => {
     expect(screen.getAllByText('John Doe').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Alias-123').length).toBeGreaterThan(0);
     const badges = screen.getAllByTestId('badge');
-    expect(badges.some(b => b.textContent === 'competitor')).toBe(true);
+    expect(badges.some((b) => b.textContent === 'competitor')).toBe(true);
   });
 
   it('polls worker status endpoint and displays online badge', async () => {
@@ -141,12 +149,21 @@ describe('Navbar Component', () => {
 
     // Simulate SSE with cluster data
     act(() => {
-      eventSourceInstance.onmessage({ data: JSON.stringify({
-        status: 'online',
-        clusters: [
-          { name: 'celery@cpu-worker', type: 'CPU', concurrency: 4, gpu_type: 'N/A', ram_gb: 16, vram_gb: 'N/A' }
-        ]
-      })});
+      eventSourceInstance.onmessage({
+        data: JSON.stringify({
+          status: 'online',
+          clusters: [
+            {
+              name: 'celery@cpu-worker',
+              type: 'CPU',
+              concurrency: 4,
+              gpu_type: 'N/A',
+              ram_gb: 16,
+              vram_gb: 'N/A',
+            },
+          ],
+        }),
+      });
     });
 
     const statusBtn = screen.getByText('Cluster');
@@ -169,7 +186,9 @@ describe('Navbar Component', () => {
       await new Promise((r) => setTimeout(r, 220));
     });
     await vi.waitFor(() => {
-      expect(screen.queryByText('Cluster Info & Active Node Specifications')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Cluster Info & Active Node Specifications'),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -212,15 +231,16 @@ describe('Navbar Component', () => {
       if (url.includes('/api/docs/student')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            title: 'Student Guide',
-            content: 'Student Guide Content'
-          })
+          json: () =>
+            Promise.resolve({
+              title: 'Student Guide',
+              content: 'Student Guide Content',
+            }),
         });
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ status: 'online', clusters: [] })
+        json: () => Promise.resolve({ status: 'online', clusters: [] }),
       });
     });
 
@@ -244,15 +264,16 @@ describe('Navbar Component', () => {
       if (url.includes('/api/docs/student')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            title: 'Student Guide',
-            content: '> [!NOTE]\n> This is a test note.'
-          })
+          json: () =>
+            Promise.resolve({
+              title: 'Student Guide',
+              content: '> [!NOTE]\n> This is a test note.',
+            }),
         });
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ status: 'online', clusters: [] })
+        json: () => Promise.resolve({ status: 'online', clusters: [] }),
       });
     });
 
@@ -278,10 +299,10 @@ describe('Navbar Component', () => {
           start_time: '2026-06-13T10:00:00Z',
           end_time: '2026-06-13T12:00:00Z',
           is_finalized: false,
-        }
-      ]
+        },
+      ],
     };
-    
+
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
       logout: mockLogout,
@@ -318,10 +339,10 @@ describe('Navbar Component', () => {
           start_time: '2026-06-13T10:00:00Z',
           end_time: '2026-06-13T12:00:00Z',
           is_finalized: false,
-        }
-      ]
+        },
+      ],
     };
-    
+
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
       logout: mockLogout,
@@ -358,10 +379,10 @@ describe('Navbar Component', () => {
           start_time: '2026-06-13T10:00:00Z',
           end_time: '2026-06-13T12:00:00Z',
           is_finalized: false,
-        }
-      ]
+        },
+      ],
     };
-    
+
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
       logout: mockLogout,
@@ -398,10 +419,10 @@ describe('Navbar Component', () => {
           start_time: '2026-06-13T10:00:00Z',
           end_time: '2026-06-13T12:00:00Z',
           is_finalized: false,
-        }
-      ]
+        },
+      ],
     };
-    
+
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
       logout: mockLogout,

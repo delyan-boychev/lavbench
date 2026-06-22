@@ -81,12 +81,14 @@ class TestValidateMimeType:
 
 class TestValidateNotebookContent:
     def test_valid_notebook(self):
-        content = json.dumps({
-            "cells": [
-                {"cell_type": "code", "source": ["print('hello')"]},
-                {"cell_type": "markdown", "source": ["# Title"]},
-            ]
-        }).encode()
+        content = json.dumps(
+            {
+                "cells": [
+                    {"cell_type": "code", "source": ["print('hello')"]},
+                    {"cell_type": "markdown", "source": ["# Title"]},
+                ]
+            }
+        ).encode()
         valid, error, notebook = validate_notebook_content(content)
         assert valid is True
         assert error is None
@@ -111,25 +113,19 @@ class TestValidateNotebookContent:
         assert "cells" in error.lower()
 
     def test_cell_missing_required_keys(self):
-        content = json.dumps({
-            "cells": [{"cell_type": "code"}]
-        }).encode()
+        content = json.dumps({"cells": [{"cell_type": "code"}]}).encode()
         valid, error, notebook = validate_notebook_content(content)
         assert valid is False
         assert "missing keys" in error
 
     def test_cell_invalid_type(self):
-        content = json.dumps({
-            "cells": [{"cell_type": "unknown", "source": []}]
-        }).encode()
+        content = json.dumps({"cells": [{"cell_type": "unknown", "source": []}]}).encode()
         valid, error, notebook = validate_notebook_content(content)
         assert valid is False
         assert "invalid cell_type" in error
 
     def test_cell_not_an_object(self):
-        content = json.dumps({
-            "cells": ["string_cell"]
-        }).encode()
+        content = json.dumps({"cells": ["string_cell"]}).encode()
         valid, error, notebook = validate_notebook_content(content)
         assert valid is False
         assert "must be an object" in error

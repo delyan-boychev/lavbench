@@ -8,10 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 export default function LeaderboardView() {
   const { challengeId } = useParams();
-  const { 
-    selectedChallenge, 
-    setSelectedChallengeById 
-  } = useApp();
+  const { selectedChallenge, setSelectedChallengeById } = useApp();
   const { t } = useTranslation();
 
   const [leaderboardData, setLeaderboardData] = useState([]);
@@ -39,13 +36,12 @@ export default function LeaderboardView() {
         setIsNormalized(res.data.is_normalized || false);
       }
     } catch (err) {
-      console.error("Failed to load challenge leaderboard:", err);
+      console.error('Failed to load challenge leaderboard:', err);
     } finally {
       if (showLoading) setLoading(false);
     }
   };
 
-   
   useEffect(() => {
     loadLeaderboard(true); // eslint-disable-line react-hooks/set-state-in-effect
 
@@ -59,10 +55,10 @@ export default function LeaderboardView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
       {selectedChallenge ? (
-        <LeaderboardTable 
-          data={leaderboardData} 
+        <LeaderboardTable
+          data={leaderboardData}
           tasks={tasks}
-          challenge={selectedChallenge} 
+          challenge={selectedChallenge}
           loading={loading}
           metricName={metricName}
           isNormalized={isNormalized}

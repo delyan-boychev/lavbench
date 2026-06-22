@@ -1,8 +1,16 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-export default function SidebarNav({ adminSubTab, setAdminSubTab, currentUser,
-  setIsCreatingTask, setEditingTask, setIsCreatingStage, setEditingStage, setFinalizingStage }) {
+export default function SidebarNav({
+  adminSubTab,
+  setAdminSubTab,
+  currentUser,
+  setIsCreatingTask,
+  setEditingTask,
+  setIsCreatingStage,
+  setEditingStage,
+  setFinalizingStage,
+}) {
   const { t } = useTranslation();
 
   const resetSubViews = () => {
@@ -27,35 +35,71 @@ export default function SidebarNav({ adminSubTab, setAdminSubTab, currentUser,
       </h2>
 
       {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-        <button onClick={() => { setAdminSubTab('competition-mgmt'); resetSubViews(); }} className={btnClass('competition-mgmt')}>
+        <button
+          onClick={() => {
+            setAdminSubTab('competition-mgmt');
+            resetSubViews();
+          }}
+          className={btnClass('competition-mgmt')}
+        >
           {t('admin.manage_competitions')}
         </button>
       )}
 
       {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-        <button onClick={() => { setAdminSubTab('challenge-config'); resetSubViews(); }} className={btnClass('challenge-config')}>
+        <button
+          onClick={() => {
+            setAdminSubTab('challenge-config');
+            resetSubViews();
+          }}
+          className={btnClass('challenge-config')}
+        >
           {t('admin.create_competition')}
         </button>
       )}
 
-      <button onClick={() => { setAdminSubTab('competitor-reg'); resetSubViews(); }} className={btnClass('competitor-reg')}>
+      <button
+        onClick={() => {
+          setAdminSubTab('competitor-reg');
+          resetSubViews();
+        }}
+        className={btnClass('competitor-reg')}
+      >
         {t('admin.competitor_registrations')}
       </button>
 
       {currentUser.role === 'admin' && (
-        <button onClick={() => { setAdminSubTab('backups'); resetSubViews(); }} className={btnClass('backups')}>
+        <button
+          onClick={() => {
+            setAdminSubTab('backups');
+            resetSubViews();
+          }}
+          className={btnClass('backups')}
+        >
           {t('admin.database_backup')}
         </button>
       )}
 
       {currentUser.role === 'admin' && (
-        <button onClick={() => { setAdminSubTab('user-management'); resetSubViews(); }} className={btnClass('user-management')}>
+        <button
+          onClick={() => {
+            setAdminSubTab('user-management');
+            resetSubViews();
+          }}
+          className={btnClass('user-management')}
+        >
           {t('admin.user_management')}
         </button>
       )}
 
       {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-        <button onClick={() => { setAdminSubTab('workers-stats'); resetSubViews(); }} className={btnClass('workers-stats')}>
+        <button
+          onClick={() => {
+            setAdminSubTab('workers-stats');
+            resetSubViews();
+          }}
+          className={btnClass('workers-stats')}
+        >
           {t('admin.workers_resources')}
         </button>
       )}

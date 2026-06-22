@@ -36,7 +36,9 @@ describe('TaskSidebar Component', () => {
     // Check Task 1
     expect(screen.getByText('Task #1')).toBeInTheDocument();
     expect(screen.getByText('Task Alpha')).toBeInTheDocument();
-    expect(screen.getByText('First task description with markdown formatting.')).toBeInTheDocument(); // stripped markdown
+    expect(
+      screen.getByText('First task description with markdown formatting.'),
+    ).toBeInTheDocument(); // stripped markdown
     expect(screen.getByText('2')).toBeInTheDocument();
 
     // Check Task 2

@@ -6,7 +6,7 @@ import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import create_app
 from models import db, User, Challenge, Task, Submission
@@ -19,16 +19,16 @@ class TestRunBackup:
     @pytest.fixture(autouse=True)
     def setup(self):
         self.app = create_app()
-        self.app.config['TESTING'] = True
-        self.app.config['UPLOAD_FOLDER'] = '/tmp/test_uploads'
-        os.makedirs(self.app.config['UPLOAD_FOLDER'], exist_ok=True)
+        self.app.config["TESTING"] = True
+        self.app.config["UPLOAD_FOLDER"] = "/tmp/test_uploads"
+        os.makedirs(self.app.config["UPLOAD_FOLDER"], exist_ok=True)
 
     def _ctx(self):
         return self.app.app_context()
 
-    @patch('task_modules.system.subprocess.run')
-    @patch('task_modules.system.os.makedirs')
-    @patch('task_modules.system.os.path.getsize')
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
+    @patch("task_modules.system.os.path.getsize")
     def test_run_backup_auto(self, mock_getsize, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -38,9 +38,9 @@ class TestRunBackup:
         assert filename is not None
         assert filename.startswith("auto_")
 
-    @patch('task_modules.system.subprocess.run')
-    @patch('task_modules.system.os.makedirs')
-    @patch('task_modules.system.os.path.getsize')
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
+    @patch("task_modules.system.os.path.getsize")
     def test_run_backup_manual(self, mock_getsize, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 0
         mock_getsize.return_value = 1024
@@ -48,9 +48,9 @@ class TestRunBackup:
             filename = run_backup(self.app, auto=False)
         assert filename.startswith("manual_")
 
-    @patch('task_modules.system.subprocess.run')
-    @patch('task_modules.system.os.makedirs')
-    @patch('task_modules.system.os.path.getsize')
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
+    @patch("task_modules.system.os.path.getsize")
     def test_run_backup_with_challenge_and_state(self, mock_getsize, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 0
         mock_getsize.return_value = 1024
@@ -59,8 +59,8 @@ class TestRunBackup:
         assert "grace_ended" in filename
         mock_makedirs.assert_any_call("/backups/challenge_42", exist_ok=True)
 
-    @patch('task_modules.system.subprocess.run')
-    @patch('task_modules.system.os.makedirs')
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
     def test_run_backup_pg_dump_failure(self, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "connection refused"
@@ -69,11 +69,11 @@ class TestRunBackup:
                 run_backup(self.app)
         assert "pg_dump failed" in str(ctx.value)
 
-    @patch('task_modules.system.subprocess.run')
-    @patch('task_modules.system.os.makedirs')
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
     def test_run_backup_tar_failure(self, mock_makedirs, mock_run):
         def side_effect(*args, **kwargs):
-            if 'pg_dump' in args[0]:
+            if "pg_dump" in args[0]:
                 result = MagicMock()
                 result.returncode = 0
                 return result
@@ -81,6 +81,7 @@ class TestRunBackup:
             result.returncode = 1
             result.stderr = "tar error"
             return result
+
         mock_run.side_effect = side_effect
         with self._ctx():
             with pytest.raises(RuntimeError) as ctx:
@@ -89,16 +90,17 @@ class TestRunBackup:
 
 
 class TestRunRegisterWorkerSpecs:
-    @patch('task_modules.system.requests.post')
-    @patch('task_modules.system.os.environ.get')
+    @patch("task_modules.system.requests.post")
+    @patch("task_modules.system.os.environ.get")
     def test_register_cpu_worker(self, mock_getenv, mock_post):
         def getenv_side_effect(key, default=None):
             env = {
                 "WORKER_GPU_ID": None,
                 "HOSTNAME": "worker-01",
-                "API_BASE": "http://localhost:5001/api"
+                "API_BASE": "http://localhost:5001/api",
             }
             return env.get(key, default)
+
         mock_getenv.side_effect = getenv_side_effect
         mock_celery = MagicMock()
         run_register_worker_specs(mock_celery)
@@ -107,23 +109,24 @@ class TestRunRegisterWorkerSpecs:
         assert payload["worker_id"] == "worker-01"
         assert payload["gpu_count"] == 0
 
-    @patch('task_modules.system.requests.post')
-    @patch('task_modules.system.os.environ.get')
+    @patch("task_modules.system.requests.post")
+    @patch("task_modules.system.os.environ.get")
     def test_register_gpu_worker(self, mock_getenv, mock_post):
         def getenv_side_effect(key, default=None):
             env = {
                 "WORKER_GPU_ID": "0",
                 "HOSTNAME": "gpu-box",
-                "API_BASE": "http://localhost:5001/api"
+                "API_BASE": "http://localhost:5001/api",
             }
             return env.get(key, default)
+
         mock_getenv.side_effect = getenv_side_effect
         mock_celery = MagicMock()
         run_register_worker_specs(mock_celery)
         payload = mock_post.call_args[1]["json"]
         assert "gpu" in payload["worker_id"]
 
-    @patch('task_modules.system.requests.post')
+    @patch("task_modules.system.requests.post")
     def test_register_handles_timeout(self, mock_post):
         mock_post.side_effect = Exception("timeout")
         mock_celery = MagicMock()
@@ -135,6 +138,7 @@ class TestCheckAndBackup:
     def setup(self, app, db_session, redis_flush):
         self.app = app
         import tasks
+
         tasks.app = app
         self.seed_basic_data()
 
@@ -145,7 +149,7 @@ class TestCheckAndBackup:
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=48),
             end_time=datetime.utcnow() + timedelta(hours=2),
-            is_frozen=False
+            is_frozen=False,
         )
         db.session.add(self.challenge)
         db.session.commit()
@@ -173,7 +177,7 @@ class TestAdminBackupEndpoints:
             username="backup_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Admin-Backup"
+            alias_id="Admin-Backup",
         )
         db.session.add(self.admin)
         db.session.commit()
@@ -183,7 +187,7 @@ class TestAdminBackupEndpoints:
             username="normal_user",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
-            alias_id="User-001"
+            alias_id="User-001",
         )
         db.session.add(self.user)
         db.session.commit()
@@ -193,17 +197,11 @@ class TestAdminBackupEndpoints:
         return {"Authorization": f"Bearer {token}"}
 
     def test_list_backups_admin_access(self):
-        resp = self.client.get(
-            "/api/admin/backups",
-            headers=self._auth(self.admin_token)
-        )
+        resp = self.client.get("/api/admin/backups", headers=self._auth(self.admin_token))
         assert resp.status_code == 200
 
     def test_list_backups_competitor_forbidden(self):
-        resp = self.client.get(
-            "/api/admin/backups",
-            headers=self._auth(self.user_token)
-        )
+        resp = self.client.get("/api/admin/backups", headers=self._auth(self.user_token))
         assert resp.status_code == 403
 
     def test_list_backups_unauthenticated(self):
@@ -211,43 +209,33 @@ class TestAdminBackupEndpoints:
         assert resp.status_code == 403
 
     def test_force_backup_admin_access(self):
-        resp = self.client.post(
-            "/api/admin/backups/force",
-            headers=self._auth(self.admin_token)
-        )
+        resp = self.client.post("/api/admin/backups/force", headers=self._auth(self.admin_token))
         assert resp.status_code not in (403, 401)
 
     def test_force_backup_competitor_forbidden(self):
-        resp = self.client.post(
-            "/api/admin/backups/force",
-            headers=self._auth(self.user_token)
-        )
+        resp = self.client.post("/api/admin/backups/force", headers=self._auth(self.user_token))
         assert resp.status_code == 403
 
     def test_download_backup_not_found(self):
         resp = self.client.get(
-            "/api/admin/backups/nonexistent.tar.gz/download",
-            headers=self._auth(self.admin_token)
+            "/api/admin/backups/nonexistent.tar.gz/download", headers=self._auth(self.admin_token)
         )
         assert resp.status_code == 404
 
     def test_download_backup_competitor_forbidden(self):
         resp = self.client.get(
-            "/api/admin/backups/test.tar.gz/download",
-            headers=self._auth(self.user_token)
+            "/api/admin/backups/test.tar.gz/download", headers=self._auth(self.user_token)
         )
         assert resp.status_code == 403
 
     def test_delete_backup_not_found(self):
         resp = self.client.delete(
-            "/api/admin/backups/delete/nonexistent.tar.gz",
-            headers=self._auth(self.admin_token)
+            "/api/admin/backups/delete/nonexistent.tar.gz", headers=self._auth(self.admin_token)
         )
         assert resp.status_code == 404
 
     def test_delete_backup_competitor_forbidden(self):
         resp = self.client.delete(
-            "/api/admin/backups/delete/test.tar.gz",
-            headers=self._auth(self.user_token)
+            "/api/admin/backups/delete/test.tar.gz", headers=self._auth(self.user_token)
         )
         assert resp.status_code == 403

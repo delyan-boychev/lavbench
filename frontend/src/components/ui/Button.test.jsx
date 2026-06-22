@@ -18,11 +18,15 @@ describe('Button Component', () => {
 
   it('does not trigger onClick when disabled', () => {
     const handleClick = vi.fn();
-    render(<Button onClick={handleClick} disabled={true}>Click me</Button>);
-    
+    render(
+      <Button onClick={handleClick} disabled={true}>
+        Click me
+      </Button>,
+    );
+
     const button = screen.getByText('Click me');
     expect(button).toBeDisabled();
-    
+
     fireEvent.click(button);
     expect(handleClick).not.toHaveBeenCalled();
   });
@@ -40,7 +44,11 @@ describe('Button Component', () => {
   });
 
   it('passes title and custom className properties', () => {
-    render(<Button title="Button Title" className="custom-class">Test</Button>);
+    render(
+      <Button title="Button Title" className="custom-class">
+        Test
+      </Button>,
+    );
     const button = screen.getByText('Test');
     expect(button).toHaveAttribute('title', 'Button Title');
     expect(button).toHaveClass('custom-class');

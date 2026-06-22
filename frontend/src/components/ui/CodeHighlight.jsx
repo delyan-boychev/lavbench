@@ -11,15 +11,18 @@ function sanitizePrismOutput(html) {
     .replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
     .replace(/\bon\w+\s*=\s*'[^']*'/gi, '')
     .replace(/\bon\w+\s*=[^\s>]*/gi, '')
-    .replace(/<(\/?)(script|iframe|object|embed|form|input|textarea|select|button|link|meta|style|base|applet|audio|video|source|track|area|map|param|noscript|slot|template|portal)[^>]*>/gi, '<$1span>');
+    .replace(
+      /<(\/?)(script|iframe|object|embed|form|input|textarea|select|button|link|meta|style|base|applet|audio|video|source|track|area|map|param|noscript|slot|template|portal)[^>]*>/gi,
+      '<$1span>',
+    );
 }
 
-export default function CodeHighlight({ 
-  code = '', 
-  language = 'python', 
-  maxHeight = 'none', 
+export default function CodeHighlight({
+  code = '',
+  language = 'python',
+  maxHeight = 'none',
   wrap = true,
-  style = {}
+  style = {},
 }) {
   const highlighted = useMemo(() => {
     try {
@@ -40,12 +43,12 @@ export default function CodeHighlight({
     overflowX: 'auto',
     ...(maxHeight ? { maxHeight, overflowY: 'auto' } : {}),
     ...(wrap ? { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } : {}),
-    ...style
+    ...style,
   };
 
   if (!highlighted) {
     return (
-      <pre className="code-panel" style={/** @type {React.CSSProperties} */(preStyle)}>
+      <pre className="code-panel" style={/** @type {React.CSSProperties} */ (preStyle)}>
         {code}
       </pre>
     );
@@ -54,11 +57,11 @@ export default function CodeHighlight({
   const codeStyle = wrap ? { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } : {};
 
   return (
-    <pre className="code-panel" style={/** @type {React.CSSProperties} */(preStyle)}>
-      <code 
-        className={`language-${language}`} 
-        style={/** @type {React.CSSProperties} */(codeStyle)}
-        dangerouslySetInnerHTML={{ __html: highlighted }} 
+    <pre className="code-panel" style={/** @type {React.CSSProperties} */ (preStyle)}>
+      <code
+        className={`language-${language}`}
+        style={/** @type {React.CSSProperties} */ (codeStyle)}
+        dangerouslySetInnerHTML={{ __html: highlighted }}
       />
     </pre>
   );

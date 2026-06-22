@@ -11,13 +11,21 @@ const SIZES = {
   '2xl': 'max-w-7xl',
 };
 
-export default function Modal({ isOpen, onClose, title, children, size = 'md', footer, bodyScrollable = true }) {
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  size = 'md',
+  footer,
+  bodyScrollable = true,
+}) {
   const { t } = useTranslation();
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [animateShow, setAnimateShow] = useState(false);
 
   // Handle opening and closing transition state
-   
+
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
@@ -33,7 +41,9 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
   // Close on Escape key
   useEffect(() => {
     if (!isOpen) return;
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
@@ -56,19 +66,19 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
   if (!shouldRender) return null;
 
   return createPortal(
-    <div 
+    <div
       className={`fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 md:p-10 overflow-hidden transition-opacity duration-200 ${
         animateShow ? 'opacity-100' : 'opacity-0'
-      }`} 
+      }`}
       onClick={onClose}
     >
-      <div 
+      <div
         className={`bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-h-[90vh] flex flex-col ${
           SIZES[size] || SIZES.md
         } transform transition-all duration-200 ${
           animateShow ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
         }`}
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-800 flex-shrink-0">
@@ -77,13 +87,17 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
             onClick={onClose}
             className="text-slate-400 hover:text-slate-200 cursor-pointer text-lg p-1.5 rounded-lg hover:bg-slate-800 leading-none transition-colors"
             title={t('common.close')}
-          ><X size={20} /></button>
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* Body */}
-        <div className={`p-6 flex-1 flex flex-col min-h-0 text-slate-300 ${
-          bodyScrollable ? 'overflow-y-auto overscroll-contain scrollbar-thin' : 'overflow-hidden'
-        }`}>
+        <div
+          className={`p-6 flex-1 flex flex-col min-h-0 text-slate-300 ${
+            bodyScrollable ? 'overflow-y-auto overscroll-contain scrollbar-thin' : 'overflow-hidden'
+          }`}
+        >
           {children}
         </div>
 
@@ -95,6 +109,6 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
         )}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

@@ -6,14 +6,30 @@ vi.mock('../../ui/InputField', () => ({
   default: ({ label, value, onChange, type, placeholder, required, className }) => (
     <div data-testid="input-field">
       {label && <label>{label}</label>}
-      <input data-testid="input" type={type || 'text'} value={value} onChange={onChange} placeholder={placeholder} required={required} className={className} />
+      <input
+        data-testid="input"
+        type={type || 'text'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+        className={className}
+      />
     </div>
   ),
 }));
 
 vi.mock('../../ui/Button', () => ({
   default: ({ children, type, variant, className, disabled, size }) => (
-    <button type={type} data-variant={variant} data-size={size} className={className} disabled={disabled}>{children}</button>
+    <button
+      type={type}
+      data-variant={variant}
+      data-size={size}
+      className={className}
+      disabled={disabled}
+    >
+      {children}
+    </button>
   ),
 }));
 
@@ -22,7 +38,11 @@ vi.mock('../../ui/SelectField', () => ({
     <div data-testid="select-field">
       <label>{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)} required={required}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
       </select>
     </div>
   ),
@@ -40,7 +60,9 @@ vi.mock('../../ui/ToggleField', () => ({
 vi.mock('../../ui/Pagination', () => ({
   default: ({ page, pages, total, onPageChange, itemName: _itemName }) => (
     <div data-testid="pagination">
-      <span data-testid="page-info">{page}/{pages}</span>
+      <span data-testid="page-info">
+        {page}/{pages}
+      </span>
       <span data-testid="total">{total}</span>
       <button onClick={() => onPageChange(page + 1)}>Next</button>
     </div>
@@ -51,7 +73,12 @@ vi.mock('../../ui/FileUploader', () => ({
   default: ({ files: _files, onChange, accept, label, required }) => (
     <div data-testid="file-uploader">
       <span>{label}</span>
-      <input type="file" accept={accept} onChange={(e) => onChange(e.target.files)} required={required} />
+      <input
+        type="file"
+        accept={accept}
+        onChange={(e) => onChange(e.target.files)}
+        required={required}
+      />
     </div>
   ),
 }));
@@ -61,14 +88,32 @@ import CompetitorManager from '../CompetitorManager';
 const baseProps = {
   editingUser: null,
   setEditingUser: vi.fn(),
-  editUserForm: { name: '', surname: '', grade: '', school: '', city: '', username: '', email: '', challenge_id: '', is_anonymous: false },
+  editUserForm: {
+    name: '',
+    surname: '',
+    grade: '',
+    school: '',
+    city: '',
+    username: '',
+    email: '',
+    challenge_id: '',
+    is_anonymous: false,
+  },
   setEditUserForm: vi.fn(),
-  handleUpdateUserSubmit: vi.fn(e => e.preventDefault()),
+  handleUpdateUserSubmit: vi.fn((e) => e.preventDefault()),
   challenges: [{ id: 1, title: 'Challenge 1' }],
   isEditDisabled: false,
-  newCompetitor: { name: '', surname: '', grade: '', school: '', city: '', challenge_id: '', is_anonymous: false },
+  newCompetitor: {
+    name: '',
+    surname: '',
+    grade: '',
+    school: '',
+    city: '',
+    challenge_id: '',
+    is_anonymous: false,
+  },
   setNewCompetitor: vi.fn(),
-  handleRegisterCompetitor: vi.fn(e => e.preventDefault()),
+  handleRegisterCompetitor: vi.fn((e) => e.preventDefault()),
   isManualRegisterDisabled: false,
   generatedCredentials: null,
   csvChallengeId: '',
@@ -77,7 +122,7 @@ const baseProps = {
   setCsvFile: vi.fn(),
   csvImporting: false,
   isCSVImportDisabled: false,
-  handleCSVImport: vi.fn(e => e.preventDefault()),
+  handleCSVImport: vi.fn((e) => e.preventDefault()),
   importedCompetitors: [],
   resetCredentials: null,
   setResetCredentials: vi.fn(),
@@ -121,7 +166,17 @@ describe('CompetitorManager', () => {
   });
 
   it('shows generated credentials when provided', () => {
-    render(<CompetitorManager {...baseProps} generatedCredentials={{ username: 'newuser', password: 'pass123', name: 'John', surname: 'Doe' }} />);
+    render(
+      <CompetitorManager
+        {...baseProps}
+        generatedCredentials={{
+          username: 'newuser',
+          password: 'pass123',
+          name: 'John',
+          surname: 'Doe',
+        }}
+      />,
+    );
     expect(screen.getByText('newuser')).toBeInTheDocument();
     expect(screen.getByText('pass123')).toBeInTheDocument();
   });
@@ -138,7 +193,18 @@ describe('CompetitorManager', () => {
 
   it('shows registered competitors table when list is non-empty', () => {
     const competitors = [
-      { id: 1, alias_id: 'A001', name: 'Bob', surname: 'Jones', school: 'High School', grade: '10', city: 'NY', username: 'bobj', is_anonymous: false, challenge_id: 1 },
+      {
+        id: 1,
+        alias_id: 'A001',
+        name: 'Bob',
+        surname: 'Jones',
+        school: 'High School',
+        grade: '10',
+        city: 'NY',
+        username: 'bobj',
+        is_anonymous: false,
+        challenge_id: 1,
+      },
     ];
     render(<CompetitorManager {...baseProps} competitorsList={competitors} />);
     expect(screen.getByText('A001')).toBeInTheDocument();
@@ -153,29 +219,44 @@ describe('CompetitorManager', () => {
 
   it('shows competition started warning when manual register is disabled', () => {
     render(<CompetitorManager {...baseProps} isManualRegisterDisabled={true} />);
-    expect(screen.getByText('This competition has started. Jury members cannot modify competitors.')).toBeInTheDocument();
+    expect(
+      screen.getByText('This competition has started. Jury members cannot modify competitors.'),
+    ).toBeInTheDocument();
   });
 
   it('shows competition started warning when CSV import is disabled', () => {
     render(<CompetitorManager {...baseProps} isCSVImportDisabled={true} />);
-    expect(screen.getByText('This competition has started. Jury members cannot import competitors.')).toBeInTheDocument();
+    expect(
+      screen.getByText('This competition has started. Jury members cannot import competitors.'),
+    ).toBeInTheDocument();
   });
 
   it('shows competition started warning when edit is disabled', () => {
-    render(<CompetitorManager {...baseProps} editingUser={{ id: 1, username: 'testuser' }} isEditDisabled={true} />);
-    expect(screen.getByText('This competition has started. Jury members cannot modify competitors.')).toBeInTheDocument();
+    render(
+      <CompetitorManager
+        {...baseProps}
+        editingUser={{ id: 1, username: 'testuser' }}
+        isEditDisabled={true}
+      />,
+    );
+    expect(
+      screen.getByText('This competition has started. Jury members cannot modify competitors.'),
+    ).toBeInTheDocument();
   });
 
   it('shows password reset credentials when provided', () => {
-    render(<CompetitorManager {...baseProps} resetCredentials={{ username: 'reset_user', password: 'new_pass' }} />);
+    render(
+      <CompetitorManager
+        {...baseProps}
+        resetCredentials={{ username: 'reset_user', password: 'new_pass' }}
+      />,
+    );
     expect(screen.getByText('reset_user')).toBeInTheDocument();
     expect(screen.getByText('new_pass')).toBeInTheDocument();
   });
 
   it('shows bulk reset credentials table when list is non-empty', () => {
-    const bulk = [
-      { name: 'User1', surname: 'Test', username: 'u1', password: 'p1' },
-    ];
+    const bulk = [{ name: 'User1', surname: 'Test', username: 'u1', password: 'p1' }];
     render(<CompetitorManager {...baseProps} bulkResetCredentials={bulk} />);
     expect(screen.getByText(/User1/)).toBeInTheDocument();
     expect(screen.getByText(/Test/)).toBeInTheDocument();
@@ -183,9 +264,25 @@ describe('CompetitorManager', () => {
 
   it('renders pagination info for competitors list', () => {
     const competitors = Array.from({ length: 10 }, (_, i) => ({
-      id: i, alias_id: `A${i}`, name: `User${i}`, surname: '', school: '', grade: '', city: '', username: '', is_anonymous: false, challenge_id: 1,
+      id: i,
+      alias_id: `A${i}`,
+      name: `User${i}`,
+      surname: '',
+      school: '',
+      grade: '',
+      city: '',
+      username: '',
+      is_anonymous: false,
+      challenge_id: 1,
     }));
-    render(<CompetitorManager {...baseProps} competitorsList={competitors} competitorsPages={3} competitorsTotal={25} />);
+    render(
+      <CompetitorManager
+        {...baseProps}
+        competitorsList={competitors}
+        competitorsPages={3}
+        competitorsTotal={25}
+      />,
+    );
     expect(screen.getByText('1/3')).toBeInTheDocument();
     expect(screen.getByText('25')).toBeInTheDocument();
   });
@@ -196,13 +293,30 @@ describe('CompetitorManager', () => {
   });
 
   it('hides reset all passwords button for jury when challenge started', () => {
-    render(<CompetitorManager {...baseProps} currentUser={{ role: 'jury' }} isChallengeStarted={() => true} />);
+    render(
+      <CompetitorManager
+        {...baseProps}
+        currentUser={{ role: 'jury' }}
+        isChallengeStarted={() => true}
+      />,
+    );
     expect(screen.queryByText('Reset All Passwords in Challenge')).not.toBeInTheDocument();
   });
 
   it('shows edit and reset password buttons for each competitor', () => {
     const competitors = [
-      { id: 1, alias_id: 'A001', name: 'Bob', surname: 'Jones', school: '', grade: '', city: '', username: 'bobj', is_anonymous: false, challenge_id: 1 },
+      {
+        id: 1,
+        alias_id: 'A001',
+        name: 'Bob',
+        surname: 'Jones',
+        school: '',
+        grade: '',
+        city: '',
+        username: 'bobj',
+        is_anonymous: false,
+        challenge_id: 1,
+      },
     ];
     render(<CompetitorManager {...baseProps} competitorsList={competitors} />);
     expect(screen.getByText('Edit')).toBeInTheDocument();
@@ -210,17 +324,19 @@ describe('CompetitorManager', () => {
   });
 
   it('calls handleRegisterCompetitor on form submit', () => {
-    const handleRegisterCompetitor = vi.fn(e => e.preventDefault());
-    render(<CompetitorManager {...baseProps} handleRegisterCompetitor={handleRegisterCompetitor} />);
-    const forms = screen.getAllByText('Generate Credentials').map(el => el.closest('form'));
+    const handleRegisterCompetitor = vi.fn((e) => e.preventDefault());
+    render(
+      <CompetitorManager {...baseProps} handleRegisterCompetitor={handleRegisterCompetitor} />,
+    );
+    const forms = screen.getAllByText('Generate Credentials').map((el) => el.closest('form'));
     fireEvent.submit(forms[0]);
     expect(handleRegisterCompetitor).toHaveBeenCalled();
   });
 
   it('calls handleCSVImport on CSV form submit', () => {
-    const handleCSVImport = vi.fn(e => e.preventDefault());
+    const handleCSVImport = vi.fn((e) => e.preventDefault());
     render(<CompetitorManager {...baseProps} handleCSVImport={handleCSVImport} />);
-    const forms = screen.getAllByText('Upload & Parse CSV').map(el => el.closest('form'));
+    const forms = screen.getAllByText('Upload & Parse CSV').map((el) => el.closest('form'));
     fireEvent.submit(forms[0]);
     expect(handleCSVImport).toHaveBeenCalled();
   });

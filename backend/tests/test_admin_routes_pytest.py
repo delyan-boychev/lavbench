@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, User, Challenge
 from auth_utils import generate_token
@@ -21,10 +21,7 @@ class TestGetAvailableMetrics:
         self.admin_token = generate_token(self.admin.id, role="admin")
 
     def test_returns_available_metrics(self, client, auth_headers):
-        resp = client.get(
-            "/api/admin/metrics",
-            headers=auth_headers(self.admin_token)
-        )
+        resp = client.get("/api/admin/metrics", headers=auth_headers(self.admin_token))
         assert resp.status_code == 200
         data = resp.get_json()
         assert isinstance(data, dict)
@@ -43,10 +40,7 @@ class TestGetAvailableMetrics:
         db_session.add(comp)
         db_session.commit()
         token = generate_token(comp.id, role="competitor")
-        resp = client.get(
-            "/api/admin/metrics",
-            headers=auth_headers(token)
-        )
+        resp = client.get("/api/admin/metrics", headers=auth_headers(token))
         assert resp.status_code == 403
 
 
@@ -54,17 +48,21 @@ class TestRegisterUser:
     @pytest.fixture(autouse=True)
     def _setup(self, db_session, redis_flush):
         self.challenge = Challenge(
-            title="Reg Test", description="Test", max_eval_requests=5,
+            title="Reg Test",
+            description="Test",
+            max_eval_requests=5,
             start_time=datetime.utcnow() + timedelta(hours=24),
             end_time=datetime.utcnow() + timedelta(hours=72),
-            is_frozen=False
+            is_frozen=False,
         )
         db_session.add(self.challenge)
         self.started_challenge = Challenge(
-            title="Started", description="Test", max_eval_requests=5,
+            title="Started",
+            description="Test",
+            max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=24),
-            is_frozen=False
+            is_frozen=False,
         )
         db_session.add(self.started_challenge)
         self.admin = User(username="admin1", password_hash="x", role="admin", alias_id="A1")
@@ -72,8 +70,11 @@ class TestRegisterUser:
         self.jury = User(username="jury1", password_hash="x", role="jury", alias_id="J1")
         db_session.add(self.jury)
         self.existing = User(
-            username="existing_user", password_hash="x", role="competitor",
-            alias_id="EX1", challenge_id=self.challenge.id
+            username="existing_user",
+            password_hash="x",
+            role="competitor",
+            alias_id="EX1",
+            challenge_id=self.challenge.id,
         )
         db_session.add(self.existing)
         db_session.commit()
@@ -87,10 +88,12 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "name": "John", "surname": "Doe", "role": "competitor",
-                "challenge_id": self.challenge.id
+                "name": "John",
+                "surname": "Doe",
+                "role": "competitor",
+                "challenge_id": self.challenge.id,
             },
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
         data = resp.get_json()
@@ -101,11 +104,8 @@ class TestRegisterUser:
     def test_register_jury_success(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={
-                "username": "newjury", "name": "Jane", "surname": "Juror",
-                "role": "jury"
-            },
-            headers=self._auth(self.admin_token)
+            json={"username": "newjury", "name": "Jane", "surname": "Juror", "role": "jury"},
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
 
@@ -113,13 +113,18 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "username": "johndoe", "name": "John", "surname": "Doe",
-                "email": "john@test.com", "role": "competitor",
+                "username": "johndoe",
+                "name": "John",
+                "surname": "Doe",
+                "email": "john@test.com",
+                "role": "competitor",
                 "challenge_id": self.challenge.id,
-                "grade": "10", "school": "Test HS", "city": "Sofia",
-                "is_anonymous": True
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
+                "is_anonymous": True,
             },
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
         data = resp.get_json()
@@ -129,7 +134,7 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={"name": "John", "surname": "Doe"},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
         assert "Valid role" in resp.get_json()["error"]
@@ -138,7 +143,7 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={"name": "John", "surname": "Doe", "role": "superadmin"},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
 
@@ -146,7 +151,7 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={"name": "Admin", "surname": "User", "role": "admin"},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 403
         assert "CLI" in resp.get_json()["error"]
@@ -155,7 +160,7 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={"name": "John", "role": "competitor", "challenge_id": self.challenge.id},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
         assert "Name and Surname" in resp.get_json()["error"]
@@ -164,7 +169,7 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={"name": "John", "surname": "Doe", "role": "competitor"},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
         assert "challenge_id" in resp.get_json()["error"]
@@ -172,11 +177,8 @@ class TestRegisterUser:
     def test_competitor_invalid_challenge_returns_400(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={
-                "name": "John", "surname": "Doe", "role": "competitor",
-                "challenge_id": 99999
-            },
-            headers=self._auth(self.admin_token)
+            json={"name": "John", "surname": "Doe", "role": "competitor", "challenge_id": 99999},
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
         assert "Invalid challenge_id" in resp.get_json()["error"]
@@ -185,10 +187,12 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "name": "John", "surname": "Doe", "role": "competitor",
-                "challenge_id": self.started_challenge.id
+                "name": "John",
+                "surname": "Doe",
+                "role": "competitor",
+                "challenge_id": self.started_challenge.id,
             },
-            headers=self._auth(self.jury_token)
+            headers=self._auth(self.jury_token),
         )
         assert resp.status_code == 403
         assert "Jury members" in resp.get_json()["error"]
@@ -197,10 +201,12 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "name": "John", "surname": "Doe", "role": "competitor",
-                "challenge_id": self.started_challenge.id
+                "name": "John",
+                "surname": "Doe",
+                "role": "competitor",
+                "challenge_id": self.started_challenge.id,
             },
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
 
@@ -208,10 +214,13 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "username": "existing_user", "name": "John", "surname": "Doe",
-                "role": "competitor", "challenge_id": self.challenge.id
+                "username": "existing_user",
+                "name": "John",
+                "surname": "Doe",
+                "role": "competitor",
+                "challenge_id": self.challenge.id,
             },
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
         assert "already exists" in resp.get_json()["error"]
@@ -219,7 +228,12 @@ class TestRegisterUser:
     def test_unauthorized_access_returns_403(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"name": "John", "surname": "Doe", "role": "competitor", "challenge_id": self.challenge.id}
+            json={
+                "name": "John",
+                "surname": "Doe",
+                "role": "competitor",
+                "challenge_id": self.challenge.id,
+            },
         )
         assert resp.status_code == 403
 
@@ -227,10 +241,12 @@ class TestRegisterUser:
         resp = client.post(
             "/api/admin/register-user",
             json={
-                "name": "Alice", "surname": "Smith", "role": "competitor",
-                "challenge_id": self.challenge.id
+                "name": "Alice",
+                "surname": "Smith",
+                "role": "competitor",
+                "challenge_id": self.challenge.id,
             },
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         data = resp.get_json()
         assert len(data["generated_password"]) == 8
@@ -238,11 +254,8 @@ class TestRegisterUser:
     def test_persists_user_in_database(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={
-                "username": "persist_test", "name": "Persist", "surname": "Test",
-                "role": "jury"
-            },
-            headers=self._auth(self.admin_token)
+            json={"username": "persist_test", "name": "Persist", "surname": "Test", "role": "jury"},
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
         user = User.query.filter_by(username="persist_test").first()
@@ -286,7 +299,9 @@ class TestGetUsers:
             u = User(username=f"user{i}", password_hash="x", role="competitor", alias_id=f"U{i}")
             db_session.add(u)
         db_session.commit()
-        resp = client.get("/api/admin/users?page=1&per_page=5", headers=self._auth(self.admin_token))
+        resp = client.get(
+            "/api/admin/users?page=1&per_page=5", headers=self._auth(self.admin_token)
+        )
         data = resp.get_json()
         assert len(data["items"]) == 5
         assert data["page"] == 1
@@ -307,15 +322,21 @@ class TestDeleteUser:
         return {"Authorization": f"Bearer {token}"}
 
     def test_admin_can_delete_user(self, client):
-        resp = client.delete(f"/api/admin/users/{self.target.id}", headers=self._auth(self.admin_token))
+        resp = client.delete(
+            f"/api/admin/users/{self.target.id}", headers=self._auth(self.admin_token)
+        )
         assert resp.status_code == 200
 
     def test_competitor_cannot_delete_user(self, client):
-        resp = client.delete(f"/api/admin/users/{self.target.id}", headers=self._auth(self.comp_token))
+        resp = client.delete(
+            f"/api/admin/users/{self.target.id}", headers=self._auth(self.comp_token)
+        )
         assert resp.status_code == 403
 
     def test_cannot_delete_self(self, client):
-        resp = client.delete(f"/api/admin/users/{self.admin.id}", headers=self._auth(self.admin_token))
+        resp = client.delete(
+            f"/api/admin/users/{self.admin.id}", headers=self._auth(self.admin_token)
+        )
         assert resp.status_code == 400
 
     def test_delete_nonexistent_user(self, client):
@@ -341,7 +362,7 @@ class TestUpdateUser:
         resp = client.put(
             f"/api/admin/users/{self.target.id}",
             json={"email": "updated@test.com"},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         assert db_session.get(User, self.target.id).email == "updated@test.com"
@@ -350,7 +371,7 @@ class TestUpdateUser:
         resp = client.put(
             f"/api/admin/users/{self.target.id}",
             json={"is_anonymous": True},
-            headers=self._auth(self.admin_token)
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         assert db_session.get(User, self.target.id).is_anonymous
@@ -359,14 +380,12 @@ class TestUpdateUser:
         resp = client.put(
             f"/api/admin/users/{self.target.id}",
             json={"role": "jury"},
-            headers=self._auth(self.comp_token)
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
 
     def test_update_nonexistent_user(self, client):
         resp = client.put(
-            "/api/admin/users/99999",
-            json={"role": "jury"},
-            headers=self._auth(self.admin_token)
+            "/api/admin/users/99999", json={"role": "jury"}, headers=self._auth(self.admin_token)
         )
         assert resp.status_code == 404

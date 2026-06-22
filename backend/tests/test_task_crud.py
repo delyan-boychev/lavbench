@@ -7,6 +7,7 @@ import pytest
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+
 def _make_notebook(content="print('hello')"):
     nb = {
         "nbformat": 4,
@@ -24,6 +25,7 @@ def _make_csv(text="a,b,c\n1,2,3\n"):
 def _make_parquet_with_id():
     import pyarrow as pa
     import pyarrow.parquet as pq
+
     table = pa.table({"id": [1, 2, 3], "label": ["x", "y", "z"]})
     buf = io.BytesIO()
     pq.write_table(table, buf)
@@ -35,14 +37,24 @@ def _make_parquet_with_id():
 #  CREATE — /api/challenges/<id>/tasks  (POST)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestCreateTask:
     """POST /api/challenges/<challenge_id>/tasks"""
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_basic(self, mock_log, mock_cache, mock_queue,
-                          client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_basic(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -51,8 +63,7 @@ class TestCreateTask:
             "description": "A basic test task",
             "baseline_notebook": (nb, "baseline.ipynb"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         body = resp.get_json()
         assert body["title"] == "Basic Task"
@@ -64,8 +75,17 @@ class TestCreateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_all_fields(self, mock_log, mock_cache, mock_queue,
-                                    client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_with_all_fields(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -94,8 +114,7 @@ class TestCreateTask:
             "max_submissions_per_period": "5",
             "submission_period_hours": "24",
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         body = resp.get_json()
         assert body["title"] == "Full Task"
@@ -108,8 +127,17 @@ class TestCreateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_gpu_flag_false(self, mock_log, mock_cache, mock_queue,
-                                        client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_with_gpu_flag_false(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -118,16 +146,24 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "gpu_required": "false",
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         assert resp.get_json()["gpu_required"] is False
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_dataset_file(self, mock_log, mock_cache, mock_queue,
-                                      client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_with_dataset_file(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -137,8 +173,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "file0": (csv, "train.csv"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         body = resp.get_json()
         files = body["files"]
@@ -148,8 +183,17 @@ class TestCreateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_labels_parquet(self, mock_log, mock_cache, mock_queue,
-                                        client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_with_labels_parquet(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -159,8 +203,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "file0": (prq, "labels.parquet"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         files = resp.get_json()["files"]
         assert "labels.parquet" in [f["filename"] for f in files]
@@ -168,8 +211,17 @@ class TestCreateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_evaluator_script(self, mock_log, mock_cache, mock_queue,
-                                          client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_with_evaluator_script(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -179,8 +231,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "evaluator_script": (script, "eval.py"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         body = resp.get_json()
         assert body["evaluator_script_path"] is not None
@@ -188,8 +239,18 @@ class TestCreateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_with_stage(self, mock_log, mock_cache, mock_queue,
-                               client, db_session, sample_challenge, sample_stage, tokens, auth_headers):
+    def test_create_with_stage(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -198,8 +259,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "stage_id": str(sample_stage.id),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
         assert resp.get_json()["stage_id"] == sample_stage.id
 
@@ -210,33 +270,36 @@ class TestCreateTask:
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
         data = {"baseline_notebook": (nb, "baseline.ipynb")}
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 400
         assert "title is required" in resp.get_json()["error"].lower()
 
-    def test_create_missing_baseline(self, client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_missing_baseline(
+        self, client, db_session, sample_challenge, tokens, auth_headers
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         data = {"title": "No NB"}
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 400
         assert "baseline" in resp.get_json()["error"].lower()
 
-    def test_create_wrong_baseline_extension(self, client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_wrong_baseline_extension(
+        self, client, db_session, sample_challenge, tokens, auth_headers
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         data = {
             "title": "Bad Ext",
             "baseline_notebook": (io.BytesIO(b"{}"), "notebook.txt"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 400
         assert "extension" in resp.get_json()["error"].lower()
 
-    def test_create_competitor_forbidden(self, client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_competitor_forbidden(
+        self, client, db_session, sample_challenge, tokens, auth_headers
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.competitor)
         nb = _make_notebook()
@@ -244,8 +307,7 @@ class TestCreateTask:
             "title": "Hacker Task",
             "baseline_notebook": (nb, "baseline.ipynb"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 403
 
     def test_create_challenge_not_found(self, client, db_session, tokens, auth_headers):
@@ -256,15 +318,23 @@ class TestCreateTask:
             "title": "Ghost Task",
             "baseline_notebook": (nb, "baseline.ipynb"),
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 404
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_invalid_metrics(self, mock_log, mock_cache, mock_queue,
-                                    client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_invalid_metrics(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -273,16 +343,24 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "metrics_config": "not-json",
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 400
         assert "metrics" in resp.get_json()["error"].lower()
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_create_invalid_docker_image(self, mock_log, mock_cache, mock_queue,
-                                         client, db_session, sample_challenge, tokens, auth_headers):
+    def test_create_invalid_docker_image(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
@@ -291,8 +369,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
             "base_docker_image": "UPPERCASE_IMAGE!!",
         }
-        resp = client.post(url, data=data, headers=headers,
-                           content_type="multipart/form-data")
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 400
         assert "docker" in resp.get_json()["error"].lower()
 
@@ -311,15 +388,26 @@ class TestCreateTask:
 #  UPDATE — /api/tasks/<id>  (PUT)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestUpdateTask:
     """PUT /api/tasks/<task_id>"""
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_update_basic_fields(self, mock_log, mock_cache, mock_queue,
-                                 client, db_session, sample_challenge, tokens, auth_headers):
+    def test_update_basic_fields(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         from models import Task
+
         task = Task(
             title="Original",
             challenge_id=sample_challenge.id,
@@ -339,8 +427,7 @@ class TestUpdateTask:
             "ram_limit_mb": "2048",
             "time_limit_sec": "900",
         }
-        resp = client.put(url, data=data, headers=headers,
-                          content_type="multipart/form-data")
+        resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["title"] == "Updated Title"
@@ -351,8 +438,17 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_update_replace_file(self, mock_log, mock_cache, mock_queue,
-                                 client, db_session, sample_challenge, tokens, auth_headers):
+    def test_update_replace_file(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         import os
         import tempfile
         from models import Task
@@ -375,7 +471,9 @@ class TestUpdateTask:
             f.write("a,b\n1,2\n")
 
         # Override UPLOAD_FOLDER for this test
-        with patch.dict(client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False):
+        with patch.dict(
+            client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
+        ):
             url = f"/api/tasks/{task.id}"
             headers = auth_headers(tokens.admin)
 
@@ -385,8 +483,7 @@ class TestUpdateTask:
                 "deleted_files": json.dumps(["old.csv"]),
                 "file0": (new_csv, "new.csv"),
             }
-            resp = client.put(url, data=data, headers=headers,
-                              content_type="multipart/form-data")
+            resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 200
         files = resp.get_json()["files"]
         filenames = [f["filename"] for f in files]
@@ -396,9 +493,19 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_update_gpu_flag(self, mock_log, mock_cache, mock_queue,
-                             client, db_session, sample_challenge, tokens, auth_headers):
+    def test_update_gpu_flag(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         from models import Task
+
         task = Task(
             title="GPU Toggle",
             challenge_id=sample_challenge.id,
@@ -413,13 +520,15 @@ class TestUpdateTask:
         url = f"/api/tasks/{task.id}"
         headers = auth_headers(tokens.admin)
         data = {"gpu_required": "true"}
-        resp = client.put(url, data=data, headers=headers,
-                          content_type="multipart/form-data")
+        resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 200
         assert resp.get_json()["gpu_required"] is True
 
-    def test_update_competitor_forbidden(self, client, db_session, sample_challenge, tokens, auth_headers):
+    def test_update_competitor_forbidden(
+        self, client, db_session, sample_challenge, tokens, auth_headers
+    ):
         from models import Task
+
         task = Task(
             title="Locked",
             challenge_id=sample_challenge.id,
@@ -433,19 +542,22 @@ class TestUpdateTask:
 
         url = f"/api/tasks/{task.id}"
         headers = auth_headers(tokens.competitor)
-        resp = client.put(url, data={"title": "Hacked"}, headers=headers,
-                          content_type="multipart/form-data")
+        resp = client.put(
+            url, data={"title": "Hacked"}, headers=headers, content_type="multipart/form-data"
+        )
         assert resp.status_code == 403
 
     def test_update_task_not_found(self, client, db_session, tokens, auth_headers):
         url = "/api/tasks/99999"
         headers = auth_headers(tokens.admin)
-        resp = client.put(url, data={"title": "Ghost"}, headers=headers,
-                          content_type="multipart/form-data")
+        resp = client.put(
+            url, data={"title": "Ghost"}, headers=headers, content_type="multipart/form-data"
+        )
         assert resp.status_code == 404
 
     def test_update_unauthenticated_returns_403(self, client, db_session, sample_challenge):
         from models import Task
+
         task = Task(
             title="No Auth",
             challenge_id=sample_challenge.id,
@@ -464,8 +576,17 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
-    def test_update_baseline_notebook_replacement(self, mock_log, mock_cache, mock_queue,
-                                                  client, db_session, sample_challenge, tokens, auth_headers):
+    def test_update_baseline_notebook_replacement(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
         import os
         import tempfile
         from models import Task
@@ -484,7 +605,9 @@ class TestUpdateTask:
         upload_dir = os.path.join(tempfile.gettempdir(), f"task_{task.id}")
         os.makedirs(upload_dir, exist_ok=True)
 
-        with patch.dict(client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False):
+        with patch.dict(
+            client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
+        ):
             url = f"/api/tasks/{task.id}"
             headers = auth_headers(tokens.admin)
             nb = _make_notebook("print('updated')")
@@ -492,8 +615,7 @@ class TestUpdateTask:
                 "title": "Replace NB",
                 "baseline_notebook": (nb, "baseline.ipynb"),
             }
-            resp = client.put(url, data=data, headers=headers,
-                              content_type="multipart/form-data")
+            resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 200
         assert resp.get_json()["baseline_notebook_path"] is not None
 
@@ -502,11 +624,13 @@ class TestUpdateTask:
 #  DELETE — /api/tasks/<id>  (bonus coverage)
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestDeleteTaskCRUD:
     """DELETE /api/tasks/<task_id>"""
 
     def test_delete_while_unauthenticated(self, client, db_session, sample_challenge):
         from models import Task
+
         task = Task(
             title="Delete Me",
             challenge_id=sample_challenge.id,

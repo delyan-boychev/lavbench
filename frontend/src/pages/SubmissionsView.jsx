@@ -14,13 +14,8 @@ export default function SubmissionsView() {
   const { t } = useTranslation();
   const { challengeId } = useParams();
   const { currentUser } = useAuth();
-  const { 
-    selectedChallenge, 
-    setSelectedChallengeById, 
-    selectedTask, 
-    setSelectedTask,
-    confirm
-  } = useApp();
+  const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask, confirm } =
+    useApp();
 
   const [submissions, setSubmissions] = useState([]);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
@@ -72,10 +67,10 @@ export default function SubmissionsView() {
           setSubmissions(data.items || []);
           setSubmissionsTotal(data.total || 0);
           setSubmissionsPages(data.pages || 1);
-          
-          setSelectedSubmission(prev => {
+
+          setSelectedSubmission((prev) => {
             if (!prev) return null;
-            const updated = data.items.find(s => s.id === prev.id);
+            const updated = data.items.find((s) => s.id === prev.id);
             return updated ? { ...prev, ...updated } : prev;
           });
         } else {
@@ -83,10 +78,10 @@ export default function SubmissionsView() {
           setSubmissions(arr);
           setSubmissionsTotal(arr.length);
           setSubmissionsPages(1);
-          
-          setSelectedSubmission(prev => {
+
+          setSelectedSubmission((prev) => {
             if (!prev) return null;
-            const updated = arr.find(s => s.id === prev.id);
+            const updated = arr.find((s) => s.id === prev.id);
             return updated ? { ...prev, ...updated } : prev;
           });
         }
@@ -99,13 +94,13 @@ export default function SubmissionsView() {
   };
 
   // Reset page when selected task changes
-   
+
   useEffect(() => {
     setSubmissionsPage(1); // eslint-disable-line react-hooks/set-state-in-effect
   }, [selectedTask]);
 
   // Stream submissions via Server-Sent Events (SSE)
-   
+
   useEffect(() => {
     if (!selectedTask) {
       setSubmissions([]); // eslint-disable-line react-hooks/set-state-in-effect
@@ -128,9 +123,9 @@ export default function SubmissionsView() {
             setSubmissionsTotal(data.total || 0);
             setSubmissionsPages(data.pages || 1);
 
-            setSelectedSubmission(prev => {
+            setSelectedSubmission((prev) => {
               if (!prev) return null;
-              const updated = data.items.find(s => s.id === prev.id);
+              const updated = data.items.find((s) => s.id === prev.id);
               return updated ? { ...prev, ...updated } : prev;
             });
           } else {
@@ -139,27 +134,27 @@ export default function SubmissionsView() {
             setSubmissionsTotal(arr.length);
             setSubmissionsPages(1);
 
-            setSelectedSubmission(prev => {
+            setSelectedSubmission((prev) => {
               if (!prev) return null;
-              const updated = arr.find(s => s.id === prev.id);
+              const updated = arr.find((s) => s.id === prev.id);
               return updated ? { ...prev, ...updated } : prev;
             });
           }
         }
         setLoading(false);
       } catch (err) {
-        console.error("Failed to parse submissions SSE data:", err);
+        console.error('Failed to parse submissions SSE data:', err);
       }
     };
 
     eventSource.onerror = () => {
-      console.error("Submissions SSE error, attempting HTTP fallback");
+      console.error('Submissions SSE error, attempting HTTP fallback');
       eventSource.close();
 
       const loadSubmissionsFallback = async () => {
         try {
           const res = await api.fetch(`/api/tasks/${taskId}/submissions?page=${page}&per_page=10`, {
-            headers: {}
+            headers: {},
           });
           if (res.ok) {
             if (taskIdRef.current !== taskId) return;
@@ -169,14 +164,14 @@ export default function SubmissionsView() {
               setSubmissionsTotal(data.total || 0);
               setSubmissionsPages(data.pages || 1);
             } else {
-              const arr = (data || []);
+              const arr = data || [];
               setSubmissions(arr);
               setSubmissionsTotal(arr.length);
               setSubmissionsPages(1);
             }
           }
         } catch (fetchErr) {
-          console.error("Fallback submissions fetch failed:", fetchErr);
+          console.error('Fallback submissions fetch failed:', fetchErr);
         } finally {
           setLoading(false);
         }
@@ -190,7 +185,6 @@ export default function SubmissionsView() {
     };
   }, [selectedTask, submissionsPage]);
 
-
   const handleSelectFinal = async (submissionId) => {
     setSelectingFinal(true);
     try {
@@ -199,7 +193,7 @@ export default function SubmissionsView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
       });
       if (res.ok) {
         fetchSubmissions(true);
@@ -207,9 +201,11 @@ export default function SubmissionsView() {
         const data = await res.json();
         await confirm({
           title: t('submissions.selection_error'),
-          message: data.code ? t(`api.${data.code}`, data.error || t('submissions.select_final_failed')) : (data.error || t('submissions.select_final_failed')),
+          message: data.code
+            ? t(`api.${data.code}`, data.error || t('submissions.select_final_failed'))
+            : data.error || t('submissions.select_final_failed'),
           confirmText: t('common.ok'),
-          cancelText: ""
+          cancelText: '',
         });
       }
     } catch (err) {
@@ -228,15 +224,17 @@ export default function SubmissionsView() {
     try {
       const res = await TaskService.getSubmissionDetail(sub.id);
       if (res.ok) {
-        setSelectedSubmission(prev => prev && prev.id === sub.id ? { ...prev, ...res.data } : prev);
+        setSelectedSubmission((prev) =>
+          prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
+        );
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const stage = selectedChallenge?.stages?.find(s => s.id === selectedTask?.stage_id);
-  
+  const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
+
   let finalSelectDeadline = null;
   let hasRunningPreDeadline = false;
 
@@ -261,13 +259,14 @@ export default function SubmissionsView() {
     }
   }
 
-  const isSelectionDisabled = stage 
-    ? (!hasRunningPreDeadline && finalSelectDeadline !== null && nowMs > finalSelectDeadline)
+  const isSelectionDisabled = stage
+    ? !hasRunningPreDeadline && finalSelectDeadline !== null && nowMs > finalSelectDeadline
     : false;
 
-  const isSubmissionAfterDeadline = stage && selectedSubmission 
-    ? new Date(selectedSubmission.created_at).getTime() > new Date(stage.end_time).getTime()
-    : false;
+  const isSubmissionAfterDeadline =
+    stage && selectedSubmission
+      ? new Date(selectedSubmission.created_at).getTime() > new Date(stage.end_time).getTime()
+      : false;
 
   const renderTimer = () => {
     if (!stage) return null;
@@ -284,21 +283,25 @@ export default function SubmissionsView() {
       } else {
         const min = Math.floor(diff / 60000);
         const sec = Math.floor((diff % 60000) / 1000);
-        timerText = t('submissions.time_remaining_select_final', { time: `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}` });
+        timerText = t('submissions.time_remaining_select_final', {
+          time: `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`,
+        });
       }
     }
 
     return (
-      <div style={{
-        fontSize: '0.8rem',
-        fontWeight: 600,
-        color: isExpired ? 'var(--danger)' : 'var(--warning)',
-        background: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-        border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
-        borderRadius: 'var(--radius-md)',
-        padding: '10px 14px',
-        textAlign: 'center',
-      }}>
+      <div
+        style={{
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          color: isExpired ? 'var(--danger)' : 'var(--warning)',
+          background: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+          border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
+          borderRadius: 'var(--radius-md)',
+          padding: '10px 14px',
+          textAlign: 'center',
+        }}
+      >
         {timerText}
       </div>
     );
@@ -310,13 +313,24 @@ export default function SubmissionsView() {
         <>
           {/* Task selector if there are multiple tasks */}
           {selectedChallenge.tasks?.length > 1 && (
-            <div className="surface" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div
+              className="surface"
+              style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}
+            >
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
                 {t('submissions.select_task')}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <TabScrollContainer>
-                  {selectedChallenge.tasks.map(task => (
+                  {selectedChallenge.tasks.map((task) => (
                     <button
                       key={task.id}
                       onClick={() => {
@@ -335,16 +349,21 @@ export default function SubmissionsView() {
           )}
 
           {selectedTask ? (
-            <div key={selectedTask.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              key={selectedTask.id}
+              style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+            >
               {renderTimer()}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr',
-                gap: 24,
-              }} className="lg:grid-cols-[320px_1fr] items-start animate-fadein">
-                
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr',
+                  gap: 24,
+                }}
+                className="lg:grid-cols-[320px_1fr] items-start animate-fadein"
+              >
                 {/* Left Column: Submissions List */}
-                <SubmissionList 
+                <SubmissionList
                   submissions={submissions}
                   selected={selectedSubmission}
                   onSelect={handleSelectSubmission}
@@ -357,7 +376,7 @@ export default function SubmissionsView() {
                 />
 
                 {/* Right Column: Submission Viewer */}
-                <SubmissionViewer 
+                <SubmissionViewer
                   submission={selectedSubmission}
                   currentUser={currentUser}
                   onSelectFinal={handleSelectFinal}
@@ -365,7 +384,6 @@ export default function SubmissionsView() {
                   isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
                   isSubmissionAfterDeadline={isSubmissionAfterDeadline}
                 />
-
               </div>
             </div>
           ) : (

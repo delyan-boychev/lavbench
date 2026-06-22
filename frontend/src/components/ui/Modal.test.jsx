@@ -8,7 +8,7 @@ describe('Modal Component', () => {
     const { container } = render(
       <Modal isOpen={false} onClose={() => {}} title="Modal Title">
         <div>Modal Content</div>
-      </Modal>
+      </Modal>,
     );
     expect(container.firstChild).toBeNull();
   });
@@ -17,7 +17,7 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={() => {}} title="Modal Title">
         <div>Modal Content</div>
-      </Modal>
+      </Modal>,
     );
     expect(screen.getByText('Modal Title')).toBeInTheDocument();
     expect(screen.getByText('Modal Content')).toBeInTheDocument();
@@ -28,7 +28,7 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={() => {}} title="Title" footer={<button>Save Changes</button>}>
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
     expect(screen.getByText('Save Changes')).toBeInTheDocument();
   });
@@ -38,7 +38,7 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={handleClose} title="Title">
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
     fireEvent.click(screen.getByTitle('Close'));
     expect(handleClose).toHaveBeenCalledTimes(1);
@@ -49,9 +49,9 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={handleClose} title="Title">
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
-    
+
     // The overlay is the outermost div in the Portal
     const overlay = document.body.querySelector('.fixed');
     fireEvent.click(overlay);
@@ -63,9 +63,9 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={handleClose} title="Title">
         <div>Body Content</div>
-      </Modal>
+      </Modal>,
     );
-    
+
     fireEvent.click(screen.getByText('Body Content'));
     expect(handleClose).not.toHaveBeenCalled();
   });
@@ -75,9 +75,9 @@ describe('Modal Component', () => {
     render(
       <Modal isOpen={true} onClose={handleClose} title="Title">
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
-    
+
     fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
@@ -86,14 +86,14 @@ describe('Modal Component', () => {
     const { rerender, unmount } = render(
       <Modal isOpen={true} onClose={() => {}} title="Title">
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
     expect(document.body.style.overflow).toBe('hidden');
 
     rerender(
       <Modal isOpen={false} onClose={() => {}} title="Title">
         <div>Body</div>
-      </Modal>
+      </Modal>,
     );
     expect(document.body.style.overflow).toBe('');
 

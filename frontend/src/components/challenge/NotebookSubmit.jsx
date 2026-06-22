@@ -21,21 +21,36 @@ export default function NotebookSubmit({ task, challenge }) {
   const [submitting, setSubmitting] = useState(false);
 
   const isCompetitor = currentUser?.role === 'competitor'; // eslint-disable-line no-unused-vars
-  const stage = challenge?.stages?.find(s => s.id === task?.stage_id);
+  const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
   const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
-  const stageEnded = stage ? new Date().getTime() > (new Date(stage.end_time).getTime() + graceMs) : false;
-  const challengeEnded = !stage && challenge?.end_time && new Date().getTime() > (new Date(challenge.end_time).getTime() + graceMs);
-  const isClosed = !challenge?.is_active || challenge?.is_archived || challenge?.scores_finalized || challengeEnded || stageEnded;
+  const stageEnded = stage
+    ? new Date().getTime() > new Date(stage.end_time).getTime() + graceMs
+    : false;
+  const challengeEnded =
+    !stage &&
+    challenge?.end_time &&
+    new Date().getTime() > new Date(challenge.end_time).getTime() + graceMs;
+  const isClosed =
+    !challenge?.is_active ||
+    challenge?.is_archived ||
+    challenge?.scores_finalized ||
+    challengeEnded ||
+    stageEnded;
 
   // Admin/Jury: show info panel only
   if (!isCompetitor) {
     return (
       <div className="surface" style={{ padding: '22px 26px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: 'var(--warning)', display: 'inline-block'
-          }} />
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: 'var(--warning)',
+              display: 'inline-block',
+            }}
+          />
           <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--warning)' }}>
             {t('challenge.judge_session_active')}
           </h3>
@@ -51,16 +66,21 @@ export default function NotebookSubmit({ task, challenge }) {
     const isFinalized = challenge?.scores_finalized;
     return (
       <div className="surface" style={{ padding: '22px 26px' }}>
-        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 6 }}>
-          {stageEnded ? t('challenge.stage_submission_closed') : isFinalized ? t('challenge.competition_finalized') : t('challenge.competition_closed')}
+        <h3
+          style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 6 }}
+        >
+          {stageEnded
+            ? t('challenge.stage_submission_closed')
+            : isFinalized
+              ? t('challenge.competition_finalized')
+              : t('challenge.competition_closed')}
         </h3>
         <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-          {stageEnded 
+          {stageEnded
             ? t('challenge.stage_deadline_passed', { title: stage.title })
-            : isFinalized 
-            ? t('challenge.competition_finalized_desc')
-            : t('challenge.competition_closed_desc')
-          }
+            : isFinalized
+              ? t('challenge.competition_finalized_desc')
+              : t('challenge.competition_closed_desc')}
         </p>
       </div>
     );
@@ -83,18 +103,25 @@ export default function NotebookSubmit({ task, challenge }) {
         const parsedCells = res.data.cells || [];
         setCells(parsedCells);
         setFileName(res.data.filename); // eslint-disable-line no-unused-vars
-        
+
         // Auto-select cells containing "# SUBMIT" tag
         const submitTagRegex = /#\s*SUBMIT/i;
         const autoSelectedIds = parsedCells
-          .filter(c => c.type === 'code' && submitTagRegex.test(c.source || ''))
-          .map(c => c.id);
-        
+          .filter((c) => c.type === 'code' && submitTagRegex.test(c.source || ''))
+          .map((c) => c.id);
+
         if (autoSelectedIds.length > 0) {
           setSelectedCellIds(autoSelectedIds);
-          showToast(t('challenge.parsed_cells_auto_selected', { total: parsedCells.length, selected: autoSelectedIds.length }));
+          showToast(
+            t('challenge.parsed_cells_auto_selected', {
+              total: parsedCells.length,
+              selected: autoSelectedIds.length,
+            }),
+          );
         } else {
-          showToast(t('challenge.parsed_cells', { total: parsedCells.length, filename: res.data.filename }));
+          showToast(
+            t('challenge.parsed_cells', { total: parsedCells.length, filename: res.data.filename }),
+          );
         }
       } else {
         showToast(res.data?.error || t('challenge.failed_parse'), 'error');
@@ -107,14 +134,14 @@ export default function NotebookSubmit({ task, challenge }) {
   };
 
   const toggleCell = (id) => {
-    setSelectedCellIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    setSelectedCellIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
   const toggleCollapse = (id) => {
-    setCollapsedCellIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    setCollapsedCellIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
@@ -123,7 +150,7 @@ export default function NotebookSubmit({ task, challenge }) {
       showToast(t('challenge.select_cells_to_submit'), 'error');
       return;
     }
-    const selected = cells.filter(c => selectedCellIds.includes(c.id));
+    const selected = cells.filter((c) => selectedCellIds.includes(c.id));
     setSubmitting(true);
     try {
       const res = await TaskService.submit(task.id, selected);
@@ -144,7 +171,10 @@ export default function NotebookSubmit({ task, challenge }) {
   };
 
   return (
-    <div className="surface" style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div
+      className="surface"
+      style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)' }}>
           {t('challenge.submit_solution')}
@@ -165,22 +195,70 @@ export default function NotebookSubmit({ task, challenge }) {
         />
         <label htmlFor="notebook-upload" style={{ cursor: 'pointer' }}>
           {uploading ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-secondary)' }}>
-              <div className="animate-spin" style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%' }} />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <div
+                className="animate-spin"
+                style={{
+                  width: 16,
+                  height: 16,
+                  border: '2px solid var(--border)',
+                  borderTopColor: 'var(--accent)',
+                  borderRadius: '50%',
+                }}
+              />
               {t('challenge.parsing_notebook')}
             </div>
           ) : fileName ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Book className="w-4 h-4" />{fileName}</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('challenge.click_to_replace')}</span>
+              <span
+                style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: 'var(--accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                }}
+              >
+                <Book className="w-4 h-4" />
+                {fileName}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {t('challenge.click_to_replace')}
+              </span>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" style={{ color: 'var(--text-muted)' }}>
-                <path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              <svg
+                width="28"
+                height="28"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <path
+                  strokeLinecap="round"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                />
               </svg>
-              <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{t('challenge.upload_jupyter_notebook')}</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('challenge.click_or_drag')}</span>
+              <span
+                style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', fontWeight: 600 }}
+              >
+                {t('challenge.upload_jupyter_notebook')}
+              </span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {t('challenge.click_or_drag')}
+              </span>
             </div>
           )}
         </label>
@@ -189,18 +267,46 @@ export default function NotebookSubmit({ task, challenge }) {
       {/* Cell picker */}
       {cells.length > 0 && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <h4 style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {t('challenge.select_cells_count', { selected: selectedCellIds.length, total: cells.filter(c => c.type === 'code').length })}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <h4
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {t('challenge.select_cells_count', {
+                selected: selectedCellIds.length,
+                total: cells.filter((c) => c.type === 'code').length,
+              })}
             </h4>
             <button
-              onClick={() => setSelectedCellIds(cells.filter(c => c.type === 'code').map(c => c.id))}
+              onClick={() =>
+                setSelectedCellIds(cells.filter((c) => c.type === 'code').map((c) => c.id))
+              }
               className="btn btn-ghost btn-sm"
             >
               {t('challenge.select_all_code')}
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 500, overflowY: 'auto' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              maxHeight: 500,
+              overflowY: 'auto',
+            }}
+          >
             {cells.map((cell, idx) => {
               const isCode = cell.type === 'code';
               const isSelected = selectedCellIds.includes(cell.id);
@@ -210,7 +316,9 @@ export default function NotebookSubmit({ task, challenge }) {
                   key={cell.id}
                   onClick={() => isCode && toggleCell(cell.id)}
                   style={{
-                    display: 'flex', gap: 10, alignItems: 'flex-start',
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
                     padding: '8px 12px',
                     background: isSelected ? 'var(--accent-soft)' : 'var(--bg-elevated)',
                     border: `1px solid ${isSelected ? 'var(--accent-border)' : 'var(--border)'}`,
@@ -220,7 +328,10 @@ export default function NotebookSubmit({ task, challenge }) {
                     transition: 'all 0.12s ease',
                   }}
                 >
-                  <label className={`relative inline-flex items-center ${isCode ? 'cursor-pointer' : 'cursor-default'} select-none flex-shrink-0`} style={{ marginTop: 2 }}>
+                  <label
+                    className={`relative inline-flex items-center ${isCode ? 'cursor-pointer' : 'cursor-default'} select-none flex-shrink-0`}
+                    style={{ marginTop: 2 }}
+                  >
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -232,24 +343,28 @@ export default function NotebookSubmit({ task, challenge }) {
                     <div className="relative w-8 h-4.5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-[14px] peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 peer-checked:after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-disabled:opacity-40"></div>
                   </label>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div 
-                      style={{ 
-                        display: 'flex', 
-                        gap: 8, 
-                        alignItems: 'center', 
-                        marginBottom: 4, 
-                        userSelect: 'none'
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                        marginBottom: 4,
+                        userSelect: 'none',
                       }}
                     >
-                      <span style={{
-                        fontSize: '0.68rem', fontWeight: 700,
-                        color: isCode ? 'var(--accent)' : 'var(--text-muted)',
-                        textTransform: 'uppercase', letterSpacing: '0.05em',
-                      }}>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          color: isCode ? 'var(--accent)' : 'var(--text-muted)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
                         [{idx}] {cell.type}
                       </span>
                       {isCode && (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleCollapse(cell.id);
@@ -259,13 +374,13 @@ export default function NotebookSubmit({ task, challenge }) {
                           type="button"
                           title={t('challenge.toggle_collapse')}
                         >
-                          {isCollapsed ? `▶ ${t('challenge.expand')}` : `▼ ${t('challenge.collapse')}`}
+                          {isCollapsed
+                            ? `▶ ${t('challenge.expand')}`
+                            : `▼ ${t('challenge.collapse')}`}
                         </button>
                       )}
                     </div>
-                    {!isCollapsed && (
-                      <CodeHighlight code={cell.source || ''} wrap={true} />
-                    )}
+                    {!isCollapsed && <CodeHighlight code={cell.source || ''} wrap={true} />}
                   </div>
                 </div>
               );
@@ -284,7 +399,16 @@ export default function NotebookSubmit({ task, challenge }) {
         >
           {submitting ? (
             <>
-              <div className="animate-spin" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }} />
+              <div
+                className="animate-spin"
+                style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderTopColor: '#fff',
+                  borderRadius: '50%',
+                }}
+              />
               {t('challenge.submitting')}
             </>
           ) : (

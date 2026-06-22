@@ -2,7 +2,7 @@ import i18n from '../i18n';
 
 /**
  * Formats a date string/object according to the active UI language.
- * @param {string|Date} dateVal 
+ * @param {string|Date} dateVal
  * @param {object} options Optional overrides for Intl.DateTimeFormat
  * @returns {string}
  */
@@ -19,7 +19,7 @@ export function formatLocalizedDate(dateVal, options = {}) {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    ...options
+    ...options,
   };
 
   return new Intl.DateTimeFormat(currentLanguage, defaultOptions).format(date);

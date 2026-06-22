@@ -14,6 +14,7 @@ from models import db, User, Challenge, Task
 # Area 1: Worker Bootstrap Token
 # =============================================================================
 
+
 class TestWorkerBootstrapToken:
     """POST /api/worker/bootstrap-token"""
 
@@ -66,6 +67,7 @@ class TestWorkerBootstrapToken:
 # =============================================================================
 
 from flask import Response
+
 MOCK_FILE_RESPONSE = Response("test file content", 200)
 
 
@@ -81,10 +83,12 @@ class TestTaskFileDownload:
             time_limit_sec=300,
             ram_limit_mb=512,
             max_submissions_per_period=10,
-            files=json.dumps([
-                {"filename": "data.csv", "saved_name": "abc_data.csv"},
-                {"filename": "labels.parquet", "saved_name": "xyz_labels.parquet"},
-            ]),
+            files=json.dumps(
+                [
+                    {"filename": "data.csv", "saved_name": "abc_data.csv"},
+                    {"filename": "labels.parquet", "saved_name": "xyz_labels.parquet"},
+                ]
+            ),
         )
         db_session.add(task)
         db_session.flush()
@@ -186,6 +190,7 @@ class TestTaskFileDownload:
             challenge_id=sample_future_challenge.id,
         )
         from auth_utils import generate_token
+
         comp_token = generate_token(comp.id, "competitor")
 
         resp = client.get(
@@ -198,9 +203,7 @@ class TestTaskFileDownload:
 
     # --- file not found in metadata ---
 
-    def test_file_not_found_in_metadata(
-        self, client, task_with_files, tokens, auth_headers
-    ):
+    def test_file_not_found_in_metadata(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/nonexistent.ipynb",
             headers=auth_headers(tokens.competitor),
@@ -223,15 +226,18 @@ class TestTaskFileDownload:
 # Area 3: Login Rate Limiting
 # =============================================================================
 
+
 class TestLoginRateLimiting:
     """Rate-limiting helpers in routes/auth.py + login endpoint 429."""
 
     def test_no_failures_not_exceeded(self, redis_flush):
         from routes.auth import _login_rate_limit_exceeded
+
         assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
 
     def test_five_failures_exceeds_user_limit(self, redis_flush):
         from routes.auth import _record_login_failure, _login_rate_limit_exceeded
+
         username = "rate_test_user"
         ip = "10.0.0.1"
         for _ in range(5):
@@ -239,7 +245,12 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded(username, ip) is True
 
     def test_clear_failures_resets_limit(self, redis_flush):
-        from routes.auth import _record_login_failure, _login_rate_limit_exceeded, _clear_login_failures
+        from routes.auth import (
+            _record_login_failure,
+            _login_rate_limit_exceeded,
+            _clear_login_failures,
+        )
+
         username = "clear_test_user"
         ip = "10.0.0.2"
         for _ in range(5):
@@ -250,6 +261,7 @@ class TestLoginRateLimiting:
 
     def test_thirty_ip_failures_exceeds_ip_limit(self, redis_flush):
         from routes.auth import _record_login_failure, _login_rate_limit_exceeded
+
         ip = "10.0.0.100"
         for i in range(30):
             _record_login_failure(f"user_{i}", ip)
@@ -287,6 +299,7 @@ class TestLoginRateLimiting:
 # Area 4: Register Competitor
 # =============================================================================
 
+
 class TestRegisterCompetitor:
     """POST /api/admin/register-competitor"""
 
@@ -314,9 +327,7 @@ class TestRegisterCompetitor:
         assert "generated_password" in data
         assert "user" in data
 
-    def test_missing_challenge_id_returns_400(
-        self, client, tokens, auth_headers
-    ):
+    def test_missing_challenge_id_returns_400(self, client, tokens, auth_headers):
         resp = client.post(
             "/api/admin/register-competitor",
             headers=auth_headers(tokens.admin),
@@ -325,9 +336,7 @@ class TestRegisterCompetitor:
         assert resp.status_code == 400
         assert "challenge_id is required" in resp.get_json()["error"]
 
-    def test_invalid_challenge_id_returns_400(
-        self, client, tokens, auth_headers
-    ):
+    def test_invalid_challenge_id_returns_400(self, client, tokens, auth_headers):
         payload = {**self.COMP_PAYLOAD, "challenge_id": 99999}
         resp = client.post(
             "/api/admin/register-competitor",
@@ -353,6 +362,7 @@ class TestRegisterCompetitor:
         self, client, db_session, sample_future_challenge, auth_headers
     ):
         from auth_utils import generate_token
+
         jury = User(
             username="jury_before",
             password_hash="x",
@@ -374,6 +384,7 @@ class TestRegisterCompetitor:
         self, client, db_session, sample_challenge, auth_headers
     ):
         from auth_utils import generate_token
+
         jury = User(
             username="jury_after",
             password_hash="x",
@@ -392,9 +403,7 @@ class TestRegisterCompetitor:
         assert resp.status_code == 403
         assert "Jury members cannot register" in resp.get_json()["error"]
 
-    def test_unauthenticated_returns_403(
-        self, client, sample_challenge
-    ):
+    def test_unauthenticated_returns_403(self, client, sample_challenge):
         payload = {**self.COMP_PAYLOAD, "challenge_id": sample_challenge.id}
         resp = client.post(
             "/api/admin/register-competitor",

@@ -16,22 +16,27 @@ def run_register_worker_specs(celery_app):
     machine_id = os.environ.get("HOSTNAME", "local-worker")
     if gpu_id is not None:
         machine_id = f"gpu-worker-device-{gpu_id}"
-        
+
     try:
         import psutil
+
         ram_gb = round(psutil.virtual_memory().total / (1024**3), 2)
     except ImportError:
         ram_gb = 16.0
-        
+
     api_base = os.environ.get("API_BASE", "http://localhost:5001/api")
-    
+
     try:
-        requests.post(f"{api_base}/admin/workers/register", json={
-            "worker_id": machine_id,
-            "ram_gb": ram_gb,
-            "gpu_count": 1 if gpu_id else 0,
-            "status": "idle"
-        }, timeout=5)
+        requests.post(
+            f"{api_base}/admin/workers/register",
+            json={
+                "worker_id": machine_id,
+                "ram_gb": ram_gb,
+                "gpu_count": 1 if gpu_id else 0,
+                "status": "idle",
+            },
+            timeout=5,
+        )
     except Exception as e:
         pass
 
@@ -78,10 +83,21 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
         dump_path = os.path.join(tmp, "db_dump.sql")
         result = subprocess.run(
             [
-                "pg_dump", "-h", host, "-U", username, "-p", port, "-d", database,
-                "-f", dump_path,
+                "pg_dump",
+                "-h",
+                host,
+                "-U",
+                username,
+                "-p",
+                port,
+                "-d",
+                database,
+                "-f",
+                dump_path,
             ],
-            env=env, capture_output=True, text=True
+            env=env,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
@@ -116,6 +132,7 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
 def _publish_backup_event(filename, size_bytes, challenge_id, state):
     try:
         from cache_utils import get_redis_client
+
         r = get_redis_client()
         if r:
             payload = {

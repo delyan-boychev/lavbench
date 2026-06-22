@@ -3,7 +3,7 @@
 import os
 from jinja2 import Environment
 
-DEFAULT_EVALUATION_TEMPLATE = '''\
+DEFAULT_EVALUATION_TEMPLATE = """\
 
 import os
 import sys
@@ -216,9 +216,9 @@ def run_evaluation():
 
 if __name__ == "__main__":
     run_evaluation()
-'''
+"""
 
-CUSTOM_EVAL_WRAPPER = '''\
+CUSTOM_EVAL_WRAPPER = """\
 import os
 import json
 import subprocess
@@ -289,13 +289,14 @@ except Exception as e:
     except OSError: pass
     
     return preds_data
-'''
+"""
+
 
 def render_eval_template(template_str, **kwargs):
     env = Environment(
-        variable_start_string='[[',
-        variable_end_string=']]',
-        block_start_string='[%',
-        block_end_string='%]'
+        variable_start_string="[[",
+        variable_end_string="]]",
+        block_start_string="[%",
+        block_end_string="%]",
     )
     return env.from_string(template_str).render(**kwargs)

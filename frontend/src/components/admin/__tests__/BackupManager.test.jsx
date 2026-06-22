@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 class MockEventSource {
-  constructor(url) { this.url = url; this.onmessage = null; this.onerror = null; }
+  constructor(url) {
+    this.url = url;
+    this.onmessage = null;
+    this.onerror = null;
+  }
   close() {}
 }
 
@@ -19,7 +23,9 @@ vi.mock('../../../services/ApiService', () => ({
 
 vi.mock('../../ui/Button', () => ({
   default: ({ children, variant, onClick, disabled, size }) => (
-    <button data-variant={variant} data-size={size} onClick={onClick} disabled={disabled}>{children}</button>
+    <button data-variant={variant} data-size={size} onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
   ),
 }));
 
@@ -82,7 +88,12 @@ describe('BackupManager', () => {
       ok: true,
       data: {
         backups: [
-          { filename: 'backup_2024_01.db', size_mb: 12.5, created_at: '2024-01-15T10:00:00Z', type: 'manual' },
+          {
+            filename: 'backup_2024_01.db',
+            size_mb: 12.5,
+            created_at: '2024-01-15T10:00:00Z',
+            type: 'manual',
+          },
         ],
       },
     });
@@ -127,7 +138,12 @@ describe('BackupManager', () => {
       ok: true,
       data: {
         backups: [
-          { filename: 'manual_backup.db', size_mb: 3, created_at: '2024-01-01T00:00:00Z', type: 'manual' },
+          {
+            filename: 'manual_backup.db',
+            size_mb: 3,
+            created_at: '2024-01-01T00:00:00Z',
+            type: 'manual',
+          },
         ],
       },
     });
@@ -145,7 +161,12 @@ describe('BackupManager', () => {
       ok: true,
       data: {
         backups: [
-          { filename: 'submission_ended_backup.db', size_mb: 1, created_at: '2024-01-01T00:00:00Z', type: 'auto' },
+          {
+            filename: 'submission_ended_backup.db',
+            size_mb: 1,
+            created_at: '2024-01-01T00:00:00Z',
+            type: 'auto',
+          },
         ],
       },
     });
@@ -160,7 +181,12 @@ describe('BackupManager', () => {
       ok: true,
       data: {
         backups: [
-          { filename: 'grace_ended_backup.db', size_mb: 1, created_at: '2024-01-01T00:00:00Z', type: 'auto' },
+          {
+            filename: 'grace_ended_backup.db',
+            size_mb: 1,
+            created_at: '2024-01-01T00:00:00Z',
+            type: 'auto',
+          },
         ],
       },
     });
@@ -175,7 +201,12 @@ describe('BackupManager', () => {
       ok: true,
       data: {
         backups: [
-          { filename: 'finalized_backup.db', size_mb: 1, created_at: '2024-01-01T00:00:00Z', type: 'auto' },
+          {
+            filename: 'finalized_backup.db',
+            size_mb: 1,
+            created_at: '2024-01-01T00:00:00Z',
+            type: 'auto',
+          },
         ],
       },
     });

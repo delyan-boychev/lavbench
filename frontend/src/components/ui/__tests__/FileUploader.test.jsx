@@ -13,13 +13,7 @@ describe('FileUploader Component', () => {
   });
 
   it('renders label, description, and required badge', () => {
-    render(
-      <FileUploader
-        label="Upload Files"
-        description="Select your files"
-        required
-      />
-    );
+    render(<FileUploader label="Upload Files" description="Select your files" required />);
 
     expect(screen.getByText('Upload Files')).toBeInTheDocument();
     expect(screen.getByText('Select your files')).toBeInTheDocument();
@@ -86,16 +80,9 @@ describe('FileUploader Component', () => {
 
   it('removes existing file on delete button click', () => {
     const handleRemoveExisting = vi.fn();
-    const existingFiles = [
-      { filename: 'existing1.txt', size_bytes: 2048 },
-    ];
+    const existingFiles = [{ filename: 'existing1.txt', size_bytes: 2048 }];
 
-    render(
-      <FileUploader
-        existingFiles={existingFiles}
-        onRemoveExisting={handleRemoveExisting}
-      />
-    );
+    render(<FileUploader existingFiles={existingFiles} onRemoveExisting={handleRemoveExisting} />);
 
     fireEvent.click(screen.getByText('Delete'));
 

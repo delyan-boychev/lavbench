@@ -10,7 +10,7 @@ export default function Pagination({
   perPage = 10,
   onPageChange,
   itemName = 'items',
-  className = ''
+  className = '',
 }) {
   const { t } = useTranslation();
   if (pages <= 1 && total === 0) return null;
@@ -25,7 +25,7 @@ export default function Pagination({
       for (let i = 1; i <= pages; i++) list.push(i);
     } else {
       list.push(1);
-      
+
       if (page > 3) {
         list.push('ellipsis-start');
       }
@@ -49,12 +49,18 @@ export default function Pagination({
   const pageNumbers = getPageNumbers();
 
   return (
-    <div className={`flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 pt-4 border-t border-slate-800 text-xs text-slate-400 ${className}`}>
+    <div
+      className={`flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 pt-4 border-t border-slate-800 text-xs text-slate-400 ${className}`}
+    >
       {/* Item Range Label */}
       <div>
         {total > 0 ? (
           <span>
-            {t('common.showing')} <strong className="text-slate-200">{startIdx}-{endIdx}</strong> {t('common.of')} <strong className="text-slate-200">{total}</strong> {itemName}
+            {t('common.showing')}{' '}
+            <strong className="text-slate-200">
+              {startIdx}-{endIdx}
+            </strong>{' '}
+            {t('common.of')} <strong className="text-slate-200">{total}</strong> {itemName}
           </span>
         ) : (
           <span>{t('common.page_of', { page, pages })}</span>

@@ -11,24 +11,25 @@ import numpy as np
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import create_app
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
 from evaluation_engine import validate_parquet_schema, evaluate_predictions
 
+
 class TestUnifiedParquetEvaluation:
 
     @pytest.fixture(autouse=True)
     def setup(self, db_session, app_ctx, app):
         self.app = app
-        self.app.config['TESTING'] = True
-        self.app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
+        self.app.config["TESTING"] = True
+        self.app.config["UPLOAD_FOLDER"] = tempfile.mkdtemp()
         self.client = self.app.test_client()
         self.seed_basic_data()
         self.temp_test_dir = tempfile.mkdtemp()
-        self._upload_dir = self.app.config['UPLOAD_FOLDER']
+        self._upload_dir = self.app.config["UPLOAD_FOLDER"]
         self._temp_test_dir = self.temp_test_dir
 
     def seed_basic_data(self):
@@ -36,7 +37,7 @@ class TestUnifiedParquetEvaluation:
             username="test_admin",
             password_hash="pbkdf2:sha256:...",
             role="admin",
-            alias_id="Admin-001"
+            alias_id="Admin-001",
         )
         db.session.add(self.admin)
 
@@ -46,7 +47,7 @@ class TestUnifiedParquetEvaluation:
             max_eval_requests=5,
             start_time=datetime.utcnow() - timedelta(hours=2),
             end_time=datetime.utcnow() + timedelta(hours=2),
-            is_frozen=False
+            is_frozen=False,
         )
         db.session.add(self.challenge)
         db.session.commit()
@@ -56,7 +57,7 @@ class TestUnifiedParquetEvaluation:
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Stellar-Voyager-101",
-            challenge_id=self.challenge.id
+            challenge_id=self.challenge.id,
         )
         db.session.add(self.competitor)
         db.session.commit()
@@ -71,25 +72,25 @@ class TestUnifiedParquetEvaluation:
         return {
             "title": "Unified Task 1",
             "description": "Modality test",
-            "metrics_config": json.dumps({
-                "accuracy": {"weight": 0.5, "higher_is_better": True},
-                "f1_macro": {"weight": 0.5, "higher_is_better": True}
-            }),
+            "metrics_config": json.dumps(
+                {
+                    "accuracy": {"weight": 0.5, "higher_is_better": True},
+                    "f1_macro": {"weight": 0.5, "higher_is_better": True},
+                }
+            ),
             "baseline_notebook": (io.BytesIO(b"# Baseline"), "baseline.ipynb"),
-            "solution_notebook": (io.BytesIO(b"# Solution"), "solution.ipynb")
+            "solution_notebook": (io.BytesIO(b"# Solution"), "solution.ipynb"),
         }
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_celery_evaluate_submission_unified_parquet(self, mock_subproc):
         from tasks import evaluate_submission
 
         task = Task(
             challenge_id=self.challenge.id,
             title="Class Task",
-            metrics_config=json.dumps({
-                "accuracy": {"weight": 1.0, "higher_is_better": True}
-            }),
-            public_eval_percentage=50
+            metrics_config=json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+            public_eval_percentage=50,
         )
         db.session.add(task)
         db.session.commit()
@@ -101,18 +102,16 @@ class TestUnifiedParquetEvaluation:
         df_labels = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]})
         df_labels.to_parquet(labels_parquet_path)
 
-        task.files = json.dumps([{
-            "filename": "labels.parquet",
-            "saved_name": "labels.parquet",
-            "size_bytes": 1000
-        }])
+        task.files = json.dumps(
+            [{"filename": "labels.parquet", "saved_name": "labels.parquet", "size_bytes": 1000}]
+        )
         db.session.commit()
 
         sub = Submission(
             user_id=self.competitor.id,
             challenge_id=self.challenge.id,
             task_id=task.id,
-            status="queued"
+            status="queued",
         )
         sub.code_cells = json.dumps(["# Write output\nprint('Done!')"])
         db.session.add(sub)
@@ -130,16 +129,21 @@ class TestUnifiedParquetEvaluation:
 
         mock_subproc.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        with patch('tempfile.mkdtemp', side_effect=mock_mkdtemp), \
-             patch('task_modules.submission_runner.run_command_streaming', return_value=(0, "", "", False)), \
-             patch('tasks.app', self.app):
+        with (
+            patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
+            patch(
+                "task_modules.submission_runner.run_command_streaming",
+                return_value=(0, "", "", False),
+            ),
+            patch("tasks.app", self.app),
+        ):
 
-             res = evaluate_submission(sub.id)
-             sub_reloaded = db.session.get(Submission, sub.id)
-             db.session.refresh(sub_reloaded)
-             print("\n\nSTATUS:", sub_reloaded.status)
-             print("LOGS:", sub_reloaded.logs, "\n\n")
-             assert "evaluated with status completed" in res
+            res = evaluate_submission(sub.id)
+            sub_reloaded = db.session.get(Submission, sub.id)
+            db.session.refresh(sub_reloaded)
+            print("\n\nSTATUS:", sub_reloaded.status)
+            print("LOGS:", sub_reloaded.logs, "\n\n")
+            assert "evaluated with status completed" in res
 
         db.session.refresh(sub)
         assert sub.status == "completed"
@@ -156,34 +160,31 @@ class TestUnifiedParquetEvaluation:
 
         mock_subproc.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        sub.status = 'queued'
+        sub.status = "queued"
         db.session.commit()
 
-        with patch('tempfile.mkdtemp', side_effect=mock_mkdtemp), \
-             patch('task_modules.submission_runner.run_command_streaming', return_value=(0, "", "", False)), \
-             patch('tasks.app', self.app):
+        with (
+            patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
+            patch(
+                "task_modules.submission_runner.run_command_streaming",
+                return_value=(0, "", "", False),
+            ),
+            patch("tasks.app", self.app),
+        ):
 
-             res = evaluate_submission(sub.id)
+            res = evaluate_submission(sub.id)
 
         db.session.refresh(sub)
         assert sub.status == "failed"
         assert "Submission schema validation failed" in sub.logs
 
     def test_multi_column_evaluation(self):
-        df_labels = pd.DataFrame({
-            "id": [1, 2],
-            "label_1": [1.0, 2.0],
-            "label_2": [3.0, 4.0]
-        })
-        df_sub = pd.DataFrame({
-            "id": [1, 2],
-            "label_1": [1.1, 1.9],
-            "label_2": [3.2, 4.2]
-        })
+        df_labels = pd.DataFrame({"id": [1, 2], "label_1": [1.0, 2.0], "label_2": [3.0, 4.0]})
+        df_sub = pd.DataFrame({"id": [1, 2], "label_1": [1.1, 1.9], "label_2": [3.2, 4.2]})
 
         metrics_cfg = {
             "mse": {"weight": 1.0, "options": {"column": "label_1", "multioutput": "raw_values"}},
-            "mae": {"weight": 1.0, "options": {"column": "label_2"}}
+            "mae": {"weight": 1.0, "options": {"column": "label_2"}},
         }
 
         res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
@@ -227,8 +228,8 @@ class TestUnifiedParquetEvaluation:
             challenge_id=self.challenge.id,
             title="HF Test Task",
             hf_datasets="{malformed",
-            hf_models='[not json',
-            metrics_config='{"accuracy": {"weight": 1.0}}'
+            hf_models="[not json",
+            metrics_config='{"accuracy": {"weight": 1.0}}',
         )
         db.session.add(task)
         db.session.commit()
@@ -242,7 +243,7 @@ class TestUnifiedParquetEvaluation:
             title="HF Valid Task",
             hf_datasets='["stanfordnlp/imdb", "glue"]',
             hf_models='["distilbert-base-uncased"]',
-            metrics_config='{"accuracy": {"weight": 1.0}}'
+            metrics_config='{"accuracy": {"weight": 1.0}}',
         )
         db.session.add(task)
         db.session.commit()
