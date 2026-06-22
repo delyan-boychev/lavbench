@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install black
-      - run: black --check backend/
+      - run: black --check --config backend/pyproject.toml backend/
 
   frontend-lint:
     name: Frontend lint
