@@ -25,6 +25,13 @@ if [ -f ".env" ]; then
     set +a
 fi
 
+# Require Ed25519 private key for worker authentication
+if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
+    echo "FATAL: WORKER_PRIVATE_KEY is not set in .env"
+    echo "  Generate a keypair on the server and copy WORKER_PRIVATE_KEY to the worker's .env"
+    exit 1
+fi
+
 export HF_CACHE_DIR="${HF_CACHE_DIR:-/app/hf_cache}"
 
 if [ ! -z "$2" ]; then

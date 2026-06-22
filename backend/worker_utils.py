@@ -19,8 +19,9 @@ def _sign_worker_token(submission_id):
     """
     import base64 as _b64
 
-    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY", "")
+    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY")
     if not priv_key_b64:
+        logger.critical("WORKER_PRIVATE_KEY is not set — worker cannot authenticate to the main server")
         return ""
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
