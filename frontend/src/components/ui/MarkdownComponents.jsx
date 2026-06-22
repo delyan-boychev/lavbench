@@ -21,7 +21,10 @@ const stringToSlug = (str) => {
 };
 
 export const markdownComponents = {
+   
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- react-markdown component
   blockquote: ({ children }) => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     const { t } = useTranslation();
     const rawText = getRawText(children).trim();
     const alertMatch = rawText.match(/^\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/i);

@@ -410,16 +410,30 @@ def create_task(challenge_id):
     if 'baseline_notebook' in request.files:
         f = request.files['baseline_notebook']
         if f and f.filename != '':
+            from services.file_validation import validate_extension
+            valid_ext, ext_err = validate_extension(f.filename, {'.ipynb'})
+            if not valid_ext:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return jsonify({"error": ext_err}), 400
             safe_name = "baseline_" + secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
             
-
-            
     for key in files_keys:
         uploaded_file = request.files[key]
         if uploaded_file and uploaded_file.filename != '':
+            from services.file_validation import check_dangerous_extension
+            if check_dangerous_extension(uploaded_file.filename):
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return jsonify({"error": f"File type '{uploaded_file.filename}' is not allowed."}), 400
+
             uploaded_file.seek(0, os.SEEK_END)
             size = uploaded_file.tell()
             uploaded_file.seek(0)
@@ -471,6 +485,9 @@ def create_task(challenge_id):
     admin_id = request.user["user_id"]
     _maybe_queue_baseline(task, challenge, admin_id)
     
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "task", target_id=task.id, details={"title": task.title, "challenge_id": challenge_id})
+
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
     
@@ -672,6 +689,10 @@ def update_task(task_id):
     if 'baseline_notebook' in request.files:
         f = request.files['baseline_notebook']
         if f and f.filename != '':
+            from services.file_validation import validate_extension
+            valid_ext, ext_err = validate_extension(f.filename, {'.ipynb'})
+            if not valid_ext:
+                return jsonify({"error": ext_err}), 400
             safe_name = "baseline_" + secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
@@ -717,6 +738,13 @@ def update_task(task_id):
     for key in new_files_keys:
         uploaded_file = request.files[key]
         if uploaded_file and uploaded_file.filename != '':
+            from services.file_validation import check_dangerous_extension
+            if check_dangerous_extension(uploaded_file.filename):
+                for p in newly_saved_paths:
+                    if os.path.exists(p):
+                        os.remove(p)
+                return jsonify({"error": f"File type '{uploaded_file.filename}' is not allowed."}), 400
+
             uploaded_file.seek(0, os.SEEK_END)
             size = uploaded_file.tell()
             uploaded_file.seek(0)
@@ -758,6 +786,9 @@ def update_task(task_id):
             })
     task.files = json.dumps(current_files)
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "update", "task", target_id=task.id, details={"title": task.title, "challenge_id": task.challenge_id})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(task.challenge_id)
@@ -807,6 +838,9 @@ def delete_task(task_id):
             except OSError: pass
     db.session.delete(task)
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "delete", "task", target_id=task.id, details={"title": task.title, "challenge_id": challenge_id})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
@@ -967,13 +1001,13 @@ def submit_task_code(task_id):
     from cache_utils import cache_lock
     lock_key = f"submit_lock:user_{user_id}:task_{task_id}"
     
-    with cache_lock(lock_key, ttl=5):
+    with cache_lock(lock_key, ttl=10):
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge.id,
             Submission.created_at >= today_start
-        ).with_for_update().count()
+        ).count()
         
         if submission_count >= challenge.max_eval_requests:
             return jsonify({
@@ -1280,7 +1314,7 @@ def get_task_leaderboard_live(task_id):
             except:
                 pass
         except Exception as e:
-            print(f"Leaderboard SSE error: {e}")
+            logger.error("Leaderboard SSE error: %s", e)
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
@@ -1364,7 +1398,7 @@ def get_task_submissions_live(task_id):
             except:
                 pass
         except Exception as e:
-            print(f"Submissions SSE error: {e}")
+            logger.error("Submissions SSE error: %s", e)
             try:
                 if user_role in ['admin', 'jury']:
                     pubsub.punsubscribe()
@@ -1553,9 +1587,9 @@ def report_worker_progress(submission_id):
             schema:
               type: object
     """
-    token = request.headers.get("X-Worker-Token")
+    token = request.headers.get("X-Worker-Token") or os.environ.get("WORKER_BOOTSTRAP_TOKEN")
     from auth_utils import verify_worker_token
-    if not verify_worker_token(token, submission_id=submission_id):
+    if not verify_worker_token(token):
         return jsonify({"error": "Unauthorized"}), 401
         
     data = request.json or {}
@@ -1661,6 +1695,35 @@ def worker_download_task_file(task_id, filename):
     return send_from_directory(task_upload_dir, saved_name)
 
 
+@tasks_bp.route('/worker/bootstrap-token', methods=['POST'])
+def worker_bootstrap_token():
+    """
+    Exchange a WORKER_SECRET_KEY for a short-lived JWT for bootstrap endpoints.
+    ---
+    tags:
+      - Tasks
+    parameters:
+      - in: header
+        name: X-Worker-Secret
+        schema:
+          type: string
+        required: true
+        description: Worker secret key from environment
+    responses:
+      200:
+        description: JWT token returned
+      401:
+        description: Invalid secret
+    """
+    worker_secret = request.headers.get("X-Worker-Secret") or (request.json or {}).get("secret")
+    expected_secret = os.environ.get("WORKER_SECRET_KEY")
+    if not expected_secret or worker_secret != expected_secret:
+        return jsonify({"error": "Unauthorized"}), 401
+    from auth_utils import generate_worker_bootstrap_token
+    token = generate_worker_bootstrap_token()
+    return jsonify({"token": token, "expires_in": 3600}), 200
+
+
 @tasks_bp.route('/worker/active-datasets', methods=['GET'])
 def get_active_datasets():
     """
@@ -1732,7 +1795,7 @@ def get_task_hf_key(task_id):
             schema:
               type: object
     """
-    token = request.headers.get("X-Worker-Token")
+    token = request.headers.get("X-Worker-Token") or os.environ.get("WORKER_BOOTSTRAP_TOKEN")
     from auth_utils import verify_worker_token
     if not verify_worker_token(token):
         return jsonify({"error": "Unauthorized"}), 401

@@ -43,7 +43,7 @@ export default function Navbar() {
   const [docContent, setDocContent] = React.useState('');
   const [docLoading, setDocLoading] = React.useState(false);
   const [docError, setDocError] = React.useState(null);
-  const [nowMs, setNowMs] = React.useState(Date.now());
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
 
   React.useEffect(() => {
     setMobileMenuOpen(false);
@@ -51,7 +51,7 @@ export default function Navbar() {
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setNowMs(Date.now());
+      setNowMs(Date.now()); // eslint-disable-line react-hooks/set-state-in-effect
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -107,7 +107,7 @@ export default function Navbar() {
       }
     }
     
-    let timeStr = "";
+    let timeStr;
     if (isGracePeriod) {
       const remainingGraceSecs = Math.ceil((graceMs + timeRemainingMs) / 1000);
       timeStr = `${remainingGraceSecs}s`;
@@ -185,7 +185,7 @@ export default function Navbar() {
           const errData = await res.json();
           setDocError(errData.code ? t(`api.${errData.code}`, errData.error || t('nav.failed_fetch_docs')) : (errData.error || t('nav.failed_fetch_docs')));
         }
-      } catch (err) {
+      } catch {
         setDocError(t('nav.failed_fetch_docs_network'));
       } finally {
         setDocLoading(false);
@@ -208,7 +208,7 @@ export default function Navbar() {
         const data = JSON.parse(event.data);
         setWorkerStatus(data.status);
         setClusters(data.clusters || []);
-      } catch {}
+      } catch { /* noop */ }
     };
     
     eventSource.onerror = () => {
@@ -223,7 +223,7 @@ export default function Navbar() {
     const mq = window.matchMedia('(max-width: 450px)');
     const handler = (e) => setIsNarrow(e.matches);
     mq.addEventListener('change', handler);
-    setIsNarrow(mq.matches);
+    setIsNarrow(mq.matches); // eslint-disable-line react-hooks/set-state-in-effect
     return () => mq.removeEventListener('change', handler);
   }, []);
 

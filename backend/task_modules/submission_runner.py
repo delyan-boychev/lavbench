@@ -464,10 +464,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build step for speed.")
             else:
                 logs.append("Docker sandbox available. Building custom task image...")
-                dockerfile_lines = [f"FROM {base_image}"]
+                import shlex
+                dockerfile_lines = [f"FROM {shlex.quote(base_image)}"]
             
                 if task.apt_packages:
-                    apt_list = " ".join([p.strip() for p in task.apt_packages.replace(",", " ").split() if p.strip()])
+                    apt_list = " ".join(
+                        shlex.quote(p.strip()) for p in task.apt_packages.replace(",", " ").split() if p.strip()
+                    )
                     if apt_list:
                         dockerfile_lines.extend([
                             "RUN apt-get update && apt-get install -y --no-install-recommends \\",
@@ -842,4 +845,4 @@ def register_worker_specs(sender, **kwargs):
         except Exception as e:
             logger.warning("Error fetching/preloading active datasets: %s", e)
     except Exception as e:
-        print(f"[NeuroBench] Failed to register specs: {e}")
+        logger.error("Failed to register specs: %s", e)

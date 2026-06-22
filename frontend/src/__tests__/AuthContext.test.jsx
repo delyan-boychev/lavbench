@@ -23,6 +23,7 @@ vi.mock('../services/ApiService', () => ({
   default: {
     get: (...args) => mockGet(...args),
     post: (...args) => mockPost(...args),
+    refreshCsrfToken: vi.fn().mockResolvedValue(),
   },
 }));
 

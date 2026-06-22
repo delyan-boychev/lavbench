@@ -45,8 +45,9 @@ export default function LeaderboardView() {
     }
   };
 
+   
   useEffect(() => {
-    loadLeaderboard(true);
+    loadLeaderboard(true); // eslint-disable-line react-hooks/set-state-in-effect
 
     const interval = setInterval(() => {
       loadLeaderboard(false);

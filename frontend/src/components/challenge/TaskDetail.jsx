@@ -71,10 +71,10 @@ export default function TaskDetail({ task }) {
 
   if (!task) return null;
 
-  let files = [];
+  let files;
   try {
     files = typeof task.files === 'string' ? JSON.parse(task.files) : (task.files || []);
-  } catch { files = []; }
+  } catch { /* noop */ files = []; }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

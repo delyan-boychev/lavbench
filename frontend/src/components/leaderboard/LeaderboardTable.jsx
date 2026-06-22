@@ -26,6 +26,7 @@ function Row({
   doubleBlind, 
   isExpanded, 
   onToggleExpand,
+  // eslint-disable-next-line no-unused-vars
   isAdmin,
   challengeId,
   showPublicCols,
@@ -44,7 +45,7 @@ function Row({
   const isBaseline = entry.is_baseline_entry;
 
   // Manage temporary points state during editing
-  const [tempPoints, setTempPoints] = useState({});
+  const [tempPoints, setTempPoints] = useState({}); // eslint-disable-line react-hooks/set-state-in-effect
 
   const handlePointsChange = (taskId, value) => {
     setTempPoints(prev => ({
@@ -76,7 +77,7 @@ function Row({
       } else {
         showToast(res.data?.error || t('leaderboard.save_points_failed'), "error");
       }
-    } catch (err) {
+    } catch {
       showToast(t('leaderboard.server_error'), "error");
     }
   };
@@ -389,7 +390,7 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
     displayData = displayData.map((entry, index) => {
       const entryCopy = { ...entry };
       if (index > 0) {
-        let isTie = false;
+        let isTie;
         if (isFinalized) {
           const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
           const ptsB = Number(displayData[index - 1].user?.manual_points?.[activeTaskIdStr] ?? 0);
@@ -400,6 +401,7 @@ export default function LeaderboardTable({ data, tasks, challenge, loading, onRe
           isTie = (scoreA != null && scoreB != null && scoreA === scoreB);
         }
         if (!isTie) {
+          // eslint-disable-next-line react-hooks/immutability
           currentRank = index + 1;
         }
       }

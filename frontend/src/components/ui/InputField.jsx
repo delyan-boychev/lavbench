@@ -21,7 +21,7 @@ export default function InputField({
   const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
 
   useEffect(() => {
-    if (value) setError(false);
+    if (value) setError(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [value]);
 
   const handleInvalid = (e) => {

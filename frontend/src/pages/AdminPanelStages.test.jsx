@@ -5,6 +5,7 @@ import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import AdminPanel from './AdminPanel';
 
+
 // Mock AuthContext
 vi.mock('../AuthContext', () => ({
   useAuth: vi.fn(),

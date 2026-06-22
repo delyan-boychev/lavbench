@@ -9,6 +9,7 @@ const AppContext = createContext(null);
 function ConfirmModal({ config }) {
   const [val, setVal] = useState('');
 
+   
   useEffect(() => {
     if (config.isOpen) {
       setVal('');
@@ -84,7 +85,7 @@ export const AppProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'dark';
-    } catch (e) {
+    } catch {
       return 'dark';
     }
   });
@@ -130,7 +131,7 @@ export const AppProvider = ({ children }) => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
       localStorage.setItem('theme', theme);
-    } catch (e) {
+    } catch {
       // Ignore storage errors
     }
   }, [theme]);
@@ -151,14 +152,7 @@ export const AppProvider = ({ children }) => {
         if (data.length > 0) {
           setSelectedChallengeState(prev => {
             const keep = prev ? data.find(c => c.id === prev.id) : null;
-            const next = keep || data[0];
-            // Reset task if challenge changed or task no longer exists
-            setSelectedTask(t => {
-              if (!t) return next.tasks?.[0] || null;
-              const found = next.tasks?.find(tk => tk.id === t.id);
-              return found || next.tasks?.[0] || null;
-            });
-            return next;
+            return keep || data[0];
           });
         } else {
           setSelectedChallengeState(null);
@@ -171,10 +165,24 @@ export const AppProvider = ({ children }) => {
   }, [currentUser]);
 
   // Fetch challenges when user logs in
+   
   useEffect(() => {
     if (currentUser) fetchChallenges();
     else { setChallenges([]); setSelectedChallengeState(null); setSelectedTask(null); }
   }, [currentUser, fetchChallenges]);
+
+  // Reset task when the selected challenge changes (separate effect to avoid
+  // calling setSelectedTask inside a state updater, which causes ordering flakes)
+   
+  useEffect(() => {
+    if (selectedChallenge) {
+      setSelectedTask(t => {
+        if (!t) return selectedChallenge.tasks?.[0] || null;
+        const found = selectedChallenge.tasks?.find(tk => tk.id === t.id);
+        return found || selectedChallenge.tasks?.[0] || null;
+      });
+    }
+  }, [selectedChallenge]);
 
   // Set selected challenge by ID - resets task to first of new challenge (fixes B7)
   const setSelectedChallengeById = useCallback((id) => {
@@ -206,6 +214,7 @@ export const AppProvider = ({ children }) => {
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useApp = () => {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp must be used within AppProvider');

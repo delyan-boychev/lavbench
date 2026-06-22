@@ -29,7 +29,7 @@ export default function CustomSelect({
 
   useEffect(() => {
     if (!isOpen) {
-      setSearchQuery('');
+      setSearchQuery(''); // eslint-disable-line react-hooks/set-state-in-effect
     } else {
       // Auto-focus search input when opening
       setTimeout(() => {

@@ -11,6 +11,7 @@ import urllib.parse
 import subprocess
 import json
 import zipfile
+import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, current_app, Response, stream_with_context
 from werkzeug.security import generate_password_hash
@@ -18,6 +19,7 @@ from models import db, User, Challenge, Submission, Task, generate_pseudonym, de
 from auth_utils import role_required
 from evaluation_engine import AVAILABLE_METRICS
 
+logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.route('/metrics', methods=['GET'])
@@ -121,10 +123,9 @@ def register_competitor():
     username = generate_unique_username(name, surname)
     password = generate_random_password()
     
-    client_hash = hashlib.sha256(password.encode()).hexdigest()
     user = User(
         username=username,
-        password_hash=generate_password_hash(client_hash, method='pbkdf2:sha256'),
+        password_hash=generate_password_hash(password, method='pbkdf2:sha256'),
         role='competitor',
         alias_id=generate_pseudonym(),
         challenge_id=challenge_id
@@ -132,6 +133,9 @@ def register_competitor():
     user.set_demographics(name, surname, grade, school, city)
     db.session.add(user)
     db.session.commit()
+    
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "user", target_id=user.id, details={"username": username, "role": "competitor", "challenge_id": challenge_id})
     
     from cache_utils import invalidate_leaderboard_cache
     invalidate_leaderboard_cache(challenge_id)
@@ -275,6 +279,9 @@ def delete_user(user_id):
     if not user:
         return jsonify({"error": "User not found."}), 404
         
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "delete", "user", target_id=user.id, details={"username": user.username, "role": user.role})
+    
     # ORM delete per submission — triggers after_delete event for file cleanup
     subs = Submission.query.filter_by(user_id=user_id).all()
     for s in subs:
@@ -338,10 +345,8 @@ def register_user():
             if request.user["role"] != 'admin':
                 return jsonify({"error": "Jury members cannot register competitors once the competition has started."}), 403
             
-    is_plain = False
     if not password:
         password = generate_random_password(8)
-        is_plain = True
         
     if role == 'competitor' and not username:
         username = generate_unique_username(name, surname)
@@ -357,11 +362,10 @@ def register_user():
     city = data.get("city")
     is_anon = bool(data.get("is_anonymous", False))
     
-    client_hash = hashlib.sha256(password.encode()).hexdigest() if is_plain else password
     user = User(
         username=username,
         email=email,
-        password_hash=generate_password_hash(client_hash, method='pbkdf2:sha256'),
+        password_hash=generate_password_hash(password, method='pbkdf2:sha256'),
         role=role,
         alias_id=generate_pseudonym(),
         challenge_id=challenge_id if role == 'competitor' else None,
@@ -370,6 +374,9 @@ def register_user():
     user.set_demographics(name, surname, grade, school, city)
     db.session.add(user)
     db.session.commit()
+    
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "user", target_id=user.id, details={"username": username, "role": role, "challenge_id": challenge_id if role == 'competitor' else None})
     
     return jsonify({
         "message": f"{role.capitalize()} registered successfully.",
@@ -414,11 +421,23 @@ def import_competitors_csv():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded."}), 400
     file = request.files['file']
-    if not file.filename.endswith('.csv'):
-        return jsonify({"error": "Only CSV (.csv) files are supported."}), 400
-        
+    
+    from services.file_validation import validate_extension, validate_csv_content
+    
+    valid_ext, ext_err = validate_extension(file.filename, {'.csv'})
+    if not valid_ext:
+        return jsonify({"error": ext_err}), 400
+
     try:
-        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        raw = file.read()
+    except Exception:
+        return jsonify({"error": "Failed to read uploaded file."}), 400
+    valid_content, content_err, _ = validate_csv_content(raw)
+    if not valid_content:
+        return jsonify({"error": content_err}), 400
+
+    try:
+        stream = io.StringIO(raw.decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
         
         csv_reader.fieldnames = [f.strip().lower() for f in csv_reader.fieldnames]
@@ -442,15 +461,13 @@ def import_competitors_csv():
             username = generate_unique_username(name, surname)
             password = generate_random_password(8)
             
-            client_hash = hashlib.sha256(password.encode()).hexdigest()
-            
             # Anonymity preference
             is_anon_str = (row.get("is_anonymous") or row.get("anonymous") or "").strip().lower()
             is_anon = is_anon_str in ("1", "true", "yes")
 
             user = User(
                 username=username,
-                password_hash=generate_password_hash(client_hash, method='pbkdf2:sha256'),
+                password_hash=generate_password_hash(password, method='pbkdf2:sha256'),
                 role='competitor',
                 alias_id=generate_pseudonym(),
                 challenge_id=int(challenge_id),
@@ -471,6 +488,9 @@ def import_competitors_csv():
             })
             
         db.session.commit()
+
+        from services.audit_service import log_action
+        log_action(request.user["user_id"], "import_competitors", "user", details={"challenge_id": int(challenge_id), "count": len(imported)})
         
         from cache_utils import invalidate_leaderboard_cache
         invalidate_leaderboard_cache(int(challenge_id))
@@ -547,6 +567,8 @@ def force_backup():
             schema:
               type: object
     """
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "backup", details={"auto": False})
     from tasks import run_backup
     task = run_backup.delay(auto=False)
     return jsonify({"task_id": task.id, "status": "started"}), 202
@@ -660,6 +682,8 @@ def delete_backup_file(filename):
     if not os.path.isfile(safe_path):
         return jsonify({"error": "Not found"}), 404
     os.remove(safe_path)
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "delete", "backup", details={"filename": filename})
     return jsonify({"message": "Deleted."})
 
 @admin_bp.route('/challenges/<int:challenge_id>/backups', methods=['GET'])
@@ -816,10 +840,11 @@ def update_user(user_id):
         user.username = username
         
     if password:
-        client_hash = hashlib.sha256(password.encode()).hexdigest()
-        user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
+        user.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
         
     db.session.commit()
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "update", "user", target_id=user.id, details={"username": user.username})
     return jsonify({
         "message": "User updated successfully.",
         "user": user.to_dict(view_role=request.user["role"])
@@ -859,9 +884,11 @@ def reset_user_password(user_id):
                 return jsonify({"error": "Cannot reset password: The assigned competition has already started."}), 403
 
     new_password = generate_random_password(8)
-    client_hash = hashlib.sha256(new_password.encode()).hexdigest()
-    user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
+    user.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "reset_password", "user", target_id=user.id, details={"username": user.username})
 
     return jsonify({
         "message": f"Password reset successfully for {user.username}.",
@@ -905,8 +932,7 @@ def reset_all_challenge_passwords(challenge_id):
     results = []
     for user in competitors:
         new_password = generate_random_password()
-        client_hash = hashlib.sha256(new_password.encode()).hexdigest()
-        user.password_hash = generate_password_hash(client_hash, method='pbkdf2:sha256')
+        user.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
 
         # Decrypt name/surname for output
         dec_name = decrypt_field(user.name)
@@ -915,11 +941,12 @@ def reset_all_challenge_passwords(challenge_id):
         results.append({
             "username": user.username,
             "name": dec_name or "",
-            "surname": dec_surname or "",
-            "password": new_password
+            "surname": dec_surname or ""
         })
 
     db.session.commit()
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "reset_passwords", "user", details={"challenge_id": challenge_id, "count": len(competitors)})
     return jsonify({
         "message": f"Reset passwords for {len(competitors)} competitors.",
         "reset_accounts": results
@@ -1137,7 +1164,7 @@ def stream_worker_stats():
             except:
                 pass
         except Exception as e:
-            print(f"Worker stats SSE error: {e}")
+            logger.error("Worker stats SSE error: %s", e)
             try:
                 pubsub.unsubscribe()
                 pubsub.close()

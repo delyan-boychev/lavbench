@@ -17,6 +17,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', f
   const [animateShow, setAnimateShow] = useState(false);
 
   // Handle opening and closing transition state
+   
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);

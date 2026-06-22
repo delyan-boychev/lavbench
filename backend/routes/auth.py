@@ -1,46 +1,64 @@
 from flask import Blueprint, request, jsonify, make_response
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from models import db, User
 from auth_utils import generate_token, login_required, set_auth_cookie, clear_auth_cookie
 
 auth_bp = Blueprint('auth', __name__)
 
-def check_rate_limit(identifier):
+import time
+
+def _login_rate_limit_exceeded(username, ip):
+    """
+    Two-tier sliding window rate limiting:
+    - Per-username: max 5 failures per 60s
+    - Per-IP: max 30 failures per 60s (accommodates school NAT)
+    """
     try:
         from cache_utils import get_redis_client
         r = get_redis_client()
         if not r:
             return False
-        key = f"login_failures:{identifier}"
-        failures = r.get(key)
-        if failures and int(failures) >= 5:
-            return True
-        return False
+        
+        now = time.time()
+        window = 60
+        
+        user_key = f"login_failures:user:{username}"
+        ip_key = f"login_failures:ip:{ip}"
+        
+        r.zremrangebyscore(user_key, 0, now - window)
+        r.zremrangebyscore(ip_key, 0, now - window)
+        
+        user_failures = r.zcard(user_key)
+        ip_failures = r.zcard(ip_key)
+        
+        return user_failures >= 5 or ip_failures >= 30
     except Exception:
         return False
 
-def record_failure(identifier):
+def _record_login_failure(username, ip):
+    """Record a failed login attempt in sliding window."""
     try:
         from cache_utils import get_redis_client
         r = get_redis_client()
         if not r:
             return
-        key = f"login_failures:{identifier}"
-        pipe = r.pipeline()
-        pipe.incr(key)
-        pipe.expire(key, 60)
-        pipe.execute()
+        now = time.time()
+        r.zadd(f"login_failures:user:{username}", {str(now): now})
+        r.zadd(f"login_failures:ip:{ip}", {str(now): now})
+        r.expire(f"login_failures:user:{username}", 120)
+        r.expire(f"login_failures:ip:{ip}", 120)
     except Exception:
         pass
 
-def clear_failures(identifier):
+def _clear_login_failures(username, ip):
+    """Clear failure records on successful login."""
     try:
         from cache_utils import get_redis_client
         r = get_redis_client()
         if not r:
             return
-        key = f"login_failures:{identifier}"
-        r.delete(key)
+        r.delete(f"login_failures:user:{username}")
+        r.delete(f"login_failures:ip:{ip}")
     except Exception:
         pass
 
@@ -130,27 +148,30 @@ def login():
         }), 400
         
     ip = get_client_ip()
-    rate_limit_key = f"{username}:{ip}"
         
-    if check_rate_limit(rate_limit_key):
+    if _login_rate_limit_exceeded(username, ip):
         return jsonify({
-            "error": "Too many failed login attempts. Please try again in a minute.",
+            "error": "Too many failed login attempts. Please try again later.",
             "code": "ERR_RATE_LIMIT_EXCEEDED"
         }), 429
         
     user = User.query.filter(User.username == username).first()
     
-    import hashlib
-    client_hash = hashlib.sha256(password.encode()).hexdigest()
-    
-    if not user or not check_password_hash(user.password_hash, client_hash):
-        record_failure(rate_limit_key)
-        return jsonify({
-            "error": "Invalid credentials.",
-            "code": "ERR_INVALID_CREDENTIALS"
-        }), 401
+    if not user or not check_password_hash(user.password_hash, password):
+        # Check legacy format (SHA-256 wrapped). Migrate on successful match.
+        import hashlib
+        legacy_hash = hashlib.sha256(password.encode()).hexdigest()
+        if not user or not check_password_hash(user.password_hash, legacy_hash):
+            _record_login_failure(username, ip)
+            return jsonify({
+                "error": "Invalid credentials.",
+                "code": "ERR_INVALID_CREDENTIALS"
+            }), 401
+        # Migrate to new format
+            user.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+        db.session.commit()
         
-    clear_failures(rate_limit_key)
+    _clear_login_failures(username, ip)
         
     if user.role == 'competitor' and user.challenge_id:
         from models import Challenge
@@ -168,6 +189,30 @@ def login():
     }))
     set_auth_cookie(resp, user.id, user.role)
     return resp
+
+
+@auth_bp.route('/csrf-token', methods=['GET'])
+def get_csrf_token():
+    """
+    Get a CSRF token for state-changing requests.
+    Returns the token in the response body and sets it as a non-httpOnly cookie.
+    The frontend should read the cookie and include it as X-CSRF-Token header.
+    ---
+    tags:
+      - Auth
+    responses:
+      200:
+        description: CSRF token generated
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                csrf_token:
+                  type: string
+    """
+    from auth_utils import generate_csrf_token
+    return generate_csrf_token()
 
 
 @auth_bp.route('/logout', methods=['POST'])

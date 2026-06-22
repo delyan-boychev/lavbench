@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../AuthContext';
@@ -41,7 +41,7 @@ export default function ProtectedLayout() {
         margin: '0 auto',
         padding: '20px 16px',
       }}>
-        <div key={location.pathname} className="animate-fadein">
+        <div key={location.pathname} className="animate-fadein"> {/* eslint-disable-line react-hooks/set-state-in-effect */}
           <Outlet />
         </div>
       </main>

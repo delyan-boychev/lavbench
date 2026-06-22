@@ -5,6 +5,7 @@ import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Navbar from './Navbar';
 
+
 // Mock AuthContext
 vi.mock('../../AuthContext', () => ({
   useAuth: vi.fn(),
@@ -45,10 +46,6 @@ describe('Navbar Component', () => {
     global.EventSource = class {
       constructor(url) { this.url = url; this.close = vi.fn(); }
     };
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'online' }),
-    });
   });
 
   it('renders logo and user info when logged in', async () => {

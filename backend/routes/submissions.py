@@ -1,11 +1,14 @@
 import os
 import json
+import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import joinedload
 from models import db, Challenge, Submission, User, Task
 from auth_utils import login_required, rate_limit
 from sse_utils import publish_submissions_update, publish_leaderboard_update
+
+logger = logging.getLogger(__name__)
 
 
 submissions_bp = Blueprint('submissions', __name__)
@@ -65,9 +68,13 @@ def parse_notebook(challenge_id):
             "code": "ERR_NO_FILE_UPLOADED"
         }), 400
     file = request.files['file']
-    if not file.filename.endswith('.ipynb'):
+    
+    from services.file_validation import validate_extension, validate_notebook_content
+    
+    valid_ext, ext_err = validate_extension(file.filename, {'.ipynb'})
+    if not valid_ext:
         return jsonify({
-            "error": "Only Jupyter Notebook (.ipynb) files are supported.",
+            "error": ext_err,
             "code": "ERR_INVALID_FILE_TYPE"
         }), 400
         
@@ -80,31 +87,29 @@ def parse_notebook(challenge_id):
             "code": "ERR_FILE_TOO_LARGE"
         }), 413
         
-    try:
-        notebook_content = content.decode('utf-8')
-        notebook = json.loads(notebook_content)
-        
-        cells = []
-        for idx, cell in enumerate(notebook.get("cells", [])):
-            cell_type = cell.get("cell_type", "code")
-            source_lines = cell.get("source", [])
-            source = "".join(source_lines) if isinstance(source_lines, list) else source_lines
-            
-            cells.append({
-                "id": idx,
-                "type": cell_type,
-                "source": source
-            })
-            
+    valid_content, content_err, notebook = validate_notebook_content(content)
+    if not valid_content:
         return jsonify({
-            "filename": file.filename,
-            "cells": cells
-        })
-    except Exception as e:
-        return jsonify({
-            "error": f"Failed to parse notebook: {str(e)}",
+            "error": f"Invalid notebook file: {content_err}",
             "code": "ERR_PARSING_FAILED"
         }), 400
+
+    cells = []
+    for idx, cell in enumerate(notebook.get("cells", [])):
+        cell_type = cell.get("cell_type", "code")
+        source_lines = cell.get("source", [])
+        source = "".join(source_lines) if isinstance(source_lines, list) else source_lines
+
+        cells.append({
+            "id": idx,
+            "type": cell_type,
+            "source": source
+        })
+
+    return jsonify({
+        "filename": file.filename,
+        "cells": cells
+    })
 
 
 @submissions_bp.route('/challenges/<int:challenge_id>/submit', methods=['POST'])
@@ -267,30 +272,40 @@ def submit_code(challenge_id):
             "code": "ERR_AST_RULE_FAILED"
         }), 400
         
-    # Check rate limit (submissions count today) - use SELECT FOR UPDATE to prevent race
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    submission_count = Submission.query.filter(
-        Submission.user_id == user_id,
-        Submission.challenge_id == challenge_id,
-        Submission.created_at >= today_start
-    ).with_for_update().count()
+    # Atomic rate-limited submission creation via Redis lock
+    from cache_utils import cache_lock
+    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge_id}"
     
-    if submission_count >= challenge.max_eval_requests:
-        return jsonify({
-            "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day.",
-            "code": "ERR_DAILY_LIMIT_REACHED"
-        }), 429
+    with cache_lock(lock_key, ttl=10) as acquired:
+        if not acquired:
+            return jsonify({
+                "error": "Another submission is being processed. Please wait.",
+                "code": "ERR_SUBMIT_LOCKED"
+            }), 429
+            
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        submission_count = Submission.query.filter(
+            Submission.user_id == user_id,
+            Submission.challenge_id == challenge_id,
+            Submission.created_at >= today_start
+        ).count()
         
-    # Create submission
-    submission = Submission(
-        user_id=user_id,
-        challenge_id=challenge_id,
-        task_id=task.id,
-        status='queued',
-        code_cells=json.dumps(selected_cells)
-    )
-    db.session.add(submission)
-    db.session.commit()
+        if submission_count >= challenge.max_eval_requests:
+            return jsonify({
+                "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day.",
+                "code": "ERR_DAILY_LIMIT_REACHED"
+            }), 429
+            
+        # Create submission
+        submission = Submission(
+            user_id=user_id,
+            challenge_id=challenge_id,
+            task_id=task.id,
+            status='queued',
+            code_cells=json.dumps(selected_cells)
+        )
+        db.session.add(submission)
+        db.session.commit()
     
     # Trigger Celery Task asynchronously
     from tasks import evaluate_submission
@@ -595,13 +610,14 @@ def select_final_submission(submission_id):
                         "code": "ERR_SELECTION_WINDOW_CLOSED"
                     }), 400
                     
-    # Unset is_final_selection for all other submissions by this user for this task
-    Submission.query.filter_by(
+    # Atomically set final selection: lock all submissions for this user+task
+    locked_subs = Submission.query.filter_by(
         user_id=submission.user_id,
         task_id=submission.task_id
-    ).update({Submission.is_final_selection: False})
+    ).with_for_update().all()
     
-    submission.is_final_selection = True
+    for s in locked_subs:
+        s.is_final_selection = (s.id == submission.id)
     db.session.commit()
     
     from cache_utils import invalidate_leaderboard_cache
@@ -709,7 +725,7 @@ def stream_submission_logs(submission_id):
             except:
                 pass
         except Exception as e:
-            print(f"SSE logs streaming error: {e}")
+            logger.error("SSE logs streaming error: %s", e)
             try:
                 pubsub.unsubscribe()
                 pubsub.close()

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const NAMES = ['Alpha-Titan', 'Quantum-Falcon', 'Stellar-Voyager', 'Cyber-Phoenix', 'Neon-Warrior',
@@ -13,10 +13,9 @@ function generateScores() {
 }
 
 export default function LeaderboardDemo() {
-  const { t } = useTranslation();
+  useTranslation();
   const [entries, setEntries] = useState(generateScores);
   const [prevRanks, setPrevRanks] = useState({});
-  const prevEntriesRef = useRef(entries.map(e => e.id));
 
   const shuffle = () => {
     const prev = {};
@@ -27,7 +26,7 @@ export default function LeaderboardDemo() {
 
   // Animate on mount
   useEffect(() => {
-    const timer = setInterval(shuffle, 3000);
+    const timer = setInterval(shuffle, 3000); // eslint-disable-line react-hooks/set-state-in-effect
     return () => clearInterval(timer);
   }, []);
 

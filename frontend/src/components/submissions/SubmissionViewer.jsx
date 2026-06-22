@@ -82,7 +82,7 @@ export default function SubmissionViewer({
     );
   }
 
-  let cells = [];
+  let cells;
   try {
     cells = typeof submission.code_cells === 'string'
       ? JSON.parse(submission.code_cells)

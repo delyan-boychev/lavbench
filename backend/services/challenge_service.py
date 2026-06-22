@@ -2,8 +2,9 @@
 
 import csv
 import io
+import json
 from datetime import datetime
-from models import db, User, Submission, AuditLog, decrypt_field
+from models import db, User, Submission, AuditLog, Challenge, Task, Stage, decrypt_field
 from services.submission_service import get_best_submission
 from services.leaderboard_service import build_and_cache_leaderboard
 
@@ -152,3 +153,93 @@ def generate_exported_results_csv(challenge):
         ])
         
     return output.getvalue()
+
+
+def import_challenge_from_dict(data):
+    """Create a challenge (with stages and tasks) from an exported dict.
+    Returns the created Challenge object. Raises ValueError on invalid data."""
+    title = data.get("title")
+    if not title:
+        raise ValueError("Challenge title is required.")
+
+    def _parse_dt(val):
+        if not val:
+            return None
+        try:
+            if isinstance(val, str):
+                return datetime.fromisoformat(val.replace('Z', '+00:00')).replace(tzinfo=None)
+            return val
+        except Exception:
+            return None
+
+    challenge = Challenge(
+        title=title,
+        description=data.get("description"),
+        max_eval_requests=int(data.get("max_eval_requests", 10)),
+        ram_limit_mb=int(data.get("ram_limit_mb", 8192)),
+        time_limit_sec=int(data.get("time_limit_sec", 300)),
+        gpu_required=bool(data.get("gpu_required", True)),
+        is_active=bool(data.get("is_active", True)),
+        is_archived=False,
+        scores_finalized=False,
+        start_time=_parse_dt(data.get("start_time")) or datetime.utcnow(),
+        end_time=_parse_dt(data.get("end_time")) or datetime.utcnow(),
+        is_frozen=bool(data.get("is_frozen", False)),
+        double_blind=bool(data.get("double_blind", True)),
+        reveal_public_scores=bool(data.get("reveal_public_scores", True)),
+        reveal_private_scores=bool(data.get("reveal_private_scores", True)),
+        reveal_points=bool(data.get("reveal_points", True)),
+        timezone=data.get("timezone", "UTC"),
+    )
+    db.session.add(challenge)
+    db.session.flush()
+
+    old_to_new_stage = {}
+
+    for s_data in data.get("stages", []):
+        stage = Stage(
+            challenge_id=challenge.id,
+            stage_number=int(s_data.get("stage_number", 1)),
+            title=s_data.get("title", "Stage"),
+            start_time=_parse_dt(s_data.get("start_time")) or datetime.utcnow(),
+            end_time=_parse_dt(s_data.get("end_time")) or datetime.utcnow(),
+            is_finalized=False,
+            finalize_type=s_data.get("finalize_type"),
+            reveal_public=bool(s_data.get("reveal_public", True)),
+            reveal_private=bool(s_data.get("reveal_private", False)),
+            reveal_points=bool(s_data.get("reveal_points", False)),
+        )
+        db.session.add(stage)
+        db.session.flush()
+        if s_data.get("id"):
+            old_to_new_stage[s_data["id"]] = stage.id
+
+    for t_data in data.get("tasks", []):
+        if not t_data.get("title"):
+            continue
+        task = Task(
+            challenge_id=challenge.id,
+            stage_id=old_to_new_stage.get(t_data.get("stage_id")),
+            title=t_data["title"],
+            description=t_data.get("description"),
+            files=json.dumps(t_data.get("files", [])),
+            ram_limit_mb=t_data.get("ram_limit_mb"),
+            time_limit_sec=t_data.get("time_limit_sec"),
+            gpu_required=t_data.get("gpu_required"),
+            base_docker_image=t_data.get("base_docker_image"),
+            apt_packages=t_data.get("apt_packages"),
+            pip_requirements=t_data.get("pip_requirements"),
+            ban_magic_commands=bool(t_data.get("ban_magic_commands", False)),
+            banned_imports=t_data.get("banned_imports"),
+            whitelisted_imports=t_data.get("whitelisted_imports"),
+            metrics_config=t_data.get("metrics_config"),
+            hf_datasets=t_data.get("hf_datasets"),
+            hf_models=t_data.get("hf_models"),
+            public_eval_percentage=int(t_data.get("public_eval_percentage", 30)),
+            max_submissions_per_period=t_data.get("max_submissions_per_period"),
+            submission_period_hours=t_data.get("submission_period_hours"),
+        )
+        db.session.add(task)
+
+    db.session.commit()
+    return challenge

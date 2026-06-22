@@ -18,6 +18,14 @@ export default function BackupManager({ challengeId }) {
     ? `/api/admin/challenges/${challengeId}/backups`
     : '/api/admin/backups';
 
+  const loadBackups = async () => {
+    try {
+      const { ok, data } = await api.get(listUrl);
+      if (ok) setBackups(data.backups || []);
+    } catch { /* noop */ }
+    setLoading(false);
+  };
+
   useEffect(() => {
     loadBackups();
     const eventSource = new EventSource('/api/admin/backups/live');
@@ -26,27 +34,24 @@ export default function BackupManager({ challengeId }) {
         const data = JSON.parse(event.data);
         if (data.backups) {
           const filtered = challengeId
-            ? data.backups.filter(b => b.filename.includes(challengeId) || true)
+            ? data.backups.filter(b => b.filename.includes(challengeId))
             : data.backups.filter(b => !b.filename.includes('submission_ended') && !b.filename.includes('grace_ended') && !b.filename.includes('finalized'));
-          setBackups(data.backups);
+          setBackups(filtered);
           setLoading(false);
         }
         if (data.event?.status === 'completed') {
           setForcing(false);
           loadBackups();
         }
-      } catch {}
+      } catch (e) {
+        console.error("Backup SSE parse error:", e);
+      }
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
     };
     return () => eventSource.close();
-  }, [challengeId]);
-
-  const loadBackups = async () => {
-    try {
-      const { ok, data } = await api.get(listUrl);
-      if (ok) setBackups(data.backups || []);
-    } catch {}
-    setLoading(false);
-  };
+  }, [challengeId, loadBackups]);
 
   const handleForce = async () => {
     setForcing(true);
@@ -63,7 +68,7 @@ export default function BackupManager({ challengeId }) {
       /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/{filename}']['delete']['responses']['200']['content']['application/json'] }>} */
       await api.delete(`/api/admin/backups/${filename}`);
       loadBackups();
-    } catch {}
+    } catch { /* noop */ }
   };
 
   const handleDownload = (filename) => {

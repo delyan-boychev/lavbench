@@ -169,8 +169,6 @@ describe('AdminPanel - Column Config & Metrics', () => {
       fireEvent.change(nameInput, { target: { value: 'label' } });
     });
 
-    // Add metric from dropdown
-    const addMetricSelect = screen.getAllByRole('combobox')[0];
     // Find the "Add Evaluation Metric" select (it contains the "+" text)
     const metricSelects = screen.getAllByRole('combobox');
     const addMetric = metricSelects.find(s => s.querySelector('option')?.textContent?.includes('Add'));

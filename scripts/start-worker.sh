@@ -1,8 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # scripts/start-worker.sh
 # Decoupled Startup Script for Remote Celery GPU/CPU Workers
 # Usage: make start-worker REDIS_URL=redis://... [GPU_ID=0]
 # Example: make start-worker REDIS_URL=redis://worker_user:secure_password@shared-redis:6379/0 GPU_ID=0
+
+set -euo pipefail
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <REDIS_URL> [GPU_ID]"
@@ -12,14 +14,15 @@ fi
 
 export CELERY_BROKER_URL="$1"
 export CELERY_RESULT_BACKEND="$1"
-export RUNNING_AS_WORKER="true" # Enforce database-free decoupled worker execution
+export RUNNING_AS_WORKER="true"
 export PYTHONPATH=".:backend:$PYTHONPATH"
 
 # Load server callback configurations from .env if present
 if [ -f ".env" ]; then
     echo "--> Loading variables from local .env file..."
-    # Export vars, ignoring comments
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 export HF_CACHE_DIR="${HF_CACHE_DIR:-/app/hf_cache}"
@@ -28,6 +31,21 @@ if [ ! -z "$2" ]; then
     export WORKER_GPU_ID="$2"
     export CUDA_VISIBLE_DEVICES="$2"
     echo "--> Configuring worker for GPU device: $2"
+fi
+
+# Obtain a bootstrap token from the main server
+if [ -n "${MAIN_SERVER_URL:-}" ] && [ -n "${WORKER_SECRET_KEY:-}" ]; then
+    echo "--> Obtaining worker bootstrap token from $MAIN_SERVER_URL..."
+    TOKEN_RESPONSE=$(curl -s -X POST "$MAIN_SERVER_URL/api/worker/bootstrap-token" \
+        -H "Content-Type: application/json" \
+        -d "{\"secret\": \"$WORKER_SECRET_KEY\"}")
+    WORKER_BOOTSTRAP_TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
+    if [ -n "$WORKER_BOOTSTRAP_TOKEN" ]; then
+        export WORKER_BOOTSTRAP_TOKEN
+        echo "--> Bootstrap token acquired successfully."
+    else
+        echo "--> WARNING: Failed to obtain bootstrap token. Worker may not access bootstrap endpoints."
+    fi
 fi
 
 # 1. Micromamba environment setup (required)
@@ -61,7 +79,7 @@ echo "    Main Server Callback URL: ${MAIN_SERVER_URL:-http://localhost:5001}"
 echo "=========================================================================="
 
 # Select queue depending on GPU availability
-if [ ! -z "$WORKER_GPU_ID" ]; then
+if [ ! -z "${WORKER_GPU_ID:-}" ]; then
     celery -A tasks.celery worker --loglevel=info -Q gpu_queue
 else
     celery -A tasks.celery worker --loglevel=info -Q celery

@@ -36,7 +36,7 @@ export default function ChallengeOverview({ challenge }) {
       const getPart = (type) => parts.find(p => p.type === type)?.value || '';
       const tzLabel = (timezone || 'UTC').replace(/_/g, ' ');
       return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
-    } catch (err) {
+    } catch {
       const d = new Date(dateStr);
       const pad = (n) => n.toString().padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${t('challenge.local_timezone')}`;

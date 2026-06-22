@@ -95,6 +95,18 @@
   --danger: var(--color-rose-600);
 }
 
+/* ─── SEMANTIC UTILITY CLASSES (theme-aware) ────── */
+.text-primary { color: var(--text-primary) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-muted { color: var(--text-muted) !important; }
+.bg-base { background-color: var(--bg-base) !important; }
+.bg-surface { background-color: var(--bg-surface) !important; }
+.bg-elevated { background-color: var(--bg-elevated) !important; }
+.bg-hover { background-color: var(--bg-hover) !important; }
+.border-default { border-color: var(--border) !important; }
+.bg-navbar { background-color: var(--bg-nav) !important; }
+.bg-topbar { background-color: var(--bg-bar) !important; }
+
 /* Light mode structural & utility overrides */
 [data-theme='light'] .bg-\[\#0d0e18\]:not([data-theme='dark'] *) {
   background-color: var(--custom-bg-dark) !important;

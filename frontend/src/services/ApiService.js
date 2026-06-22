@@ -1,14 +1,33 @@
 class ApiService {
   #baseUrl;
+  #csrfToken;
 
   constructor(baseUrl = '/api') {
     this.#baseUrl = baseUrl;
+    this.#csrfToken = null;
   }
 
-  #getHeaders(isForm = false) {
+  /** Fetch a CSRF token from the server and cache it. */
+  async refreshCsrfToken() {
+    try {
+      const res = await fetch(`${this.#baseUrl}/auth/csrf-token`);
+      if (res.ok) {
+        const data = await res.json();
+        this.#csrfToken = data.csrf_token;
+      }
+    } catch {
+      // CSRF failure is non-fatal; mutations without it will get 403
+    }
+  }
+
+  #getHeaders(isForm = false, method = 'GET') {
     /** @type {{ [key: string]: string }} */
     const headers = {};
     if (!isForm) headers['Content-Type'] = 'application/json';
+    // Attach CSRF token for state-changing requests
+    if (this.#csrfToken && method !== 'GET' && method !== 'HEAD') {
+      headers['X-CSRF-Token'] = this.#csrfToken;
+    }
     return headers;
   }
 
@@ -20,12 +39,31 @@ class ApiService {
     return { ok: res.ok, status: res.status, data, res };
   }
 
+  async #csrfAwareRequest(method, path, body, isForm = false) {
+    const res = await fetch(`${this.#baseUrl}${path}`, {
+      method,
+      headers: this.#getHeaders(isForm, method),
+      body,
+    });
+    const result = await this.#handleResponse(res);
+    if (result.status === 403 && result.data?.code === 'ERR_CSRF_FAILED') {
+      await this.refreshCsrfToken();
+      const retryRes = await fetch(`${this.#baseUrl}${path}`, {
+        method,
+        headers: this.#getHeaders(isForm, method),
+        body,
+      });
+      return this.#handleResponse(retryRes);
+    }
+    return result;
+  }
+
   // Generic fetch wrapper to act as a drop-in replacement for native fetch
   async fetch(url, options = {}) {
     const isForm = options.body instanceof FormData;
-    const defaultHeaders = this.#getHeaders(isForm);
+    const method = options.method || 'GET';
+    const defaultHeaders = this.#getHeaders(isForm, method);
     
-    // We strip headers that fetch would auto-generate for FormData
     const mergedHeaders = { ...defaultHeaders, ...options.headers };
     if (isForm && mergedHeaders['Content-Type']) {
       delete mergedHeaders['Content-Type'];
@@ -33,7 +71,6 @@ class ApiService {
 
     let finalUrl = url;
     if (!url.startsWith('http')) {
-      // Avoid double /api prefix
       finalUrl = url.startsWith(this.#baseUrl) ? url : `${this.#baseUrl}${url}`;
     }
 
@@ -50,58 +87,34 @@ class ApiService {
 
   async get(path) {
     const res = await fetch(`${this.#baseUrl}${path}`, {
-      headers: this.#getHeaders(),
+      headers: this.#getHeaders(false, 'GET'),
     });
     return this.#handleResponse(res);
   }
 
   async post(path, body) {
-    const res = await fetch(`${this.#baseUrl}${path}`, {
-      method: 'POST',
-      headers: this.#getHeaders(),
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    return this.#handleResponse(res);
+    return this.#csrfAwareRequest('POST', path, body !== undefined ? JSON.stringify(body) : undefined);
   }
 
   async put(path, body) {
-    const res = await fetch(`${this.#baseUrl}${path}`, {
-      method: 'PUT',
-      headers: this.#getHeaders(),
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    return this.#handleResponse(res);
+    return this.#csrfAwareRequest('PUT', path, body !== undefined ? JSON.stringify(body) : undefined);
   }
 
   async delete(path) {
-    const res = await fetch(`${this.#baseUrl}${path}`, {
-      method: 'DELETE',
-      headers: this.#getHeaders(),
-    });
-    return this.#handleResponse(res);
+    return this.#csrfAwareRequest('DELETE', path);
   }
 
   async postForm(path, formData) {
-    const res = await fetch(`${this.#baseUrl}${path}`, {
-      method: 'POST',
-      headers: this.#getHeaders(true),
-      body: formData,
-    });
-    return this.#handleResponse(res);
+    return this.#csrfAwareRequest('POST', path, formData, true);
   }
 
   async putForm(path, formData) {
-    const res = await fetch(`${this.#baseUrl}${path}`, {
-      method: 'PUT',
-      headers: this.#getHeaders(true),
-      body: formData,
-    });
-    return this.#handleResponse(res);
+    return this.#csrfAwareRequest('PUT', path, formData, true);
   }
 
   async getBlob(path) {
     const res = await fetch(`${this.#baseUrl}${path}`, {
-      headers: this.#getHeaders(),
+      headers: this.#getHeaders(false, 'GET'),
     });
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent('auth:unauthorized'));

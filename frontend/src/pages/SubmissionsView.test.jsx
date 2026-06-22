@@ -6,7 +6,6 @@ import { useApp } from '../context/AppContext';
 import TaskService from '../services/TaskService';
 import SubmissionsView from './SubmissionsView';
 
-// Mock contexts
 vi.mock('../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -15,10 +14,16 @@ vi.mock('../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-// Mock services
 vi.mock('../services/TaskService', () => ({
   default: {
     getSubmissions: vi.fn(),
+    getSubmissionDetail: vi.fn(),
+  },
+}));
+
+vi.mock('../services/ApiService', () => ({
+  default: {
+    fetch: vi.fn(),
   },
 }));
 
@@ -29,10 +34,9 @@ describe('SubmissionsView Page', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     useAuth.mockReturnValue({
       currentUser: { id: 2, username: 'student1', role: 'competitor' },
-      
     });
 
     TaskService.getSubmissions.mockResolvedValue({
@@ -75,7 +79,7 @@ describe('SubmissionsView Page', () => {
       start_time: '2026-06-13T10:00:00Z',
       end_time: '2026-06-13T12:00:00Z',
     };
-    
+
     const mockTask = {
       id: 10,
       title: 'Task 1',
@@ -95,7 +99,6 @@ describe('SubmissionsView Page', () => {
       confirm: mockConfirm,
     });
 
-    // Mock EventSource — fire onmessage directly with submission data to bypass SSE/fallback complexity
     const mockSubmissions = [
       {
         id: 100,
@@ -107,21 +110,16 @@ describe('SubmissionsView Page', () => {
       constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onmessage) this.onmessage({ data: JSON.stringify(mockSubmissions) }); }, 10); }
     };
 
-    // Mock Date.now() to 11:55 — stage is still active, submission is pre-deadline and queued
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
     render(<SubmissionsView />);
 
-    // Check that it shows waiting for running submissions
     await vi.waitFor(() => {
       expect(screen.getByText(/Waiting for running pre-deadline submissions/i)).toBeInTheDocument();
     }, { timeout: 5000 });
   });
 
   it('displays countdown timer showing remaining time to select final', async () => {
-    // Current time is 12:02 (2 minutes after end_time 12:00).
-    // Final selection deadline is 12:05 (5 minutes after end_time).
-    // Remaining time should be 3 minutes (03:00).
     const mockStage = {
       id: 5,
       title: 'Stage 1',
@@ -129,7 +127,7 @@ describe('SubmissionsView Page', () => {
       start_time: '2026-06-13T10:00:00Z',
       end_time: '2026-06-13T12:00:00Z',
     };
-    
+
     const mockTask = {
       id: 10,
       title: 'Task 1',
@@ -149,67 +147,10 @@ describe('SubmissionsView Page', () => {
       confirm: mockConfirm,
     });
 
-    // Mock EventSource — fire onerror to trigger HTTP fallback which loads submissions
     global.EventSource = class {
       constructor() { this.close = vi.fn(); }
     };
 
-    // Mock submissions (all finished)
-    const mockSubmissions = [
-      {
-        id: 100,
-        status: 'completed',
-        created_at: '2026-06-13T11:50:00Z',
-        executed_at: '2026-06-13T11:52:00Z', // selection deadline would be max(12:00+5m, 11:52+5m) = 12:05
-      }
-    ];
-
-    TaskService.getSubmissions.mockResolvedValue({
-      ok: true,
-      data: mockSubmissions,
-    });
-
-    // Mock Date.now() to be 12:02:00 (must be before render)
-    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:02:00Z').getTime());
-
-    render(<SubmissionsView />);
-
-    await vi.waitFor(() => {
-      expect(screen.getByText(/Time remaining to select final: 03:00/i)).toBeInTheDocument();
-    });
-  });
-
-  it('displays Selection closed timer when time limit has expired', async () => {
-    // Current time is 12:06 (6 minutes after end_time 12:00).
-    // Selection should be expired (Selection closed).
-    const mockStage = {
-      id: 5,
-      title: 'Stage 1',
-      stage_number: 1,
-      start_time: '2026-06-13T10:00:00Z',
-      end_time: '2026-06-13T12:00:00Z',
-    };
-    
-    const mockTask = {
-      id: 10,
-      title: 'Task 1',
-      stage_id: 5,
-    };
-
-    useApp.mockReturnValue({
-      selectedChallenge: {
-        id: 1,
-        title: 'Challenge Alpha',
-        stages: [mockStage],
-        tasks: [mockTask],
-      },
-      selectedTask: mockTask,
-      setSelectedChallengeById: mockSetSelectedChallengeById,
-      setSelectedTask: mockSetSelectedTask,
-      confirm: mockConfirm,
-    });
-
-    // Mock submissions (all finished before deadline)
     const mockSubmissions = [
       {
         id: 100,
@@ -224,7 +165,57 @@ describe('SubmissionsView Page', () => {
       data: mockSubmissions,
     });
 
-    // Mock Date.now() to be 12:06:00 (must be before render)
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:02:00Z').getTime());
+
+    render(<SubmissionsView />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Time remaining to select final: 03:00/i)).toBeInTheDocument();
+    });
+  });
+
+  it('displays Selection closed timer when time limit has expired', async () => {
+    const mockStage = {
+      id: 5,
+      title: 'Stage 1',
+      stage_number: 1,
+      start_time: '2026-06-13T10:00:00Z',
+      end_time: '2026-06-13T12:00:00Z',
+    };
+
+    const mockTask = {
+      id: 10,
+      title: 'Task 1',
+      stage_id: 5,
+    };
+
+    useApp.mockReturnValue({
+      selectedChallenge: {
+        id: 1,
+        title: 'Challenge Alpha',
+        stages: [mockStage],
+        tasks: [mockTask],
+      },
+      selectedTask: mockTask,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      setSelectedTask: mockSetSelectedTask,
+      confirm: mockConfirm,
+    });
+
+    const mockSubmissions = [
+      {
+        id: 100,
+        status: 'completed',
+        created_at: '2026-06-13T11:50:00Z',
+        executed_at: '2026-06-13T11:52:00Z',
+      }
+    ];
+
+    TaskService.getSubmissions.mockResolvedValue({
+      ok: true,
+      data: mockSubmissions,
+    });
+
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:06:00Z').getTime());
 
     render(<SubmissionsView />);
@@ -242,7 +233,7 @@ describe('SubmissionsView Page', () => {
       start_time: '2026-06-13T10:00:00Z',
       end_time: '2026-06-13T12:00:00Z',
     };
-    
+
     const mockTask1 = { id: 10, title: 'Task 1', stage_id: 5 };
     const mockTask2 = { id: 11, title: 'Task 2', stage_id: 5 };
 
@@ -269,5 +260,78 @@ describe('SubmissionsView Page', () => {
     });
 
     expect(mockSetSelectedTask).toHaveBeenCalledWith(mockTask2);
+  });
+
+  it('renders timer and submissions after SSE onmessage loads data', async () => {
+    const mockStage = {
+      id: 5, title: 'Stage 1', stage_number: 1,
+      start_time: '2026-06-13T10:00:00Z',
+      end_time: '2026-06-13T12:00:00Z',
+    };
+    const mockTask = { id: 10, title: 'Task 1', stage_id: 5 };
+
+    useApp.mockReturnValue({
+      selectedChallenge: {
+        id: 1, title: 'Challenge Alpha',
+        stages: [mockStage],
+        tasks: [mockTask],
+      },
+      selectedTask: mockTask,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      setSelectedTask: mockSetSelectedTask,
+      confirm: mockConfirm,
+    });
+
+    const mockSubmissions = [
+      { id: 200, status: 'completed', created_at: '2026-06-13T11:50:00Z', executed_at: '2026-06-13T11:52:00Z' },
+    ];
+    global.EventSource = class {
+      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onmessage) this.onmessage({ data: JSON.stringify({ items: mockSubmissions, total: 1, pages: 1 }) }); }, 10); }
+    };
+
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:02:00Z').getTime());
+
+    render(<SubmissionsView />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Time remaining to select final: 03:00/i)).toBeInTheDocument();
+    }, { timeout: 5000 });
+  });
+
+  it('falls back to api.fetch when SSE errors', async () => {
+    const api = (await import('../services/ApiService')).default;
+    api.fetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+    });
+
+    const mockStage = {
+      id: 5, title: 'Stage 1', stage_number: 1,
+      start_time: '2026-06-13T10:00:00Z',
+      end_time: '2026-06-13T12:00:00Z',
+    };
+    const mockTask = { id: 10, title: 'Task 1', stage_id: 5 };
+
+    useApp.mockReturnValue({
+      selectedChallenge: {
+        id: 1, title: 'Challenge Alpha',
+        stages: [mockStage],
+        tasks: [mockTask],
+      },
+      selectedTask: mockTask,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      setSelectedTask: mockSetSelectedTask,
+      confirm: mockConfirm,
+    });
+
+    global.EventSource = class {
+      constructor() { this.close = vi.fn(); setTimeout(() => { if (this.onerror) this.onerror(new Event('error')); }, 10); }
+    };
+
+    render(<SubmissionsView />);
+
+    await vi.waitFor(() => {
+      expect(api.fetch).toHaveBeenCalled();
+    }, { timeout: 5000 });
   });
 });

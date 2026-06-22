@@ -636,28 +636,49 @@ class AuditLog(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False, index=True)
+    
+    # Generic audit fields
+    action_type = db.Column(db.String(50), nullable=True, index=True)  # create, update, delete, finalize, archive, reset_password
+    target_type = db.Column(db.String(50), nullable=True, index=True)  # user, challenge, task, stage, submission
+    target_id = db.Column(db.Integer, nullable=True, index=True)
+    details = db.Column(db.JSON, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    
+    # Legacy fields (score corrections)
+    target_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True, index=True)
     old_score = db.Column(db.Integer, nullable=True)
     new_score = db.Column(db.Integer, nullable=True)
-    reason = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    reason = db.Column(db.Text, nullable=True)
+    
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     admin = db.relationship('User', foreign_keys=[admin_id])
     target_user = db.relationship('User', foreign_keys=[target_user_id])
     task = db.relationship('Task')
     
     def to_dict(self):
-        return {
+        result = {
             "id": self.id,
             "admin_id": self.admin_id,
             "admin_username": self.admin.username if self.admin else None,
-            "target_user_id": self.target_user_id,
-            "target_user_username": self.target_user.username if self.target_user else None,
-            "task_id": self.task_id,
-            "task_title": self.task.title if self.task else None,
-            "old_score": self.old_score,
-            "new_score": self.new_score,
-            "reason": self.reason,
+            "action_type": self.action_type,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "details": self.details,
+            "ip_address": self.ip_address,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None
         }
+        # Include legacy fields if set
+        if self.target_user_id is not None:
+            result["target_user_id"] = self.target_user_id
+            result["target_user_username"] = self.target_user.username if self.target_user else None
+        if self.task_id is not None:
+            result["task_id"] = self.task_id
+            result["task_title"] = self.task.title if self.task else None
+        if self.old_score is not None or self.new_score is not None:
+            result["old_score"] = self.old_score
+            result["new_score"] = self.new_score
+        if self.reason:
+            result["reason"] = self.reason
+        return result

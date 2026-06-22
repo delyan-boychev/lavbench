@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
@@ -8,117 +8,20 @@ import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
 import Pagination from '../components/ui/Pagination';
-import CodeHighlight from '../components/ui/CodeHighlight';
 import ToggleField from '../components/ui/ToggleField';
 import { Plus } from 'lucide-react';
 
-// Modular Child Components & Service Layer
 import WorkersStats from '../components/admin/WorkersStats';
 import BackupManager from '../components/admin/BackupManager';
 import UserManager from '../components/admin/UserManager';
 import CompetitorManager from '../components/admin/CompetitorManager';
 import ChallengeConfig from '../components/admin/ChallengeConfig';
 import TaskForm from '../components/admin/TaskForm';
-
-const getTimezones = () => {
-  let zones = [];
-  try {
-    zones = Intl.supportedValuesOf('timeZone');
-  } catch (e) {
-    zones = [
-      'UTC',
-      'Europe/Sofia',
-      'Europe/London',
-      'Europe/Paris',
-      'Europe/Berlin',
-      'Europe/Athens',
-      'Europe/Bucharest',
-      'Europe/Rome',
-      'Europe/Madrid',
-      'Europe/Dublin',
-      'America/New_York',
-      'America/Chicago',
-      'America/Denver',
-      'America/Los_Angeles',
-      'America/Toronto',
-      'America/Mexico_City',
-      'America/Sao_Paulo',
-      'Asia/Tokyo',
-      'Asia/Shanghai',
-      'Asia/Singapore',
-      'Asia/Kolkata',
-      'Asia/Dubai',
-      'Australia/Sydney',
-      'Australia/Melbourne',
-      'Africa/Cairo',
-      'Africa/Johannesburg',
-      'Pacific/Auckland'
-    ];
-  }
-  // Remove underscores from labels
-  return zones.map(zone => ({
-    value: zone,
-    label: zone.replace(/_/g, ' ')
-  }));
-};
-
-const TIMEZONES = getTimezones();
-
-export const formatMetricName = (name) => {
-  if (!name) return '';
-  
-  const specialWords = {
-    f1: 'F1',
-    rmse: 'RMSE',
-    mae: 'MAE',
-    mse: 'MSE',
-    fid: 'FID',
-    oks: 'OKS',
-    pck: 'PCK',
-    snr: 'SNR',
-    ssim: 'SSIM',
-    psnr: 'PSNR',
-    mrr: 'MRR',
-    ndcg: 'NDCG',
-    map: 'mAP',
-    iou: 'IoU',
-    chrf: 'chrF',
-    bleu: 'BLEU',
-    rouge: 'ROUGE',
-    meteor: 'METEOR',
-    ter: 'TER',
-    auc: 'AUC',
-    roc: 'ROC',
-    mape: 'MAPE',
-    ae: 'AE',
-    bertscore: 'BERTScore',
-    is: 'IS',
-    lpips: 'LPIPS',
-    niqe: 'NIQE',
-    lsd: 'LSD',
-    nisqa: 'NISQA',
-    pesq: 'PESQ',
-    sdr: 'SDR',
-    si: 'SI',
-  };
-
-  let formatted = name.replace(/_/g, ' ');
-
-  if (formatted.toLowerCase() === 'map 50 95') {
-    return 'mAP 50-95';
-  }
-
-  return formatted
-    .split(' ')
-    .map(word => {
-      const lower = word.toLowerCase();
-      if (specialWords[lower] !== undefined) {
-        return specialWords[lower];
-      }
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
-};
+import SidebarNav from '../components/admin/SidebarNav';
+import { TIMEZONES } from '../utils/timezones';
+import { formatMetricName } from '../utils/metrics';
+// eslint-disable-next-line react-refresh/only-export-components
+export { formatMetricName };
 
 
 
@@ -129,7 +32,6 @@ export default function AdminPanel() {
   const { 
     challenges, 
     selectedChallenge, 
-    setSelectedChallengeById, 
     fetchChallenges, 
     showToast,
     confirm
@@ -164,7 +66,7 @@ export default function AdminPanel() {
       const getPart = (type) => parts.find(p => p.type === type)?.value || '';
       const tzLabel = (timezone || 'UTC').replace(/_/g, ' ');
       return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
-    } catch (err) {
+    } catch {
       const d = new Date(dateStr);
       const pad = (n) => n.toString().padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${t('challenge.local_timezone')}`;
@@ -356,17 +258,19 @@ export default function AdminPanel() {
     }
   };
 
+   
   useEffect(() => {
     if (currentUser) {
-      fetchAvailableMetrics();
+      fetchAvailableMetrics(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [currentUser]);
 
   // Worker stats via SSE (persistent connection, no polling)
+   
   useEffect(() => {
     if (adminSubTab !== 'workers-stats') return;
     
-    setWorkerStatsLoading(true);
+    setWorkerStatsLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     const sseUrl = `/api/admin/workers/stats/live`;
     const eventSource = new EventSource(sseUrl);
     
@@ -462,21 +366,22 @@ export default function AdminPanel() {
     }
   };
 
+   
   useEffect(() => {
     if (adminSubTab === 'user-management') {
-      fetchUsers();
+      fetchUsers(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [adminSubTab, usersPage, debouncedUserSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competitor-reg' || adminSubTab === 'competition-mgmt') {
-      fetchCompetitors();
+      fetchCompetitors(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [adminSubTab, selectedChallenge, competitorsPage, debouncedCompetitorSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competition-mgmt') {
-      fetchPaginatedChallenges();
+      fetchPaginatedChallenges(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [adminSubTab, challengesPage]);
 
@@ -487,11 +392,11 @@ export default function AdminPanel() {
   }, [adminSubTab]);
 
   useEffect(() => {
-    setUsersPage(1);
+    setUsersPage(1); // eslint-disable-line react-hooks/set-state-in-effect
   }, [userSearch]);
 
   useEffect(() => {
-    setCompetitorsPage(1);
+    setCompetitorsPage(1); // eslint-disable-line react-hooks/set-state-in-effect
   }, [competitorSearch]);
 
   // Handle Competition creation
@@ -529,7 +434,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.competition_create_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_create_competition'), 'rose');
     }
   };
@@ -556,7 +461,7 @@ export default function AdminPanel() {
         showToast(data.error || t('admin.notifications.competition_update_failed'), 'rose');
         return { success: false };
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_update_competition'), 'rose');
       return { success: false };
     }
@@ -585,7 +490,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.competition_delete_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_delete_competition'), 'rose');
     }
   };
@@ -612,7 +517,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.scores_finalize_failed'), "rose");
       }
-    } catch (e) {
+    } catch {
       showToast(t('admin.notifications.network_error_finalize_scores'), "rose");
     }
   };
@@ -634,7 +539,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.archive_failed'), "rose");
       }
-    } catch (e) {
+    } catch {
       showToast(t('admin.notifications.network_error'), "rose");
     }
   };
@@ -661,7 +566,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.test_competition_schedule_failed'), "rose");
       }
-    } catch (e) {
+    } catch {
       showToast(t('admin.notifications.network_error_schedule_test'), "rose");
     }
   };
@@ -727,7 +632,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.stage_create_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_create_stage'), 'rose');
     }
   };
@@ -759,7 +664,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.stage_update_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_update_stage'), 'rose');
     }
   };
@@ -785,7 +690,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.stage_delete_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_delete_stage'), 'rose');
     }
   };
@@ -817,7 +722,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.stage_finalize_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_finalize_stage'), 'rose');
     }
   };
@@ -904,7 +809,7 @@ export default function AdminPanel() {
         });
         cleanMetricsConfig = JSON.stringify(parsed);
       }
-    } catch (e) {}
+    } catch { /* noop */ }
     formData.append("metrics_config", cleanMetricsConfig);
     
     if (taskForm.hf_api_key) formData.append("hf_api_key", taskForm.hf_api_key);
@@ -966,7 +871,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.task_create_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
     } finally {
       setSavingTask(false);
@@ -1016,7 +921,7 @@ export default function AdminPanel() {
       } else {
         showToast(data.error || t('admin.notifications.task_update_failed'), 'rose');
       }
-    } catch (err) {
+    } catch {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
     } finally {
       setSavingTask(false);
@@ -1047,7 +952,7 @@ export default function AdminPanel() {
         const data = await res.json();
         showToast(data.error || t('admin.notifications.task_delete_failed'), 'rose');
       }
-    } catch (e) {
+    } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
   };
@@ -1272,6 +1177,50 @@ export default function AdminPanel() {
     }
   };
 
+  const handleExportChallenge = async (challengeId, challengeTitle) => {
+    try {
+      const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
+        headers: {}
+      });
+      if (!res.ok) {
+        showToast('Failed to export challenge.', 'rose');
+        return;
+      }
+      const json = await res.json();
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+      const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.json`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Challenge exported.');
+    } catch {
+      showToast('Failed to export challenge.', 'rose');
+    }
+  };
+
+  const importFileRef = useRef(null);
+  const handleImportChallenge = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await api.postForm(`/challenges/import`, formData);
+      if (res.ok) {
+        showToast('Challenge imported successfully.');
+        fetchPaginatedChallenges();
+      } else {
+        showToast(res.data?.error || 'Failed to import challenge.', 'rose');
+      }
+    } catch {
+      showToast('Failed to import challenge.', 'rose');
+    }
+    e.target.value = '';
+  };
+
   // User editing
   const initEditUser = (user) => {
     setEditingUser(user);
@@ -1405,7 +1354,7 @@ export default function AdminPanel() {
   };
 
   const filteredUsers = allUsers;
-  const filteredCompetitors = competitorsList;
+  const _filteredCompetitors = competitorsList; // eslint-disable-line no-unused-vars
 
   const isManualRegisterDisabled = currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
   const isCSVImportDisabled = currentUser.role === 'jury' && isChallengeStarted(csvChallengeId);
@@ -1415,82 +1364,16 @@ export default function AdminPanel() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-fadein">
       
-      {/* Sidebar Control Submenu */}
-      <div className="bg-[#0d0e18] border border-white/5 p-5 rounded-2xl flex flex-col gap-1.5">
-        <h2 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider mb-3 px-2">{t('admin.jury_control_hub')}</h2>
-        
-        {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <button 
-            onClick={() => { setAdminSubTab('competition-mgmt'); setIsCreatingTask(false); setEditingTask(null); }}
-            className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'competition-mgmt' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-          >
-            {t('admin.manage_competitions')}
-          </button>
-        )}
-
-        {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <button 
-            onClick={() => {
-              setAdminSubTab('challenge-config');
-              setIsCreatingTask(false); setEditingTask(null);
-              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
-            }}
-            className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'challenge-config' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-          >
-            {t('admin.create_competition')}
-          </button>
-        )}
-        
-        <button 
-          onClick={() => {
-            setAdminSubTab('competitor-reg');
-            setIsCreatingTask(false); setEditingTask(null);
-            setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
-          }}
-          className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'competitor-reg' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-        >
-          {t('admin.competitor_registrations')}
-        </button>
-
-        {currentUser.role === 'admin' && (
-          <button 
-            onClick={() => {
-              setAdminSubTab('backups');
-              setIsCreatingTask(false); setEditingTask(null);
-              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
-            }}
-            className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'backups' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-          >
-            {t('admin.database_backup')}
-          </button>
-        )}
-
-        {currentUser.role === 'admin' && (
-          <button 
-            onClick={() => {
-              setAdminSubTab('user-management');
-              setIsCreatingTask(false); setEditingTask(null);
-              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
-            }}
-            className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'user-management' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-          >
-            {t('admin.user_management')}
-          </button>
-        )}
-
-        {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
-          <button 
-            onClick={() => {
-              setAdminSubTab('workers-stats');
-              setIsCreatingTask(false); setEditingTask(null);
-              setIsCreatingStage(false); setEditingStage(null); setFinalizingStage(null);
-            }}
-            className={`text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${adminSubTab === 'workers-stats' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-          >
-            {t('admin.workers_resources')}
-          </button>
-        )}
-      </div>
+      <SidebarNav
+        adminSubTab={adminSubTab}
+        setAdminSubTab={setAdminSubTab}
+        currentUser={currentUser}
+        setIsCreatingTask={setIsCreatingTask}
+        setEditingTask={setEditingTask}
+        setIsCreatingStage={setIsCreatingStage}
+        setEditingStage={setEditingStage}
+        setFinalizingStage={setFinalizingStage}
+      />
 
       {/* Main Workspace Work Areas */}
       <div className="lg:col-span-3">
@@ -1652,6 +1535,19 @@ export default function AdminPanel() {
                               {t('admin.finalize_challenge')}
                             </Button>
                           )}
+                          <Button variant="secondary" onClick={() => handleExportChallenge(c.id, c.title)}>
+                            {t('admin.export_challenge')}
+                          </Button>
+                          <input
+                            ref={importFileRef}
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={handleImportChallenge}
+                          />
+                          <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
+                            {t('admin.import_challenge')}
+                          </Button>
                           <Button variant="danger" onClick={() => handleDeleteChallenge(c.id, c.title)}>{t('admin.stages.delete')}</Button>
                         </div>
                       </div>

@@ -47,10 +47,6 @@ def _extract_token():
     token = request.headers.get("Authorization")
     if token:
         return token
-    # 3. URL query param (legacy, for EventSource SSE — cookie covers this now)
-    token = request.args.get("token")
-    if token:
-        logger.warning("Token received via URL query parameter")
     return token
 
 def set_auth_cookie(response, user_id, role):
@@ -147,7 +143,7 @@ def verify_token(token):
         return None
 
 def login_required(f):
-    """Decorator: requires a valid JWT (cookie/header/query). Injects request.user."""
+    """Decorator: requires a valid JWT (cookie/header). Injects request.user."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = _extract_token()
@@ -155,6 +151,11 @@ def login_required(f):
         if not user_data:
             return jsonify({"error": "Unauthorized access. Token is missing, expired, or invalid."}), 401
         request.user = user_data
+        if not verify_csrf_token():
+            return jsonify({
+                "error": "CSRF token missing or invalid.",
+                "code": "ERR_CSRF_FAILED"
+            }), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -168,6 +169,11 @@ def role_required(allowed_roles):
             if not user_data or user_data["role"] not in allowed_roles:
                 return jsonify({"error": f"Unauthorized. Requires role: {allowed_roles}"}), 403
             request.user = user_data
+            if not verify_csrf_token():
+                return jsonify({
+                    "error": "CSRF token missing or invalid.",
+                    "code": "ERR_CSRF_FAILED"
+                }), 403
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -210,6 +216,49 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
     return decorator
 
 
+CSRF_COOKIE_NAME = "csrf_token"
+
+def generate_csrf_token():
+    """Generate a CSRF token and set it as a non-httpOnly cookie."""
+    token = uuid.uuid4().hex
+    response = jsonify({"csrf_token": token})
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        token,
+        max_age=3600,
+        httponly=False,
+        samesite="Strict",
+        secure=False,
+        path="/"
+    )
+    return response
+
+def verify_csrf_token():
+    """Verify the X-CSRF-Token header matches the csrf_token cookie."""
+    if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
+        return True
+    # Worker endpoints use token auth, skip CSRF
+    if request.headers.get("X-Worker-Token") or request.headers.get("Authorization", "").startswith("Bearer "):
+        return True
+    header_token = request.headers.get("X-CSRF-Token")
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    if not header_token or not cookie_token or header_token != cookie_token:
+        return False
+    return True
+
+def csrf_required(f):
+    """Decorator: requires valid CSRF token for non-GET requests."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not verify_csrf_token():
+            return jsonify({
+                "error": "CSRF token missing or invalid.",
+                "code": "ERR_CSRF_FAILED"
+            }), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 def generate_worker_token(submission_id, task_id, expires_in_sec):
     """Create a short-lived JWT so workers can authenticate back to the server."""
     payload = {
@@ -221,25 +270,33 @@ def generate_worker_token(submission_id, task_id, expires_in_sec):
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
+def generate_worker_bootstrap_token(worker_id="worker", expires_in_sec=3600):
+    """Create a short-lived JWT for worker bootstrap (active-datasets, hf-key)."""
+    payload = {
+        "sub": worker_id,
+        "role": "worker_bootstrap",
+        "jti": uuid.uuid4().hex,
+        "exp": datetime.utcnow() + timedelta(seconds=expires_in_sec),
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
 def verify_worker_token(token, submission_id=None, task_id=None):
-    """Verify a worker JWT or bootstrap key. Optionally scoped to submission_id/task_id."""
+    """Verify a worker JWT. Optionally scoped to submission_id/task_id."""
     if not token:
         return False
-    # Worker bootstrapping (active-datasets preloading) uses raw WORKER_SECRET_KEY
-    if submission_id is None and task_id is None:
-        worker_key = os.environ.get("WORKER_SECRET_KEY")
-        if worker_key and token == worker_key:
-            return True
     try:
         if token.startswith("Bearer "):
             token = token[7:]
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        if payload.get("role") != "worker_submission":
+        role = payload.get("role")
+        if role not in ("worker_submission", "worker_bootstrap"):
             return False
-        if submission_id is not None and payload.get("sub") != str(submission_id):
-            return False
-        if task_id is not None and payload.get("task_id") != task_id:
-            return False
+        if role == "worker_submission":
+            if submission_id is not None and payload.get("sub") != str(submission_id):
+                return False
+            if task_id is not None and payload.get("task_id") != task_id:
+                return False
         return True
     except Exception:
         return False

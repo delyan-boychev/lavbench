@@ -903,7 +903,7 @@
     },
     "/api/auth/login": {
       "post": {
-        "description": "Password must be SHA-256 hashed client-side before sending.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>",
+        "description": "Password must be sent as plaintext; the server hashes it.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>",
         "parameters": [
           {
             "content": {
@@ -911,8 +911,8 @@
                 "schema": {
                   "properties": {
                     "password": {
-                      "description": "SHA-256 hash of the plaintext password",
-                      "example": "a1b2c3...",
+                      "description": "Plaintext password",
+                      "example": "mysecurepassword123",
                       "type": "string"
                     },
                     "username": {

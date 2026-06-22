@@ -179,7 +179,7 @@ def create_app():
     def health_check():
         """
         Health check for Docker and load balancer monitoring.
-        Verifies database connectivity.
+        Verifies database, Redis, Celery, and disk availability.
         ---
         tags:
           - Admin
@@ -190,25 +190,72 @@ def create_app():
               application/json:
                 schema:
                   type: object
-                  properties:
-                    status: {type: string, example: "ok"}
-                    database: {type: string, example: "connected"}
           503:
-            description: Database unreachable
+            description: Service degraded
             content:
               application/json:
                 schema:
                   type: object
-                  properties:
-                    status: {type: string, example: "error"}
-                    detail: {type: string}
         """
+        import platform
+        
+        checks = {}
+        all_ok = True
+        
+        # Database check
         try:
             db.session.execute(db.text("SELECT 1"))
-            return jsonify({"status": "ok", "database": "connected"}), 200
+            checks["database"] = "connected"
         except Exception as e:
-            return jsonify({"status": "error", "detail": str(e)}), 503
-    
+            checks["database"] = f"error: {e}"
+            all_ok = False
+            
+        # Redis check
+        try:
+            from cache_utils import get_redis_client
+            r = get_redis_client()
+            if r and r.ping():
+                checks["redis"] = "connected"
+            else:
+                checks["redis"] = "error: no response"
+                all_ok = False
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            all_ok = False
+            
+        # Celery check
+        try:
+            from tasks import celery
+            inspect = celery.control.inspect(timeout=2.0)
+            pings = inspect.ping() or {}
+            workers_count = len(pings)
+            checks["celery"] = {"workers_online": workers_count}
+        except Exception as e:
+            checks["celery"] = f"error: {e}"
+            
+        # Disk check
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage("/")
+            checks["disk"] = {
+                "total_gb": round(total / (1024**3), 1),
+                "used_gb": round(used / (1024**3), 1),
+                "free_gb": round(free / (1024**3), 1)
+            }
+        except Exception:
+            pass
+            
+        status_code = 200 if all_ok else 503
+        return jsonify({
+            "status": "ok" if all_ok else "degraded",
+            "checks": checks,
+            "version": "1.0",
+            "python": platform.python_version()
+        }), status_code
+    @app.errorhandler(500)
+    def handle_internal_error(e):
+        return jsonify({"error": "Internal server error.", "code": "ERR_INTERNAL"}), 500
+
     return app
 
 app = create_app()

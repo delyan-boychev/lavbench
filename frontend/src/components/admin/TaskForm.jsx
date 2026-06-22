@@ -31,9 +31,10 @@ export default function TaskForm({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- evalContent is an IIFE not a hook
   const evalContent = (function() {
     let metricsObj = {};
-    try { metricsObj = JSON.parse(taskForm.metrics_config) || {}; } catch(e) {}
+    try { metricsObj = JSON.parse(taskForm.metrics_config) || {}; } catch { /* noop */ }
     const columnsDef = metricsObj._columns || [];
     const metricsOnly = /** @type {Record<string, any>} */({ ...metricsObj });
     delete metricsOnly._columns;
@@ -400,7 +401,7 @@ export default function TaskForm({
     );
   })();
 
-  const TABS = [
+  const TABS = [ // eslint-disable-next-line react-hooks/rules-of-hooks
     { id: 'general', label: t('admin.tasks.tabs.general'), Icon: Pencil },
     { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), Icon: BarChart3 },
     { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: Lock },

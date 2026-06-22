@@ -10,7 +10,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     /** @type {Promise<{ ok: boolean, data: import('./types/api').paths['/api/auth/logout']['post']['responses']['200']['content']['application/json'] }>} */
-    try { await api.post('/auth/logout'); } catch {}
+    try { await api.post('/auth/logout'); } catch { /* ignore network errors on logout */ }
     setCurrentUser(null);
     setAuthLoading(false);
   }, []);
@@ -56,6 +56,7 @@ export const AuthProvider = ({ children }) => {
       
       if (ok) {
         setCurrentUser(data.user);
+        await api.refreshCsrfToken();
         return { success: true };
       } else {
         setAuthError(/** @type {string} */(data?.code ? { code: data.code, error: data.error } : 'auth.failed'));
@@ -67,9 +68,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // On mount: check if there's an active session via cookie
+  // On mount: check if there's an active session via cookie and refresh CSRF token
   useEffect(() => {
-    fetchUser();
+    fetchUser(); // eslint-disable-line react-hooks/set-state-in-effect
+    api.refreshCsrfToken();
   }, [fetchUser]);
 
   return (

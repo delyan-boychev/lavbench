@@ -324,6 +324,9 @@ def create_challenge():
     db.session.add(challenge)
     db.session.commit()
     
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "challenge", target_id=challenge.id, details={"title": challenge.title})
+    
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache()
     
@@ -417,6 +420,9 @@ def update_challenge(challenge_id):
         challenge.timezone = data.get("timezone")
         
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "update", "challenge", target_id=challenge.id, details={"title": challenge.title})
     
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
     invalidate_challenge_cache(challenge_id)
@@ -462,6 +468,9 @@ def delete_challenge(challenge_id):
     
     db.session.delete(challenge)
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "delete", "challenge", target_id=challenge.id, details={"title": challenge.title})
     
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
     invalidate_challenge_cache(challenge_id)
@@ -528,6 +537,9 @@ def finalize_challenge(challenge_id):
     
     challenge.scores_finalized = True
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "finalize", "challenge", target_id=challenge.id, details={"title": challenge.title})
     
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
     invalidate_challenge_cache(challenge_id)
@@ -570,6 +582,9 @@ def archive_challenge(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "archive", "challenge" if challenge.is_archived else "restore", target_id=challenge.id, details={"title": challenge.title})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
@@ -645,6 +660,9 @@ def create_stage(challenge_id):
     
     db.session.add(stage)
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "stage", target_id=stage.id, details={"title": stage.title, "challenge_id": challenge_id})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
@@ -699,6 +717,9 @@ def update_stage(challenge_id, stage_id):
             stage.end_time = t
             
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "update", "stage", target_id=stage.id, details={"title": stage.title, "challenge_id": challenge_id})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
@@ -746,6 +767,9 @@ def delete_stage(challenge_id, stage_id):
         
     db.session.delete(stage)
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "delete", "stage", target_id=stage.id, details={"title": stage.title, "challenge_id": challenge_id})
     
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(challenge_id)
@@ -833,6 +857,9 @@ def finalize_stage(challenge_id, stage_id):
     stage.reveal_points = bool(data.get("reveal_points", False))
     
     db.session.commit()
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "finalize", "stage", target_id=stage.id, details={"title": stage.title, "challenge_id": challenge_id})
     
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
     invalidate_challenge_cache(challenge_id)
@@ -941,6 +968,9 @@ except Exception as e:
     db.session.add(test_task)
     db.session.commit()
     
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "create", "challenge", target_id=test_comp.id, details={"title": test_comp.title, "source_challenge_id": challenge_id, "type": "test"})
+    
     from cache_utils import invalidate_challenge_cache
     invalidate_challenge_cache(orig.id)
     
@@ -987,3 +1017,101 @@ def export_results(challenge_id):
         headers={"Content-disposition": f"attachment; filename=challenge_{challenge_id}_export.csv"}
     )
     return response
+
+
+@challenges_bp.route('/<int:challenge_id>/export', methods=['GET'])
+@role_required(['admin', 'jury'])
+def export_challenge(challenge_id):
+    """
+    Export a challenge configuration as JSON, including tasks and stages.
+    File attachments (baseline notebooks, evaluator scripts) are NOT included.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        required: true
+        type: integer
+    responses:
+      200:
+        description: Challenge export JSON
+        content:
+          application/json:
+            schema:
+              type: object
+    """
+    challenge = db.get_or_404(Challenge, challenge_id)
+    data = challenge.to_dict()
+    return jsonify(data)
+
+
+@challenges_bp.route('/import', methods=['POST'])
+@role_required(['admin'])
+def import_challenge():
+    """
+    Import a challenge configuration from JSON (previously exported via /export).
+    Creates challenge, stages, and tasks. File attachments are NOT restored.
+    ---
+    tags:
+      - Challenges
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      201:
+        description: Challenge created
+        content:
+          application/json:
+            schema:
+              type: object
+    """
+    import json
+    from services.file_validation import validate_extension, validate_csv_content
+
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded."}), 400
+        f = request.files['file']
+        valid_ext, ext_err = validate_extension(f.filename, {'.json'})
+        if not valid_ext:
+            return jsonify({"error": ext_err}), 400
+        raw = f.read()
+    else:
+        raw = request.get_data()
+
+    if not raw:
+        return jsonify({"error": "No data provided."}), 400
+
+    try:
+        import_data = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        return jsonify({"error": f"Invalid JSON: {e}"}), 400
+
+    if not isinstance(import_data, dict):
+        return jsonify({"error": "Import data must be a JSON object."}), 400
+
+    from services.challenge_service import import_challenge_from_dict
+    try:
+        challenge = import_challenge_from_dict(import_data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    from services.audit_service import log_action
+    log_action(request.user["user_id"], "import", "challenge", target_id=challenge.id, details={"title": challenge.title})
+
+    return jsonify(challenge.to_dict()), 201

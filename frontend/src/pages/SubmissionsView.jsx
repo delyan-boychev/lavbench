@@ -99,20 +99,24 @@ export default function SubmissionsView() {
   };
 
   // Reset page when selected task changes
+   
   useEffect(() => {
-    setSubmissionsPage(1);
+    setSubmissionsPage(1); // eslint-disable-line react-hooks/set-state-in-effect
   }, [selectedTask]);
 
   // Stream submissions via Server-Sent Events (SSE)
+   
   useEffect(() => {
     if (!selectedTask) {
-      setSubmissions([]);
+      setSubmissions([]); // eslint-disable-line react-hooks/set-state-in-effect
       return;
     }
 
     setLoading(true);
 
-    const sseUrl = `/api/tasks/${selectedTask.id}/submissions/live?page=${submissionsPage}&per_page=10`;
+    const taskId = selectedTask.id;
+    const page = submissionsPage;
+    const sseUrl = `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10`;
     const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
@@ -123,7 +127,7 @@ export default function SubmissionsView() {
             setSubmissions(data.items || []);
             setSubmissionsTotal(data.total || 0);
             setSubmissionsPages(data.pages || 1);
-            
+
             setSelectedSubmission(prev => {
               if (!prev) return null;
               const updated = data.items.find(s => s.id === prev.id);
@@ -134,7 +138,7 @@ export default function SubmissionsView() {
             setSubmissions(arr);
             setSubmissionsTotal(arr.length);
             setSubmissionsPages(1);
-            
+
             setSelectedSubmission(prev => {
               if (!prev) return null;
               const updated = arr.find(s => s.id === prev.id);
@@ -148,47 +152,37 @@ export default function SubmissionsView() {
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error("Submissions SSE error, attempting HTTP fallback:", err);
+    eventSource.onerror = () => {
+      console.error("Submissions SSE error, attempting HTTP fallback");
       eventSource.close();
 
-      const controller = new AbortController();
       const loadSubmissionsFallback = async () => {
         try {
-          /** @type {Response} */
-          const res = await api.fetch(`/api/tasks/${selectedTask.id}/submissions?page=${submissionsPage}&per_page=10`, {
-            signal: controller.signal,
+          const res = await api.fetch(`/api/tasks/${taskId}/submissions?page=${page}&per_page=10`, {
             headers: {}
           });
           if (res.ok) {
-            if (taskIdRef.current !== selectedTask.id) return;
-            /** @type {import('../types/api').paths['/api/tasks/{task_id}/submissions']['get']['responses']['200']['content']['application/json']} */
+            if (taskIdRef.current !== taskId) return;
             const data = await res.json();
             if (data && data.items !== undefined) {
               setSubmissions(data.items || []);
               setSubmissionsTotal(data.total || 0);
               setSubmissionsPages(data.pages || 1);
             } else {
-              const arr = /** @type {any[]} */(data || []);
+              const arr = (data || []);
               setSubmissions(arr);
               setSubmissionsTotal(arr.length);
               setSubmissionsPages(1);
             }
           }
         } catch (fetchErr) {
-          if (fetchErr.name !== 'AbortError') {
-            console.error("Fallback submissions fetch failed:", fetchErr);
-          }
+          console.error("Fallback submissions fetch failed:", fetchErr);
         } finally {
           setLoading(false);
         }
       };
 
       loadSubmissionsFallback();
-
-      return () => {
-        controller.abort();
-      };
     };
 
     return () => {

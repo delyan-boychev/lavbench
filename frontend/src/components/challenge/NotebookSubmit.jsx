@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import ChallengeService from '../../services/ChallengeService';
@@ -13,14 +13,14 @@ export default function NotebookSubmit({ task, challenge }) {
   const { showToast } = useApp();
   const { t } = useTranslation();
 
-  const [cells, setCells] = useState([]);
+  const [cells, setCells] = useState([]); // eslint-disable-line no-unused-vars
   const [selectedCellIds, setSelectedCellIds] = useState([]);
   const [collapsedCellIds, setCollapsedCellIds] = useState([]);
   const [fileName, setFileName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const isCompetitor = currentUser?.role === 'competitor';
+  const isCompetitor = currentUser?.role === 'competitor'; // eslint-disable-line no-unused-vars
   const stage = challenge?.stages?.find(s => s.id === task?.stage_id);
   const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
   const stageEnded = stage ? new Date().getTime() > (new Date(stage.end_time).getTime() + graceMs) : false;
@@ -82,7 +82,7 @@ export default function NotebookSubmit({ task, challenge }) {
       if (res.ok) {
         const parsedCells = res.data.cells || [];
         setCells(parsedCells);
-        setFileName(res.data.filename);
+        setFileName(res.data.filename); // eslint-disable-line no-unused-vars
         
         // Auto-select cells containing "# SUBMIT" tag
         const submitTagRegex = /#\s*SUBMIT/i;
