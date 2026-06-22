@@ -22,6 +22,7 @@ from worker_utils import (
     report_status_to_server,
     download_task_files_to_dir,
     download_labels_parquet_to_dir,
+    _sign_worker_token,
 )
 
 
@@ -186,7 +187,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             get_hf_api_key=lambda: _fetch_hf_key_from_server(
                 metadata.get("task_id"),
                 metadata.get("main_server_url"),
-                metadata.get("worker_secret_key"),
+                _sign_worker_token(metadata.get("submission_id", "unknown")),
             ),
             evaluator_script_path=None,
             custom_eval_code=metadata.get("custom_eval_code"),
