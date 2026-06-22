@@ -182,7 +182,7 @@ python-dateutil==2.9.0.post0
     # via
     #   celery
     #   pandas
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via -r requirements.in
 pytz==2026.2
     # via pandas
