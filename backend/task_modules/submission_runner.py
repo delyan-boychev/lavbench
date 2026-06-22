@@ -1012,8 +1012,6 @@ def register_worker_specs(sender, **kwargs):
         # Call main server to retrieve active datasets and preload them on worker startup
         main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
-        from worker_utils import _sign_worker_token
-
         try:
             url = f"{main_server_url.rstrip('/')}/api/worker/active-datasets"
             headers = {"X-Worker-Token": _sign_worker_token("worker")}
