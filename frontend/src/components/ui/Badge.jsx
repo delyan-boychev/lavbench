@@ -10,6 +10,7 @@ import {
   Snowflake,
   Flag,
   Archive,
+  CalendarClock,
 } from 'lucide-react';
 
 const ICON = {
@@ -23,6 +24,7 @@ const ICON = {
   active: Activity,
   archived: Archive,
   not_started: Clock,
+  future: CalendarClock,
   frozen: Snowflake,
   ended: Flag,
   finalized: Check,
@@ -56,6 +58,10 @@ const CONFIG = {
   not_started: {
     style: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
     key: 'badge.not_started',
+  },
+  future: {
+    style: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+    key: 'badge.future',
   },
   frozen: { style: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400', key: 'badge.frozen' },
   ended: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.ended' },

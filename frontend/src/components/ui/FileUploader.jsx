@@ -51,7 +51,7 @@ export default function FileUploader({
   const missingRequired = requiredFiles.filter((name) => !allFilenames.includes(name));
 
   const totalCount = files.length + existingFiles.filter((f) => !f._deleted).length;
-  const isOverLimit = maxFiles && totalCount >= maxFiles;
+  const isOverLimit = maxFiles > 0 && totalCount >= maxFiles;
 
   const acceptedFormats = accept
     ? accept

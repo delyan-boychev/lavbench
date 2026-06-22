@@ -33,6 +33,14 @@ function StatCard({ label, value, accent = undefined }) {
 
 export default function ChallengeOverview({ challenge }) {
   const { t } = useTranslation();
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const formatDateTime = (dateStr, timezone = 'UTC') => {
     if (!dateStr) return '—';
@@ -65,18 +73,87 @@ export default function ChallengeOverview({ challenge }) {
     if (challenge.scores_finalized) return 'finalized';
     if (challenge.is_frozen) return 'frozen';
 
-    const now = new Date();
-    const startTime = challenge.start_time ? new Date(challenge.start_time) : null;
-    const endTime = challenge.end_time ? new Date(challenge.end_time) : null;
+    const startTime = challenge.start_time ? new Date(challenge.start_time).getTime() : null;
+    const endTime = challenge.end_time ? new Date(challenge.end_time).getTime() : null;
 
-    if (startTime && now < startTime) return 'not_started';
-    if (endTime && now > endTime) return 'ended';
+    if (startTime && nowMs < startTime) return 'future';
+    if (endTime && nowMs > endTime) return 'ended';
 
     return 'active';
   };
 
   const status = getStatus();
-  const hasStarted = status !== 'not_started';
+  const hasStarted = status !== 'future';
+
+  const renderStartTimer = () => {
+    if (!challenge.start_time || status !== 'future') return null;
+
+    const timeUntilMs = new Date(challenge.start_time).getTime() - nowMs;
+    if (timeUntilMs <= 0) return null;
+
+    const totalSecs = Math.ceil(timeUntilMs / 1000);
+    const days = Math.floor(totalSecs / 86400);
+    const hours = Math.floor((totalSecs % 86400) / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const seconds = totalSecs % 60;
+
+    const totalMinutes = timeUntilMs / 60000;
+    let color = '#a855f7';
+    let isFlashing = false;
+
+    if (totalMinutes <= 5) {
+      color = '#c084fc';
+      isFlashing = true;
+    } else if (totalMinutes <= 30) {
+      color = '#c084fc';
+    }
+
+    const timeStr =
+      days > 0
+        ? `${days}d ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        : `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 16px',
+          background: 'rgba(168, 85, 247, 0.08)',
+          border: '1px solid rgba(168, 85, 247, 0.2)',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: '0.85rem',
+          fontWeight: 700,
+          color: color,
+          userSelect: 'none',
+          transition: 'all 0.2s ease',
+          marginBottom: 12,
+          width: 'fit-content',
+        }}
+        className={isFlashing ? 'animate-flash-purple' : ''}
+        title={t('nav.starts_in_title')}
+      >
+        <svg
+          width="15"
+          height="15"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <span>
+          {t('challenge.starts_in')}: {timeStr}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="surface" style={{ padding: '24px 28px' }}>
@@ -95,6 +172,8 @@ export default function ChallengeOverview({ challenge }) {
         </h1>
         <Badge status={status} />
       </div>
+
+      {renderStartTimer()}
 
       {challenge.description && (
         <p

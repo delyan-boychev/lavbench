@@ -2090,7 +2090,11 @@ export default function AdminPanel() {
           !editingTask &&
           !isCreatingStage &&
           !editingStage &&
-          !finalizingStage && <BackupManager challengeId={selectedChallenge.id} />}
+          !finalizingStage && (
+            <div className="mt-8">
+              <BackupManager challengeId={selectedChallenge.id} />
+            </div>
+          )}
 
         {/* 6. SYSTEM USER MANAGEMENT */}
         {adminSubTab === 'user-management' && currentUser.role === 'admin' && (

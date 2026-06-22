@@ -533,3 +533,19 @@ body {
 .animate-flash-red {
   animation: flashRed 1s infinite;
 }
+
+@keyframes flashPurple {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 4px rgba(168, 85, 247, 0.4);
+  }
+  50% {
+    opacity: 0.4;
+    text-shadow: none;
+  }
+}
+
+.animate-flash-purple {
+  animation: flashPurple 1s infinite;
+}
