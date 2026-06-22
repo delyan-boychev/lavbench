@@ -45,6 +45,21 @@ def check_execution_rules(task, cells_list):
     """Validate student code against task rules: banned magic commands, banned/whitelisted imports."""
     extracted_cells = extract_code_from_cells(cells_list)
     combined_code = "\n".join(extracted_cells)
+
+    # Always-banned dynamic execution bypasses (unconditional — cannot be opted out)
+    dangerous_patterns = [
+        ("__import__(", "Rule Violation: Dynamic imports via __import__() are not allowed."),
+        ("exec(",      "Rule Violation: exec() is not allowed."),
+        ("eval(",      "Rule Violation: eval() is not allowed."),
+        ("compile(",   "Rule Violation: compile() is not allowed."),
+    ]
+    for pattern, message in dangerous_patterns:
+        if pattern in combined_code:
+            return False, message
+
+    # Always-banned importlib bypass
+    if "importlib" in combined_code and "import_module" in combined_code:
+        return False, "Rule Violation: Dynamic imports via importlib.import_module() are not allowed."
     
     if task.ban_magic_commands:
         for line in combined_code.splitlines():

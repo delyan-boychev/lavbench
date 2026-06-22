@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: Frontend ESLint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: frontend-types
+        name: Frontend type check
+        entry: bash -c 'cd frontend && npm run check-types'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: translations-check
+        name: Translation key parity
+        entry: python3 frontend/scripts/check_translations.py
+        language: system
+        files: ^frontend/public/locales/
+        pass_filenames: false
