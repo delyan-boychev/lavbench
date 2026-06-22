@@ -364,7 +364,7 @@ def submit_code(challenge_id):
     if task.files:
         try:
             task_files_list = json.loads(task.files)
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError):
             pass
 
     hf_token = task.get_hf_api_key() or ""
@@ -406,7 +406,9 @@ def submit_code(challenge_id):
             if isinstance(task.hf_models, str)
             else (json.dumps(task.hf_models) if task.hf_models else None)
         ),
-        "public_eval_percentage": task.public_eval_percentage or 30,
+        "public_eval_percentage": (
+            task.public_eval_percentage if task.public_eval_percentage is not None else 30
+        ),
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),

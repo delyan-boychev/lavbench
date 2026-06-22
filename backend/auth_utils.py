@@ -110,7 +110,9 @@ def revoke_token(token):
                 try:
                     r.setex(f"revoked:{jti}", ttl, "1")
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to write revocation for jti=%s to Redis", jti, exc_info=True
+                    )
     except Exception:
         pass
 
@@ -124,7 +126,7 @@ def _fetch_current_role(user_id):
             if user:
                 return user.role
     except Exception:
-        pass
+        logger.warning("Failed to fetch current role for user_id=%s", user_id, exc_info=True)
     return None
 
 
@@ -312,7 +314,10 @@ def check_worker_auth(token):
     import time
 
     pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY")
-    if not pub_key_b64 or not token:
+    if not pub_key_b64:
+        logger.critical("WORKER_PUBLIC_KEY not set — all worker requests will be rejected")
+        return False
+    if not token:
         return False
 
     try:
@@ -326,13 +331,16 @@ def check_worker_auth(token):
 
         pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_key_b64))
         pub_key.verify(base64.b64decode(sig_b64), nonce.encode())
-    except (InvalidSignature, ValueError, Exception):
+    except (InvalidSignature, ValueError, Exception) as e:
+        logger.warning("Worker auth failed: %s", e)
         return False
 
     # Replay protection: nonce must be within 5 minutes of server time
     try:
         ts = int(nonce.rsplit(":", 1)[-1])
-        if abs(time.time() - ts) > 300:
+        delta = abs(time.time() - ts)
+        if delta > 300:
+            logger.warning("Worker token outside replay window: %ss old (limit 300s)", int(delta))
             return False
     except (ValueError, IndexError):
         return False

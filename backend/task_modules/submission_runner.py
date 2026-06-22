@@ -27,6 +27,12 @@ from worker_utils import (
 
 def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     if not task_id or not main_server_url or not worker_token:
+        logger.warning(
+            "_fetch_hf_key_from_server: missing params (task=%s url=%s has_token=%s)",
+            task_id,
+            main_server_url,
+            bool(worker_token),
+        )
         return ""
     try:
         res = requests.get(
@@ -36,8 +42,9 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
         )
         if res.status_code == 200:
             return res.json().get("hf_key", "")
-    except Exception:
-        pass
+        logger.warning("_fetch_hf_key_from_server: HTTP %s for task %s", res.status_code, task_id)
+    except Exception as e:
+        logger.warning("_fetch_hf_key_from_server: request failed: %s", e)
     return ""
 
 
@@ -56,7 +63,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
         if isinstance(ds_val, str):
             try:
                 ds_val = json.loads(ds_val)
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 ds_val = []
         if isinstance(ds_val, list):
             for ds in ds_val:
@@ -71,7 +78,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
         if isinstance(md_val, str):
             try:
                 md_val = json.loads(md_val)
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 md_val = []
         if isinstance(md_val, list):
             for md in md_val:
@@ -82,7 +89,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
     if task and hasattr(task, "get_hf_api_key"):
         try:
             hf_token = task.get_hf_api_key()
-        except:
+        except Exception:
             pass
 
     if not hf_token:
@@ -338,7 +345,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                             )
                         except Exception:
                             pass
-                        # (was: raise RuntimeError(f"Failed to deliver final status '{status_val}' to server and fallback.") from fallback_err
                 else:
                     # Intermediate status: best-effort — already logged to Redis via StreamingLogList
                     pass
@@ -500,7 +506,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             res = subprocess.run(["docker", "--version"], capture_output=True, text=True)
             if res.returncode == 0:
                 docker_available = True
-        except:
+        except Exception:
             pass
 
         if not docker_available:
@@ -777,7 +783,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         if isinstance(metrics_cfg, str):
                             try:
                                 metrics_cfg = json.loads(metrics_cfg)
-                            except:
+                            except (json.JSONDecodeError, TypeError, ValueError):
                                 metrics_cfg = None
 
                         # Strip metadata keys (e.g., _columns) that are not metrics
@@ -879,14 +885,14 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     import shutil
 
                     shutil.rmtree(host_labels_dir, ignore_errors=True)
-                except:
+                except OSError:
                     pass
 
         try:
             import shutil
 
             shutil.rmtree(temp_dir, ignore_errors=True)
-        except:
+        except OSError:
             pass
 
         # Write final results status back to server or DB
@@ -1027,8 +1033,8 @@ def register_worker_specs(sender, **kwargs):
 
                     try:
                         os.makedirs(hf_cache_dir, exist_ok=True)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.warning("Cannot create hf_cache_dir %s: %s", hf_cache_dir, e)
 
                     if os.path.exists(hf_cache_dir):
                         try:
@@ -1050,9 +1056,12 @@ def register_worker_specs(sender, **kwargs):
                                     logger.warning("Failed preloading dataset '%s': %s", ds_name, e)
                         except Exception as import_err:
                             logger.warning("Could not import 'datasets' to preload: %s", import_err)
+                    else:
+                        logger.warning("hf_cache_dir %s missing — preload skipped", hf_cache_dir)
             else:
                 logger.warning(
-                    "Failed to fetch active datasets from main server: HTTP %s", res.status_code
+                    "Server rejected active-datasets (HTTP %s) — check WORKER_PUBLIC_KEY on server and WORKER_PRIVATE_KEY on worker",
+                    res.status_code,
                 )
         except Exception as e:
             logger.warning("Error fetching/preloading active datasets: %s", e)

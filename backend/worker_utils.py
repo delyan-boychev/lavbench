@@ -21,7 +21,9 @@ def _sign_worker_token(submission_id):
 
     priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY")
     if not priv_key_b64:
-        logger.critical("WORKER_PRIVATE_KEY is not set — worker cannot authenticate to the main server")
+        logger.critical(
+            "WORKER_PRIVATE_KEY is not set — worker cannot authenticate to the main server"
+        )
         return ""
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -64,7 +66,7 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
                 try:
                     pipe.close()
                 except Exception:
-                    pass
+                    logger.debug("Error closing pipe", exc_info=True)
 
         t_out = threading.Thread(target=read_pipe, args=(proc.stdout, stdout_lines, False))
         t_err = threading.Thread(target=read_pipe, args=(proc.stderr, stderr_lines, True))
@@ -93,14 +95,14 @@ def run_command_streaming(cmd, logs_list, time_limit=None):
                 stdout_lines.append(remaining)
                 logs_list.append(remaining.rstrip("\r\n"))
         except Exception:
-            pass
+            logger.debug("Error draining stdout pipe", exc_info=True)
         try:
             remaining = proc.stderr.read()
             if remaining:
                 stderr_lines.append(remaining)
                 logs_list.append("[stderr] " + remaining.rstrip("\r\n"))
         except Exception:
-            pass
+            logger.debug("Error draining stderr pipe", exc_info=True)
 
         stdout_str = "".join(stdout_lines)
         stderr_str = "".join(stderr_lines)

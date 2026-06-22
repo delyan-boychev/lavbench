@@ -144,7 +144,9 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
             if isinstance(task.hf_models, str)
             else (json.dumps(task.hf_models) if task.hf_models else None)
         ),
-        "public_eval_percentage": task.public_eval_percentage or 30,
+        "public_eval_percentage": (
+            task.public_eval_percentage if task.public_eval_percentage is not None else 30
+        ),
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
@@ -429,7 +431,9 @@ def create_task(challenge_id):
                     400,
                 )
 
-    public_eval_percentage = to_int(request.form.get("public_eval_percentage")) or 30
+    public_eval_percentage = to_int(request.form.get("public_eval_percentage"))
+    if public_eval_percentage is None:
+        public_eval_percentage = 30
     max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
     submission_period_hours = to_int(request.form.get("submission_period_hours"))
     stage_id = to_int(request.form.get("stage_id"))
@@ -807,7 +811,8 @@ def update_task(task_id):
         if hf_api_key:
             task.set_hf_api_key(hf_api_key)
     if "public_eval_percentage" in request.form:
-        task.public_eval_percentage = to_int(request.form.get("public_eval_percentage")) or 30
+        val = to_int(request.form.get("public_eval_percentage"))
+        task.public_eval_percentage = val if val is not None else 30
     if "max_submissions_per_period" in request.form:
         task.max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
     if "submission_period_hours" in request.form:
@@ -1339,7 +1344,9 @@ def submit_task_code(task_id):
             if isinstance(task.hf_models, str)
             else (json.dumps(task.hf_models) if task.hf_models else None)
         ),
-        "public_eval_percentage": task.public_eval_percentage or 30,
+        "public_eval_percentage": (
+            task.public_eval_percentage if task.public_eval_percentage is not None else 30
+        ),
         "task_files": task_files_list,
         "main_server_url": main_server_url,
         "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
@@ -1867,7 +1874,9 @@ def report_worker_progress(submission_id):
     if not check_worker_auth(token):
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.json or {}
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
+    data = request.get_json()
     submission = db.get_or_404(Submission, submission_id)
 
     VALID_STATUSES = {"queued", "running", "completed", "failed"}
@@ -1955,7 +1964,7 @@ def worker_download_task_file(task_id, filename):
     task = db.get_or_404(Task, task_id)
     try:
         files_meta = json.loads(task.files)
-    except:
+    except (json.JSONDecodeError, TypeError, ValueError):
         files_meta = []
 
     saved_name = None
@@ -1966,6 +1975,9 @@ def worker_download_task_file(task_id, filename):
 
     if not saved_name:
         return jsonify({"error": "File not found"}), 404
+
+    if ".." in saved_name or "/" in saved_name or "\\" in saved_name:
+        return jsonify({"error": "Invalid filename"}), 400
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     return send_from_directory(task_upload_dir, saved_name)
@@ -2014,7 +2026,7 @@ def get_active_datasets():
                     for d in hf_list:
                         if isinstance(d, str) and d.strip():
                             datasets_set.add(d.strip())
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
             # Extract from custom evaluation code
@@ -2025,7 +2037,7 @@ def get_active_datasets():
                 try:
                     with open(task.evaluator_script_path, "r") as f:
                         eval_code = f.read()
-                except:
+                except (OSError, UnicodeDecodeError):
                     pass
 
             if eval_code:
@@ -2039,8 +2051,8 @@ def get_active_datasets():
             if hf_api_key is None and task.hf_api_key:
                 try:
                     hf_api_key = task.get_hf_api_key()
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to decrypt hf_api_key for task %s: %s", task.id, e)
 
     resp = {"datasets": list(datasets_set)}
     if hf_api_key:
@@ -2079,4 +2091,7 @@ def get_task_hf_key(task_id):
     task = db.session.get(Task, task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
-    return jsonify({"hf_key": task.get_hf_api_key() or ""}), 200
+    hf_key = task.get_hf_api_key() or ""
+    if not hf_key:
+        logger.warning("No HF API key configured for task %s", task_id)
+    return jsonify({"hf_key": hf_key}), 200
