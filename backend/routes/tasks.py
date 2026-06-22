@@ -2038,10 +2038,26 @@ def get_active_datasets():
 
     active_challenges = Challenge.query.filter_by(is_archived=False).all()
     datasets_set = set()
+    hf_api_key = None
     import re
+    import json
 
     for challenge in active_challenges:
         for task in challenge.tasks:
+            # Collect from task.hf_datasets field
+            if task.hf_datasets:
+                try:
+                    hf_list = (
+                        json.loads(task.hf_datasets)
+                        if isinstance(task.hf_datasets, str)
+                        else (task.hf_datasets or [])
+                    )
+                    for d in hf_list:
+                        if isinstance(d, str) and d.strip():
+                            datasets_set.add(d.strip())
+                except:
+                    pass
+
             # Extract from custom evaluation code
             eval_code = ""
             if task.custom_eval_code:
@@ -2060,7 +2076,17 @@ def get_active_datasets():
                 for m in matches:
                     datasets_set.add(m)
 
-    return jsonify({"datasets": list(datasets_set)}), 200
+            # Grab first hf_api_key from any active task
+            if hf_api_key is None and task.hf_api_key:
+                try:
+                    hf_api_key = task.get_hf_api_key()
+                except:
+                    pass
+
+    resp = {"datasets": list(datasets_set)}
+    if hf_api_key:
+        resp["hf_api_key"] = hf_api_key
+    return jsonify(resp), 200
 
 
 @tasks_bp.route("/worker/tasks/<int:task_id>/hf-key", methods=["GET"])

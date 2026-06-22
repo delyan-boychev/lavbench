@@ -10,6 +10,28 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _refresh_worker_token(main_server_url):
+    """Re-authenticate with the main server using WORKER_SECRET_KEY.
+
+    Returns a fresh JWT on success, or None on failure.
+    """
+    raw_secret = os.environ.get("WORKER_SECRET_KEY", "")
+    if not raw_secret:
+        return None
+    try:
+        url = f"{main_server_url.rstrip('/')}/api/worker/bootstrap-token"
+        res = requests.post(
+            url,
+            json={"secret": raw_secret},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            return res.json().get("token")
+    except Exception as e:
+        logger.warning("Failed to refresh worker token: %s", e)
+    return None
+
+
 def run_command_streaming(cmd, logs_list, time_limit=None):
     """
     Runs a command and streams stdout/stderr lines to logs_list in real-time.
@@ -133,7 +155,6 @@ def report_status_to_server(
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
         return False
     url = f"{metadata['main_server_url']}/api/worker/report/{metadata['submission_id']}"
-    headers = {"X-Worker-Token": metadata["worker_secret_key"], "Content-Type": "application/json"}
     payload = {"status": status, "detailed_status": detailed_status}
     if logs is not None:
         if isinstance(logs, list):
@@ -153,11 +174,25 @@ def report_status_to_server(
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
 
+    main_server_url = metadata["main_server_url"]
+
     for attempt in range(max_retries):
+        # On 401, refresh the JWT and retry once per attempt cycle
+        token = metadata["worker_secret_key"]
+        headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
+
         try:
             res = requests.post(url, json=payload, headers=headers, timeout=10)
             if res.status_code == 200:
                 return True
+            if res.status_code == 401:
+                new_token = _refresh_worker_token(main_server_url)
+                if new_token:
+                    metadata["worker_secret_key"] = new_token
+                    headers = {"X-Worker-Token": new_token, "Content-Type": "application/json"}
+                    res = requests.post(url, json=payload, headers=headers, timeout=10)
+                    if res.status_code == 200:
+                        return True
             logger.warning(
                 "Server returned status %s for report attempt %s", res.status_code, attempt + 1
             )
@@ -176,6 +211,23 @@ def report_status_to_server(
     return False
 
 
+def _make_authenticated_request(method, url, metadata, **kwargs):
+    """Make an HTTP request with worker token, refreshing on 401."""
+    main_server_url = metadata.get("main_server_url", "")
+    token = metadata.get("worker_secret_key", "")
+    headers = kwargs.pop("headers", {})
+    headers["X-Worker-Token"] = token
+
+    res = requests.request(method, url, headers=headers, **kwargs)
+    if res.status_code == 401:
+        new_token = _refresh_worker_token(main_server_url)
+        if new_token:
+            metadata["worker_secret_key"] = new_token
+            headers["X-Worker-Token"] = new_token
+            res = requests.request(method, url, headers=headers, **kwargs)
+    return res
+
+
 def download_task_files_to_dir(metadata, temp_dir, logs):
     """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
     if not metadata or "main_server_url" not in metadata or "worker_secret_key" not in metadata:
@@ -192,10 +244,9 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
             continue  # Do NOT download labels.parquet to sandbox temp_dir!
 
         url = f"{metadata['main_server_url']}/api/worker/tasks/{task_id}/files/{filename}"
-        headers = {"X-Worker-Token": metadata["worker_secret_key"]}
         try:
             logs.append(f"Downloading task file '{filename}' from server...")
-            res = requests.get(url, headers=headers, timeout=30)
+            res = _make_authenticated_request("GET", url, metadata, timeout=30)
             if res.status_code == 200:
                 dest_file = os.path.join(temp_dir, filename)
                 with open(dest_file, "wb") as df:
@@ -222,10 +273,9 @@ def download_labels_parquet_to_dir(metadata, labels_dir, logs):
         filename = f["filename"]
         if filename == "labels.parquet":
             url = f"{metadata['main_server_url']}/api/worker/tasks/{task_id}/files/{filename}"
-            headers = {"X-Worker-Token": metadata["worker_secret_key"]}
             try:
                 logs.append("Downloading labels.parquet securely from server...")
-                res = requests.get(url, headers=headers, timeout=30)
+                res = _make_authenticated_request("GET", url, metadata, timeout=30)
                 if res.status_code == 200:
                     dest_file = os.path.join(labels_dir, filename)
                     with open(dest_file, "wb") as df:

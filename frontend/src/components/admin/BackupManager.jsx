@@ -10,9 +10,7 @@ export default function BackupManager({ challengeId }) {
   const [loading, setLoading] = useState(true);
   const [forcing, setForcing] = useState(false);
 
-  const listUrl = challengeId
-    ? `/api/admin/challenges/${challengeId}/backups`
-    : '/api/admin/backups';
+  const listUrl = challengeId ? `/admin/challenges/${challengeId}/backups` : '/admin/backups';
 
   const downloadBase = challengeId
     ? `/api/admin/challenges/${challengeId}/backups`
@@ -64,7 +62,7 @@ export default function BackupManager({ challengeId }) {
     setForcing(true);
     try {
       /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/force']['post']['responses']['200']['content']['application/json'] }>} */
-      await api.post('/api/admin/backups/force');
+      await api.post('/admin/backups/force');
     } catch {
       setForcing(false);
     }
@@ -73,7 +71,7 @@ export default function BackupManager({ challengeId }) {
   const handleDelete = async (filename) => {
     try {
       /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/{filename}']['delete']['responses']['200']['content']['application/json'] }>} */
-      await api.delete(`/api/admin/backups/${filename}`);
+      await api.delete(`/admin/backups/${filename}`);
       loadBackups();
     } catch {
       /* noop */

@@ -26,7 +26,14 @@ export { formatMetricName };
 export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { challenges, selectedChallenge, fetchChallenges, showToast, confirm } = useApp();
+  const {
+    challenges,
+    selectedChallenge,
+    setSelectedChallengeById,
+    fetchChallenges,
+    showToast,
+    confirm,
+  } = useApp();
 
   const API_BASE = '/api';
 
@@ -730,8 +737,10 @@ export default function AdminPanel() {
   };
 
   // Set up task form edit / create
-  const initCreateTask = () => {
-    if (!selectedChallenge) return;
+  const initCreateTask = (challengeId = null) => {
+    const target = challengeId ? challenges.find((c) => c.id === challengeId) : selectedChallenge;
+    if (!target) return;
+    if (challengeId) setSelectedChallengeById(challengeId);
     setTaskForm({
       title: '',
       description: '',
@@ -891,6 +900,7 @@ export default function AdminPanel() {
       if (res.ok) {
         showToast(t('admin.notifications.task_created'));
         fetchChallenges();
+        fetchPaginatedChallenges();
         setIsCreatingTask(false);
       } else {
         showToast(data.error || t('admin.notifications.task_create_failed'), 'rose');
@@ -943,6 +953,7 @@ export default function AdminPanel() {
       if (res.ok) {
         showToast(t('admin.notifications.task_updated'));
         fetchChallenges();
+        fetchPaginatedChallenges();
         setEditingTask(null);
       } else {
         showToast(data.error || t('admin.notifications.task_update_failed'), 'rose');
@@ -974,6 +985,7 @@ export default function AdminPanel() {
           setIsCreatingTask(false);
         }
         fetchChallenges();
+        fetchPaginatedChallenges();
       } else {
         const data = await res.json();
         showToast(data.error || t('admin.notifications.task_delete_failed'), 'rose');
@@ -1594,7 +1606,7 @@ export default function AdminPanel() {
                     </h1>
                     <Button
                       variant="primary"
-                      onClick={initCreateTask}
+                      onClick={() => initCreateTask()}
                       disabled={!selectedChallenge}
                     >
                       <Plus size={16} />
@@ -1704,11 +1716,21 @@ export default function AdminPanel() {
                         </div>
 
                         <div className="border-t border-white/5 pt-4 mt-2">
-                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                            {t('admin.tasks_in_competition', {
-                              count: c.tasks ? c.tasks.length : 0,
-                            })}
-                          </h3>
+                          <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                              {t('admin.tasks_in_competition', {
+                                count: c.tasks ? c.tasks.length : 0,
+                              })}
+                            </h3>
+                            <Button
+                              variant="primary"
+                              className="py-1 px-3 text-[10px]"
+                              onClick={() => initCreateTask(c.id)}
+                            >
+                              <Plus size={14} />
+                              {t('admin.add_task')}
+                            </Button>
+                          </div>
                           {c.tasks?.length === 0 ? (
                             <p className="text-xs text-slate-500 italic">
                               {t('admin.no_tasks_created')}

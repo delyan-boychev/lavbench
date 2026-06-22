@@ -115,90 +115,89 @@ export default function Navbar() {
 
   const renderNavbarTimer = () => {
     if (timeRemainingMs !== null) {
+      const graceMs = (selectedChallenge?.deadline_grace_period_seconds || 60) * 1000;
+      const isGracePeriod = timeRemainingMs < 0;
 
-    const graceMs = (selectedChallenge?.deadline_grace_period_seconds || 60) * 1000;
-    const isGracePeriod = timeRemainingMs < 0;
+      let color = '#10b981'; // Green
+      let isFlashing = false;
 
-    let color = '#10b981'; // Green
-    let isFlashing = false;
-
-    if (isGracePeriod) {
-      color = '#f97316'; // Amber/Orange
-      isFlashing = true;
-    } else {
-      const minutesLeft = timeRemainingMs / 60000;
-      if (minutesLeft <= 5) {
-        color = '#ef4444'; // Red
+      if (isGracePeriod) {
+        color = '#f97316'; // Amber/Orange
         isFlashing = true;
-      } else if (minutesLeft <= 15) {
-        color = '#ef4444'; // Red
-      } else if (minutesLeft <= 30) {
-        color = '#f59e0b'; // Yellow
+      } else {
+        const minutesLeft = timeRemainingMs / 60000;
+        if (minutesLeft <= 5) {
+          color = '#ef4444'; // Red
+          isFlashing = true;
+        } else if (minutesLeft <= 15) {
+          color = '#ef4444'; // Red
+        } else if (minutesLeft <= 30) {
+          color = '#f59e0b'; // Yellow
+        }
       }
-    }
 
-    let timeStr;
-    if (isGracePeriod) {
-      const remainingGraceSecs = Math.ceil((graceMs + timeRemainingMs) / 1000);
-      timeStr = `${remainingGraceSecs}s`;
-    } else {
-      const totalSecs = Math.ceil(timeRemainingMs / 1000);
-      const hours = Math.floor(totalSecs / 3600);
-      const minutes = Math.floor((totalSecs % 3600) / 60);
-      const seconds = totalSecs % 60;
-      timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
+      let timeStr;
+      if (isGracePeriod) {
+        const remainingGraceSecs = Math.ceil((graceMs + timeRemainingMs) / 1000);
+        timeStr = `${remainingGraceSecs}s`;
+      } else {
+        const totalSecs = Math.ceil(timeRemainingMs / 1000);
+        const hours = Math.floor(totalSecs / 3600);
+        const minutes = Math.floor((totalSecs % 3600) / 60);
+        const seconds = totalSecs % 60;
+        timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
 
-    const labelStr = isGracePeriod
-      ? t('nav.grace_period')
-      : activeStage
-        ? t('nav.stage_time_left', { stage: activeStage.stage_number })
-        : t('nav.time_left');
+      const labelStr = isGracePeriod
+        ? t('nav.grace_period')
+        : activeStage
+          ? t('nav.stage_time_left', { stage: activeStage.stage_number })
+          : t('nav.time_left');
 
-    const titleStr = isGracePeriod
-      ? t('nav.grace_period_title')
-      : activeStage
-        ? t('nav.stage_time_left_title', { stage: activeStage.stage_number })
-        : t('nav.time_left_title');
+      const titleStr = isGracePeriod
+        ? t('nav.grace_period_title')
+        : activeStage
+          ? t('nav.stage_time_left_title', { stage: activeStage.stage_number })
+          : t('nav.time_left_title');
 
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 12px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '0.78rem',
-          fontWeight: 700,
-          color: color,
-          userSelect: 'none',
-          transition: 'all 0.2s ease',
-        }}
-        className={isFlashing ? 'animate-flash-red' : ''}
-        title={titleStr}
-      >
-        <svg
-          width="13"
-          height="13"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            color: color,
+            userSelect: 'none',
+            transition: 'all 0.2s ease',
+          }}
+          className={isFlashing ? 'animate-flash-red' : ''}
+          title={titleStr}
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-        <span>
-          {labelStr}: {timeStr}
-        </span>
-      </div>
-    );
+          <svg
+            width="13"
+            height="13"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <span>
+            {labelStr}: {timeStr}
+          </span>
+        </div>
+      );
     }
 
     if (timeUntilStartMs !== null) {

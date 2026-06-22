@@ -1004,15 +1004,18 @@ def register_worker_specs(sender, **kwargs):
 
         # Call main server to retrieve active datasets and preload them on worker startup
         main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-        worker_secret_key = os.environ.get("WORKER_SECRET_KEY") or ""
+        worker_token = (
+            os.environ.get("WORKER_BOOTSTRAP_TOKEN") or os.environ.get("WORKER_SECRET_KEY") or ""
+        )
 
         try:
             url = f"{main_server_url.rstrip('/')}/api/worker/active-datasets"
-            headers = {"X-Worker-Token": worker_secret_key}
+            headers = {"X-Worker-Token": worker_token}
             res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 data = res.json()
                 datasets_to_preload = data.get("datasets", [])
+                hf_api_key = data.get("hf_api_key")
                 if datasets_to_preload:
                     logger.info("Active datasets to preload on startup: %s", datasets_to_preload)
 
@@ -1037,7 +1040,9 @@ def register_worker_specs(sender, **kwargs):
                                     logger.info(
                                         "Preloading dataset '%s' to '%s'...", ds_name, hf_cache_dir
                                     )
-                                    host_load_dataset(ds_name, cache_dir=hf_cache_dir)
+                                    host_load_dataset(
+                                        ds_name, cache_dir=hf_cache_dir, token=hf_api_key
+                                    )
                                     logger.info(
                                         "Successfully preloaded dataset '%s' on worker startup.",
                                         ds_name,

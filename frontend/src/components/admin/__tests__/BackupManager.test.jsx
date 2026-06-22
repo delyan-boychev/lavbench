@@ -111,7 +111,7 @@ describe('BackupManager', () => {
       expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText('Force Backup Now'));
-    expect(api.post).toHaveBeenCalledWith('/api/admin/backups/force');
+    expect(api.post).toHaveBeenCalledWith('/admin/backups/force');
   });
 
   it('calls download when download button clicked', async () => {
@@ -153,7 +153,7 @@ describe('BackupManager', () => {
       expect(screen.getByText('✕')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText('✕'));
-    expect(api.delete).toHaveBeenCalledWith('/api/admin/backups/manual_backup.db');
+    expect(api.delete).toHaveBeenCalledWith('/admin/backups/manual_backup.db');
   });
 
   it('shows state label for submission_ended backups', async () => {
