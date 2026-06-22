@@ -38,7 +38,7 @@ jobs:
         env:
           REDIS_URL: "redis://localhost:6379/0"
           DATABASE_URL: "sqlite:///:memory:"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-coverage
@@ -85,7 +85,7 @@ jobs:
         working-directory: frontend
       - run: npm run test:coverage
         working-directory: frontend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: frontend-coverage
@@ -174,7 +174,7 @@ jobs:
         env:
           API_SPEC_SKIP_FETCH: "true"
         run: cd docs && make html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sphinx-docs
