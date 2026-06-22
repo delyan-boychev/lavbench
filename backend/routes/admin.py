@@ -625,7 +625,7 @@ def import_competitors_csv():
         return jsonify({"error": f"Failed to parse CSV file: {str(e)}"}), 400
 
 
-BACKUPS_DIR = "/backups"
+BACKUPS_DIR = os.environ.get("BACKUPS_DIR", "/backups")
 
 
 def _list_backup_files(directory):

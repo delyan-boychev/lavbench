@@ -234,6 +234,7 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
                 dest_file = os.path.join(temp_dir, filename)
                 with open(dest_file, "wb") as df:
                     df.write(res.content)
+                os.chmod(dest_file, 0o644)
                 logs.append(f"Downloaded task file '{filename}' successfully.")
             else:
                 logs.append(

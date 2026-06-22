@@ -54,7 +54,7 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
         prefix = state
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
-    backup_dir = "/backups"
+    backup_dir = os.environ.get("BACKUPS_DIR", "/backups")
     if challenge_id:
         backup_dir = os.path.join(backup_dir, f"challenge_{challenge_id}")
     os.makedirs(backup_dir, exist_ok=True)

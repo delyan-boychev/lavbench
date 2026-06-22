@@ -424,6 +424,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
 
         # Write user code to temporary file / directory
         temp_dir = tempfile.mkdtemp()
+        os.chmod(temp_dir, 0o755)
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
@@ -497,6 +498,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         results_key = secrets.token_hex(16)
         with open(os.path.join(temp_dir, "student_actual.py"), "w") as f:
             f.write(user_code)
+            os.fchmod(f.fileno(), 0o644)
 
         # Preload HuggingFace datasets on the host so they are available offline in docker
         preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs)
@@ -569,6 +571,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     req_path = os.path.join(temp_dir, "requirements.txt")
                     with open(req_path, "w") as rf:
                         rf.write(task.pip_requirements)
+                    os.chmod(req_path, 0o644)
                     dockerfile_lines.extend(
                         [
                             "COPY requirements.txt /requirements.txt",
@@ -579,6 +582,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 dockerfile_path = os.path.join(temp_dir, "Dockerfile")
                 with open(dockerfile_path, "w") as df:
                     df.write("\n".join(dockerfile_lines))
+                os.chmod(dockerfile_path, 0o644)
 
                 logs.append(f"Building docker image '{image_tag}'...")
                 retcode, stdout, stderr, is_timeout = run_command_streaming(
