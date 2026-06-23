@@ -157,7 +157,6 @@ def build_task_image(metadata):
 
     # Bake the hf_cache INTO the image — no volume mount needed
     dockerfile_lines.append("COPY hf_cache /hf_cache")
-    dockerfile_lines.append("RUN chmod -R 555 /hf_cache")
 
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
