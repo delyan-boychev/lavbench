@@ -342,6 +342,60 @@ def watchdog_stuck_submissions():
         return {"recovered": recovered, "timed_out": timeout_count}
 
 
+@celery.task
+def recalculate_dirty_leaderboards():
+    """Celery beat task: rebuild leaderboard cache for challenges marked as dirty."""
+    if RUNNING_AS_WORKER:
+        return {"skipped": "running_as_remote_worker"}
+    if not app:
+        return {"skipped": "no_app_context"}
+
+    from cache_utils import get_redis_client
+
+    r = get_redis_client()
+    if not r:
+        return {"error": "redis_unavailable"}
+
+    try:
+        dirty_challenges = r.smembers("leaderboard:dirty_challenges")
+        if not dirty_challenges:
+            return {"recalculated": 0}
+
+        recalculated_count = 0
+        from services.leaderboard_service import build_and_cache_leaderboard
+        from models import Challenge
+        import json
+
+        with app.app_context():
+            for cid_bytes in dirty_challenges:
+                cid = cid_bytes.decode("utf-8") if isinstance(cid_bytes, bytes) else str(cid_bytes)
+
+                # Remove from dirty set first to prevent race condition
+                r.srem("leaderboard:dirty_challenges", cid)
+
+                try:
+                    challenge = Challenge.query.get(cid)
+                    if not challenge:
+                        continue
+
+                    # Rebuild cache
+                    build_and_cache_leaderboard(cid, is_frozen_view=False, force_rebuild=True)
+                    if challenge.is_frozen:
+                        build_and_cache_leaderboard(cid, is_frozen_view=True, force_rebuild=True)
+
+                    # Publish event for live SSE updates
+                    channel_name = f"challenge_{cid}_leaderboard"
+                    r.publish(channel_name, json.dumps({"event": "update"}))
+                    recalculated_count += 1
+                except Exception as e:
+                    logger.error("recalculate_dirty_leaderboards: failed for %s: %s", cid, e)
+
+        return {"recalculated": recalculated_count}
+    except Exception as e:
+        logger.error("recalculate_dirty_leaderboards failed: %s", e)
+        return {"error": str(e)}
+
+
 # Celery Beat schedule for periodic tasks
 # watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
@@ -359,6 +413,10 @@ celery.conf.beat_schedule = {
     "backup-check-every-20m": {
         "task": "tasks.check_and_backup",
         "schedule": 1200.0,
+    },
+    "recalculate-dirty-leaderboards-every-20s": {
+        "task": "tasks.recalculate_dirty_leaderboards",
+        "schedule": 20.0,
     },
     "docker-prune-weekly": {
         "task": "tasks.prune_docker_images",

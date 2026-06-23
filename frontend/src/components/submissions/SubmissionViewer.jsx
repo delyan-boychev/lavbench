@@ -20,6 +20,9 @@ export default function SubmissionViewer({
   const [currentId, setCurrentId] = useState(null);
   const logRef = useRef(null);
 
+  const isTerminal = submission?.status === 'completed' || submission?.status === 'failed';
+  const displayLogs = isTerminal ? submission?.logs || liveLogs : liveLogs || submission?.logs;
+
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTo({
@@ -229,7 +232,7 @@ export default function SubmissionViewer({
         )}
 
         {/* Execution Log */}
-        {submission.logs || liveLogs ? (
+        {displayLogs ? (
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {submission.status === 'completed' || submission.status === 'failed'
@@ -252,7 +255,7 @@ export default function SubmissionViewer({
                 wordBreak: 'break-all',
               }}
             >
-              {submission.logs || liveLogs}
+              {displayLogs}
             </pre>
           </div>
         ) : null}

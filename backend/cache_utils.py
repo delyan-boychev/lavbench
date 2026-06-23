@@ -168,7 +168,7 @@ def invalidate_challenge_cache(challenge_id=None):
 
 
 def invalidate_leaderboard_cache(challenge_id, delete_only=False):
-    """Clear or warm background leaderboard cache for a given challenge."""
+    """Mark the challenge leaderboard cache as dirty for periodic Celery Beat rebuilding."""
     if not challenge_id:
         return
     challenge_id = str(challenge_id)
@@ -177,22 +177,22 @@ def invalidate_leaderboard_cache(challenge_id, delete_only=False):
         delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
         delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
         delete_cached(f"leaderboard:pending:{challenge_id}")
+        r = get_redis_client()
+        if r:
+            try:
+                r.srem("leaderboard:dirty_challenges", challenge_id)
+            except Exception:
+                pass
         return
 
     r = get_redis_client()
     if r:
-        pending_key = f"leaderboard:pending:{challenge_id}"
         try:
-            is_new = r.set(pending_key, "1", nx=True, ex=5)
-            if not is_new:
-                return
+            r.sadd("leaderboard:dirty_challenges", challenge_id)
+            return
         except Exception:
             pass
 
-    try:
-        from tasks import recalculate_leaderboard
-
-        recalculate_leaderboard.delay(challenge_id)
-    except Exception:
-        delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
-        delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
+    # Fallback if Redis is down/unavailable: delete cache to avoid serving stale indefinitely
+    delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
+    delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
