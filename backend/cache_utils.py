@@ -11,14 +11,17 @@ import redis as redis_lib
 logger = logging.getLogger(__name__)
 
 _pool = None
+_pool_pid = None
 
 
 def get_redis_client():
     """Returns a Redis client from a shared ConnectionPool (auto-reconnect, greenlet-safe)."""
-    global _pool
-    if _pool is None:
+    global _pool, _pool_pid
+    current_pid = os.getpid()
+    if _pool is None or _pool_pid != current_pid:
         broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
         _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=100)
+        _pool_pid = current_pid
     return redis_lib.Redis(connection_pool=_pool)
 
 

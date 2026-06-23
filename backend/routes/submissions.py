@@ -816,20 +816,38 @@ def stream_submission_logs(submission_id):
         pubsub = r.pubsub()
         pubsub.subscribe(f"submission_{submission_id}_logs")
 
+        import time
+
+        last_db_check = time.time()
+
         try:
             while True:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
                 if message:
-                    yield f"data: {message['data'].decode('utf-8')}\n\n"
+                    data_str = message["data"].decode("utf-8")
+                    yield f"data: {data_str}\n\n"
+                    try:
+                        parsed = json.loads(data_str)
+                        if isinstance(parsed, dict) and parsed.get("status") in (
+                            "completed",
+                            "failed",
+                        ):
+                            break
+                    except Exception:
+                        pass
                 else:
                     yield ": keep-alive\n\n"
 
-                with current_app.app_context():
-                    db.session.expire_all()
-                    sub = db.session.get(Submission, submission_id)
-                    if sub and sub.status in ("completed", "failed"):
-                        yield f"data: {json.dumps({'status': sub.status})}\n\n"
-                        break
+                # Database fallback query check at most once every 10 seconds
+                now = time.time()
+                if now - last_db_check >= 10.0:
+                    last_db_check = now
+                    with current_app.app_context():
+                        db.session.expire_all()
+                        sub = db.session.get(Submission, submission_id)
+                        if sub and sub.status in ("completed", "failed"):
+                            yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                            break
         except GeneratorExit:
             try:
                 pubsub.unsubscribe()

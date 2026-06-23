@@ -159,17 +159,30 @@ class TestChallengeLeaderboardGetEndpoint:
         mock_build.assert_called_once_with(self.challenge.id, False)
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
-    def test_admin_bypasses_cache(self, mock_build, client):
+    def test_admin_uses_cache(self, mock_build, client):
         mock_build.return_value = []
         from cache_utils import set_cached
 
-        set_cached(f"leaderboard:raw:{self.challenge.id}:unfrozen", ["stale"], timeout=60)
+        entry = {
+            "user": {
+                "id": 1,
+                "alias_id": "Alpha",
+                "role": "competitor",
+                "is_anonymous": False,
+            },
+            "task_scores": {},
+            "public_score": 0.95,
+            "private_score": 0.92,
+            "total_points": 80,
+            "has_submitted": True,
+        }
+        set_cached(f"leaderboard:raw:{self.challenge.id}:unfrozen", [entry], timeout=60)
 
         res = client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
         )
         assert res.status_code == 200
-        mock_build.assert_called_once()
+        mock_build.assert_not_called()
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_double_blind_hides_details_for_competitors(self, mock_build, client, db_session):
@@ -259,6 +272,78 @@ class TestChallengeLeaderboardGetEndpoint:
         assert res.status_code == 200
         data = res.get_json()
         assert data["is_finalized"] is True
+
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
+    def test_scores_finalized_results_hidden_shows_only_public_and_ranks_by_public(
+        self, mock_build, client, db_session
+    ):
+        self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
+        db_session.flush()
+
+        entries = [
+            {
+                "user": {
+                    "id": self.competitor.id,
+                    "alias_id": "Alpha-Comp",
+                    "role": "competitor",
+                    "challenge_id": self.challenge.id,
+                    "is_anonymous": False,
+                    "name": "Alice",
+                    "surname": "Smith",
+                    "manual_points": {"1": 10},
+                },
+                "task_scores": {
+                    "1": {"public_score": 0.50, "private_score": 0.90, "submission_id": 101}
+                },
+                "public_score": 0.50,
+                "private_score": 0.90,
+                "total_points": 10,
+                "has_submitted": True,
+            },
+            {
+                "user": {
+                    "id": self.other_competitor.id,
+                    "alias_id": "Beta-Comp",
+                    "role": "competitor",
+                    "challenge_id": self.challenge.id,
+                    "is_anonymous": False,
+                    "name": "Bob",
+                    "surname": "Jones",
+                    "manual_points": {"1": 20},
+                },
+                "task_scores": {
+                    "1": {"public_score": 0.80, "private_score": 0.40, "submission_id": 102}
+                },
+                "public_score": 0.80,
+                "private_score": 0.40,
+                "total_points": 20,
+                "has_submitted": True,
+            },
+        ]
+        mock_build.return_value = entries
+
+        res = client.get(
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["is_finalized"] is True
+        assert data["reveal_results"] is False
+
+        leaderboard = data["leaderboard"]
+        assert len(leaderboard) == 2
+        # Since they are ranked on public score (higher is better), Beta-Comp (0.80) should be rank 1, Alpha-Comp (0.50) should be rank 2.
+        assert leaderboard[0]["user"]["id"] == self.other_competitor.id
+        assert leaderboard[0]["rank"] == 1
+        assert leaderboard[0]["private_score"] is None
+        assert leaderboard[0]["total_points"] == 0
+
+        assert leaderboard[1]["user"]["id"] == self.competitor.id
+        assert leaderboard[1]["rank"] == 2
+        assert leaderboard[1]["private_score"] is None
+        assert leaderboard[1]["total_points"] == 0
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_leaderboard_response_shape(self, mock_build, client):

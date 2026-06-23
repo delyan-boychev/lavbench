@@ -580,6 +580,16 @@ def finalize_challenge(challenge_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
+    if challenge.scores_finalized:
+        return (
+            jsonify(
+                {
+                    "error": "Competition is already finalized.",
+                    "code": "ERR_ALREADY_FINALIZED",
+                }
+            ),
+            400,
+        )
 
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
@@ -643,7 +653,7 @@ def finalize_challenge(challenge_id):
 
 
 @challenges_bp.route("/<int:challenge_id>/reveal-results", methods=["PUT"])
-@role_required(["jury"])
+@role_required(["admin", "jury"])
 def toggle_reveal_results(challenge_id):
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -959,6 +969,16 @@ def finalize_stage(challenge_id, stage_id):
     from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    if stage.is_finalized:
+        return (
+            jsonify(
+                {
+                    "error": "Stage is already finalized.",
+                    "code": "ERR_ALREADY_FINALIZED",
+                }
+            ),
+            400,
+        )
     data = request.json or {}
 
     finalize_type = data.get("finalize_type", "visible")
@@ -1191,7 +1211,7 @@ def export_results(challenge_id):
     from services.challenge_service import generate_exported_results_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
-    csv_data = generate_exported_results_csv(challenge)
+    csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
 
     response = Response(
         csv_data,

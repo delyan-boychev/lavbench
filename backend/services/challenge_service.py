@@ -77,9 +77,19 @@ def generate_scores_csv(challenge):
     return output.getvalue()
 
 
-def generate_exported_results_csv(challenge):
+def generate_exported_results_csv(challenge, view_role="admin"):
     leaderboard = build_and_cache_leaderboard(challenge.id) or []
     tasks = challenge.tasks
+
+    now = datetime.utcnow()
+    has_started = challenge.start_time is not None and now >= challenge.start_time
+    challenge_finalized = challenge.scores_finalized
+
+    show_details = True
+    if challenge.double_blind:
+        show_details = (view_role == "admin") or (
+            view_role == "jury" and (not has_started or challenge_finalized)
+        )
 
     task_ids = [t.id for t in tasks]
     if task_ids:
@@ -120,18 +130,34 @@ def generate_exported_results_csv(challenge):
 
     for entry in leaderboard:
         user_data = entry["user"]
-        real_name = f"{user_data.get('name') or ''} {user_data.get('surname') or ''}".strip()
         manual_pts = user_data.get("manual_points") or {}
+
+        if show_details:
+            username_val = user_data.get("username")
+            real_name_val = (
+                f"{user_data.get('name') or ''} {user_data.get('surname') or ''}".strip()
+            )
+            email_val = user_data.get("email")
+            school_val = user_data.get("school")
+            city_val = user_data.get("city")
+            grade_val = user_data.get("grade")
+        else:
+            username_val = user_data.get("alias_id")
+            real_name_val = user_data.get("alias_id")
+            email_val = "N/A"
+            school_val = "N/A"
+            city_val = "N/A"
+            grade_val = "N/A"
 
         row = [
             entry["rank"],
-            user_data.get("username"),
+            username_val,
             user_data.get("alias_id"),
-            real_name,
-            user_data.get("email"),
-            user_data.get("school"),
-            user_data.get("city"),
-            user_data.get("grade"),
+            real_name_val,
+            email_val,
+            school_val,
+            city_val,
+            grade_val,
             "Yes" if entry["has_submitted"] else "No",
             entry["total_points"],
             entry["public_score"] if entry["public_score"] is not None else "N/A",
@@ -158,9 +184,14 @@ def generate_exported_results_csv(challenge):
 
     for log in audit_logs:
         admin_user = log.admin.username if log.admin else f"User ID {log.admin_id}"
-        target_user = (
-            log.target_user.username if log.target_user else f"User ID {log.target_user_id}"
-        )
+        if show_details:
+            target_user = (
+                log.target_user.username if log.target_user else f"User ID {log.target_user_id}"
+            )
+        else:
+            target_user = (
+                log.target_user.alias_id if log.target_user else f"User ID {log.target_user_id}"
+            )
         task_title = log.task.title if log.task else f"Task ID {log.task_id}"
 
         writer.writerow(

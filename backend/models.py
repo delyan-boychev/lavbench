@@ -167,6 +167,7 @@ class User(db.Model):
         has_started = False
         challenge_finalized = scores_finalized
         double_blind = True
+        challenge_reveal_results = True
 
         if self.challenge_id:
             challenge = (
@@ -176,6 +177,7 @@ class User(db.Model):
             )
             if challenge:
                 double_blind = challenge.double_blind
+                challenge_reveal_results = challenge.reveal_results
                 if challenge.start_time:
                     has_started = datetime.utcnow() >= challenge.start_time
                 if challenge.scores_finalized:
@@ -203,8 +205,13 @@ class User(db.Model):
         if self.is_anonymous and view_role == "competitor" and not is_self:
             show_details = False
 
+        # Competitors should only see manual points if the scores are finalized and results are revealed.
+        show_manual_points = True
+        if view_role == "competitor" or (is_self and self.role == "competitor"):
+            show_manual_points = challenge_finalized and challenge_reveal_results
+
         manual_pts = {}
-        if self.manual_points:
+        if self.manual_points and show_manual_points:
             if isinstance(self.manual_points, dict):
                 manual_pts = self.manual_points
             elif isinstance(self.manual_points, str):
@@ -619,7 +626,7 @@ class Submission(db.Model):
         except Exception as e:
             logger.exception("Error saving logs to file")
 
-    def to_dict(self, view_role="competitor", current_user_id=None):
+    def to_dict(self, view_role="competitor", current_user_id=None, include_large_fields=True):
         finalized = self.challenge.scores_finalized if self.challenge else False
         double_blind = self.challenge.double_blind if self.challenge else True
 
@@ -644,7 +651,14 @@ class Submission(db.Model):
                 "role": owner_info.get("role"),
             }
 
-        show_private_score = (view_role == "admin") or finalized
+        if view_role == "admin":
+            show_private_score = True
+        elif view_role == "jury":
+            show_private_score = finalized
+        else:
+            show_private_score = finalized and (
+                self.challenge.reveal_results if self.challenge else False
+            )
 
         try:
             m_public = (
@@ -671,10 +685,10 @@ class Submission(db.Model):
             "task_title": self.task.title if self.task else None,
             "status": self.status,
             "detailed_status": self.detailed_status,
-            "code_cells": self.code_cells,
+            "code_cells": self.code_cells if include_large_fields else "[]",
             "public_score": self.public_score,
             "private_score": self.private_score if show_private_score else None,
-            "logs": self.logs,
+            "logs": self.logs if include_large_fields else None,
             "gpu_node": self.gpu_node,
             "execution_time_ms": self.execution_time_ms,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -693,7 +707,9 @@ class Submission(db.Model):
         }
 
     def to_dict_light(self, view_role="competitor", current_user_id=None):
-        res = self.to_dict(view_role=view_role, current_user_id=current_user_id)
+        res = self.to_dict(
+            view_role=view_role, current_user_id=current_user_id, include_large_fields=False
+        )
         res.pop("code_cells", None)
         res.pop("logs", None)
         return res

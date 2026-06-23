@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../AuthContext';
 import ChallengeService from '../../services/ChallengeService';
 import { useApp } from '../../context/AppContext';
@@ -367,18 +367,33 @@ export default function LeaderboardTable({
   const [expandedUserIds, setExpandedUserIds] = useState(new Set());
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
   const [isRevealing, setIsRevealing] = useState(false);
+  const [revealResults, setRevealResults] = useState(challenge?.reveal_results);
+
+  useEffect(() => {
+    setRevealResults(challenge?.reveal_results);
+  }, [challenge?.reveal_results]);
 
   const handleToggleReveal = async () => {
+    const nextVal = !revealResults;
+    setRevealResults(nextVal);
     setIsRevealing(true);
-    const res = await ChallengeService.toggleReveal(challenge.id, !challenge.reveal_results);
-    if (res.ok) {
-      showToast(
-        res.data.reveal_results
-          ? t('leaderboard.results_revealed')
-          : t('leaderboard.results_hidden'),
-      );
-      fetchChallenges();
-      if (onRefresh) onRefresh();
+    try {
+      const res = await ChallengeService.toggleReveal(challenge.id, nextVal);
+      if (res.ok) {
+        showToast(
+          res.data.reveal_results
+            ? t('leaderboard.results_revealed')
+            : t('leaderboard.results_hidden'),
+        );
+        fetchChallenges();
+        if (onRefresh) onRefresh();
+      } else {
+        setRevealResults(!nextVal);
+        showToast(res.data?.error || 'Failed to toggle reveal', 'error');
+      }
+    } catch {
+      setRevealResults(!nextVal);
+      showToast('Network error toggling reveal', 'error');
     }
     setIsRevealing(false);
   };
@@ -419,11 +434,10 @@ export default function LeaderboardTable({
       </EmptyState>
     );
   }
-
   // Calculate Sub-column visibility rules
-  const showPublicCols = !isFinalized || isJuryOrAdmin || challenge?.reveal_results;
-  const showPrivateCols = isJuryOrAdmin || (isFinalized && challenge?.reveal_results);
-  const showPointsCols = isJuryOrAdmin || (isFinalized && challenge?.reveal_results);
+  const showPublicCols = true;
+  const showPrivateCols = isJuryOrAdmin || (isFinalized && revealResults);
+  const showPointsCols = isJuryOrAdmin || (isFinalized && revealResults);
 
   // 1. Sort and rank display data dynamically based on active tab
   let displayData = [...data];
@@ -437,12 +451,24 @@ export default function LeaderboardTable({
     displayData = displayData.filter((e) => !e.is_baseline_entry);
   }
 
+  // After filtering baselines, recompute ranks for remaining entries
+  let currentRank = 0;
+  displayData = displayData.map((entry) => {
+    const entryCopy = { ...entry };
+    const hasScore = entry.has_submitted;
+    if (hasScore) {
+      currentRank += 1;
+    }
+    entryCopy.rank = currentRank;
+    return entryCopy;
+  });
+
   const isMse = (challenge?.metric_name || '').toLowerCase() in { mse: 1, loss: 1, error: 1 };
 
   if (activeTab !== 'general') {
     const activeTaskIdStr = activeTab.toString();
     displayData.sort((a, b) => {
-      if (isFinalized) {
+      if (isFinalized && (isJuryOrAdmin || revealResults)) {
         const ptsA = Number(a.user?.manual_points?.[activeTaskIdStr] ?? 0);
         const ptsB = Number(b.user?.manual_points?.[activeTaskIdStr] ?? 0);
         if (ptsA !== ptsB) return ptsB - ptsA;
@@ -498,7 +524,7 @@ export default function LeaderboardTable({
         }
         if (prevNonBaseline) {
           let isTie;
-          if (isFinalized) {
+          if (isFinalized && (isJuryOrAdmin || revealResults)) {
             const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
             const ptsB = Number(prevNonBaseline.user?.manual_points?.[activeTaskIdStr] ?? 0);
             isTie = ptsA === ptsB;
@@ -566,12 +592,10 @@ export default function LeaderboardTable({
             {t('leaderboard.finalize_button')}
           </Button>
         )}
-        {/* Reveal toggle — jury only, after finalization */}
-        {isJury && isFinalized && challenge && (
+        {/* Reveal toggle — jury or admin, after finalization */}
+        {isJuryOrAdmin && isFinalized && challenge && (
           <Button variant="secondary" size="sm" onClick={handleToggleReveal} disabled={isRevealing}>
-            {challenge?.reveal_results
-              ? t('leaderboard.hide_results')
-              : t('leaderboard.reveal_results')}
+            {revealResults ? t('leaderboard.hide_results') : t('leaderboard.reveal_results')}
           </Button>
         )}
       </div>

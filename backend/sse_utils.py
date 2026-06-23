@@ -63,3 +63,15 @@ def clear_submission_logs(submission_id):
             r.delete(f"submission:{submission_id}:logs")
     except Exception:
         logger.exception("Redis clear submission logs error for submission %s", submission_id)
+
+
+def publish_submission_status(submission_id, status):
+    """Publish the final status of a submission to its SSE channel."""
+    if not submission_id or not status:
+        return
+    try:
+        r = _redis()
+        if r:
+            r.publish(f"submission_{submission_id}_logs", json.dumps({"status": status}))
+    except Exception:
+        logger.exception("Redis publish submission status error for submission %s", submission_id)

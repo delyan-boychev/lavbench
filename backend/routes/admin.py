@@ -33,7 +33,7 @@ admin_bp = Blueprint("admin", __name__)
 
 
 @admin_bp.route("/metrics", methods=["GET"])
-@role_required("admin")
+@role_required(["admin", "jury"])
 def get_available_metrics():
     """
     List all built-in evaluation metrics available for task configuration.

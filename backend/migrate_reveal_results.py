@@ -30,18 +30,14 @@ def migrate():
                 "reveal_points",
             ):
                 try:
-                    conn.execute(
-                        db.text(f"ALTER TABLE challenges DROP COLUMN IF EXISTS {col}")
-                    )
+                    conn.execute(db.text(f"ALTER TABLE challenges DROP COLUMN IF EXISTS {col}"))
                 except Exception:
                     pass
 
             # Drop old columns from stages
             for col in ("reveal_public", "reveal_private", "reveal_points"):
                 try:
-                    conn.execute(
-                        db.text(f"ALTER TABLE stages DROP COLUMN IF EXISTS {col}")
-                    )
+                    conn.execute(db.text(f"ALTER TABLE stages DROP COLUMN IF EXISTS {col}"))
                 except Exception:
                     pass
 

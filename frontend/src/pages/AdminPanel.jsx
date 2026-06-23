@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import useDebounce from '../hooks/useDebounce';
+import { Navigate } from 'react-router-dom';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
@@ -26,6 +27,10 @@ export { formatMetricName };
 export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
+
+  if (currentUser?.role === 'competitor') {
+    return <Navigate to="/challenges" replace />;
+  }
   const {
     challenges,
     selectedChallenge,

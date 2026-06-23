@@ -409,6 +409,27 @@ describe('LeaderboardTable Component', () => {
     expect(screen.getByText('Reveal Results')).toBeInTheDocument();
   });
 
+  it('reveal toggle shows after finalization for admin', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
+    ChallengeService.toggleReveal = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { reveal_results: true },
+    });
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: true,
+      reveal_results: false,
+      metric_name: 'Accuracy',
+    };
+    const data = [
+      { rank: 1, public_score: 0.5, user: { id: 2, username: 'other' }, task_scores: {} },
+    ];
+
+    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
+    expect(screen.getByText('Reveal Results')).toBeInTheDocument();
+  });
+
   it('saves manual points and refreshes on blur', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
     ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });

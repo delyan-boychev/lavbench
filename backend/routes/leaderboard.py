@@ -97,7 +97,7 @@ def get_leaderboard(challenge_id):
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     is_admin_or_jury = user_role in ("admin", "jury")
-    cached_entries = None if is_admin_or_jury else get_cached(cache_key)
+    cached_entries = get_cached(cache_key)
 
     if cached_entries is None:
         cached_entries = build_and_cache_leaderboard(challenge_id, is_frozen_view)
@@ -167,18 +167,16 @@ def get_leaderboard(challenge_id):
                 elif stage:
                     if stage.is_finalized:
                         if stage.finalize_type == "visible":
-                            reveal_task_pub = stage.reveal_results
+                            reveal_task_pub = True
                             reveal_task_priv = stage.reveal_results
                             reveal_task_pts = stage.reveal_results
                     else:
-                        reveal_task_pub = challenge.reveal_results
+                        reveal_task_pub = True
                 else:
-                    reveal_task_pub = challenge.reveal_results
+                    reveal_task_pub = True
 
                 if is_self:
                     reveal_task_pub = True
-                    reveal_task_priv = True
-                    reveal_task_pts = True
 
                 if not reveal_task_pub:
                     s_copy["public_score"] = None
@@ -223,11 +221,17 @@ def get_leaderboard(challenge_id):
                     "role": comp_user.get("role"),
                     "challenge_id": comp_user.get("challenge_id"),
                     "is_anonymous": is_anonymous,
-                    "manual_points": manual_points_dict if is_self else {},
+                    "manual_points": (
+                        manual_points_dict
+                        if (is_self and challenge_finalized and challenge.reveal_results)
+                        else {}
+                    ),
                 }
             else:
                 user_copy = dict(comp_user)
-                user_copy["manual_points"] = manual_points_dict
+                user_copy["manual_points"] = (
+                    manual_points_dict if (challenge_finalized and challenge.reveal_results) else {}
+                )
                 entry_copy["user"] = user_copy
 
             post_processed_leaderboard.append(entry_copy)
@@ -235,7 +239,7 @@ def get_leaderboard(challenge_id):
         from functools import cmp_to_key
 
         def compare_competitor_entries(a, b):
-            if challenge.scores_finalized:
+            if challenge.scores_finalized and challenge.reveal_results:
                 pa = a["total_points"]
                 pb = b["total_points"]
                 if pa != pb:
@@ -258,7 +262,7 @@ def get_leaderboard(challenge_id):
             post_processed_leaderboard, key=cmp_to_key(compare_competitor_entries)
         )
 
-        if challenge.scores_finalized:
+        if challenge.scores_finalized and challenge.reveal_results:
             current_rank = 1
             for idx, entry_dict in enumerate(sorted_competitor):
                 if (
@@ -294,9 +298,8 @@ def get_leaderboard(challenge_id):
 
             if challenge.double_blind:
                 show_details = (
-                    (user_role in ("admin", "jury"))
-                    or (not has_started)
-                    or challenge_finalized
+                    (user_role == "admin")
+                    or (user_role == "jury" and (not has_started or challenge_finalized))
                     or is_self
                 )
             else:
@@ -313,11 +316,7 @@ def get_leaderboard(challenge_id):
                     "role": comp_user.get("role"),
                     "challenge_id": comp_user.get("challenge_id"),
                     "is_anonymous": is_anonymous,
-                    "manual_points": (
-                        comp_user.get("manual_points", {})
-                        if (challenge_finalized and reveal_pts)
-                        else {}
-                    ),
+                    "manual_points": comp_user.get("manual_points", {}),
                 }
             post_processed_leaderboard.append(entry_copy)
         tasks_list = [t.to_dict() for t in tasks]

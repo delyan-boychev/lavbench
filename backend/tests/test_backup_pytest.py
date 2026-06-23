@@ -90,6 +90,59 @@ class TestRunBackup:
                 run_backup(self.app)
         assert "tar failed" in str(ctx.value)
 
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
+    @patch("task_modules.system.os.path.getsize")
+    @patch("task_modules.system.glob.glob")
+    @patch("task_modules.system.os.remove")
+    @patch("task_modules.system.os.path.getctime")
+    def test_run_backup_rotation_respects_custom_dir(
+        self, mock_getctime, mock_remove, mock_glob, mock_getsize, mock_makedirs, mock_run
+    ):
+        mock_run.return_value.returncode = 0
+        mock_getsize.return_value = 1024
+        mock_glob.return_value = [
+            "/custom_backups/auto_1.tar.gz",
+            "/custom_backups/auto_2.tar.gz",
+            "/custom_backups/auto_3.tar.gz",
+            "/custom_backups/auto_4.tar.gz",
+            "/custom_backups/auto_5.tar.gz",
+            "/custom_backups/auto_6.tar.gz",
+            "/custom_backups/auto_7.tar.gz",
+            "/custom_backups/auto_8.tar.gz",
+        ]
+        mock_getctime.side_effect = lambda path: {
+            "/custom_backups/auto_1.tar.gz": 1,
+            "/custom_backups/auto_2.tar.gz": 2,
+            "/custom_backups/auto_3.tar.gz": 3,
+            "/custom_backups/auto_4.tar.gz": 4,
+            "/custom_backups/auto_5.tar.gz": 5,
+            "/custom_backups/auto_6.tar.gz": 6,
+            "/custom_backups/auto_7.tar.gz": 7,
+            "/custom_backups/auto_8.tar.gz": 8,
+        }.get(path, 0)
+        with patch.dict(os.environ, {"BACKUPS_DIR": "/custom_backups"}):
+            with self._ctx():
+                filename = run_backup(self.app, auto=True)
+        mock_glob.assert_called_with("/custom_backups/auto_*.tar.gz")
+        assert mock_remove.call_count == 2
+        mock_remove.assert_any_call("/custom_backups/auto_1.tar.gz")
+        mock_remove.assert_any_call("/custom_backups/auto_2.tar.gz")
+
+    @patch("task_modules.system.subprocess.run")
+    @patch("task_modules.system.os.makedirs")
+    @patch("task_modules.system.glob.glob")
+    @patch("task_modules.system.os.path.getctime")
+    def test_run_backup_skips_duplicate_state(
+        self, mock_getctime, mock_glob, mock_makedirs, mock_run
+    ):
+        mock_getctime.return_value = 12345
+        mock_glob.return_value = ["/backups/challenge_42/grace_ended_20260101_120000.tar.gz"]
+        with self._ctx():
+            filename = run_backup(self.app, auto=False, challenge_id=42, state="grace_ended")
+        assert filename == "grace_ended_20260101_120000.tar.gz"
+        mock_run.assert_not_called()
+
 
 class TestRunRegisterWorkerSpecs:
     @patch("task_modules.system.requests.post")

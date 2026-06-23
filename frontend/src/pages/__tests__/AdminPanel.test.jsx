@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { formatMetricName } from '../../utils/metrics';
 
-vi.mock('../services/ApiService', () => ({
+vi.mock('../../services/ApiService', () => ({
   default: {
-    fetch: vi.fn(),
+    fetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })),
     postForm: vi.fn(() => Promise.resolve({ ok: true })),
   },
 }));

@@ -130,3 +130,68 @@ class TestExtractCodeFromNotebook:
             assert result == []
         finally:
             os.unlink(fpath)
+
+
+class MockTask:
+    def __init__(self):
+        self.ban_magic_commands = False
+        self.banned_imports = ""
+        self.whitelisted_imports = ""
+
+
+class TestCheckExecutionRulesAST:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.task = MockTask()
+
+    def test_allowed_code(self):
+        ok, msg = check_execution_rules(self.task, ["x = 1\ny = x + 2\nprint(y)"])
+        assert ok is True
+        assert msg is None
+
+    def test_banned_exec(self):
+        ok, msg = check_execution_rules(self.task, ["exec('print(1)')"])
+        assert ok is False
+        assert "exec" in msg
+
+    def test_banned_eval(self):
+        ok, msg = check_execution_rules(self.task, ["eval('1 + 1')"])
+        assert ok is False
+        assert "eval" in msg
+
+    def test_banned_compile(self):
+        ok, msg = check_execution_rules(self.task, ["compile('print(1)', '<string>', 'exec')"])
+        assert ok is False
+        assert "compile" in msg
+
+    def test_banned_importlib(self):
+        ok, msg = check_execution_rules(self.task, ["import importlib"])
+        assert ok is False
+        assert "importlib" in msg
+
+    def test_banned_builtins_lookup(self):
+        ok, msg = check_execution_rules(self.task, ["__builtins__.__dict__['eval']('1')"])
+        assert ok is False
+        assert "eval" in msg
+
+    def test_obfuscated_exec_dict(self):
+        ok, msg = check_execution_rules(self.task, ["globals()['exec']('print(1)')"])
+        assert ok is False
+        assert "exec" in msg
+
+    def test_syntax_error_fallback(self):
+        ok, msg = check_execution_rules(self.task, ["if True eval("])
+        assert ok is False
+        assert "eval" in msg
+
+    def test_allowed_attributes(self):
+        # Verify model.eval() and re.compile(...) are allowed
+        ok, msg = check_execution_rules(self.task, ["model.eval()\nre.compile('abc')"])
+        assert ok is True
+        assert msg is None
+
+    def test_banned_meta_programming(self):
+        # Verify subclass sandbox escape attribute is blocked
+        ok, msg = check_execution_rules(self.task, ["().__class__.__bases__[0].__subclasses__()"])
+        assert ok is False
+        assert "subclasses" in msg.lower()

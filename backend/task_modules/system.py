@@ -59,6 +59,17 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
         backup_dir = os.path.join(backup_dir, f"challenge_{challenge_id}")
     os.makedirs(backup_dir, exist_ok=True)
 
+    if challenge_id and state:
+        pattern = os.path.join(backup_dir, f"{state}_*.tar.gz")
+        existing_backups = glob.glob(pattern)
+        if existing_backups:
+            latest_existing = sorted(existing_backups, key=os.path.getctime)[-1]
+            filename = os.path.basename(latest_existing)
+            print(
+                f"[BACKUP] Skipping duplicate backup: {filename} already exists for challenge {challenge_id} ({state})"
+            )
+            return filename
+
     filename = f"{prefix}_{ts}.tar.gz"
     target = os.path.join(backup_dir, filename)
 
@@ -115,7 +126,7 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
 
     # Rotation: keep last 6 auto backups in root directory only
     if auto and not challenge_id:
-        pattern = os.path.join("/backups", "auto_*.tar.gz")
+        pattern = os.path.join(backup_dir, "auto_*.tar.gz")
         auto_files = sorted(glob.glob(pattern), key=os.path.getctime)
         for old in auto_files[:-6]:
             try:

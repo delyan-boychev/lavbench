@@ -56,3 +56,51 @@ class TestSubmissionFileCleanup:
         os.remove(self.log_path)
         db.session.delete(self.sub)
         db.session.commit()
+
+
+class TestSubmissionToDict:
+    @pytest.fixture(autouse=True)
+    def setup(self, app, db_session):
+        app.config["UPLOAD_FOLDER"] = tempfile.mkdtemp()
+        user = User(username="testuser_dict", password_hash="x", role="competitor")
+        db.session.add(user)
+        challenge = Challenge(
+            title="Test Dict", start_time=datetime(2024, 1, 1), end_time=datetime(2026, 1, 1)
+        )
+        db.session.add(challenge)
+        db.session.commit()
+
+        task = Task(challenge_id=challenge.id, title="Test Task Dict")
+        db.session.add(task)
+        db.session.commit()
+
+        sub = Submission(
+            user_id=user.id, challenge_id=challenge.id, task_id=task.id, status="completed"
+        )
+        sub.code_cells = '["print(1)"]'
+        sub.logs = "evaluated logs"
+        db.session.add(sub)
+        db.session.commit()
+        self.sub = sub
+
+    def test_to_dict_includes_large_fields(self):
+        res = self.sub.to_dict()
+        assert res["code_cells"] == '["print(1)"]'
+        assert res["logs"] == "evaluated logs"
+
+    def test_to_dict_excludes_large_fields(self):
+        res = self.sub.to_dict(include_large_fields=False)
+        assert res["code_cells"] == "[]"
+        assert res["logs"] is None
+
+    def test_to_dict_light_excludes_large_fields_and_keys(self):
+        res = self.sub.to_dict_light()
+        assert "code_cells" not in res
+        assert "logs" not in res
+
+    def test_to_dict_light_no_disk_read(self):
+        from unittest.mock import patch
+
+        with patch("builtins.open") as mock_open:
+            res = self.sub.to_dict_light()
+            mock_open.assert_not_called()

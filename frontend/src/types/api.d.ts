@@ -765,6 +765,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/csrf-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a CSRF token for state-changing requests.
+         * @description Returns the token in the response body and sets it as a non-httpOnly cookie.<br/>The frontend should read the cookie and include it as X-CSRF-Token header.<br/>
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSRF token generated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            csrf_token?: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -776,7 +817,7 @@ export interface paths {
         put?: never;
         /**
          * Authenticate a user and receive a session cookie.
-         * @description Password must be SHA-256 hashed client-side before sending.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>
+         * @description Password must be sent as plaintext; the server hashes it.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>
          */
         post: {
             parameters: {
@@ -1000,6 +1041,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/challenges/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a challenge configuration from JSON (previously exported via /export).
+         * @description Creates challenge, stages, and tasks. File attachments are NOT restored.<br/>
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Challenge created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/challenges/{challenge_id}": {
         parameters: {
             query?: never;
@@ -1114,6 +1202,47 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export a challenge configuration as JSON, including tasks and stages.
+         * @description File attachments (baseline notebooks, evaluator scripts) are NOT included.<br/>
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    challenge_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Challenge export JSON */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1830,7 +1959,7 @@ export interface paths {
         };
         /**
          * Health check for Docker and load balancer monitoring.
-         * @description Verifies database connectivity.<br/>
+         * @description Verifies database, Redis, Celery, and disk availability.<br/>
          */
         get: {
             parameters: {
@@ -1847,25 +1976,16 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            /** @example connected */
-                            database?: string;
-                            /** @example ok */
-                            status?: string;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Database unreachable */
+                /** @description Service degraded */
                 503: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            detail?: string;
-                            /** @example error */
-                            status?: string;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -2463,6 +2583,40 @@ export interface paths {
                     content: {
                         "application/json": Record<string, never>;
                     };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worker/active-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all active task configurations for worker image pre-building. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };

@@ -50,24 +50,86 @@ def check_execution_rules(task, cells_list):
     combined_code = "\n".join(extracted_cells)
 
     # Always-banned dynamic execution bypasses (unconditional — cannot be opted out)
-    import re
+    banned_names = {
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "importlib",
+        "__builtins__",
+        "builtins",
+    }
+    banned_attributes = {
+        "exec",
+        "__import__",
+        "importlib",
+        "__builtins__",
+        "__globals__",
+        "__subclasses__",
+        "__code__",
+    }
+    banned_constants = {
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "importlib",
+        "__builtins__",
+        "builtins",
+        "__globals__",
+        "__subclasses__",
+        "__code__",
+    }
 
-    dangerous_patterns = [
-        (re.compile(r"(?:^|\s|['\"(])__import__\s*\("), "Rule Violation: Dynamic imports via __import__() are not allowed."),
-        (re.compile(r"(?:^|\s|['\"(])exec\s*\("), "Rule Violation: exec() is not allowed."),
-        (re.compile(r"(?:^|\s|['\"(])eval\s*\("), "Rule Violation: eval() is not allowed."),
-        (re.compile(r"(?:^|\s|['\"(])compile\s*\("), "Rule Violation: compile() is not allowed."),
-    ]
-    for pattern, message in dangerous_patterns:
-        if pattern.search(combined_code):
-            return False, message
+    def get_violation_message(name):
+        if name == "__import__":
+            return "Rule Violation: Dynamic imports via __import__() are not allowed."
+        if name == "exec":
+            return "Rule Violation: exec() is not allowed."
+        if name == "eval":
+            return "Rule Violation: eval() is not allowed."
+        if name == "compile":
+            return "Rule Violation: compile() is not allowed."
+        if name in ("__globals__", "__subclasses__", "__code__"):
+            return f"Rule Violation: Access to meta-programming attribute '{name}' is banned."
+        return f"Rule Violation: Dynamic execution or import via '{name}' is not allowed."
 
-    # Always-banned importlib bypass
-    if "importlib" in combined_code and "import_module" in combined_code:
-        return (
-            False,
-            "Rule Violation: Dynamic imports via importlib.import_module() are not allowed.",
-        )
+    try:
+        tree = ast.parse(combined_code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in banned_names:
+                return False, get_violation_message(node.id)
+            elif isinstance(node, ast.Attribute) and node.attr in banned_attributes:
+                return False, get_violation_message(node.attr)
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value in banned_constants
+            ):
+                return False, get_violation_message(node.value)
+            elif isinstance(node, ast.Str) and node.s in banned_constants:
+                return False, get_violation_message(node.s)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    root_import = alias.name.split(".")[0]
+                    if root_import in banned_names:
+                        return False, get_violation_message(root_import)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    root_import = node.module.split(".")[0]
+                    if root_import in banned_names:
+                        return False, get_violation_message(root_import)
+                for alias in node.names:
+                    if alias.name in banned_names:
+                        return False, get_violation_message(alias.name)
+    except SyntaxError:
+        # Fallback for code with syntax errors: check if any of the banned names appear as whole words not preceded by a dot
+        import re
+
+        for name in banned_names:
+            pattern = re.compile(rf"(?<!\.)\b{name}\b")
+            if pattern.search(combined_code):
+                return False, get_violation_message(name)
 
     if task.ban_magic_commands:
         for line in combined_code.splitlines():

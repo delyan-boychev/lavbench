@@ -1945,6 +1945,11 @@ def report_worker_progress(submission_id):
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)
 
+    if submission.status in ("completed", "failed"):
+        from sse_utils import publish_submission_status
+
+        publish_submission_status(submission.id, submission.status)
+
     return jsonify({"message": "Status updated successfully"}), 200
 
 

@@ -367,7 +367,9 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
     for comp in competitors:
         sub = user_best.get(comp.id)
         if sub:
-            entry_dict = sub.to_dict(view_role=user_role, current_user_id=current_user_id)
+            entry_dict = sub.to_dict(
+                view_role=user_role, current_user_id=current_user_id, include_large_fields=False
+            )
             entry_dict["has_submitted"] = True
         else:
             entry_dict = {
@@ -410,7 +412,7 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         )
         if best_baseline:
             baseline_entry = best_baseline.to_dict(
-                view_role=user_role, current_user_id=current_user_id
+                view_role=user_role, current_user_id=current_user_id, include_large_fields=False
             )
             baseline_entry["is_baseline_entry"] = True
             baseline_entry["has_submitted"] = True
@@ -423,11 +425,13 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         if not a["has_submitted"]:
             name_a = (
                 f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower()
-                or a["user"].get("username", "").lower()
+                or (a["user"].get("username") or "").lower()
+                or (a["user"].get("alias_id") or "").lower()
             )
             name_b = (
                 f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower()
-                or b["user"].get("username", "").lower()
+                or (b["user"].get("username") or "").lower()
+                or (b["user"].get("alias_id") or "").lower()
             )
             if name_a != name_b:
                 return -1 if name_a < name_b else 1

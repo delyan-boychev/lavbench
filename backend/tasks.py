@@ -210,6 +210,12 @@ def watchdog_stuck_submissions():
                             sub.metrics_payload_private = fb["metrics_payload_priv"]
                         r.delete(fallback_key)
                         recovered += 1
+                        try:
+                            from sse_utils import publish_submission_status
+
+                            publish_submission_status(sub.id, sub.status)
+                        except Exception:
+                            pass
                     except Exception as e:
                         logger.error(
                             "Watchdog: failed to recover fallback for submission %s: %s", sub.id, e
@@ -248,6 +254,12 @@ def watchdog_stuck_submissions():
             sub.detailed_status = "failed"
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
             timeout_count += 1
+            try:
+                from sse_utils import publish_submission_status
+
+                publish_submission_status(sub.id, sub.status)
+            except Exception:
+                pass
 
         if recovered > 0 or timeout_count > 0:
             db.session.commit()

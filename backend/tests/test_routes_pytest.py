@@ -1287,9 +1287,7 @@ class TestRouteLevelLogic:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
-            data=json.dumps(
-                {"reveal_results": True}
-            ),
+            data=json.dumps({"reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(self.admin_token),
         )
@@ -1297,9 +1295,7 @@ class TestRouteLevelLogic:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
-            data=json.dumps(
-                {"reveal_results": True}
-            ),
+            data=json.dumps({"reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
@@ -1311,9 +1307,7 @@ class TestRouteLevelLogic:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
-            data=json.dumps(
-                {"reveal_results": True}
-            ),
+            data=json.dumps({"reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
@@ -1456,6 +1450,16 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
         assert res.get_json()["is_finalized"]
+
+        # Verify repeat stage finalization returns 400
+        res_repeat = self.client.post(
+            f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
+            data=json.dumps({"finalize_type": "visible", "reveal_results": True}),
+            content_type="application/json",
+            headers=self.get_auth_header(jury_token),
+        )
+        assert res_repeat.status_code == 400
+        assert "already finalized" in res_repeat.get_json()["error"].lower()
 
         self.challenge.is_archived = True
         db.session.commit()

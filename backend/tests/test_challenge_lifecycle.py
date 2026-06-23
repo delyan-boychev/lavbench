@@ -124,8 +124,8 @@ class TestFinalizeChallenge:
             content_type="application/json",
             headers=headers,
         )
-        assert res2.status_code == 200
-        assert res2.get_json()["challenge"]["scores_finalized"] is True
+        assert res2.status_code == 400
+        assert "already finalized" in res2.get_json()["error"].lower()
 
     def test_finalize_reveal_options(
         self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
@@ -171,6 +171,22 @@ class TestFinalizeChallenge:
         assert res3.status_code == 200
         db_session.refresh(sample_challenge)
         assert sample_challenge.reveal_results is True
+
+        # Toggle reveal as admin — turn off
+        admin = create_user(username="finalize-admin-ro", role="admin")
+        admin_token = generate_token(admin.id, "admin")
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        res_admin = client.put(
+            f"/api/challenges/{sample_challenge.id}/reveal-results",
+            data=json.dumps({"reveal_results": False}),
+            content_type="application/json",
+            headers=admin_headers,
+        )
+        assert res_admin.status_code == 200
+        db_session.refresh(sample_challenge)
+        assert sample_challenge.reveal_results is False
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Test-Competition endpoint:  POST /challenges/<id>/test-competition
 # Requires role: admin or jury

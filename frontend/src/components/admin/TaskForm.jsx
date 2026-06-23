@@ -3,6 +3,7 @@ import { useTranslation, Trans } from 'react-i18next';
 import InputField from '../ui/InputField';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
+import CustomSelect from '../ui/CustomSelect';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
 import TabScrollContainer from '../ui/TabScrollContainer';
@@ -69,7 +70,7 @@ export default function TaskForm({
     return (
       <div className="flex flex-col gap-6">
         {/* COLUMN DEFINITIONS */}
-        <div className="flex flex-col gap-4 border border-emerald-500/20 p-5 bg-emerald-950/10 rounded-xl">
+        <div className="relative z-20 flex flex-col gap-4 border border-emerald-500/20 p-5 bg-emerald-950/10 rounded-xl">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-bold text-emerald-300">
               {t('admin.tasks.column_definitions')}
@@ -116,17 +117,15 @@ export default function TaskForm({
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <select
+                        <CustomSelect
+                          size="sm"
+                          options={['integer', 'float', 'string', 'binary', 'list', 'struct'].map(
+                            (t) => ({ value: t, label: t }),
+                          )}
                           value={col.type}
-                          onChange={(e) => updateColumn(idx, 'type', e.target.value)}
-                          className="text-xs bg-slate-900 border border-white/10 rounded-md text-slate-200 py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        >
-                          {['integer', 'float', 'string', 'binary', 'list', 'struct'].map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(val) => updateColumn(idx, 'type', val)}
+                          renderHiddenSelect={true}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -172,7 +171,7 @@ export default function TaskForm({
         </div>
 
         {/* METRICS CONFIGURATION */}
-        <div className="flex flex-col gap-4 border border-indigo-500/20 p-5 bg-indigo-950/10 rounded-xl">
+        <div className="relative z-10 flex flex-col gap-4 border border-indigo-500/20 p-5 bg-indigo-950/10 rounded-xl">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-bold text-indigo-300">
               {t('admin.tasks.evaluation_metrics')}
@@ -188,11 +187,14 @@ export default function TaskForm({
             </div>
           )}
 
-          <div className="flex gap-2">
-            <select
-              className="flex-1 text-sm text-slate-200 border border-white/10 px-4 py-2.5 bg-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
-              onChange={(e) => {
-                const mName = e.target.value;
+          <div className="flex gap-2 w-full">
+            <CustomSelect
+              options={Object.keys(availableMetrics)
+                .filter((m) => !metricsOnly[m])
+                .sort()
+                .map((m) => ({ value: m, label: formatMetricName(m) }))}
+              value=""
+              onChange={(mName) => {
                 if (mName && !metricsOnly[mName]) {
                   let updatedObj = { ...metricsObj };
                   const schema = availableMetrics[mName] || {};
@@ -207,25 +209,11 @@ export default function TaskForm({
                   updatedObj[mName] = { weight: 1.0, options: defaultOpts };
                   updateMetricsConfig(updatedObj);
                 }
-                e.target.value = '';
               }}
-              defaultValue=""
+              placeholder={t('admin.tasks.add_eval_metric')}
               disabled={selectedCount >= 10}
-            >
-              <option value="">
-                {' '}
-                <Plus size={14} />
-                {t('admin.tasks.add_eval_metric')}
-              </option>
-              {Object.keys(availableMetrics)
-                .filter((m) => !metricsOnly[m])
-                .sort()
-                .map((m) => (
-                  <option key={m} value={m}>
-                    {formatMetricName(m)}
-                  </option>
-                ))}
-            </select>
+              renderHiddenSelect={true}
+            />
           </div>
 
           {selectedCount > 0 && (
@@ -243,7 +231,7 @@ export default function TaskForm({
                   </tr>
                 </thead>
                 <tbody className="bg-slate-950/50 divide-y divide-white/5">
-                  {Object.keys(metricsOnly).map((mName) => {
+                  {Object.keys(metricsOnly).map((mName, idx) => {
                     const currentWeight =
                       metricsOnly[mName].weight !== undefined ? metricsOnly[mName].weight : 1.0;
                     const schema = availableMetrics[mName] || {};
@@ -269,25 +257,18 @@ export default function TaskForm({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <select
+                          <CustomSelect
+                            size="sm"
+                            options={columnNames.map((cn) => ({ value: cn, label: cn }))}
                             value={opts.column || ''}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               let updatedObj = { ...metricsObj };
-                              updatedObj[mName].options = { ...opts, column: e.target.value };
+                              updatedObj[mName].options = { ...opts, column: val };
                               updateMetricsConfig(updatedObj);
                             }}
-                            className="w-32 text-xs bg-slate-900 border border-white/10 rounded-md text-slate-200 py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          >
-                            {columnNames.length === 0 ? (
-                              <option value="">{t('admin.tasks.no_columns_option')}</option>
-                            ) : (
-                              columnNames.map((cn) => (
-                                <option key={cn} value={cn}>
-                                  {cn}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                            placeholder={t('admin.tasks.no_columns_option')}
+                            renderHiddenSelect={true}
+                          />
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
@@ -326,24 +307,23 @@ export default function TaskForm({
                                     <span className="text-[10px] text-slate-400 capitalize">
                                       {param.replace('_', ' ')}:
                                     </span>
-                                    <select
-                                      value={opts[param] || schema[param][0]}
-                                      onChange={(e) => {
+                                    <CustomSelect
+                                      size="sm"
+                                      options={schema[param].map((val) => ({
+                                        value: val.toString(),
+                                        label: val.toString(),
+                                      }))}
+                                      value={(opts[param] || schema[param][0]).toString()}
+                                      onChange={(val) => {
                                         let updatedObj = { ...metricsObj };
                                         updatedObj[mName].options = {
                                           ...opts,
-                                          [param]: e.target.value,
+                                          [param]: val,
                                         };
                                         updateMetricsConfig(updatedObj);
                                       }}
-                                      className="bg-transparent border-none text-[11px] text-slate-200 p-0 focus:ring-0 cursor-pointer"
-                                    >
-                                      {schema[param].map((val) => (
-                                        <option key={val} value={val} className="bg-slate-900">
-                                          {val}
-                                        </option>
-                                      ))}
-                                    </select>
+                                      renderHiddenSelect={true}
+                                    />
                                   </div>
                                 );
                               }
