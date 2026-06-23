@@ -6,86 +6,19 @@ from auth_utils import login_required, role_required
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        import uuid
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return super().default(obj)
+
 from services.leaderboard_service import build_and_cache_leaderboard
 
 
-@leaderboard_bp.route("/challenges/<int:challenge_id>/leaderboard", methods=["GET"])
-@login_required
-def get_leaderboard(challenge_id):
-    """
-    Get the leaderboard for a specific challenge.
-    Competitors only see their own challenge, and frozen/finalized rules apply.
-    ---
-    tags:
-      - Leaderboard
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: integer
-        required: true
-        description: ID of the challenge
-    responses:
-      200:
-        description: Leaderboard data returned
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied for competitor
-
-        content:
-          application/json:
-            schema:
-              type: object
-      404:
-        description: Challenge not found
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    challenge = db.get_or_404(Challenge, challenge_id)
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-
-    # Restrict competitors to their registered challenge
-    if user_role == "competitor":
-        user = db.session.get(User, current_user_id)
-        if not user or user.challenge_id != challenge_id:
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
-                403,
-            )
-
+def _get_leaderboard_payload(challenge, user_role, current_user_id):
+    challenge_id = challenge.id
     tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
-    is_mse = False
-    for task in tasks:
-        if task.metrics_config:
-            try:
-                cfg = (
-                    json.loads(task.metrics_config)
-                    if isinstance(task.metrics_config, str)
-                    else task.metrics_config
-                )
-                for m_name in cfg.keys():
-                    if is_metric_lower_better(m_name):
-                        is_mse = True
-                        break
-            except Exception:
-                pass
-        if is_mse:
-            break
-
     challenge_finalized = challenge.scores_finalized
 
     # Check if competitor needs to see frozen leaderboard
@@ -101,8 +34,6 @@ def get_leaderboard(challenge_id):
 
     if cached_entries is None:
         cached_entries = build_and_cache_leaderboard(challenge_id, is_frozen_view)
-
-    tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
 
     if user_role == "competitor":
         now = datetime.utcnow()
@@ -337,20 +268,156 @@ def get_leaderboard(challenge_id):
             except Exception:
                 pass
 
-    return jsonify(
-        {
-            "challenge_title": challenge.title,
-            "metric_name": metric_name,
-            "is_normalized": is_normalized,
-            "is_finalized": challenge.scores_finalized,
-            "reveal_results": challenge.reveal_results,
-            "tasks": tasks_list,
-            "leaderboard": post_processed_leaderboard,
-        }
-    )
+    return {
+        "challenge_title": challenge.title,
+        "metric_name": metric_name,
+        "is_normalized": is_normalized,
+        "is_finalized": challenge.scores_finalized,
+        "reveal_results": challenge.reveal_results,
+        "tasks": tasks_list,
+        "leaderboard": post_processed_leaderboard,
+    }
 
 
-@leaderboard_bp.route("/challenges/<int:challenge_id>/manual-points", methods=["POST"])
+@leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard", methods=["GET"])
+@login_required
+def get_leaderboard(challenge_id):
+    """
+    Get the leaderboard for a specific challenge.
+    Competitors only see their own challenge, and frozen/finalized rules apply.
+    ---
+    tags:
+      - Leaderboard
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: string
+        required: true
+        description: ID of the challenge
+    responses:
+      200:
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+    """
+    challenge = db.get_or_404(Challenge, challenge_id)
+    user_role = request.user["role"]
+    current_user_id = request.user["user_id"]
+
+    # Restrict competitors to their registered challenge
+    if user_role == "competitor":
+        user = db.session.get(User, current_user_id)
+        if not user or str(user.challenge_id) != str(challenge_id):
+            return (
+                jsonify(
+                    {
+                        "error": "Access denied. You are not registered for this competition.",
+                        "code": "ERR_NOT_REGISTERED",
+                    }
+                ),
+                403,
+            )
+
+    payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
+    return jsonify(payload)
+
+
+@leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard/live", methods=["GET"])
+@login_required
+def stream_challenge_leaderboard(challenge_id):
+    """
+    Stream live updates to the challenge leaderboard using Server-Sent Events (SSE).
+    ---
+    tags:
+      - SSE Streaming
+    security:
+      - cookieAuth: []
+    parameters:
+      - in: path
+        name: challenge_id
+        type: string
+        required: true
+        description: ID of the challenge
+    responses:
+      200:
+        description: Success
+        content:
+          text/event-stream:
+            schema:
+              type: string
+    """
+    from flask import current_app, Response, stream_with_context
+    from cache_utils import get_redis_client
+
+    user_id = request.user["user_id"]
+    user_role = request.user["role"]
+
+    challenge = db.session.get(Challenge, challenge_id)
+    if not challenge:
+        return jsonify({"error": "Challenge not found.", "code": "ERR_NOT_FOUND"}), 404
+
+    # Competitor check: can only view if it's their challenge
+    if user_role == "competitor":
+        u = db.session.get(User, user_id)
+        if not u or str(u.challenge_id) != str(challenge_id):
+            return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+
+    def event_generator():
+        r = get_redis_client()
+
+        # Yield initial connection confirmation
+        yield f"data: {json.dumps({'info': 'connected'})}\n\n"
+
+        # Helper to fetch current processed leaderboard and yield it
+        def get_and_yield_leaderboard():
+            with current_app.app_context():
+                c = db.session.get(Challenge, challenge_id)
+                if not c:
+                    return
+                payload = _get_leaderboard_payload(c, user_role, user_id)
+                yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
+
+        # Yield initial leaderboard state
+        for msg in get_and_yield_leaderboard():
+            yield msg
+
+        if r:
+            pubsub = r.pubsub()
+            channel_name = f"challenge_{challenge_id}_leaderboard"
+            try:
+                pubsub.subscribe(channel_name)
+            except Exception:
+                r = None # Fallback to standard polling if Redis errors
+
+        if r:
+            try:
+                while True:
+                    # Listen for message on the channel
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                    if message:
+                        # Message received means leaderboard recalculation completed!
+                        for msg in get_and_yield_leaderboard():
+                            yield msg
+                    else:
+                        yield ": keep-alive\n\n"
+            except Exception:
+                pass
+        else:
+            # Fallback to polling every 10 seconds if Redis is down
+            import time
+            while True:
+                time.sleep(10.0)
+                for msg in get_and_yield_leaderboard():
+                    yield msg
+
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+
+
+@leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
 @login_required
 @role_required(["admin", "jury"])
 def save_manual_points(challenge_id):
@@ -447,11 +514,7 @@ def save_manual_points(challenge_id):
     validated_points = {}
     tasks = {t.id for t in challenge.tasks}
     for k, v in points_dict.items():
-        try:
-            task_id = int(k)
-        except ValueError:
-            return jsonify({"error": f"Invalid task ID: {k}", "code": "ERR_INVALID_TASK_ID"}), 400
-
+        task_id = str(k)
         if task_id not in tasks:
             return (
                 jsonify(
@@ -519,7 +582,7 @@ def save_manual_points(challenge_id):
     from models import AuditLog
 
     for task_id_str, pts in validated_points.items():
-        task_id = int(task_id_str)
+        task_id = str(task_id_str)
         old_score = current_points.get(task_id_str)
         if old_score != pts:
             audit_entry = AuditLog(

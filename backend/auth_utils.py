@@ -138,7 +138,7 @@ def verify_token(token):
         if token.startswith("Bearer "):
             token = token[7:]
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        user_id = int(payload["sub"])
+        user_id = str(payload["sub"])
         # Check blacklist
         jti = payload.get("jti")
         if jti and _redis_exists(f"revoked:{jti}"):

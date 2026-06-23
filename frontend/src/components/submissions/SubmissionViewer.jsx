@@ -67,7 +67,7 @@ export default function SubmissionViewer({
     return () => {
       eventSource.close();
     };
-  }, [submission?.id, submission?.status]);
+  }, [submission?.id]);
 
   if (!submission) {
     return (

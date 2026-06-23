@@ -815,7 +815,7 @@ class TestRouteLevelLogic:
 
         from cache_utils import invalidate_leaderboard_cache
 
-        invalidate_leaderboard_cache(self.challenge.id)
+        invalidate_leaderboard_cache(self.challenge.id, delete_only=True)
         mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:frozen")
         mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:unfrozen")
 

@@ -20,7 +20,29 @@ def get_redis_client():
     current_pid = os.getpid()
     if _pool is None or _pool_pid != current_pid:
         broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-        _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=100)
+        ssl_kwargs = {}
+        if broker_url.startswith("rediss://"):
+            import ssl
+            ssl_ca_certs = os.environ.get("REDIS_SSL_CA_CERTS")
+            ssl_certfile = os.environ.get("REDIS_SSL_CERTFILE")
+            ssl_keyfile = os.environ.get("REDIS_SSL_KEYFILE")
+            ssl_cert_reqs_str = os.environ.get("REDIS_SSL_CERT_REQS", "required")
+
+            ssl_cert_reqs = ssl.CERT_REQUIRED
+            if ssl_cert_reqs_str == "none":
+                ssl_cert_reqs = ssl.CERT_NONE
+            elif ssl_cert_reqs_str == "optional":
+                ssl_cert_reqs = ssl.CERT_OPTIONAL
+
+            ssl_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
+            if ssl_ca_certs:
+                ssl_kwargs["ssl_ca_certs"] = ssl_ca_certs
+            if ssl_certfile:
+                ssl_kwargs["ssl_certfile"] = ssl_certfile
+            if ssl_keyfile:
+                ssl_kwargs["ssl_keyfile"] = ssl_keyfile
+
+        _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=100, **ssl_kwargs)
         _pool_pid = current_pid
     return redis_lib.Redis(connection_pool=_pool)
 
@@ -139,12 +161,36 @@ def invalidate_challenge_cache(challenge_id=None):
     """Clear cached challenge listings and (optionally) a specific challenge entry."""
     delete_cached("challenges:all")
     if challenge_id:
+        challenge_id = str(challenge_id)
         delete_cached(f"challenge:{challenge_id}")
         delete_cached(f"challenge:{challenge_id}:competitor")
 
 
-def invalidate_leaderboard_cache(challenge_id):
-    """Clear frozen and unfrozen leaderboard cache for a given challenge."""
-    if challenge_id:
+def invalidate_leaderboard_cache(challenge_id, delete_only=False):
+    """Clear or warm background leaderboard cache for a given challenge."""
+    if not challenge_id:
+        return
+    challenge_id = str(challenge_id)
+
+    if delete_only:
+        delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
+        delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
+        delete_cached(f"leaderboard:pending:{challenge_id}")
+        return
+
+    r = get_redis_client()
+    if r:
+        pending_key = f"leaderboard:pending:{challenge_id}"
+        try:
+            is_new = r.set(pending_key, "1", nx=True, ex=5)
+            if not is_new:
+                return
+        except Exception:
+            pass
+
+    try:
+        from tasks import recalculate_leaderboard
+        recalculate_leaderboard.delay(challenge_id)
+    except Exception:
         delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
         delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")

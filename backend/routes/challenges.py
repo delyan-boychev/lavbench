@@ -149,7 +149,7 @@ def get_challenges():
     return jsonify(challenges_list)
 
 
-@challenges_bp.route("/<int:challenge_id>", methods=["GET"])
+@challenges_bp.route("/<uuid:challenge_id>", methods=["GET"])
 @login_required
 def get_challenge(challenge_id):
     """
@@ -178,7 +178,7 @@ def get_challenge(challenge_id):
 
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or user.challenge_id != challenge_id:
+        if not user or str(user.challenge_id) != str(challenge_id):
             return (
                 jsonify(
                     {
@@ -369,7 +369,7 @@ def create_challenge():
     return jsonify(challenge.to_dict()), 201
 
 
-@challenges_bp.route("/<int:challenge_id>", methods=["PUT"])
+@challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 def update_challenge(challenge_id):
     """
@@ -490,7 +490,7 @@ def update_challenge(challenge_id):
     return jsonify(challenge.to_dict())
 
 
-@challenges_bp.route("/<int:challenge_id>", methods=["DELETE"])
+@challenges_bp.route("/<uuid:challenge_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
 def delete_challenge(challenge_id):
     """
@@ -546,7 +546,7 @@ def delete_challenge(challenge_id):
     from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id, delete_only=True)
 
     return jsonify(
         {
@@ -555,7 +555,7 @@ def delete_challenge(challenge_id):
     )
 
 
-@challenges_bp.route("/<int:challenge_id>/finalize", methods=["POST"])
+@challenges_bp.route("/<uuid:challenge_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 def finalize_challenge(challenge_id):
     """
@@ -652,7 +652,7 @@ def finalize_challenge(challenge_id):
     )
 
 
-@challenges_bp.route("/<int:challenge_id>/reveal-results", methods=["PUT"])
+@challenges_bp.route("/<uuid:challenge_id>/reveal-results", methods=["PUT"])
 @role_required(["admin", "jury"])
 def toggle_reveal_results(challenge_id):
     """Toggle reveal of private scores and manual points to competitors."""
@@ -669,7 +669,7 @@ def toggle_reveal_results(challenge_id):
     return jsonify({"reveal_results": challenge.reveal_results, "challenge": challenge.to_dict()})
 
 
-@challenges_bp.route("/<int:challenge_id>/archive", methods=["POST"])
+@challenges_bp.route("/<uuid:challenge_id>/archive", methods=["POST"])
 @role_required(["admin", "jury"])
 def archive_challenge(challenge_id):
     """
@@ -720,7 +720,7 @@ def archive_challenge(challenge_id):
     )
 
 
-@challenges_bp.route("/<int:challenge_id>/stages", methods=["POST"])
+@challenges_bp.route("/<uuid:challenge_id>/stages", methods=["POST"])
 @role_required(["admin", "jury"])
 def create_stage(challenge_id):
     """
@@ -804,14 +804,15 @@ def create_stage(challenge_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
 
     return jsonify(stage.to_dict()), 201
 
 
-@challenges_bp.route("/<int:challenge_id>/stages/<int:stage_id>", methods=["PUT"])
+@challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 def update_stage(challenge_id, stage_id):
     """
@@ -870,14 +871,15 @@ def update_stage(challenge_id, stage_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
 
     return jsonify(stage.to_dict())
 
 
-@challenges_bp.route("/<int:challenge_id>/stages/<int:stage_id>", methods=["DELETE"])
+@challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
 def delete_stage(challenge_id, stage_id):
     """
@@ -930,14 +932,15 @@ def delete_stage(challenge_id, stage_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
 
     return jsonify({"message": f"Stage '{stage.title}' has been deleted."})
 
 
-@challenges_bp.route("/<int:challenge_id>/stages/<int:stage_id>/finalize", methods=["POST"])
+@challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 def finalize_stage(challenge_id, stage_id):
     """
@@ -1057,7 +1060,7 @@ def finalize_stage(challenge_id, stage_id):
     return jsonify(stage.to_dict())
 
 
-@challenges_bp.route("/<int:challenge_id>/test-competition", methods=["POST"])
+@challenges_bp.route("/<uuid:challenge_id>/test-competition", methods=["POST"])
 @login_required
 @role_required(["admin", "jury"])
 def create_scheduled_test_competition(challenge_id):
@@ -1182,7 +1185,7 @@ except Exception as e:
     )
 
 
-@challenges_bp.route("/<int:challenge_id>/export-results", methods=["GET"])
+@challenges_bp.route("/<uuid:challenge_id>/export-results", methods=["GET"])
 @login_required
 @role_required(["admin", "jury"])
 def export_results(challenge_id):
@@ -1223,7 +1226,7 @@ def export_results(challenge_id):
     return response
 
 
-@challenges_bp.route("/<int:challenge_id>/export", methods=["GET"])
+@challenges_bp.route("/<uuid:challenge_id>/export", methods=["GET"])
 @role_required(["admin", "jury"])
 def export_challenge(challenge_id):
     """

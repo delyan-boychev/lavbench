@@ -1348,7 +1348,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Leaderboard data returned */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1357,22 +1357,43 @@ export interface paths {
                         "application/json": Record<string, never>;
                     };
                 };
-                /** @description Access denied for competitor */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/leaderboard/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream live updates to the challenge leaderboard using Server-Sent Events (SSE). */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description ID of the challenge */
+                    challenge_id: string;
                 };
-                /** @description Challenge not found */
-                404: {
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "text/event-stream": string;
                     };
                 };
             };
@@ -2018,62 +2039,6 @@ export interface paths {
             requestBody?: never;
             responses: {
                 /** @description Submission details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Access denied */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Submission not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/submissions/{submission_id}/logs/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream live logs for a submission using Server-Sent Events (SSE). */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    submission_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description SSE stream of logs */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2759,7 +2724,8 @@ export interface components {
             /** Format: date-time */
             end_time?: string;
             gpu_required?: boolean;
-            id?: number;
+            /** Format: uuid */
+            id?: string;
             is_active?: boolean;
             is_archived?: boolean;
             is_frozen?: boolean;
@@ -2783,20 +2749,23 @@ export interface components {
             error: string;
         };
         Submission: {
-            challenge_id?: number;
+            /** Format: uuid */
+            challenge_id?: string;
             /** Format: date-time */
             created_at?: string;
             detailed_status?: string;
             /** Format: date-time */
             executed_at?: string;
             execution_time_ms?: number;
-            id?: number;
+            /** Format: uuid */
+            id?: string;
             is_baseline?: boolean;
             is_final_selection?: boolean;
             private_score?: number;
             public_score?: number;
             status?: string;
-            task_id?: number;
+            /** Format: uuid */
+            task_id?: string;
             task_title?: string;
             user?: components["schemas"]["User"];
         };
@@ -2805,16 +2774,19 @@ export interface components {
             ban_magic_commands?: boolean;
             banned_imports?: string;
             base_docker_image?: string;
-            challenge_id?: number;
+            /** Format: uuid */
+            challenge_id?: string;
             description?: string;
             files?: Record<string, never>[];
             gpu_required?: boolean;
-            id?: number;
+            /** Format: uuid */
+            id?: string;
             max_submissions_per_period?: number;
             metrics_config?: Record<string, never>;
             pip_requirements?: string;
             ram_limit_mb?: number;
-            stage_id?: number;
+            /** Format: uuid */
+            stage_id?: string;
             submission_period_hours?: number;
             time_limit_sec?: number;
             title?: string;
@@ -2823,11 +2795,13 @@ export interface components {
         User: {
             /** @description Pseudonym for leaderboard display */
             alias_id?: string;
-            challenge_id?: number;
+            /** Format: uuid */
+            challenge_id?: string;
             city?: string;
             email?: string;
             grade?: string;
-            id?: number;
+            /** Format: uuid */
+            id?: string;
             is_anonymous?: boolean;
             manual_points?: Record<string, never>;
             name?: string;

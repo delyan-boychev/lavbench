@@ -13,6 +13,18 @@ def get_client_ip():
     return request.remote_addr or "127.0.0.1"
 
 
+import uuid
+
+def _clean_details(val):
+    if isinstance(val, dict):
+        return {k: _clean_details(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_clean_details(v) for v in val]
+    elif isinstance(val, uuid.UUID):
+        return str(val)
+    return val
+
+
 def log_action(
     admin_id,
     action_type,
@@ -40,12 +52,13 @@ def log_action(
         reason: justification (legacy compat)
     """
     try:
+        cleaned_details = _clean_details(details) if details else {}
         entry = AuditLog(
             admin_id=admin_id,
             action_type=action_type,
             target_type=target_type,
             target_id=target_id,
-            details=details or {},
+            details=cleaned_details,
             ip_address=get_client_ip(),
             target_user_id=target_user_id,
             task_id=task_id,

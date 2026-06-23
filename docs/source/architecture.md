@@ -56,13 +56,13 @@ Celery Workers (host, not Docker):
 | 2 | Probabilistic | `auc_roc`, `logloss`, `brier_score` |
 | 3 | Regression | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae` |
 | 4 | Seq-label (NER) | `seqeval_f1`, `seqeval_precision`, `seqeval_recall` |
-| 5 | Generative NLP | `bleu`, `rouge`, `rouge_l`, `meteor`, `bertscore`, `chrf`, `ter` |
+| 5 | Generative NLP | `bleu`, `rouge`, `rouge_l`, `meteor`, `chrf`, `ter` |
 | 6 | QA Extractive | `exact_match`, `f1`\* (word-overlap) |
 | 7 | Object Detection | `map_50`, `map_75`, `map_50_95`, `recall`\* (box recall) |
 | 8 | Segmentation | `mean_iou`, `dice`, `pixel_accuracy` |
 | 9 | Keypoints | `oks`, `pck` |
-| 10 | Image Quality | `psnr`, `ssim`, `fid`, `is`, `clip_score`, `lpips`, `niqe` |
-| 11 | Audio Quality | `snr`, `mel_lsd`, `si_sdr`, `nisqa`, `pesq` |
+| 10 | Image Quality | `psnr`, `ssim` |
+| 11 | Audio Quality | `snr`, `mel_lsd`, `si_sdr` |
 | 12 | Clustering | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
 | + | Retrieval | `ndcg_k`, `recall_k`, `mrr` |
 
@@ -93,10 +93,11 @@ Response types use `content: application/json: schema:` format. The `components.
 
 ## SSE Streaming
 
-6 endpoints use Server-Sent Events for real-time updates:
+7 endpoints use Server-Sent Events for real-time updates:
 
 | Endpoint | Data | Triggers |
 |----------|------|----------|
+| `/api/challenges/<id>/leaderboard/live` | Full challenge leaderboard JSON | Recalculation complete (SSE publish) |
 | `/api/tasks/<id>/leaderboard/live` | Full leaderboard JSON | Submission status change, manual points |
 | `/api/tasks/<id>/submissions/live` | Submission list | New submission, status change |
 | `/api/submissions/<id>/logs/live` | Execution log lines | New log output from worker |

@@ -22,12 +22,21 @@ from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 tasks_bp = Blueprint("tasks", __name__)
 
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        import uuid
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return super().default(obj)
+
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
 
 
 def check_competitor_access(user_id, challenge_id):
     user = db.session.get(User, user_id)
-    if not user or user.challenge_id != challenge_id:
+    if not user or user.challenge_id is None or challenge_id is None:
+        return False
+    if str(user.challenge_id) != str(challenge_id):
         return False
     return True
 
@@ -208,7 +217,7 @@ def _maybe_queue_baseline(task, challenge, admin_id):
 # --- TASK CRUD ---
 
 
-@tasks_bp.route("/tasks/<int:task_id>", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>", methods=["GET"])
 @login_required
 def get_task(task_id):
     """
@@ -247,7 +256,7 @@ def get_task(task_id):
     return jsonify(task.to_dict())
 
 
-@tasks_bp.route("/challenges/<int:challenge_id>/tasks", methods=["POST"])
+@tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
 def create_task(challenge_id):
     """
@@ -436,7 +445,9 @@ def create_task(challenge_id):
         public_eval_percentage = 30
     max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
     submission_period_hours = to_int(request.form.get("submission_period_hours"))
-    stage_id = to_int(request.form.get("stage_id"))
+    stage_id = request.form.get("stage_id")
+    if stage_id == "":
+        stage_id = None
     if stage_id:
         from models import Stage
 
@@ -596,9 +607,10 @@ def create_task(challenge_id):
         details={"title": task.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
 
     # Notify workers to rebuild Docker image for this task
     try:
@@ -613,7 +625,7 @@ def create_task(challenge_id):
     return jsonify(task.to_dict()), 201
 
 
-@tasks_bp.route("/tasks/<int:task_id>", methods=["PUT"])
+@tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 def update_task(task_id):
     """
@@ -828,7 +840,9 @@ def update_task(task_id):
     if "submission_period_hours" in request.form:
         task.submission_period_hours = to_int(request.form.get("submission_period_hours"))
     if "stage_id" in request.form:
-        stage_id_val = to_int(request.form.get("stage_id"))
+        stage_id_val = request.form.get("stage_id")
+        if stage_id_val == "":
+            stage_id_val = None
         if stage_id_val:
             from models import Stage
 
@@ -972,9 +986,10 @@ def update_task(task_id):
         details={"title": task.title, "challenge_id": task.challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(task.challenge_id)
+    invalidate_leaderboard_cache(task.challenge_id)
     _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
 
     # Notify workers to rebuild Docker image for this task
@@ -990,7 +1005,7 @@ def update_task(task_id):
     return jsonify(task.to_dict())
 
 
-@tasks_bp.route("/tasks/<int:task_id>", methods=["DELETE"])
+@tasks_bp.route("/tasks/<uuid:task_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
 def delete_task(task_id):
     """
@@ -1022,6 +1037,13 @@ def delete_task(task_id):
     shutil.rmtree(task_upload_dir, ignore_errors=True)
     # Collect file paths before bulk delete for cleanup
     subs = Submission.query.filter_by(task_id=task_id).all()
+    from tasks import celery
+    for s in subs:
+        if s.celery_task_id:
+            try:
+                celery.control.revoke(s.celery_task_id, terminate=True)
+            except Exception:
+                pass
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     for code_path, log_path in paths:
@@ -1048,9 +1070,10 @@ def delete_task(task_id):
         details={"title": task.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 
     invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
 
     return jsonify({"message": f"Task '{task.title}' has been deleted successfully."})
 
@@ -1058,7 +1081,7 @@ def delete_task(task_id):
 # --- DOWNLOAD FILE ---
 
 
-@tasks_bp.route("/tasks/<int:task_id>/download/<string:filename>", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
 def download_task_file(task_id, filename):
     """
@@ -1134,7 +1157,7 @@ def download_task_file(task_id, filename):
 # --- TASK SUBMISSIONS & EVALUATIONS ---
 
 
-@tasks_bp.route("/tasks/<int:task_id>/submit", methods=["POST"])
+@tasks_bp.route("/tasks/<uuid:task_id>/submit", methods=["POST"])
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def submit_task_code(task_id):
@@ -1230,7 +1253,7 @@ def submit_task_code(task_id):
 
     lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
 
-    with cache_lock(lock_key, ttl=10):
+    if True:
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
@@ -1393,7 +1416,11 @@ def submit_task_code(task_id):
 
     try:
         evaluate_submission.apply_async(
-            args=[submission.id, metadata], priority=priority, queue=queue_name, countdown=1
+            args=[submission.id, metadata],
+            priority=priority,
+            queue=queue_name,
+            countdown=1,
+            task_id=f"submission_{submission.id}",
         )
     except Exception as e:
         submission.status = "failed"
@@ -1461,7 +1488,7 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
     return [s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in submissions]
 
 
-@tasks_bp.route("/tasks/<int:task_id>/submissions", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>/submissions", methods=["GET"])
 @login_required
 def get_task_submissions(task_id):
     """
@@ -1502,7 +1529,7 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
     return get_task_leaderboard_data(task_id, user_role, current_user_id)
 
 
-@tasks_bp.route("/tasks/<int:task_id>/leaderboard", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard", methods=["GET"])
 @login_required
 def get_task_leaderboard(task_id):
     """
@@ -1534,7 +1561,7 @@ def get_task_leaderboard(task_id):
     return jsonify(data)
 
 
-@tasks_bp.route("/tasks/<int:task_id>/leaderboard/live", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
 @login_required
 def get_task_leaderboard_live(task_id):
     """
@@ -1576,7 +1603,7 @@ def get_task_leaderboard_live(task_id):
     def event_generator():
         with current_app.app_context():
             data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-            yield f"data: {json.dumps(data)}\n\n"
+            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
 
         from cache_utils import get_redis_client
 
@@ -1590,7 +1617,7 @@ def get_task_leaderboard_live(task_id):
                 if message:
                     with current_app.app_context():
                         data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                        yield f"data: {json.dumps(data)}\n\n"
+                        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
                 else:
                     yield ": keep-alive\n\n"
         except GeneratorExit:
@@ -1610,7 +1637,7 @@ def get_task_leaderboard_live(task_id):
     return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
 
 
-@tasks_bp.route("/tasks/<int:task_id>/submissions/live", methods=["GET"])
+@tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
 def get_task_submissions_live(task_id):
     """
@@ -1865,7 +1892,7 @@ def _get_worker_status_data():
     return res_data
 
 
-@tasks_bp.route("/worker/report/<int:submission_id>", methods=["POST"])
+@tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
 def report_worker_progress(submission_id):
     """
     Worker callback to report submission status and scores.
@@ -1953,7 +1980,7 @@ def report_worker_progress(submission_id):
     return jsonify({"message": "Status updated successfully"}), 200
 
 
-@tasks_bp.route("/worker/tasks/<int:task_id>/files/<string:filename>", methods=["GET"])
+@tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
 def worker_download_task_file(task_id, filename):
     """
     Worker endpoint to securely download task resource files.
@@ -2145,7 +2172,7 @@ def get_active_datasets():
     return jsonify(resp), 200
 
 
-@tasks_bp.route("/worker/tasks/<int:task_id>/hf-key", methods=["GET"])
+@tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
 def get_task_hf_key(task_id):
     """
     Worker endpoint to fetch the HuggingFace API key for a task.

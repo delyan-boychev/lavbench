@@ -40,12 +40,12 @@ services:
         if [ -n "$$REDIS_PASSWORD" ]; then
           exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru
         else
-          echo "REDIS_PASSWORD is required in .env" && exit 1
+          exec redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
         fi
       '
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
-      REDISCLI_AUTH: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
     deploy:
       resources:
         limits:
@@ -76,6 +76,10 @@ services:
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
       - WORKER_PUBLIC_KEY=${WORKER_PUBLIC_KEY:?WORKER_PUBLIC_KEY must be set in .env}
+      - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
+      - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
+      - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
+      - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
     depends_on:
       db:
         condition: service_healthy
@@ -114,6 +118,10 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
+      - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
+      - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
+      - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
+      - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
     depends_on:
       redis:
         condition: service_healthy

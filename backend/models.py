@@ -13,6 +13,69 @@ import json
 from cryptography.fernet import Fernet
 import uuid
 import zoneinfo
+from sqlalchemy.types import TypeDecorator, CHAR
+from sqlalchemy.dialects.postgresql import UUID
+
+def uuid7():
+    import time
+    import os
+    ms = int(time.time() * 1000)
+    rand_bytes = os.urandom(10)
+    b_ts = ms.to_bytes(6, byteorder='big')
+    v_and_rand = (0x7000 | (int.from_bytes(rand_bytes[:2], byteorder='big') & 0x0FFF))
+    b_vr = v_and_rand.to_bytes(2, byteorder='big')
+    var_and_rand = (0x8000000000000000 | (int.from_bytes(rand_bytes[2:], byteorder='big') & 0x3FFFFFFFFFFFFFFF))
+    b_var_rand = var_and_rand.to_bytes(8, byteorder='big')
+    return uuid.UUID(bytes=b_ts + b_vr + b_var_rand)
+
+class GUID(TypeDecorator):
+    """Platform-independent GUID type.
+    Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing as standard UUID strings.
+    """
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        try:
+            if isinstance(value, uuid.UUID):
+                u = value
+            elif isinstance(value, int):
+                u = uuid.UUID(int=value)
+            else:
+                val_str = str(value)
+                try:
+                    u = uuid.UUID(val_str)
+                except ValueError:
+                    try:
+                        u = uuid.UUID(int=int(val_str))
+                    except ValueError:
+                        u = uuid.UUID(int=0)
+        except Exception:
+            u = uuid.UUID(int=0)
+
+        if dialect.name == 'postgresql':
+            return u
+        else:
+            return str(u)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        try:
+            return str(uuid.UUID(str(value)))
+        except ValueError:
+            return str(value)
+
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +184,7 @@ class User(db.Model):
 
     __tablename__ = "users"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
     username = db.Column(db.String(100), unique=True, nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
@@ -135,7 +198,7 @@ class User(db.Model):
 
     role = db.Column(db.String(50), default="competitor", index=True)  # competitor, jury, admin
     alias_id = db.Column(db.String(100), unique=True, nullable=False, default=generate_pseudonym)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("challenges.id"), nullable=True, index=True)
+    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=True, index=True)
     is_anonymous = db.Column(db.Boolean, default=False, nullable=False)
     manual_points = db.Column(db.JSON, default=dict, nullable=False)
 
@@ -258,7 +321,7 @@ class Challenge(db.Model):
 
     __tablename__ = "challenges"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
 
@@ -365,8 +428,8 @@ class Stage(db.Model):
         db.UniqueConstraint("challenge_id", "stage_number", name="uq_stage_challenge_number"),
     )
 
-    id = db.Column(db.Integer, primary_key=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("challenges.id"), nullable=False, index=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
+    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=False, index=True)
     stage_number = db.Column(db.Integer, nullable=False, default=1)
     title = db.Column(db.String(255), nullable=False)
 
@@ -396,9 +459,9 @@ class Task(db.Model):
 
     __tablename__ = "tasks"
 
-    id = db.Column(db.Integer, primary_key=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("challenges.id"), nullable=False, index=True)
-    stage_id = db.Column(db.Integer, db.ForeignKey("stages.id"), nullable=True, index=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
+    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=False, index=True)
+    stage_id = db.Column(GUID, db.ForeignKey("stages.id"), nullable=True, index=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)  # Markdown description
 
@@ -544,10 +607,10 @@ class Submission(db.Model):
         db.Index("idx_sub_task_user_created", "task_id", "user_id", db.text("created_at DESC")),
     )
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("challenges.id"), nullable=False)
-    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
+    user_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=False)
+    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=False)
+    task_id = db.Column(GUID, db.ForeignKey("tasks.id"), nullable=True)
 
     status = db.Column(db.String(50), default="queued", index=True)
     is_baseline = db.Column(db.Boolean, default=False)
@@ -738,8 +801,8 @@ class AuditLog(db.Model):
 
     __tablename__ = "audit_logs"
 
-    id = db.Column(db.Integer, primary_key=True)
-    admin_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    id = db.Column(GUID, primary_key=True, default=uuid7)
+    admin_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=False, index=True)
 
     # Generic audit fields
     action_type = db.Column(
@@ -748,13 +811,13 @@ class AuditLog(db.Model):
     target_type = db.Column(
         db.String(50), nullable=True, index=True
     )  # user, challenge, task, stage, submission
-    target_id = db.Column(db.Integer, nullable=True, index=True)
+    target_id = db.Column(GUID, nullable=True, index=True)
     details = db.Column(db.JSON, nullable=True)
     ip_address = db.Column(db.String(45), nullable=True)
 
     # Legacy fields (score corrections)
-    target_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
-    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True, index=True)
+    target_user_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=True, index=True)
+    task_id = db.Column(GUID, db.ForeignKey("tasks.id"), nullable=True, index=True)
     old_score = db.Column(db.Integer, nullable=True)
     new_score = db.Column(db.Integer, nullable=True)
     reason = db.Column(db.Text, nullable=True)

@@ -76,7 +76,7 @@ describe('LeaderboardView', () => {
 
   it('sets selected challenge by id from params on mount', () => {
     render(<LeaderboardView />);
-    expect(mockSetSelectedChallengeById).toHaveBeenCalledWith(42);
+    expect(mockSetSelectedChallengeById).toHaveBeenCalledWith('42');
   });
 
   it('does not call setSelectedChallengeById when challengeId is absent', () => {

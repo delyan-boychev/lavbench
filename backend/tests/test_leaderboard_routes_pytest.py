@@ -291,10 +291,10 @@ class TestChallengeLeaderboardGetEndpoint:
                     "is_anonymous": False,
                     "name": "Alice",
                     "surname": "Smith",
-                    "manual_points": {"1": 10},
+                    "manual_points": {str(self.task.id): 10},
                 },
                 "task_scores": {
-                    "1": {"public_score": 0.50, "private_score": 0.90, "submission_id": 101}
+                    str(self.task.id): {"public_score": 0.50, "private_score": 0.90, "submission_id": 101}
                 },
                 "public_score": 0.50,
                 "private_score": 0.90,
@@ -310,10 +310,10 @@ class TestChallengeLeaderboardGetEndpoint:
                     "is_anonymous": False,
                     "name": "Bob",
                     "surname": "Jones",
-                    "manual_points": {"1": 20},
+                    "manual_points": {str(self.task.id): 20},
                 },
                 "task_scores": {
-                    "1": {"public_score": 0.80, "private_score": 0.40, "submission_id": 102}
+                    str(self.task.id): {"public_score": 0.80, "private_score": 0.40, "submission_id": 102}
                 },
                 "public_score": 0.80,
                 "private_score": 0.40,
@@ -335,12 +335,12 @@ class TestChallengeLeaderboardGetEndpoint:
         leaderboard = data["leaderboard"]
         assert len(leaderboard) == 2
         # Since they are ranked on public score (higher is better), Beta-Comp (0.80) should be rank 1, Alpha-Comp (0.50) should be rank 2.
-        assert leaderboard[0]["user"]["id"] == self.other_competitor.id
+        assert leaderboard[0]["user"]["id"] == str(self.other_competitor.id)
         assert leaderboard[0]["rank"] == 1
         assert leaderboard[0]["private_score"] is None
         assert leaderboard[0]["total_points"] == 0
 
-        assert leaderboard[1]["user"]["id"] == self.competitor.id
+        assert leaderboard[1]["user"]["id"] == str(self.competitor.id)
         assert leaderboard[1]["rank"] == 2
         assert leaderboard[1]["private_score"] is None
         assert leaderboard[1]["total_points"] == 0
@@ -641,7 +641,8 @@ class TestManualPointsEndpoint:
             json=payload,
         )
         assert res.status_code == 200
-        mock_invalidate.assert_called_once_with(self.challenge.id)
+        assert mock_invalidate.call_count == 1
+        assert str(mock_invalidate.call_args[0][0]) == str(self.challenge.id)
 
     def test_challenge_not_found_returns_404(self, client):
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}

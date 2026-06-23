@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 submissions_bp = Blueprint("submissions", __name__)
 
 
-@submissions_bp.route("/challenges/<int:challenge_id>/parse-notebook", methods=["POST"])
+@submissions_bp.route("/challenges/<uuid:challenge_id>/parse-notebook", methods=["POST"])
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def parse_notebook(challenge_id):
@@ -57,7 +57,7 @@ def parse_notebook(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or user.challenge_id != challenge_id:
+        if not user or str(user.challenge_id) != str(challenge_id):
             return (
                 jsonify(
                     {
@@ -107,7 +107,7 @@ def parse_notebook(challenge_id):
     return jsonify({"filename": file.filename, "cells": cells})
 
 
-@submissions_bp.route("/challenges/<int:challenge_id>/submit", methods=["POST"])
+@submissions_bp.route("/challenges/<uuid:challenge_id>/submit", methods=["POST"])
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
 def submit_code(challenge_id):
@@ -169,7 +169,7 @@ def submit_code(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or user.challenge_id != challenge_id:
+        if not user or str(user.challenge_id) != str(challenge_id):
             return (
                 jsonify(
                     {
@@ -295,7 +295,7 @@ def submit_code(challenge_id):
     if not task_id:
         return jsonify({"error": "task_id is required.", "code": "ERR_MISSING_TASK_ID"}), 400
 
-    if not task or task.challenge_id != challenge_id:
+    if not task or str(task.challenge_id) != str(challenge_id):
         return (
             jsonify(
                 {"error": "Invalid task_id for this challenge.", "code": "ERR_INVALID_TASK_ID"}
@@ -419,7 +419,11 @@ def submit_code(challenge_id):
 
     try:
         evaluate_submission.apply_async(
-            args=[submission.id, metadata], priority=priority, queue=queue_name, countdown=1
+            args=[submission.id, metadata],
+            priority=priority,
+            queue=queue_name,
+            countdown=1,
+            task_id=f"submission_{submission.id}",
         )
     except Exception as e:
         submission.status = "failed"
@@ -448,7 +452,7 @@ def submit_code(challenge_id):
     )
 
 
-@submissions_bp.route("/challenges/<int:challenge_id>/submissions", methods=["GET"])
+@submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
 @login_required
 def get_submissions(challenge_id):
     """
@@ -498,7 +502,7 @@ def get_submissions(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or user.challenge_id != challenge_id:
+        if not user or str(user.challenge_id) != str(challenge_id):
             return (
                 jsonify(
                     {
@@ -538,7 +542,7 @@ def get_submissions(challenge_id):
     )
 
 
-@submissions_bp.route("/submissions/<int:submission_id>", methods=["GET"])
+@submissions_bp.route("/submissions/<uuid:submission_id>", methods=["GET"])
 @login_required
 def get_submission_detail(submission_id):
     """
@@ -595,7 +599,7 @@ def get_submission_detail(submission_id):
     return jsonify(submission.to_dict(view_role=user_role, current_user_id=user_id))
 
 
-@submissions_bp.route("/submissions/<int:submission_id>/select-final", methods=["POST"])
+@submissions_bp.route("/submissions/<uuid:submission_id>/select-final", methods=["POST"])
 @login_required
 @rate_limit(max_requests=20, window_seconds=60)
 def select_final_submission(submission_id):
@@ -742,43 +746,11 @@ def select_final_submission(submission_id):
     )
 
 
-@submissions_bp.route("/submissions/<int:submission_id>/logs/live", methods=["GET"])
+@submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
 @login_required
 def stream_submission_logs(submission_id):
     """
     Stream live logs for a submission using Server-Sent Events (SSE).
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: submission_id
-        type: integer
-        required: true
-    responses:
-      200:
-        description: SSE stream of logs
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied
-
-        content:
-          application/json:
-            schema:
-              type: object
-      404:
-        description: Submission not found
-
-        content:
-          application/json:
-            schema:
-              type: object
     """
     from flask import current_app, Response, stream_with_context
 
@@ -800,12 +772,28 @@ def stream_submission_logs(submission_id):
         # Yield an initial message to flush headers immediately and establish connection
         yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
-        log_key = f"submission:{submission_id}:logs"
-        existing_logs = r.lrange(log_key, 0, -1)
-        if existing_logs:
-            for log_bin in existing_logs:
-                log_line = log_bin.decode("utf-8")
-                yield f"data: {json.dumps({'log': log_line})}\n\n"
+        if r:
+            try:
+                log_key = f"submission:{submission_id}:logs"
+                existing_logs = r.lrange(log_key, 0, -1)
+                if existing_logs:
+                    for log_bin in existing_logs:
+                        log_line = log_bin.decode("utf-8")
+                        yield f"data: {json.dumps({'log': log_line})}\n\n"
+                else:
+                    with current_app.app_context():
+                        sub = db.session.get(Submission, submission_id)
+                        if sub and sub.logs:
+                            for line in sub.logs.splitlines():
+                                yield f"data: {json.dumps({'log': line})}\n\n"
+            except Exception:
+                pass
+        else:
+            with current_app.app_context():
+                sub = db.session.get(Submission, submission_id)
+                if sub and sub.logs:
+                    for line in sub.logs.splitlines():
+                        yield f"data: {json.dumps({'log': line})}\n\n"
 
         with current_app.app_context():
             sub = db.session.get(Submission, submission_id)
@@ -813,54 +801,90 @@ def stream_submission_logs(submission_id):
                 yield f"data: {json.dumps({'status': sub.status})}\n\n"
                 return
 
-        pubsub = r.pubsub()
-        pubsub.subscribe(f"submission_{submission_id}_logs")
+        if r:
+            try:
+                pubsub = r.pubsub()
+                pubsub.subscribe(f"submission_{submission_id}_logs")
+            except Exception:
+                r = None
 
-        import time
+        if r:
+            import time
+            last_db_check = time.time()
+            try:
+                while True:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                    if message:
+                        data_str = message["data"].decode("utf-8")
+                        yield f"data: {data_str}\n\n"
+                        try:
+                            parsed = json.loads(data_str)
+                            if isinstance(parsed, dict) and parsed.get("status") in (
+                                "completed",
+                                "failed",
+                            ):
+                                break
+                        except Exception:
+                            pass
+                    else:
+                        yield ": keep-alive\n\n"
 
-        last_db_check = time.time()
+                    # Database fallback query check at most once every 10 seconds
+                    now = time.time()
+                    if now - last_db_check >= 10.0:
+                        last_db_check = now
+                        with current_app.app_context():
+                            db.session.expire_all()
+                            sub = db.session.get(Submission, submission_id)
+                            if sub and sub.status in ("completed", "failed"):
+                                yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                                break
+            except GeneratorExit:
+                try:
+                    pubsub.unsubscribe()
+                    pubsub.close()
+                except:
+                    pass
+            except Exception as e:
+                logger.error("SSE logs streaming error: %s", e)
+                try:
+                    pubsub.unsubscribe()
+                    pubsub.close()
+                except:
+                    pass
+        else:
+            # Fallback to database/file logs and simple polling
+            last_yielded_len = 0
+            with current_app.app_context():
+                sub = db.session.get(Submission, submission_id)
+                if sub and sub.logs:
+                    last_yielded_len = len(sub.logs.splitlines())
 
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                if message:
-                    data_str = message["data"].decode("utf-8")
-                    yield f"data: {data_str}\n\n"
-                    try:
-                        parsed = json.loads(data_str)
-                        if isinstance(parsed, dict) and parsed.get("status") in (
-                            "completed",
-                            "failed",
-                        ):
-                            break
-                    except Exception:
-                        pass
-                else:
-                    yield ": keep-alive\n\n"
-
-                # Database fallback query check at most once every 10 seconds
-                now = time.time()
-                if now - last_db_check >= 10.0:
-                    last_db_check = now
+            import time
+            try:
+                while True:
                     with current_app.app_context():
                         db.session.expire_all()
                         sub = db.session.get(Submission, submission_id)
-                        if sub and sub.status in ("completed", "failed"):
+                        if not sub:
+                            break
+
+                        logs_str = sub.logs or ""
+                        lines = logs_str.splitlines()
+                        if len(lines) > last_yielded_len:
+                            for line in lines[last_yielded_len:]:
+                                yield f"data: {json.dumps({'log': line})}\n\n"
+                            last_yielded_len = len(lines)
+
+                        if sub.status in ("completed", "failed"):
                             yield f"data: {json.dumps({'status': sub.status})}\n\n"
                             break
-        except GeneratorExit:
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except:
+
+                    time.sleep(2.0)
+            except GeneratorExit:
                 pass
-        except Exception as e:
-            logger.error("SSE logs streaming error: %s", e)
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except:
-                pass
+            except Exception as e:
+                logger.error("Polling logs fallback error: %s", e)
 
     headers = {
         "Cache-Control": "no-cache",

@@ -105,7 +105,7 @@ def create_app():
                     "User": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "integer"},
+                            "id": {"type": "string", "format": "uuid"},
                             "username": {"type": "string"},
                             "email": {"type": "string"},
                             "role": {"type": "string", "enum": ["competitor", "jury", "admin"]},
@@ -118,7 +118,7 @@ def create_app():
                             "grade": {"type": "string"},
                             "school": {"type": "string"},
                             "city": {"type": "string"},
-                            "challenge_id": {"type": "integer"},
+                            "challenge_id": {"type": "string", "format": "uuid"},
                             "is_anonymous": {"type": "boolean"},
                             "manual_points": {"type": "object"},
                         },
@@ -126,7 +126,7 @@ def create_app():
                     "Challenge": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "integer"},
+                            "id": {"type": "string", "format": "uuid"},
                             "title": {"type": "string"},
                             "description": {"type": "string"},
                             "max_eval_requests": {"type": "integer"},
@@ -147,8 +147,8 @@ def create_app():
                     "Task": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "integer"},
-                            "challenge_id": {"type": "integer"},
+                            "id": {"type": "string", "format": "uuid"},
+                            "challenge_id": {"type": "string", "format": "uuid"},
                             "title": {"type": "string"},
                             "description": {"type": "string"},
                             "files": {"type": "array", "items": {"type": "object"}},
@@ -162,7 +162,7 @@ def create_app():
                             "banned_imports": {"type": "string"},
                             "whitelisted_imports": {"type": "string"},
                             "metrics_config": {"type": "object"},
-                            "stage_id": {"type": "integer"},
+                            "stage_id": {"type": "string", "format": "uuid"},
                             "max_submissions_per_period": {"type": "integer"},
                             "submission_period_hours": {"type": "integer"},
                         },
@@ -170,9 +170,9 @@ def create_app():
                     "Submission": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "integer"},
-                            "challenge_id": {"type": "integer"},
-                            "task_id": {"type": "integer"},
+                            "id": {"type": "string", "format": "uuid"},
+                            "challenge_id": {"type": "string", "format": "uuid"},
+                            "task_id": {"type": "string", "format": "uuid"},
                             "task_title": {"type": "string"},
                             "status": {"type": "string"},
                             "detailed_status": {"type": "string"},

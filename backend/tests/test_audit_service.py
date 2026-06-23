@@ -1,5 +1,6 @@
 import json
 import pytest
+import uuid
 from unittest.mock import patch
 
 
@@ -9,6 +10,7 @@ class TestAuditService:
         self.admin = sample_admin
         self.db = db_session
         self.app = app
+        self.dummy_uuids = [str(uuid.uuid4()) for _ in range(10)]
 
     def _log(self, **kwargs):
         from services.audit_service import log_action
@@ -22,46 +24,50 @@ class TestAuditService:
         return AuditLog.query.filter_by(**kwargs)
 
     def test_log_action_creates_entry(self):
+        tid = self.dummy_uuids[0]
         self._log(
             action_type="create",
             target_type="challenge",
-            target_id=42,
+            target_id=tid,
             details={"title": "New Challenge"},
         )
         entry = self._query(action_type="create").first()
         assert entry is not None
-        assert entry.admin_id == self.admin.id
+        assert str(entry.admin_id) == str(self.admin.id)
         assert entry.target_type == "challenge"
-        assert entry.target_id == 42
+        assert entry.target_id == tid
         assert entry.details == {"title": "New Challenge"}
         assert entry.ip_address is not None
 
     def test_log_action_with_legacy_fields(self):
+        tid = self.dummy_uuids[1]
+        task_id = self.dummy_uuids[2]
         self._log(
             action_type="update",
             target_type="submission",
-            target_id=7,
+            target_id=tid,
             target_user_id=self.admin.id,
-            task_id=3,
+            task_id=task_id,
             old_score=0.5,
             new_score=0.9,
             reason="Recalculation",
         )
         entry = self._query(action_type="update").first()
-        assert entry.target_user_id == self.admin.id
-        assert entry.task_id == 3
+        assert str(entry.target_user_id) == str(self.admin.id)
+        assert entry.task_id == task_id
         assert entry.old_score == 0.5
         assert entry.new_score == 0.9
         assert entry.reason == "Recalculation"
 
     def test_log_action_multiple_entries(self):
         for i in range(3):
-            self._log(action_type="delete", target_type="task", target_id=i)
+            self._log(action_type="delete", target_type="task", target_id=self.dummy_uuids[3 + i])
         assert self._query(action_type="delete").count() == 3
 
     def test_log_action_handles_none_details(self):
-        self._log(action_type="create", target_type="user", target_id=99, details=None)
-        entry = self._query(action_type="create").first()
+        tid = self.dummy_uuids[6]
+        self._log(action_type="create", target_type="user", target_id=tid, details=None)
+        entry = self._query(action_type="create", target_id=tid).first()
         assert entry.details == {}
 
     def test_get_client_ip_returns_remote_addr(self, app):
@@ -83,11 +89,13 @@ class TestAuditService:
             assert get_client_ip() == "203.0.113.5"
 
     def test_log_action_stores_ip(self):
-        self._log(action_type="update", target_type="user", target_id=1)
-        entry = self._query(action_type="update").first()
+        tid = self.dummy_uuids[7]
+        self._log(action_type="update", target_type="user", target_id=tid)
+        entry = self._query(action_type="update", target_id=tid).first()
         assert entry.ip_address == "127.0.0.1"
 
     def test_audit_log_timestamps(self):
-        self._log(action_type="create", target_type="stage", target_id=5)
-        entry = self._query(action_type="create").first()
+        tid = self.dummy_uuids[8]
+        self._log(action_type="create", target_type="stage", target_id=tid)
+        entry = self._query(action_type="create", target_id=tid).first()
         assert entry.timestamp is not None

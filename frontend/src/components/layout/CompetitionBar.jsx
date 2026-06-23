@@ -63,7 +63,7 @@ export default function CompetitionBar() {
 
   const handleChallengeChange = (val) => {
     if (!val) return;
-    const newId = parseInt(val);
+    const newId = val;
     setSelectedChallengeById(newId);
 
     const path = location.pathname;

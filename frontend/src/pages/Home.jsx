@@ -15,7 +15,7 @@ export default function Home() {
 
   useEffect(() => {
     if (challengeId) {
-      setSelectedChallengeById(parseInt(challengeId));
+      setSelectedChallengeById(challengeId);
     }
   }, [challengeId, setSelectedChallengeById]);
 

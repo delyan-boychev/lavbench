@@ -101,7 +101,7 @@ describe('Home Page', () => {
     });
 
     render(<Home />);
-    expect(mockSetSelectedChallengeById).toHaveBeenCalledWith(5);
+    expect(mockSetSelectedChallengeById).toHaveBeenCalledWith('5');
   });
 
   it('uses selectedTask from AppContext', () => {

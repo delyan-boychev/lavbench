@@ -35,7 +35,8 @@
             "type": "boolean"
           },
           "id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "is_active": {
             "type": "boolean"
@@ -95,7 +96,8 @@
       "Submission": {
         "properties": {
           "challenge_id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -112,7 +114,8 @@
             "type": "integer"
           },
           "id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "is_baseline": {
             "type": "boolean"
@@ -130,7 +133,8 @@
             "type": "string"
           },
           "task_id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "task_title": {
             "type": "string"
@@ -156,7 +160,8 @@
             "type": "string"
           },
           "challenge_id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "description": {
             "type": "string"
@@ -171,7 +176,8 @@
             "type": "boolean"
           },
           "id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "max_submissions_per_period": {
             "type": "integer"
@@ -186,7 +192,8 @@
             "type": "integer"
           },
           "stage_id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "submission_period_hours": {
             "type": "integer"
@@ -210,7 +217,8 @@
             "type": "string"
           },
           "challenge_id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "city": {
             "type": "string"
@@ -222,7 +230,8 @@
             "type": "string"
           },
           "id": {
-            "type": "integer"
+            "format": "uuid",
+            "type": "string"
           },
           "is_anonymous": {
             "type": "boolean"
@@ -1457,7 +1466,7 @@
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -1470,27 +1479,7 @@
                 }
               }
             },
-            "description": "Leaderboard data returned"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Access denied for competitor"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Challenge not found"
+            "description": "Success"
           }
         },
         "security": [
@@ -1501,6 +1490,42 @@
         "summary": "Get the leaderboard for a specific challenge.",
         "tags": [
           "Leaderboard"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/leaderboard/live": {
+      "get": {
+        "parameters": [
+          {
+            "description": "ID of the challenge",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream live updates to the challenge leaderboard using Server-Sent Events (SSE).",
+        "tags": [
+          "SSE Streaming"
         ]
       }
     },
@@ -2219,61 +2244,6 @@
         "summary": "Get details of a specific submission.",
         "tags": [
           "Submissions"
-        ]
-      }
-    },
-    "/api/submissions/{submission_id}/logs/live": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "SSE stream of logs"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Access denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Submission not found"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Stream live logs for a submission using Server-Sent Events (SSE).",
-        "tags": [
-          "SSE Streaming"
         ]
       }
     },

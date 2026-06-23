@@ -14,7 +14,6 @@ from evaluation_engine import (
     compute_meteor,
     compute_chrf,
     compute_ter,
-    compute_bertscore,
     calculate_box_iou,
     compute_map_detection,
     compute_psnr,
@@ -165,32 +164,6 @@ class TestComputeTer:
         assert score > 0.0
         assert score <= 1.0
 
-
-class TestComputeBertscore:
-    def test_identical(self):
-        score = compute_bertscore(["hello world"], ["hello world"])
-        assert score == pytest.approx(1.0)
-
-    def test_no_overlap(self):
-        score = compute_bertscore(["hello world"], ["xyz abc"])
-        assert 0.0 <= score < 0.9
-
-    def test_partial(self):
-        score = compute_bertscore(["the cat sat"], ["the dog ran"])
-        assert score > 0.0
-        assert score < 1.0
-
-    def test_empty_ref(self):
-        score = compute_bertscore([""], ["hello"])
-        assert score == 0.0
-
-    def test_empty_hyp(self):
-        score = compute_bertscore(["hello"], [""])
-        assert score == 0.0
-
-    def test_multiple_pairs(self):
-        score = compute_bertscore(["hello world", "cat dog"], ["hello world", "cat dog"])
-        assert score == pytest.approx(1.0)
 
 
 class TestCalculateBoxIou:
@@ -642,13 +615,6 @@ class TestEvaluatePredictionsEdgeCases:
         df_labels = pd.DataFrame({"id": [1], "label": [0]})
         result = evaluate_predictions(df_sub, df_labels, {"logloss": {"weight": 1.0}})
         assert isinstance(result["logloss"], float)
-
-    def test_mock_metrics(self):
-        df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
-        df_labels = pd.DataFrame({"id": [1], "label": [0]})
-        for metric in ["fid", "is", "clip_score", "lpips", "niqe", "nisqa", "pesq"]:
-            result = evaluate_predictions(df_sub, df_labels, {metric: {"weight": 1.0}})
-            assert metric in result
 
     def test_retrieval_ndcg_k(self):
         df_true = pd.DataFrame(

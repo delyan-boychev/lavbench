@@ -1322,7 +1322,7 @@ export default function AdminPanel() {
           grade: editUserForm.grade || null,
           school: editUserForm.school || null,
           city: editUserForm.city || null,
-          challenge_id: editUserForm.challenge_id === '' ? '' : parseInt(editUserForm.challenge_id),
+          challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
           is_anonymous: editUserForm.is_anonymous,
         }),
       });

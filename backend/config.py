@@ -41,9 +41,9 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {}
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
         SQLALCHEMY_ENGINE_OPTIONS = {
-            "pool_size": 15,
+            "pool_size": 50,
             "pool_timeout": 30,
-            "max_overflow": 25,
+            "max_overflow": 50,
             "pool_pre_ping": True,
             "pool_recycle": 600,
         }

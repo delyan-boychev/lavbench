@@ -310,7 +310,7 @@ def get_users():
     )
 
 
-@admin_bp.route("/users/<int:user_id>", methods=["DELETE"])
+@admin_bp.route("/users/<uuid:user_id>", methods=["DELETE"])
 @role_required(["admin"])
 def delete_user(user_id):
     """
@@ -334,7 +334,7 @@ def delete_user(user_id):
             schema:
               type: object
     """
-    if request.user["user_id"] == user_id:
+    if str(request.user["user_id"]) == str(user_id):
         return jsonify({"error": "You cannot delete your own admin account."}), 400
 
     user = db.session.get(User, user_id)
@@ -577,7 +577,7 @@ def import_competitors_csv():
                 password_hash=generate_password_hash(password, method="pbkdf2:sha256"),
                 role="competitor",
                 alias_id=generate_pseudonym(),
-                challenge_id=int(challenge_id),
+                challenge_id=challenge_id,
                 is_anonymous=is_anon,
             )
             user.set_demographics(name, surname, grade, school, city)
@@ -604,12 +604,12 @@ def import_competitors_csv():
             request.user["user_id"],
             "import_competitors",
             "user",
-            details={"challenge_id": int(challenge_id), "count": len(imported)},
+            details={"challenge_id": challenge_id, "count": len(imported)},
         )
 
         from cache_utils import invalidate_leaderboard_cache
 
-        invalidate_leaderboard_cache(int(challenge_id))
+        invalidate_leaderboard_cache(challenge_id)
         return (
             jsonify(
                 {
@@ -835,7 +835,7 @@ def delete_backup_file(filename):
     return jsonify({"message": "Deleted."})
 
 
-@admin_bp.route("/challenges/<int:challenge_id>/backups", methods=["GET"])
+@admin_bp.route("/challenges/<uuid:challenge_id>/backups", methods=["GET"])
 @role_required(["admin"])
 def list_challenge_backups(challenge_id):
     """
@@ -863,7 +863,7 @@ def list_challenge_backups(challenge_id):
     return jsonify({"backups": _list_backup_files(directory)})
 
 
-@admin_bp.route("/challenges/<int:challenge_id>/backups/<path:filename>/download", methods=["GET"])
+@admin_bp.route("/challenges/<uuid:challenge_id>/backups/<path:filename>/download", methods=["GET"])
 @role_required(["admin"])
 def download_challenge_backup(challenge_id, filename):
     """
@@ -900,7 +900,7 @@ def download_challenge_backup(challenge_id, filename):
     return send_file(safe_path, as_attachment=True, download_name=filename)
 
 
-@admin_bp.route("/users/<int:user_id>", methods=["PUT"])
+@admin_bp.route("/users/<uuid:user_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 def update_user(user_id):
     """
@@ -926,6 +926,7 @@ def update_user(user_id):
     """
     user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
+    old_challenge_id = user.challenge_id
 
     # Check if the competition has started for jury edits
     if current_role == "jury":
@@ -966,7 +967,7 @@ def update_user(user_id):
 
     # Check new challenge start time if jury is assigning
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
-        target_challenge_id = int(challenge_id)
+        target_challenge_id = str(challenge_id)
         if current_role == "jury":
             challenge = db.session.get(Challenge, target_challenge_id)
             if challenge and challenge.is_started:
@@ -1008,6 +1009,13 @@ def update_user(user_id):
         user.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
 
     db.session.commit()
+
+    from cache_utils import invalidate_leaderboard_cache
+    if old_challenge_id:
+        invalidate_leaderboard_cache(old_challenge_id)
+    if user.challenge_id and user.challenge_id != old_challenge_id:
+        invalidate_leaderboard_cache(user.challenge_id)
+
     from services.audit_service import log_action
 
     log_action(
@@ -1025,7 +1033,7 @@ def update_user(user_id):
     )
 
 
-@admin_bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_bp.route("/users/<uuid:user_id>/reset-password", methods=["POST"])
 @role_required(["admin", "jury"])
 def reset_user_password(user_id):
     """
@@ -1087,7 +1095,7 @@ def reset_user_password(user_id):
     )
 
 
-@admin_bp.route("/challenges/<int:challenge_id>/reset-all-passwords", methods=["POST"])
+@admin_bp.route("/challenges/<uuid:challenge_id>/reset-all-passwords", methods=["POST"])
 @role_required(["admin", "jury"])
 def reset_all_challenge_passwords(challenge_id):
     """
@@ -1152,7 +1160,7 @@ def reset_all_challenge_passwords(challenge_id):
     )
 
 
-@admin_bp.route("/challenges/<int:challenge_id>/download-scores-csv", methods=["GET"])
+@admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])
 @role_required(["admin", "jury"])
 def download_scores_csv(challenge_id):
     """
@@ -1194,7 +1202,7 @@ def download_scores_csv(challenge_id):
     )
 
 
-@admin_bp.route("/challenges/<int:challenge_id>/download-submissions-zip", methods=["GET"])
+@admin_bp.route("/challenges/<uuid:challenge_id>/download-submissions-zip", methods=["GET"])
 @role_required(["admin", "jury"])
 def download_submissions_zip(challenge_id):
     """

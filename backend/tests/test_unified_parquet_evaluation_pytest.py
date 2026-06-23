@@ -443,12 +443,6 @@ class TestEvalPredictionsAllMetricPaths:
         res = evaluate_predictions(df_s, df_l, {"meteor": {"weight": 1.0}})
         assert "meteor" in res
 
-    def test_bertscore_metric(self):
-        df_l = pd.DataFrame({"id": [1, 2], "label": ["hello world", "foo bar"]})
-        df_s = pd.DataFrame({"id": [1, 2], "prediction": ["hello world", "foo baz"]})
-        res = evaluate_predictions(df_s, df_l, {"bertscore": {"weight": 1.0}})
-        assert "bertscore" in res
-
     def test_chrf_metric(self):
         df_l = pd.DataFrame({"id": [1, 2], "label": ["hello world", "foo bar"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["hello world", "foo baz"]})
@@ -641,36 +635,6 @@ class TestEvalPredictionsAllMetricPaths:
         res = evaluate_predictions(df_s, df_l, {"ssim": {"weight": 1.0}})
         assert "ssim" in res
 
-    def test_fid_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["ref_img"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["hyp_img"]})
-        res = evaluate_predictions(df_s, df_l, {"fid": {"weight": 1.0}})
-        assert res["fid"] == pytest.approx(0.85)
-
-    def test_is_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["ref"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["hyp"]})
-        res = evaluate_predictions(df_s, df_l, {"is": {"weight": 1.0}})
-        assert res["is"] == pytest.approx(0.85)
-
-    def test_clip_score_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["ref"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["hyp"]})
-        res = evaluate_predictions(df_s, df_l, {"clip_score": {"weight": 1.0}})
-        assert res["clip_score"] == pytest.approx(0.85)
-
-    def test_lpips_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["ref"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["hyp"]})
-        res = evaluate_predictions(df_s, df_l, {"lpips": {"weight": 1.0}})
-        assert res["lpips"] == pytest.approx(0.15)
-
-    def test_niqe_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["ref"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["hyp"]})
-        res = evaluate_predictions(df_s, df_l, {"niqe": {"weight": 1.0}})
-        assert res["niqe"] == pytest.approx(3.5)
-
     # ── Audio Quality ──────────────────────────────────────────────────────────
 
     def test_snr_identical_signal(self):
@@ -703,18 +667,6 @@ class TestEvalPredictionsAllMetricPaths:
         res = evaluate_predictions(df_s, df_l, {"si_sdr": {"weight": 1.0}})
         assert "si_sdr" in res
         assert res["si_sdr"] > 50.0  # SNR 100 + 1.2
-
-    def test_nisqa_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["audio"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["audio"]})
-        res = evaluate_predictions(df_s, df_l, {"nisqa": {"weight": 1.0}})
-        assert res["nisqa"] == pytest.approx(4.2)
-
-    def test_pesq_mock_fallback(self):
-        df_l = pd.DataFrame({"id": [1], "label": ["audio"]})
-        df_s = pd.DataFrame({"id": [1], "prediction": ["audio"]})
-        res = evaluate_predictions(df_s, df_l, {"pesq": {"weight": 1.0}})
-        assert res["pesq"] == pytest.approx(4.2)
 
     # ── Clustering ─────────────────────────────────────────────────────────────
 

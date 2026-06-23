@@ -35,6 +35,39 @@ else:
         "tasks", broker=app.config["CELERY_BROKER_URL"], backend=app.config["CELERY_RESULT_BACKEND"]
     )
 
+def configure_celery_ssl(celery_app):
+    broker_url = celery_app.conf.broker_url or ""
+    result_backend = celery_app.conf.result_backend or ""
+    if broker_url.startswith("rediss://") or result_backend.startswith("rediss://"):
+        import ssl
+        ssl_ca_certs = os.environ.get("REDIS_SSL_CA_CERTS")
+        ssl_certfile = os.environ.get("REDIS_SSL_CERTFILE")
+        ssl_keyfile = os.environ.get("REDIS_SSL_KEYFILE")
+        ssl_cert_reqs_str = os.environ.get("REDIS_SSL_CERT_REQS", "required")
+
+        ssl_cert_reqs = ssl.CERT_REQUIRED
+        if ssl_cert_reqs_str == "none":
+            ssl_cert_reqs = ssl.CERT_NONE
+        elif ssl_cert_reqs_str == "optional":
+            ssl_cert_reqs = ssl.CERT_OPTIONAL
+
+        ssl_opts = {
+            "ssl_cert_reqs": ssl_cert_reqs
+        }
+        if ssl_ca_certs:
+            ssl_opts["ssl_ca_certs"] = ssl_ca_certs
+        if ssl_certfile:
+            ssl_opts["ssl_certfile"] = ssl_certfile
+        if ssl_keyfile:
+            ssl_opts["ssl_keyfile"] = ssl_keyfile
+
+        celery_app.conf.update(
+            broker_use_ssl=ssl_opts,
+            redis_backend_use_ssl=ssl_opts
+        )
+
+configure_celery_ssl(celery)
+
 # Recycle worker child processes after 50 tasks to reclaim memory from ML model execution
 celery.conf.update(
     worker_max_tasks_per_child=50,
@@ -83,6 +116,30 @@ def recalculate_all_leaderboards():
     if RUNNING_AS_WORKER:
         return
     return run_recalculate_all_leaderboards(app)
+
+
+@celery.task
+def recalculate_leaderboard(challenge_id):
+    """Celery task: rebuild leaderboard cache for a specific challenge."""
+    if RUNNING_AS_WORKER:
+        return
+    if not app:
+        return
+    from services.leaderboard_service import build_and_cache_leaderboard
+    with app.app_context():
+        challenge = Challenge.query.get(challenge_id)
+        if not challenge:
+            return
+        build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=True)
+        if challenge.is_frozen:
+            build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
+
+        from cache_utils import get_redis_client
+        r = get_redis_client()
+        if r:
+            channel_name = f"challenge_{challenge_id}_leaderboard"
+            import json
+            r.publish(channel_name, json.dumps({"event": "update"}))
 
 
 @celery.task

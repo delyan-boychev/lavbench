@@ -28,7 +28,7 @@ class TestAuthUtils:
         token = generate_token(42, "competitor")
         result = verify_token(token)
         assert result is not None
-        assert result["user_id"] == 42
+        assert result["user_id"] == "42"
         assert result["role"] == "competitor"
 
     def test_verify_token_returns_none_for_empty_token(self):
@@ -39,7 +39,7 @@ class TestAuthUtils:
         token = generate_token(42, "admin")
         result = verify_token(f"Bearer {token}")
         assert result is not None
-        assert result["user_id"] == 42
+        assert result["user_id"] == "42"
         assert result["role"] == "admin"
 
     def test_verify_token_returns_none_for_expired_token(self):
@@ -135,7 +135,7 @@ class TestAuthUtils:
         res = client.get("/test", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200
         data = res.get_json()
-        assert data["user_id"] == 42
+        assert data["user_id"] == "42"
 
     def test_role_required_blocks_wrong_role(self):
         app = Flask(__name__)

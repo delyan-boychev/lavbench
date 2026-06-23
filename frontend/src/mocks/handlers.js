@@ -140,9 +140,9 @@ export const handlers = [
   http.get(`${BASE}/challenges/:id`, async ({ params }) => {
     const challenge = {
       ...DEFAULT_CHALLENGE,
-      id: parseInt(/** @type {string} */ (params.id)),
+      id: /** @type {string} */ (params.id),
       tasks: [DEFAULT_TASK],
-      stages: [{ id: 1, title: 'Stage 1', stage_number: 1 }],
+      stages: [{ id: 'mock-stage-1', title: 'Stage 1', stage_number: 1 }],
     };
     return HttpResponse.json(challenge);
   }),

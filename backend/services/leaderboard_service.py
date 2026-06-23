@@ -9,24 +9,26 @@ from models import db, Challenge, Submission, User, Task, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 
-def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
+def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=False):
     """Compute, cache, and return the leaderboard for a challenge. Uses a distributed lock."""
     from cache_utils import set_cached, get_cached, cache_lock
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     lock_key = f"lock:{cache_key}"
 
-    cached = get_cached(cache_key)
-    if cached is not None:
-        return cached
+    if not force_rebuild:
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return cached
 
     with cache_lock(lock_key, ttl=30) as got_lock:
         if not got_lock:
             for _ in range(10):
                 time.sleep(0.3)
-                cached = get_cached(cache_key)
-                if cached is not None:
-                    return cached
+                if not force_rebuild:
+                    cached = get_cached(cache_key)
+                    if cached is not None:
+                        return cached
 
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge:

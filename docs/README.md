@@ -61,7 +61,7 @@ if (ok) {
 ### flasgger docstring template (OpenAPI 3.0)
 
 ```python
-@some_bp.route('/path/<int:id>', methods=['POST'])
+@some_bp.route('/path/<uuid:id>', methods=['POST'])
 @login_required
 def some_action(id):
     """
@@ -72,9 +72,9 @@ def some_action(id):
     parameters:
       - in: path
         name: id
-        type: integer
+        type: string
         required: true
-        description: Resource ID
+        description: Resource UUID
       - in: body
         name: body
         required: true
@@ -119,7 +119,7 @@ tags:
 parameters:
   - in: path
     name: id
-    type: integer
+    type: string
     required: true
 produces:
   - text/event-stream

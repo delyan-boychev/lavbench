@@ -57,7 +57,6 @@ AVAILABLE_METRICS = {
     "bleu": {},
     "rouge": {"rouge_type": ["rouge1", "rouge2", "rougeL"]},
     "meteor": {},
-    "bertscore": {},
     "chrf": {"beta": ["1", "2", "3"]},
     "ter": {},
     "exact_match": {},
@@ -71,15 +70,8 @@ AVAILABLE_METRICS = {
     "pck": {"threshold": ["0.01", "0.02", "0.05", "0.1", "0.15", "0.2"]},
     "psnr": {},
     "ssim": {},
-    "fid": {},
-    "is": {},
-    "clip_score": {},
-    "lpips": {},
-    "niqe": {},
     "snr": {},
     "mel_lsd": {},
-    "nisqa": {},
-    "pesq": {},
     "si_sdr": {},
     "ndcg_k": {"k": ["5", "10", "20", "50", "100"]},
     "mrr": {},
@@ -229,26 +221,6 @@ def compute_ter(ref, hyp):
                 dp[i][j] = min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1
     return min(1.0, dp[m][n] / m)
 
-
-def compute_bertscore(refs, hyps):
-    """Compute BERTScore — precision, recall, F1 based on BERT embeddings."""
-    try:
-        from bert_score import score
-
-        P, R, F1 = score(hyps, refs, lang="en", verbose=False)
-        return F1.mean().item()
-    except Exception:
-        # Fallback to TF-IDF cosine similarity approximation
-        scores = []
-        for r, h in zip(refs, hyps):
-            r_set = set(r.lower().split())
-            h_set = set(h.lower().split())
-            if not r_set or not h_set:
-                scores.append(0.0)
-                continue
-            intersection = r_set.intersection(h_set)
-            scores.append(len(intersection) / math.sqrt(len(r_set) * len(h_set)))
-        return float(np.mean(scores))
 
 
 # Object Detection IoU Matcher
@@ -922,8 +894,6 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred)])
         elif m_name_clean == "meteor":
             val = np.mean([compute_meteor(t, p) for t, p in zip(y_true, y_pred)])
-        elif m_name_clean == "bertscore":
-            val = compute_bertscore(y_true, y_pred)
         elif m_name_clean == "chrf":
             beta = m_opts.get("beta", 3)
             val = np.mean([compute_chrf(t, p, beta=beta) for t, p in zip(y_true, y_pred)])
@@ -978,19 +948,12 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             val = compute_psnr(y_true, y_pred)
         elif m_name_clean == "ssim":
             val = compute_ssim(y_true, y_pred)
-        elif m_name_clean in ["fid", "is", "clip_score"]:
-            # Neural network outputs mock fallback for scoring host
-            val = 0.85
-        elif m_name_clean in ["lpips", "niqe"]:
-            val = 0.15 if m_name_clean == "lpips" else 3.5
 
         # 11. Audio Quality
         elif m_name_clean == "snr":
             val = compute_audio_snr(y_true, y_pred)
         elif m_name_clean == "mel_lsd":
             val = compute_mel_lsd(y_true, y_pred)
-        elif m_name_clean in ["nisqa", "pesq"]:
-            val = 4.2  # Mock high score fallback
         elif m_name_clean == "si_sdr":
             val = compute_audio_snr(y_true, y_pred) + 1.2
 

@@ -260,7 +260,7 @@ class TestCreateTask:
         }
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
-        assert resp.get_json()["stage_id"] == sample_stage.id
+        assert resp.get_json()["stage_id"] == str(sample_stage.id)
 
     # ── Error cases ──
 

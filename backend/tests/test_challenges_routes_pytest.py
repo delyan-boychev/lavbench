@@ -414,14 +414,16 @@ class TestDeleteStage:
         return {"Authorization": f"Bearer {token}"}
 
     def test_delete_stage_success(self, client, db_session):
+        stage_id = self.stage.id
         res = client.delete(
-            f"/api/challenges/{self.challenge.id}/stages/{self.stage.id}",
+            f"/api/challenges/{self.challenge.id}/stages/{stage_id}",
             headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         assert "deleted" in res.get_json()["message"].lower()
 
-        deleted = db_session.get(Stage, self.stage.id)
+        db_session.close()
+        deleted = db_session.get(Stage, stage_id)
         assert deleted is None
 
     def test_delete_stage_competitor_forbidden(self, client):

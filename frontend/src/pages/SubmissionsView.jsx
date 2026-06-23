@@ -34,7 +34,7 @@ export default function SubmissionsView() {
 
   useEffect(() => {
     if (challengeId) {
-      setSelectedChallengeById(parseInt(challengeId));
+      setSelectedChallengeById(challengeId);
     }
   }, [challengeId, setSelectedChallengeById]);
 
