@@ -15,6 +15,7 @@ def get_client_ip():
 
 import uuid
 
+
 def _clean_details(val):
     if isinstance(val, dict):
         return {k: _clean_details(v) for k, v in val.items()}

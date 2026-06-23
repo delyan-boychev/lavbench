@@ -294,7 +294,11 @@ class TestChallengeLeaderboardGetEndpoint:
                     "manual_points": {str(self.task.id): 10},
                 },
                 "task_scores": {
-                    str(self.task.id): {"public_score": 0.50, "private_score": 0.90, "submission_id": 101}
+                    str(self.task.id): {
+                        "public_score": 0.50,
+                        "private_score": 0.90,
+                        "submission_id": 101,
+                    }
                 },
                 "public_score": 0.50,
                 "private_score": 0.90,
@@ -313,7 +317,11 @@ class TestChallengeLeaderboardGetEndpoint:
                     "manual_points": {str(self.task.id): 20},
                 },
                 "task_scores": {
-                    str(self.task.id): {"public_score": 0.80, "private_score": 0.40, "submission_id": 102}
+                    str(self.task.id): {
+                        "public_score": 0.80,
+                        "private_score": 0.40,
+                        "submission_id": 102,
+                    }
                 },
                 "public_score": 0.80,
                 "private_score": 0.40,

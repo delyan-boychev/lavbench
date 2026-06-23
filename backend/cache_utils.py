@@ -23,6 +23,7 @@ def get_redis_client():
         ssl_kwargs = {}
         if broker_url.startswith("rediss://"):
             import ssl
+
             ssl_ca_certs = os.environ.get("REDIS_SSL_CA_CERTS")
             ssl_certfile = os.environ.get("REDIS_SSL_CERTFILE")
             ssl_keyfile = os.environ.get("REDIS_SSL_KEYFILE")
@@ -190,6 +191,7 @@ def invalidate_leaderboard_cache(challenge_id, delete_only=False):
 
     try:
         from tasks import recalculate_leaderboard
+
         recalculate_leaderboard.delay(challenge_id)
     except Exception:
         delete_cached(f"leaderboard:raw:{challenge_id}:frozen")

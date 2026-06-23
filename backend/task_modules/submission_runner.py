@@ -388,9 +388,12 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     if status_val in ("completed", "failed"):
                         try:
                             from cache_utils import invalidate_leaderboard_cache
+
                             invalidate_leaderboard_cache(sub.challenge_id)
                         except Exception:
-                            logger.exception("Failed to invalidate leaderboard cache in submission runner")
+                            logger.exception(
+                                "Failed to invalidate leaderboard cache in submission runner"
+                            )
 
                     publish_submissions_update(sub.task_id, sub.user_id)
                     publish_leaderboard_update(sub.task_id)

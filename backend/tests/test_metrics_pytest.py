@@ -165,7 +165,6 @@ class TestComputeTer:
         assert score <= 1.0
 
 
-
 class TestCalculateBoxIou:
     def test_identical_boxes(self):
         box = {"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10}

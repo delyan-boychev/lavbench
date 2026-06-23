@@ -700,8 +700,11 @@ class TestGetTaskSubmissions:
 
     def test_returns_404_for_nonexistent_task(self):
         import uuid
+
         dummy_uuid = str(uuid.uuid4())
-        resp = self.client.get(f"/api/tasks/{dummy_uuid}/submissions", headers=self._auth(self.admin_token))
+        resp = self.client.get(
+            f"/api/tasks/{dummy_uuid}/submissions", headers=self._auth(self.admin_token)
+        )
         assert resp.status_code == 403
 
     def test_includes_submission_details(self):

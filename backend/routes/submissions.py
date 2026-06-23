@@ -810,6 +810,7 @@ def stream_submission_logs(submission_id):
 
         if r:
             import time
+
             last_db_check = time.time()
             try:
                 while True:
@@ -861,6 +862,7 @@ def stream_submission_logs(submission_id):
                     last_yielded_len = len(sub.logs.splitlines())
 
             import time
+
             try:
                 while True:
                     with current_app.app_context():

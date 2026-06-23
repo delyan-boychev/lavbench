@@ -6,12 +6,15 @@ from auth_utils import login_required, role_required
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
+
 class UUIDEncoder(json.JSONEncoder):
     def default(self, obj):
         import uuid
+
         if isinstance(obj, uuid.UUID):
             return str(obj)
         return super().default(obj)
+
 
 from services.leaderboard_service import build_and_cache_leaderboard
 
@@ -391,7 +394,7 @@ def stream_challenge_leaderboard(challenge_id):
             try:
                 pubsub.subscribe(channel_name)
             except Exception:
-                r = None # Fallback to standard polling if Redis errors
+                r = None  # Fallback to standard polling if Redis errors
 
         if r:
             try:
@@ -409,6 +412,7 @@ def stream_challenge_leaderboard(challenge_id):
         else:
             # Fallback to polling every 10 seconds if Redis is down
             import time
+
             while True:
                 time.sleep(10.0)
                 for msg in get_and_yield_leaderboard():

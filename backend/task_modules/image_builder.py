@@ -260,7 +260,9 @@ def _rebuild_listener(main_server_url, worker_token):
             if msg and msg.get("type") == "message":
                 try:
                     raw_data = msg.get("data")
-                    task_id = (raw_data.decode("utf-8") if isinstance(raw_data, bytes) else str(raw_data)).strip()
+                    task_id = (
+                        raw_data.decode("utf-8") if isinstance(raw_data, bytes) else str(raw_data)
+                    ).strip()
                     logger.info("Rebuild notification for task %s", task_id)
                     # Fetch updated config from the server
                     import requests

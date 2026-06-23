@@ -1011,6 +1011,7 @@ def update_user(user_id):
     db.session.commit()
 
     from cache_utils import invalidate_leaderboard_cache
+
     if old_challenge_id:
         invalidate_leaderboard_cache(old_challenge_id)
     if user.challenge_id and user.challenge_id != old_challenge_id:

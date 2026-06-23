@@ -222,7 +222,6 @@ def compute_ter(ref, hyp):
     return min(1.0, dp[m][n] / m)
 
 
-
 # Object Detection IoU Matcher
 def calculate_box_iou(box1, box2):
     """box = {x_min, y_min, x_max, y_max}"""

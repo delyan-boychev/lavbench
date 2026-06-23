@@ -22,12 +22,15 @@ from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 tasks_bp = Blueprint("tasks", __name__)
 
+
 class UUIDEncoder(json.JSONEncoder):
     def default(self, obj):
         import uuid
+
         if isinstance(obj, uuid.UUID):
             return str(obj)
         return super().default(obj)
+
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
 
@@ -1038,6 +1041,7 @@ def delete_task(task_id):
     # Collect file paths before bulk delete for cleanup
     subs = Submission.query.filter_by(task_id=task_id).all()
     from tasks import celery
+
     for s in subs:
         if s.celery_task_id:
             try:
@@ -1976,6 +1980,13 @@ def report_worker_progress(submission_id):
         from sse_utils import publish_submission_status
 
         publish_submission_status(submission.id, submission.status)
+
+        try:
+            from cache_utils import invalidate_leaderboard_cache
+
+            invalidate_leaderboard_cache(submission.challenge_id)
+        except Exception:
+            current_app.logger.exception("Failed to invalidate leaderboard cache in report route")
 
     return jsonify({"message": "Status updated successfully"}), 200
 

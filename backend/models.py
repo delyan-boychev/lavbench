@@ -16,27 +16,33 @@ import zoneinfo
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID
 
+
 def uuid7():
     import time
     import os
+
     ms = int(time.time() * 1000)
     rand_bytes = os.urandom(10)
-    b_ts = ms.to_bytes(6, byteorder='big')
-    v_and_rand = (0x7000 | (int.from_bytes(rand_bytes[:2], byteorder='big') & 0x0FFF))
-    b_vr = v_and_rand.to_bytes(2, byteorder='big')
-    var_and_rand = (0x8000000000000000 | (int.from_bytes(rand_bytes[2:], byteorder='big') & 0x3FFFFFFFFFFFFFFF))
-    b_var_rand = var_and_rand.to_bytes(8, byteorder='big')
+    b_ts = ms.to_bytes(6, byteorder="big")
+    v_and_rand = 0x7000 | (int.from_bytes(rand_bytes[:2], byteorder="big") & 0x0FFF)
+    b_vr = v_and_rand.to_bytes(2, byteorder="big")
+    var_and_rand = 0x8000000000000000 | (
+        int.from_bytes(rand_bytes[2:], byteorder="big") & 0x3FFFFFFFFFFFFFFF
+    )
+    b_var_rand = var_and_rand.to_bytes(8, byteorder="big")
     return uuid.UUID(bytes=b_ts + b_vr + b_var_rand)
+
 
 class GUID(TypeDecorator):
     """Platform-independent GUID type.
     Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing as standard UUID strings.
     """
+
     impl = CHAR
     cache_ok = True
 
     def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
+        if dialect.name == "postgresql":
             return dialect.type_descriptor(UUID(as_uuid=True))
         else:
             return dialect.type_descriptor(CHAR(36))
@@ -61,7 +67,7 @@ class GUID(TypeDecorator):
         except Exception:
             u = uuid.UUID(int=0)
 
-        if dialect.name == 'postgresql':
+        if dialect.name == "postgresql":
             return u
         else:
             return str(u)
