@@ -16,10 +16,10 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 1. **Create tests for new code** — When adding new API endpoints, React components, or services, include accompanying tests to maintain coverage standards.
 2. **Run all tests**:
    ```bash
-   # Backend (pytest)
-   python -m pytest backend/tests/ -v
+   # Backend (pytest — 941 tests, requires micromamba env)
+   cd backend && micromamba run -n lavbench_backend python -m pytest tests/ -v
 
-   # Frontend (vitest)
+   # Frontend (vitest — 363 tests)
    cd frontend && npm run test
    ```
 3. **Format your code** — Both formatters run in CI and will block unformatted code:
@@ -53,7 +53,8 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 ### Backend (Python)
 
 - Formatted with **Black** (line-length 100, configured in `backend/pyproject.toml`)
-- Tests in `backend/tests/`, one file per route module
+- Tests in `backend/tests/`, one file per route module or service
+- Dev dependencies (pytest, pytest-mock, Faker, etc.) are in `dev-requirements.in` — compile with `pip-compile dev-requirements.in`
 - Use pytest fixtures from `backend/conftest.py` for common setups
 - New routes go in `backend/routes/`, register blueprints in `backend/app.py`
 - Security-sensitive code must include rate limiting and auth checks

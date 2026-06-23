@@ -191,7 +191,7 @@ You can submit multiple times. When you're satisfied with a result:
 Some tasks restrict certain libraries (like `os`, `sys`, `subprocess`, `requests`) for security. These restrictions are **per-task** — not all tasks have the same rules. Check your task details to see what's banned.
 
 ### Magic Commands
-Jupyter magic commands (`!pip install`, `%timeit`, `%matplotlib inline`) are incompatible with the evaluation system. Your submission will be **rejected** if any selected cell contains these commands. Remove them before submitting.
+Jupyter magic commands (`!pip install`, `%timeit`, `%matplotlib inline`) are **automatically stripped** before execution. You can leave them in your notebook, but they will have no effect inside the sandbox — do not rely on `!pip install` to add packages; all required libraries must already be in the Docker environment.
 
 ### Submission Limits
 - **Daily limit**: Maximum submissions per calendar day across all tasks in your competition

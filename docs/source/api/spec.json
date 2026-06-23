@@ -901,6 +901,32 @@
         ]
       }
     },
+    "/api/auth/csrf-token": {
+      "get": {
+        "description": "Returns the token in the response body and sets it as a non-httpOnly cookie.<br/>The frontend should read the cookie and include it as X-CSRF-Token header.<br/>",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "csrf_token": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "CSRF token generated"
+          }
+        },
+        "summary": "Get a CSRF token for state-changing requests.",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "description": "Password must be sent as plaintext; the server hashes it.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>",
@@ -1132,6 +1158,53 @@
         ]
       }
     },
+    "/api/challenges/import": {
+      "post": {
+        "description": "Creates challenge, stages, and tasks. File attachments are NOT restored.<br/>",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Challenge created"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Import a challenge configuration from JSON (previously exported via /export).",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
     "/api/challenges/{challenge_id}": {
       "delete": {
         "parameters": [
@@ -1263,6 +1336,42 @@
           }
         ],
         "summary": "Toggle archive state. Archived challenges are hidden from competitors.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/export": {
+      "get": {
+        "description": "File attachments (baseline notebooks, evaluator scripts) are NOT included.<br/>",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Challenge export JSON"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Export a challenge configuration as JSON, including tasks and stages.",
         "tags": [
           "Challenges"
         ]
@@ -2029,22 +2138,12 @@
     },
     "/api/health": {
       "get": {
-        "description": "Verifies database connectivity.<br/>",
+        "description": "Verifies database, Redis, Celery, and disk availability.<br/>",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "database": {
-                      "example": "connected",
-                      "type": "string"
-                    },
-                    "status": {
-                      "example": "ok",
-                      "type": "string"
-                    }
-                  },
                   "type": "object"
                 }
               }
@@ -2055,20 +2154,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "detail": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "example": "error",
-                      "type": "string"
-                    }
-                  },
                   "type": "object"
                 }
               }
             },
-            "description": "Database unreachable"
+            "description": "Service degraded"
           }
         },
         "summary": "Health check for Docker and load balancer monitoring.",
@@ -2641,6 +2731,24 @@
           }
         ],
         "summary": "List all HuggingFace datasets used by active challenges for worker preloading.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/active-tasks": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List all active task configurations for worker image pre-building.",
         "tags": [
           "Tasks"
         ]

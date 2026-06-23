@@ -46,6 +46,28 @@ Celery Workers (host, not Docker):
 7. Worker: report scores to server → update Submission → invalidate cache → publish SSE → leaderboard update
 ```
 
+## Evaluation Engine
+
+`evaluation_engine.py` resolves ~70 metrics across 12 categories, dispatching by metric name and input data type:
+
+| # | Category | Metric Names |
+|---|----------|--------------|
+| 1 | Classification | `accuracy`, `f1`\*, `precision`, `recall`\*, `cohen_kappa`, `matthews_corrcoef` |
+| 2 | Probabilistic | `auc_roc`, `logloss`, `brier_score` |
+| 3 | Regression | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae` |
+| 4 | Seq-label (NER) | `seqeval_f1`, `seqeval_precision`, `seqeval_recall` |
+| 5 | Generative NLP | `bleu`, `rouge`, `rouge_l`, `meteor`, `bertscore`, `chrf`, `ter` |
+| 6 | QA Extractive | `exact_match`, `f1`\* (word-overlap) |
+| 7 | Object Detection | `map_50`, `map_75`, `map_50_95`, `recall`\* (box recall) |
+| 8 | Segmentation | `mean_iou`, `dice`, `pixel_accuracy` |
+| 9 | Keypoints | `oks`, `pck` |
+| 10 | Image Quality | `psnr`, `ssim`, `fid`, `is`, `clip_score`, `lpips`, `niqe` |
+| 11 | Audio Quality | `snr`, `mel_lsd`, `si_sdr`, `nisqa`, `pesq` |
+| 12 | Clustering | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
+| + | Retrieval | `ndcg_k`, `recall_k`, `mrr` |
+
+\* `f1` and `recall` auto-dispatch: string inputs → QA word-overlap / exact-match; list-of-dict inputs → object detection box recall; scalar inputs → sklearn classification.
+
 ## API Type Pipeline
 
 ```

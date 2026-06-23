@@ -84,13 +84,45 @@ A JSON configuration dictates how the final public and private scores are calcul
 ```json
 {
   "accuracy": { "weight": 0.5, "higher_is_better": true },
-  "f1_score": { "weight": 0.5, "higher_is_better": true }
+  "f1": { "weight": 0.5, "higher_is_better": true }
 }
 ```
 
+**Example: Multi-metric Regression Task**
+```json
+{
+  "rmse":      { "weight": 0.6 },
+  "mae":       { "weight": 0.3 },
+  "r_squared": { "weight": 0.1 }
+}
+```
+
+### Supported Metric Categories
+
+The evaluation engine supports ~70 metrics across 12 task types:
+
+| Category | Metric Keys |
+|----------|-------------|
+| **Classification** | `accuracy`, `f1`, `precision`, `recall`, `cohen_kappa`, `matthews_corrcoef` |
+| **Probabilistic** | `auc_roc`, `logloss`, `brier_score` |
+| **Regression** | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae` |
+| **Seq-label (NER)** | `seqeval_f1`, `seqeval_precision`, `seqeval_recall` |
+| **Generative NLP** | `bleu`, `rouge`, `rouge_l`, `meteor`, `bertscore`, `chrf`, `ter` |
+| **QA Extractive** | `exact_match`, `f1` (word-overlap) |
+| **Object Detection** | `map_50`, `map_75`, `map_50_95`, `recall` (box recall) |
+| **Segmentation** | `mean_iou`, `dice`, `pixel_accuracy` |
+| **Keypoints** | `oks`, `pck` |
+| **Image Quality** | `psnr`, `ssim`, `fid`, `is`, `clip_score`, `lpips`, `niqe` |
+| **Audio Quality** | `snr`, `mel_lsd`, `si_sdr`, `nisqa`, `pesq` |
+| **Clustering** | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
+| **Retrieval** | `ndcg_k`, `recall_k`, `mrr` |
+
+> [!NOTE]
+> `f1` and `recall` automatically dispatch based on input type: string values → QA word-overlap; list-of-dict values → object detection box recall; integer/float values → sklearn classification.
+
 ### Pre-Execution AST Rule Enforcement
 Before any submission reaches the Celery queue, it undergoes strict Static Application Security Testing (AST):
-* **Ban Magic Commands:** Automatically strips or rejects Jupyter `%` or `!` shell commands.
+* **Strip Magic Commands:** Jupyter `%` and `!` shell commands (e.g., `%matplotlib inline`, `!pip install`) are automatically removed via regex before AST parsing. They have no effect inside the sandbox.
 ### Banned Imports
 Define modules (like `os, sys, subprocess, requests, socket`) that are forbidden. These are configured per-task — you can enforce different restrictions for different machine learning problems.
 

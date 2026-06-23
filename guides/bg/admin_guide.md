@@ -83,13 +83,45 @@ JSON конфигурация определя как се усредняват 
 ```json
 {
   "accuracy": { "weight": 0.5, "higher_is_better": true },
-  "f1_score": { "weight": 0.5, "higher_is_better": true }
+  "f1": { "weight": 0.5, "higher_is_better": true }
 }
 ```
 
+**Пример: Регресионна задача с множество метрики**
+```json
+{
+  "rmse":      { "weight": 0.6 },
+  "mae":       { "weight": 0.3 },
+  "r_squared": { "weight": 0.1 }
+}
+```
+
+### Поддържани категории метрики
+
+Машината за оценяване поддържа ~70 метрики в 12 категории задачи:
+
+| Категория | Ключове на метрики |
+|-----------|--------------------|
+| **Класификация** | `accuracy`, `f1`, `precision`, `recall`, `cohen_kappa`, `matthews_corrcoef` |
+| **Вероятностни** | `auc_roc`, `logloss`, `brier_score` |
+| **Регресия** | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae` |
+| **Поредни етикети (NER)** | `seqeval_f1`, `seqeval_precision`, `seqeval_recall` |
+| **Генеративен NLP** | `bleu`, `rouge`, `rouge_l`, `meteor`, `bertscore`, `chrf`, `ter` |
+| **QA Извличане** | `exact_match`, `f1` (съвпадение на думи) |
+| **Засичане на обекти** | `map_50`, `map_75`, `map_50_95`, `recall` (box recall) |
+| **Сегментация** | `mean_iou`, `dice`, `pixel_accuracy` |
+| **Ключови точки** | `oks`, `pck` |
+| **Качество на изображение** | `psnr`, `ssim`, `fid`, `is`, `clip_score`, `lpips`, `niqe` |
+| **Качество на аудио** | `snr`, `mel_lsd`, `si_sdr`, `nisqa`, `pesq` |
+| **Клъстеризация** | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
+| **Извличане** | `ndcg_k`, `recall_k`, `mrr` |
+
+> [!NOTE]
+> `f1` и `recall` автоматично избират клон на изчисление според типа данни: низови стойности → QA word-overlap; списъци от речници → box recall (засичане на обекти); числа → sklearn класификация.
+
 ### AST валидация и правила преди изпълнение
 Преди дадено решение да достигне до Celery опашката, то преминава през строг статичен анализ на сигурността (AST):
-* **Забрана на магически команди:** Автоматично премахва или отхвърля Jupyter `%` или `!` shell команди.
+* **Автоматично премахване на магически команди:** Jupyter `%` и `!` команди (напр. `%matplotlib inline`, `!pip install`) се изтриват автоматично чрез регулярен израз преди AST анализа. Те нямат ефект в sandbox средата.
 ### Забранени библиотеки (Banned Imports)
 Дефинирайте модули (като `os, sys, subprocess, requests, socket`), които са забранени за импортиране. Те се конфигурират за всяка задача поотделно.
 

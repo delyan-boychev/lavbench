@@ -120,7 +120,7 @@ lavbench/
 │   ├── models.py                # SQLAlchemy models
 │   ├── auth_utils.py            # JWT auth, rate limiting, token revocation
 │   ├── cache_utils.py           # Redis caching, connection pool, locks
-│   ├── evaluation_engine.py     # Parquet-based evaluation with 50+ metrics
+│   ├── evaluation_engine.py     # Parquet-based evaluation with 70+ metrics across 12 categories
 │   ├── sse_utils.py             # SSE pub/sub helpers
 │   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
 │   ├── tasks.py                 # Celery task definitions + beat schedule
@@ -129,7 +129,7 @@ lavbench/
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks
-│   └── tests/                   # Backend tests (pytest, 120 tests)
+│   └── tests/                   # Backend tests (pytest, 941 tests, 75% coverage)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # Reusable components (admin, challenge, ui, layout)
@@ -188,7 +188,7 @@ cp .env.example .env
 cd backend
 micromamba run -n lavbench_backend python -m pytest tests/ -v
 ```
-Includes ~780 tests covering routes, auth, evaluation, caching, rate limiting, and models.
+Includes 941 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
 
 ### Sphinx Documentation
 
@@ -206,7 +206,7 @@ The Sphinx build runs automatically in CI (`.github/workflows/ci.yml`) and deplo
 ```bash
 cd frontend
 
-# Unit / component tests (vitest — 362 tests)
+# Unit / component tests (vitest — 363 tests)
 npm run test
 
 # Type checking (JSDoc annotations + component props)
