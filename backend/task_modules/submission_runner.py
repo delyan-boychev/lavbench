@@ -435,7 +435,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
 
         # Write user code to temporary file / directory
         temp_dir = tempfile.mkdtemp()
-        os.chmod(temp_dir, 0o755)
+        os.chmod(temp_dir, 0o777)
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
