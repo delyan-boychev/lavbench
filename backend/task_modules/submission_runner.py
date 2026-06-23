@@ -49,6 +49,17 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     return ""
 
 
+def _image_exists(tag):
+    """Check if a Docker image tag already exists locally."""
+    try:
+        res = subprocess.run(
+            ["docker", "images", "-q", tag], capture_output=True, text=True, timeout=10
+        )
+        return bool(res.stdout.strip())
+    except Exception:
+        return False
+
+
 def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
     """
     Preloads HuggingFace datasets and models on the host so they are available offline in docker.
@@ -500,10 +511,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             f.write(user_code)
             os.fchmod(f.fileno(), 0o644)
 
-        # Preload HuggingFace datasets on the host so they are available offline in docker
-        preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs)
-
-        # Phase 2: Build / Prepare environment
+        # Phase 2: Build / Prepare environment (image pre-built by worker startup)
         docker_available = False
         try:
             res = subprocess.run(["docker", "--version"], capture_output=True, text=True)
@@ -520,86 +528,39 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             report_status_to_server(metadata, "failed", "failed", logs=logs)
             return
 
+        image_tag = f"lavbench_task_{task.id if task else 0}"
+
         if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
             base_image = task.base_docker_image or "python:3.10-slim"
 
-            # Calculate a stable config hash to make builds fast!
-            import hashlib
-
-            config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
-            config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
-            image_tag = f"lavbench_task_{task.id}_{config_hash}".lower()
-
-            image_exists = False
-            try:
-                res_check = subprocess.run(
-                    ["docker", "images", "-q", image_tag], capture_output=True, text=True
-                )
-                if res_check.stdout.strip():
-                    image_exists = True
-            except Exception:
-                pass
-
-            if image_exists:
-                logs.append(
-                    f"Docker sandbox image '{image_tag}' already exists. Skipping build step for speed."
-                )
+            if _image_exists(image_tag):
+                logs.append("Docker sandbox image '%s' already exists. Skipping build.", image_tag)
             else:
-                logs.append("Docker sandbox available. Building custom task image...")
-                import shlex
+                logs.append("Docker sandbox image '%s' not found. Building now...", image_tag)
+                from task_modules.image_builder import build_task_image
 
-                dockerfile_lines = [f"FROM {shlex.quote(base_image)}"]
-
-                if task.apt_packages:
-                    apt_list = " ".join(
-                        shlex.quote(p.strip())
-                        for p in task.apt_packages.replace(",", " ").split()
-                        if p.strip()
-                    )
-                    if apt_list:
-                        dockerfile_lines.extend(
-                            [
-                                "RUN apt-get update && apt-get install -y --no-install-recommends \\",
-                                f"    {apt_list} && \\",
-                                "    rm -rf /var/lib/apt/lists/*",
-                            ]
+                build_meta = {
+                    "task_id": task.id,
+                    "base_docker_image": base_image,
+                    "pip_requirements": task.pip_requirements or "",
+                    "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
+                    "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
+                    "hf_api_key": (
+                        _fetch_hf_key_from_server(
+                            task.id,
+                            metadata.get("main_server_url", ""),
+                            _sign_worker_token(metadata.get("submission_id", "unknown")),
                         )
-
-                # Core ML/deps — add more via task's pip_requirements field
-
-                if task.pip_requirements:
-                    req_path = os.path.join(temp_dir, "requirements.txt")
-                    with open(req_path, "w") as rf:
-                        rf.write(task.pip_requirements)
-                    os.chmod(req_path, 0o644)
-                    dockerfile_lines.extend(
-                        [
-                            "COPY requirements.txt /requirements.txt",
-                            "RUN pip install --no-cache-dir -r /requirements.txt",
-                        ]
-                    )
-
-                dockerfile_path = os.path.join(temp_dir, "Dockerfile")
-                with open(dockerfile_path, "w") as df:
-                    df.write("\n".join(dockerfile_lines))
-                os.chmod(dockerfile_path, 0o644)
-
-                logs.append(f"Building docker image '{image_tag}'...")
-                retcode, stdout, stderr, is_timeout = run_command_streaming(
-                    ["docker", "build", "-t", image_tag, temp_dir], logs, time_limit=300
-                )
-                if is_timeout:
-                    logs.append("Docker build timed out after 300 seconds!")
+                        if metadata and metadata.get("main_server_url")
+                        else hf_token or ""
+                    ),
+                }
+                if not build_task_image(build_meta):
+                    logs.append("Docker image build failed!")
                     update_status("failed", "failed", logs_list=logs)
                     report_status_to_server(metadata, "failed", "failed", logs=logs)
                     return
-                elif retcode != 0:
-                    logs.append(f"Docker build failed with return code {retcode}!")
-                    update_status("failed", "failed", logs_list=logs)
-                    report_status_to_server(metadata, "failed", "failed", logs=logs)
-                    return
-                else:
-                    logs.append("Docker image built successfully.")
+                logs.append("Docker image built successfully.")
 
         # Update status: Running Inference
         update_status("running", "running_inference", logs_list=logs)
@@ -608,21 +569,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         start_wall_time = time.time()
         stdout, stderr = "", ""
         process_timeout = False
-
-        base_image = task.base_docker_image or "python:3.10-slim"
-        import hashlib
-
-        config_str = f"{base_image}|{task.apt_packages or ''}|{task.pip_requirements or ''}"
-        config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
-        image_tag = (
-            f"lavbench_task_{task.id}_{config_hash}".lower()
-            if (task and (task.base_docker_image or task.apt_packages or task.pip_requirements))
-            else "python:3.10-slim"
-        )
-
-        hf_cache_mount = []
-        if hf_cache_dir and os.path.exists(hf_cache_dir):
-            hf_cache_mount = ["-v", f"{hf_cache_dir}:/hf_cache"]
 
         ram_limit = 8192
         if task and task.ram_limit_mb is not None:
@@ -676,7 +622,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 "/app",
             ]
             + gpu_args
-            + hf_cache_mount
             + [
                 "-e",
                 "HOME=/tmp",
@@ -878,8 +823,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         status = "completed"
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
-                        import traceback
-
                         status = "failed"
                         logs.append(f"Error during parquet metric calculation: {str(eval_err)}")
                         logs.append(f"Traceback: {traceback.format_exc()}")
@@ -1013,60 +956,14 @@ def register_worker_specs(sender, **kwargs):
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
         logger.info("Worker specs registered: %s", spec)
 
-        # Call main server to retrieve active datasets and preload them on worker startup
-        main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-
+        # Build Docker images for all active tasks + start rebuild listener
         try:
-            url = f"{main_server_url.rstrip('/')}/api/worker/active-datasets"
-            headers = {"X-Worker-Token": _sign_worker_token("worker")}
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                datasets_to_preload = data.get("datasets", [])
-                hf_api_key = data.get("hf_api_key")
-                if datasets_to_preload:
-                    logger.info("Active datasets to preload on startup: %s", datasets_to_preload)
+            from task_modules.image_builder import build_all_active_tasks, start_rebuild_listener
 
-                    # Resolve cache directory on worker
-                    hf_cache_dir = os.environ.get("HF_CACHE_DIR")
-                    if not hf_cache_dir:
-                        hf_cache_dir = os.path.abspath(
-                            os.path.join(os.path.dirname(__file__), "hf_cache")
-                        )
-
-                    try:
-                        os.makedirs(hf_cache_dir, exist_ok=True)
-                    except Exception as e:
-                        logger.warning("Cannot create hf_cache_dir %s: %s", hf_cache_dir, e)
-
-                    if os.path.exists(hf_cache_dir):
-                        try:
-                            from datasets import load_dataset as host_load_dataset
-
-                            for ds_name in datasets_to_preload:
-                                try:
-                                    logger.info(
-                                        "Preloading dataset '%s' to '%s'...", ds_name, hf_cache_dir
-                                    )
-                                    host_load_dataset(
-                                        ds_name, cache_dir=hf_cache_dir, token=hf_api_key
-                                    )
-                                    logger.info(
-                                        "Successfully preloaded dataset '%s' on worker startup.",
-                                        ds_name,
-                                    )
-                                except Exception as e:
-                                    logger.warning("Failed preloading dataset '%s': %s", ds_name, e)
-                        except Exception as import_err:
-                            logger.warning("Could not import 'datasets' to preload: %s", import_err)
-                    else:
-                        logger.warning("hf_cache_dir %s missing — preload skipped", hf_cache_dir)
-            else:
-                logger.warning(
-                    "Server rejected active-datasets (HTTP %s) — check WORKER_PUBLIC_KEY on server and WORKER_PRIVATE_KEY on worker",
-                    res.status_code,
-                )
+            worker_token = _sign_worker_token("worker")
+            build_all_active_tasks(main_server_url, worker_token)
+            start_rebuild_listener(main_server_url, worker_token)
         except Exception as e:
-            logger.warning("Error fetching/preloading active datasets: %s", e)
+            logger.warning("Failed to build active task images on startup: %s", e)
     except Exception as e:
         logger.error("Failed to register specs: %s", e)

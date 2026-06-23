@@ -89,6 +89,10 @@ export default function SubmissionViewer({
   } catch {
     cells = [];
   }
+  // Normalize string cells to objects with source property
+  cells = (cells || []).map((cell) =>
+    typeof cell === 'string' ? { type: 'code', source: cell } : cell,
+  );
 
   const isCompetitor = currentUser?.role === 'competitor';
   const isAdminOrJury = currentUser?.role === 'admin' || currentUser?.role === 'jury';

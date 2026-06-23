@@ -600,6 +600,16 @@ def create_task(challenge_id):
 
     invalidate_challenge_cache(challenge_id)
 
+    # Notify workers to rebuild Docker image for this task
+    try:
+        from cache_utils import get_redis_client
+
+        r = get_redis_client()
+        if r:
+            r.publish("task_rebuild", str(task.id))
+    except Exception:
+        pass
+
     return jsonify(task.to_dict()), 201
 
 
@@ -966,6 +976,16 @@ def update_task(task_id):
 
     invalidate_challenge_cache(task.challenge_id)
     _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
+
+    # Notify workers to rebuild Docker image for this task
+    try:
+        from cache_utils import get_redis_client
+
+        r = get_redis_client()
+        if r:
+            r.publish("task_rebuild", str(task.id))
+    except Exception:
+        pass
 
     return jsonify(task.to_dict())
 
@@ -1981,6 +2001,66 @@ def worker_download_task_file(task_id, filename):
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     return send_from_directory(task_upload_dir, saved_name)
+
+
+@tasks_bp.route("/worker/active-tasks", methods=["GET"])
+def get_active_tasks():
+    """
+    List all active task configurations for worker image pre-building.
+    ---
+    tags:
+      - Tasks
+    security:
+      - cookieAuth: []
+    responses:
+      200:
+        description: Success
+    """
+    token = request.headers.get("X-Worker-Token")
+    from auth_utils import check_worker_auth
+
+    if not check_worker_auth(token):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    active_challenges = Challenge.query.filter_by(is_archived=False).all()
+    tasks_list = []
+    import json
+
+    for challenge in active_challenges:
+        for task in challenge.tasks:
+            hf_datasets_list = []
+            if task.hf_datasets:
+                try:
+                    hf_datasets_list = (
+                        json.loads(task.hf_datasets)
+                        if isinstance(task.hf_datasets, str)
+                        else (task.hf_datasets or [])
+                    )
+                except Exception:
+                    pass
+            hf_models_list = []
+            if task.hf_models:
+                try:
+                    hf_models_list = (
+                        json.loads(task.hf_models)
+                        if isinstance(task.hf_models, str)
+                        else (task.hf_models or [])
+                    )
+                except Exception:
+                    pass
+            tasks_list.append(
+                {
+                    "id": task.id,
+                    "base_docker_image": task.base_docker_image
+                    or "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime",
+                    "pip_requirements": task.pip_requirements or "",
+                    "hf_datasets": hf_datasets_list,
+                    "hf_models": hf_models_list,
+                    "hf_api_key": task.get_hf_api_key() if task.hf_api_key else "",
+                }
+            )
+
+    return jsonify({"tasks": tasks_list}), 200
 
 
 @tasks_bp.route("/worker/active-datasets", methods=["GET"])
