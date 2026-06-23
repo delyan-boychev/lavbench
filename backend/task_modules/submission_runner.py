@@ -534,9 +534,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             base_image = task.base_docker_image or "python:3.10-slim"
 
             if _image_exists(image_tag):
-                logs.append("Docker sandbox image '%s' already exists. Skipping build.", image_tag)
+                logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
             else:
-                logs.append("Docker sandbox image '%s' not found. Building now...", image_tag)
+                logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
                 from task_modules.image_builder import build_task_image
 
                 build_meta = {
