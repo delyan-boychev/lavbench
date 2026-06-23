@@ -185,7 +185,7 @@ def build_task_image(metadata):
                 "Task %s image built successfully in %.1fs (tag: %s)", task_id, elapsed, tag
             )
             return True
-        logger.error("Task %s image build failed (rc=%s): %s", task_id, retcode, "\n".join(logs))
+        logger.error("Task %s image build failed (rc=%s)\n%s", task_id, retcode, "\n".join(logs))
         return False
     except Exception as e:
         logger.exception("Task %s image build crashed: %s", task_id, e)
@@ -195,12 +195,12 @@ def build_task_image(metadata):
 def _run_docker_build(tag, build_dir, logs):
     """Run ``docker build`` and capture output."""
     cmd = ["docker", "build", "-t", tag, build_dir]
-    return (
-        subprocess.run(cmd, capture_output=True, text=True, timeout=600).returncode,
-        "",
-        "",
-        False,
-    )
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.stdout:
+        logs.append(result.stdout.strip())
+    if result.stderr:
+        logs.append(result.stderr.strip())
+    return result.returncode, result.stdout, result.stderr, False
 
 
 def build_all_active_tasks(main_server_url, worker_token):
