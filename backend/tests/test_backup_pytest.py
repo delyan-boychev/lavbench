@@ -57,7 +57,9 @@ class TestRunBackup:
         with self._ctx():
             filename = run_backup(self.app, auto=False, challenge_id=42, state="grace_ended")
         assert "grace_ended" in filename
-        mock_makedirs.assert_any_call(os.path.join(os.environ.get("BACKUPS_DIR", "/backups"), "challenge_42"), exist_ok=True)
+        mock_makedirs.assert_any_call(
+            os.path.join(os.environ.get("BACKUPS_DIR", "/backups"), "challenge_42"), exist_ok=True
+        )
 
     @patch("task_modules.system.subprocess.run")
     @patch("task_modules.system.os.makedirs")

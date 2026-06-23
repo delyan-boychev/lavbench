@@ -131,8 +131,8 @@ describe('NotebookSubmit Component', () => {
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Parsed 3 cells from "my_solution.ipynb".');
       expect(screen.getByText('Select Cells (0/2 code cells)')).toBeInTheDocument();
-      expect(screen.getByText('[1] code')).toBeInTheDocument();
-      expect(screen.getByText('[2] code')).toBeInTheDocument();
+      expect(screen.getByText(/Cell \[1\]/)).toBeInTheDocument();
+      expect(screen.getByText(/Cell \[2\]/)).toBeInTheDocument();
     });
   });
 
@@ -205,8 +205,8 @@ describe('NotebookSubmit Component', () => {
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
 
-    // Select the cell
-    fireEvent.click(screen.getByText('[0] code'));
+    // Select the cell by clicking its checkbox
+    fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
     expect(screen.getByText('Select Cells (1/1 code cells)')).toBeInTheDocument();
 

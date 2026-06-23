@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Badge from '../ui/Badge';
-import CodeHighlight from '../ui/CodeHighlight';
+import CodePreview from '../ui/CodePreview';
 import EmptyState from '../ui/EmptyState';
 import { Star } from 'lucide-react';
 import ToggleField from '../ui/ToggleField';
@@ -37,11 +37,11 @@ export default function SubmissionViewer({
   }, [submission?.id]);
 
   useEffect(() => {
-    if (!submission || submission.status === 'completed' || submission.status === 'failed') {
+    if (!submission) {
       return;
     }
 
-    setLiveLogs(t('submissions.connecting_live_logs', 'Connecting to live logs...\n'));
+    setLiveLogs('');
 
     const sseUrl = `/api/submissions/${submission.id}/logs/live`;
 
@@ -60,8 +60,7 @@ export default function SubmissionViewer({
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error('Live logs SSE error:', err);
+    eventSource.onerror = () => {
       eventSource.close();
     };
 
@@ -265,21 +264,7 @@ export default function SubmissionViewer({
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">
             {t('submissions.submitted_code', { count: cells.length })}
           </div>
-          <div className="flex flex-col gap-3">
-            {cells.map((cell, idx) => (
-              <div key={idx}>
-                <div className="text-[10px] text-slate-500 font-mono mb-1">
-                  {t('submissions.cell_label', { id: cell.id ?? idx, type: cell.type || 'code' })}
-                </div>
-                <CodeHighlight
-                  code={cell.source || ''}
-                  language={cell.type === 'code' ? 'python' : 'markdown'}
-                  wrap={true}
-                  maxHeight="200px"
-                />
-              </div>
-            ))}
-          </div>
+          <CodePreview cells={cells} defaultCollapsed={true} maxHeight="200px" />
         </div>
       )}
     </div>

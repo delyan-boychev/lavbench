@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import ChallengeService from '../../services/ChallengeService';
 import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
-import CodeHighlight from '../ui/CodeHighlight';
+import CodePreview from '../ui/CodePreview';
 import { Book } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,7 +15,6 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const [cells, setCells] = useState([]); // eslint-disable-line no-unused-vars
   const [selectedCellIds, setSelectedCellIds] = useState([]);
-  const [collapsedCellIds, setCollapsedCellIds] = useState([]);
   const [fileName, setFileName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +94,6 @@ export default function NotebookSubmit({ task, challenge }) {
     }
     setUploading(true);
     setSelectedCellIds([]);
-    setCollapsedCellIds([]);
     setCells([]);
     try {
       const res = await ChallengeService.parseNotebook(challenge.id, file);
@@ -133,18 +131,6 @@ export default function NotebookSubmit({ task, challenge }) {
     }
   };
 
-  const toggleCell = (id) => {
-    setSelectedCellIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const toggleCollapse = (id) => {
-    setCollapsedCellIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
   const handleSubmit = async () => {
     if (selectedCellIds.length === 0) {
       showToast(t('challenge.select_cells_to_submit'), 'error');
@@ -158,7 +144,6 @@ export default function NotebookSubmit({ task, challenge }) {
         showToast(t('challenge.submission_queued'));
         setCells([]);
         setSelectedCellIds([]);
-        setCollapsedCellIds([]);
         setFileName('');
       } else {
         showToast(res.data?.error || t('challenge.submission_failed'), 'error');
@@ -300,91 +285,18 @@ export default function NotebookSubmit({ task, challenge }) {
           </div>
           <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
               maxHeight: 500,
               overflowY: 'auto',
             }}
           >
-            {cells.map((cell, idx) => {
-              const isCode = cell.type === 'code';
-              const isSelected = selectedCellIds.includes(cell.id);
-              const isCollapsed = collapsedCellIds.includes(cell.id);
-              return (
-                <div
-                  key={cell.id}
-                  onClick={() => isCode && toggleCell(cell.id)}
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'flex-start',
-                    padding: '8px 12px',
-                    background: isSelected ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-                    border: `1px solid ${isSelected ? 'var(--accent-border)' : 'var(--border)'}`,
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: isCode ? 'pointer' : 'default',
-                    opacity: isCode ? 1 : 0.5,
-                    transition: 'all 0.12s ease',
-                  }}
-                >
-                  <label
-                    className={`relative inline-flex items-center ${isCode ? 'cursor-pointer' : 'cursor-default'} select-none flex-shrink-0`}
-                    style={{ marginTop: 2 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => isCode && toggleCell(cell.id)}
-                      disabled={!isCode}
-                      className="sr-only peer"
-                      readOnly
-                    />
-                    <div className="relative w-8 h-4.5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-[14px] peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-500 peer-checked:after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-disabled:opacity-40"></div>
-                  </label>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: 8,
-                        alignItems: 'center',
-                        marginBottom: 4,
-                        userSelect: 'none',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.68rem',
-                          fontWeight: 700,
-                          color: isCode ? 'var(--accent)' : 'var(--text-muted)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        [{idx}] {cell.type}
-                      </span>
-                      {isCode && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleCollapse(cell.id);
-                          }}
-                          className="btn btn-ghost btn-xs text-[10px] py-0 px-1.5 h-auto text-slate-500 hover:text-slate-300"
-                          style={{ minHeight: 'auto', padding: '1px 4px', fontSize: '10px' }}
-                          type="button"
-                          title={t('challenge.toggle_collapse')}
-                        >
-                          {isCollapsed
-                            ? `▶ ${t('challenge.expand')}`
-                            : `▼ ${t('challenge.collapse')}`}
-                        </button>
-                      )}
-                    </div>
-                    {!isCollapsed && <CodeHighlight code={cell.source || ''} wrap={true} />}
-                  </div>
-                </div>
-              );
-            })}
+            <CodePreview
+              cells={cells}
+              selectable={true}
+              selectedIds={selectedCellIds}
+              onSelectionChange={setSelectedCellIds}
+              defaultCollapsed={false}
+              maxHeight="300px"
+            />
           </div>
         </div>
       )}

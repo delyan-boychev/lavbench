@@ -3,6 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import SubmissionViewer from './SubmissionViewer';
 
+vi.stubGlobal(
+  'EventSource',
+  class {
+    constructor() {}
+    close = vi.fn();
+  },
+);
+
 vi.mock('../../AuthContext', () => ({
   useAuth: () => ({
     currentUser: { role: 'competitor', username: 'test_comp' },
@@ -137,7 +145,6 @@ describe('SubmissionViewer Component', () => {
 
     expect(mockEventSourceInstances.length).toBe(1);
     expect(mockEventSourceInstances[0].url).toContain('/api/submissions/42/logs/live');
-    expect(screen.getByText(/Connecting to live logs/i)).toBeInTheDocument();
 
     const event = { data: JSON.stringify({ log: 'Building docker sandbox...' }) };
     act(() => {
