@@ -259,7 +259,8 @@ def _rebuild_listener(main_server_url, worker_token):
             msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=60)
             if msg and msg.get("type") == "message":
                 try:
-                    task_id = int(msg.get("data", ""))
+                    raw_data = msg.get("data")
+                    task_id = (raw_data.decode("utf-8") if isinstance(raw_data, bytes) else str(raw_data)).strip()
                     logger.info("Rebuild notification for task %s", task_id)
                     # Fetch updated config from the server
                     import requests
