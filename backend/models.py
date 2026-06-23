@@ -220,7 +220,6 @@ class User(db.Model):
                 "role": self.role,
                 "challenge_id": self.challenge_id,
                 "is_anonymous": self.is_anonymous,
-                "manual_points": manual_pts,
             }
 
         # Decrypt fields for display to authorized viewers
@@ -267,9 +266,7 @@ class Challenge(db.Model):
     end_time = db.Column(db.DateTime, nullable=False)
     is_frozen = db.Column(db.Boolean, default=False, nullable=False)
     double_blind = db.Column(db.Boolean, default=True, nullable=False)
-    reveal_public_scores = db.Column(db.Boolean, default=True, nullable=False)
-    reveal_private_scores = db.Column(db.Boolean, default=True, nullable=False)
-    reveal_points = db.Column(db.Boolean, default=True, nullable=False)
+    reveal_results = db.Column(db.Boolean, default=True, nullable=False)
     timezone = db.Column(db.String(50), nullable=False, default="UTC")
 
     tasks = db.relationship("Task", backref="challenge", lazy=True, cascade="all, delete-orphan")
@@ -338,9 +335,7 @@ class Challenge(db.Model):
             "is_active": self.is_active,
             "is_archived": self.is_archived,
             "scores_finalized": self.scores_finalized,
-            "reveal_public_scores": self.reveal_public_scores,
-            "reveal_private_scores": self.reveal_private_scores,
-            "reveal_points": self.reveal_points,
+            "reveal_results": self.reveal_results,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "is_frozen": self.is_frozen,
@@ -373,9 +368,7 @@ class Stage(db.Model):
 
     is_finalized = db.Column(db.Boolean, default=False, nullable=False)
     finalize_type = db.Column(db.String(50), nullable=True)  # "internal" or "visible"
-    reveal_public = db.Column(db.Boolean, default=True, nullable=False)
-    reveal_private = db.Column(db.Boolean, default=False, nullable=False)
-    reveal_points = db.Column(db.Boolean, default=False, nullable=False)
+    reveal_results = db.Column(db.Boolean, default=False, nullable=False)
 
     def to_dict(self):
         return {
@@ -387,9 +380,7 @@ class Stage(db.Model):
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "is_finalized": self.is_finalized,
             "finalize_type": self.finalize_type,
-            "reveal_public": self.reveal_public,
-            "reveal_private": self.reveal_private,
-            "reveal_points": self.reveal_points,
+            "reveal_results": self.reveal_results,
         }
 
 

@@ -1288,7 +1288,7 @@ class TestRouteLevelLogic:
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
             data=json.dumps(
-                {"reveal_public_scores": True, "reveal_private_scores": True, "reveal_points": True}
+                {"reveal_results": True}
             ),
             content_type="application/json",
             headers=self.get_auth_header(self.admin_token),
@@ -1298,7 +1298,7 @@ class TestRouteLevelLogic:
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
             data=json.dumps(
-                {"reveal_public_scores": True, "reveal_private_scores": True, "reveal_points": True}
+                {"reveal_results": True}
             ),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
@@ -1312,7 +1312,7 @@ class TestRouteLevelLogic:
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
             data=json.dumps(
-                {"reveal_public_scores": True, "reveal_private_scores": True, "reveal_points": True}
+                {"reveal_results": True}
             ),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
@@ -1450,7 +1450,7 @@ class TestRouteLevelLogic:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
-            data=json.dumps({"finalize_type": "visible", "reveal_public": True}),
+            data=json.dumps({"finalize_type": "visible", "reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )

@@ -209,9 +209,7 @@ def import_challenge_from_dict(data):
         end_time=_parse_dt(data.get("end_time")) or datetime.utcnow(),
         is_frozen=bool(data.get("is_frozen", False)),
         double_blind=bool(data.get("double_blind", True)),
-        reveal_public_scores=bool(data.get("reveal_public_scores", True)),
-        reveal_private_scores=bool(data.get("reveal_private_scores", True)),
-        reveal_points=bool(data.get("reveal_points", True)),
+        reveal_results=bool(data.get("reveal_results", True)),
         timezone=data.get("timezone", "UTC"),
     )
     db.session.add(challenge)
@@ -228,9 +226,7 @@ def import_challenge_from_dict(data):
             end_time=_parse_dt(s_data.get("end_time")) or datetime.utcnow(),
             is_finalized=False,
             finalize_type=s_data.get("finalize_type"),
-            reveal_public=bool(s_data.get("reveal_public", True)),
-            reveal_private=bool(s_data.get("reveal_private", False)),
-            reveal_points=bool(s_data.get("reveal_points", False)),
+            reveal_results=bool(s_data.get("reveal_results", False)),
         )
         db.session.add(stage)
         db.session.flush()

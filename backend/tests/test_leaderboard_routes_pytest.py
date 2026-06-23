@@ -32,9 +32,7 @@ class TestChallengeLeaderboardGetEndpoint:
             end_time=datetime.utcnow() + timedelta(hours=2),
             is_frozen=False,
             double_blind=True,
-            reveal_public_scores=True,
-            reveal_private_scores=False,
-            reveal_points=False,
+            reveal_results=True,
             scores_finalized=False,
         )
         db_session.add(self.challenge)
@@ -232,7 +230,7 @@ class TestChallengeLeaderboardGetEndpoint:
     @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_scores_finalized_shows_all_details(self, mock_build, client, db_session):
         self.challenge.scores_finalized = True
-        self.challenge.reveal_points = True
+        self.challenge.reveal_results = True
         db_session.flush()
 
         entry = {
@@ -274,9 +272,7 @@ class TestChallengeLeaderboardGetEndpoint:
         assert "metric_name" in data
         assert "is_normalized" in data
         assert "is_finalized" in data
-        assert "reveal_public_scores" in data
-        assert "reveal_private_scores" in data
-        assert "reveal_points" in data
+        assert "reveal_results" in data
         assert "tasks" in data
         assert "leaderboard" in data
 

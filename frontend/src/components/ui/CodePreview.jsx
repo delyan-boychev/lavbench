@@ -8,7 +8,7 @@ export default function CodePreview({
   maxHeight = '300px',
   selectable = false,
   selectedIds = [],
-  onSelectionChange,
+  onSelectionChange = null,
 }) {
   if (!cells || cells.length === 0) return null;
 
@@ -61,6 +61,7 @@ function CodeCell({
 
   return (
     <div
+      className="relative"
       style={{
         border: `1px solid ${selected ? 'var(--accent-border)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-md)',

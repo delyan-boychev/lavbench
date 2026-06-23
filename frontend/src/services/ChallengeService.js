@@ -13,6 +13,8 @@ const ChallengeService = {
   delete: (id) => api.delete(`/challenges/${id}`),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/finalize']['post']['responses']['200']['content']['application/json'] }>} */
   finalize: (id, data) => api.post(`/challenges/${id}/finalize`, data),
+  toggleReveal: (id, reveal_results) =>
+    api.put(`/challenges/${id}/reveal-results`, { reveal_results }),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json'] }>} */
   archiveToggle: (id) => api.post(`/challenges/${id}/archive`),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/leaderboard']['get']['responses']['200']['content']['application/json'] }>} */

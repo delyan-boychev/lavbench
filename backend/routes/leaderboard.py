@@ -162,18 +162,18 @@ def get_leaderboard(challenge_id):
 
                 if challenge.scores_finalized:
                     reveal_task_pub = True
-                    reveal_task_priv = True
-                    reveal_task_pts = True
+                    reveal_task_priv = challenge.reveal_results
+                    reveal_task_pts = challenge.reveal_results
                 elif stage:
                     if stage.is_finalized:
                         if stage.finalize_type == "visible":
-                            reveal_task_pub = stage.reveal_public
-                            reveal_task_priv = stage.reveal_private
-                            reveal_task_pts = stage.reveal_points
+                            reveal_task_pub = stage.reveal_results
+                            reveal_task_priv = stage.reveal_results
+                            reveal_task_pts = stage.reveal_results
                     else:
-                        reveal_task_pub = challenge.reveal_public_scores
+                        reveal_task_pub = challenge.reveal_results
                 else:
-                    reveal_task_pub = challenge.reveal_public_scores
+                    reveal_task_pub = challenge.reveal_results
 
                 if is_self:
                     reveal_task_pub = True
@@ -282,7 +282,7 @@ def get_leaderboard(challenge_id):
     else:
         now = datetime.utcnow()
         has_started = challenge.start_time is not None and now >= challenge.start_time
-        reveal_pts = challenge.reveal_points
+        reveal_results = challenge.reveal_results
 
         post_processed_leaderboard = []
         for entry in cached_entries:
@@ -347,9 +347,7 @@ def get_leaderboard(challenge_id):
             "metric_name": metric_name,
             "is_normalized": is_normalized,
             "is_finalized": challenge.scores_finalized,
-            "reveal_public_scores": challenge.reveal_public_scores,
-            "reveal_private_scores": challenge.reveal_private_scores,
-            "reveal_points": challenge.reveal_points,
+            "reveal_results": challenge.reveal_results,
             "tasks": tasks_list,
             "leaderboard": post_processed_leaderboard,
         }

@@ -107,9 +107,7 @@ describe('LeaderboardTable Component', () => {
       title: 'Challenge A',
       scores_finalized: true,
       metric_name: 'Accuracy',
-      reveal_public_scores: true,
-      reveal_private_scores: true,
-      reveal_points: true,
+      reveal_results: true,
     };
     const tasks = [{ id: 1, title: 'Task 1' }];
     const data = [
@@ -177,11 +175,7 @@ describe('LeaderboardTable Component', () => {
     expect(submitBtn).toBeInTheDocument();
     fireEvent.click(submitBtn);
 
-    expect(ChallengeService.finalize).toHaveBeenCalledWith(12, {
-      reveal_public_scores: true,
-      reveal_private_scores: true,
-      reveal_points: true,
-    });
+    expect(ChallengeService.finalize).toHaveBeenCalledWith(12, {});
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Scores finalized — visibility options applied.');
@@ -198,6 +192,7 @@ describe('LeaderboardTable Component', () => {
       metric_name: 'Accuracy',
       double_blind: false,
     };
+    const tasks = [{ id: 10, title: 'Task 1' }];
     const data = [
       {
         rank: 1,
@@ -208,9 +203,14 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
+    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+
+    // Baseline hidden from general tab
+    expect(screen.queryByText('Baseline')).not.toBeInTheDocument();
+
+    // Switch to per-task tab — baselines visible pre-finalized
+    fireEvent.click(screen.getByText('Task 1'));
     expect(screen.getByText('Baseline')).toBeInTheDocument();
-    expect(screen.queryByTitle('Toggle details')).not.toBeInTheDocument();
   });
 
   it('shows true name for other users when jury/admin view during blind mode', () => {
@@ -388,13 +388,17 @@ describe('LeaderboardTable Component', () => {
     });
   });
 
-  it('toggles in finalize modal update the submission payload', async () => {
+  it('reveal toggle shows after finalization for jury', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
-    ChallengeService.finalize.mockResolvedValue({ ok: true });
+    ChallengeService.toggleReveal = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { reveal_results: true },
+    });
     const challenge = {
       id: 12,
       title: 'Challenge A',
-      scores_finalized: false,
+      scores_finalized: true,
+      reveal_results: false,
       metric_name: 'Accuracy',
     };
     const data = [
@@ -402,28 +406,13 @@ describe('LeaderboardTable Component', () => {
     ];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
-    fireEvent.click(screen.getByText('Finalize & Reveal Identities'));
-
-    const publicToggle = screen.getByLabelText('Reveal Public Scores');
-    const privateToggle = screen.getByLabelText('Reveal Private Scores');
-    const pointsToggle = screen.getByLabelText('Reveal Manual Points & Aggregates');
-
-    fireEvent.click(publicToggle);
-    fireEvent.click(privateToggle);
-    fireEvent.click(pointsToggle);
-
-    fireEvent.click(screen.getByText('Finalize & Reveal'));
-
-    expect(ChallengeService.finalize).toHaveBeenCalledWith(12, {
-      reveal_public_scores: false,
-      reveal_private_scores: false,
-      reveal_points: false,
-    });
+    expect(screen.getByText('Reveal Results')).toBeInTheDocument();
   });
 
   it('saves manual points and refreshes on blur', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
     ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
     const onRefresh = vi.fn();
     const challenge = {
       id: 12,
@@ -468,7 +457,7 @@ describe('LeaderboardTable Component', () => {
   });
 
   it('shows error toast when save manual points returns invalid input', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
     const challenge = {
       id: 12,
       title: 'Challenge A',

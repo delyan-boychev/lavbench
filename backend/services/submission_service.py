@@ -50,14 +50,16 @@ def check_execution_rules(task, cells_list):
     combined_code = "\n".join(extracted_cells)
 
     # Always-banned dynamic execution bypasses (unconditional — cannot be opted out)
+    import re
+
     dangerous_patterns = [
-        ("__import__(", "Rule Violation: Dynamic imports via __import__() are not allowed."),
-        ("exec(", "Rule Violation: exec() is not allowed."),
-        ("eval(", "Rule Violation: eval() is not allowed."),
-        ("compile(", "Rule Violation: compile() is not allowed."),
+        (re.compile(r"(?:^|\s|['\"(])__import__\s*\("), "Rule Violation: Dynamic imports via __import__() are not allowed."),
+        (re.compile(r"(?:^|\s|['\"(])exec\s*\("), "Rule Violation: exec() is not allowed."),
+        (re.compile(r"(?:^|\s|['\"(])eval\s*\("), "Rule Violation: eval() is not allowed."),
+        (re.compile(r"(?:^|\s|['\"(])compile\s*\("), "Rule Violation: compile() is not allowed."),
     ]
     for pattern, message in dangerous_patterns:
-        if pattern in combined_code:
+        if pattern.search(combined_code):
             return False, message
 
     # Always-banned importlib bypass

@@ -31,13 +31,7 @@ class TestFinalizeChallenge:
 
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
-            data=json.dumps(
-                {
-                    "reveal_public_scores": True,
-                    "reveal_private_scores": True,
-                    "reveal_points": True,
-                }
-            ),
+            data=json.dumps({}),
             content_type="application/json",
             headers=headers,
         )
@@ -145,25 +139,38 @@ class TestFinalizeChallenge:
         sample_competitor.manual_points = {str(sample_task.id): 75}
         db_session.commit()
 
+        # Finalize first (no reveal options)
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/finalize",
-            data=json.dumps(
-                {
-                    "reveal_public_scores": False,
-                    "reveal_private_scores": False,
-                    "reveal_points": False,
-                }
-            ),
+            data=json.dumps({}),
             content_type="application/json",
             headers=headers,
         )
         assert res.status_code == 200
         db_session.refresh(sample_challenge)
-        assert sample_challenge.reveal_public_scores is False
-        assert sample_challenge.reveal_private_scores is False
-        assert sample_challenge.reveal_points is False
+        assert sample_challenge.scores_finalized is True
 
+        # Toggle reveal — turn off
+        res2 = client.put(
+            f"/api/challenges/{sample_challenge.id}/reveal-results",
+            data=json.dumps({"reveal_results": False}),
+            content_type="application/json",
+            headers=headers,
+        )
+        assert res2.status_code == 200
+        db_session.refresh(sample_challenge)
+        assert sample_challenge.reveal_results is False
 
+        # Toggle reveal — turn back on
+        res3 = client.put(
+            f"/api/challenges/{sample_challenge.id}/reveal-results",
+            data=json.dumps({"reveal_results": True}),
+            content_type="application/json",
+            headers=headers,
+        )
+        assert res3.status_code == 200
+        db_session.refresh(sample_challenge)
+        assert sample_challenge.reveal_results is True
 # ═══════════════════════════════════════════════════════════════════════════
 # Test-Competition endpoint:  POST /challenges/<id>/test-competition
 # Requires role: admin or jury

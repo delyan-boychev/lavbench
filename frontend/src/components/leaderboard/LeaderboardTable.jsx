@@ -5,7 +5,6 @@ import { useApp } from '../../context/AppContext';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import TabScrollContainer from '../ui/TabScrollContainer';
-import ToggleField from '../ui/ToggleField';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, RefreshCw, BarChart3 } from 'lucide-react';
@@ -25,8 +24,6 @@ function Row({
   doubleBlind,
   isExpanded,
   onToggleExpand,
-  // eslint-disable-next-line no-unused-vars
-  isAdmin,
   challengeId,
   showPublicCols,
   showPrivateCols,
@@ -37,39 +34,31 @@ function Row({
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
-  const medalStyle = rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
-  const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
-  const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isJuryOrAdmin;
-  const showDemographics =
-    showIdentity && (!entry.user?.is_anonymous || isJuryOrAdmin || isCurrentUser);
+  const isAdmin = currentUser?.role === 'admin';
+  const isJury = currentUser?.role === 'jury';
+  const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isAdmin;
+  const showDemographics = showIdentity && (!entry.user?.is_anonymous || isAdmin || isCurrentUser);
   const isBaseline = entry.is_baseline_entry;
+  const medalStyle = !isBaseline && rank >= 1 && rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
 
-  // Manage temporary points state during editing
-  const [tempPoints, setTempPoints] = useState({}); // eslint-disable-line react-hooks/set-state-in-effect
+  const [tempPoints, setTempPoints] = useState({});
 
   const handlePointsChange = (taskId, value) => {
-    setTempPoints((prev) => ({
-      ...prev,
-      [taskId]: value,
-    }));
+    setTempPoints((prev) => ({ ...prev, [taskId]: value }));
   };
 
   const handleSavePoints = async (taskId) => {
     const rawVal = tempPoints[taskId];
-    if (rawVal === undefined) return; // Not modified
-
+    if (rawVal === undefined) return;
     const pts = parseInt(rawVal);
     if (isNaN(pts) || pts < 0 || pts > 100) {
       showToast(t('leaderboard.save_points_error'), 'error');
       return;
     }
-
     try {
       const res = await ChallengeService.saveManualPoints(challengeId, {
         user_id: entry.user.id,
-        points: {
-          [taskId]: pts,
-        },
+        points: { [taskId]: pts },
       });
       if (res.ok) {
         showToast(
@@ -99,7 +88,7 @@ function Row({
   } else {
     if (showPublicCols) colSpanCount++;
     if (showPrivateCols) colSpanCount++;
-    if (showPointsCols || isJuryOrAdmin) colSpanCount++;
+    if (showPointsCols) colSpanCount++;
   }
 
   return (
@@ -125,16 +114,22 @@ function Row({
 
         {/* Rank column */}
         <td className="px-4 py-3 text-center w-14 text-slate-300">
-          <div
-            className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`}
-            title={t('leaderboard.rank_tooltip', { rank })}
-          >
-            <span
-              className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}
+          {isBaseline ? (
+            <span className="text-xs text-slate-500 font-mono">—</span>
+          ) : !entry.has_submitted ? (
+            <span className="text-xs text-slate-500 font-mono">—</span>
+          ) : (
+            <div
+              className={`flex items-center justify-center w-7 h-7 rounded-full border-2 mx-auto ${medalStyle || 'bg-slate-800/60 border-slate-700/60'}`}
+              title={t('leaderboard.rank_tooltip', { rank })}
             >
-              {rank}
-            </span>
-          </div>
+              <span
+                className={`text-xs font-extrabold font-mono ${medalStyle ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]' : 'text-slate-400'}`}
+              >
+                {rank}
+              </span>
+            </div>
+          )}
         </td>
 
         {/* Participant Details */}
@@ -183,8 +178,10 @@ function Row({
               </td>
             )}
             {showPointsCols && (
-              <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 text-sm">
-                {t('leaderboard.points_short', { count: entry.total_points })}
+              <td className="px-4 py-3 text-right font-mono font-bold text-sm">
+                <span className="text-amber-400">
+                  {isBaseline ? '—' : t('leaderboard.points_short', { count: entry.total_points })}
+                </span>
               </td>
             )}
           </>
@@ -200,9 +197,9 @@ function Row({
                 {scoreObj.private_score != null ? scoreObj.private_score.toFixed(4) : '—'}
               </td>
             )}
-            {(showPointsCols || isJuryOrAdmin) && (
+            {showPointsCols && (
               <td className="px-4 py-3 text-right font-mono font-bold text-sm">
-                {isJuryOrAdmin && !isFinalized ? (
+                {isJury && !isFinalized && !isBaseline ? (
                   <input
                     type="number"
                     min="0"
@@ -223,9 +220,11 @@ function Row({
                   />
                 ) : (
                   <span className="text-amber-400">
-                    {t('leaderboard.points_short', {
-                      count: entry.user?.manual_points?.[activeTask.id.toString()] ?? 0,
-                    })}
+                    {isBaseline
+                      ? '—'
+                      : t('leaderboard.points_short', {
+                          count: entry.user?.manual_points?.[activeTask.id.toString()] ?? 0,
+                        })}
                   </span>
                 )}
               </td>
@@ -322,38 +321,16 @@ function Row({
                             </div>
                           )}
                         </div>
-                        {(showPointsCols || isJuryOrAdmin) && (
+                        {showPointsCols && (
                           <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
                             <span className="text-slate-500">
                               {t('leaderboard.manual_points_label')}
                             </span>
-                            {isJuryOrAdmin && !isFinalized && !isBaseline ? (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  value={
-                                    tempPoints[task.id] ??
-                                    entry.user?.manual_points?.[task.id.toString()] ??
-                                    0
-                                  }
-                                  onChange={(e) => handlePointsChange(task.id, e.target.value)}
-                                  onBlur={() => handleSavePoints(task.id)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      /** @type {HTMLElement} */ (e.target).blur();
-                                    }
-                                  }}
-                                  className="w-14 px-1 py-0.5 text-center bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-xs text-indigo-300"
-                                />
-                                <span className="text-[10px] text-slate-500">/ 100</span>
-                              </div>
-                            ) : (
-                              <span className="text-amber-400 font-bold font-mono">
-                                {t('leaderboard.points_short', { count: manualPts })}
-                              </span>
-                            )}
+                            <span className="text-amber-400 font-bold font-mono">
+                              {isBaseline
+                                ? '—'
+                                : t('leaderboard.points_short', { count: manualPts })}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -388,12 +365,23 @@ export default function LeaderboardTable({
 
   const [activeTab, setActiveTab] = useState('general');
   const [expandedUserIds, setExpandedUserIds] = useState(new Set());
-
-  // Finalize Settings Modal
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
-  const [revealPub, setRevealPub] = useState(true);
-  const [revealPriv, setRevealPriv] = useState(true);
-  const [revealPoints, setRevealPoints] = useState(true);
+  const [isRevealing, setIsRevealing] = useState(false);
+
+  const handleToggleReveal = async () => {
+    setIsRevealing(true);
+    const res = await ChallengeService.toggleReveal(challenge.id, !challenge.reveal_results);
+    if (res.ok) {
+      showToast(
+        res.data.reveal_results
+          ? t('leaderboard.results_revealed')
+          : t('leaderboard.results_hidden'),
+      );
+      fetchChallenges();
+      if (onRefresh) onRefresh();
+    }
+    setIsRevealing(false);
+  };
 
   const handleToggleExpand = (userId) => {
     setExpandedUserIds((prev) => {
@@ -409,11 +397,7 @@ export default function LeaderboardTable({
 
   const handleFinalizeSubmit = async () => {
     setIsFinalizeModalOpen(false);
-    const res = await ChallengeService.finalize(challenge.id, {
-      reveal_public_scores: revealPub,
-      reveal_private_scores: revealPriv,
-      reveal_points: revealPoints,
-    });
+    const res = await ChallengeService.finalize(challenge.id, {});
     if (res.ok) {
       showToast(
         t('leaderboard.scores_finalized_success', 'Scores finalized — visibility options applied.'),
@@ -437,12 +421,22 @@ export default function LeaderboardTable({
   }
 
   // Calculate Sub-column visibility rules
-  const showPublicCols = !isFinalized || isJuryOrAdmin || challenge?.reveal_public_scores;
-  const showPrivateCols = isFinalized && (isJuryOrAdmin || challenge?.reveal_private_scores);
-  const showPointsCols = isFinalized && (isJuryOrAdmin || challenge?.reveal_points);
+  const showPublicCols = !isFinalized || isJuryOrAdmin || challenge?.reveal_results;
+  const showPrivateCols = isJuryOrAdmin || (isFinalized && challenge?.reveal_results);
+  const showPointsCols = isJuryOrAdmin || (isFinalized && challenge?.reveal_results);
 
   // 1. Sort and rank display data dynamically based on active tab
   let displayData = [...data];
+
+  // Baseline entries never appear in the general tab
+  if (activeTab === 'general') {
+    displayData = displayData.filter((e) => !e.is_baseline_entry);
+  }
+  // In per-task tabs, baselines are hidden only after finalization
+  if (isFinalized) {
+    displayData = displayData.filter((e) => !e.is_baseline_entry);
+  }
+
   const isMse = (challenge?.metric_name || '').toLowerCase() in { mse: 1, loss: 1, error: 1 };
 
   if (activeTab !== 'general') {
@@ -481,23 +475,41 @@ export default function LeaderboardTable({
       return nameA.localeCompare(nameB);
     });
 
-    let currentRank = 1;
+    let currentRank = 0;
     displayData = displayData.map((entry, index) => {
       const entryCopy = { ...entry };
-      if (index > 0) {
-        let isTie;
-        if (isFinalized) {
-          const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
-          const ptsB = Number(displayData[index - 1].user?.manual_points?.[activeTaskIdStr] ?? 0);
-          isTie = ptsA === ptsB;
-        } else {
-          const scoreA = entry.task_scores?.[activeTaskIdStr]?.public_score;
-          const scoreB = displayData[index - 1].task_scores?.[activeTaskIdStr]?.public_score;
-          isTie = scoreA != null && scoreB != null && scoreA === scoreB;
-        }
-        if (!isTie) {
+      if (!entry.is_baseline_entry) {
+        // Only rank entries that have submitted
+        const hasScore = entry.has_submitted;
+        if (hasScore) {
           // eslint-disable-next-line react-hooks/immutability
-          currentRank = index + 1;
+          currentRank += 1;
+        }
+        // Find previous non-baseline entry for tie comparison
+        let prevIdx = index - 1;
+        let prevNonBaseline = null;
+        while (prevIdx >= 0) {
+          const candidate = displayData[prevIdx];
+          if (!candidate.is_baseline_entry) {
+            prevNonBaseline = candidate;
+            break;
+          }
+          prevIdx--;
+        }
+        if (prevNonBaseline) {
+          let isTie;
+          if (isFinalized) {
+            const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
+            const ptsB = Number(prevNonBaseline.user?.manual_points?.[activeTaskIdStr] ?? 0);
+            isTie = ptsA === ptsB;
+          } else {
+            const scoreA = entry.task_scores?.[activeTaskIdStr]?.public_score;
+            const scoreB = prevNonBaseline.task_scores?.[activeTaskIdStr]?.public_score;
+            isTie = scoreA != null && scoreB != null && scoreA === scoreB;
+          }
+          if (isTie) {
+            currentRank = prevNonBaseline.rank;
+          }
         }
       }
       entryCopy.rank = currentRank;
@@ -554,6 +566,14 @@ export default function LeaderboardTable({
             {t('leaderboard.finalize_button')}
           </Button>
         )}
+        {/* Reveal toggle — jury only, after finalization */}
+        {isJury && isFinalized && challenge && (
+          <Button variant="secondary" size="sm" onClick={handleToggleReveal} disabled={isRevealing}>
+            {challenge?.reveal_results
+              ? t('leaderboard.hide_results')
+              : t('leaderboard.reveal_results')}
+          </Button>
+        )}
       </div>
 
       {/* Tabs for General Standings vs Tasks */}
@@ -599,7 +619,7 @@ export default function LeaderboardTable({
               <thead>
                 <tr className="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   <th className="px-4 py-3 text-center w-10"></th>
-                  <th className="px-4 py-3 text-center w-12">#</th>
+                  <th className="px-4 py-3 text-center w-14">#</th>
                   <th className="px-4 py-3 text-left">{t('leaderboard.participant_header')}</th>
 
                   {activeTab === 'general' ? (
@@ -626,7 +646,7 @@ export default function LeaderboardTable({
                       {showPrivateCols && (
                         <th className="px-4 py-3 text-right">{t('leaderboard.private_score')}</th>
                       )}
-                      {(showPointsCols || isJuryOrAdmin) && (
+                      {showPointsCols && (
                         <th className="px-4 py-3 text-right">{t('leaderboard.manual_points')}</th>
                       )}
                     </>
@@ -645,7 +665,6 @@ export default function LeaderboardTable({
                     doubleBlind={challenge?.double_blind !== false}
                     isExpanded={expandedUserIds.has(entry.user?.id)}
                     onToggleExpand={() => handleToggleExpand(entry.user?.id)}
-                    isAdmin={isJuryOrAdmin}
                     challengeId={challenge?.id}
                     showPublicCols={showPublicCols}
                     showPrivateCols={showPrivateCols}
@@ -660,7 +679,7 @@ export default function LeaderboardTable({
         )}
       </div>
 
-      {/* Finalize settings Modal */}
+      {/* Finalize Modal — confirm only, no reveal toggle */}
       <Modal
         isOpen={isFinalizeModalOpen}
         onClose={() => setIsFinalizeModalOpen(false)}
@@ -678,39 +697,6 @@ export default function LeaderboardTable({
       >
         <div className="flex flex-col gap-5 text-sm text-slate-300">
           <p>{t('leaderboard.finalize_modal_desc', { title: challenge?.title })}</p>
-          <p className="text-xs text-slate-400">{t('leaderboard.finalize_visibility_desc')}</p>
-
-          <div className="flex flex-col gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800/60">
-            <ToggleField
-              label={t('leaderboard.reveal_public_scores')}
-              id="reveal_pub"
-              checked={revealPub}
-              onChange={(e) => setRevealPub(e.target.checked)}
-            />
-            <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              {t('leaderboard.reveal_public_scores_help')}
-            </p>
-
-            <ToggleField
-              label={t('leaderboard.reveal_private_scores')}
-              id="reveal_priv"
-              checked={revealPriv}
-              onChange={(e) => setRevealPriv(e.target.checked)}
-            />
-            <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              {t('leaderboard.reveal_private_scores_help')}
-            </p>
-
-            <ToggleField
-              label={t('leaderboard.reveal_points')}
-              id="reveal_pts"
-              checked={revealPoints}
-              onChange={(e) => setRevealPoints(e.target.checked)}
-            />
-            <p className="text-[11px] text-slate-500 ml-12 -mt-2">
-              {t('leaderboard.reveal_points_help')}
-            </p>
-          </div>
         </div>
       </Modal>
     </div>

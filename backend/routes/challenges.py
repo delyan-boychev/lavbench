@@ -611,12 +611,6 @@ def finalize_challenge(challenge_id):
                     400,
                 )
 
-    # Read reveal options
-    data = request.get_json() or {}
-    challenge.reveal_public_scores = bool(data.get("reveal_public_scores", True))
-    challenge.reveal_private_scores = bool(data.get("reveal_private_scores", True))
-    challenge.reveal_points = bool(data.get("reveal_points", True))
-
     challenge.scores_finalized = True
     db.session.commit()
 
@@ -646,6 +640,23 @@ def finalize_challenge(challenge_id):
             "challenge": challenge.to_dict(),
         }
     )
+
+
+@challenges_bp.route("/<int:challenge_id>/reveal-results", methods=["PUT"])
+@role_required(["jury"])
+def toggle_reveal_results(challenge_id):
+    """Toggle reveal of private scores and manual points to competitors."""
+    challenge = db.get_or_404(Challenge, challenge_id)
+    if not challenge.scores_finalized:
+        return jsonify({"error": "Must finalize scores before revealing results."}), 400
+    data = request.get_json() or {}
+    challenge.reveal_results = bool(data.get("reveal_results", True))
+    db.session.commit()
+
+    from cache_utils import invalidate_leaderboard_cache
+
+    invalidate_leaderboard_cache(challenge_id)
+    return jsonify({"reveal_results": challenge.reveal_results, "challenge": challenge.to_dict()})
 
 
 @challenges_bp.route("/<int:challenge_id>/archive", methods=["POST"])
@@ -1004,9 +1015,7 @@ def finalize_stage(challenge_id, stage_id):
 
     stage.is_finalized = True
     stage.finalize_type = finalize_type
-    stage.reveal_public = bool(data.get("reveal_public", True))
-    stage.reveal_private = bool(data.get("reveal_private", False))
-    stage.reveal_points = bool(data.get("reveal_points", False))
+    stage.reveal_results = bool(data.get("reveal_results", False))
 
     db.session.commit()
 

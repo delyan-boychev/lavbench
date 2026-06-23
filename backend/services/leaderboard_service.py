@@ -308,7 +308,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
         cached = get_cached(cache_key)
         if cached is not None:
             return cached
-        set_cached(cache_key, cached_entries, timeout=300)
+        set_cached(cache_key, cached_entries, timeout=120)
         return cached_entries
 
 
