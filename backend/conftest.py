@@ -27,7 +27,21 @@ from app import create_app
 from models import db, User, Challenge, Task, Submission, Stage, AuditLog
 from auth_utils import generate_token
 
+
+@pytest.fixture(scope="session", autouse=True)
+def download_nltk_data():
+    """Ensure NLTK datasets are downloaded and available for metrics evaluation."""
+    import nltk
+
+    for corpus in ["wordnet", "punkt", "punkt_tab", "omw-1.4"]:
+        try:
+            nltk.download(corpus, quiet=True)
+        except Exception:
+            pass
+
+
 # ═══════════════════════════════════════════════════════════════════════════
+
 # App & Context
 # ═══════════════════════════════════════════════════════════════════════════
 
