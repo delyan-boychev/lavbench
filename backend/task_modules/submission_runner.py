@@ -960,6 +960,7 @@ def register_worker_specs(sender, **kwargs):
         try:
             from task_modules.image_builder import build_all_active_tasks, start_rebuild_listener
 
+            main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
             worker_token = _sign_worker_token("worker")
             build_all_active_tasks(main_server_url, worker_token)
             start_rebuild_listener(main_server_url, worker_token)
