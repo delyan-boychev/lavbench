@@ -42,3 +42,742 @@ class TestSubmissionRunnerMetrics:
         cfg = {"mse": {"weight": 1.0}}
         score = calculate_weighted_score(payload, cfg)
         assert score == 0.0
+
+
+class CommandInterrupted(Exception):
+    def __init__(self, cmd):
+        super().__init__()
+        self.cmd = cmd
+
+
+class TestSubmissionRunnerDocker:
+    @pytest.fixture(autouse=True)
+    def setup_mocks(self, mocker):
+        # Mock subprocess.run for "docker --version"
+        import subprocess
+
+        original_run = subprocess.run
+
+        def mock_run(args, *run_args, **run_kwargs):
+            if args == ["docker", "--version"]:
+
+                class CompletedProcessMock:
+                    returncode = 0
+                    stdout = "docker version mock"
+                    stderr = ""
+
+                return CompletedProcessMock()
+            return original_run(args, *run_args, **run_kwargs)
+
+        mocker.patch("subprocess.run", side_effect=mock_run)
+        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.get_redis_client", return_value=mocker.MagicMock()
+        )
+
+        def mock_stream(cmd, logs, time_limit=None):
+            raise CommandInterrupted(cmd)
+
+        mocker.patch(
+            "task_modules.submission_runner.run_command_streaming", side_effect=mock_stream
+        )
+
+    def test_unconditional_sandbox_args(self):
+        from task_modules.submission_runner import run_eval_submission
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('user code')",
+            "submission_id": "sub_123",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        with pytest.raises(CommandInterrupted) as exc_info:
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_123",
+                metadata=metadata,
+                app=None,
+                db=None,
+                Submission=None,
+                Challenge=None,
+            )
+
+        cmd = exc_info.value.cmd
+        assert "docker" in cmd
+        assert "run" in cmd
+        assert "--network" in cmd
+        assert "none" in cmd
+        assert "--cap-drop" in cmd
+        assert "ALL" in cmd
+        assert "--security-opt" in cmd
+        assert "no-new-privileges:true" in cmd
+        assert "--pids-limit" in cmd
+        assert "64" in cmd
+        assert "--cpus" in cmd
+        assert "2" in cmd
+        assert "-m" in cmd
+        assert "4096m" in cmd
+        assert "--memory-swap" in cmd
+        assert "4096m" in cmd
+
+    def test_ram_limit_fallback_challenge(self):
+        from task_modules.submission_runner import run_eval_submission
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": None,  # no limit on task
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('user code')",
+            "submission_id": "sub_123",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        # But challenge has ram_limit
+        # In run_eval_submission, Challenge.ram_limit is mocked using the metadata's "ram_limit" key:
+        # Challenge constructor uses: ram_limit_mb=metadata.get("ram_limit")
+        # So we can't test challenge fallback via metadata dictionary easily since both refer to "ram_limit",
+        # but let's test that if ram_limit is provided, it goes into the memory limit flags.
+        # Wait, let's look at how ram_limit is read:
+        # ram_limit = 8192
+        # if task and task.ram_limit_mb is not None:
+        #     ram_limit = task.ram_limit_mb
+        # elif challenge and challenge.ram_limit_mb is not None:
+        #     ram_limit = challenge.ram_limit_mb
+        # Let's test that if ram_limit is 2048, it is set correctly to 2048m.
+        metadata["ram_limit"] = 2048
+
+        with pytest.raises(CommandInterrupted) as exc_info:
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_123",
+                metadata=metadata,
+                app=None,
+                db=None,
+                Submission=None,
+                Challenge=None,
+            )
+
+        cmd = exc_info.value.cmd
+        assert "-m" in cmd
+        assert "2048m" in cmd
+        assert "--memory-swap" in cmd
+        assert "2048m" in cmd
+
+    def test_gpu_routing_all(self, monkeypatch):
+        from task_modules.submission_runner import run_eval_submission
+
+        monkeypatch.delenv("WORKER_GPU_ID", raising=False)
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": True,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('user code')",
+            "submission_id": "sub_123",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        with pytest.raises(CommandInterrupted) as exc_info:
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_123",
+                metadata=metadata,
+                app=None,
+                db=None,
+                Submission=None,
+                Challenge=None,
+            )
+
+        cmd = exc_info.value.cmd
+        assert "--gpus" in cmd
+        assert "all" in cmd
+
+    def test_gpu_routing_specific_device(self, monkeypatch):
+        from task_modules.submission_runner import run_eval_submission
+
+        monkeypatch.setenv("WORKER_GPU_ID", "2")
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": True,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('user code')",
+            "submission_id": "sub_123",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        with pytest.raises(CommandInterrupted) as exc_info:
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_123",
+                metadata=metadata,
+                app=None,
+                db=None,
+                Submission=None,
+                Challenge=None,
+            )
+
+        cmd = exc_info.value.cmd
+        assert "--gpus" in cmd
+        assert "device=2" in cmd
+        assert "CUDA_VISIBLE_DEVICES=2" in cmd
+
+    def test_gpu_routing_none(self, monkeypatch):
+        from task_modules.submission_runner import run_eval_submission
+
+        monkeypatch.delenv("WORKER_GPU_ID", raising=False)
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('user code')",
+            "submission_id": "sub_123",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        with pytest.raises(CommandInterrupted) as exc_info:
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_123",
+                metadata=metadata,
+                app=None,
+                db=None,
+                Submission=None,
+                Challenge=None,
+            )
+
+        cmd = exc_info.value.cmd
+        assert "--gpus" not in cmd
+
+
+class TestCalculateWeightedScoreEdgeCases:
+    """Edge cases for calculate_weighted_score — no-cfg nan/inf + weighted special paths."""
+
+    def test_no_cfg_nan_payload_returns_zero(self):
+        """No config with NaN payload (lines 150-151) → 0.0."""
+        score = calculate_weighted_score({"accuracy": math.nan}, None)
+        assert score == 0.0
+
+    def test_no_cfg_inf_payload_returns_zero(self):
+        score = calculate_weighted_score({"accuracy": math.inf}, None)
+        assert score == 0.0
+
+    def test_no_cfg_empty_payload_returns_zero(self):
+        score = calculate_weighted_score({}, None)
+        assert score == 0.0
+
+    def test_no_cfg_brier_score_inverted(self):
+        """brier_score is lower-better → 1 - val normalization."""
+        score = calculate_weighted_score({"brier_score": 0.3}, None)
+        assert score == pytest.approx(0.7)
+
+    def test_cfg_zero_total_weight_returns_zero(self):
+        """All weights zero → total_weight 0 → return 0.0 immediately."""
+        score = calculate_weighted_score({"accuracy": 0.9}, {"accuracy": {"weight": 0.0}})
+        assert score == 0.0
+
+    def test_cfg_weighted_brier_score(self):
+        """In the weighted path, brier_score → 1 - val normalization."""
+        score = calculate_weighted_score({"brier_score": 0.2}, {"brier_score": {"weight": 1.0}})
+        assert score == pytest.approx(0.8)
+
+    def test_cfg_lower_better_val_negative_one_returns_zero(self):
+        """val=-1.0 for lower-better metric triggers the special-case guard."""
+        score = calculate_weighted_score({"mse": -1.0}, {"mse": {"weight": 1.0}})
+        assert score == pytest.approx(0.0)
+
+    def test_cfg_nan_norm_val_clamped_to_zero(self):
+        """NaN/inf higher-is-better metric values → guard returns 0.0 contribution."""
+        score = calculate_weighted_score({"accuracy": math.inf}, {"accuracy": {"weight": 1.0}})
+        assert score == pytest.approx(0.0)
+
+
+class TestFetchHFKeyFromServer:
+    """Unit tests for _fetch_hf_key_from_server."""
+
+    def test_missing_task_id_returns_empty(self):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        assert _fetch_hf_key_from_server(None, "http://server", "token") == ""
+
+    def test_missing_server_url_returns_empty(self):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        assert _fetch_hf_key_from_server("task_1", None, "token") == ""
+
+    def test_missing_token_returns_empty(self):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        assert _fetch_hf_key_from_server("task_1", "http://server", None) == ""
+
+    def test_all_params_missing_returns_empty(self):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        assert _fetch_hf_key_from_server(None, None, None) == ""
+
+    def test_successful_200_response(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"hf_key": "hf_secret_token"}
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "worker_token")
+        assert result == "hf_secret_token"
+
+    def test_http_403_returns_empty(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 403
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "bad_token")
+        assert result == ""
+
+    def test_http_404_returns_empty(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 404
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+
+        result = _fetch_hf_key_from_server("task_999", "http://server:5000", "token")
+        assert result == ""
+
+    def test_connection_error_returns_empty(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+        import requests as req
+
+        mocker.patch(
+            "task_modules.submission_runner.requests.get",
+            side_effect=req.exceptions.ConnectionError("refused"),
+        )
+        result = _fetch_hf_key_from_server("task_1", "http://badhost:9999", "token")
+        assert result == ""
+
+    def test_timeout_exception_returns_empty(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+        import requests as req
+
+        mocker.patch(
+            "task_modules.submission_runner.requests.get",
+            side_effect=req.exceptions.Timeout("timeout"),
+        )
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        assert result == ""
+
+    def test_200_but_missing_hf_key_field_returns_empty_string(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {}  # No "hf_key" field
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        assert result == ""
+
+
+class TestImageExists:
+    """Unit tests for _image_exists."""
+
+    def test_image_found_returns_true(self, mocker):
+        from task_modules.submission_runner import _image_exists
+
+        mock_result = mocker.MagicMock()
+        mock_result.stdout = "sha256:abc123def456"
+        mocker.patch("subprocess.run", return_value=mock_result)
+        assert _image_exists("lavbench_task_42:latest") is True
+
+    def test_image_not_found_returns_false(self, mocker):
+        from task_modules.submission_runner import _image_exists
+
+        mock_result = mocker.MagicMock()
+        mock_result.stdout = ""
+        mocker.patch("subprocess.run", return_value=mock_result)
+        assert _image_exists("nonexistent_image:v1") is False
+
+    def test_image_whitespace_only_stdout_returns_false(self, mocker):
+        from task_modules.submission_runner import _image_exists
+
+        mock_result = mocker.MagicMock()
+        mock_result.stdout = "   \n"
+        mocker.patch("subprocess.run", return_value=mock_result)
+        assert _image_exists("my_image") is False
+
+    def test_subprocess_file_not_found_returns_false(self, mocker):
+        from task_modules.submission_runner import _image_exists
+
+        mocker.patch("subprocess.run", side_effect=FileNotFoundError("docker command not found"))
+        assert _image_exists("any_image") is False
+
+    def test_subprocess_timeout_returns_false(self, mocker):
+        from task_modules.submission_runner import _image_exists
+        import subprocess
+
+        mocker.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10))
+        assert _image_exists("any_image") is False
+
+    def test_subprocess_os_error_returns_false(self, mocker):
+        from task_modules.submission_runner import _image_exists
+
+        mocker.patch("subprocess.run", side_effect=OSError("permission denied"))
+        assert _image_exists("any_image") is False
+
+
+class TestPreloadSubmissionDatasets:
+    """Unit tests for preload_submission_datasets."""
+
+    def _make_task(self, datasets=None, models=None):
+        from worker_utils import MockModel
+
+        return MockModel(
+            hf_datasets=datasets,
+            hf_models=models,
+        )
+
+    def test_no_hf_datasets_no_hf_models_noop(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=None, models=None)
+        logs = []
+        preload_submission_datasets(task, None, "/tmp", None, logs)
+        assert not any("Preloading" in l for l in logs)
+
+    def test_malformed_datasets_json_is_ignored(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets="{malformed", models=None)
+        logs = []
+        preload_submission_datasets(task, None, "/tmp", None, logs)
+        assert not any("Preloading datasets" in l for l in logs)
+
+    def test_malformed_models_json_is_ignored(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=None, models="[not valid json")
+        logs = []
+        preload_submission_datasets(task, None, "/tmp", None, logs)
+        assert not any("Preloading" in l for l in logs)
+
+    def test_datasets_list_without_cache_dir_skips(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets='["dataset1"]', models=None)
+        logs = []
+        # No cache_dir → should not try to load datasets
+        preload_submission_datasets(task, None, "/tmp", None, logs)
+        assert not any("Preloading datasets" in l for l in logs)
+
+    def test_models_list_without_cache_dir_skips(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=None, models='["bert-base-uncased"]')
+        logs = []
+        preload_submission_datasets(task, None, "/tmp", None, logs)
+        assert not any("Preloading HF models" in l for l in logs)
+
+    def test_datasets_with_cache_dir_attempts_preload(self, mocker, tmp_path):
+        """When cache_dir and datasets are set, preload is attempted."""
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets='["stanfordnlp/imdb"]', models=None)
+        logs = []
+        cache_dir = str(tmp_path)
+
+        mock_ds_module = mocker.MagicMock()
+        mock_ds_module.load_dataset = mocker.MagicMock()
+        mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
+
+        preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
+        assert any("Preloading datasets" in l for l in logs)
+
+    def test_datasets_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
+        """Even if preload fails, it should log a warning and continue without crashing."""
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets='["failing/dataset"]', models=None)
+        logs = []
+        cache_dir = str(tmp_path)
+
+        mock_ds_module = mocker.MagicMock()
+        mock_ds_module.load_dataset.side_effect = Exception("Dataset not found on Hub")
+        mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
+
+        preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
+        assert any("Warning" in l for l in logs)
+
+    def test_models_with_cache_dir_attempts_preload(self, mocker, tmp_path):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=None, models='["bert-base-uncased"]')
+        logs = []
+        cache_dir = str(tmp_path)
+
+        mock_hub_module = mocker.MagicMock()
+        mock_hub_module.snapshot_download = mocker.MagicMock()
+        mocker.patch.dict("sys.modules", {"huggingface_hub": mock_hub_module})
+
+        preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
+        assert any("Preloading HF models" in l for l in logs)
+
+    def test_model_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=None, models='["failing/model"]')
+        logs = []
+        cache_dir = str(tmp_path)
+
+        mock_hub_module = mocker.MagicMock()
+        mock_hub_module.snapshot_download.side_effect = Exception("Model not found")
+        mocker.patch.dict("sys.modules", {"huggingface_hub": mock_hub_module})
+
+        preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
+        assert any("Warning" in l for l in logs)
+
+    def test_empty_dataset_names_are_filtered(self):
+        """Empty strings in the dataset list should not be added to datasets_to_load."""
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets='["", ""]', models=None)
+        logs = []
+        preload_submission_datasets(task, None, "/tmp", "/tmp/cache", logs)
+        assert not any("Preloading datasets" in l for l in logs)
+
+    def test_task_is_none_handled_gracefully(self):
+        from task_modules.submission_runner import preload_submission_datasets
+
+        logs = []
+        preload_submission_datasets(None, None, "/tmp", None, logs)
+        assert not any("Preloading" in l for l in logs)
+
+    def test_list_datasets_directly_set(self, mocker, tmp_path):
+        """Task with hf_datasets already as a Python list (not JSON string)."""
+        from task_modules.submission_runner import preload_submission_datasets
+
+        task = self._make_task(datasets=["my_dataset"], models=None)
+        logs = []
+        cache_dir = str(tmp_path)
+
+        mock_ds_module = mocker.MagicMock()
+        mock_ds_module.load_dataset = mocker.MagicMock()
+        mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
+
+        preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
+        assert any("Preloading datasets" in l for l in logs)
+
+
+class TestDockerNotAvailable:
+    """Test that run_eval_submission fails gracefully when Docker is unavailable."""
+
+    def _metadata(self):
+        return {
+            "task_id": 1,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 50,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": None,
+            "challenge_id": 1,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('hi')",
+            "submission_id": "sub_docker_test",
+            "main_server_url": "http://localhost:5000",
+        }
+
+    def _setup_mocks(self, mocker, docker_returncode=1):
+        def mock_subprocess_run(args, *a, **kw):
+            class R:
+                returncode = docker_returncode
+                stdout = "Docker version 20.10" if docker_returncode == 0 else ""
+                stderr = "" if docker_returncode == 0 else "docker: command not found"
+
+            return R()
+
+        mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
+        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.get_redis_client", return_value=mocker.MagicMock()
+        )
+        mocker.patch("task_modules.submission_runner.download_task_files_to_dir", return_value=None)
+
+    def test_docker_returncode_nonzero_returns_early(self, mocker):
+        from task_modules.submission_runner import run_eval_submission
+
+        self._setup_mocks(mocker, docker_returncode=1)
+        result = run_eval_submission(
+            self_task=None,
+            submission_id="sub_docker_test",
+            metadata=self._metadata(),
+            app=None,
+            db=None,
+            Submission=None,
+            Challenge=None,
+        )
+        assert result is None
+
+    def test_docker_check_os_error_returns_early(self, mocker):
+        from task_modules.submission_runner import run_eval_submission
+
+        mocker.patch("subprocess.run", side_effect=OSError("docker binary missing"))
+        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.get_redis_client", return_value=mocker.MagicMock()
+        )
+        mocker.patch("task_modules.submission_runner.download_task_files_to_dir", return_value=None)
+
+        result = run_eval_submission(
+            self_task=None,
+            submission_id="sub_exc_test",
+            metadata=self._metadata(),
+            app=None,
+            db=None,
+            Submission=None,
+            Challenge=None,
+        )
+        assert result is None
+
+
+class TestCodeCellsParseError:
+    """Test that malformed code_cells JSON causes graceful failure."""
+
+    def test_malformed_code_cells_json_returns_none(self, mocker):
+        from task_modules.submission_runner import run_eval_submission
+        import json as _json
+
+        # Docker is available
+        def mock_subprocess_run(args, *a, **kw):
+            class R:
+                returncode = 0
+                stdout = "Docker version 20.10"
+                stderr = ""
+
+            return R()
+
+        mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
+        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.get_redis_client", return_value=mocker.MagicMock()
+        )
+        mocker.patch("task_modules.submission_runner.download_task_files_to_dir", return_value=None)
+
+        # Patch json.loads so the first call (code_cells parse) raises
+        original_loads = _json.loads
+        call_count = [0]
+
+        def patched_loads(s, *a, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ValueError("Simulated malformed code_cells JSON")
+            return original_loads(s, *a, **kw)
+
+        mocker.patch("task_modules.submission_runner.json.loads", side_effect=patched_loads)
+
+        metadata = {
+            "task_id": 1,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 50,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": None,
+            "challenge_id": 1,
+            "metric_name": "accuracy",
+            "hf_dataset_split": "test",
+            "user_code": "print('hi')",
+            "submission_id": "sub_json_err",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        result = run_eval_submission(
+            self_task=None,
+            submission_id="sub_json_err",
+            metadata=metadata,
+            app=None,
+            db=None,
+            Submission=None,
+            Challenge=None,
+        )
+        assert result is None

@@ -538,6 +538,10 @@ class Submission(db.Model):
         db.Index("idx_sub_user_task", "user_id", "task_id", "challenge_id"),
         db.Index("idx_sub_task_id", "task_id"),
         db.Index("idx_sub_user_challenge_created", "user_id", "challenge_id", "created_at"),
+        db.Index("idx_sub_challenge_status_baseline", "challenge_id", "status", "is_baseline"),
+        db.Index("idx_sub_challenge_created", "challenge_id", db.text("created_at DESC")),
+        db.Index("idx_sub_task_created", "task_id", db.text("created_at DESC")),
+        db.Index("idx_sub_task_user_created", "task_id", "user_id", db.text("created_at DESC")),
     )
 
     id = db.Column(db.Integer, primary_key=True)

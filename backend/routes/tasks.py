@@ -1228,7 +1228,7 @@ def submit_task_code(task_id):
 
     from cache_utils import cache_lock
 
-    lock_key = f"submit_lock:user_{user_id}:task_{task_id}"
+    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
 
     with cache_lock(lock_key, ttl=10):
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)

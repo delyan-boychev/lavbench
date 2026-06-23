@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
@@ -28,9 +28,6 @@ export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
 
-  if (currentUser?.role === 'competitor') {
-    return <Navigate to="/challenges" replace />;
-  }
   const {
     challenges,
     selectedChallenge,
@@ -41,6 +38,7 @@ export default function AdminPanel() {
   } = useApp();
 
   const API_BASE = '/api';
+  const importFileRef = useRef(null);
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -243,7 +241,7 @@ export default function AdminPanel() {
 
   const [availableMetrics, setAvailableMetrics] = useState({});
 
-  const fetchAvailableMetrics = async () => {
+  const fetchAvailableMetrics = useCallback(async () => {
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/metrics`, {
@@ -257,13 +255,13 @@ export default function AdminPanel() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (currentUser) {
       fetchAvailableMetrics(); // eslint-disable-line react-hooks/set-state-in-effect
     }
-  }, [currentUser]);
+  }, [currentUser, fetchAvailableMetrics]);
 
   // Worker stats via SSE (persistent connection, no polling)
 
@@ -296,11 +294,12 @@ export default function AdminPanel() {
     };
 
     return () => eventSource.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab]);
 
   const fetchWorkerStats = () => setWorkerStatsLoading(true);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       /** @type {Response} */
       const res = await api.fetch(
@@ -319,10 +318,9 @@ export default function AdminPanel() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [usersPage, userSearch]);
 
-  // Fetch Competitors (based on user lists or submissions)
-  const fetchCompetitors = async () => {
+  const fetchCompetitors = useCallback(async () => {
     if (!selectedChallenge) return;
     try {
       /** @type {Response} */
@@ -342,10 +340,9 @@ export default function AdminPanel() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [selectedChallenge, competitorsPage, competitorSearch]);
 
-  // Fetch Paginated Challenges (Competitions)
-  const fetchPaginatedChallenges = async () => {
+  const fetchPaginatedChallenges = useCallback(async () => {
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/challenges?page=${challengesPage}&per_page=5`, {
@@ -370,24 +367,27 @@ export default function AdminPanel() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [challengesPage, showToast, t]);
 
   useEffect(() => {
     if (adminSubTab === 'user-management') {
       fetchUsers(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, usersPage, debouncedUserSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competitor-reg' || adminSubTab === 'competition-mgmt') {
       fetchCompetitors(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, selectedChallenge, competitorsPage, debouncedCompetitorSearch]);
 
   useEffect(() => {
     if (adminSubTab === 'competition-mgmt') {
       fetchPaginatedChallenges(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, challengesPage]);
 
   useEffect(() => {
@@ -403,6 +403,10 @@ export default function AdminPanel() {
   useEffect(() => {
     setCompetitorsPage(1); // eslint-disable-line react-hooks/set-state-in-effect
   }, [competitorSearch]);
+
+  if (currentUser?.role === 'competitor') {
+    return <Navigate to="/challenges" replace />;
+  }
 
   // Handle Competition creation
   const handleCreateChallenge = async (e) => {
@@ -1264,7 +1268,6 @@ export default function AdminPanel() {
     }
   };
 
-  const importFileRef = useRef(null);
   const handleImportChallenge = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;

@@ -189,13 +189,13 @@ def get_leaderboard(challenge_id):
                     tot_pub += s_copy["public_score"]
                     has_pub_sum = True
                 else:
-                    tot_pub += 999.0 if is_mse else 0.0
+                    tot_pub += 0.0
 
                 if reveal_task_priv and s_copy["private_score"] is not None:
                     tot_priv += s_copy["private_score"]
                     has_priv_sum = True
                 else:
-                    tot_priv += 999.0 if is_mse else 0.0
+                    tot_priv += 0.0
 
                 if reveal_task_pts:
                     tot_pts += manual_points_dict.get(tid_str, 0)
@@ -248,10 +248,7 @@ def get_leaderboard(challenge_id):
                 score_a = a["public_score"]
                 score_b = b["public_score"]
                 if score_a is not None and score_b is not None and score_a != score_b:
-                    if is_mse:
-                        return -1 if score_a < score_b else 1
-                    else:
-                        return -1 if score_a > score_b else 1
+                    return -1 if score_a > score_b else 1
             name_a = (a["user"].get("alias_id") or "").lower()
             name_b = (b["user"].get("alias_id") or "").lower()
             if name_a != name_b:

@@ -79,6 +79,91 @@ function Row({
   const activeTask = activeTab !== 'general' ? tasks.find((t) => t.id === activeTab) : null;
   const scoreObj = activeTask ? entry.task_scores?.[activeTask.id.toString()] || {} : {};
 
+  const [flashPublic, setFlashPublic] = useState(false);
+  const [flashPrivate, setFlashPrivate] = useState(false);
+  const [flashPoints, setFlashPoints] = useState(false);
+
+  const prevPublicRef = React.useRef(entry.public_score);
+  const prevPrivateRef = React.useRef(entry.private_score);
+  const prevPointsRef = React.useRef(entry.total_points);
+
+  const prevTaskPublicRef = React.useRef(scoreObj.public_score);
+  const prevTaskPrivateRef = React.useRef(scoreObj.private_score);
+
+  useEffect(() => {
+    let t1, t2, t3;
+    if (activeTab === 'general') {
+      if (entry.public_score !== prevPublicRef.current) {
+        if (
+          prevPublicRef.current !== undefined &&
+          prevPublicRef.current !== null &&
+          entry.public_score !== null
+        ) {
+          setFlashPublic(true);
+          t1 = setTimeout(() => setFlashPublic(false), 2000);
+        }
+        prevPublicRef.current = entry.public_score;
+      }
+      if (entry.private_score !== prevPrivateRef.current) {
+        if (
+          prevPrivateRef.current !== undefined &&
+          prevPrivateRef.current !== null &&
+          entry.private_score !== null
+        ) {
+          setFlashPrivate(true);
+          t2 = setTimeout(() => setFlashPrivate(false), 2000);
+        }
+        prevPrivateRef.current = entry.private_score;
+      }
+      if (entry.total_points !== prevPointsRef.current) {
+        if (
+          prevPointsRef.current !== undefined &&
+          prevPointsRef.current !== null &&
+          entry.total_points !== null
+        ) {
+          setFlashPoints(true);
+          t3 = setTimeout(() => setFlashPoints(false), 2000);
+        }
+        prevPointsRef.current = entry.total_points;
+      }
+    } else {
+      if (scoreObj.public_score !== prevTaskPublicRef.current) {
+        if (
+          prevTaskPublicRef.current !== undefined &&
+          prevTaskPublicRef.current !== null &&
+          scoreObj.public_score !== null
+        ) {
+          setFlashPublic(true);
+          t1 = setTimeout(() => setFlashPublic(false), 2000);
+        }
+        prevTaskPublicRef.current = scoreObj.public_score;
+      }
+      if (scoreObj.private_score !== prevTaskPrivateRef.current) {
+        if (
+          prevTaskPrivateRef.current !== undefined &&
+          prevTaskPrivateRef.current !== null &&
+          scoreObj.private_score !== null
+        ) {
+          setFlashPrivate(true);
+          t2 = setTimeout(() => setFlashPrivate(false), 2000);
+        }
+        prevTaskPrivateRef.current = scoreObj.private_score;
+      }
+    }
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [
+    entry.public_score,
+    entry.private_score,
+    entry.total_points,
+    scoreObj.public_score,
+    scoreObj.private_score,
+    activeTab,
+  ]);
+
   // Calculate colSpan dynamically for expanded row
   let colSpanCount = 3; // Toggle expand, rank, participant
   if (activeTab === 'general') {
@@ -168,17 +253,23 @@ function Row({
         {activeTab === 'general' ? (
           <>
             {showPublicCols && (
-              <td className="px-4 py-3 text-right font-mono text-indigo-400 text-xs">
+              <td
+                className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
+              >
                 {entry.public_score != null ? entry.public_score.toFixed(4) : '—'}
               </td>
             )}
             {showPrivateCols && (
-              <td className="px-4 py-3 text-right font-mono text-emerald-400 text-xs">
+              <td
+                className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
+              >
                 {entry.private_score != null ? entry.private_score.toFixed(4) : '—'}
               </td>
             )}
             {showPointsCols && (
-              <td className="px-4 py-3 text-right font-mono font-bold text-sm">
+              <td
+                className={`px-4 py-3 text-right font-mono font-bold text-sm transition-all duration-300 ${flashPoints ? 'animate-pulse-highlight' : ''}`}
+              >
                 <span className="text-amber-400">
                   {isBaseline ? '—' : t('leaderboard.points_short', { count: entry.total_points })}
                 </span>
@@ -188,12 +279,16 @@ function Row({
         ) : (
           <>
             {showPublicCols && (
-              <td className="px-4 py-3 text-right font-mono text-indigo-400 text-xs">
+              <td
+                className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
+              >
                 {scoreObj.public_score != null ? scoreObj.public_score.toFixed(4) : '—'}
               </td>
             )}
             {showPrivateCols && (
-              <td className="px-4 py-3 text-right font-mono text-emerald-400 text-xs">
+              <td
+                className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
+              >
                 {scoreObj.private_score != null ? scoreObj.private_score.toFixed(4) : '—'}
               </td>
             )}
@@ -370,6 +465,7 @@ export default function LeaderboardTable({
   const [revealResults, setRevealResults] = useState(challenge?.reveal_results);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRevealResults(challenge?.reveal_results);
   }, [challenge?.reveal_results]);
 

@@ -114,25 +114,28 @@ class TestServiceSandboxAndPriority:
         db.session.commit()
 
         self.task.metrics_config = '{"mse": {"weight": 1.0, "higher_is_better": false}}'
+        # In practice, scores are normalized by the runner to higher-is-better:
+        # sub1 (MSE = 10.0) -> normalized to 1.0 / (1.0 + 10.0) = 0.0909
+        # sub2 (MSE = 5.0)  -> normalized to 1.0 / (1.0 + 5.0) = 0.1667
         sub1 = Submission(
             task_id=self.task.id,
             user_id=1,
             status="completed",
-            public_score=10.0,
-            private_score=10.0,
+            public_score=0.0909,
+            private_score=0.0909,
             execution_time_ms=200,
         )
         sub2 = Submission(
             task_id=self.task.id,
             user_id=1,
             status="completed",
-            public_score=5.0,
-            private_score=5.0,
+            public_score=0.1667,
+            private_score=0.1667,
             execution_time_ms=100,
         )
 
         best = get_best_submission(self.task, [sub1, sub2], challenge, is_lower_better=True)
-        assert best.public_score == 5.0
+        assert best.public_score == 0.1667
 
     def test_challenge_csv_generation(self):
         from models import Challenge, User, Submission

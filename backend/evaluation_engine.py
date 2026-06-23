@@ -693,24 +693,87 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             y_true = df_labels[label_col].tolist()
             y_pred = df_sub[pred_col].tolist()
         if m_name_clean == "accuracy":
-            if str(m_opts.get("balanced", "false")).lower() == "true":
-                val = balanced_accuracy_score(y_true, y_pred)
-            else:
-                val = accuracy_score(y_true, y_pred)
+            try:
+                if str(m_opts.get("balanced", "false")).lower() == "true":
+                    val = balanced_accuracy_score(y_true, y_pred)
+                else:
+                    val = accuracy_score(y_true, y_pred)
+            except Exception as e:
+                logger.warning("accuracy calculation failed, using fallback 0.0: %s", e)
+                val = 0.0
         elif m_name_clean == "f1":
-            val = f1_score(y_true, y_pred, average=m_opts.get("average", "macro"))
+            # Dispatch: string inputs → QA word-overlap F1; else → classification F1
+            first_true = y_true[0] if len(y_true) > 0 else None
+            if isinstance(first_true, str):
+                f1_scores = []
+                for t, p in zip(y_true, y_pred):
+                    t_words = str(t).strip().lower().split()
+                    p_words = str(p).strip().lower().split()
+                    if not t_words or not p_words:
+                        f1_scores.append(1.0 if t_words == p_words else 0.0)
+                        continue
+                    overlap = set(t_words).intersection(set(p_words))
+                    if len(overlap) == 0:
+                        f1_scores.append(0.0)
+                        continue
+                    prec = len(overlap) / len(p_words)
+                    rec = len(overlap) / len(t_words)
+                    f1_scores.append((2 * prec * rec) / (prec + rec))
+                val = np.mean(f1_scores) if f1_scores else 0.0
+            else:
+                try:
+                    val = f1_score(y_true, y_pred, average=m_opts.get("average", "macro"))
+                except Exception as e:
+                    logger.warning("f1 calculation failed, using fallback 0.0: %s", e)
+                    val = 0.0
         elif m_name_clean == "precision":
-            val = precision_score(
-                y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
-            )
+            try:
+                val = precision_score(
+                    y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
+                )
+            except Exception as e:
+                logger.warning("precision calculation failed, using fallback 0.0: %s", e)
+                val = 0.0
         elif m_name_clean == "recall":
-            val = recall_score(
-                y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
-            )
+            # Dispatch: list entries (boxes) → detection box recall; else → classification recall
+            first_true = y_true[0] if len(y_true) > 0 else None
+            if isinstance(first_true, list):
+                recall_scores = []
+                for true_boxes, pred_boxes in zip(y_true, y_pred):
+                    if not true_boxes:
+                        recall_scores.append(1.0)
+                        continue
+                    if not pred_boxes:
+                        recall_scores.append(0.0)
+                        continue
+                    hits = 0
+                    for t in true_boxes:
+                        for p in pred_boxes:
+                            if p.get("label") == t.get("label") and calculate_box_iou(p, t) >= 0.5:
+                                hits += 1
+                                break
+                    recall_scores.append(hits / len(true_boxes))
+                val = np.mean(recall_scores) if recall_scores else 0.0
+            else:
+                try:
+                    val = recall_score(
+                        y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
+                    )
+                except Exception as e:
+                    logger.warning("recall calculation failed, using fallback 0.0: %s", e)
+                    val = 0.0
         elif m_name_clean == "cohen_kappa":
-            val = cohen_kappa_score(y_true, y_pred)
+            try:
+                val = cohen_kappa_score(y_true, y_pred)
+            except Exception as e:
+                logger.warning("cohen_kappa calculation failed, using fallback 0.0: %s", e)
+                val = 0.0
         elif m_name_clean == "matthews_corrcoef":
-            val = matthews_corrcoef(y_true, y_pred)
+            try:
+                val = matthews_corrcoef(y_true, y_pred)
+            except Exception as e:
+                logger.warning("matthews_corrcoef calculation failed, using fallback 0.0: %s", e)
+                val = 0.0
 
         # 2. Probabilistic Metrics
         elif m_name_clean == "auc_roc":
@@ -742,62 +805,84 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
 
         # 3. Regression Metrics
         elif m_name_clean in ["rmse", "mse", "mae"]:
-            if len(y_true) > 0 and isinstance(y_true[0], (bytes, bytearray)):
-                scores = []
-                for t, p in zip(y_true, y_pred):
-                    if not t or not p:
-                        scores.append(1.0)
-                        continue
-                    min_len = min(len(t), len(p))
-                    arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
-                    arr_p = np.frombuffer(p[:min_len], dtype=np.uint8)
-                    if m_name_clean == "rmse":
-                        scores.append(math.sqrt(mean_squared_error(arr_t, arr_p)))
-                    elif m_name_clean == "mse":
-                        scores.append(mean_squared_error(arr_t, arr_p))
-                    elif m_name_clean == "mae":
-                        scores.append(mean_absolute_error(arr_t, arr_p))
-                val = np.mean(scores)
-            else:
-                shape_str = str(m_opts.get("shape", "0")).strip()
-                mo = m_opts.get("multioutput", "uniform_average")
-                if shape_str == "0" or not shape_str:
-                    if m_name_clean == "rmse":
-                        res = mean_squared_error(y_true, y_pred, multioutput=mo)
-                        val = (
-                            np.mean(np.sqrt(res)) if isinstance(res, np.ndarray) else math.sqrt(res)
-                        )
-                    elif m_name_clean == "mse":
-                        res = mean_squared_error(y_true, y_pred, multioutput=mo)
-                        val = np.mean(res) if isinstance(res, np.ndarray) else res
-                    elif m_name_clean == "mae":
-                        res = mean_absolute_error(y_true, y_pred, multioutput=mo)
-                        val = np.mean(res) if isinstance(res, np.ndarray) else res
+            try:
+                if len(y_true) > 0 and isinstance(y_true[0], (bytes, bytearray)):
+                    scores = []
+                    for t, p in zip(y_true, y_pred):
+                        if not t or not p:
+                            scores.append(1.0)
+                            continue
+                        min_len = min(len(t), len(p))
+                        arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
+                        arr_p = np.frombuffer(p[:min_len], dtype=np.uint8)
+                        if m_name_clean == "rmse":
+                            scores.append(math.sqrt(mean_squared_error(arr_t, arr_p)))
+                        elif m_name_clean == "mse":
+                            scores.append(mean_squared_error(arr_t, arr_p))
+                        elif m_name_clean == "mae":
+                            scores.append(mean_absolute_error(arr_t, arr_p))
+                    val = np.mean(scores)
                 else:
-                    try:
-                        shape_tuple = tuple(int(x.strip()) for x in shape_str.split(","))
-                        scores = []
-                        for t, p in zip(y_true, y_pred):
-                            arr_t = np.array(t).reshape(shape_tuple)
-                            arr_p = np.array(p).reshape(shape_tuple)
-                            if m_name_clean == "rmse":
-                                scores.append(math.sqrt(np.mean((arr_t - arr_p) ** 2)))
-                            elif m_name_clean == "mse":
-                                scores.append(np.mean((arr_t - arr_p) ** 2))
-                            elif m_name_clean == "mae":
-                                scores.append(np.mean(np.abs(arr_t - arr_p)))
-                        val = np.mean(scores)
-                    except Exception as e:
-                        logger.warning(
-                            "Shape error for metric '%s', using fallback 999.0: %s", m_name, e
-                        )
-                        val = 999.0  # Fallback on shape error
+                    shape_str = str(m_opts.get("shape", "0")).strip()
+                    mo = m_opts.get("multioutput", "uniform_average")
+                    if shape_str == "0" or not shape_str:
+                        if m_name_clean == "rmse":
+                            res = mean_squared_error(y_true, y_pred, multioutput=mo)
+                            val = (
+                                np.mean(np.sqrt(res))
+                                if isinstance(res, np.ndarray)
+                                else math.sqrt(res)
+                            )
+                        elif m_name_clean == "mse":
+                            res = mean_squared_error(y_true, y_pred, multioutput=mo)
+                            val = np.mean(res) if isinstance(res, np.ndarray) else res
+                        elif m_name_clean == "mae":
+                            res = mean_absolute_error(y_true, y_pred, multioutput=mo)
+                            val = np.mean(res) if isinstance(res, np.ndarray) else res
+                    else:
+                        try:
+                            shape_tuple = tuple(int(x.strip()) for x in shape_str.split(","))
+                            scores = []
+                            for t, p in zip(y_true, y_pred):
+                                arr_t = np.array(t).reshape(shape_tuple)
+                                arr_p = np.array(p).reshape(shape_tuple)
+                                if m_name_clean == "rmse":
+                                    scores.append(math.sqrt(np.mean((arr_t - arr_p) ** 2)))
+                                elif m_name_clean == "mse":
+                                    scores.append(np.mean((arr_t - arr_p) ** 2))
+                                elif m_name_clean == "mae":
+                                    scores.append(np.mean(np.abs(arr_t - arr_p)))
+                            val = np.mean(scores)
+                        except Exception as e:
+                            logger.warning(
+                                "Shape error for metric '%s', using fallback 999.0: %s", m_name, e
+                            )
+                            val = 999.0  # Fallback on shape error
+            except Exception as e:
+                logger.warning(
+                    "Regression calculation failed for metric '%s', using fallback 999.0: %s",
+                    m_name,
+                    e,
+                )
+                val = 999.0
         elif m_name_clean == "r_squared":
-            val = r2_score(y_true, y_pred)
+            try:
+                val = r2_score(y_true, y_pred)
+            except Exception as e:
+                logger.warning("r_squared failed, fallback 0.0: %s", e)
+                val = 0.0
         elif m_name_clean == "mape":
-            val = mean_absolute_percentage_error(y_true, y_pred)
+            try:
+                val = mean_absolute_percentage_error(y_true, y_pred)
+            except Exception as e:
+                logger.warning("mape failed, fallback 999.0: %s", e)
+                val = 999.0
         elif m_name_clean == "median_ae":
-            val = median_absolute_error(y_true, y_pred)
+            try:
+                val = median_absolute_error(y_true, y_pred)
+            except Exception as e:
+                logger.warning("median_ae failed, fallback 999.0: %s", e)
+                val = 999.0
 
         # 4. NER / Tagging (SeqEval approximate fallback)
         elif m_name_clean in ["seqeval_f1", "seqeval_precision", "seqeval_recall"]:
@@ -852,23 +937,6 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                 for t, p in zip(y_true, y_pred)
             ]
             val = np.mean(em_list)
-        elif m_name_clean == "f1":  # QA F1
-            f1_scores = []
-            for t, p in zip(y_true, y_pred):
-                t_words = str(t).strip().lower().split()
-                p_words = str(p).strip().lower().split()
-                if not t_words or not p_words:
-                    f1_scores.append(1.0 if t_words == p_words else 0.0)
-                    continue
-                overlap = set(t_words).intersection(set(p_words))
-                if len(overlap) == 0:
-                    f1_scores.append(0.0)
-                    continue
-                prec = len(overlap) / len(p_words)
-                rec = len(overlap) / len(t_words)
-                f1_scores.append((2 * prec * rec) / (prec + rec))
-            val = np.mean(f1_scores)
-
         # 7. CV Object Detection
         elif m_name_clean == "map_50":
             val = compute_map_detection(y_true, y_pred, iou_threshold=0.5)
@@ -879,23 +947,6 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             val = np.mean(
                 [compute_map_detection(y_true, y_pred, iou_threshold=th) for th in thresholds]
             )
-        elif m_name_clean == "recall":  # box recall
-            recall_scores = []
-            for true_boxes, pred_boxes in zip(y_true, y_pred):
-                if not true_boxes:
-                    recall_scores.append(1.0)
-                    continue
-                if not pred_boxes:
-                    recall_scores.append(0.0)
-                    continue
-                hits = 0
-                for t in true_boxes:
-                    for p in pred_boxes:
-                        if p.get("label") == t.get("label") and calculate_box_iou(p, t) >= 0.5:
-                            hits += 1
-                            break
-                recall_scores.append(hits / len(true_boxes))
-            val = np.mean(recall_scores)
 
         # 8. CV Segmentation
         elif m_name_clean == "mean_iou":

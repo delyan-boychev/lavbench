@@ -32,7 +32,6 @@ export default function TaskForm({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- evalContent is an IIFE not a hook
   const evalContent = (function () {
     let metricsObj = {};
     try {
@@ -231,7 +230,7 @@ export default function TaskForm({
                   </tr>
                 </thead>
                 <tbody className="bg-slate-950/50 divide-y divide-white/5">
-                  {Object.keys(metricsOnly).map((mName, idx) => {
+                  {Object.keys(metricsOnly).map((mName) => {
                     const currentWeight =
                       metricsOnly[mName].weight !== undefined ? metricsOnly[mName].weight : 1.0;
                     const schema = availableMetrics[mName] || {};
@@ -487,7 +486,6 @@ export default function TaskForm({
   })();
 
   const TABS = [
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     { id: 'general', label: t('admin.tasks.tabs.general'), Icon: Pencil },
     { id: 'evaluation', label: t('admin.tasks.tabs.evaluation'), Icon: BarChart3 },
     { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: Lock },

@@ -132,7 +132,17 @@ def check_execution_rules(task, cells_list):
                 return False, get_violation_message(name)
 
     if task.ban_magic_commands:
-        for line in combined_code.splitlines():
+        import re
+
+        # Remove triple-quoted strings first
+        cleaned = re.sub(r'""".*?"""', "", combined_code, flags=re.DOTALL)
+        cleaned = re.sub(r"'''.*?'''", "", cleaned, flags=re.DOTALL)
+        # Remove single-line strings
+        cleaned = re.sub(r'".*?"', "", cleaned)
+        cleaned = re.sub(r"'.*?'", "", cleaned)
+        # Remove comments
+        cleaned = re.sub(r"#.*", "", cleaned)
+        for line in cleaned.splitlines():
             stripped = line.strip()
             if stripped.startswith("!") or stripped.startswith("%"):
                 return False, "Rule Violation: Jupyter magic commands ('!' or '%') are banned."
@@ -225,47 +235,20 @@ def get_best_submission(task, user_subs, challenge, is_lower_better=None):
         return final_sub
 
     # 2. Tie-breaking sorting logic
-    if is_lower_better is None:
-        is_lower_better = False
-        if task.metrics_config:
-            try:
-                m_config = (
-                    json.loads(task.metrics_config)
-                    if isinstance(task.metrics_config, str)
-                    else task.metrics_config
-                )
-                for m_name, m_info in m_config.items():
-                    if m_info.get("higher_is_better") is False or is_metric_lower_better(m_name):
-                        is_lower_better = True
-                    break
-            except Exception:
-                pass
-
-    if is_lower_better:
-        subs_sorted = sorted(
-            user_subs,
-            key=lambda x: (
-                (
-                    x.private_score
-                    if x.private_score is not None
-                    else (x.public_score if x.public_score is not None else 999999)
-                ),
-                x.execution_time_ms if x.execution_time_ms is not None else 999999,
+    # Since all database scores (public_score, private_score) are normalized to higher-is-better,
+    # we always sort descending by score and ascending by execution time (faster is better).
+    subs_sorted = sorted(
+        user_subs,
+        key=lambda x: (
+            (
+                x.private_score
+                if x.private_score is not None
+                else (x.public_score if x.public_score is not None else -999999)
             ),
-        )
-    else:
-        subs_sorted = sorted(
-            user_subs,
-            key=lambda x: (
-                (
-                    x.private_score
-                    if x.private_score is not None
-                    else (x.public_score if x.public_score is not None else -999999)
-                ),
-                -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
-            ),
-            reverse=True,
-        )
+            -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
+        ),
+        reverse=True,
+    )
 
     if subs_sorted:
         return subs_sorted[0]

@@ -35,8 +35,17 @@ else:
         "tasks", broker=app.config["CELERY_BROKER_URL"], backend=app.config["CELERY_RESULT_BACKEND"]
     )
 
+# Recycle worker child processes after 50 tasks to reclaim memory from ML model execution
+celery.conf.update(
+    worker_max_tasks_per_child=50,
+)
+
 from task_modules.submission_runner import run_eval_submission
-from task_modules.system import run_register_worker_specs, run_backup as _do_backup
+from task_modules.system import (
+    run_register_worker_specs,
+    run_backup as _do_backup,
+    run_docker_prune,
+)
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 
 
@@ -83,13 +92,13 @@ def register_worker_specs():
 
 
 @celery.task
-def run_backup(auto=True, challenge_id=None, state=None):
+def run_backup(auto=True, challenge_id=None, state=None, db_only=False):
     """Celery task: create a pg_dump+uploads tarball backup."""
     if RUNNING_AS_WORKER:
         return {"skipped": "remote_worker"}
     if not app:
         return {"error": "no_app"}
-    return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state)
+    return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state, db_only=db_only)
 
 
 @celery.task
@@ -158,7 +167,7 @@ def check_and_backup():
                 should_run = True
             if should_run:
                 set_cached(last_key, now.isoformat(), timeout=86400)
-                run_backup.delay(auto=True)
+                run_backup.delay(auto=True, db_only=(active_count > 0))
 
     return {"active_competitions": active_count}
 
@@ -278,6 +287,12 @@ def watchdog_stuck_submissions():
 # Celery Beat schedule for periodic tasks
 # watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
+@celery.task
+def prune_docker_images():
+    """Celery task: prune unused Docker images/layers on worker nodes."""
+    return run_docker_prune()
+
+
 celery.conf.beat_schedule = {
     "watchdog-every-5m": {
         "task": "tasks.watchdog_stuck_submissions",
@@ -286,5 +301,9 @@ celery.conf.beat_schedule = {
     "backup-check-every-20m": {
         "task": "tasks.check_and_backup",
         "schedule": 1200.0,
+    },
+    "docker-prune-weekly": {
+        "task": "tasks.prune_docker_images",
+        "schedule": 604800.0,  # once a week (7 days)
     },
 }

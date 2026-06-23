@@ -195,3 +195,73 @@ class TestCheckExecutionRulesAST:
         ok, msg = check_execution_rules(self.task, ["().__class__.__bases__[0].__subclasses__()"])
         assert ok is False
         assert "subclasses" in msg.lower()
+
+    def test_ban_magic_commands_enabled(self):
+        self.task.ban_magic_commands = True
+        ok, msg = check_execution_rules(self.task, ["!pip install requests"])
+        assert ok is False
+        assert "magic commands" in msg
+
+        ok, msg = check_execution_rules(self.task, ["%matplotlib inline"])
+        assert ok is False
+        assert "magic commands" in msg
+
+    def test_ban_magic_commands_disabled(self):
+        self.task.ban_magic_commands = False
+        ok, msg = check_execution_rules(self.task, ["!pip install requests\n%matplotlib inline"])
+        assert ok is True
+        assert msg is None
+
+    def test_banned_imports_simple(self):
+        self.task.banned_imports = "os,sys,subprocess"
+        ok, msg = check_execution_rules(self.task, ["import os"])
+        assert ok is False
+        assert "Import of library 'os' is banned" in msg
+
+        ok, msg = check_execution_rules(self.task, ["from subprocess import Popen"])
+        assert ok is False
+        assert "Import from library 'subprocess' is banned" in msg
+
+    def test_banned_imports_submodule(self):
+        self.task.banned_imports = "os,sys,subprocess"
+        ok, msg = check_execution_rules(self.task, ["import os.path"])
+        assert ok is False
+        assert "Import of library 'os.path' is banned" in msg
+
+    def test_banned_imports_not_triggered(self):
+        self.task.banned_imports = "subprocess"
+        ok, msg = check_execution_rules(self.task, ["import json\nimport numpy as np"])
+        assert ok is True
+        assert msg is None
+
+    def test_whitelisted_imports_allowed(self):
+        self.task.whitelisted_imports = "json,numpy,pandas"
+        ok, msg = check_execution_rules(self.task, ["import json\nfrom numpy import array"])
+        assert ok is True
+        assert msg is None
+
+    def test_whitelisted_imports_disallowed(self):
+        self.task.whitelisted_imports = "json,numpy"
+        ok, msg = check_execution_rules(self.task, ["import requests"])
+        assert ok is False
+        assert "Import of library 'requests' is not allowed by whitelist" in msg
+
+        ok, msg = check_execution_rules(self.task, ["from pandas import DataFrame"])
+        assert ok is False
+        assert "Import from library 'pandas' is not allowed by whitelist" in msg
+
+    def test_magic_commands_inside_string_or_comment(self):
+        self.task.ban_magic_commands = True
+
+        # Valid python code with lines starting with % or ! inside comments or string literals
+        code1 = "#%matplotlib inline\nprint('hello')"
+        ok, msg = check_execution_rules(self.task, [code1])
+        assert ok is True, f"Banned error: {msg}"
+
+        code2 = 'query = """\n%select * from users;\n"""'
+        ok, msg = check_execution_rules(self.task, [code2])
+        assert ok is True, f"Banned error: {msg}"
+
+        code3 = "css_string = 'div { content: !important; }'"
+        ok, msg = check_execution_rules(self.task, [code3])
+        assert ok is True, f"Banned error: {msg}"

@@ -8,7 +8,10 @@ import tempfile
 import subprocess
 import urllib.parse
 import requests
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def run_register_worker_specs(celery_app):
@@ -38,16 +41,17 @@ def run_register_worker_specs(celery_app):
             timeout=5,
         )
     except Exception as e:
-        pass
+        logger.warning("Worker registration failed for ID %s: %s", machine_id, str(e))
 
 
-def run_backup(app, auto=True, challenge_id=None, state=None):
+def run_backup(app, auto=True, challenge_id=None, state=None, db_only=False):
     """
     Unified backup: pg_dump via .pgpass + tar.gz of DB dump + uploads.
     - auto=True  → saves to /backups/auto_*.tar.gz, rotates to latest 6
     - auto=False → saves to /backups/manual_*.tar.gz, never auto-deleted
     - challenge_id → saves to /backups/challenge_{id}/{state}_*.tar.gz
     - state → one of: submission_ended, grace_ended, finalized
+    - db_only → if True, only backs up the database (no uploads folder)
     """
     prefix = "auto" if auto else "manual"
     if challenge_id and state:
@@ -115,7 +119,7 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
 
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
         tar_args = ["tar", "-czf", target, "-C", tmp, "db_dump.sql"]
-        if uploads_path and os.path.isdir(uploads_path):
+        if not db_only and uploads_path and os.path.isdir(uploads_path):
             tar_args.extend(["-C", os.path.dirname(uploads_path), os.path.basename(uploads_path)])
 
         result = subprocess.run(tar_args, capture_output=True, text=True)
@@ -129,6 +133,16 @@ def run_backup(app, auto=True, challenge_id=None, state=None):
         pattern = os.path.join(backup_dir, "auto_*.tar.gz")
         auto_files = sorted(glob.glob(pattern), key=os.path.getctime)
         for old in auto_files[:-6]:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+
+    # Rotation: keep last 3 challenge-specific lifecycle backups
+    if challenge_id:
+        pattern = os.path.join(backup_dir, "*.tar.gz")
+        challenge_files = sorted(glob.glob(pattern), key=os.path.getctime)
+        for old in challenge_files[:-3]:
             try:
                 os.remove(old)
             except OSError:
@@ -156,3 +170,16 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
             r.publish("backup_status", json.dumps(payload))
     except Exception:
         pass
+
+
+def run_docker_prune():
+    """Prune unused docker layers on worker nodes to prevent disk space leaks."""
+    try:
+        result = subprocess.run(
+            ["docker", "image", "prune", "-f"], capture_output=True, text=True, check=True
+        )
+        logger.info("Docker image prune succeeded: %s", result.stdout.strip())
+        return {"status": "success", "output": result.stdout.strip()}
+    except Exception as e:
+        logger.exception("Docker image prune failed: %s", str(e))
+        return {"status": "failed", "error": str(e)}

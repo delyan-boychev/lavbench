@@ -54,8 +54,52 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
             task_metrics[task.id] = task_lower
 
         challenge_finalized = challenge.scores_finalized
+
+        # Determine users who have late submissions
+        late_users = set()
+        if challenge.end_time:
+            late_user_ids = (
+                db.session.query(Submission.user_id)
+                .filter(
+                    Submission.challenge_id == challenge_id,
+                    Submission.executed_at > challenge.end_time,
+                )
+                .distinct()
+                .all()
+            )
+            late_users = {uid[0] for uid in late_user_ids}
+
+        from sqlalchemy import func, case
+
+        if late_users:
+            is_final_active = case(
+                (Submission.user_id.in_(late_users), False), else_=Submission.is_final_selection
+            )
+        else:
+            is_final_active = Submission.is_final_selection
+
+        subq = (
+            db.session.query(
+                Submission.id.label("sub_id"),
+                func.row_number()
+                .over(
+                    partition_by=(Submission.user_id, Submission.task_id),
+                    order_by=(
+                        is_final_active.desc(),
+                        Submission.private_score.desc(),
+                        Submission.public_score.desc(),
+                        Submission.execution_time_ms.asc(),
+                    ),
+                )
+                .label("rn"),
+            )
+            .filter(Submission.challenge_id == challenge_id, Submission.status == "completed")
+            .subquery()
+        )
+
         all_completed = (
-            Submission.query.filter_by(challenge_id=challenge_id, status="completed")
+            Submission.query.join(subq, Submission.id == subq.c.sub_id)
+            .filter(subq.c.rn == 1)
             .options(
                 joinedload(Submission.challenge),
                 joinedload(Submission.user),
@@ -64,7 +108,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
             .all()
         )
 
-        # Pre-group by (user_id, task_id) — avoids O(N*M) scan
+        # Pre-group by (user_id, task_id)
         sub_by_key = {}
         for s in all_completed:
             key = (s.user_id, s.task_id)
@@ -119,7 +163,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
                     if sc is not None:
                         tot_pub += sc
                     else:
-                        tot_pub += 999.0 if task_metrics.get(task.id, False) else 0.0
+                        tot_pub += 0.0
                 aggregated_public = tot_pub
             else:
                 aggregated_public = None
@@ -131,7 +175,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False):
                     if sc is not None:
                         tot_priv += sc
                     else:
-                        tot_priv += 999.0 if task_metrics.get(task.id, False) else 0.0
+                        tot_priv += 0.0
                 aggregated_private = tot_priv
             else:
                 aggregated_private = None

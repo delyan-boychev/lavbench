@@ -14,9 +14,50 @@ def generate_scores_csv(challenge):
     tasks = challenge.tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
 
-    all_subs = Submission.query.filter(
-        Submission.challenge_id == challenge.id, Submission.status == "completed"
-    ).all()
+    # Determine users who have late submissions
+    late_users = set()
+    if challenge.end_time:
+        late_user_ids = (
+            db.session.query(Submission.user_id)
+            .filter(
+                Submission.challenge_id == challenge.id, Submission.executed_at > challenge.end_time
+            )
+            .distinct()
+            .all()
+        )
+        late_users = {uid[0] for uid in late_user_ids}
+
+    from sqlalchemy import func, case
+
+    if late_users:
+        is_final_active = case(
+            (Submission.user_id.in_(late_users), False), else_=Submission.is_final_selection
+        )
+    else:
+        is_final_active = Submission.is_final_selection
+
+    subq = (
+        db.session.query(
+            Submission.id.label("sub_id"),
+            func.row_number()
+            .over(
+                partition_by=(Submission.user_id, Submission.task_id),
+                order_by=(
+                    is_final_active.desc(),
+                    Submission.private_score.desc(),
+                    Submission.public_score.desc(),
+                    Submission.execution_time_ms.asc(),
+                ),
+            )
+            .label("rn"),
+        )
+        .filter(Submission.challenge_id == challenge.id, Submission.status == "completed")
+        .subquery()
+    )
+
+    all_subs = (
+        Submission.query.join(subq, Submission.id == subq.c.sub_id).filter(subq.c.rn == 1).all()
+    )
 
     sub_by_user_task = {}
     for s in all_subs:
