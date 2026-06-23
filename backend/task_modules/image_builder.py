@@ -20,7 +20,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 TASK_IMAGES_DIR = os.environ.get(
-    "TASK_IMAGES_DIR", os.path.join(os.path.dirname(__file__), "..", "task_images")
+    "TASK_IMAGES_DIR",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "task_images")),
 )
 
 
@@ -150,8 +151,7 @@ def build_task_image(metadata):
         dockerfile_lines.extend(
             [
                 "COPY requirements.txt /tmp/requirements.txt",
-                "RUN pip install --no-cache-dir -r /tmp/requirements.txt",
-                "    && rm /tmp/requirements.txt",
+                "RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt",
             ]
         )
 
