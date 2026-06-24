@@ -9,6 +9,7 @@ Checks:
 
 Handles dynamic key patterns like t('badge.' + role) and t(`path/${id}`).
 """
+
 import os
 import re
 import json
@@ -16,8 +17,13 @@ import sys
 from collections import defaultdict
 
 # ── Colours ────────────────────────────────────────────────────────────────
-RED = "\033[91m"; GREEN = "\033[92m"; YELLOW = "\033[93m"; CYAN = "\033[96m"
-BOLD = "\033[1m"; RESET = "\033[0m"
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def flatten_keys(d, prefix=""):
@@ -31,9 +37,11 @@ def flatten_keys(d, prefix=""):
             out[full] = v
     return out
 
+
 def load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 # ── Extract keys used in source code ──────────────────────────────────────
 def extract_used_keys(src_dir):
@@ -95,6 +103,7 @@ def extract_used_keys(src_dir):
 
     return used, dynamic_prefixes
 
+
 # ── Symmetry check ────────────────────────────────────────────────────────
 def check_symmetry(en_keys, bg_keys):
     en_set = set(en_keys.keys())
@@ -102,6 +111,7 @@ def check_symmetry(en_keys, bg_keys):
     only_en = sorted(en_set - bg_set)
     only_bg = sorted(bg_set - en_set)
     return only_en, only_bg
+
 
 # ── Missing check ─────────────────────────────────────────────────────────
 def check_missing(used_keys, en_keys, bg_keys, dynamic_prefixes):
@@ -122,6 +132,7 @@ def check_missing(used_keys, en_keys, bg_keys, dynamic_prefixes):
             missing_bg.append(k)
 
     return missing_en, missing_bg
+
 
 # ── Orphaned check ────────────────────────────────────────────────────────
 def check_orphaned(en_keys, used_keys, dynamic_prefixes):
@@ -152,14 +163,17 @@ def check_orphaned(en_keys, used_keys, dynamic_prefixes):
 
     return orphaned
 
+
 # ── Report helpers ────────────────────────────────────────────────────────
 def section(title):
     print(f"\n{BOLD}{'─' * 72}{RESET}")
     print(f"{BOLD}  {title}{RESET}")
     print(f"{BOLD}{'─' * 72}{RESET}")
 
+
 def ok(msg):
     print(f"  {GREEN}✓{RESET} {msg}")
+
 
 def warn(msg, items, limit=999):
     print(f"  {YELLOW}⚠ {RESET}{msg}: {len(items)}")
@@ -167,6 +181,7 @@ def warn(msg, items, limit=999):
         print(f"      {RED}{item}{RESET}")
     if len(items) > limit:
         print(f"      {RED}... and {len(items) - limit} more{RESET}")
+
 
 # ── Main ──────────────────────────────────────────────────────────────────
 def main():
@@ -195,7 +210,9 @@ def main():
     print(f"  Static keys used : {len(used_keys)}")
     if dynamic_prefixes:
         dyn_list = sorted(dynamic_prefixes)
-        print(f"  Dynamic prefixes : {len(dyn_list)}  ({', '.join(dyn_list[:6])}{'...' if len(dyn_list) > 6 else ''})")
+        print(
+            f"  Dynamic prefixes : {len(dyn_list)}  ({', '.join(dyn_list[:6])}{'...' if len(dyn_list) > 6 else ''})"
+        )
 
     errors = 0
     warnings = 0
@@ -218,7 +235,9 @@ def main():
 
     # ── 2. Missing ───────────────────────────────────────────────────────
     section("2. Missing Translations (used in code, not in locale)  [ERROR]")
-    missing_en, missing_bg = check_missing(used_keys, en_keys, bg_keys, dynamic_prefixes)
+    missing_en, missing_bg = check_missing(
+        used_keys, en_keys, bg_keys, dynamic_prefixes
+    )
 
     if missing_en:
         warn("Used in code but MISSING from English", missing_en)
@@ -257,11 +276,14 @@ def main():
     if errors == 0 and warnings == 0:
         print(f"\n  {GREEN}{BOLD}✓ All checks passed. Translations are clean.{RESET}")
     elif errors == 0:
-        print(f"\n  {YELLOW}{BOLD}✓ No errors, but {warnings} warning(s) — see above.{RESET}")
+        print(
+            f"\n  {YELLOW}{BOLD}✓ No errors, but {warnings} warning(s) — see above.{RESET}"
+        )
     else:
         print(f"\n  {RED}{BOLD}✗ {errors} error(s) — see above for details.{RESET}")
 
     sys.exit(0 if errors == 0 else 1)
+
 
 if __name__ == "__main__":
     main()
