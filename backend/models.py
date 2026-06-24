@@ -134,6 +134,35 @@ ADJECTIVES = [
     "Zenith",
     "Vector",
     "Binary",
+    "Cosmic",
+    "Solar",
+    "Galactic",
+    "Vortex",
+    "Aurora",
+    "Plasma",
+    "Pixel",
+    "Neon",
+    "Aero",
+    "Crypto",
+    "Apex",
+    "Sonic",
+    "Tectonic",
+    "Magneto",
+    "Astral",
+    "Ember",
+    "Frost",
+    "Aether",
+    "Primal",
+    "Kinetic",
+    "Omega",
+    "Obsidian",
+    "Radiant",
+    "Volcanic",
+    "Spectral",
+    "Dynamic",
+    "Abyssal",
+    "Magnetic",
+    "Luminous",
 ]
 NOUNS = [
     "Falcon",
@@ -146,6 +175,36 @@ NOUNS = [
     "Ranger",
     "Titan",
     "Specter",
+    "Phoenix",
+    "Horizon",
+    "Sentinel",
+    "Comet",
+    "Odyssey",
+    "Genesis",
+    "Summit",
+    "Pulse",
+    "Beacon",
+    "Glitch",
+    "Helix",
+    "Spark",
+    "Quasar",
+    "Rogue",
+    "Nova",
+    "Seeker",
+    "Pulsar",
+    "Catalyst",
+    "Entropy",
+    "Nebula",
+    "Vanguard",
+    "Anomaly",
+    "Warden",
+    "Strider",
+    "Rift",
+    "Core",
+    "Void",
+    "Phantom",
+    "Goliath",
+    "Mirage",
 ]
 
 METRIC_LOWER_IS_BETTER = {
@@ -176,12 +235,30 @@ def is_metric_lower_better(metric_name):
     return METRIC_LOWER_IS_BETTER.get(metric_name.lower().strip(), False)
 
 
+def to_base36(num):
+    """Convert an integer to a base36 string."""
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    result = ""
+    while num > 0:
+        num, d = divmod(num, 36)
+        result = chars[d] + result
+    return result or "0"
+
+
 def generate_pseudonym():
-    """Generate a random pseudonym like 'Quantum-Falcon-342' for blind review."""
+    """Generate a unique, timestamp-based pseudonym (e.g. 'Quantum-Falcon-28qt')."""
+    import time
+
     adj = random.choice(ADJECTIVES)
     noun = random.choice(NOUNS)
-    num = random.randint(100, 999)
-    return f"{adj}-{noun}-{num}"
+    # 1. Get millisecond timestamp modulo 36^4 (1,679,616)
+    ts_ms = int(time.time() * 1000)
+    raw_num = ts_ms % 1679616
+    # 2. Scramble using LCG-like bijective modular multiplication (7919 is coprime to 36)
+    scrambled = (raw_num * 7919 + 104729) % 1679616
+    # 3. Convert to exactly 4 characters of base36
+    suffix = to_base36(scrambled).zfill(4)
+    return f"{adj}-{noun}-{suffix}"
 
 
 class User(db.Model):

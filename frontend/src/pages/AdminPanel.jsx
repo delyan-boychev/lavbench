@@ -1269,23 +1269,35 @@ export default function AdminPanel() {
     }
   };
 
-  // Download Submissions ZIP
-  const handleDownloadSubmissionsZip = async (challengeId, challengeTitle) => {
+  // Download Submissions ZIP (supports optional stage filtering)
+  const handleDownloadSubmissionsZip = async (
+    challengeId,
+    challengeTitle,
+    stageId = null,
+    stageTitle = null,
+  ) => {
     try {
+      let url = `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`;
+      if (stageId) {
+        url += `?stage_id=${stageId}`;
+      }
       /** @type {Response} */
-      const res = await api.fetch(
-        `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`,
-        {
-          headers: {},
-        },
-      );
+      const res = await api.fetch(url, {
+        headers: {},
+      });
       if (!res.ok) {
         const errData = await res.json();
         showToast(errData.error || t('admin.notifications.download_submissions_failed'), 'rose');
         return;
       }
       const blob = await res.blob();
-      const filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}.zip`;
+
+      let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
+      if (stageTitle) {
+        filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
+      }
+      filename += '.zip';
+
       const link = document.createElement('a');
       link.href = window.URL.createObjectURL(blob);
       link.setAttribute('download', filename);
@@ -1820,12 +1832,26 @@ export default function AdminPanel() {
                                   >
                                     {t('admin.download_csv_scores_short', 'Scores (CSV)')}
                                   </Button>
-                                  <Button
-                                    variant="accent"
-                                    onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
-                                  >
-                                    {t('admin.download_submissions_zip_short', 'Submissions (ZIP)')}
-                                  </Button>
+                                </>
+                              )}
+
+                              {(c.scores_finalized ||
+                                (c.end_time ? new Date(c.end_time) <= new Date() : false)) && (
+                                <Button
+                                  variant="accent"
+                                  onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
+                                >
+                                  {c.scores_finalized
+                                    ? t('admin.download_submissions_zip_short', 'Submissions (ZIP)')
+                                    : t(
+                                        'admin.download_submissions_zip_short_blinded',
+                                        'Submissions (ZIP) (Blinded)',
+                                      )}
+                                </Button>
+                              )}
+
+                              {c.scores_finalized && (
+                                <>
                                   <Button
                                     variant="accent"
                                     onClick={() => handleDownloadAuditLogs(c.id, c.title)}
@@ -1998,6 +2024,31 @@ export default function AdminPanel() {
                                             {t('admin.stages.finalize')}
                                           </Button>
                                         )}
+                                      {(c.scores_finalized ||
+                                        st.is_finalized ||
+                                        (st.end_time
+                                          ? new Date(st.end_time) <= new Date()
+                                          : false)) && (
+                                        <Button
+                                          variant="accent"
+                                          className="py-1 px-2.5"
+                                          onClick={() =>
+                                            handleDownloadSubmissionsZip(
+                                              c.id,
+                                              c.title,
+                                              st.id,
+                                              st.title,
+                                            )
+                                          }
+                                        >
+                                          {c.scores_finalized
+                                            ? t('admin.download_submissions_stage', 'Download')
+                                            : t(
+                                                'admin.download_submissions_stage_blinded',
+                                                'Download (Blinded)',
+                                              )}
+                                        </Button>
+                                      )}
                                       <Button
                                         variant="danger"
                                         className="py-1 px-2.5"

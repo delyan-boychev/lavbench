@@ -18,6 +18,7 @@ from models import (
     Submission,
     generate_pseudonym,
     decrypt_field,
+    to_base36,
 )
 from auth_utils import role_required, jury_access_required
 from evaluation_engine import AVAILABLE_METRICS
@@ -87,6 +88,8 @@ def transliterate_bulgarian(text):
 
 
 def generate_unique_username(name, surname, role="competitor"):
+    import time
+
     trans_name = transliterate_bulgarian(name)
     trans_surname = transliterate_bulgarian(surname)
     norm_name = re.sub(r"[^a-zA-Z0-9]", "", trans_name)
@@ -97,11 +100,16 @@ def generate_unique_username(name, surname, role="competitor"):
     if len(base) < len(prefix) + 4:
         base = f"{prefix}_user"
 
-    while True:
-        num = random.randint(1000, 9999)
-        username = f"{base}_{num}"
-        if not User.query.filter_by(username=username).first():
-            return username
+    # 1. Get millisecond timestamp modulo 36^4 (1,679,616)
+    ts_ms = int(time.time() * 1000)
+    raw_num = ts_ms % 1679616
+
+    # 2. Scramble using LCG-like bijective modular multiplication (7919 is coprime to 36)
+    scrambled = (raw_num * 7919 + 104729) % 1679616
+
+    # 3. Convert to exactly 4 characters of base36
+    suffix = to_base36(scrambled).zfill(4)
+    return f"{base}_{suffix}"
 
 
 def generate_random_password(length=16):
@@ -1293,39 +1301,72 @@ def download_scores_csv(challenge_id):
 @jury_access_required
 def download_submissions_zip(challenge_id):
     """
-    Download all completed student submissions as a ZIP archive.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
+    Download completed student submissions as a ZIP archive.
+    Allows anonymized downloads when a stage or the competition has ended,
+    and non-anonymized downloads once finalized.
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    if not challenge.scores_finalized:
-        return jsonify({"error": "Scores must be finalized before downloading submissions."}), 400
+    stage_id = request.args.get("stage_id")
+
+    now = datetime.utcnow()
+
+    # 1. Determine target stage and tasks
+    stage = None
+    if stage_id:
+        from models import Stage
+
+        stage = db.get_or_404(Stage, stage_id)
+        if str(stage.challenge_id) != str(challenge.id):
+            return jsonify({"error": "Stage does not belong to this challenge."}), 400
+        tasks = [t for t in challenge.tasks if t.stage_id == stage.id]
+    else:
+        tasks = challenge.tasks
+
+    # 2. Check if download is allowed
+    # Allowed if finalized OR (if stage_id provided, stage has ended) OR (if no stage_id, challenge has ended)
+    is_allowed = False
+    if challenge.scores_finalized:
+        is_allowed = True
+    elif stage and (stage.is_finalized or stage.end_time < now):
+        is_allowed = True
+    elif not stage and (challenge.end_time and challenge.end_time < now):
+        is_allowed = True
+
+    if not is_allowed:
+        if stage:
+            return (
+                jsonify(
+                    {"error": "Submissions cannot be downloaded until this stage has finished."}
+                ),
+                400,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "error": "Submissions cannot be downloaded until the competition has finished."
+                    }
+                ),
+                400,
+            )
+
+    # 3. Determine if anonymized
+    # Anonymized unless challenge/competition is finalized (scores_finalized = True)
+    is_anonymized = not challenge.scores_finalized
 
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
-    tasks = challenge.tasks
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for comp in competitors:
-            name_part = decrypt_field(comp.name) or ""
-            surname_part = decrypt_field(comp.surname) or ""
-            comp_name = f"{name_part}_{surname_part}_{comp.alias_id}"
+            # 4. Folder name according to anonymization state
+            if is_anonymized:
+                comp_name = comp.alias_id
+            else:
+                name_part = decrypt_field(comp.name) or ""
+                surname_part = decrypt_field(comp.surname) or ""
+                comp_name = f"{name_part}_{surname_part}_{comp.alias_id}"
+
             comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
 
             for task in tasks:
@@ -1343,7 +1384,22 @@ def download_submissions_zip(challenge_id):
                     task_title = "".join(
                         c for c in task.title if c.isalnum() or c in (" ", "_", "-")
                     ).strip()
-                    filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
+
+                    # 5. Group by stage name if there are multiple stages in the challenge
+                    if not stage_id and task.stage_id:
+                        from models import Stage
+
+                        task_stage = db.session.get(Stage, task.stage_id)
+                        stage_title = (
+                            "".join(
+                                c for c in task_stage.title if c.isalnum() or c in (" ", "_", "-")
+                            ).strip()
+                            if task_stage
+                            else "Stage"
+                        )
+                        filename = f"{comp_name}/{stage_title}/{task_title}_sub_{best_sub.id}.ipynb"
+                    else:
+                        filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
 
                     try:
                         cells_data = (
@@ -1387,18 +1443,24 @@ def download_submissions_zip(challenge_id):
 
         # Check if the zip file has no entries, write a readme to prevent empty/corrupted archives
         if not zip_file.namelist():
+            target_desc = f"stage: {stage.title}" if stage else f"challenge: {challenge.title}"
             zip_file.writestr(
                 "README.txt",
-                f"No completed student submissions found for challenge: {challenge.title}",
+                f"No completed student submissions found for {target_desc}",
             )
 
     zip_buffer.seek(0)
+    zip_filename = f"submissions_challenge_{challenge_id}"
+    if stage_id:
+        zip_filename += f"_stage_{stage_id}"
+    if is_anonymized:
+        zip_filename += "_anonymized"
+    zip_filename += ".zip"
+
     return Response(
         zip_buffer.getvalue(),
         mimetype="application/zip",
-        headers={
-            "Content-disposition": f"attachment; filename=submissions_challenge_{challenge_id}.zip"
-        },
+        headers={"Content-disposition": f"attachment; filename={zip_filename}"},
     )
 
 
