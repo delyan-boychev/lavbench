@@ -10,8 +10,6 @@ from services.submission_service import (
     extract_code_from_cells,
     extract_code_from_notebook,
     check_execution_rules,
-    calculate_submission_priority,
-    get_best_submission,
 )
 
 

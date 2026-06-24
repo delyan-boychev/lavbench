@@ -95,10 +95,11 @@ cd backend
 cd ..
 sleep 2
 
-# 6. Start Celery Worker
+# 6. Start Celery Worker (restricted to system tasks queue, low concurrency default to save resource overhead)
 echo "--> Starting Celery Worker..."
 cd backend
-celery -A tasks.celery worker --loglevel=info > celery.log 2>&1 &
+CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-2}"
+INTERNAL_ONLY_WORKER="true" celery -A tasks.celery worker --loglevel=info -c "$CONCURRENCY" -Q celery > celery.log 2>&1 &
 cd ..
 echo "    Celery running. Logs redirected to backend/celery.log"
 

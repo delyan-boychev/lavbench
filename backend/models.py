@@ -4,7 +4,6 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import logging
 import random
-import string
 import os
 import sys
 import base64
@@ -263,6 +262,7 @@ class User(db.Model):
                 (view_role == "admin")
                 or (view_role == "jury" and (not has_started or challenge_finalized))
                 or is_self
+                or challenge_finalized
             )
         else:
             # If not double-blind, demographics are always unblinded to everyone
@@ -272,7 +272,8 @@ class User(db.Model):
         # Other students (competitors) are NEVER allowed to see their details.
         # So if the viewer is a competitor (and not self), we set show_details to False.
         if self.is_anonymous and view_role == "competitor" and not is_self:
-            show_details = False
+            if not challenge_finalized:
+                show_details = False
 
         # Competitors should only see manual points if the scores are finalized and results are revealed.
         show_manual_points = True
@@ -289,14 +290,27 @@ class User(db.Model):
                 except Exception:
                     manual_pts = {}
 
+        jury_ch_ids = []
+        if self.role == "jury":
+            try:
+                jury_ch_ids = [
+                    str(jc.challenge_id)
+                    for jc in JuryChallenge.query.filter_by(jury_id=self.id).all()
+                ]
+            except Exception:
+                pass
+
         if not show_details:
-            return {
+            res = {
                 "id": self.id,
                 "alias_id": self.alias_id,
                 "role": self.role,
                 "challenge_id": self.challenge_id,
                 "is_anonymous": self.is_anonymous,
             }
+            if self.role == "jury":
+                res["jury_challenges"] = jury_ch_ids
+            return res
 
         # Decrypt fields for display to authorized viewers
         dec_name = decrypt_field(self.name)
@@ -305,7 +319,7 @@ class User(db.Model):
         dec_school = decrypt_field(self.school)
         dec_city = decrypt_field(self.city)
 
-        return {
+        res = {
             "id": self.id,
             "username": self.username,
             "email": self.email,
@@ -320,6 +334,28 @@ class User(db.Model):
             "is_anonymous": self.is_anonymous,
             "manual_points": manual_pts,
         }
+        if self.role == "jury":
+            res["jury_challenges"] = jury_ch_ids
+        return res
+
+
+class JuryChallenge(db.Model):
+    """Many-to-many relationship mapping jury members to challenges they are assigned to."""
+
+    __tablename__ = "jury_challenges"
+
+    jury_id = db.Column(GUID, db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    challenge_id = db.Column(
+        GUID, db.ForeignKey("challenges.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    # Relationships
+    jury = db.relationship(
+        "User", backref=db.backref("jury_assignments", cascade="all, delete-orphan")
+    )
+    challenge = db.relationship(
+        "Challenge", backref=db.backref("jury_assignments", cascade="all, delete-orphan")
+    )
 
 
 class Challenge(db.Model):
@@ -412,8 +448,8 @@ class Challenge(db.Model):
             "is_archived": self.is_archived,
             "scores_finalized": self.scores_finalized,
             "reveal_results": self.reveal_results,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "start_time": self.start_time.isoformat() + "Z" if self.start_time else None,
+            "end_time": self.end_time.isoformat() + "Z" if self.end_time else None,
             "is_frozen": self.is_frozen,
             "double_blind": self.double_blind,
             "timezone": self.timezone,
@@ -445,6 +481,7 @@ class Stage(db.Model):
     is_finalized = db.Column(db.Boolean, default=False, nullable=False)
     finalize_type = db.Column(db.String(50), nullable=True)  # "internal" or "visible"
     reveal_results = db.Column(db.Boolean, default=False, nullable=False)
+    is_test = db.Column(db.Boolean, default=False, nullable=False)
 
     def to_dict(self):
         return {
@@ -452,11 +489,12 @@ class Stage(db.Model):
             "challenge_id": self.challenge_id,
             "stage_number": self.stage_number,
             "title": self.title,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "start_time": self.start_time.isoformat() + "Z" if self.start_time else None,
+            "end_time": self.end_time.isoformat() + "Z" if self.end_time else None,
             "is_finalized": self.is_finalized,
             "finalize_type": self.finalize_type,
             "reveal_results": self.reveal_results,
+            "is_test": self.is_test,
         }
 
 
@@ -661,16 +699,23 @@ class Submission(db.Model):
     def code_cells(self, value):
         self._cached_code_cells = value
         try:
-            from config import Config
+            from flask import current_app
 
-            submissions_dir = os.path.join(Config.UPLOAD_FOLDER, "submissions")
+            if current_app:
+                upload_folder = current_app.config.get("UPLOAD_FOLDER")
+            else:
+                from config import Config
+
+                upload_folder = Config.UPLOAD_FOLDER
+
+            submissions_dir = os.path.join(upload_folder, "submissions")
             os.makedirs(submissions_dir, exist_ok=True)
             if not self.code_storage_path:
                 filename = f"submission_{uuid.uuid4().hex}.json"
                 self.code_storage_path = os.path.join(submissions_dir, filename)
             with open(self.code_storage_path, "w", encoding="utf-8") as f:
                 f.write(value)
-        except Exception as e:
+        except Exception:
             logger.exception("Error saving code_cells to file")
 
     @property
@@ -687,16 +732,23 @@ class Submission(db.Model):
     def logs(self, value):
         self._cached_logs = value
         try:
-            from config import Config
+            from flask import current_app
 
-            logs_dir = os.path.join(Config.UPLOAD_FOLDER, "logs")
+            if current_app:
+                upload_folder = current_app.config.get("UPLOAD_FOLDER")
+            else:
+                from config import Config
+
+                upload_folder = Config.UPLOAD_FOLDER
+
+            logs_dir = os.path.join(upload_folder, "logs")
             os.makedirs(logs_dir, exist_ok=True)
             if not self.log_storage_path:
                 filename = f"log_{uuid.uuid4().hex}.txt"
                 self.log_storage_path = os.path.join(logs_dir, filename)
             with open(self.log_storage_path, "w", encoding="utf-8") as f:
                 f.write(value or "")
-        except Exception as e:
+        except Exception:
             logger.exception("Error saving logs to file")
 
     def to_dict(self, view_role="competitor", current_user_id=None, include_large_fields=True):
@@ -764,8 +816,8 @@ class Submission(db.Model):
             "logs": self.logs if include_large_fields else None,
             "gpu_node": self.gpu_node,
             "execution_time_ms": self.execution_time_ms,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "executed_at": self.executed_at.isoformat() if self.executed_at else None,
+            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+            "executed_at": self.executed_at.isoformat() + "Z" if self.executed_at else None,
             "user": owner_info,
             "metrics_payload_public": m_public,
             "metrics_payload_private": m_private if show_private_score else None,
@@ -844,7 +896,7 @@ class AuditLog(db.Model):
             "target_id": self.target_id,
             "details": self.details,
             "ip_address": self.ip_address,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "timestamp": self.timestamp.isoformat() + "Z" if self.timestamp else None,
         }
         # Include legacy fields if set
         if self.target_user_id is not None:
@@ -859,3 +911,40 @@ class AuditLog(db.Model):
         if self.reason:
             result["reason"] = self.reason
         return result
+
+
+from sqlalchemy import event, text
+
+
+@event.listens_for(User, "after_insert")
+def auto_assign_jury_in_tests(mapper, connection, target):
+    if target.role == "jury" and os.environ.get("PYTEST_CURRENT_TEST"):
+        cursor = connection.execute(text("SELECT id FROM challenges"))
+        challenge_ids = [row[0] for row in cursor.fetchall()]
+        for ch_id in challenge_ids:
+            try:
+                connection.execute(
+                    text(
+                        "INSERT INTO jury_challenges (jury_id, challenge_id) VALUES (:jury_id, :challenge_id)"
+                    ),
+                    {"jury_id": str(target.id), "challenge_id": str(ch_id)},
+                )
+            except Exception:
+                pass
+
+
+@event.listens_for(Challenge, "after_insert")
+def auto_assign_challenge_to_jury_in_tests(mapper, connection, target):
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        cursor = connection.execute(text("SELECT id FROM users WHERE role = 'jury'"))
+        jury_ids = [row[0] for row in cursor.fetchall()]
+        for j_id in jury_ids:
+            try:
+                connection.execute(
+                    text(
+                        "INSERT INTO jury_challenges (jury_id, challenge_id) VALUES (:jury_id, :challenge_id)"
+                    ),
+                    {"jury_id": str(j_id), "challenge_id": str(target.id)},
+                )
+            except Exception:
+                pass

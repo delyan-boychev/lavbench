@@ -174,7 +174,7 @@ class TestWorkerEndpoints:
         assert sub.metrics_payload_private is not None
 
     def test_report_progress_with_fallback_data(self):
-        from cache_utils import get_redis_client, set_cached
+        from cache_utils import get_redis_client
 
         r = get_redis_client()
         if r:

@@ -80,6 +80,7 @@ services:
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
+      - BACKUPS_DIR=/backups
     depends_on:
       db:
         condition: service_healthy
@@ -122,6 +123,7 @@ services:
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
+      - BACKUPS_DIR=/backups
     depends_on:
       redis:
         condition: service_healthy
@@ -141,7 +143,45 @@ services:
       retries: 3
       start_period: 20s
 
-  # 5. React Frontend & Nginx Router
+  # 5. Celery Worker (internal/system tasks worker only)
+  celery_worker:
+    build: ./backend
+    container_name: lavbench_worker
+    restart: always
+    command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q celery -c $${CELERY_WORKER_CONCURRENCY:-2}'
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - HF_CACHE_DIR=/app/hf_cache
+      - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
+      - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
+      - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
+      - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
+      - BACKUPS_DIR=/backups
+      - INTERNAL_ONLY_WORKER=true
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+      - backups_data:/backups
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A tasks.celery inspect ping --timeout 5 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # 6. React Frontend & Nginx Router
   frontend:
     build: ./frontend
     container_name: lavbench_frontend

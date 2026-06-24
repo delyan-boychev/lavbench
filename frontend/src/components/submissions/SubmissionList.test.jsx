@@ -3,6 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SubmissionList from './SubmissionList';
 
+vi.mock('../../context/AppContext', () => ({
+  useApp: () => ({
+    selectedChallenge: { id: 'c1-id', timezone: 'UTC' },
+  }),
+}));
+
 describe('SubmissionList Component', () => {
   it('renders loading indicator when loading is true', () => {
     render(<SubmissionList submissions={[]} selected={null} onSelect={() => {}} loading={true} />);

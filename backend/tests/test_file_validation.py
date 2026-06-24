@@ -1,4 +1,3 @@
-import io
 import json
 from services.file_validation import (
     validate_extension,

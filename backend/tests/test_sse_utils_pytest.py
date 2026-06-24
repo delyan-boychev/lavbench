@@ -1,6 +1,5 @@
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from sse_utils import (
     publish_leaderboard_update,

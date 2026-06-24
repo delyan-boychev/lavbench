@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../services/ApiService';
+import ChallengeService from '../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
@@ -19,6 +21,7 @@ import CompetitorManager from '../components/admin/CompetitorManager';
 import ChallengeConfig from '../components/admin/ChallengeConfig';
 import TaskForm from '../components/admin/TaskForm';
 import SidebarNav from '../components/admin/SidebarNav';
+import AuditLogViewer from '../components/admin/AuditLogViewer';
 import { TIMEZONES } from '../utils/timezones';
 import { formatMetricName } from '../utils/metrics';
 // eslint-disable-next-line react-refresh/only-export-components
@@ -48,12 +51,13 @@ export default function AdminPanel() {
     return dateStr.substring(0, 16);
   };
 
-  const formatDateTime = (dateStr, timezone = 'UTC') => {
+  const formatDateTime = (dateStr, tz) => {
     if (!dateStr) return '—';
     try {
       const d = new Date(dateStr);
+      const targetTz = tz || 'UTC';
       const formatter = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: timezone || 'UTC',
+        timeZone: targetTz,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -63,12 +67,12 @@ export default function AdminPanel() {
       });
       const parts = formatter.formatToParts(d);
       const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
-      const tzLabel = (timezone || 'UTC').replace(/_/g, ' ');
+      const tzLabel = targetTz.replace(/_/g, ' ');
       return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
     } catch {
       const d = new Date(dateStr);
       const pad = (n) => n.toString().padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${t('challenge.local_timezone')}`;
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} (UTC)`;
     }
   };
 
@@ -107,6 +111,8 @@ export default function AdminPanel() {
     is_frozen: false,
     double_blind: true,
     timezone: 'UTC',
+    test_stage_start_time: '',
+    test_stage_end_time: '',
   });
 
   // Edit Challenge State
@@ -151,6 +157,7 @@ export default function AdminPanel() {
     stage_number: '',
     start_time: '',
     end_time: '',
+    reveal_results: false,
   });
 
   const [finalizingStage, setFinalizingStage] = useState(null);
@@ -159,6 +166,11 @@ export default function AdminPanel() {
     reveal_public: true,
     reveal_private: false,
     reveal_points: false,
+  });
+
+  const [finalizingChallenge, setFinalizingChallenge] = useState(null);
+  const [challengeFinalizeForm, setChallengeFinalizeForm] = useState({
+    reveal_results: false,
   });
 
   // Manual Competitor Register State
@@ -191,6 +203,7 @@ export default function AdminPanel() {
     city: '',
     challenge_id: '',
     is_anonymous: false,
+    jury_challenges: [],
   });
   const [generatedUserCredentials, setGeneratedUserCredentials] = useState(null);
 
@@ -207,6 +220,8 @@ export default function AdminPanel() {
     city: '',
     challenge_id: '',
     is_anonymous: false,
+    role: 'competitor',
+    jury_challenges: [],
   });
 
   // CSV Import State
@@ -436,6 +451,8 @@ export default function AdminPanel() {
           is_frozen: false,
           double_blind: true,
           timezone: 'UTC',
+          test_stage_start_time: '',
+          test_stage_end_time: '',
         });
         fetchChallenges();
         fetchPaginatedChallenges();
@@ -504,23 +521,30 @@ export default function AdminPanel() {
     }
   };
 
-  // Handle finalize scores
-  const handleFinalize = async (id) => {
-    const ok = await confirm({
-      title: t('admin.confirm.finalize_scores_title'),
-      message: t('admin.confirm.finalize_scores_message'),
-    });
-    if (!ok) return;
+  // Handle finalize scores setup
+  const handleFinalizeSetup = (challenge) => {
+    setFinalizingChallenge(challenge);
+    setChallengeFinalizeForm({ reveal_results: false });
+  };
+
+  // Handle save/submit finalize challenge
+  const handleSaveFinalizeChallenge = async (e) => {
+    e.preventDefault();
+    if (!finalizingChallenge) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${id}/finalize`, {
+      const res = await api.fetch(`${API_BASE}/challenges/${finalizingChallenge.id}/finalize`, {
         method: 'POST',
-        headers: {},
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reveal_results: challengeFinalizeForm.reveal_results,
+        }),
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/finalize']['post']['responses']['200']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.scores_finalized'));
+        setFinalizingChallenge(null);
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
@@ -528,6 +552,34 @@ export default function AdminPanel() {
       }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
+    }
+  };
+
+  // Handle toggle reveal results for challenge
+  const handleToggleRevealChallenge = async (id, currentRevealResults) => {
+    const nextVal = !currentRevealResults;
+    try {
+      const res = await api.fetch(`${API_BASE}/challenges/${id}/reveal-results`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reveal_results: nextVal }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(
+          nextVal
+            ? t('admin.notifications.results_revealed', 'Results revealed successfully.')
+            : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
+        );
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showToast(data.error || 'Failed to toggle reveal', 'rose');
+      }
+    } catch {
+      showToast(t('admin.notifications.network_error'), 'rose');
     }
   };
 
@@ -553,33 +605,6 @@ export default function AdminPanel() {
     }
   };
 
-  // Handle scheduled test competition creation
-  const handleCreateTestCompetition = async (id) => {
-    const ok = await confirm({
-      title: t('admin.confirm.schedule_test_title'),
-      message: t('admin.confirm.schedule_test_message'),
-    });
-    if (!ok) return;
-    try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${id}/test-competition`, {
-        method: 'POST',
-        headers: {},
-      });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/test-competition']['post']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.test_competition_scheduled'));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showToast(data.error || t('admin.notifications.test_competition_schedule_failed'), 'rose');
-      }
-    } catch {
-      showToast(t('admin.notifications.network_error_schedule_test'), 'rose');
-    }
-  };
-
   // Stage management helpers
   const initCreateStage = (challengeId) => {
     setStageChallengeId(challengeId);
@@ -588,6 +613,7 @@ export default function AdminPanel() {
       stage_number: '',
       start_time: '',
       end_time: '',
+      reveal_results: false,
     });
     setIsCreatingStage(true);
   };
@@ -603,6 +629,7 @@ export default function AdminPanel() {
           : '',
       start_time: formatDateTimeLocal(stage.start_time),
       end_time: formatDateTimeLocal(stage.end_time),
+      reveal_results: !!stage.reveal_results,
     });
   };
 
@@ -657,6 +684,7 @@ export default function AdminPanel() {
         stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
         start_time: stageForm.start_time,
         end_time: stageForm.end_time,
+        reveal_results: !!stageForm.reveal_results,
       };
       /** @type {Response} */
       const res = await api.fetch(
@@ -894,6 +922,11 @@ export default function AdminPanel() {
       return;
     }
 
+    if (!baselineFile) {
+      showToast(t('admin.tasks.baseline_required', 'Baseline notebook is required.'), 'rose');
+      return;
+    }
+
     setSavingTask(true);
     const formData = prepareTaskFormData();
 
@@ -944,10 +977,20 @@ export default function AdminPanel() {
       return;
     }
 
+    const hasBaseline =
+      (editingTask.baseline_notebook_path && !editingTask.baselineDeleted) || baselineFile;
+    if (!hasBaseline) {
+      showToast(t('admin.tasks.baseline_required', 'Baseline notebook is required.'), 'rose');
+      return;
+    }
+
     setSavingTask(true);
     const formData = prepareTaskFormData();
     if (deletedNames.length > 0) {
       formData.append('deleted_files', JSON.stringify(deletedNames));
+    }
+    if (editingTask.baselineDeleted && !baselineFile) {
+      formData.append('delete_baseline', 'true');
     }
 
     try {
@@ -1057,6 +1100,16 @@ export default function AdminPanel() {
       showToast(t('admin.notifications.select_competition_competitor_role'), 'rose');
       return;
     }
+    if (newUser.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newUser.email)) {
+        showToast(
+          t('admin.notifications.invalid_email', 'Please enter a valid email address'),
+          'rose',
+        );
+        return;
+      }
+    }
     setGeneratedUserCredentials(null);
 
     // Hash password helper
@@ -1104,6 +1157,7 @@ export default function AdminPanel() {
           city: '',
           challenge_id: '',
           is_anonymous: false,
+          jury_challenges: [],
         });
         fetchUsers();
       } else {
@@ -1244,6 +1298,35 @@ export default function AdminPanel() {
     }
   };
 
+  const handleDownloadAuditLogs = async (challengeId, challengeTitle) => {
+    try {
+      const res = await ChallengeService.downloadAuditLogs(challengeId);
+      if (!res.ok) {
+        showToast(
+          t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
+          'rose',
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(
+        t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
+      );
+    } catch {
+      showToast(
+        t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
+        'rose',
+      );
+    }
+  };
+
   const handleExportChallenge = async (challengeId, challengeTitle) => {
     try {
       const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
@@ -1253,9 +1336,8 @@ export default function AdminPanel() {
         showToast('Failed to export challenge.', 'rose');
         return;
       }
-      const json = await res.json();
-      const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
-      const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.json`;
+      const blob = await res.blob();
+      const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
       const link = document.createElement('a');
       link.href = window.URL.createObjectURL(blob);
       link.setAttribute('download', filename);
@@ -1301,11 +1383,23 @@ export default function AdminPanel() {
       city: user.city || '',
       challenge_id: user.challenge_id ? user.challenge_id.toString() : '',
       is_anonymous: user.is_anonymous || false,
+      role: user.role || 'competitor',
+      jury_challenges: user.jury_challenges || [],
     });
   };
 
   const handleUpdateUserSubmit = async (e) => {
     e.preventDefault();
+    if (editUserForm.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(editUserForm.email)) {
+        showToast(
+          t('admin.notifications.invalid_email', 'Please enter a valid email address'),
+          'rose',
+        );
+        return;
+      }
+    }
     try {
       /** @type {Response} */
       const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
@@ -1324,6 +1418,8 @@ export default function AdminPanel() {
           city: editUserForm.city || null,
           challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
           is_anonymous: editUserForm.is_anonymous,
+          role: editUserForm.role,
+          jury_challenges: editUserForm.jury_challenges,
         }),
       });
       /** @type {import('../types/api').paths['/api/admin/users/{user_id}']['put']['responses']['200']['content']['application/json']} */
@@ -1437,727 +1533,1103 @@ export default function AdminPanel() {
 
   // Render components
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-fadein">
-      <SidebarNav
-        adminSubTab={adminSubTab}
-        setAdminSubTab={setAdminSubTab}
-        currentUser={currentUser}
-        setIsCreatingTask={setIsCreatingTask}
-        setEditingTask={setEditingTask}
-        setIsCreatingStage={setIsCreatingStage}
-        setEditingStage={setEditingStage}
-        setFinalizingStage={setFinalizingStage}
-      />
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-fadein">
+        <SidebarNav
+          adminSubTab={adminSubTab}
+          setAdminSubTab={setAdminSubTab}
+          currentUser={currentUser}
+          setIsCreatingTask={setIsCreatingTask}
+          setEditingTask={setEditingTask}
+          setIsCreatingStage={setIsCreatingStage}
+          setEditingStage={setEditingStage}
+          setFinalizingStage={setFinalizingStage}
+        />
 
-      {/* Main Workspace Work Areas */}
-      <div className="lg:col-span-3">
-        {/* 1. COMPETITION & TASK CONFIGURATION */}
-        {adminSubTab === 'competition-mgmt' &&
-          !isCreatingTask &&
-          !editingTask &&
-          !isCreatingStage &&
-          !editingStage &&
-          !finalizingStage && (
-            <div className="flex flex-col gap-6">
-              {editingChallenge ? (
-                <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-                  <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-                    <h2 className="text-xl font-bold text-white">
-                      {t('admin.edit_competition', { title: editingChallenge.title })}
-                    </h2>
+        {/* Main Workspace Work Areas */}
+        <div className="lg:col-span-3">
+          {/* 1. COMPETITION & TASK CONFIGURATION */}
+          {adminSubTab === 'competition-mgmt' &&
+            !isCreatingTask &&
+            !editingTask &&
+            !isCreatingStage &&
+            !editingStage &&
+            !finalizingStage &&
+            !finalizingChallenge && (
+              <div className="flex flex-col gap-6">
+                {editingChallenge ? (
+                  <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
+                    <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                      <h2 className="text-xl font-bold text-white">
+                        {t('admin.edit_competition', { title: editingChallenge.title })}
+                      </h2>
+                    </div>
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const res = await handleUpdateChallenge(
+                          editingChallenge.id,
+                          editingChallenge,
+                        );
+                        if (res.success) setEditingChallenge(null);
+                      }}
+                      className="flex flex-col gap-4"
+                    >
+                      <InputField
+                        label={t('admin.competition_title')}
+                        value={editingChallenge.title}
+                        onChange={(e) =>
+                          setEditingChallenge({ ...editingChallenge, title: e.target.value })
+                        }
+                        required
+                      />
+                      <InputField
+                        multiline
+                        label={t('admin.description')}
+                        value={editingChallenge.description}
+                        onChange={(e) =>
+                          setEditingChallenge({ ...editingChallenge, description: e.target.value })
+                        }
+                        rows={4}
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <InputField
+                          label={t('admin.daily_limits')}
+                          type="number"
+                          value={editingChallenge.max_eval_requests}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              max_eval_requests: parseInt(e.target.value) || 0,
+                            })
+                          }
+                        />
+                        <InputField
+                          label={t('admin.ram_limit_override')}
+                          type="number"
+                          value={editingChallenge.ram_limit_mb}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              ram_limit_mb: parseInt(e.target.value) || 0,
+                            })
+                          }
+                        />
+                        <InputField
+                          label={t('admin.time_limit_override')}
+                          type="number"
+                          value={editingChallenge.time_limit_sec}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              time_limit_sec: parseInt(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <InputField
+                          label={t('admin.stages.start_time_label')}
+                          type="datetime-local"
+                          value={formatDateTimeLocal(editingChallenge.start_time)}
+                          onChange={(e) =>
+                            setEditingChallenge({ ...editingChallenge, start_time: e.target.value })
+                          }
+                          required
+                        />
+                        <InputField
+                          label={t('admin.stages.end_time_label')}
+                          type="datetime-local"
+                          value={formatDateTimeLocal(editingChallenge.end_time)}
+                          onChange={(e) =>
+                            setEditingChallenge({ ...editingChallenge, end_time: e.target.value })
+                          }
+                          required
+                        />
+                        <SelectField
+                          label={t('admin.timezone_choose')}
+                          value={editingChallenge.timezone || 'UTC'}
+                          onChange={(val) =>
+                            setEditingChallenge({ ...editingChallenge, timezone: val })
+                          }
+                          options={TIMEZONES}
+                          required
+                        />
+                      </div>
+                      {(() => {
+                        const existingTestStage = editingChallenge.stages?.find((s) => s.is_test);
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                            <InputField
+                              label={t('admin.test_stage_start')}
+                              type="datetime-local"
+                              value={
+                                editingChallenge.test_stage_start_time !== undefined
+                                  ? editingChallenge.test_stage_start_time
+                                  : existingTestStage?.start_time
+                                    ? existingTestStage.start_time.slice(0, 16)
+                                    : ''
+                              }
+                              onChange={(e) =>
+                                setEditingChallenge({
+                                  ...editingChallenge,
+                                  test_stage_start_time: e.target.value,
+                                })
+                              }
+                            />
+                            <InputField
+                              label={t('admin.test_stage_end')}
+                              type="datetime-local"
+                              value={
+                                editingChallenge.test_stage_end_time !== undefined
+                                  ? editingChallenge.test_stage_end_time
+                                  : existingTestStage?.end_time
+                                    ? existingTestStage.end_time.slice(0, 16)
+                                    : ''
+                              }
+                              onChange={(e) =>
+                                setEditingChallenge({
+                                  ...editingChallenge,
+                                  test_stage_end_time: e.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                        );
+                      })()}
+                      <div className="flex flex-col gap-3 mt-2.5">
+                        <ToggleField
+                          label={t('admin.requires_gpu_sandbox')}
+                          id="edit-gpu"
+                          checked={editingChallenge.gpu_required}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              gpu_required: e.target.checked,
+                            })
+                          }
+                        />
+                        <ToggleField
+                          label={t('admin.double_blind_eval')}
+                          id="edit-double-blind"
+                          checked={editingChallenge.double_blind !== false}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              double_blind: e.target.checked,
+                            })
+                          }
+                        />
+                        <ToggleField
+                          label={t('admin.freeze_label')}
+                          id="edit-is-frozen"
+                          checked={editingChallenge.is_frozen || false}
+                          onChange={(e) =>
+                            setEditingChallenge({
+                              ...editingChallenge,
+                              is_frozen: e.target.checked,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex gap-3 mt-4">
+                        <Button type="submit" variant="primary">
+                          {t('admin.stages.save_changes_btn')}
+                        </Button>
+                        <Button onClick={() => setEditingChallenge(null)} variant="secondary">
+                          {t('common.cancel')}
+                        </Button>
+                      </div>
+                    </form>
                   </div>
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      const res = await handleUpdateChallenge(
-                        editingChallenge.id,
-                        editingChallenge,
-                      );
-                      if (res.success) setEditingChallenge(null);
+                ) : (
+                  <div className="flex flex-col gap-6">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <h1 className="text-xl font-bold text-white">
+                        {t('admin.active_competitions')}
+                      </h1>
+                      <div className="flex gap-2">
+                        <input
+                          ref={importFileRef}
+                          type="file"
+                          accept=".json,.zip"
+                          className="hidden"
+                          onChange={handleImportChallenge}
+                        />
+                        <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
+                          {t('admin.import_challenge', 'Import Challenge')}
+                        </Button>
+                        <Button
+                          variant="primary"
+                          onClick={() => initCreateTask()}
+                          disabled={!selectedChallenge}
+                        >
+                          <Plus size={16} />
+                          {t('admin.add_task')}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {paginatedChallengesList.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">
+                        {t('admin.no_competitions_created')}
+                      </p>
+                    ) : (
+                      paginatedChallengesList.map((c) => (
+                        <div
+                          key={c.id}
+                          className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col gap-4"
+                        >
+                          <div className="flex flex-wrap justify-between items-start gap-4">
+                            <div>
+                              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                {c.title}
+                                {c.is_archived && (
+                                  <span className="text-[10px] bg-slate-800 border border-white/5 text-slate-400 px-2 py-0.5 rounded-full font-bold">
+                                    {t('admin.archived')}
+                                  </span>
+                                )}
+                              </h2>
+                              <p className="text-xs text-slate-400 mt-1">
+                                {c.description || t('admin.no_description')}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
+                                {t('admin.stages.edit')}
+                              </Button>
+                              <Button variant="secondary" onClick={() => handleArchiveToggle(c.id)}>
+                                {c.is_archived ? t('admin.restore') : t('admin.archive')}
+                              </Button>
+
+                              {c.scores_finalized && (
+                                <>
+                                  <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">
+                                    {t('leaderboard.finalized')}
+                                  </span>
+                                  <Button
+                                    variant="accent"
+                                    onClick={() => handleDownloadScores(c.id, c.title)}
+                                  >
+                                    {t('admin.download_csv_scores_short', 'Scores (CSV)')}
+                                  </Button>
+                                  <Button
+                                    variant="accent"
+                                    onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
+                                  >
+                                    {t('admin.download_submissions_zip_short', 'Submissions (ZIP)')}
+                                  </Button>
+                                  <Button
+                                    variant="accent"
+                                    onClick={() => handleDownloadAuditLogs(c.id, c.title)}
+                                  >
+                                    {t('admin.download_audits_json_short', 'Audits (JSON)')}
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() =>
+                                      handleToggleRevealChallenge(c.id, c.reveal_results)
+                                    }
+                                  >
+                                    {c.reveal_results
+                                      ? t('admin.hide_results', 'Hide')
+                                      : t('admin.reveal_results', 'Reveal')}
+                                  </Button>
+                                </>
+                              )}
+                              {!c.scores_finalized &&
+                                currentUser.role === 'jury' &&
+                                (c.end_time ? new Date(c.end_time) <= new Date() : false) && (
+                                  <Button
+                                    variant="accent"
+                                    onClick={() => handleFinalizeSetup(c)}
+                                    disabled={c.stages && c.stages.some((st) => !st.is_finalized)}
+                                    title={
+                                      c.stages && c.stages.some((st) => !st.is_finalized)
+                                        ? t('leaderboard.finalize_disabled_tooltip')
+                                        : ''
+                                    }
+                                  >
+                                    {t('admin.finalize_short', 'Finalize')}
+                                  </Button>
+                                )}
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleExportChallenge(c.id, c.title)}
+                              >
+                                {t('admin.export_short', 'Export')}
+                              </Button>
+                              <Button
+                                variant="danger"
+                                onClick={() => handleDeleteChallenge(c.id, c.title)}
+                              >
+                                {t('admin.stages.delete')}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/5 pt-4 mt-2">
+                            <div className="flex justify-between items-center mb-3">
+                              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                {t('admin.tasks_in_competition', {
+                                  count: c.tasks ? c.tasks.length : 0,
+                                })}
+                              </h3>
+                              <Button
+                                variant="primary"
+                                className="py-1 px-3 text-[10px]"
+                                onClick={() => initCreateTask(c.id)}
+                              >
+                                <Plus size={14} />
+                                {t('admin.add_task')}
+                              </Button>
+                            </div>
+                            {c.tasks?.length === 0 ? (
+                              <p className="text-xs text-slate-500 italic">
+                                {t('admin.no_tasks_created')}
+                              </p>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {c.tasks?.map((task) => (
+                                  <div
+                                    key={task.id}
+                                    className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                                  >
+                                    <div>
+                                      <span className="font-bold text-slate-200">{task.title}</span>
+                                      <span className="text-[10px] text-slate-500 ml-2">
+                                        {t('admin.public_eval_split', {
+                                          percentage: task.public_eval_percentage || 30,
+                                        })}
+                                      </span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="secondary"
+                                        onClick={() => initEditTask(task)}
+                                      >
+                                        {t('admin.edit_config')}
+                                      </Button>
+                                      <Button
+                                        variant="danger"
+                                        onClick={() => handleDeleteTask(task.id, task.title)}
+                                      >
+                                        {t('admin.stages.delete')}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-t border-white/5 pt-4 mt-2">
+                            <div className="flex justify-between items-center mb-3">
+                              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                {t('admin.stages.stages_in_competition', {
+                                  count: c.stages ? c.stages.length : 0,
+                                })}
+                              </h3>
+                              <Button
+                                variant="primary"
+                                className="py-1 px-3 text-[10px]"
+                                onClick={() => initCreateStage(c.id)}
+                              >
+                                <Plus size={14} />
+                                {t('admin.stages.add_stage')}
+                              </Button>
+                            </div>
+                            {c.stages?.length === 0 ? (
+                              <p className="text-xs text-slate-500 italic">
+                                {t('admin.stages.no_stages')}
+                              </p>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {c.stages?.map((st) => (
+                                  <div
+                                    key={st.id}
+                                    className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                                  >
+                                    <div>
+                                      <span className="font-bold text-slate-200">
+                                        {t('admin.stages.stage_label', {
+                                          number: st.stage_number,
+                                          title: st.title,
+                                        })}
+                                      </span>
+                                      <span className="text-[10px] text-indigo-400 ml-3">
+                                        {formatDateTime(st.start_time, c.timezone)} {t('common.to')}{' '}
+                                        {formatDateTime(st.end_time, c.timezone)}
+                                      </span>
+                                      {st.is_finalized && (
+                                        <span
+                                          className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
+                                        >
+                                          {t('admin.stages.finalized_type', {
+                                            type: st.finalize_type,
+                                          })}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="secondary"
+                                        className="py-1 px-2.5"
+                                        onClick={() => initEditStage(c.id, st)}
+                                      >
+                                        {t('admin.stages.edit')}
+                                      </Button>
+                                      {!st.is_finalized &&
+                                        (st.end_time
+                                          ? new Date(st.end_time) <= new Date()
+                                          : false) && (
+                                          <Button
+                                            variant="accent"
+                                            className="py-1 px-2.5"
+                                            onClick={() => initFinalizeStage(c.id, st)}
+                                          >
+                                            {t('admin.stages.finalize')}
+                                          </Button>
+                                        )}
+                                      <Button
+                                        variant="danger"
+                                        className="py-1 px-2.5"
+                                        onClick={() => handleDeleteStage(c.id, st.id, st.title)}
+                                      >
+                                        {t('admin.stages.delete')}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+
+                    <Pagination
+                      page={challengesPage}
+                      pages={challengesPages}
+                      total={challengesTotal}
+                      perPage={5}
+                      onPageChange={setChallengesPage}
+                      itemName={t('admin.competitions_pagination_item')}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+          {/* Stage Create/Edit Form */}
+          {adminSubTab === 'competition-mgmt' && (isCreatingStage || editingStage) && (
+            <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+              <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                <h2 className="text-xl font-bold text-white">
+                  {isCreatingStage
+                    ? t('admin.stages.create_stage_modal_title')
+                    : t('admin.stages.edit_stage_modal_title', { title: editingStage?.title })}
+                </h2>
+              </div>
+
+              <form
+                onSubmit={isCreatingStage ? handleSaveCreateStage : handleSaveUpdateStage}
+                className="flex flex-col gap-4"
+              >
+                <InputField
+                  label={t('admin.stages.stage_title_label')}
+                  value={stageForm.title}
+                  onChange={(e) => setStageForm({ ...stageForm, title: e.target.value })}
+                  required
+                />
+                <InputField
+                  label={t('admin.stages.stage_number_optional')}
+                  type="number"
+                  value={stageForm.stage_number}
+                  onChange={(e) => setStageForm({ ...stageForm, stage_number: e.target.value })}
+                  placeholder={t('admin.stages.edit_stage_number_placeholder')}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <InputField
+                    label={t('admin.stages.start_time_label')}
+                    type="datetime-local"
+                    value={stageForm.start_time}
+                    onChange={(e) => setStageForm({ ...stageForm, start_time: e.target.value })}
+                    required
+                  />
+                  <InputField
+                    label={t('admin.stages.end_time_label')}
+                    type="datetime-local"
+                    value={stageForm.end_time}
+                    onChange={(e) => setStageForm({ ...stageForm, end_time: e.target.value })}
+                    required
+                  />
+                </div>
+                {!isCreatingStage && (
+                  <ToggleField
+                    label={t(
+                      'admin.stages.reveal_results_label',
+                      'Reveal private scores and points to students',
+                    )}
+                    id="stage-reveal-results-edit"
+                    checked={stageForm.reveal_results || false}
+                    onChange={(e) =>
+                      setStageForm({
+                        ...stageForm,
+                        reveal_results: e.target.checked,
+                      })
+                    }
+                  />
+                )}
+                <div className="flex gap-3 mt-4">
+                  <Button type="submit" variant="primary">
+                    {isCreatingStage
+                      ? t('admin.stages.create_stage_btn')
+                      : t('admin.stages.save_changes_btn')}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setIsCreatingStage(false);
+                      setEditingStage(null);
                     }}
-                    className="flex flex-col gap-4"
+                    variant="secondary"
                   >
-                    <InputField
-                      label={t('admin.competition_title')}
-                      value={editingChallenge.title}
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Stage Finalize Form */}
+          {adminSubTab === 'competition-mgmt' && finalizingStage && (
+            <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+              <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                <h2 className="text-xl font-bold text-white">
+                  {t('admin.stages.finalize_stage_modal_title', { title: finalizingStage.title })}
+                </h2>
+              </div>
+
+              <form onSubmit={handleSaveFinalizeStage} className="flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-slate-300">
+                    {t('admin.stages.finalize_type_label')}
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="finalize_type"
+                        value="visible"
+                        checked={stageFinalizeForm.finalize_type === 'visible'}
+                        onChange={() =>
+                          setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })
+                        }
+                      />
+                      {t('admin.stages.finalize_type_visible')}
+                    </label>
+                    <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="finalize_type"
+                        value="internal"
+                        checked={stageFinalizeForm.finalize_type === 'internal'}
+                        onChange={() =>
+                          setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })
+                        }
+                      />
+                      {t('admin.stages.finalize_type_internal')}
+                    </label>
+                  </div>
+                </div>
+
+                {stageFinalizeForm.finalize_type === 'visible' && (
+                  <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">
+                      {t('admin.stages.visibility_rules_students')}
+                    </h4>
+                    <ToggleField
+                      label={t('admin.stages.reveal_public_split')}
+                      id="stage-reveal-public"
+                      checked={stageFinalizeForm.reveal_public}
                       onChange={(e) =>
-                        setEditingChallenge({ ...editingChallenge, title: e.target.value })
+                        setStageFinalizeForm({
+                          ...stageFinalizeForm,
+                          reveal_public: e.target.checked,
+                        })
                       }
+                    />
+                    <ToggleField
+                      label={t('admin.stages.reveal_private_split')}
+                      id="stage-reveal-private"
+                      checked={stageFinalizeForm.reveal_private}
+                      onChange={(e) =>
+                        setStageFinalizeForm({
+                          ...stageFinalizeForm,
+                          reveal_private: e.target.checked,
+                        })
+                      }
+                    />
+                    <ToggleField
+                      label={t('admin.stages.reveal_total_points')}
+                      id="stage-reveal-points"
+                      checked={stageFinalizeForm.reveal_points}
+                      onChange={(e) =>
+                        setStageFinalizeForm({
+                          ...stageFinalizeForm,
+                          reveal_points: e.target.checked,
+                        })
+                      }
+                    />
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-4">
+                  <Button type="submit" variant="primary">
+                    {t('admin.stages.finalize_stage_btn')}
+                  </Button>
+                  <Button onClick={() => setFinalizingStage(null)} variant="secondary">
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Challenge Finalize Form */}
+          {adminSubTab === 'competition-mgmt' && finalizingChallenge && (
+            <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+              <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                <h2 className="text-xl font-bold text-white">
+                  {t('admin.finalize_competition_title', { title: finalizingChallenge.title })}
+                </h2>
+              </div>
+
+              <form onSubmit={handleSaveFinalizeChallenge} className="flex flex-col gap-6">
+                <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
+                  <ToggleField
+                    label={t(
+                      'admin.reveal_results_label',
+                      'Reveal private scores and competitor identities immediately',
+                    )}
+                    id="challenge-reveal-results"
+                    checked={challengeFinalizeForm.reveal_results}
+                    onChange={(e) =>
+                      setChallengeFinalizeForm({
+                        ...challengeFinalizeForm,
+                        reveal_results: e.target.checked,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="flex gap-3 mt-4">
+                  <Button type="submit" variant="primary">
+                    {t('admin.finalize_short', 'Finalize')}
+                  </Button>
+                  <Button onClick={() => setFinalizingChallenge(null)} variant="secondary">
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 2. TASK EDITING OR CREATION (The Sandbox + HF + Rules form) */}
+          {adminSubTab === 'competition-mgmt' && (isCreatingTask || editingTask) && (
+            <TaskForm
+              taskForm={taskForm}
+              setTaskForm={setTaskForm}
+              isCreatingTask={isCreatingTask}
+              editingTask={editingTask}
+              setEditingTask={setEditingTask}
+              setIsCreatingTask={setIsCreatingTask}
+              handleSaveCreateTask={handleSaveCreateTask}
+              handleSaveUpdateTask={handleSaveUpdateTask}
+              challenges={challenges}
+              selectedChallenge={selectedChallenge}
+              availableMetrics={availableMetrics}
+              formatMetricName={formatMetricName}
+              taskFiles={taskFiles}
+              setTaskFiles={setTaskFiles}
+              baselineFile={baselineFile}
+              setBaselineFile={setBaselineFile}
+              formatDateTime={formatDateTime}
+              savingTask={savingTask}
+            />
+          )}
+
+          {/* 3. CREATE NEW COMPETITIONS */}
+          {adminSubTab === 'challenge-config' &&
+            (currentUser.role === 'admin' || currentUser.role === 'jury') && (
+              <ChallengeConfig
+                handleCreateChallenge={handleCreateChallenge}
+                newChallenge={newChallenge}
+                setNewChallenge={setNewChallenge}
+                timezones={TIMEZONES}
+              />
+            )}
+
+          {/* 4. COMPETITOR REGISTRATION MODULE (JURY/ADMIN) */}
+          {adminSubTab === 'competitor-reg' && (
+            <CompetitorManager
+              challenges={challenges}
+              newCompetitor={newCompetitor}
+              setNewCompetitor={setNewCompetitor}
+              handleRegisterCompetitor={handleRegisterCompetitor}
+              isManualRegisterDisabled={isManualRegisterDisabled}
+              generatedCredentials={generatedCredentials}
+              csvChallengeId={csvChallengeId}
+              setCsvChallengeId={setCsvChallengeId}
+              csvFile={csvFile}
+              setCsvFile={setCsvFile}
+              csvImporting={csvImporting}
+              isCSVImportDisabled={isCSVImportDisabled}
+              handleCSVImport={handleCSVImport}
+              importedCompetitors={importedCompetitors}
+              resetCredentials={resetCredentials}
+              setResetCredentials={setResetCredentials}
+              bulkResetCredentials={bulkResetCredentials}
+              setBulkResetCredentials={setBulkResetCredentials}
+              competitorsList={competitorsList}
+              competitorSearch={competitorSearch}
+              setCompetitorSearch={setCompetitorSearch}
+              handleBulkResetPasswords={handleBulkResetPasswords}
+              currentUser={currentUser}
+              selectedChallenge={selectedChallenge}
+              isChallengeStarted={isChallengeStarted}
+              initEditUser={initEditUser}
+              handleResetUserPassword={handleResetUserPassword}
+              competitorsPage={competitorsPage}
+              competitorsPages={competitorsPages}
+              competitorsTotal={competitorsTotal}
+              setCompetitorsPage={setCompetitorsPage}
+            />
+          )}
+
+          {/* 5. DATABASE BACKUP MANAGEMENT */}
+          {adminSubTab === 'backups' && currentUser.role === 'admin' && <BackupManager />}
+
+          {/* 6. SYSTEM USER MANAGEMENT */}
+          {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
+            <UserManager
+              newUser={newUser}
+              setNewUser={setNewUser}
+              handleRegisterUser={handleRegisterUser}
+              generatedUserCredentials={generatedUserCredentials}
+              allUsers={filteredUsers}
+              userSearch={userSearch}
+              setUserSearch={setUserSearch}
+              handleDeleteUser={handleDeleteUser}
+              usersPage={usersPage}
+              usersPages={usersPages}
+              usersTotal={usersTotal}
+              setUsersPage={setUsersPage}
+              challenges={challenges}
+              currentUser={currentUser}
+              initEditUser={initEditUser}
+            />
+          )}
+
+          {/* 7. WORKERS MONITORING MODULE */}
+          {adminSubTab === 'workers-stats' &&
+            (currentUser.role === 'admin' || currentUser.role === 'jury') && (
+              <WorkersStats
+                workerStats={workerStats}
+                workerStatsLoading={workerStatsLoading}
+                workerStatsError={workerStatsError}
+                fetchWorkerStats={fetchWorkerStats}
+                formatUptime={formatUptime}
+              />
+            )}
+
+          {/* 8. AUDIT LOGS */}
+          {adminSubTab === 'audit-logs' && currentUser.role === 'admin' && <AuditLogViewer />}
+        </div>
+      </div>
+
+      {/* Edit Competitor Modal */}
+      {editingUser &&
+        adminSubTab === 'competitor-reg' &&
+        createPortal(
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[10000] p-4">
+            <div className="bg-[#0b0c16] border border-white/10 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fadein">
+              <form
+                onSubmit={handleUpdateUserSubmit}
+                noValidate
+                className="flex flex-col flex-1 min-h-0"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-white/5 flex-shrink-0">
+                  <h2 className="text-lg font-bold text-white mb-1">
+                    {t('admin.competitor_reg.edit_competitor_details')}
+                  </h2>
+                  <p className="text-slate-400 text-xs">
+                    {t('admin.competitor_reg.updating_account', { username: editingUser.username })}
+                  </p>
+                </div>
+
+                {/* Form Body (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <InputField
+                      label={t('admin.competitor_reg.first_name')}
+                      value={editUserForm.name}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
                       required
                     />
                     <InputField
-                      multiline
-                      label={t('admin.description')}
-                      value={editingChallenge.description}
+                      label={t('admin.competitor_reg.last_name')}
+                      value={editUserForm.surname}
                       onChange={(e) =>
-                        setEditingChallenge({ ...editingChallenge, description: e.target.value })
+                        setEditUserForm({ ...editUserForm, surname: e.target.value })
                       }
-                      rows={4}
+                      required
                     />
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <InputField
-                        label={t('admin.daily_limits')}
-                        type="number"
-                        value={editingChallenge.max_eval_requests}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            max_eval_requests: parseInt(e.target.value) || 0,
-                          })
-                        }
-                      />
-                      <InputField
-                        label={t('admin.ram_limit_override')}
-                        type="number"
-                        value={editingChallenge.ram_limit_mb}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            ram_limit_mb: parseInt(e.target.value) || 0,
-                          })
-                        }
-                      />
-                      <InputField
-                        label={t('admin.time_limit_override')}
-                        type="number"
-                        value={editingChallenge.time_limit_sec}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            time_limit_sec: parseInt(e.target.value) || 0,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <InputField
-                        label={t('admin.stages.start_time_label')}
-                        type="datetime-local"
-                        value={formatDateTimeLocal(editingChallenge.start_time)}
-                        onChange={(e) =>
-                          setEditingChallenge({ ...editingChallenge, start_time: e.target.value })
-                        }
-                        required
-                      />
-                      <InputField
-                        label={t('admin.stages.end_time_label')}
-                        type="datetime-local"
-                        value={formatDateTimeLocal(editingChallenge.end_time)}
-                        onChange={(e) =>
-                          setEditingChallenge({ ...editingChallenge, end_time: e.target.value })
-                        }
-                        required
-                      />
-                      <SelectField
-                        label={t('admin.timezone_choose')}
-                        value={editingChallenge.timezone || 'UTC'}
-                        onChange={(val) =>
-                          setEditingChallenge({ ...editingChallenge, timezone: val })
-                        }
-                        options={TIMEZONES}
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col gap-3 mt-2.5">
-                      <ToggleField
-                        label={t('admin.requires_gpu_sandbox')}
-                        id="edit-gpu"
-                        checked={editingChallenge.gpu_required}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            gpu_required: e.target.checked,
-                          })
-                        }
-                      />
-                      <ToggleField
-                        label={t('admin.double_blind_eval')}
-                        id="edit-double-blind"
-                        checked={editingChallenge.double_blind !== false}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            double_blind: e.target.checked,
-                          })
-                        }
-                      />
-                      <ToggleField
-                        label={t('admin.freeze_label')}
-                        id="edit-is-frozen"
-                        checked={editingChallenge.is_frozen || false}
-                        onChange={(e) =>
-                          setEditingChallenge({ ...editingChallenge, is_frozen: e.target.checked })
-                        }
-                      />
-                    </div>
-                    <div className="flex gap-3 mt-4">
-                      <Button type="submit" variant="primary">
-                        {t('admin.stages.save_changes_btn')}
-                      </Button>
-                      <Button onClick={() => setEditingChallenge(null)} variant="secondary">
-                        {t('common.cancel')}
-                      </Button>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6">
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <h1 className="text-xl font-bold text-white">
-                      {t('admin.active_competitions')}
-                    </h1>
-                    <Button
-                      variant="primary"
-                      onClick={() => initCreateTask()}
-                      disabled={!selectedChallenge}
-                    >
-                      <Plus size={16} />
-                      {t('admin.add_task')}
-                    </Button>
                   </div>
 
-                  {paginatedChallengesList.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic">
-                      {t('admin.no_competitions_created')}
-                    </p>
-                  ) : (
-                    paginatedChallengesList.map((c) => (
-                      <div
-                        key={c.id}
-                        className="bg-[#0d0e18] border border-white/5 p-6 rounded-2xl flex flex-col gap-4"
-                      >
-                        <div className="flex flex-wrap justify-between items-start gap-4">
-                          <div>
-                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                              {c.title}
-                              {c.is_archived && (
-                                <span className="text-[10px] bg-slate-800 border border-white/5 text-slate-400 px-2 py-0.5 rounded-full font-bold">
-                                  {t('admin.archived')}
-                                </span>
-                              )}
-                            </h2>
-                            <p className="text-xs text-slate-400 mt-1">
-                              {c.description || t('admin.no_description')}
-                            </p>
-                          </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <InputField
+                      label={t('admin.competitor_reg.grade')}
+                      value={editUserForm.grade || ''}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })}
+                    />
+                    <InputField
+                      label={t('admin.competitor_reg.school')}
+                      value={editUserForm.school || ''}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })}
+                    />
+                    <InputField
+                      label={t('admin.competitor_reg.city')}
+                      value={editUserForm.city || ''}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })}
+                    />
+                  </div>
 
-                          <div className="flex flex-wrap gap-2">
-                            <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
-                              {t('admin.stages.edit')}
-                            </Button>
-                            <Button variant="secondary" onClick={() => handleArchiveToggle(c.id)}>
-                              {c.is_archived ? t('admin.restore') : t('admin.archive')}
-                            </Button>
-                            {!c.title.startsWith('Test:') && (
-                              <Button
-                                variant="secondary"
-                                onClick={() => handleCreateTestCompetition(c.id)}
-                              >
-                                {t('admin.schedule_test')}
-                              </Button>
-                            )}
-                            {c.scores_finalized && (
-                              <>
-                                <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">
-                                  {t('leaderboard.finalized')}
-                                </span>
-                                <Button
-                                  variant="accent"
-                                  onClick={() => handleDownloadScores(c.id, c.title)}
-                                >
-                                  {t('admin.download_csv_scores')}
-                                </Button>
-                                <Button
-                                  variant="accent"
-                                  onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
-                                >
-                                  {t('admin.download_submissions_zip')}
-                                </Button>
-                              </>
-                            )}
-                            {!c.scores_finalized && currentUser.role === 'jury' && (
-                              <Button
-                                variant="accent"
-                                onClick={() => handleFinalize(c.id)}
-                                disabled={c.stages && c.stages.some((st) => !st.is_finalized)}
-                                title={
-                                  c.stages && c.stages.some((st) => !st.is_finalized)
-                                    ? t('leaderboard.finalize_disabled_tooltip')
-                                    : ''
-                                }
-                              >
-                                {t('admin.finalize_challenge')}
-                              </Button>
-                            )}
-                            <Button
-                              variant="secondary"
-                              onClick={() => handleExportChallenge(c.id, c.title)}
-                            >
-                              {t('admin.export_challenge')}
-                            </Button>
-                            <input
-                              ref={importFileRef}
-                              type="file"
-                              accept=".json"
-                              className="hidden"
-                              onChange={handleImportChallenge}
-                            />
-                            <Button
-                              variant="secondary"
-                              onClick={() => importFileRef.current?.click()}
-                            >
-                              {t('admin.import_challenge')}
-                            </Button>
-                            <Button
-                              variant="danger"
-                              onClick={() => handleDeleteChallenge(c.id, c.title)}
-                            >
-                              {t('admin.stages.delete')}
-                            </Button>
-                          </div>
-                        </div>
+                  <InputField
+                    label={t('admin.competitor_reg.system_username')}
+                    value={editUserForm.username}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })}
+                    required
+                    disabled
+                  />
 
-                        <div className="border-t border-white/5 pt-4 mt-2">
-                          <div className="flex justify-between items-center mb-3">
-                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                              {t('admin.tasks_in_competition', {
-                                count: c.tasks ? c.tasks.length : 0,
-                              })}
-                            </h3>
-                            <Button
-                              variant="primary"
-                              className="py-1 px-3 text-[10px]"
-                              onClick={() => initCreateTask(c.id)}
-                            >
-                              <Plus size={14} />
-                              {t('admin.add_task')}
-                            </Button>
-                          </div>
-                          {c.tasks?.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic">
-                              {t('admin.no_tasks_created')}
-                            </p>
-                          ) : (
-                            <div className="flex flex-col gap-2">
-                              {c.tasks?.map((task) => (
-                                <div
-                                  key={task.id}
-                                  className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
-                                >
-                                  <div>
-                                    <span className="font-bold text-slate-200">{task.title}</span>
-                                    <span className="text-[10px] text-slate-500 ml-2">
-                                      {t('admin.public_eval_split', {
-                                        percentage: task.public_eval_percentage || 30,
-                                      })}
-                                    </span>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button variant="secondary" onClick={() => initEditTask(task)}>
-                                      {t('admin.edit_config')}
-                                    </Button>
-                                    <Button
-                                      variant="danger"
-                                      onClick={() => handleDeleteTask(task.id, task.title)}
-                                    >
-                                      {t('admin.stages.delete')}
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                  <InputField
+                    label={t('admin.competitor_reg.email_address')}
+                    type="text"
+                    value={editUserForm.email || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                    placeholder={t('admin.competitor_reg.email_placeholder')}
+                  />
 
-                        <div className="border-t border-white/5 pt-4 mt-2">
-                          <div className="flex justify-between items-center mb-3">
-                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                              {t('admin.stages.stages_in_competition', {
-                                count: c.stages ? c.stages.length : 0,
-                              })}
-                            </h3>
-                            <Button
-                              variant="primary"
-                              className="py-1 px-3 text-[10px]"
-                              onClick={() => initCreateStage(c.id)}
-                            >
-                              <Plus size={14} />
-                              {t('admin.stages.add_stage')}
-                            </Button>
-                          </div>
-                          {c.stages?.length === 0 ? (
-                            <p className="text-xs text-slate-500 italic">
-                              {t('admin.stages.no_stages')}
-                            </p>
-                          ) : (
-                            <div className="flex flex-col gap-2">
-                              {c.stages?.map((st) => (
-                                <div
-                                  key={st.id}
-                                  className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
-                                >
-                                  <div>
-                                    <span className="font-bold text-slate-200">
-                                      {t('admin.stages.stage_label', {
-                                        number: st.stage_number,
-                                        title: st.title,
-                                      })}
-                                    </span>
-                                    <span className="text-[10px] text-indigo-400 ml-3">
-                                      {formatDateTime(st.start_time, c.timezone)} {t('common.to')}{' '}
-                                      {formatDateTime(st.end_time, c.timezone)}
-                                    </span>
-                                    {st.is_finalized && (
-                                      <span
-                                        className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
-                                      >
-                                        {t('admin.stages.finalized_type', {
-                                          type: st.finalize_type,
-                                        })}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      variant="secondary"
-                                      className="py-1 px-2.5"
-                                      onClick={() => initEditStage(c.id, st)}
-                                    >
-                                      {t('admin.stages.edit')}
-                                    </Button>
-                                    {!st.is_finalized && (
-                                      <Button
-                                        variant="accent"
-                                        className="py-1 px-2.5"
-                                        onClick={() => initFinalizeStage(c.id, st)}
-                                      >
-                                        {t('admin.stages.finalize')}
-                                      </Button>
-                                    )}
-                                    <Button
-                                      variant="danger"
-                                      className="py-1 px-2.5"
-                                      onClick={() => handleDeleteStage(c.id, st.id, st.title)}
-                                    >
-                                      {t('admin.stages.delete')}
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                  <SelectField
+                    label={t('admin.competitor_reg.assign_competition')}
+                    value={editUserForm.challenge_id}
+                    onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })}
+                    required
+                    options={[
+                      { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
+                      ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
+                    ]}
+                  />
+
+                  <div className="mt-2.5">
+                    <ToggleField
+                      label={t('admin.competitor_reg.anonymous_help')}
+                      id="edit-is-anonymous"
+                      checked={editUserForm.is_anonymous}
+                      onChange={(e) =>
+                        setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })
+                      }
+                    />
+                  </div>
+
+                  {isEditDisabled && (
+                    <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
+                      {t('admin.competitor_reg.competition_started_warning')}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-white/5 flex justify-end gap-3 flex-shrink-0">
+                  <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="submit" variant="primary" disabled={isEditDisabled}>
+                    {t('admin.stages.save_changes_btn')}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Edit User Account Modal */}
+      {editingUser &&
+        adminSubTab === 'user-management' &&
+        createPortal(
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[10000] p-4">
+            <div className="bg-[#0b0c16] border border-white/10 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fadein">
+              <form
+                onSubmit={handleUpdateUserSubmit}
+                noValidate
+                className="flex flex-col flex-1 min-h-0"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-white/5 flex-shrink-0">
+                  <h2 className="text-lg font-bold text-white mb-1">
+                    {t('admin.user_mgmt.edit_user_account', 'Edit User Account')}
+                  </h2>
+                  <p className="text-slate-400 text-xs">
+                    {t(
+                      'admin.user_mgmt.edit_user_account_desc',
+                      'Update user details, role, and assigned competitions.',
+                    )}
+                  </p>
+                </div>
+
+                {/* Form Body (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                  <InputField
+                    label={t('admin.user_mgmt.username_label')}
+                    value={editUserForm.username}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })}
+                    required
+                    disabled
+                  />
+                  <InputField
+                    label={t('admin.competitor_reg.email_address')}
+                    type="text"
+                    value={editUserForm.email || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                  />
+                  <InputField
+                    label={t('admin.user_mgmt.password_optional_label', 'New Password (Optional)')}
+                    type="password"
+                    value={editUserForm.password || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
+                    placeholder={t(
+                      'admin.user_mgmt.password_optional_placeholder',
+                      'Leave blank to keep current',
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <InputField
+                      label={t('admin.competitor_reg.first_name')}
+                      value={editUserForm.name}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                      required
+                    />
+                    <InputField
+                      label={t('admin.competitor_reg.last_name')}
+                      value={editUserForm.surname}
+                      onChange={(e) =>
+                        setEditUserForm({ ...editUserForm, surname: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <SelectField
+                    label={t('admin.user_mgmt.role_label')}
+                    value={editUserForm.role}
+                    onChange={(val) => setEditUserForm({ ...editUserForm, role: val })}
+                    required
+                    options={[
+                      { value: 'competitor', label: t('admin.user_mgmt.role_competitor') },
+                      { value: 'jury', label: t('admin.user_mgmt.role_jury') },
+                    ]}
+                  />
+
+                  {editUserForm.role === 'competitor' && (
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        <InputField
+                          label={t('admin.competitor_reg.grade')}
+                          value={editUserForm.grade || ''}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, grade: e.target.value })
+                          }
+                        />
+                        <InputField
+                          label={t('admin.competitor_reg.school')}
+                          value={editUserForm.school || ''}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, school: e.target.value })
+                          }
+                        />
+                        <InputField
+                          label={t('admin.competitor_reg.city')}
+                          value={editUserForm.city || ''}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, city: e.target.value })
+                          }
+                        />
                       </div>
-                    ))
+                      <SelectField
+                        label={t('admin.competitor_reg.assign_competition')}
+                        value={editUserForm.challenge_id}
+                        onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })}
+                        required
+                        options={[
+                          { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
+                          ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
+                        ]}
+                      />
+                      <div className="mt-2.5">
+                        <ToggleField
+                          label={t('admin.competitor_reg.anonymous_help')}
+                          id="edit-user-is-anonymous"
+                          checked={editUserForm.is_anonymous}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })
+                          }
+                        />
+                      </div>
+                    </>
                   )}
 
-                  <Pagination
-                    page={challengesPage}
-                    pages={challengesPages}
-                    total={challengesTotal}
-                    perPage={5}
-                    onPageChange={setChallengesPage}
-                    itemName={t('admin.competitions_pagination_item')}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-        {/* Stage Create/Edit Form */}
-        {adminSubTab === 'competition-mgmt' && (isCreatingStage || editingStage) && (
-          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
-            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-              <h2 className="text-xl font-bold text-white">
-                {isCreatingStage
-                  ? t('admin.stages.create_stage_modal_title')
-                  : t('admin.stages.edit_stage_modal_title', { title: editingStage?.title })}
-              </h2>
-            </div>
-
-            <form
-              onSubmit={isCreatingStage ? handleSaveCreateStage : handleSaveUpdateStage}
-              className="flex flex-col gap-4"
-            >
-              <InputField
-                label={t('admin.stages.stage_title_label')}
-                value={stageForm.title}
-                onChange={(e) => setStageForm({ ...stageForm, title: e.target.value })}
-                required
-              />
-              <InputField
-                label={t('admin.stages.stage_number_optional')}
-                type="number"
-                value={stageForm.stage_number}
-                onChange={(e) => setStageForm({ ...stageForm, stage_number: e.target.value })}
-                placeholder={t('admin.stages.edit_stage_number_placeholder')}
-              />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InputField
-                  label={t('admin.stages.start_time_label')}
-                  type="datetime-local"
-                  value={stageForm.start_time}
-                  onChange={(e) => setStageForm({ ...stageForm, start_time: e.target.value })}
-                  required
-                />
-                <InputField
-                  label={t('admin.stages.end_time_label')}
-                  type="datetime-local"
-                  value={stageForm.end_time}
-                  onChange={(e) => setStageForm({ ...stageForm, end_time: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex gap-3 mt-4">
-                <Button type="submit" variant="primary">
-                  {isCreatingStage
-                    ? t('admin.stages.create_stage_btn')
-                    : t('admin.stages.save_changes_btn')}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setIsCreatingStage(false);
-                    setEditingStage(null);
-                  }}
-                  variant="secondary"
-                >
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Stage Finalize Form */}
-        {adminSubTab === 'competition-mgmt' && finalizingStage && (
-          <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
-            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-              <h2 className="text-xl font-bold text-white">
-                {t('admin.stages.finalize_stage_modal_title', { title: finalizingStage.title })}
-              </h2>
-            </div>
-
-            <form onSubmit={handleSaveFinalizeStage} className="flex flex-col gap-6">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-slate-300">
-                  {t('admin.stages.finalize_type_label')}
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="finalize_type"
-                      value="visible"
-                      checked={stageFinalizeForm.finalize_type === 'visible'}
-                      onChange={() =>
-                        setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })
+                  {editUserForm.role === 'jury' && (
+                    <SelectField
+                      label={t('admin.user_mgmt.assign_jury_competitions', 'Assign Competitions')}
+                      multiple
+                      searchable
+                      value={editUserForm.jury_challenges || []}
+                      onChange={(vals) =>
+                        setEditUserForm({ ...editUserForm, jury_challenges: vals })
                       }
+                      options={challenges.map((c) => ({ value: c.id.toString(), label: c.title }))}
+                      placeholder={t(
+                        'admin.user_mgmt.no_competitions_assigned',
+                        'No competitions assigned',
+                      )}
                     />
-                    {t('admin.stages.finalize_type_visible')}
-                  </label>
-                  <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="finalize_type"
-                      value="internal"
-                      checked={stageFinalizeForm.finalize_type === 'internal'}
-                      onChange={() =>
-                        setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })
-                      }
-                    />
-                    {t('admin.stages.finalize_type_internal')}
-                  </label>
+                  )}
                 </div>
-              </div>
 
-              {stageFinalizeForm.finalize_type === 'visible' && (
-                <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
-                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">
-                    {t('admin.stages.visibility_rules_students')}
-                  </h4>
-                  <ToggleField
-                    label={t('admin.stages.reveal_public_split')}
-                    id="stage-reveal-public"
-                    checked={stageFinalizeForm.reveal_public}
-                    onChange={(e) =>
-                      setStageFinalizeForm({
-                        ...stageFinalizeForm,
-                        reveal_public: e.target.checked,
-                      })
-                    }
-                  />
-                  <ToggleField
-                    label={t('admin.stages.reveal_private_split')}
-                    id="stage-reveal-private"
-                    checked={stageFinalizeForm.reveal_private}
-                    onChange={(e) =>
-                      setStageFinalizeForm({
-                        ...stageFinalizeForm,
-                        reveal_private: e.target.checked,
-                      })
-                    }
-                  />
-                  <ToggleField
-                    label={t('admin.stages.reveal_total_points')}
-                    id="stage-reveal-points"
-                    checked={stageFinalizeForm.reveal_points}
-                    onChange={(e) =>
-                      setStageFinalizeForm({
-                        ...stageFinalizeForm,
-                        reveal_points: e.target.checked,
-                      })
-                    }
-                  />
+                {/* Footer */}
+                <div className="p-6 border-t border-white/5 flex justify-end gap-3 flex-shrink-0">
+                  <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
+                    {t('common.cancel', 'Cancel')}
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    {t('common.save', 'Save')}
+                  </Button>
                 </div>
-              )}
-
-              <div className="flex gap-3 mt-4">
-                <Button type="submit" variant="primary">
-                  {t('admin.stages.finalize_stage_btn')}
-                </Button>
-                <Button onClick={() => setFinalizingStage(null)} variant="secondary">
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* 2. TASK EDITING OR CREATION (The Sandbox + HF + Rules form) */}
-        {adminSubTab === 'competition-mgmt' && (isCreatingTask || editingTask) && (
-          <TaskForm
-            taskForm={taskForm}
-            setTaskForm={setTaskForm}
-            isCreatingTask={isCreatingTask}
-            editingTask={editingTask}
-            setEditingTask={setEditingTask}
-            setIsCreatingTask={setIsCreatingTask}
-            handleSaveCreateTask={handleSaveCreateTask}
-            handleSaveUpdateTask={handleSaveUpdateTask}
-            challenges={challenges}
-            selectedChallenge={selectedChallenge}
-            availableMetrics={availableMetrics}
-            formatMetricName={formatMetricName}
-            taskFiles={taskFiles}
-            setTaskFiles={setTaskFiles}
-            baselineFile={baselineFile}
-            setBaselineFile={setBaselineFile}
-            formatDateTime={formatDateTime}
-            savingTask={savingTask}
-          />
-        )}
-
-        {/* 3. CREATE NEW COMPETITIONS */}
-        {adminSubTab === 'challenge-config' &&
-          (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-            <ChallengeConfig
-              handleCreateChallenge={handleCreateChallenge}
-              newChallenge={newChallenge}
-              setNewChallenge={setNewChallenge}
-              timezones={TIMEZONES}
-            />
-          )}
-
-        {/* 4. COMPETITOR REGISTRATION MODULE (JURY/ADMIN) */}
-        {adminSubTab === 'competitor-reg' && (
-          <CompetitorManager
-            editingUser={editingUser}
-            setEditingUser={setEditingUser}
-            editUserForm={editUserForm}
-            setEditUserForm={setEditUserForm}
-            handleUpdateUserSubmit={handleUpdateUserSubmit}
-            challenges={challenges}
-            isEditDisabled={isEditDisabled}
-            newCompetitor={newCompetitor}
-            setNewCompetitor={setNewCompetitor}
-            handleRegisterCompetitor={handleRegisterCompetitor}
-            isManualRegisterDisabled={isManualRegisterDisabled}
-            generatedCredentials={generatedCredentials}
-            csvChallengeId={csvChallengeId}
-            setCsvChallengeId={setCsvChallengeId}
-            csvFile={csvFile}
-            setCsvFile={setCsvFile}
-            csvImporting={csvImporting}
-            isCSVImportDisabled={isCSVImportDisabled}
-            handleCSVImport={handleCSVImport}
-            importedCompetitors={importedCompetitors}
-            resetCredentials={resetCredentials}
-            setResetCredentials={setResetCredentials}
-            bulkResetCredentials={bulkResetCredentials}
-            setBulkResetCredentials={setBulkResetCredentials}
-            competitorsList={competitorsList}
-            competitorSearch={competitorSearch}
-            setCompetitorSearch={setCompetitorSearch}
-            handleBulkResetPasswords={handleBulkResetPasswords}
-            currentUser={currentUser}
-            selectedChallenge={selectedChallenge}
-            isChallengeStarted={isChallengeStarted}
-            initEditUser={initEditUser}
-            handleResetUserPassword={handleResetUserPassword}
-            competitorsPage={competitorsPage}
-            competitorsPages={competitorsPages}
-            competitorsTotal={competitorsTotal}
-            setCompetitorsPage={setCompetitorsPage}
-          />
-        )}
-
-        {/* 5. DATABASE BACKUP MANAGEMENT */}
-        {adminSubTab === 'backups' && currentUser.role === 'admin' && (
-          <BackupManager challengeId={null} />
-        )}
-
-        {/* 6. COMPETITION BACKUPS (inside competition detail view) */}
-        {adminSubTab === 'competition-mgmt' &&
-          currentUser.role === 'admin' &&
-          selectedChallenge &&
-          !isCreatingTask &&
-          !editingTask &&
-          !isCreatingStage &&
-          !editingStage &&
-          !finalizingStage && (
-            <div className="mt-8">
-              <BackupManager challengeId={selectedChallenge.id} />
+              </form>
             </div>
-          )}
-
-        {/* 6. SYSTEM USER MANAGEMENT */}
-        {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
-          <UserManager
-            newUser={newUser}
-            setNewUser={setNewUser}
-            handleRegisterUser={handleRegisterUser}
-            generatedUserCredentials={generatedUserCredentials}
-            allUsers={filteredUsers}
-            userSearch={userSearch}
-            setUserSearch={setUserSearch}
-            handleDeleteUser={handleDeleteUser}
-            usersPage={usersPage}
-            usersPages={usersPages}
-            usersTotal={usersTotal}
-            setUsersPage={setUsersPage}
-            challenges={challenges}
-            currentUser={currentUser}
-          />
+          </div>,
+          document.body,
         )}
-
-        {/* 7. WORKERS MONITORING MODULE */}
-        {adminSubTab === 'workers-stats' &&
-          (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-            <WorkersStats
-              workerStats={workerStats}
-              workerStatsLoading={workerStatsLoading}
-              workerStatsError={workerStatsError}
-              fetchWorkerStats={fetchWorkerStats}
-              formatUptime={formatUptime}
-            />
-          )}
-      </div>
-    </div>
+    </>
   );
 }

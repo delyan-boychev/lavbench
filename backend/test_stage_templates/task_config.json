@@ -1,0 +1,38 @@
+{
+  "title": "Warm-up Test Task",
+  "description": "This is a simple warm-up test task using standard evaluation. Your notebook submission must load the 'ylecun/mnist' dataset, balance the training set to 5200 images per class and the test set to 800 images per class for digits 3, 5, and 8, generate predictions, and save them to 'submission.parquet' containing 'id' and 'prediction' columns.",
+  "gpu_required": true,
+  "base_docker_image": "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime",
+  "pip_requirements": "pandas==2.2.2\npyarrow==17.0.0\ndatasets==3.0.0\ntorchvision==0.21.0",
+  "ram_limit_mb": 8192,
+  "time_limit_sec": 600,
+  "public_eval_percentage": 30,
+  "ban_magic_commands": true,
+  "whitelisted_imports": "pandas,datasets,pyarrow,torch,torchvision,numpy,json,sys,os",
+  "hf_datasets": [
+    "ylecun/mnist"
+  ],
+  "metrics_config": {
+    "accuracy": {
+      "weight": 0.25
+    },
+    "f1": {
+      "weight": 0.25,
+      "options": {
+        "average": "macro"
+      }
+    },
+    "precision": {
+      "weight": 0.25,
+      "options": {
+        "average": "macro"
+      }
+    },
+    "recall": {
+      "weight": 0.25,
+      "options": {
+        "average": "macro"
+      }
+    }
+  }
+}

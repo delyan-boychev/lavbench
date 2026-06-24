@@ -42,12 +42,13 @@ export default function ChallengeOverview({ challenge }) {
     return () => clearInterval(timer);
   }, []);
 
-  const formatDateTime = (dateStr, timezone = 'UTC') => {
+  const formatDateTime = (dateStr, tz) => {
     if (!dateStr) return '—';
     try {
       const d = new Date(dateStr);
+      const targetTz = tz || 'UTC';
       const formatter = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: timezone || 'UTC',
+        timeZone: targetTz,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -57,12 +58,12 @@ export default function ChallengeOverview({ challenge }) {
       });
       const parts = formatter.formatToParts(d);
       const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
-      const tzLabel = (timezone || 'UTC').replace(/_/g, ' ');
+      const tzLabel = targetTz.replace(/_/g, ' ');
       return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
     } catch {
       const d = new Date(dateStr);
       const pad = (n) => n.toString().padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${t('challenge.local_timezone')}`;
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} (UTC)`;
     }
   };
 

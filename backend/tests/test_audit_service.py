@@ -1,7 +1,5 @@
-import json
 import pytest
 import uuid
-from unittest.mock import patch
 
 
 class TestAuditService:
@@ -99,3 +97,147 @@ class TestAuditService:
         self._log(action_type="create", target_type="stage", target_id=tid)
         entry = self._query(action_type="create", target_id=tid).first()
         assert entry.timestamp is not None
+
+
+class TestAuditLogsRoute:
+    @pytest.fixture(autouse=True)
+    def setup(self, app, db_session):
+        self.app = app
+        self.client = app.test_client()
+
+        from models import User
+        from auth_utils import generate_token
+
+        # Create users
+        self.admin = User(
+            username="audit_admin",
+            password_hash="pbkdf2:sha256:...",
+            role="admin",
+            alias_id="Admin-Audit",
+        )
+        self.jury = User(
+            username="audit_jury",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Audit",
+        )
+        self.competitor = User(
+            username="audit_comp",
+            password_hash="pbkdf2:sha256:...",
+            role="competitor",
+            alias_id="Comp-Audit",
+        )
+
+        db_session.add_all([self.admin, self.jury, self.competitor])
+        db_session.commit()
+
+        self.admin_token = generate_token(self.admin.id, role="admin")
+        self.jury_token = generate_token(self.jury.id, role="jury")
+        self.comp_token = generate_token(self.competitor.id, role="competitor")
+
+    def test_get_audit_logs_admin_allowed(self):
+        # Create an audit log entry
+        from models import AuditLog
+        from datetime import datetime
+
+        entry = AuditLog(
+            admin_id=self.admin.id,
+            action_type="create",
+            target_type="challenge",
+            timestamp=datetime.utcnow(),
+        )
+        from models import db
+
+        db.session.add(entry)
+        db.session.commit()
+
+        # Call the endpoint
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        res = self.client.get("/api/admin/audit-logs", headers=headers)
+        assert res.status_code == 200
+        data = res.get_json()
+        assert "logs" in data
+        assert len(data["logs"]) >= 1
+        assert data["logs"][0]["action_type"] == "create"
+
+    def test_get_audit_logs_non_admin_forbidden(self):
+        # Test jury forbidden
+        headers = {"Authorization": f"Bearer {self.jury_token}"}
+        res = self.client.get("/api/admin/audit-logs", headers=headers)
+        assert res.status_code == 403
+
+        # Test competitor forbidden
+        headers = {"Authorization": f"Bearer {self.comp_token}"}
+        res = self.client.get("/api/admin/audit-logs", headers=headers)
+        assert res.status_code == 403
+
+    def test_get_audit_logs_filter_by_challenge(self):
+        # Create a challenge, tasks, stages, users
+        from models import Challenge, Stage, Task, User, AuditLog
+        from datetime import datetime, timedelta
+        from models import db
+
+        challenge = Challenge(
+            title="Audit Test Challenge",
+            description="Test Description",
+            max_eval_requests=3,
+            start_time=datetime.utcnow(),
+            end_time=datetime.utcnow() + timedelta(hours=2),
+        )
+        db.session.add(challenge)
+        db.session.commit()
+
+        # Audit log for challenge itself
+        log1 = AuditLog(
+            admin_id=self.admin.id,
+            action_type="create",
+            target_type="challenge",
+            target_id=challenge.id,
+            timestamp=datetime.utcnow(),
+        )
+        # Audit log unrelated
+        log2 = AuditLog(
+            admin_id=self.admin.id,
+            action_type="create",
+            target_type="user",
+            target_id=self.competitor.id,
+            timestamp=datetime.utcnow(),
+        )
+        db.session.add_all([log1, log2])
+        db.session.commit()
+
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        res = self.client.get(f"/api/admin/audit-logs?challenge_id={challenge.id}", headers=headers)
+        assert res.status_code == 200
+        data = res.get_json()
+        assert len(data["logs"]) == 1
+        assert data["logs"][0]["target_id"] == str(challenge.id)
+
+    def test_download_challenge_audit_logs_forbidden_for_jury(self):
+        from models import Challenge
+        from models import db
+        from datetime import datetime, timedelta
+
+        challenge = Challenge(
+            title="Download Test Challenge",
+            description="Test Description",
+            max_eval_requests=3,
+            start_time=datetime.utcnow(),
+            end_time=datetime.utcnow() + timedelta(hours=2),
+        )
+        db.session.add(challenge)
+        db.session.commit()
+
+        # Jury token should get 403
+        headers = {"Authorization": f"Bearer {self.jury_token}"}
+        res = self.client.get(
+            f"/api/challenges/{challenge.id}/audit-logs/download", headers=headers
+        )
+        assert res.status_code == 403
+
+        # Admin token should get 200
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        res = self.client.get(
+            f"/api/challenges/{challenge.id}/audit-logs/download", headers=headers
+        )
+        assert res.status_code == 200

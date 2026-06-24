@@ -16,8 +16,8 @@ vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-// Mock CustomSelect to make assertion on its presence simpler
-vi.mock('../ui/CustomSelect', () => ({
+// Mock SelectField to make assertion on its presence simpler
+vi.mock('../ui/SelectField', () => ({
   default: ({ options, value, onChange, placeholder }) => (
     <div data-testid="mock-custom-select">
       <span data-testid="select-placeholder">{placeholder}</span>

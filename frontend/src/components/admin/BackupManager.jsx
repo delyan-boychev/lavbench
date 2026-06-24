@@ -3,18 +3,17 @@ import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import api from '../../services/ApiService';
+import { useApp } from '../../context/AppContext';
 
-export default function BackupManager({ challengeId }) {
+export default function BackupManager() {
   const { t } = useTranslation();
+  const { selectedChallenge } = useApp();
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [forcing, setForcing] = useState(false);
 
-  const listUrl = challengeId ? `/admin/challenges/${challengeId}/backups` : '/admin/backups';
-
-  const downloadBase = challengeId
-    ? `/api/admin/challenges/${challengeId}/backups`
-    : '/api/admin/backups';
+  const listUrl = '/admin/backups';
+  const downloadBase = '/api/admin/backups';
 
   const loadBackups = useCallback(async () => {
     try {
@@ -24,7 +23,7 @@ export default function BackupManager({ challengeId }) {
       /* noop */
     }
     setLoading(false);
-  }, [listUrl, challengeId]);
+  }, [listUrl]);
 
   useEffect(() => {
     loadBackups();
@@ -33,14 +32,12 @@ export default function BackupManager({ challengeId }) {
       try {
         const data = JSON.parse(event.data);
         if (data.backups) {
-          const filtered = challengeId
-            ? data.backups.filter((b) => b.filename.includes(challengeId))
-            : data.backups.filter(
-                (b) =>
-                  !b.filename.includes('submission_ended') &&
-                  !b.filename.includes('grace_ended') &&
-                  !b.filename.includes('finalized'),
-              );
+          const filtered = data.backups.filter(
+            (b) =>
+              !b.filename.includes('submission_ended') &&
+              !b.filename.includes('grace_ended') &&
+              !b.filename.includes('finalized'),
+          );
           setBackups(filtered);
           setLoading(false);
         }
@@ -53,12 +50,11 @@ export default function BackupManager({ challengeId }) {
       }
     };
     return () => eventSource.close();
-  }, [challengeId, loadBackups]);
+  }, [loadBackups]);
 
   const handleForce = async () => {
     setForcing(true);
     try {
-      /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/force']['post']['responses']['200']['content']['application/json'] }>} */
       await api.post('/admin/backups/force');
     } catch {
       setForcing(false);
@@ -67,7 +63,6 @@ export default function BackupManager({ challengeId }) {
 
   const handleDelete = async (filename) => {
     try {
-      /** @type {Promise<{ ok: boolean, data: import('../../types/api').paths['/api/admin/backups/{filename}']['delete']['responses']['200']['content']['application/json'] }>} */
       await api.delete(`/admin/backups/${filename}`);
       loadBackups();
     } catch {
@@ -82,32 +77,28 @@ export default function BackupManager({ challengeId }) {
 
   const formatDate = (iso) => {
     try {
-      return new Date(iso).toLocaleString();
+      if (!iso) return '';
+      const date = new Date(iso);
+      const tz = selectedChallenge?.timezone || 'UTC';
+      const formatted = date.toLocaleString(undefined, {
+        timeZone: tz,
+        hour12: false,
+      });
+      return `${formatted} (${tz.replace(/_/g, ' ')})`;
     } catch {
       return iso;
     }
-  };
-
-  const stateLabel = (filename) => {
-    if (filename.startsWith('submission_ended')) return t('admin.backups.submission_ended');
-    if (filename.startsWith('grace_ended')) return t('admin.backups.grace_ended');
-    if (filename.startsWith('finalized')) return t('admin.backups.finalized');
-    return '';
   };
 
   return (
     <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-white">
-          {challengeId
-            ? t('admin.backups.competition_backups')
-            : t('admin.backups.database_backups_security')}
+          {t('admin.backups.database_backups_security')}
         </h2>
-        {!challengeId && (
-          <Button variant="accent" onClick={handleForce} disabled={forcing}>
-            {forcing ? t('admin.backups.forcing') : t('admin.backups.force_now')}
-          </Button>
-        )}
+        <Button variant="accent" onClick={handleForce} disabled={forcing}>
+          {forcing ? t('admin.backups.forcing') : t('admin.backups.force_now')}
+        </Button>
       </div>
 
       {loading ? (
@@ -126,16 +117,13 @@ export default function BackupManager({ challengeId }) {
                 <div className="flex gap-3 text-xs text-slate-500">
                   <span>{b.size_mb} MB</span>
                   <span>{formatDate(b.created_at)}</span>
-                  {stateLabel(b.filename) && (
-                    <span className="text-indigo-400 font-medium">{stateLabel(b.filename)}</span>
-                  )}
                 </div>
               </div>
               <div className="flex gap-2 flex-shrink-0">
                 <Button variant="ghost" size="sm" onClick={() => handleDownload(b.filename)}>
                   {t('admin.backups.download')}
                 </Button>
-                {!challengeId && b.type === 'manual' && (
+                {b.type === 'manual' && (
                   <Button variant="danger" size="sm" onClick={() => handleDelete(b.filename)}>
                     ✕
                   </Button>

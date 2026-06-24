@@ -1,15 +1,13 @@
 import os
 import sys
-import json
 import pytest
-import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import create_app
-from models import db, User, Challenge, Task, Submission
+from models import db, User, Challenge
 from task_modules.system import run_backup, run_register_worker_specs
 from tasks import check_and_backup
 from auth_utils import generate_token
@@ -17,8 +15,8 @@ from auth_utils import generate_token
 
 class TestRunBackup:
     @pytest.fixture(autouse=True)
-    def setup(self):
-        self.app = create_app()
+    def setup(self, app, db_session):
+        self.app = app
         self.app.config["TESTING"] = True
         self.app.config["UPLOAD_FOLDER"] = "/tmp/test_uploads"
         os.makedirs(self.app.config["UPLOAD_FOLDER"], exist_ok=True)
@@ -38,6 +36,15 @@ class TestRunBackup:
         assert filename is not None
         assert filename.startswith("auto_")
 
+        # Verify nice -n 19 is prepended
+        assert mock_run.call_count == 2
+        pg_dump_args = mock_run.call_args_list[0][0][0]
+        assert pg_dump_args[0:4] == ["nice", "-n", "19", "pg_dump"]
+
+        tar_args = mock_run.call_args_list[1][0][0]
+        assert tar_args[0:4] == ["nice", "-n", "19", "tar"]
+        assert "audit_logs.json" in tar_args
+
     @patch("task_modules.system.subprocess.run")
     @patch("task_modules.system.os.makedirs")
     @patch("task_modules.system.os.path.getsize")
@@ -48,18 +55,14 @@ class TestRunBackup:
             filename = run_backup(self.app, auto=False)
         assert filename.startswith("manual_")
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
-    @patch("task_modules.system.os.path.getsize")
-    def test_run_backup_with_challenge_and_state(self, mock_getsize, mock_makedirs, mock_run):
-        mock_run.return_value.returncode = 0
-        mock_getsize.return_value = 1024
-        with self._ctx():
-            filename = run_backup(self.app, auto=False, challenge_id=42, state="grace_ended")
-        assert "grace_ended" in filename
-        mock_makedirs.assert_any_call(
-            os.path.join(os.environ.get("BACKUPS_DIR", "/backups"), "challenge_42"), exist_ok=True
-        )
+        # Verify nice -n 19 is NOT prepended
+        assert mock_run.call_count == 2
+        pg_dump_args = mock_run.call_args_list[0][0][0]
+        assert pg_dump_args[0] == "pg_dump"
+
+        tar_args = mock_run.call_args_list[1][0][0]
+        assert tar_args[0] == "tar"
+        assert "audit_logs.json" in tar_args
 
     @patch("task_modules.system.subprocess.run")
     @patch("task_modules.system.os.makedirs")
@@ -125,23 +128,12 @@ class TestRunBackup:
             with self._ctx():
                 filename = run_backup(self.app, auto=True)
         mock_glob.assert_called_with("/custom_backups/auto_*.tar.gz")
-        assert mock_remove.call_count == 2
+        assert mock_remove.call_count == 5
         mock_remove.assert_any_call("/custom_backups/auto_1.tar.gz")
         mock_remove.assert_any_call("/custom_backups/auto_2.tar.gz")
-
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
-    @patch("task_modules.system.glob.glob")
-    @patch("task_modules.system.os.path.getctime")
-    def test_run_backup_skips_duplicate_state(
-        self, mock_getctime, mock_glob, mock_makedirs, mock_run
-    ):
-        mock_getctime.return_value = 12345
-        mock_glob.return_value = ["/backups/challenge_42/grace_ended_20260101_120000.tar.gz"]
-        with self._ctx():
-            filename = run_backup(self.app, auto=False, challenge_id=42, state="grace_ended")
-        assert filename == "grace_ended_20260101_120000.tar.gz"
-        mock_run.assert_not_called()
+        mock_remove.assert_any_call("/custom_backups/auto_3.tar.gz")
+        mock_remove.assert_any_call("/custom_backups/auto_4.tar.gz")
+        mock_remove.assert_any_call("/custom_backups/auto_5.tar.gz")
 
 
 class TestRunRegisterWorkerSpecs:
@@ -248,6 +240,16 @@ class TestAdminBackupEndpoints:
         db.session.commit()
         self.user_token = generate_token(self.user.id, role="competitor")
 
+        self.jury = User(
+            username="backup_jury",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Backup",
+        )
+        db.session.add(self.jury)
+        db.session.commit()
+        self.jury_token = generate_token(self.jury.id, role="jury")
+
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
 
@@ -257,6 +259,10 @@ class TestAdminBackupEndpoints:
 
     def test_list_backups_competitor_forbidden(self):
         resp = self.client.get("/api/admin/backups", headers=self._auth(self.user_token))
+        assert resp.status_code == 403
+
+    def test_list_backups_jury_forbidden(self):
+        resp = self.client.get("/api/admin/backups", headers=self._auth(self.jury_token))
         assert resp.status_code == 403
 
     def test_list_backups_unauthenticated(self):
@@ -271,6 +277,10 @@ class TestAdminBackupEndpoints:
         resp = self.client.post("/api/admin/backups/force", headers=self._auth(self.user_token))
         assert resp.status_code == 403
 
+    def test_force_backup_jury_forbidden(self):
+        resp = self.client.post("/api/admin/backups/force", headers=self._auth(self.jury_token))
+        assert resp.status_code == 403
+
     def test_download_backup_not_found(self):
         resp = self.client.get(
             "/api/admin/backups/nonexistent.tar.gz/download", headers=self._auth(self.admin_token)
@@ -283,14 +293,26 @@ class TestAdminBackupEndpoints:
         )
         assert resp.status_code == 403
 
+    def test_download_backup_jury_forbidden(self):
+        resp = self.client.get(
+            "/api/admin/backups/test.tar.gz/download", headers=self._auth(self.jury_token)
+        )
+        assert resp.status_code == 403
+
     def test_delete_backup_not_found(self):
         resp = self.client.delete(
-            "/api/admin/backups/delete/nonexistent.tar.gz", headers=self._auth(self.admin_token)
+            "/api/admin/backups/nonexistent.tar.gz", headers=self._auth(self.admin_token)
         )
         assert resp.status_code == 404
 
     def test_delete_backup_competitor_forbidden(self):
         resp = self.client.delete(
-            "/api/admin/backups/delete/test.tar.gz", headers=self._auth(self.user_token)
+            "/api/admin/backups/test.tar.gz", headers=self._auth(self.user_token)
+        )
+        assert resp.status_code == 403
+
+    def test_delete_backup_jury_forbidden(self):
+        resp = self.client.delete(
+            "/api/admin/backups/test.tar.gz", headers=self._auth(self.jury_token)
         )
         assert resp.status_code == 403

@@ -4,6 +4,48 @@
  */
 
 export interface paths {
+    "/api/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get paginated audit logs, optionally filtered by challenge_id and action_type.
+         * @description Only available to admins.<br/>
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    per_page?: number;
+                    challenge_id?: string;
+                    action_type?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/backups": {
         parameters: {
             query?: never;
@@ -163,83 +205,6 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    filename: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/challenges/{challenge_id}/backups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List competition lifecycle backups for a specific challenge. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/challenges/{challenge_id}/backups/{filename}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download a competition lifecycle backup file. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
                     filename: string;
                 };
                 cookie?: never;
@@ -1051,8 +1016,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Import a challenge configuration from JSON (previously exported via /export).
-         * @description Creates challenge, stages, and tasks. File attachments are NOT restored.<br/>
+         * Import a challenge configuration from a ZIP archive.
+         * @description Creates challenge, stages, and tasks, and restores files.<br/>
          */
         post: {
             parameters: {
@@ -1063,7 +1028,6 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": Record<string, never>;
                     "multipart/form-data": {
                         /** Format: binary */
                         file?: string;
@@ -1215,10 +1179,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Export a challenge configuration as JSON, including tasks and stages.
-         * @description File attachments (baseline notebooks, evaluator scripts) are NOT included.<br/>
-         */
+        /** Export a challenge configuration as ZIP, including tasks, stages, and uploaded files. */
         get: {
             parameters: {
                 query?: never;
@@ -1230,13 +1191,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Challenge export JSON */
+                /** @description Challenge export ZIP file */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/zip": string;
                     };
                 };
             };
@@ -1816,7 +1777,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/challenges/{challenge_id}/test-competition": {
+    "/api/challenges/{challenge_id}/test-stage": {
         parameters: {
             query?: never;
             header?: never;
@@ -1825,7 +1786,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a test competition that starts immediately for testing purposes. */
+        /** Create a test stage before the competition starts for testing purposes. */
         post: {
             parameters: {
                 query?: never;
@@ -1835,10 +1796,20 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        end_time?: string;
+                        /** Format: date-time */
+                        start_time?: string;
+                        title?: string;
+                    };
+                };
+            };
             responses: {
-                /** @description Success */
-                200: {
+                /** @description Test stage created */
+                201: {
                     headers: {
                         [name: string]: unknown;
                     };

@@ -127,7 +127,7 @@ def get_cached(key):
         data = r.get(key)
         if data:
             return json.loads(data)
-    except Exception as e:
+    except Exception:
         logger.exception("Cache get error for %s", key)
     return None
 
@@ -140,7 +140,7 @@ def set_cached(key, value, timeout=300):
     try:
         r.set(key, json.dumps(value), ex=timeout)
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Cache set error for %s", key)
         return False
 
@@ -153,7 +153,7 @@ def delete_cached(key):
     try:
         r.delete(key)
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Cache delete error for %s", key)
         return False
 

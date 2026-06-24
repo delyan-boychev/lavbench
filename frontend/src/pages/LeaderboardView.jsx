@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import ChallengeService from '../services/ChallengeService';
@@ -30,30 +30,38 @@ export default function LeaderboardView() {
     setUseSse(true);
   }, [challengeId, selectedChallenge?.id]);
 
-  const loadLeaderboard = async (showLoading = true) => {
-    const activeId = challengeId || selectedChallenge?.id;
-    if (!activeId) return;
-    if (showLoading) setLoading(true);
-    try {
-      const res = await ChallengeService.getLeaderboard(activeId);
-      if (res.ok) {
-        setLeaderboardData(res.data.leaderboard || []);
-        setTasks(res.data.tasks || []);
-        setMetricName(res.data.metric_name || 'Score');
-        setIsNormalized(res.data.is_normalized || false);
+  const loadLeaderboard = useCallback(
+    async (showLoading = true) => {
+      const activeId = challengeId || selectedChallenge?.id;
+      if (!activeId) return;
+      if (showLoading) setLoading(true);
+      try {
+        const res = await ChallengeService.getLeaderboard(activeId);
+        if (res.ok) {
+          setLeaderboardData(res.data.leaderboard || []);
+          setTasks(res.data.tasks || []);
+          setMetricName(res.data.metric_name || 'Score');
+          setIsNormalized(res.data.is_normalized || false);
+        }
+      } catch (err) {
+        console.error('Failed to load challenge leaderboard:', err);
+      } finally {
+        if (showLoading) setLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to load challenge leaderboard:', err);
-    } finally {
-      if (showLoading) setLoading(false);
+    },
+    [challengeId, selectedChallenge?.id],
+  );
+
+  useEffect(() => {
+    const activeId = challengeId || selectedChallenge?.id;
+    if (activeId) {
+      loadLeaderboard(true);
     }
-  };
+  }, [challengeId, selectedChallenge?.id, loadLeaderboard]);
 
   useEffect(() => {
     const activeId = challengeId || selectedChallenge?.id;
     if (!activeId) return;
-
-    loadLeaderboard(true); // eslint-disable-line react-hooks/set-state-in-effect
 
     if (useSse && typeof EventSource !== 'undefined') {
       const sseUrl = `/api/challenges/${activeId}/leaderboard/live`;
@@ -91,7 +99,7 @@ export default function LeaderboardView() {
 
       return () => clearInterval(interval);
     }
-  }, [challengeId, selectedChallenge?.id]);
+  }, [challengeId, selectedChallenge?.id, useSse, loadLeaderboard]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">

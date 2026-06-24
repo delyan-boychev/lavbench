@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -59,7 +59,8 @@ class TestAuthUtils:
         assert verify_token(tampered) is None
 
     def test_check_worker_auth_valid_signature(self, monkeypatch):
-        import base64, time
+        import base64
+        import time
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()
@@ -73,7 +74,8 @@ class TestAuthUtils:
         assert check_worker_auth(token) is True
 
     def test_check_worker_auth_wrong_signature(self, monkeypatch):
-        import base64, time
+        import base64
+        import time
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()
@@ -87,7 +89,8 @@ class TestAuthUtils:
         assert check_worker_auth(token) is False
 
     def test_check_worker_auth_expired_nonce(self, monkeypatch):
-        import base64, time
+        import base64
+        import time
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()

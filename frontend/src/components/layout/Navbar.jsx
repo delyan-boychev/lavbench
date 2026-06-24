@@ -651,26 +651,28 @@ export default function Navbar() {
             <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">
               {t('nav.cluster_status_summary')}
             </h4>
-            <div className="grid grid-cols-2 gap-3 text-slate-300">
-              <div className="flex justify-between border-b border-white/5 pb-1.5">
+            <div className="flex flex-col gap-2.5 text-slate-300">
+              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.system_status')}</span>
                 <span className="font-bold text-emerald-400">{t('nav.active')}</span>
               </div>
-              <div className="flex justify-between border-b border-white/5 pb-1.5">
+              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.total_nodes')}</span>
                 <span className="font-bold text-slate-100">{clusters.length}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.global_concurrency')}</span>
-                <span className="font-bold text-slate-100">
+                <span className="font-bold text-slate-100 text-right">
                   {t('nav.global_parallel_tasks', {
                     count: clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0),
                   })}
                 </span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-400">{t('nav.resource_routing')}</span>
-                <span className="font-bold text-indigo-400">{t('nav.auto_load_balanced')}</span>
+                <span className="font-bold text-indigo-400 text-right">
+                  {t('nav.auto_load_balanced')}
+                </span>
               </div>
             </div>
           </div>
@@ -701,27 +703,27 @@ export default function Navbar() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-slate-300 font-medium">
-                    <div className="flex justify-between border-b border-white/5 pb-1">
+                  <div className="flex flex-col gap-2.5 text-slate-300 font-medium text-xs">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                       <span className="text-slate-500 font-semibold">{t('nav.concurrency')}</span>
                       <span className="font-bold text-slate-200">
                         {t('nav.parallel_tasks', { count: cluster.concurrency })}
                       </span>
                     </div>
-                    <div className="flex justify-between border-b border-white/5 pb-1">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                       <span className="text-slate-500 font-semibold">{t('nav.ram_limit')}</span>
                       <span className="font-bold text-slate-200">{cluster.ram_gb} GB</span>
                     </div>
-                    <div className="flex justify-between border-b border-white/5 pb-1">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                       <span className="text-slate-500 font-semibold">{t('nav.gpu_model')}</span>
                       <span
-                        className="font-bold text-slate-200 truncate max-w-[140px] text-right"
+                        className="font-bold text-slate-200 truncate max-w-[220px] text-right"
                         title={cluster.gpu_type}
                       >
                         {cluster.gpu_type}
                       </span>
                     </div>
-                    <div className="flex justify-between border-b border-white/5 pb-1">
+                    <div className="flex justify-between items-center">
                       <span className="text-slate-500 font-semibold">{t('nav.vram_limit')}</span>
                       <span className="font-bold text-slate-200">
                         {cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null

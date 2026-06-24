@@ -18,8 +18,14 @@ vi.mock('../../ui/InputField', () => ({
 }));
 
 vi.mock('../../ui/Button', () => ({
-  default: ({ children, type, variant, className, disabled }) => (
-    <button type={type} data-variant={variant} className={className} disabled={disabled}>
+  default: ({ children, type, variant, className, disabled, onClick }) => (
+    <button
+      type={type}
+      data-variant={variant}
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+    >
       {children}
     </button>
   ),
@@ -225,5 +231,24 @@ describe('UserManager', () => {
     render(<UserManager {...baseProps} allUsers={users} usersPages={3} usersTotal={15} />);
     expect(screen.getByTestId('page-info')).toBeInTheDocument();
     expect(screen.getByTestId('total')).toHaveTextContent('15');
+  });
+
+  it('shows edit button and triggers initEditUser when clicked', () => {
+    const users = [
+      {
+        id: 2,
+        username: 'other',
+        name: 'Other',
+        surname: 'User',
+        email: '',
+        role: 'competitor',
+        is_anonymous: false,
+      },
+    ];
+    const initEditUser = vi.fn();
+    render(<UserManager {...baseProps} allUsers={users} initEditUser={initEditUser} />);
+    expect(screen.getByText('Edit')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Edit'));
+    expect(initEditUser).toHaveBeenCalledWith(users[0]);
   });
 });

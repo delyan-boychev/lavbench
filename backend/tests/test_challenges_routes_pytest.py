@@ -8,7 +8,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Stage
+from models import User, Challenge, Stage
 from auth_utils import generate_token
 
 
@@ -513,3 +513,75 @@ class TestListChallenges:
         res = client.get("/api/challenges", headers=self._auth(self.competitor_token))
         assert res.status_code == 200
         assert res.get_json() == []
+
+
+class TestStageBoundariesValidation:
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session, redis_flush):
+        self.admin = User(
+            username="boundary_admin",
+            password_hash="pbkdf2:sha256:...",
+            role="admin",
+            alias_id="Boundary-Admin-001",
+        )
+        db_session.add(self.admin)
+
+        self.challenge = Challenge(
+            title="Boundary Challenge",
+            description="Challenge timeframe bounds",
+            start_time=datetime.utcnow() + timedelta(hours=1),
+            end_time=datetime.utcnow() + timedelta(hours=24),
+            timezone="UTC",
+        )
+        db_session.add(self.challenge)
+        db_session.commit()
+        self.admin_token = generate_token(self.admin.id, self.admin.role)
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_create_stage_outside_competition_bounds(self, client):
+        # Stage starts before challenge start time
+        payload = {
+            "title": "Early Stage",
+            "start_time": (datetime.utcnow()).isoformat() + "Z",
+            "end_time": (datetime.utcnow() + timedelta(hours=5)).isoformat() + "Z",
+        }
+        res = client.post(
+            f"/api/challenges/{self.challenge.id}/stages",
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
+        )
+        assert res.status_code == 400
+        assert "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS" in res.get_json()["code"]
+
+        # Stage ends after challenge end time
+        payload = {
+            "title": "Late Stage",
+            "start_time": (datetime.utcnow() + timedelta(hours=2)).isoformat() + "Z",
+            "end_time": (datetime.utcnow() + timedelta(hours=26)).isoformat() + "Z",
+        }
+        res = client.post(
+            f"/api/challenges/{self.challenge.id}/stages",
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
+        )
+        assert res.status_code == 400
+        assert "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS" in res.get_json()["code"]
+
+    def test_create_stage_end_before_start(self, client):
+        payload = {
+            "title": "Backward Stage",
+            "start_time": (datetime.utcnow() + timedelta(hours=5)).isoformat() + "Z",
+            "end_time": (datetime.utcnow() + timedelta(hours=4)).isoformat() + "Z",
+        }
+        res = client.post(
+            f"/api/challenges/{self.challenge.id}/stages",
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers=self._auth(self.admin_token),
+        )
+        assert res.status_code == 400
+        assert "ERR_INVALID_STAGE_DATES" in res.get_json()["code"]

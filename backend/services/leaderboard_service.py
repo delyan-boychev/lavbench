@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from functools import cmp_to_key
 from sqlalchemy.orm import joinedload
-from models import db, Challenge, Submission, User, Task, is_metric_lower_better
+from models import db, Challenge, Submission, User, Task, Stage, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 
@@ -80,6 +80,14 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
         else:
             is_final_active = Submission.is_final_selection
 
+        test_stage_task_ids = [
+            s[0]
+            for s in db.session.query(Task.id)
+            .join(Stage, Task.stage_id == Stage.id)
+            .filter(Stage.challenge_id == challenge_id, Stage.is_test == True)
+            .all()
+        ]
+
         subq = (
             db.session.query(
                 Submission.id.label("sub_id"),
@@ -95,7 +103,11 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                 )
                 .label("rn"),
             )
-            .filter(Submission.challenge_id == challenge_id, Submission.status == "completed")
+            .filter(
+                Submission.challenge_id == challenge_id,
+                Submission.status == "completed",
+                ~Submission.task_id.in_(test_stage_task_ids) if test_stage_task_ids else True,
+            )
             .subquery()
         )
 
@@ -237,7 +249,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                             "private_score": best_bl.private_score,
                             "execution_time_ms": best_bl.execution_time_ms or 0,
                             "created_at": (
-                                best_bl.created_at.isoformat() if best_bl.created_at else None
+                                best_bl.created_at.isoformat() + "Z" if best_bl.created_at else None
                             ),
                         }
                         has_any = True
@@ -343,17 +355,18 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
         for entry in cached_entries:
             if isinstance(entry.get("earliest_submission_time"), datetime):
                 entry["earliest_submission_time"] = (
-                    entry["earliest_submission_time"].isoformat()
+                    entry["earliest_submission_time"].isoformat() + "Z"
                     if entry["earliest_submission_time"] != datetime.max
                     else None
                 )
             for ts_score in entry["task_scores"].values():
                 if isinstance(ts_score.get("created_at"), datetime):
-                    ts_score["created_at"] = ts_score["created_at"].isoformat()
+                    ts_score["created_at"] = ts_score["created_at"].isoformat() + "Z"
 
-        cached = get_cached(cache_key)
-        if cached is not None:
-            return cached
+        if not force_rebuild:
+            cached = get_cached(cache_key)
+            if cached is not None:
+                return cached
         set_cached(cache_key, cached_entries, timeout=120)
         return cached_entries
 

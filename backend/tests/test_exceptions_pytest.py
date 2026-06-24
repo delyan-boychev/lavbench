@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import pytest
 from io import BytesIO
 from datetime import datetime, timedelta
@@ -8,7 +7,6 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
 

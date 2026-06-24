@@ -3,9 +3,7 @@ import sys
 import json
 import pytest
 import tempfile
-import shutil
 import io
-import math
 import pandas as pd
 import numpy as np
 from unittest.mock import patch, MagicMock
@@ -13,7 +11,6 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
 from evaluation_engine import validate_parquet_schema, evaluate_predictions

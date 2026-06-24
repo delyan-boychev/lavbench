@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, User, Challenge, Task, Submission, Stage
 from auth_utils import generate_token
 
@@ -196,7 +195,7 @@ class TestQueueSystemSubmission:
         queue_system_submission(
             self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
         )
-        assert mock_apply.call_args[1]["queue"] == "celery"
+        assert mock_apply.call_args[1]["queue"] == "cpu_queue"
 
     @patch("tasks.evaluate_submission.apply_async")
     @patch("routes.tasks.extract_code_from_cells")

@@ -24,7 +24,7 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 from app import create_app
-from models import db, User, Challenge, Task, Submission, Stage, AuditLog
+from models import db, User, Challenge, Task, Submission, Stage
 from auth_utils import generate_token
 
 
@@ -49,9 +49,24 @@ def download_nltk_data():
 @pytest.fixture(scope="session")
 def app():
     """Flask application — created once per test session."""
+    import tempfile
+    import shutil
+
+    # Create temporary directory for uploads isolation
+    test_upload_dir = tempfile.mkdtemp()
+    os.environ["UPLOAD_FOLDER"] = test_upload_dir
+
     _app = create_app()
     _app.config["TESTING"] = True
-    return _app
+    _app.config["UPLOAD_FOLDER"] = test_upload_dir
+
+    yield _app
+
+    # Cleanup temporary directory
+    try:
+        shutil.rmtree(test_upload_dir)
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="function")
@@ -143,6 +158,7 @@ def create_user(db_session):
         role="competitor",
         alias_id=None,
         challenge_id=None,
+        jury_challenges=None,
     ):
         if alias_id is None:
             alias_id = f"{role}-{username}-{uuid.uuid4().hex[:6]}"
@@ -157,6 +173,7 @@ def create_user(db_session):
         )
         db_session.add(user)
         db_session.flush()
+
         return user
 
     return _make

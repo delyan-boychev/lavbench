@@ -281,10 +281,16 @@ export default function SubmissionsView() {
         timerText = t('submissions.selection_closed');
         isExpired = true;
       } else {
-        const min = Math.floor(diff / 60000);
-        const sec = Math.floor((diff % 60000) / 1000);
+        const totalSecs = Math.ceil(diff / 1000);
+        const hours = Math.floor(totalSecs / 3600);
+        const min = Math.floor((totalSecs % 3600) / 60);
+        const sec = totalSecs % 60;
+        const timeStr =
+          hours > 0
+            ? `${hours.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
+            : `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
         timerText = t('submissions.time_remaining_select_final', {
-          time: `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`,
+          time: timeStr,
         });
       }
     }

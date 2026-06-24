@@ -200,6 +200,11 @@ export const AppProvider = ({ children }) => {
   // Set selected challenge by ID - resets task to first of new challenge (fixes B7)
   const setSelectedChallengeById = useCallback(
     (id) => {
+      if (!id) {
+        setSelectedChallengeState(null);
+        setSelectedTask(null);
+        return;
+      }
       const c = challenges.find((ch) => ch.id === id);
       if (c) {
         setSelectedChallengeState(c);

@@ -33,6 +33,12 @@ vi.mock('../../ui/EmptyState', () => ({
   default: ({ message }) => <div data-testid="empty-state">{message}</div>,
 }));
 
+vi.mock('../../../context/AppContext', () => ({
+  useApp: () => ({
+    selectedChallenge: { id: 'c1-id', timezone: 'UTC' },
+  }),
+}));
+
 import api from '../../../services/ApiService';
 import BackupManager from '../BackupManager';
 
@@ -65,22 +71,10 @@ describe('BackupManager', () => {
     expect(screen.getByText('Database Backups & Security')).toBeInTheDocument();
   });
 
-  it('renders competition backups title with challengeId', () => {
-    api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager challengeId={42} />);
-    expect(screen.getByText('Competition Backups')).toBeInTheDocument();
-  });
-
-  it('shows force backup button only without challengeId', () => {
+  it('shows force backup button', () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
     render(<BackupManager />);
     expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
-  });
-
-  it('hides force backup button with challengeId', () => {
-    api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager challengeId={42} />);
-    expect(screen.queryByText('Force Backup Now')).not.toBeInTheDocument();
   });
 
   it('renders backup list items', async () => {
@@ -154,65 +148,5 @@ describe('BackupManager', () => {
     });
     fireEvent.click(screen.getByText('✕'));
     expect(api.delete).toHaveBeenCalledWith('/admin/backups/manual_backup.db');
-  });
-
-  it('shows state label for submission_ended backups', async () => {
-    api.get.mockResolvedValue({
-      ok: true,
-      data: {
-        backups: [
-          {
-            filename: 'submission_ended_backup.db',
-            size_mb: 1,
-            created_at: '2024-01-01T00:00:00Z',
-            type: 'auto',
-          },
-        ],
-      },
-    });
-    render(<BackupManager />);
-    await waitFor(() => {
-      expect(screen.getByText('Submission Period Ended')).toBeInTheDocument();
-    });
-  });
-
-  it('shows state label for grace_ended backups', async () => {
-    api.get.mockResolvedValue({
-      ok: true,
-      data: {
-        backups: [
-          {
-            filename: 'grace_ended_backup.db',
-            size_mb: 1,
-            created_at: '2024-01-01T00:00:00Z',
-            type: 'auto',
-          },
-        ],
-      },
-    });
-    render(<BackupManager />);
-    await waitFor(() => {
-      expect(screen.getByText('Grace Period Ended')).toBeInTheDocument();
-    });
-  });
-
-  it('shows state label for finalized backups', async () => {
-    api.get.mockResolvedValue({
-      ok: true,
-      data: {
-        backups: [
-          {
-            filename: 'finalized_backup.db',
-            size_mb: 1,
-            created_at: '2024-01-01T00:00:00Z',
-            type: 'auto',
-          },
-        ],
-      },
-    });
-    render(<BackupManager />);
-    await waitFor(() => {
-      expect(screen.getByText('Scores Finalized')).toBeInTheDocument();
-    });
   });
 });

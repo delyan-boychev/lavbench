@@ -1,6 +1,4 @@
 import json
-import re
-import io
 
 EXTENSION_MAP = {
     ".ipynb": "notebook",

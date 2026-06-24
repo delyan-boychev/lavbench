@@ -13,6 +13,8 @@ const ChallengeService = {
   delete: (id) => api.delete(`/challenges/${id}`),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/finalize']['post']['responses']['200']['content']['application/json'] }>} */
   finalize: (id, data) => api.post(`/challenges/${id}/finalize`, data),
+  finalizeStage: (challengeId, stageId, data) =>
+    api.post(`/challenges/${challengeId}/stages/${stageId}/finalize`, data),
   toggleReveal: (id, reveal_results) =>
     api.put(`/challenges/${id}/reveal-results`, { reveal_results }),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json'] }>} */
@@ -27,6 +29,12 @@ const ChallengeService = {
     /** @type {Promise<{ ok: boolean, data: import('../types/api').paths['/api/challenges/{challenge_id}/parse-notebook']['post']['responses']['200']['content']['application/json'] }>} */
     return api.postForm(`/challenges/${id}/parse-notebook`, fd);
   },
+  downloadSubmission: (challengeId, taskId, userId) =>
+    api.getBlob(`/challenges/${challengeId}/tasks/${taskId}/users/${userId}/download`),
+  downloadAuditLogs: (challengeId) => api.getBlob(`/challenges/${challengeId}/audit-logs/download`),
+  downloadSubmissionUrl: (challengeId, taskId, userId) =>
+    `/challenges/${challengeId}/tasks/${taskId}/users/${userId}/download`,
+  downloadAuditLogsUrl: (challengeId) => `/challenges/${challengeId}/audit-logs/download`,
 };
 
 export default ChallengeService;

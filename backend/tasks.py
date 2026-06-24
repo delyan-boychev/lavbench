@@ -32,7 +32,9 @@ else:
 
     app = create_app()
     celery = Celery(
-        "tasks", broker=app.config["CELERY_BROKER_URL"], backend=app.config["CELERY_RESULT_BACKEND"]
+        "tasks",
+        broker=app.config["CELERY_BROKER_URL"],
+        backend=app.config["CELERY_RESULT_BACKEND"],
     )
 
 
@@ -69,6 +71,7 @@ configure_celery_ssl(celery)
 # Recycle worker child processes after 50 tasks to reclaim memory from ML model execution
 celery.conf.update(
     worker_max_tasks_per_child=50,
+    worker_concurrency=1,
 )
 
 from task_modules.submission_runner import run_eval_submission
@@ -95,7 +98,9 @@ from task_modules.leaderboard import run_recalculate_all_leaderboards
 def evaluate_submission(self, submission_id, metadata=None):
     """Celery task: run a student submission through the evaluation pipeline in Docker."""
     try:
-        return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
+        return run_eval_submission(
+            self, submission_id, metadata, app, db, Submission, Challenge
+        )
     except Exception as e:
         from cache_utils import log_dead_letter
 
@@ -129,9 +134,13 @@ def recalculate_leaderboard(challenge_id):
         challenge = Challenge.query.get(challenge_id)
         if not challenge:
             return
-        build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=True)
+        build_and_cache_leaderboard(
+            challenge_id, is_frozen_view=False, force_rebuild=True
+        )
         if challenge.is_frozen:
-            build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
+            build_and_cache_leaderboard(
+                challenge_id, is_frozen_view=True, force_rebuild=True
+            )
 
         from cache_utils import get_redis_client
 
@@ -150,13 +159,13 @@ def register_worker_specs():
 
 
 @celery.task
-def run_backup(auto=True, challenge_id=None, state=None, db_only=False):
+def run_backup(auto=True, db_only=False):
     """Celery task: create a pg_dump+uploads tarball backup."""
     if RUNNING_AS_WORKER:
         return {"skipped": "remote_worker"}
     if not app:
         return {"error": "no_app"}
-    return _do_backup(app, auto=auto, challenge_id=challenge_id, state=state, db_only=db_only)
+    return _do_backup(app, auto=auto, db_only=db_only)
 
 
 @celery.task
@@ -181,26 +190,12 @@ def check_and_backup():
 
         active_count = 0
         for c in challenges:
-            if c.start_time and c.start_time <= now and (not c.end_time or c.end_time >= now):
-                active_count += 1
-
-            # Grace period just ended
             if (
-                c.end_time
-                and not c.scores_finalized
-                and c.end_time + grace < now
-                and c.end_time + grace > now - window
+                c.start_time
+                and c.start_time <= now
+                and (not c.end_time or c.end_time >= now)
             ):
-                run_backup.delay(auto=True, challenge_id=c.id, state="grace_ended")
-
-            # Submission deadline just passed
-            elif (
-                c.end_time
-                and not c.scores_finalized
-                and c.end_time < now
-                and c.end_time > now - window
-            ):
-                run_backup.delay(auto=True, challenge_id=c.id, state="submission_ended")
+                active_count += 1
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
@@ -225,7 +220,7 @@ def check_and_backup():
                 should_run = True
             if should_run:
                 set_cached(last_key, now.isoformat(), timeout=86400)
-                run_backup.delay(auto=True, db_only=(active_count > 0))
+                run_backup.delay(auto=True, db_only=False)
 
     return {"active_competitions": active_count}
 
@@ -253,7 +248,13 @@ def watchdog_stuck_submissions():
                 return {"error": "redis_unavailable"}
             stuck = Submission.query.filter(
                 Submission.status.in_(
-                    ["queued", "running", "building_env", "running_inference", "evaluating"]
+                    [
+                        "queued",
+                        "running",
+                        "building_env",
+                        "running_inference",
+                        "evaluating",
+                    ]
                 )
             ).all()
             for sub in stuck:
@@ -285,7 +286,9 @@ def watchdog_stuck_submissions():
                             pass
                     except Exception as e:
                         logger.error(
-                            "Watchdog: failed to recover fallback for submission %s: %s", sub.id, e
+                            "Watchdog: failed to recover fallback for submission %s: %s",
+                            sub.id,
+                            e,
                         )
         except Exception as e:
             logger.error("Watchdog: Redis connection error: %s", e)
@@ -299,7 +302,9 @@ def watchdog_stuck_submissions():
         ).all()
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
+            Submission.status.in_(
+                ["running", "building_env", "running_inference", "evaluating"]
+            ),
             Submission.executed_at.isnot(None),
         ).all()
         now = datetime.utcnow()
@@ -307,7 +312,9 @@ def watchdog_stuck_submissions():
         for sub in timed_out_candidates + running_candidates:
             task_time_limit = 300
             if sub.task:
-                task_time_limit = sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
+                task_time_limit = (
+                    sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
+                )
             if sub.executed_at:
                 max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
                 if now - sub.executed_at <= max_runtime:
@@ -319,7 +326,9 @@ def watchdog_stuck_submissions():
                 reason = "never picked up by a worker (10m+ queued)"
             sub.status = "failed"
             sub.detailed_status = "failed"
-            sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
+            sub.logs = (
+                sub.logs or ""
+            ) + f"\n[WATCHDOG] Submission timed out — {reason}."
             timeout_count += 1
             try:
                 from sse_utils import publish_submission_status
@@ -368,7 +377,11 @@ def recalculate_dirty_leaderboards():
 
         with app.app_context():
             for cid_bytes in dirty_challenges:
-                cid = cid_bytes.decode("utf-8") if isinstance(cid_bytes, bytes) else str(cid_bytes)
+                cid = (
+                    cid_bytes.decode("utf-8")
+                    if isinstance(cid_bytes, bytes)
+                    else str(cid_bytes)
+                )
 
                 # Remove from dirty set first to prevent race condition
                 r.srem("leaderboard:dirty_challenges", cid)
@@ -379,16 +392,22 @@ def recalculate_dirty_leaderboards():
                         continue
 
                     # Rebuild cache
-                    build_and_cache_leaderboard(cid, is_frozen_view=False, force_rebuild=True)
+                    build_and_cache_leaderboard(
+                        cid, is_frozen_view=False, force_rebuild=True
+                    )
                     if challenge.is_frozen:
-                        build_and_cache_leaderboard(cid, is_frozen_view=True, force_rebuild=True)
+                        build_and_cache_leaderboard(
+                            cid, is_frozen_view=True, force_rebuild=True
+                        )
 
                     # Publish event for live SSE updates
                     channel_name = f"challenge_{cid}_leaderboard"
                     r.publish(channel_name, json.dumps({"event": "update"}))
                     recalculated_count += 1
                 except Exception as e:
-                    logger.error("recalculate_dirty_leaderboards: failed for %s: %s", cid, e)
+                    logger.error(
+                        "recalculate_dirty_leaderboards: failed for %s: %s", cid, e
+                    )
 
         return {"recalculated": recalculated_count}
     except Exception as e:
@@ -423,3 +442,36 @@ celery.conf.beat_schedule = {
         "schedule": 604800.0,  # once a week (7 days)
     },
 }
+
+# Unregister tasks conditionally based on environment variables
+INTERNAL_ONLY_WORKER = os.environ.get("INTERNAL_ONLY_WORKER") == "true"
+EVALUATION_ONLY_WORKER = os.environ.get("EVALUATION_ONLY_WORKER") == "true"
+
+if INTERNAL_ONLY_WORKER or EVALUATION_ONLY_WORKER:
+    all_task_names = [
+        "tasks.evaluate_submission",
+        "tasks.register_worker_specs",
+        "tasks.prune_docker_images",
+        "tasks.check_and_backup",
+        "tasks.recalculate_all_leaderboards",
+        "tasks.recalculate_dirty_leaderboards",
+        "tasks.recalculate_leaderboard",
+        "tasks.run_backup",
+        "tasks.watchdog_stuck_submissions",
+    ]
+    evaluation_tasks = {
+        "tasks.evaluate_submission",
+        "tasks.register_worker_specs",
+        "tasks.prune_docker_images",
+    }
+    for tname in all_task_names:
+        if INTERNAL_ONLY_WORKER and tname in evaluation_tasks:
+            try:
+                celery.tasks.unregister(tname)
+            except KeyError:
+                pass
+        elif EVALUATION_ONLY_WORKER and tname not in evaluation_tasks:
+            try:
+                celery.tasks.unregister(tname)
+            except KeyError:
+                pass

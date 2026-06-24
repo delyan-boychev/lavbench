@@ -1,11 +1,8 @@
 """Parquet-based evaluation engine for comparing student submissions against labels."""
 
-import os
-import json
 import math
 import logging
 import numpy as np
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 from sklearn.metrics import (

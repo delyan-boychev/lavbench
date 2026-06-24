@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from models import db, User, Challenge, Task, Stage
+from models import User, Challenge, Task, Stage
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -71,23 +71,36 @@ class TestExportChallenge:
     def test_export_challenge_as_admin(
         self, client, auth_headers, tokens, challenge_with_stages_and_tasks
     ):
+        import zipfile
+        import io
+
         ch = challenge_with_stages_and_tasks
         res = client.get(
             f"/api/challenges/{ch.id}/export",
             headers=auth_headers(tokens.admin),
         )
         assert res.status_code == 200
-        data = res.get_json()
-        assert data["title"] == ch.title
-        assert data["description"] == ch.description
-        assert "tasks" in data
-        assert "stages" in data
-        assert len(data["tasks"]) == 2
-        assert len(data["stages"]) == 2
+        assert res.headers["Content-Type"] == "application/zip"
+
+        zip_buf = io.BytesIO(res.data)
+        with zipfile.ZipFile(zip_buf, "r") as zf:
+            assert "challenge.json" in zf.namelist()
+            challenge_json = zf.read("challenge.json").decode("utf-8")
+            data = json.loads(challenge_json)
+
+            assert data["title"] == ch.title
+            assert data["description"] == ch.description
+            assert "tasks" in data
+            assert "stages" in data
+            assert len(data["tasks"]) == 2
+            assert len(data["stages"]) == 2
 
     def test_export_challenge_as_jury(
         self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user
     ):
+        import zipfile
+        import io
+
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export", role="jury")
         from auth_utils import generate_token
@@ -98,8 +111,14 @@ class TestExportChallenge:
             headers=auth_headers(jury_token),
         )
         assert res.status_code == 200
-        data = res.get_json()
-        assert data["title"] == ch.title
+        assert res.headers["Content-Type"] == "application/zip"
+
+        zip_buf = io.BytesIO(res.data)
+        with zipfile.ZipFile(zip_buf, "r") as zf:
+            assert "challenge.json" in zf.namelist()
+            challenge_json = zf.read("challenge.json").decode("utf-8")
+            data = json.loads(challenge_json)
+            assert data["title"] == ch.title
 
     def test_export_challenge_competitor_forbidden(
         self, client, auth_headers, tokens, sample_challenge
@@ -161,19 +180,31 @@ class TestImportChallenge:
         ],
     }
 
-    def _import_json(self, client, headers, payload=None):
+    def _import_zip(self, client, headers, payload=None, filename="challenge.zip"):
+        import zipfile
+        import io
+
         if payload is None:
             payload = self.EXPORT_PAYLOAD
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("challenge.json", json.dumps(payload))
+        zip_buf.seek(0)
+
         return client.post(
             "/api/challenges/import",
-            data=json.dumps(payload),
-            content_type="application/json",
             headers=headers,
+            data={"file": (zip_buf, filename)},
         )
 
-    def test_import_challenge_success_json(self, client, csrf_headers, tokens):
-        headers = csrf_headers(tokens.admin)
-        res = self._import_json(client, headers)
+    def test_import_challenge_success_zip(self, client, tokens):
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = self._import_zip(client, headers)
         assert res.status_code == 201
         data = res.get_json()
         assert data["title"] == "Imported Challenge"
@@ -181,26 +212,24 @@ class TestImportChallenge:
         assert data["max_eval_requests"] == 20
         assert data["ram_limit_mb"] == 4096
 
-    def test_import_challenge_success_file_upload(self, client, csrf_headers, tokens):
-        payload_bytes = json.dumps(self.EXPORT_PAYLOAD).encode("utf-8")
-        res = client.post(
-            "/api/challenges/import",
-            headers={
-                "Authorization": f"Bearer {tokens.admin}",
-                "X-CSRF-Token": "test-csrf-token",
-                "Cookie": "csrf_token=test-csrf-token",
-            },
-            data={"file": (io.BytesIO(payload_bytes), "challenge.json")},
-        )
+    def test_import_challenge_success_file_upload(self, client, tokens):
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = self._import_zip(client, headers)
         assert res.status_code == 201
         data = res.get_json()
         assert data["title"] == "Imported Challenge"
 
-    def test_import_challenge_stages_and_tasks_created(
-        self, client, csrf_headers, tokens, db_session
-    ):
-        headers = csrf_headers(tokens.admin)
-        res = self._import_json(client, headers)
+    def test_import_challenge_stages_and_tasks_created(self, client, tokens, db_session):
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = self._import_zip(client, headers)
         assert res.status_code == 201
         ch_id = res.get_json()["id"]
 
@@ -211,48 +240,26 @@ class TestImportChallenge:
         assert len(ch.stages) == 1
         assert ch.stages[0].title == "Preliminary"
 
-    def test_import_challenge_missing_title(self, client, csrf_headers, tokens):
+    def test_import_challenge_missing_title(self, client, tokens):
         payload = dict(self.EXPORT_PAYLOAD)
         payload.pop("title")
-        headers = csrf_headers(tokens.admin)
-        res = self._import_json(client, headers, payload)
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = self._import_zip(client, headers, payload)
         assert res.status_code == 400
         assert "title" in res.get_json()["error"].lower()
 
-    def test_import_challenge_invalid_json(self, client, csrf_headers, tokens):
-        headers = csrf_headers(tokens.admin)
-        res = client.post(
-            "/api/challenges/import",
-            data=b"not valid json",
-            content_type="application/json",
-            headers=headers,
-        )
-        assert res.status_code == 400
-        assert "invalid json" in res.get_json()["error"].lower()
+    def test_import_challenge_invalid_json(self, client, tokens):
+        import zipfile
+        import io
 
-    def test_import_challenge_not_a_dict(self, client, csrf_headers, tokens):
-        headers = csrf_headers(tokens.admin)
-        res = client.post(
-            "/api/challenges/import",
-            data=json.dumps(["not", "a", "dict"]),
-            content_type="application/json",
-            headers=headers,
-        )
-        assert res.status_code == 400
-        assert "object" in res.get_json()["error"].lower()
-
-    def test_import_challenge_no_data(self, client, csrf_headers, tokens):
-        headers = csrf_headers(tokens.admin)
-        res = client.post(
-            "/api/challenges/import",
-            data=b"",
-            content_type="application/json",
-            headers=headers,
-        )
-        assert res.status_code == 400
-        assert "no data" in res.get_json()["error"].lower()
-
-    def test_import_challenge_no_file_in_form(self, client, csrf_headers, tokens):
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("challenge.json", b"not valid json")
+        zip_buf.seek(0)
         headers = {
             "Authorization": f"Bearer {tokens.admin}",
             "X-CSRF-Token": "test-csrf-token",
@@ -261,12 +268,65 @@ class TestImportChallenge:
         res = client.post(
             "/api/challenges/import",
             headers=headers,
-            data={"wrong_field": (io.BytesIO(b"{}"), "challenge.json")},
+            data={"file": (zip_buf, "challenge.zip")},
+        )
+        assert res.status_code == 400
+        assert (
+            "invalid" in res.get_json()["error"].lower()
+            or "corrupt" in res.get_json()["error"].lower()
+        )
+
+    def test_import_challenge_not_a_dict(self, client, tokens):
+        import zipfile
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("challenge.json", json.dumps(["not", "a", "dict"]))
+        zip_buf.seek(0)
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = client.post(
+            "/api/challenges/import",
+            headers=headers,
+            data={"file": (zip_buf, "challenge.zip")},
+        )
+        assert res.status_code == 400
+        assert "object" in res.get_json()["error"].lower()
+
+    def test_import_challenge_no_data(self, client, tokens):
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = client.post(
+            "/api/challenges/import",
+            data=b"",
+            content_type="application/json",
+            headers=headers,
+        )
+        assert res.status_code == 400
+        assert "multipart" in res.get_json()["error"].lower()
+
+    def test_import_challenge_no_file_in_form(self, client, tokens):
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = client.post(
+            "/api/challenges/import",
+            headers=headers,
+            data={"wrong_field": (io.BytesIO(b"{}"), "challenge.zip")},
         )
         assert res.status_code == 400
         assert "no file" in res.get_json()["error"].lower()
 
-    def test_import_challenge_wrong_extension(self, client, csrf_headers, tokens):
+    def test_import_challenge_wrong_extension(self, client, tokens):
         headers = {
             "Authorization": f"Bearer {tokens.admin}",
             "X-CSRF-Token": "test-csrf-token",
@@ -280,14 +340,18 @@ class TestImportChallenge:
         assert res.status_code == 400
         assert "extension" in res.get_json()["error"].lower()
 
-    def test_import_challenge_competitor_forbidden(self, client, csrf_headers, tokens):
-        headers = csrf_headers(tokens.competitor)
-        res = self._import_json(client, headers)
+    def test_import_challenge_competitor_forbidden(self, client, tokens):
+        headers = {
+            "Authorization": f"Bearer {tokens.competitor}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = self._import_zip(client, headers)
         assert res.status_code == 403
         assert "role" in res.get_json()["error"].lower()
 
     def test_import_challenge_jury_forbidden(
-        self, client, db_session, csrf_headers, challenge_with_stages_and_tasks, create_user
+        self, client, db_session, challenge_with_stages_and_tasks, create_user
     ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_noimport", role="jury")
@@ -299,14 +363,97 @@ class TestImportChallenge:
             "X-CSRF-Token": "test-csrf-token",
             "Cookie": "csrf_token=test-csrf-token",
         }
-        res = client.post(
-            "/api/challenges/import",
-            data=json.dumps(self.EXPORT_PAYLOAD),
-            content_type="application/json",
-            headers=headers,
-        )
+        res = self._import_zip(client, headers, self.EXPORT_PAYLOAD)
         assert res.status_code == 403
         assert "role" in res.get_json()["error"].lower()
+
+    def test_import_challenge_with_zip_files(self, client, db_session, tokens):
+        import zipfile
+        import io
+        import os
+        from flask import current_app
+        from models import Challenge, Task
+
+        zip_buf = io.BytesIO()
+        old_task_uuid = "019efa69-ec26-718d-9fbc-d05408b246f3"
+        manifest = {
+            "title": "ZIP Import Challenge",
+            "description": "ZIP description",
+            "max_eval_requests": 15,
+            "ram_limit_mb": 2048,
+            "time_limit_sec": 120,
+            "gpu_required": False,
+            "timezone": "UTC",
+            "stages": [],
+            "tasks": [
+                {
+                    "id": old_task_uuid,
+                    "title": "ZIP Task 1",
+                    "description": "ZIP Task 1 description",
+                    "files": [
+                        {
+                            "filename": "labels.parquet",
+                            "saved_name": "labels.parquet",
+                            "size_bytes": 12,
+                        }
+                    ],
+                    "evaluator_script_path": f"/some/old/path/task_{old_task_uuid}/evaluator.py",
+                    "baseline_notebook_path": f"/some/old/path/task_{old_task_uuid}/baseline_test.ipynb",
+                }
+            ],
+        }
+
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("challenge.json", json.dumps(manifest))
+            zf.writestr(f"tasks/{old_task_uuid}/evaluator.py", b"print('evaluator')")
+            zf.writestr(f"tasks/{old_task_uuid}/baseline_test.ipynb", b"print('notebook')")
+            zf.writestr(f"tasks/{old_task_uuid}/labels.parquet", b"labels_content")
+
+        zip_buf.seek(0)
+
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "X-CSRF-Token": "test-csrf-token",
+            "Cookie": "csrf_token=test-csrf-token",
+        }
+        res = client.post(
+            "/api/challenges/import",
+            headers=headers,
+            data={"file": (zip_buf, "challenge.zip")},
+        )
+        assert res.status_code == 201
+        res_data = res.get_json()
+        new_ch_id = res_data["id"]
+
+        ch = db_session.get(Challenge, new_ch_id)
+        assert ch is not None
+        assert len(ch.tasks) == 1
+        new_task = ch.tasks[0]
+        assert new_task.title == "ZIP Task 1"
+
+        upload_folder = current_app.config.get("UPLOAD_FOLDER")
+        new_task_dir = os.path.join(upload_folder, f"task_{new_task.id}")
+        assert os.path.isdir(new_task_dir)
+
+        evaluator_local = os.path.join(new_task_dir, "evaluator.py")
+        baseline_local = os.path.join(new_task_dir, "baseline_test.ipynb")
+        labels_local = os.path.join(new_task_dir, "labels.parquet")
+
+        assert os.path.isfile(evaluator_local)
+        assert os.path.isfile(baseline_local)
+        assert os.path.isfile(labels_local)
+
+        with open(evaluator_local, "rb") as f:
+            assert f.read() == b"print('evaluator')"
+
+        with open(baseline_local, "rb") as f:
+            assert f.read() == b"print('notebook')"
+
+        with open(labels_local, "rb") as f:
+            assert f.read() == b"labels_content"
+
+        assert new_task.evaluator_script_path == evaluator_local
+        assert new_task.baseline_notebook_path == baseline_local
 
 
 # ═══════════════════════════════════════════════════════════════════════════

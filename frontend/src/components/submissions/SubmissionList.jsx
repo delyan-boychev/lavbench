@@ -5,6 +5,7 @@ import EmptyState from '../ui/EmptyState';
 import { Star } from 'lucide-react';
 import { formatLocalizedDate } from '../../utils/formatDate';
 import { useTranslation } from 'react-i18next';
+import { useApp } from '../../context/AppContext';
 
 export default function SubmissionList({
   submissions,
@@ -18,10 +19,13 @@ export default function SubmissionList({
   onPageChange,
 }) {
   const { t } = useTranslation();
+  const { selectedChallenge } = useApp();
 
   const fmtTime = (ts) => {
     if (!ts) return '—';
-    return formatLocalizedDate(ts);
+    const tz = selectedChallenge?.timezone || 'UTC';
+    const formatted = formatLocalizedDate(ts, { timeZone: tz });
+    return `${formatted} (${tz.replace(/_/g, ' ')})`;
   };
 
   if (loading) {

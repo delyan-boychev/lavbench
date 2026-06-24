@@ -2,8 +2,6 @@ import io
 import json
 from unittest.mock import patch
 
-import pytest
-
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 

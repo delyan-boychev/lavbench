@@ -1,13 +1,10 @@
 import json
-import os
-import time
-from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 from werkzeug.security import generate_password_hash
 
-from models import db, User, Challenge, Task
+from models import User, Task
 
 # =============================================================================
 # Area 1: Task File Download

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../AuthContext';
 import ChallengeService from '../../services/ChallengeService';
 import { useApp } from '../../context/AppContext';
@@ -7,7 +7,7 @@ import Modal from '../ui/Modal';
 import TabScrollContainer from '../ui/TabScrollContainer';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, RefreshCw, BarChart3 } from 'lucide-react';
+import { ChevronRight, RefreshCw, BarChart3, Layers, CheckSquare, Download } from 'lucide-react';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
@@ -28,103 +28,115 @@ function Row({
   showPublicCols,
   showPrivateCols,
   showPointsCols,
-  onRefresh,
   activeTab,
+  rowRef,
+  challenge,
+  onEditPoints,
 }) {
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
   const isAdmin = currentUser?.role === 'admin';
   const isJury = currentUser?.role === 'jury';
-  const showIdentity = !doubleBlind || isFinalized || isCurrentUser || isAdmin;
-  const showDemographics = showIdentity && (!entry.user?.is_anonymous || isAdmin || isCurrentUser);
+  const isJuryOrAdmin = isAdmin || isJury;
+  const showIdentity = isAdmin || isCurrentUser || !doubleBlind || isFinalized;
+  const showDemographics =
+    !!entry.user && showIdentity && (!entry.user.is_anonymous || isAdmin || isCurrentUser);
   const isBaseline = entry.is_baseline_entry;
   const medalStyle = !isBaseline && rank >= 1 && rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
 
-  const [tempPoints, setTempPoints] = useState({});
+  const isCompetitor = currentUser?.role === 'competitor';
+  const challengeStages = challenge?.stages;
+  const visibleStages = React.useMemo(() => {
+    const now = new Date();
+    if (!isCompetitor) return challengeStages || [];
+    return challengeStages?.filter((st) => new Date(st.start_time) <= now) || [];
+  }, [challengeStages, isCompetitor]);
 
-  const handlePointsChange = (taskId, value) => {
-    setTempPoints((prev) => ({ ...prev, [taskId]: value }));
-  };
+  const isStageTab = visibleStages.some((st) => st.id === activeTab);
+  const stageTasks = isStageTab ? tasks.filter((t) => t.stage_id === activeTab) : [];
 
-  const handleSavePoints = async (taskId) => {
-    const rawVal = tempPoints[taskId];
-    if (rawVal === undefined) return;
-    const pts = parseInt(rawVal);
-    if (isNaN(pts) || pts < 0 || pts > 100) {
-      showToast(t('leaderboard.save_points_error'), 'error');
-      return;
-    }
-    try {
-      const res = await ChallengeService.saveManualPoints(challengeId, {
-        user_id: entry.user.id,
-        points: { [taskId]: pts },
-      });
-      if (res.ok) {
-        showToast(
-          t('leaderboard.save_points_success', {
-            pts,
-            name: entry.user.name || entry.user.username,
-          }),
-        );
-        if (onRefresh) onRefresh();
-      } else {
-        showToast(res.data?.error || t('leaderboard.save_points_failed'), 'error');
+  let displayPublic = entry.public_score;
+  let displayPrivate = entry.private_score;
+  let displayPoints = entry.total_points;
+
+  if (isStageTab) {
+    let hasPublic = false;
+    let hasPrivate = false;
+    let pubSum = 0;
+    let privSum = 0;
+    let ptsSum = 0;
+
+    stageTasks.forEach((t) => {
+      const scObj = entry.task_scores?.[t.id.toString()];
+      if (scObj) {
+        if (scObj.public_score != null) {
+          pubSum += scObj.public_score;
+          hasPublic = true;
+        }
+        if (scObj.private_score != null) {
+          privSum += scObj.private_score;
+          hasPrivate = true;
+        }
       }
-    } catch {
-      showToast(t('leaderboard.server_error'), 'error');
-    }
-  };
+      ptsSum += entry.user?.manual_points?.[t.id.toString()] ?? 0;
+    });
 
-  const activeTask = activeTab !== 'general' ? tasks.find((t) => t.id === activeTab) : null;
+    displayPublic = hasPublic ? pubSum : null;
+    displayPrivate = hasPrivate ? privSum : null;
+    displayPoints = ptsSum;
+  }
+
+  const activeTask =
+    !isStageTab && activeTab !== 'general' ? tasks.find((t) => t.id === activeTab) : null;
   const scoreObj = activeTask ? entry.task_scores?.[activeTask.id.toString()] || {} : {};
 
   const [flashPublic, setFlashPublic] = useState(false);
   const [flashPrivate, setFlashPrivate] = useState(false);
   const [flashPoints, setFlashPoints] = useState(false);
 
-  const prevPublicRef = React.useRef(entry.public_score);
-  const prevPrivateRef = React.useRef(entry.private_score);
-  const prevPointsRef = React.useRef(entry.total_points);
+  const prevPublicRef = React.useRef(displayPublic);
+  const prevPrivateRef = React.useRef(displayPrivate);
+  const prevPointsRef = React.useRef(displayPoints);
 
   const prevTaskPublicRef = React.useRef(scoreObj.public_score);
   const prevTaskPrivateRef = React.useRef(scoreObj.private_score);
 
   useEffect(() => {
     let t1, t2, t3;
-    if (activeTab === 'general') {
-      if (entry.public_score !== prevPublicRef.current) {
+    if (activeTab === 'general' || isStageTab) {
+      if (displayPublic !== prevPublicRef.current) {
         if (
           prevPublicRef.current !== undefined &&
           prevPublicRef.current !== null &&
-          entry.public_score !== null
+          displayPublic !== null
         ) {
           setFlashPublic(true);
           t1 = setTimeout(() => setFlashPublic(false), 2000);
         }
-        prevPublicRef.current = entry.public_score;
+        prevPublicRef.current = displayPublic;
       }
-      if (entry.private_score !== prevPrivateRef.current) {
+      if (displayPrivate !== prevPrivateRef.current) {
         if (
           prevPrivateRef.current !== undefined &&
           prevPrivateRef.current !== null &&
-          entry.private_score !== null
+          displayPrivate !== null
         ) {
           setFlashPrivate(true);
           t2 = setTimeout(() => setFlashPrivate(false), 2000);
         }
-        prevPrivateRef.current = entry.private_score;
+        prevPrivateRef.current = displayPrivate;
       }
-      if (entry.total_points !== prevPointsRef.current) {
+      if (displayPoints !== prevPointsRef.current) {
         if (
           prevPointsRef.current !== undefined &&
           prevPointsRef.current !== null &&
-          entry.total_points !== null
+          displayPoints !== null
         ) {
           setFlashPoints(true);
           t3 = setTimeout(() => setFlashPoints(false), 2000);
         }
-        prevPointsRef.current = entry.total_points;
+        prevPointsRef.current = displayPoints;
       }
     } else {
       if (scoreObj.public_score !== prevTaskPublicRef.current) {
@@ -156,29 +168,107 @@ function Row({
       clearTimeout(t3);
     };
   }, [
-    entry.public_score,
-    entry.private_score,
-    entry.total_points,
+    displayPublic,
+    displayPrivate,
+    displayPoints,
     scoreObj.public_score,
     scoreObj.private_score,
     activeTab,
+    isStageTab,
   ]);
+
+  const activeTasks = React.useMemo(() => {
+    if (activeTab === 'general') {
+      return tasks;
+    } else if (isStageTab) {
+      return tasks.filter((t) => t.stage_id === activeTab);
+    } else {
+      return activeTask ? [activeTask] : [];
+    }
+  }, [activeTab, isStageTab, tasks, activeTask]);
 
   // Calculate colSpan dynamically for expanded row
   let colSpanCount = 3; // Toggle expand, rank, participant
-  if (activeTab === 'general') {
-    if (showPublicCols) colSpanCount++;
-    if (showPrivateCols) colSpanCount++;
-    if (showPointsCols) colSpanCount++;
+  if (activeTab === 'general' || isStageTab) {
+    colSpanCount += 1; // Summed Public Score
+    if (showPrivateCols) colSpanCount += 1;
+    if (showPointsCols) colSpanCount += 1;
   } else {
     if (showPublicCols) colSpanCount++;
     if (showPrivateCols) colSpanCount++;
     if (showPointsCols) colSpanCount++;
   }
 
+  const isTaskEditingBlocked = (task) => {
+    if (!task) return true;
+    if (challenge?.scores_finalized && challenge?.reveal_results) {
+      return true;
+    }
+    if (task.stage_id && challenge?.stages) {
+      const stage = challenge.stages.find((st) => st.id === task.stage_id);
+      if (stage && stage.is_finalized && stage.reveal_results) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const renderManualPointsBadge = (task, pts) => {
+    if (isBaseline) return '—';
+    const blocked = isTaskEditingBlocked(task);
+    const canEdit = isJuryOrAdmin && !blocked;
+
+    if (canEdit) {
+      return (
+        <button
+          onClick={() => onEditPoints && onEditPoints(entry.user, task, pts)}
+          className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold font-mono transition-colors cursor-pointer text-xs"
+          title={t('leaderboard.edit_points_tooltip', 'Click to edit manual points')}
+        >
+          {t('leaderboard.points_short', { count: pts })}
+        </button>
+      );
+    }
+
+    return (
+      <span className="text-amber-400 font-semibold font-mono">
+        {t('leaderboard.points_short', { count: pts })}
+      </span>
+    );
+  };
+
+  const handleDownloadSubmission = async (taskId) => {
+    if (!entry.user) return;
+    try {
+      const res = await ChallengeService.downloadSubmission(challengeId, taskId, entry.user.id);
+      if (!res.ok) {
+        showToast(
+          t('leaderboard.download_submission_failed', 'Download submission failed'),
+          'error',
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const filename = `submission_${entry.user.username || entry.user.alias_id}_task_${taskId}.ipynb`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(t('leaderboard.submission_downloaded', 'Submission downloaded successfully'));
+    } catch {
+      showToast(
+        t('leaderboard.download_submission_error', 'Error downloading submission'),
+        'error',
+      );
+    }
+  };
+
   return (
     <>
       <tr
+        ref={rowRef}
         className={`border-b border-slate-800/60 transition-colors duration-150 ${isCurrentUser ? 'bg-indigo-500/5' : ''}`}
       >
         {/* Toggle Expand column */}
@@ -250,28 +340,29 @@ function Row({
         </td>
 
         {/* Dynamic score cells depending on activeTab */}
-        {activeTab === 'general' ? (
+        {activeTab === 'general' || isStageTab ? (
           <>
-            {showPublicCols && (
-              <td
-                className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
-              >
-                {entry.public_score != null ? entry.public_score.toFixed(4) : '—'}
-              </td>
-            )}
+            {/* Summed Public Score */}
+            <td
+              className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
+            >
+              {displayPublic != null ? displayPublic.toFixed(4) : '—'}
+            </td>
+            {/* Summed Private Score */}
             {showPrivateCols && (
               <td
                 className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
               >
-                {entry.private_score != null ? entry.private_score.toFixed(4) : '—'}
+                {displayPrivate != null ? displayPrivate.toFixed(4) : '—'}
               </td>
             )}
+            {/* Summed Jury/Manual Points */}
             {showPointsCols && (
               <td
                 className={`px-4 py-3 text-right font-mono font-bold text-sm transition-all duration-300 ${flashPoints ? 'animate-pulse-highlight' : ''}`}
               >
-                <span className="text-amber-400">
-                  {isBaseline ? '—' : t('leaderboard.points_short', { count: entry.total_points })}
+                <span className="text-amber-500">
+                  {isBaseline ? '—' : t('leaderboard.points_short', { count: displayPoints })}
                 </span>
               </td>
             )}
@@ -293,34 +384,10 @@ function Row({
               </td>
             )}
             {showPointsCols && (
-              <td className="px-4 py-3 text-right font-mono font-bold text-sm">
-                {isJury && !isFinalized && !isBaseline ? (
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={
-                      tempPoints[activeTask.id] ??
-                      entry.user?.manual_points?.[activeTask.id.toString()] ??
-                      0
-                    }
-                    onChange={(e) => handlePointsChange(activeTask.id, e.target.value)}
-                    onBlur={() => handleSavePoints(activeTask.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        /** @type {HTMLElement} */ (e.target).blur();
-                      }
-                    }}
-                    className="w-16 px-1 py-0.5 text-center bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-xs text-indigo-300 inline-block"
-                  />
-                ) : (
-                  <span className="text-amber-400">
-                    {isBaseline
-                      ? '—'
-                      : t('leaderboard.points_short', {
-                          count: entry.user?.manual_points?.[activeTask.id.toString()] ?? 0,
-                        })}
-                  </span>
+              <td className="px-4 py-3 text-right">
+                {renderManualPointsBadge(
+                  activeTask,
+                  entry.user?.manual_points?.[activeTask.id.toString()] ?? 0,
                 )}
               </td>
             )}
@@ -378,61 +445,94 @@ function Row({
                 </div>
               </div>
 
-              {/* Task breakdown */}
-              <div className="flex flex-col gap-2 border-r border-slate-800/40 pr-6 last:border-r-0 col-span-2">
-                <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">
-                  {t('leaderboard.detailed_breakdown')}
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 font-sans text-slate-300">
-                  {tasks.map((task) => {
-                    const scObj = entry.task_scores?.[task.id.toString()] || {};
-                    const manualPts = entry.user?.manual_points?.[task.id.toString()] ?? 0;
-                    return (
-                      <div
-                        key={task.id}
-                        className="p-3 bg-slate-900/40 border border-slate-800/50 rounded-xl flex flex-col gap-1.5"
-                      >
+              {/* Task breakdown OR Task-specific Submission */}
+              {activeTab === 'general' || isStageTab ? (
+                <div className="flex flex-col gap-2 border-r border-slate-800/40 pr-6 last:border-r-0 col-span-2">
+                  <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">
+                    {t('leaderboard.detailed_breakdown')}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 font-sans text-slate-300">
+                    {activeTasks.map((task) => {
+                      const scObj = entry.task_scores?.[task.id.toString()] || {};
+                      const manualPts = entry.user?.manual_points?.[task.id.toString()] ?? 0;
+                      return (
                         <div
-                          className="font-bold text-slate-200 truncate max-w-[180px]"
-                          title={task.title}
+                          key={task.id}
+                          className="p-3 bg-slate-900/40 border border-slate-800/50 rounded-xl flex flex-col gap-1.5"
                         >
-                          {task.title}
-                        </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
-                          {showPublicCols && (
-                            <div>
-                              {t('leaderboard.public_score_short')}{' '}
-                              <span className="text-indigo-400">
-                                {scObj.public_score != null ? scObj.public_score.toFixed(4) : '—'}
-                              </span>
-                            </div>
-                          )}
-                          {showPrivateCols && (
-                            <div>
-                              {t('leaderboard.private_score_short')}{' '}
-                              <span className="text-emerald-400">
-                                {scObj.private_score != null ? scObj.private_score.toFixed(4) : '—'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {showPointsCols && (
-                          <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
-                            <span className="text-slate-500">
-                              {t('leaderboard.manual_points_label')}
-                            </span>
-                            <span className="text-amber-400 font-bold font-mono">
-                              {isBaseline
-                                ? '—'
-                                : t('leaderboard.points_short', { count: manualPts })}
-                            </span>
+                          <div
+                            className="font-bold text-slate-200 truncate max-w-[180px]"
+                            title={task.title}
+                          >
+                            {task.title}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-slate-400">
+                            {showPublicCols && (
+                              <div>
+                                {t('leaderboard.public_score_short')}{' '}
+                                <span className="text-indigo-400">
+                                  {scObj.public_score != null ? scObj.public_score.toFixed(4) : '—'}
+                                </span>
+                              </div>
+                            )}
+                            {showPrivateCols && (
+                              <div>
+                                {t('leaderboard.private_score_short')}{' '}
+                                <span className="text-emerald-400">
+                                  {scObj.private_score != null
+                                    ? scObj.private_score.toFixed(4)
+                                    : '—'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {showPointsCols && (
+                            <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
+                              <span className="text-slate-500">
+                                {t('leaderboard.manual_points_label')}
+                              </span>
+                              {renderManualPointsBadge(task, manualPts)}
+                            </div>
+                          )}
+                          {isJuryOrAdmin && scObj.submission_id != null && (
+                            <div className="flex items-center justify-start mt-1 pt-1.5 border-t border-slate-800/40 text-xs">
+                              <button
+                                onClick={() => handleDownloadSubmission(task.id)}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold transition-colors cursor-pointer text-[10px]"
+                                title={t('leaderboard.download_solution', 'Download Solution')}
+                              >
+                                <Download size={10} />
+                                {t('leaderboard.download_solution', 'Download Solution')}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Task Specific Submission Section */
+                <div className="flex flex-col gap-2 border-r border-slate-800/40 pr-6 last:border-r-0 col-span-2">
+                  {isJuryOrAdmin && scoreObj.submission_id != null && (
+                    <>
+                      <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-[9px] mb-1">
+                        {t('leaderboard.submission')}
+                      </h4>
+                      <div className="p-3 bg-slate-900/40 border border-slate-800/50 rounded-xl flex justify-start">
+                        <button
+                          onClick={() => handleDownloadSubmission(activeTask.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold transition-colors cursor-pointer text-xs"
+                          title={t('leaderboard.download_solution', 'Download Solution')}
+                        >
+                          <Download size={12} />
+                          {t('leaderboard.download_solution', 'Download Solution')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </td>
         </tr>
@@ -451,48 +551,116 @@ export default function LeaderboardTable({
   isNormalized,
 }) {
   const { currentUser } = useAuth();
-  const { showToast, fetchChallenges } = useApp();
+  const { showToast } = useApp();
   const { t } = useTranslation();
   const isFinalized = challenge?.scores_finalized;
   const metric = metricName || challenge?.metric_name || 'Score';
-  const isJury = currentUser?.role === 'jury';
   const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
 
+  const isCompetitor = currentUser?.role === 'competitor';
+
+  const challengeStages = challenge?.stages;
   const [activeTab, setActiveTab] = useState('general');
   const [expandedUserIds, setExpandedUserIds] = useState(new Set());
-  const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
-  const [isRevealing, setIsRevealing] = useState(false);
-  const [revealResults, setRevealResults] = useState(challenge?.reveal_results);
+  const revealResults = challenge?.reveal_results;
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRevealResults(challenge?.reveal_results);
-  }, [challenge?.reveal_results]);
+  const visibleStages = React.useMemo(() => {
+    const now = new Date();
+    if (!isCompetitor) return challengeStages || [];
+    return challengeStages?.filter((st) => new Date(st.start_time) <= now) || [];
+  }, [challengeStages, isCompetitor]);
 
-  const handleToggleReveal = async () => {
-    const nextVal = !revealResults;
-    setRevealResults(nextVal);
-    setIsRevealing(true);
+  const isStageTab = visibleStages.some((st) => st.id === activeTab);
+
+  const visibleTasks = React.useMemo(() => {
+    const now = new Date();
+    if (!isCompetitor) return tasks || [];
+    return (
+      tasks?.filter((task) => {
+        if (!task.stage_id) return true;
+        const stage = challengeStages?.find((st) => st.id === task.stage_id);
+        return stage ? new Date(stage.start_time) <= now : false;
+      }) || []
+    );
+  }, [tasks, challengeStages, isCompetitor]);
+
+  const [scoringModalOpen, setScoringModalOpen] = useState(false);
+  const [scoringUser, setScoringUser] = useState(null);
+  const [scoringTask, setScoringTask] = useState(null);
+  const [scoringPoints, setScoringPoints] = useState('');
+  const [scoringReason, setScoringReason] = useState('');
+
+  const handleEditPoints = (user, task, currentPts) => {
+    setScoringUser(user);
+    setScoringTask(task);
+    setScoringPoints(currentPts ? currentPts.toString() : '0');
+    setScoringReason('');
+    setScoringModalOpen(true);
+  };
+
+  const isReasonMandatory = React.useMemo(() => {
+    if (!scoringTask) return false;
+    if (challenge?.scores_finalized) return true;
+    if (scoringTask.stage_id && challenge?.stages) {
+      const stage = challenge.stages.find((st) => st.id === scoringTask.stage_id);
+      if (stage && stage.is_finalized) return true;
+    }
+    return false;
+  }, [scoringTask, challenge]);
+
+  const handleSavePointsSubmit = async () => {
+    const pts = parseInt(scoringPoints);
+    if (isNaN(pts) || pts < 0 || pts > 100) {
+      showToast(t('leaderboard.save_points_error'), 'error');
+      return;
+    }
+    if (isReasonMandatory && !scoringReason.trim()) {
+      showToast(
+        t('leaderboard.reason_required_error', 'Justification reason is required.'),
+        'error',
+      );
+      return;
+    }
+
     try {
-      const res = await ChallengeService.toggleReveal(challenge.id, nextVal);
+      const res = await ChallengeService.saveManualPoints(challenge.id, {
+        user_id: scoringUser.id,
+        points: { [scoringTask.id]: pts },
+        reason: scoringReason.trim() || undefined,
+      });
+
       if (res.ok) {
         showToast(
-          res.data.reveal_results
-            ? t('leaderboard.results_revealed')
-            : t('leaderboard.results_hidden'),
+          t('leaderboard.save_points_success', {
+            pts,
+            name: scoringUser.name || scoringUser.username || scoringUser.alias_id,
+          }),
         );
-        fetchChallenges();
+        setScoringModalOpen(false);
         if (onRefresh) onRefresh();
       } else {
-        setRevealResults(!nextVal);
-        showToast(res.data?.error || 'Failed to toggle reveal', 'error');
+        showToast(res.data?.error || t('leaderboard.save_points_failed'), 'error');
       }
     } catch {
-      setRevealResults(!nextVal);
-      showToast('Network error toggling reveal', 'error');
+      showToast(t('leaderboard.server_error'), 'error');
     }
-    setIsRevealing(false);
   };
+
+  const rowElementsRef = useRef({});
+  const rowPositionsRef = useRef({});
+
+  useLayoutEffect(() => {
+    // 1. Get current positions (Last)
+    const newPositions = {};
+    Object.keys(rowElementsRef.current).forEach((key) => {
+      const el = rowElementsRef.current[key];
+      if (el) {
+        newPositions[key] = el.getBoundingClientRect().top;
+      }
+    });
+
+    rowPositionsRef.current = newPositions;
+  });
 
   const handleToggleExpand = (userId) => {
     setExpandedUserIds((prev) => {
@@ -506,23 +674,6 @@ export default function LeaderboardTable({
     });
   };
 
-  const handleFinalizeSubmit = async () => {
-    setIsFinalizeModalOpen(false);
-    const res = await ChallengeService.finalize(challenge.id, {});
-    if (res.ok) {
-      showToast(
-        t('leaderboard.scores_finalized_success', 'Scores finalized — visibility options applied.'),
-      );
-      fetchChallenges();
-      if (onRefresh) onRefresh();
-    } else {
-      showToast(
-        res.data?.error || t('leaderboard.finalize_failed', 'Finalization failed.'),
-        'error',
-      );
-    }
-  };
-
   if (loading) {
     return (
       <EmptyState minHeight={150} message={t('leaderboard.loading')}>
@@ -534,7 +685,6 @@ export default function LeaderboardTable({
   const showPublicCols = true;
   const showPrivateCols = isJuryOrAdmin || (isFinalized && revealResults);
   const showPointsCols = isJuryOrAdmin || (isFinalized && revealResults);
-
   // 1. Sort and rank display data dynamically based on active tab
   let displayData = [...data];
 
@@ -542,9 +692,11 @@ export default function LeaderboardTable({
   if (activeTab === 'general') {
     displayData = displayData.filter((e) => !e.is_baseline_entry);
   }
-  // In per-task tabs, baselines are hidden only after finalization
-  if (isFinalized) {
-    displayData = displayData.filter((e) => !e.is_baseline_entry);
+  // In per-task or stage tabs, baselines are hidden only after finalization
+  if (isStageTab || activeTab !== 'general') {
+    if (isFinalized) {
+      displayData = displayData.filter((e) => !e.is_baseline_entry);
+    }
   }
 
   // After filtering baselines, recompute ranks for remaining entries
@@ -561,7 +713,116 @@ export default function LeaderboardTable({
 
   const isMse = (challenge?.metric_name || '').toLowerCase() in { mse: 1, loss: 1, error: 1 };
 
-  if (activeTab !== 'general') {
+  if (isStageTab) {
+    const stageTasks = visibleTasks.filter((t) => t.stage_id === activeTab);
+    displayData.sort((a, b) => {
+      let hasPubA = false;
+      let pubSumA = 0;
+      let ptsSumA = 0;
+      stageTasks.forEach((t) => {
+        const sc = a.task_scores?.[t.id.toString()];
+        if (sc && sc.public_score != null) {
+          pubSumA += sc.public_score;
+          hasPubA = true;
+        }
+        ptsSumA += a.user?.manual_points?.[t.id.toString()] ?? 0;
+      });
+
+      let hasPubB = false;
+      let pubSumB = 0;
+      let ptsSumB = 0;
+      stageTasks.forEach((t) => {
+        const sc = b.task_scores?.[t.id.toString()];
+        if (sc && sc.public_score != null) {
+          pubSumB += sc.public_score;
+          hasPubB = true;
+        }
+        ptsSumB += b.user?.manual_points?.[t.id.toString()] ?? 0;
+      });
+
+      if (isFinalized && (isJuryOrAdmin || revealResults)) {
+        if (ptsSumA !== ptsSumB) return ptsSumB - ptsSumA;
+      } else {
+        if (hasPubA && hasPubB) {
+          if (pubSumA !== pubSumB) return pubSumB - pubSumA;
+        } else if (hasPubA) {
+          return -1;
+        } else if (hasPubB) {
+          return 1;
+        }
+      }
+
+      // Fallback name stable sort
+      const nameA = (
+        (a.user?.name ? `${a.user.name} ${a.user.surname}` : a.user?.username) ||
+        a.user?.alias_id ||
+        ''
+      ).toLowerCase();
+      const nameB = (
+        (b.user?.name ? `${b.user.name} ${b.user.surname}` : b.user?.username) ||
+        b.user?.alias_id ||
+        ''
+      ).toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    let currentRank = 0;
+    displayData = displayData.map((entry, index) => {
+      const entryCopy = { ...entry };
+      if (!entry.is_baseline_entry) {
+        let userHasSubmitted = false;
+        stageTasks.forEach((t) => {
+          if (entry.task_scores?.[t.id.toString()]?.submission_id != null) {
+            userHasSubmitted = true;
+          }
+        });
+
+        if (userHasSubmitted) {
+          currentRank += 1;
+        }
+
+        let prevIdx = index - 1;
+        let prevNonBaseline = null;
+        while (prevIdx >= 0) {
+          const candidate = displayData[prevIdx];
+          if (!candidate.is_baseline_entry) {
+            prevNonBaseline = candidate;
+            break;
+          }
+          prevIdx--;
+        }
+
+        if (prevNonBaseline) {
+          let prevPub = 0;
+          let prevPts = 0;
+          stageTasks.forEach((t) => {
+            prevPub += prevNonBaseline.task_scores?.[t.id.toString()]?.public_score ?? 0;
+            prevPts += prevNonBaseline.user?.manual_points?.[t.id.toString()] ?? 0;
+          });
+
+          let currPub = 0;
+          let currPts = 0;
+          stageTasks.forEach((t) => {
+            currPub += entry.task_scores?.[t.id.toString()]?.public_score ?? 0;
+            currPts += entry.user?.manual_points?.[t.id.toString()] ?? 0;
+          });
+
+          let isTie;
+          if (isFinalized && (isJuryOrAdmin || revealResults)) {
+            isTie = currPts === prevPts;
+          } else {
+            isTie = currPub === prevPub;
+          }
+
+          if (isTie) {
+            currentRank = prevNonBaseline.rank;
+          }
+        }
+      }
+      entryCopy.rank = currentRank;
+      return entryCopy;
+    });
+  } else if (activeTab !== 'general') {
     const activeTaskIdStr = activeTab.toString();
     displayData.sort((a, b) => {
       if (isFinalized && (isJuryOrAdmin || revealResults)) {
@@ -672,61 +933,104 @@ export default function LeaderboardTable({
             <RefreshCw size={16} />
           </button>
         </div>
-        {/* Only JURY (not admin) can finalize */}
-        {isJury && !isFinalized && challenge && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setIsFinalizeModalOpen(true)}
-            disabled={challenge.stages && challenge.stages.some((st) => !st.is_finalized)}
-            title={
-              challenge.stages && challenge.stages.some((st) => !st.is_finalized)
-                ? t('leaderboard.finalize_disabled_tooltip')
-                : ''
-            }
-          >
-            {t('leaderboard.finalize_button')}
-          </Button>
-        )}
-        {/* Reveal toggle — jury or admin, after finalization */}
-        {isJuryOrAdmin && isFinalized && challenge && (
-          <Button variant="secondary" size="sm" onClick={handleToggleReveal} disabled={isRevealing}>
-            {revealResults ? t('leaderboard.hide_results') : t('leaderboard.reveal_results')}
-          </Button>
-        )}
       </div>
 
-      {/* Tabs for General Standings vs Tasks */}
-      <div className="border-b border-slate-800 pb-2 w-full">
-        <TabScrollContainer>
-          <button
-            onClick={() => setActiveTab('general')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer flex-shrink-0 ${
-              activeTab === 'general'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            {t('leaderboard.general_tab')}
-          </button>
-          {tasks?.map((task) => (
-            <button
-              key={task.id}
-              onClick={() => setActiveTab(task.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer flex-shrink-0 ${
-                activeTab === task.id
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              {task.title}
-            </button>
-          ))}
-        </TabScrollContainer>
+      {/* Tabs for General Standings vs Stages vs Tasks */}
+      <div className="flex flex-col gap-3 w-full border-b border-slate-800 pb-3">
+        {/* Overview Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+          <div className="flex items-center gap-1.5 text-slate-400 min-w-[100px] sm:min-w-[120px] flex-shrink-0">
+            <BarChart3 size={14} className="text-indigo-400" />
+            <span className="text-[10px] font-extrabold uppercase tracking-wider">
+              {t('leaderboard.tab_group_overview')}
+            </span>
+          </div>
+          <div className="flex-grow min-w-0">
+            <TabScrollContainer>
+              <div className="flex gap-1.5 flex-nowrap py-0.5">
+                <button
+                  onClick={() => setActiveTab('general')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
+                    activeTab === 'general'
+                      ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  {t('leaderboard.general_tab')}
+                </button>
+              </div>
+            </TabScrollContainer>
+          </div>
+        </div>
+
+        {/* Stages Row */}
+        {visibleStages.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+            <div className="flex items-center gap-1.5 text-slate-400 min-w-[100px] sm:min-w-[120px] flex-shrink-0">
+              <Layers size={14} className="text-emerald-400" />
+              <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                {t('leaderboard.tab_group_stages')}
+              </span>
+            </div>
+            <div className="flex-grow min-w-0">
+              <TabScrollContainer>
+                <div className="flex gap-1.5 flex-nowrap py-0.5">
+                  {visibleStages.map((stage) => (
+                    <button
+                      key={stage.id}
+                      onClick={() => setActiveTab(stage.id)}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer flex-shrink-0 ${
+                        activeTab === stage.id
+                          ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+                      }`}
+                    >
+                      {t('challenge.stage_title', {
+                        number: stage.stage_number,
+                        title: stage.title,
+                      })}
+                    </button>
+                  ))}
+                </div>
+              </TabScrollContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Tasks Row */}
+        {visibleTasks.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+            <div className="flex items-center gap-1.5 text-slate-400 min-w-[100px] sm:min-w-[120px] flex-shrink-0">
+              <CheckSquare size={14} className="text-amber-400" />
+              <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                {t('leaderboard.tab_group_tasks')}
+              </span>
+            </div>
+            <div className="flex-grow min-w-0">
+              <TabScrollContainer>
+                <div className="flex gap-1.5 flex-nowrap py-0.5">
+                  {visibleTasks.map((task) => (
+                    <button
+                      key={task.id}
+                      onClick={() => setActiveTab(task.id)}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer flex-shrink-0 ${
+                        activeTab === task.id
+                          ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+                      }`}
+                    >
+                      {task.title}
+                    </button>
+                  ))}
+                </div>
+              </TabScrollContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
-      <div key={activeTab} className="surface overflow-hidden animate-fadein">
+      <div className="surface overflow-hidden">
         {displayData.length === 0 ? (
           <EmptyState
             surface={false}
@@ -742,81 +1046,201 @@ export default function LeaderboardTable({
                   <th className="px-4 py-3 text-center w-14">#</th>
                   <th className="px-4 py-3 text-left">{t('leaderboard.participant_header')}</th>
 
-                  {activeTab === 'general' ? (
+                  {activeTab === 'general' || isStageTab ? (
                     <>
-                      {showPublicCols && (
-                        <th className="px-4 py-3 text-right">
-                          {t('leaderboard.summed_public_score')}
-                        </th>
-                      )}
+                      <th className="px-4 py-3 text-right text-indigo-400 text-[10px] font-bold whitespace-nowrap">
+                        {t('leaderboard.summed_public_score', 'Summed Public Score')}
+                      </th>
                       {showPrivateCols && (
-                        <th className="px-4 py-3 text-right">
-                          {t('leaderboard.summed_private_score')}
+                        <th className="px-4 py-3 text-right text-emerald-400 text-[10px] font-bold whitespace-nowrap">
+                          {t('leaderboard.summed_private_score', 'Summed Private Score')}
                         </th>
                       )}
                       {showPointsCols && (
-                        <th className="px-4 py-3 text-right">{t('leaderboard.total_points')}</th>
+                        <th className="px-4 py-3 text-right text-amber-500 text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap">
+                          {t('leaderboard.total_points')}
+                        </th>
                       )}
                     </>
                   ) : (
                     <>
                       {showPublicCols && (
-                        <th className="px-4 py-3 text-right">{t('leaderboard.public_score')}</th>
+                        <th className="px-4 py-3 text-right text-indigo-400 text-[10px] font-bold whitespace-nowrap">
+                          {t('leaderboard.public_score')}
+                        </th>
                       )}
                       {showPrivateCols && (
-                        <th className="px-4 py-3 text-right">{t('leaderboard.private_score')}</th>
+                        <th className="px-4 py-3 text-right text-emerald-400 text-[10px] font-bold whitespace-nowrap">
+                          {t('leaderboard.private_score')}
+                        </th>
                       )}
                       {showPointsCols && (
-                        <th className="px-4 py-3 text-right">{t('leaderboard.manual_points')}</th>
+                        <th className="px-4 py-3 text-right text-amber-400 text-[10px] font-bold whitespace-nowrap">
+                          {t('leaderboard.manual_points')}
+                        </th>
                       )}
                     </>
                   )}
                 </tr>
               </thead>
               <tbody>
-                {displayData.map((entry) => (
-                  <Row
-                    key={entry.user?.id || entry.rank}
-                    entry={entry}
-                    rank={entry.rank}
-                    tasks={tasks || []}
-                    isCurrentUser={entry.user?.id === currentUser?.id}
-                    isFinalized={isFinalized}
-                    doubleBlind={challenge?.double_blind !== false}
-                    isExpanded={expandedUserIds.has(entry.user?.id)}
-                    onToggleExpand={() => handleToggleExpand(entry.user?.id)}
-                    challengeId={challenge?.id}
-                    showPublicCols={showPublicCols}
-                    showPrivateCols={showPrivateCols}
-                    showPointsCols={showPointsCols}
-                    onRefresh={onRefresh}
-                    activeTab={activeTab}
-                  />
-                ))}
+                {displayData.map((entry) => {
+                  const key = entry.user?.id || (entry.is_baseline_entry ? 'baseline' : entry.rank);
+                  return (
+                    <Row
+                      key={key}
+                      rowRef={(el) => {
+                        if (el) {
+                          rowElementsRef.current[key] = el;
+                        } else {
+                          delete rowElementsRef.current[key];
+                        }
+                      }}
+                      entry={entry}
+                      rank={entry.rank}
+                      tasks={visibleTasks}
+                      isCurrentUser={entry.user?.id === currentUser?.id}
+                      isFinalized={isFinalized}
+                      doubleBlind={challenge?.double_blind !== false}
+                      isExpanded={expandedUserIds.has(entry.user?.id)}
+                      onToggleExpand={() => handleToggleExpand(entry.user?.id)}
+                      challengeId={challenge?.id}
+                      showPublicCols={showPublicCols}
+                      showPrivateCols={showPrivateCols}
+                      showPointsCols={showPointsCols}
+                      activeTab={activeTab}
+                      challenge={challenge}
+                      onEditPoints={handleEditPoints}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* Finalize Modal — confirm only, no reveal toggle */}
+      {/* Points Modal */}
       <Modal
-        isOpen={isFinalizeModalOpen}
-        onClose={() => setIsFinalizeModalOpen(false)}
-        title={t('leaderboard.finalize_modal_title')}
+        isOpen={scoringModalOpen}
+        onClose={() => setScoringModalOpen(false)}
+        title={t('leaderboard.score_competitor_title', 'Score Competitor')}
         footer={
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setIsFinalizeModalOpen(false)}>
+            <Button variant="ghost" onClick={() => setScoringModalOpen(false)}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button variant="primary" onClick={handleFinalizeSubmit}>
-              {t('leaderboard.finalize_and_reveal')}
+            <Button variant="primary" onClick={handleSavePointsSubmit}>
+              {t('common.save', 'Save')}
             </Button>
           </div>
         }
       >
-        <div className="flex flex-col gap-5 text-sm text-slate-300">
-          <p>{t('leaderboard.finalize_modal_desc', { title: challenge?.title })}</p>
+        <div className="flex flex-col gap-4 text-sm text-slate-300">
+          {/* Task Details */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+              {t('leaderboard.task_details', 'Task Details')}
+            </h4>
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+              <span className="font-semibold text-slate-200">{scoringTask?.title}</span>
+            </div>
+          </div>
+
+          {/* Competitor Details */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
+              {t('leaderboard.competitor_details', 'Competitor Details')}
+            </h4>
+            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 flex flex-col gap-1.5">
+              {isFinalized ? (
+                <>
+                  <div>
+                    <span className="text-slate-500">{t('leaderboard.real_name', 'Name')}: </span>
+                    <span className="text-slate-200 font-semibold">
+                      {scoringUser?.name
+                        ? `${scoringUser.name} ${scoringUser.surname}`
+                        : scoringUser?.username}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">
+                      {t('leaderboard.username', 'Username')}:{' '}
+                    </span>
+                    <span className="text-slate-200">{scoringUser?.username}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{t('leaderboard.school', 'School')}: </span>
+                    <span className="text-slate-200">{scoringUser?.school || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{t('leaderboard.grade', 'Grade')}: </span>
+                    <span className="text-slate-200">
+                      {scoringUser?.grade
+                        ? t('leaderboard.grade_value', { grade: scoringUser.grade })
+                        : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{t('leaderboard.city', 'City')}: </span>
+                    <span className="text-slate-200">{scoringUser?.city || '—'}</span>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <span className="text-slate-500">{t('leaderboard.alias_id', 'Alias')}: </span>
+                  <span className="text-slate-200 font-semibold font-mono">
+                    {scoringUser?.alias_id}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Points Input */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {t('leaderboard.points_input_label', 'Points (0-100)')}
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={scoringPoints}
+              onChange={(e) => setScoringPoints(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300"
+              placeholder="Enter score"
+            />
+          </div>
+
+          {/* Reason Input */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+              <span>{t('leaderboard.reason_label', 'Justification Reason')}</span>
+              {isReasonMandatory && (
+                <span className="text-rose-400 text-[10px] font-extrabold uppercase">
+                  {t('common.required', 'Required')}
+                </span>
+              )}
+            </label>
+            <textarea
+              value={scoringReason}
+              onChange={(e) => setScoringReason(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-sm text-slate-300 resize-none"
+              placeholder={
+                isReasonMandatory
+                  ? t(
+                      'leaderboard.reason_required_placeholder',
+                      'Enter justification (mandatory)...',
+                    )
+                  : t(
+                      'leaderboard.reason_optional_placeholder',
+                      'Enter justification (optional)...',
+                    )
+              }
+            />
+          </div>
         </div>
       </Modal>
     </div>

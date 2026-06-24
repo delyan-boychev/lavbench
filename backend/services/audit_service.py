@@ -68,7 +68,7 @@ def log_action(
             reason=reason,
         )
         db.session.add(entry)
-        db.session.flush()
+        db.session.commit()
     except Exception:
         logger.exception(
             "Failed to write audit log for action_type=%s target_type=%s target_id=%s",

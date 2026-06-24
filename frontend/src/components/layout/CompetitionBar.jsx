@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
-import CustomSelect from '../ui/CustomSelect';
+import SelectField from '../ui/SelectField';
 import { useTranslation } from 'react-i18next';
 import { Layout, Trophy, Pencil, Shield } from 'lucide-react';
 
@@ -157,7 +157,7 @@ export default function CompetitionBar() {
               </span>
             </div>
           ) : (
-            <CustomSelect
+            <SelectField
               options={challenges.map((c) => ({
                 value: c.id,
                 label: `${c.title}${c.is_archived ? t('nav.archived_suffix') : ''}`,
@@ -165,7 +165,6 @@ export default function CompetitionBar() {
               value={selectedChallenge?.id || ''}
               onChange={handleChallengeChange}
               placeholder={t('nav.no_competitions_placeholder')}
-              size="sm"
             />
           )}
           {selectedChallenge?.is_archived && (

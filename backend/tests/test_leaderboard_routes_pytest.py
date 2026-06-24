@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -9,7 +8,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission
+from models import User, Challenge, Task, Submission
 from auth_utils import generate_token
 
 
@@ -521,6 +520,7 @@ class TestManualPointsEndpoint:
 
     def test_reason_required_when_finalized(self, client, db_session):
         self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
         db_session.flush()
 
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}

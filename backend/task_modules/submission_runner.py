@@ -7,8 +7,8 @@ import tempfile
 import time
 import math
 import traceback
-import hashlib
 import requests
+import fcntl
 from datetime import datetime
 import logging
 from cache_utils import get_redis_client
@@ -43,7 +43,9 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
         )
         if res.status_code == 200:
             return res.json().get("hf_key", "")
-        logger.warning("_fetch_hf_key_from_server: HTTP %s for task %s", res.status_code, task_id)
+        logger.warning(
+            "_fetch_hf_key_from_server: HTTP %s for task %s", res.status_code, task_id
+        )
     except Exception as e:
         logger.warning("_fetch_hf_key_from_server: request failed: %s", e)
     return ""
@@ -116,11 +118,17 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
             for ds_name in datasets_to_load:
                 try:
                     host_load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_token)
-                    logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache.")
+                    logs.append(
+                        f"Successfully preloaded dataset '{ds_name}' to host cache."
+                    )
                 except Exception as preload_err:
-                    logs.append(f"Warning: Failed to preload dataset '{ds_name}': {preload_err}")
+                    logs.append(
+                        f"Warning: Failed to preload dataset '{ds_name}': {preload_err}"
+                    )
         except Exception as import_err:
-            logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
+            logs.append(
+                f"Warning: Could not import 'datasets' on host to preload: {import_err}"
+            )
 
     # 4. Preload models
     if models_to_load and hf_cache_dir:
@@ -130,10 +138,16 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
 
             for model_name in models_to_load:
                 try:
-                    snapshot_download(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token)
-                    logs.append(f"Successfully preloaded model '{model_name}' to host cache.")
+                    snapshot_download(
+                        repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token
+                    )
+                    logs.append(
+                        f"Successfully preloaded model '{model_name}' to host cache."
+                    )
                 except Exception as preload_err:
-                    logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
+                    logs.append(
+                        f"Warning: Failed to preload model '{model_name}': {preload_err}"
+                    )
         except Exception as import_err:
             logs.append(
                 f"Warning: Could not import 'huggingface_hub' on host to preload models: {import_err}"
@@ -179,7 +193,9 @@ def calculate_weighted_score(metrics_payload, metrics_cfg):
     return weighted_sum / total_weight
 
 
-def run_eval_submission(self_task, submission_id, metadata, app, db, Submission, Challenge):
+def run_eval_submission(
+    self_task, submission_id, metadata, app, db, Submission, Challenge
+):
     RUNNING_AS_WORKER = app is None
     # 1. Setup mock/real models
     if metadata:
@@ -228,51 +244,72 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 return f"Submission {submission_id} not found."
             # Idempotency: skip if already in a terminal state
             if db_submission.status in ("completed", "failed"):
-                return (
-                    f"Submission {submission_id} already in terminal state: {db_submission.status}"
-                )
+                return f"Submission {submission_id} already in terminal state: {db_submission.status}"
             db_submission.status = "running"
             db_submission.detailed_status = "running"
             db.session.commit()
             task = MockModel(
                 id=db_submission.task.id if db_submission.task else None,
-                time_limit_sec=db_submission.task.time_limit_sec if db_submission.task else None,
-                ram_limit_mb=db_submission.task.ram_limit_mb if db_submission.task else None,
-                gpu_required=db_submission.task.gpu_required if db_submission.task else None,
+                time_limit_sec=db_submission.task.time_limit_sec
+                if db_submission.task
+                else None,
+                ram_limit_mb=db_submission.task.ram_limit_mb
+                if db_submission.task
+                else None,
+                gpu_required=db_submission.task.gpu_required
+                if db_submission.task
+                else None,
                 base_docker_image=(
                     db_submission.task.base_docker_image if db_submission.task else None
                 ),
-                apt_packages=db_submission.task.apt_packages if db_submission.task else None,
+                apt_packages=db_submission.task.apt_packages
+                if db_submission.task
+                else None,
                 pip_requirements=(
                     db_submission.task.pip_requirements if db_submission.task else None
                 ),
-                metrics_config=db_submission.task.metrics_config if db_submission.task else None,
+                metrics_config=db_submission.task.metrics_config
+                if db_submission.task
+                else None,
                 public_eval_percentage=(
-                    db_submission.task.public_eval_percentage if db_submission.task else None
+                    db_submission.task.public_eval_percentage
+                    if db_submission.task
+                    else None
                 ),
                 get_hf_api_key=lambda: (
                     db_submission.task.get_hf_api_key() if db_submission.task else ""
                 ),
                 evaluator_script_path=(
-                    db_submission.task.evaluator_script_path if db_submission.task else None
+                    db_submission.task.evaluator_script_path
+                    if db_submission.task
+                    else None
                 ),
                 files=db_submission.task.files if db_submission.task else None,
                 custom_eval_code=(
                     db_submission.task.custom_eval_code
-                    if (db_submission.task and hasattr(db_submission.task, "custom_eval_code"))
+                    if (
+                        db_submission.task
+                        and hasattr(db_submission.task, "custom_eval_code")
+                    )
                     else None
                 ),
             )
             challenge = MockModel(
                 id=db_submission.challenge.id if db_submission.challenge else None,
                 time_limit_sec=(
-                    db_submission.challenge.time_limit_sec if db_submission.challenge else None
+                    db_submission.challenge.time_limit_sec
+                    if db_submission.challenge
+                    else None
                 ),
                 ram_limit_mb=(
-                    db_submission.challenge.ram_limit_mb if db_submission.challenge else None
+                    db_submission.challenge.ram_limit_mb
+                    if db_submission.challenge
+                    else None
                 ),
                 gpu_required=(
-                    db_submission.challenge.gpu_required if db_submission.challenge else None
+                    db_submission.challenge.gpu_required
+                    if db_submission.challenge
+                    else None
                 ),
             )
             submission = MockModel(
@@ -348,7 +385,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         # Local file fallback instead of raising RuntimeError
                         try:
                             fallback_path = os.path.join(
-                                tempfile.gettempdir(), f"submission_{submission_id}_result.json"
+                                tempfile.gettempdir(),
+                                f"submission_{submission_id}_result.json",
                             )
                             with open(fallback_path, "w") as ff:
                                 json.dump(fallback, ff, default=str)
@@ -362,7 +400,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     pass
         else:
             with app.app_context():
-                from sse_utils import publish_submissions_update, publish_leaderboard_update
+                from sse_utils import (
+                    publish_submissions_update,
+                    publish_leaderboard_update,
+                )
 
                 db.session.expire_all()
                 sub = db.session.get(Submission, submission_id)
@@ -398,6 +439,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     publish_submissions_update(sub.task_id, sub.user_id)
                     publish_leaderboard_update(sub.task_id)
 
+    logs = None
     status = "queued"
     public_score = None
     private_score = None
@@ -480,14 +522,51 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 except Exception as copy_err:
                     logs.append(f"Error copying task files: {copy_err}")
 
+        # Determine resource requirements early
+        gpu_required = False
+        if task and task.gpu_required is not None:
+            gpu_required = task.gpu_required
+        elif challenge and challenge.gpu_required is not None:
+            gpu_required = challenge.gpu_required
+
         # Setup environment variables
         env = os.environ.copy()
         gpu_id = os.environ.get("WORKER_GPU_ID", None)
-        if gpu_id is not None:
-            env["CUDA_VISIBLE_DEVICES"] = gpu_id
-            submission.gpu_node = f"gpu-worker-device-{gpu_id}"
+        gpu_lock_file = None
+
+        if gpu_required and gpu_id:
+            # Comma separated list of GPU IDs
+            gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
+            if gpus:
+                acquired_gpu = None
+                logs.append("Waiting for an available GPU device...")
+
+                while acquired_gpu is None:
+                    for g_id in gpus:
+                        lock_path = os.path.join(
+                            tempfile.gettempdir(), f"gpu_lock_{g_id}.lock"
+                        )
+                        try:
+                            f = open(lock_path, "w")
+                            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            acquired_gpu = g_id
+                            gpu_lock_file = f
+                            break
+                        except (IOError, OSError):
+                            continue
+                    if acquired_gpu is None:
+                        time.sleep(1)
+
+                logs.append(f"Acquired GPU device: {acquired_gpu}")
+                env["CUDA_VISIBLE_DEVICES"] = acquired_gpu
+                submission.gpu_node = f"gpu-worker-device-{acquired_gpu}"
+                gpu_id = acquired_gpu
+            else:
+                submission.gpu_node = env.get("HOSTNAME", "local-worker")
         else:
+            env.pop("CUDA_VISIBLE_DEVICES", None)
             submission.gpu_node = env.get("HOSTNAME", "local-worker")
+            gpu_id = None
 
         hf_cache_dir = os.environ.get("HF_CACHE_DIR")
         if not hf_cache_dir and not RUNNING_AS_WORKER:
@@ -502,11 +581,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 pass
 
         if not valid_cache:
-            relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "hf_cache"))
+            relative_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "hf_cache")
+            )
             try:
                 os.makedirs(relative_path, exist_ok=True)
                 hf_cache_dir = relative_path
-            except Exception as e:
+            except Exception:
                 pass
 
         if hf_cache_dir:
@@ -524,7 +605,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         # Phase 2: Build / Prepare environment (image pre-built by worker startup)
         docker_available = False
         try:
-            res = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+            res = subprocess.run(
+                ["docker", "--version"], capture_output=True, text=True
+            )
             if res.returncode == 0:
                 docker_available = True
         except Exception:
@@ -540,29 +623,43 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
 
         image_tag = f"lavbench_task_{task.id if task else 0}"
 
-        if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
+        if task and (
+            task.base_docker_image or task.apt_packages or task.pip_requirements
+        ):
             base_image = task.base_docker_image or "python:3.10-slim"
 
             if _image_exists(image_tag):
-                logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
+                logs.append(
+                    f"Docker sandbox image '{image_tag}' already exists. Skipping build."
+                )
             else:
-                logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
+                logs.append(
+                    f"Docker sandbox image '{image_tag}' not found. Building now..."
+                )
                 from task_modules.image_builder import build_task_image
 
                 build_meta = {
                     "task_id": task.id,
                     "base_docker_image": base_image,
                     "pip_requirements": task.pip_requirements or "",
-                    "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
+                    "hf_datasets": metadata.get("hf_datasets", "[]")
+                    if metadata
+                    else "[]",
                     "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
                     "hf_api_key": (
                         _fetch_hf_key_from_server(
                             task.id,
                             metadata.get("main_server_url", ""),
-                            _sign_worker_token(metadata.get("submission_id", "unknown")),
+                            _sign_worker_token(
+                                metadata.get("submission_id", "unknown")
+                            ),
                         )
                         if metadata and metadata.get("main_server_url")
-                        else hf_token or ""
+                        else (
+                            task.get_hf_api_key()
+                            if hasattr(task, "get_hf_api_key")
+                            else ""
+                        )
                     ),
                 }
                 if not build_task_image(build_meta):
@@ -587,16 +684,14 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             ram_limit = challenge.ram_limit_mb
 
         gpu_args = []
-        gpu_required = False
-        if task and task.gpu_required is not None:
-            gpu_required = task.gpu_required
-        elif challenge and challenge.gpu_required is not None:
-            gpu_required = challenge.gpu_required
-
         if gpu_required:
-            gpu_id = os.environ.get("WORKER_GPU_ID", None)
             if gpu_id is not None:
-                gpu_args = ["--gpus", f"device={gpu_id}", "-e", f"CUDA_VISIBLE_DEVICES={gpu_id}"]
+                gpu_args = [
+                    "--gpus",
+                    f"device={gpu_id}",
+                    "-e",
+                    "CUDA_VISIBLE_DEVICES=0",
+                ]
             else:
                 gpu_args = ["--gpus", "all"]
 
@@ -681,7 +776,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
 
         if process_timeout:
             status = "failed"
-            logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
+            logs.append(
+                f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit."
+            )
         elif is_unified_parquet:
             # Secure scoring for unified parquet
             sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
@@ -696,7 +793,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 if metadata:
                     # Running on worker: download labels.parquet securely to a host-only directory
                     host_labels_dir = tempfile.mkdtemp()
-                    labels_path = download_labels_parquet_to_dir(metadata, host_labels_dir, logs)
+                    labels_path = download_labels_parquet_to_dir(
+                        metadata, host_labels_dir, logs
+                    )
                 else:
                     # Running locally with DB: find in task files folder
                     if task and task.files:
@@ -712,7 +811,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                             )
                             for f in files_meta:
                                 if f["filename"] == "labels.parquet":
-                                    labels_path = os.path.join(task_files_dir, f["saved_name"])
+                                    labels_path = os.path.join(
+                                        task_files_dir, f["saved_name"]
+                                    )
                                     break
                         except Exception as e:
                             logs.append(f"Error locating local labels.parquet: {e}")
@@ -724,11 +825,16 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 else:
                     try:
                         import pandas as pd
-                        from evaluation_engine import evaluate_predictions, validate_parquet_schema
+                        from evaluation_engine import (
+                            evaluate_predictions,
+                            validate_parquet_schema,
+                        )
 
                         df_sub = pd.read_parquet(sub_parquet_path)
 
-                        is_valid, err = validate_parquet_schema(df_sub, is_submission=True)
+                        is_valid, err = validate_parquet_schema(
+                            df_sub, is_submission=True
+                        )
                         if not is_valid:
                             status = "failed"
                             logs.append(f"Submission schema validation failed: {err}")
@@ -748,7 +854,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         # Strip metadata keys (e.g., _columns) that are not metrics
                         if isinstance(metrics_cfg, dict):
                             metrics_cfg = {
-                                k: v for k, v in metrics_cfg.items() if not k.startswith("_")
+                                k: v
+                                for k, v in metrics_cfg.items()
+                                if not k.startswith("_")
                             }
 
                         pub_pct = (
@@ -785,7 +893,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                                 else pd.DataFrame(columns=df_sub.columns)
                             )
                         else:
-                            df_labels = df_labels.sort_values("id").reset_index(drop=True)
+                            df_labels = df_labels.sort_values("id").reset_index(
+                                drop=True
+                            )
                             n_total = len(df_labels)
                             num_public = int(n_total * (pub_pct / 100.0))
                             num_public = max(0, min(num_public, n_total))
@@ -819,7 +929,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                             else {}
                         )
                         m_priv = (
-                            evaluate_predictions(df_sub_priv, df_labels_priv, metrics_cfg)
+                            evaluate_predictions(
+                                df_sub_priv, df_labels_priv, metrics_cfg
+                            )
                             if len(df_labels_priv) > 0
                             else {}
                         )
@@ -828,12 +940,16 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                         private_score = calculate_weighted_score(m_priv, metrics_cfg)
                         metrics_payload_pub = m_pub
                         metrics_payload_priv = m_priv
-                        execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
+                        execution_time_ms = int(
+                            (end_wall_time - start_wall_time) * 1000
+                        )
                         status = "completed"
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
                         status = "failed"
-                        logs.append(f"Error during parquet metric calculation: {str(eval_err)}")
+                        logs.append(
+                            f"Error during parquet metric calculation: {str(eval_err)}"
+                        )
                         logs.append(f"Traceback: {traceback.format_exc()}")
 
             # Clean up securely downloaded labels directory on host if created
@@ -872,14 +988,27 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             pass
 
     except Exception as e:
-        logs.append(f"[FATAL] Unhandled worker crash: {e}")
-        logs.append(traceback.format_exc())
         status = "failed"
+        if "logs" in locals() and logs is not None:
+            logs.append(f"[FATAL] Unhandled worker crash: {e}")
+            logs.append(traceback.format_exc())
+            logs_list = logs
+        else:
+            logger.error(
+                f"[FATAL] Unhandled worker crash: {e}\n{traceback.format_exc()}"
+            )
+            logs_list = [f"[FATAL] Unhandled worker crash: {e}"]
         try:
-            update_status("failed", "failed", logs_list=logs)
+            update_status("failed", "failed", logs_list=logs_list)
         except Exception:
             pass
         raise
+    finally:
+        if "gpu_lock_file" in locals() and gpu_lock_file:
+            try:
+                gpu_lock_file.close()
+            except Exception:
+                pass
 
     return f"Submission {submission_id} evaluated with status {status}"
 
@@ -909,7 +1038,9 @@ def register_worker_specs(sender, **kwargs):
                             ram_gb = round(ram_kb / (1024 * 1024), 1)
                             break
             elif platform.system() == "Darwin":
-                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+                total_bytes = int(
+                    subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip()
+                )
                 ram_gb = round(total_bytes / (1024**3), 1)
         except Exception:
             pass
@@ -933,7 +1064,11 @@ def register_worker_specs(sender, **kwargs):
                     gpu_type = gpu_name_out.split("\n")[0]
                 vram_out = (
                     subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=memory.total",
+                            "--format=csv,noheader,nounits",
+                        ]
                     )
                     .decode("utf-8")
                     .strip()
@@ -947,10 +1082,16 @@ def register_worker_specs(sender, **kwargs):
 
         concurrency = 1
         try:
-            if hasattr(sender, "concurrency"):
+            if hasattr(sender, "pool") and hasattr(sender.pool, "limit"):
+                concurrency = sender.pool.limit
+            elif hasattr(sender, "app") and sender.app.conf.worker_concurrency:
+                concurrency = sender.app.conf.worker_concurrency
+            elif hasattr(sender, "concurrency"):
                 concurrency = sender.concurrency
+            else:
+                concurrency = os.cpu_count() or 1
         except Exception:
-            pass
+            concurrency = os.cpu_count() or 1
 
         spec = {
             "name": worker_name,
@@ -967,7 +1108,10 @@ def register_worker_specs(sender, **kwargs):
 
         # Build Docker images for all active tasks + start rebuild listener
         try:
-            from task_modules.image_builder import build_all_active_tasks, start_rebuild_listener
+            from task_modules.image_builder import (
+                build_all_active_tasks,
+                start_rebuild_listener,
+            )
 
             main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
             worker_token = _sign_worker_token("worker")

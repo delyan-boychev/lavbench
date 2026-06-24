@@ -29,7 +29,9 @@ class Config:
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
     # Upload folder
-    UPLOAD_FOLDER = os.path.join(os.path.abspath(os.path.dirname(__file__)), "uploads")
+    UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or os.path.join(
+        os.path.abspath(os.path.dirname(__file__)), "uploads"
+    )
     MAX_CONTENT_LENGTH = 150 * 1024 * 1024  # 150 MB limit
 
     # Hugging Face Settings

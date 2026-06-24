@@ -1,10 +1,9 @@
 """Service-layer functions for submission creation, validation, and status management."""
 
-import os
 import json
 import ast
 from datetime import datetime
-from models import db, Submission, is_metric_lower_better
+from models import Submission
 
 
 def extract_code_from_cells(cells_list):

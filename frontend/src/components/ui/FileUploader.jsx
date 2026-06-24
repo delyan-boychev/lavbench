@@ -15,6 +15,7 @@ export default function FileUploader({
   className = '',
   existingFiles = [],
   onRemoveExisting = (/** @type {string} */ _filename) => {},
+  hideFileList = false,
 }) {
   const { t } = useTranslation();
   const inputRef = useRef(null);
@@ -75,7 +76,7 @@ export default function FileUploader({
       )}
       {description && <p className="text-xs text-slate-400">{description}</p>}
 
-      {existingFiles.length > 0 && (
+      {!hideFileList && existingFiles.length > 0 && (
         <div className="flex flex-col gap-2">
           {existingFiles.map((f) => {
             const isDeleted = f._deleted;
@@ -115,7 +116,7 @@ export default function FileUploader({
 
       {!isOverLimit && (
         <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group">
-          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+          <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
             <Upload
               size={32}
               className="mb-3 text-slate-400 group-hover:text-indigo-400 transition-colors"
@@ -131,7 +132,7 @@ export default function FileUploader({
           <input
             ref={inputRef}
             type="file"
-            className="hidden"
+            className="sr-only"
             multiple={multiple}
             accept={accept}
             onChange={handleFiles}
@@ -145,7 +146,7 @@ export default function FileUploader({
         </p>
       )}
 
-      {files.length > 0 && (
+      {!hideFileList && files.length > 0 && (
         <div className="flex flex-col gap-2 mt-1">
           <span className="text-xs text-slate-400 font-medium">
             {multiple

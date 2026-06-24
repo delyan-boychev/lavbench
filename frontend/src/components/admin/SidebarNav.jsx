@@ -92,6 +92,18 @@ export default function SidebarNav({
         </button>
       )}
 
+      {currentUser.role === 'admin' && (
+        <button
+          onClick={() => {
+            setAdminSubTab('audit-logs');
+            resetSubViews();
+          }}
+          className={btnClass('audit-logs')}
+        >
+          {t('admin.audit_logs') || 'Audit Logs'}
+        </button>
+      )}
+
       {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
         <button
           onClick={() => {

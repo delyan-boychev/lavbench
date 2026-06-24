@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 import json
 from datetime import datetime
-from models import db, Challenge, Submission, User, decrypt_field, Task, is_metric_lower_better
-from auth_utils import login_required, role_required
+from models import db, Challenge, Submission, User, Task, is_metric_lower_better
+from auth_utils import login_required, role_required, jury_access_required
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
@@ -284,6 +284,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard", methods=["GET"])
 @login_required
+@jury_access_required
 def get_leaderboard(challenge_id):
     """
     Get the leaderboard for a specific challenge.
@@ -314,7 +315,9 @@ def get_leaderboard(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, current_user_id)
-        if not user or str(user.challenge_id) != str(challenge_id):
+        from auth_utils import check_competitor_access
+
+        if not user or not check_competitor_access(user, challenge_id):
             return (
                 jsonify(
                     {
@@ -326,11 +329,16 @@ def get_leaderboard(challenge_id):
             )
 
     payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
-    return jsonify(payload)
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard/live", methods=["GET"])
 @login_required
+@jury_access_required
 def stream_challenge_leaderboard(challenge_id):
     """
     Stream live updates to the challenge leaderboard using Server-Sent Events (SSE).
@@ -418,12 +426,20 @@ def stream_challenge_leaderboard(challenge_id):
                 for msg in get_and_yield_leaderboard():
                     yield msg
 
-    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return Response(
+        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+    )
 
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
 @login_required
 @role_required(["admin", "jury"])
+@jury_access_required
 def save_manual_points(challenge_id):
     """
     Save manual points for a user in a challenge.
@@ -477,6 +493,17 @@ def save_manual_points(challenge_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
+
+    if challenge.scores_finalized and challenge.reveal_results:
+        return (
+            jsonify(
+                {
+                    "error": "Cannot modify manual points once the competition results are finalized and revealed.",
+                    "code": "ERR_EDITING_BLOCKED",
+                }
+            ),
+            400,
+        )
 
     data = request.get_json() or {}
     user_id = data.get("user_id")
@@ -542,6 +569,23 @@ def save_manual_points(challenge_id):
                 ),
                 400,
             )
+
+        # Check if the task is in a finalized stage with revealed results
+        from models import Stage, Task
+
+        task = db.session.get(Task, task_id)
+        if task and task.stage_id:
+            stage = db.session.get(Stage, task.stage_id)
+            if stage and stage.is_finalized and stage.reveal_results:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Cannot modify manual points for task {task.title} because the stage is finalized and revealed.",
+                            "code": "ERR_EDITING_BLOCKED",
+                        }
+                    ),
+                    400,
+                )
 
         if not (0 <= pts <= 100):
             return (

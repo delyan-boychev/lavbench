@@ -229,198 +229,230 @@ export default function WorkersStats({
               : t('admin.workers.no_active_workers_connected')}
           </div>
         ) : (
-          workerStats.workers.map((worker) => (
-            <div
-              key={worker.name}
-              className="bg-[#0d0e18] border border-white/5 rounded-2xl overflow-hidden"
-            >
-              {/* Worker Header */}
-              <div className="bg-slate-900/40 border-b border-white/5 p-5 flex flex-wrap justify-between items-center gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <h4 className="font-mono text-sm font-bold text-slate-200">{worker.name}</h4>
-                </div>
-                <div className="flex items-center gap-4 text-xs font-mono">
-                  <div className="text-slate-500">
-                    {t('admin.workers.pid_label')}{' '}
-                    <span className="text-slate-300 font-bold">{worker.pid || 'N/A'}</span>
+          workerStats.workers.map((worker) => {
+            const isEvaluationWorker = worker.registered_tasks?.includes(
+              'tasks.evaluate_submission',
+            );
+            return (
+              <div
+                key={worker.name}
+                className="bg-[#0d0e18] border border-white/5 rounded-2xl overflow-hidden"
+              >
+                {/* Worker Header */}
+                <div className="bg-slate-900/40 border-b border-white/5 p-5 flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <h4 className="font-mono text-sm font-bold text-slate-200">{worker.name}</h4>
                   </div>
-                  <div className="text-slate-500">
-                    {t('admin.workers.uptime_label', { time: '' })}
-                    <span className="text-indigo-400 font-bold">{formatUptime(worker.uptime)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Worker Stats Body */}
-              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left: General Stats & Resource Usage */}
-                <div className="flex flex-col gap-4">
-                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    {t('admin.workers.capacity_resource_usage')}
-                  </h5>
-                  <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-3 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">{t('admin.workers.concurrency_pool')}</span>
-                      <span className="font-bold text-slate-300">
-                        {t('admin.workers.concurrency_pool_processes', { count: worker.pool_size })}
+                  <div className="flex items-center gap-4 text-xs font-mono">
+                    <div className="text-slate-500">
+                      {t('admin.workers.pid_label')}{' '}
+                      <span className="text-slate-300 font-bold">{worker.pid || 'N/A'}</span>
+                    </div>
+                    <div className="text-slate-500">
+                      {t('admin.workers.uptime_label', { time: '' })}
+                      <span className="text-indigo-400 font-bold">
+                        {formatUptime(worker.uptime)}
                       </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">{t('admin.workers.processed_tasks')}</span>
-                      <span className="font-bold text-emerald-400">
-                        {worker.total_tasks_processed}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">{t('admin.workers.max_ram_usage')}</span>
-                      <span className="font-bold text-slate-300">
-                        {worker.rusage?.maxrss_mb ? `${worker.rusage.maxrss_mb} MB` : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">{t('admin.workers.cpu_time')}</span>
-                      <span className="font-mono font-bold text-slate-300">
-                        {worker.rusage?.utime_sec !== undefined
-                          ? `${worker.rusage.utime_sec.toFixed(2)}s`
-                          : 'N/A'}
-                        {' / '}
-                        {worker.rusage?.stime_sec !== undefined
-                          ? `${worker.rusage.stime_sec.toFixed(2)}s`
-                          : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Broker Details */}
-                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">
-                    {t('admin.workers.broker_connection')}
-                  </h5>
-                  <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-2 font-mono text-[11px] text-slate-400">
-                    <div>
-                      <span className="text-slate-600">{t('admin.workers.transport')}</span>{' '}
-                      {worker.broker?.transport || 'N/A'}
-                    </div>
-                    <div>
-                      <span className="text-slate-600">{t('admin.workers.hostname')}</span>{' '}
-                      {worker.broker?.hostname || 'N/A'}
-                    </div>
-                    <div>
-                      <span className="text-slate-600">{t('admin.workers.port')}</span>{' '}
-                      {worker.broker?.port || 'N/A'}
                     </div>
                   </div>
                 </div>
 
-                {/* Middle: Active & Reserved Tasks */}
-                <div className="lg:col-span-2 flex flex-col gap-4">
-                  {/* Active Tasks */}
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
+                {/* Worker Stats Body */}
+                <div className="p-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  {/* Left: General Stats & Resource Usage */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-6">
+                    <div className="flex flex-col gap-4">
                       <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        {t('admin.workers.active_tasks', { count: worker.active_tasks_count })}
+                        {t('admin.workers.capacity_resource_usage')}
                       </h5>
-                      {worker.active_tasks_count > 0 && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 uppercase border border-indigo-500/20 animate-pulse">
-                          {t('admin.workers.running')}
-                        </span>
-                      )}
+                      <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-3 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">
+                            {t('admin.workers.concurrency_pool')}
+                          </span>
+                          <span className="font-bold text-slate-300">
+                            {t('admin.workers.concurrency_pool_processes', {
+                              count: worker.pool_size,
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">
+                            {t('admin.workers.processed_tasks')}
+                          </span>
+                          <span className="font-bold text-emerald-400">
+                            {worker.total_tasks_processed}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{t('admin.workers.max_ram_usage')}</span>
+                          <span className="font-bold text-slate-300">
+                            {worker.rusage?.maxrss_mb ? `${worker.rusage.maxrss_mb} MB` : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{t('admin.workers.cpu_time')}</span>
+                          <span className="font-mono font-bold text-slate-300">
+                            {worker.rusage?.utime_sec !== undefined
+                              ? `${worker.rusage.utime_sec.toFixed(2)}s`
+                              : 'N/A'}
+                            {' / '}
+                            {worker.rusage?.stime_sec !== undefined
+                              ? `${worker.rusage.stime_sec.toFixed(2)}s`
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {worker.active_tasks?.length === 0 ? (
-                      <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
-                        {t('admin.workers.no_active_tasks')}
+                    {/* Broker Details */}
+                    <div className="flex flex-col gap-4">
+                      <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {t('admin.workers.broker_connection')}
+                      </h5>
+                      <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-2 font-mono text-[11px] text-slate-400">
+                        <div>
+                          <span className="text-slate-600">{t('admin.workers.transport')}</span>{' '}
+                          {worker.broker?.transport || 'N/A'}
+                        </div>
+                        <div>
+                          <span className="text-slate-600">{t('admin.workers.hostname')}</span>{' '}
+                          {worker.broker?.hostname || 'N/A'}
+                        </div>
+                        <div>
+                          <span className="text-slate-600">{t('admin.workers.port')}</span>{' '}
+                          {worker.broker?.port || 'N/A'}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
-                        <table className="w-full text-left border-collapse text-[10px]">
-                          <thead>
-                            <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
-                              <th className="p-3">{t('admin.workers.task_id_header')}</th>
-                              <th className="p-3">{t('admin.workers.task_name_header')}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {worker.active_tasks?.map((task) => (
-                              <tr
-                                key={task.id}
-                                className="border-b border-white/5 last:border-0 hover:bg-white/5"
-                              >
-                                <td className="p-3 font-mono text-slate-300 font-semibold">
-                                  {task.id}
-                                </td>
-                                <td className="p-3 font-mono text-indigo-400">{task.name}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Reserved Queue Tasks */}
-                  <div className="mt-2">
-                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      {t('admin.workers.reserved_queue', { count: worker.reserved_tasks_count })}
-                    </h5>
+                  {/* Middle: Active & Reserved Tasks */}
+                  <div className="xl:col-span-2 flex flex-col gap-4">
+                    {isEvaluationWorker ? (
+                      <>
+                        {/* Active Tasks */}
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {t('admin.workers.active_tasks', {
+                                count: worker.active_tasks_count,
+                              })}
+                            </h5>
+                            {worker.active_tasks_count > 0 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 uppercase border border-indigo-500/20 animate-pulse">
+                                {t('admin.workers.running')}
+                              </span>
+                            )}
+                          </div>
 
-                    {worker.reserved_tasks?.length === 0 ? (
-                      <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
-                        {t('admin.workers.queue_empty')}
-                      </div>
+                          {worker.active_tasks?.length === 0 ? (
+                            <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
+                              {t('admin.workers.no_active_tasks')}
+                            </div>
+                          ) : (
+                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
+                              <table className="w-full text-left border-collapse text-[10px]">
+                                <thead>
+                                  <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
+                                    <th className="p-3">{t('admin.workers.task_id_header')}</th>
+                                    <th className="p-3">{t('admin.workers.task_name_header')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {worker.active_tasks?.map((task) => (
+                                    <tr
+                                      key={task.id}
+                                      className="border-b border-white/5 last:border-0 hover:bg-white/5"
+                                    >
+                                      <td className="p-3 font-mono text-slate-300 font-semibold">
+                                        {task.id}
+                                      </td>
+                                      <td className="p-3 font-mono text-indigo-400">{task.name}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Reserved Queue Tasks */}
+                        <div className="mt-2">
+                          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                            {t('admin.workers.reserved_queue', {
+                              count: worker.reserved_tasks_count,
+                            })}
+                          </h5>
+
+                          {worker.reserved_tasks?.length === 0 ? (
+                            <div className="bg-slate-900/10 border border-white/5 p-4 rounded-xl text-center text-slate-500 text-xs italic">
+                              {t('admin.workers.queue_empty')}
+                            </div>
+                          ) : (
+                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
+                              <table className="w-full text-left border-collapse text-[10px]">
+                                <thead>
+                                  <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
+                                    <th className="p-3">{t('admin.workers.task_id_header')}</th>
+                                    <th className="p-3">{t('admin.workers.task_name_header')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {worker.reserved_tasks?.map((task) => (
+                                    <tr
+                                      key={task.id}
+                                      className="border-b border-white/5 last:border-0 hover:bg-white/5"
+                                    >
+                                      <td className="p-3 font-mono text-slate-300 font-semibold">
+                                        {task.id}
+                                      </td>
+                                      <td className="p-3 font-mono text-amber-400">{task.name}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </>
                     ) : (
-                      <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
-                        <table className="w-full text-left border-collapse text-[10px]">
-                          <thead>
-                            <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
-                              <th className="p-3">{t('admin.workers.task_id_header')}</th>
-                              <th className="p-3">{t('admin.workers.task_name_header')}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {worker.reserved_tasks?.map((task) => (
-                              <tr
-                                key={task.id}
-                                className="border-b border-white/5 last:border-0 hover:bg-white/5"
-                              >
-                                <td className="p-3 font-mono text-slate-300 font-semibold">
-                                  {task.id}
-                                </td>
-                                <td className="p-3 font-mono text-amber-400">{task.name}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Registered Capabilities */}
-                  <div className="mt-2">
-                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      {t('admin.workers.registered_capabilities')}
-                    </h5>
-                    <div className="flex flex-wrap gap-2">
-                      {worker.registered_tasks?.length === 0 ? (
-                        <span className="text-[10px] text-slate-500 italic">
-                          {t('admin.workers.no_capabilities')}
+                      <div className="bg-slate-900/20 border border-white/5 p-6 rounded-2xl text-center text-slate-500 text-xs italic flex flex-col items-center justify-center gap-2">
+                        <span className="text-amber-500/90 font-bold uppercase text-xs tracking-widest bg-amber-500/10 px-4 py-1.5 rounded-full border border-amber-500/20 shadow-lg shadow-amber-500/5">
+                          {t('admin.workers.internal_tasks_label')}
                         </span>
-                      ) : (
-                        worker.registered_tasks?.map((taskName) => (
-                          <span
-                            key={taskName}
-                            className="font-mono text-[9px] font-bold px-2 py-1 rounded bg-slate-900/60 text-slate-400 border border-white/5"
-                          >
-                            {taskName}
+                        <span>{t('admin.workers.internal_only_notice')}</span>
+                      </div>
+                    )}
+
+                    {/* Registered Capabilities */}
+                    <div className="mt-2">
+                      <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        {t('admin.workers.registered_capabilities')}
+                      </h5>
+                      <div className="flex flex-wrap gap-2">
+                        {worker.registered_tasks?.length === 0 ? (
+                          <span className="text-[10px] text-slate-500 italic">
+                            {t('admin.workers.no_capabilities')}
                           </span>
-                        ))
-                      )}
+                        ) : (
+                          worker.registered_tasks?.map((taskName) => (
+                            <span
+                              key={taskName}
+                              className="font-mono text-[9px] font-bold px-2 py-1 rounded bg-slate-900/60 text-slate-400 border border-white/5"
+                            >
+                              {taskName}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

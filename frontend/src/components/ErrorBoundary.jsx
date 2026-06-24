@@ -1,6 +1,7 @@
 import React from 'react';
+import { withTranslation } from 'react-i18next';
 
-export default class ErrorBoundary extends React.Component {
+class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -15,6 +16,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   render() {
+    const { t } = this.props;
     if (this.state.hasError) {
       return (
         this.props.fallback || (
@@ -46,7 +48,7 @@ export default class ErrorBoundary extends React.Component {
               />
             </svg>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: 8 }}>
-              Something went wrong
+              {t('common.something_went_wrong', 'Something went wrong')}
             </h2>
             <p
               style={{
@@ -56,7 +58,10 @@ export default class ErrorBoundary extends React.Component {
                 lineHeight: 1.5,
               }}
             >
-              An unexpected error occurred. Please try refreshing the page.
+              {t(
+                'common.unexpected_error',
+                'An unexpected error occurred. Please try refreshing the page.',
+              )}
             </p>
             <button
               onClick={() => {
@@ -75,7 +80,7 @@ export default class ErrorBoundary extends React.Component {
                 cursor: 'pointer',
               }}
             >
-              Refresh Page
+              {t('common.refresh_page', 'Refresh Page')}
             </button>
           </div>
         )
@@ -85,3 +90,5 @@ export default class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+
+export default withTranslation()(ErrorBoundary);

@@ -5,10 +5,6 @@ import re
 import secrets
 import string
 import random
-import glob
-import hashlib
-import urllib.parse
-import subprocess
 import json
 import zipfile
 import logging
@@ -20,12 +16,10 @@ from models import (
     User,
     Challenge,
     Submission,
-    Task,
     generate_pseudonym,
     decrypt_field,
-    is_metric_lower_better,
 )
-from auth_utils import role_required
+from auth_utils import role_required, jury_access_required
 from evaluation_engine import AVAILABLE_METRICS
 
 logger = logging.getLogger(__name__)
@@ -92,15 +86,16 @@ def transliterate_bulgarian(text):
     return "".join(mapping.get(c, c) for c in text.lower())
 
 
-def generate_unique_username(name, surname):
+def generate_unique_username(name, surname, role="competitor"):
     trans_name = transliterate_bulgarian(name)
     trans_surname = transliterate_bulgarian(surname)
     norm_name = re.sub(r"[^a-zA-Z0-9]", "", trans_name)
     norm_surname = re.sub(r"[^a-zA-Z0-9]", "", trans_surname)
 
-    base = f"comp_{norm_name[:3]}_{norm_surname[:3]}"
-    if len(base) < 7:
-        base = "comp_user"
+    prefix = "jury" if role == "jury" else "comp"
+    base = f"{prefix}_{norm_name[:3]}_{norm_surname[:3]}"
+    if len(base) < len(prefix) + 4:
+        base = f"{prefix}_user"
 
     while True:
         num = random.randint(1000, 9999)
@@ -119,6 +114,7 @@ def generate_random_password(length=16):
 
 @admin_bp.route("/register-competitor", methods=["POST"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def register_competitor():
     """
     Register a new competitor with auto-generated credentials.
@@ -229,14 +225,30 @@ def get_users():
     page = request.args.get("page", 1, type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
     role_filter = request.args.get("role")
-    challenge_id_filter = request.args.get("challenge_id", type=int)
+    challenge_id_filter = request.args.get("challenge_id")
     search_term = request.args.get("search")
 
     query = User.query
-    if role_filter:
-        query = query.filter_by(role=role_filter)
-    if challenge_id_filter is not None:
-        query = query.filter_by(challenge_id=challenge_id_filter)
+    requester_role = request.user["role"]
+    requester_id = request.user["user_id"]
+
+    if requester_role == "jury":
+        from models import JuryChallenge
+
+        assigned_challenges = JuryChallenge.query.filter_by(jury_id=requester_id).all()
+        assigned_ids = [jc.challenge_id for jc in assigned_challenges]
+        if not assigned_ids:
+            query = query.filter(User.id == None)
+        else:
+            query = query.filter(User.role == "competitor", User.challenge_id.in_(assigned_ids))
+            if challenge_id_filter is not None:
+                if challenge_id_filter not in assigned_ids:
+                    query = query.filter(User.id == None)
+    else:
+        if role_filter:
+            query = query.filter_by(role=role_filter)
+        if challenge_id_filter is not None:
+            query = query.filter_by(challenge_id=challenge_id_filter)
 
     # Fetch all challenges to cache started status
     challenges = Challenge.query.all()
@@ -368,6 +380,7 @@ def delete_user(user_id):
 
 @admin_bp.route("/register-user", methods=["POST"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def register_user():
     """
     Register a new user account with specified role and demographics.
@@ -396,6 +409,9 @@ def register_user():
 
     if not role or role not in ["competitor", "jury", "admin"]:
         return jsonify({"error": "Valid role is required."}), 400
+
+    if request.user["role"] == "jury" and role != "competitor":
+        return jsonify({"error": "Jury members can only register competitor accounts."}), 403
 
     # STRICT CONSTRAINT: Only server-side CLI can register an Administrator (admin)
     if role == "admin":
@@ -432,8 +448,9 @@ def register_user():
     if not password:
         password = generate_random_password(8)
 
-    if role == "competitor" and not username:
-        username = generate_unique_username(name, surname)
+    # Pregenerate username for competitors and judges (jury) if not provided
+    if role in ["competitor", "jury"] and not username:
+        username = generate_unique_username(name, surname, role=role)
 
     if not username:
         return jsonify({"error": "Username is required."}), 400
@@ -458,6 +475,16 @@ def register_user():
     user.set_demographics(name, surname, grade, school, city)
     db.session.add(user)
     db.session.commit()
+
+    jury_challenges = data.get("jury_challenges")
+    if role == "jury" and jury_challenges:
+        from models import JuryChallenge
+
+        for ch_id in jury_challenges:
+            if ch_id:
+                assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
+                db.session.add(assignment)
+        db.session.commit()
 
     from services.audit_service import log_action
 
@@ -835,73 +862,96 @@ def delete_backup_file(filename):
     return jsonify({"message": "Deleted."})
 
 
-@admin_bp.route("/challenges/<uuid:challenge_id>/backups", methods=["GET"])
+@admin_bp.route("/audit-logs", methods=["GET"])
 @role_required(["admin"])
-def list_challenge_backups(challenge_id):
+def get_audit_logs():
     """
-    List competition lifecycle backups for a specific challenge.
+    Get paginated audit logs, optionally filtered by challenge_id and action_type.
+    Only available to admins.
     ---
     tags:
       - Admin
     security:
       - cookieAuth: []
     parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
+      - name: page
+        in: query
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        schema:
+          type: integer
+      - name: challenge_id
+        in: query
+        schema:
+          type: string
+      - name: action_type
+        in: query
+        schema:
+          type: string
     responses:
       200:
         description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
     """
-    directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
-    return jsonify({"backups": _list_backup_files(directory)})
+    page = request.args.get("page", 1, type=int)
+    per_page = min(request.args.get("per_page", 15, type=int), 100)
+    challenge_id = request.args.get("challenge_id")
+    action_type = request.args.get("action_type")
 
+    from models import AuditLog, Challenge, User
+    from sqlalchemy import or_
 
-@admin_bp.route("/challenges/<uuid:challenge_id>/backups/<path:filename>/download", methods=["GET"])
-@role_required(["admin"])
-def download_challenge_backup(challenge_id, filename):
-    """
-    Download a competition lifecycle backup file.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-      - in: path
-        name: filename
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
+    query = AuditLog.query
 
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    directory = os.path.join(BACKUPS_DIR, f"challenge_{challenge_id}")
-    safe_path = os.path.abspath(os.path.join(directory, filename))
-    if not safe_path.startswith(os.path.abspath(directory)):
-        return jsonify({"error": "Invalid path"}), 403
-    if not os.path.isfile(safe_path):
-        return jsonify({"error": "Not found"}), 404
-    return send_file(safe_path, as_attachment=True, download_name=filename)
+    if challenge_id:
+        challenge = db.get_or_404(Challenge, challenge_id)
+        stage_ids = [s.id for s in challenge.stages]
+        task_ids = [t.id for t in challenge.tasks]
+        competitor_ids = [
+            u.id for u in User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
+        ]
+
+        conditions = [(AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id)]
+        if stage_ids:
+            conditions.append(
+                (AuditLog.target_type == "stage") & (AuditLog.target_id.in_(stage_ids))
+            )
+        if task_ids:
+            conditions.append((AuditLog.target_type == "task") & (AuditLog.target_id.in_(task_ids)))
+            conditions.append(AuditLog.task_id.in_(task_ids))
+        if competitor_ids:
+            conditions.append(
+                (AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitor_ids))
+            )
+            conditions.append(AuditLog.target_user_id.in_(competitor_ids))
+
+        query = query.filter(or_(*conditions))
+
+    if action_type:
+        query = query.filter(AuditLog.action_type == action_type)
+
+    paginated = query.order_by(AuditLog.timestamp.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    return (
+        jsonify(
+            {
+                "logs": [log.to_dict() for log in paginated.items],
+                "total": paginated.total,
+                "pages": paginated.pages,
+                "page": paginated.page,
+                "per_page": paginated.per_page,
+            }
+        ),
+        200,
+    )
 
 
 @admin_bp.route("/users/<uuid:user_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def update_user(user_id):
     """
     Update user profile fields. Jury members have restricted edit access.
@@ -961,14 +1011,46 @@ def update_user(user_id):
     challenge_id = data.get("challenge_id")
     password = data.get("password")
     is_anonymous = data.get("is_anonymous")
+    role = data.get("role")
+    jury_challenges = data.get("jury_challenges")
 
     if is_anonymous is not None:
         user.is_anonymous = bool(is_anonymous)
+
+    if role is not None:
+        if role in ["competitor", "jury", "admin"]:
+            if role == "admin" and user.role != "admin":
+                return jsonify({"error": "Cannot change user role to Administrator."}), 403
+            user.role = role
+
+    if jury_challenges is not None:
+        from models import JuryChallenge
+
+        JuryChallenge.query.filter_by(jury_id=user.id).delete()
+        for ch_id in jury_challenges:
+            if ch_id:
+                assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
+                db.session.add(assignment)
 
     # Check new challenge start time if jury is assigning
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
         target_challenge_id = str(challenge_id)
         if current_role == "jury":
+            from models import JuryChallenge
+
+            assigned = JuryChallenge.query.filter_by(
+                jury_id=request.user["user_id"], challenge_id=target_challenge_id
+            ).first()
+            if not assigned:
+                return (
+                    jsonify(
+                        {
+                            "error": "Access denied. You are not assigned to this competition.",
+                            "code": "ERR_ACCESS_DENIED",
+                        }
+                    ),
+                    403,
+                )
             challenge = db.session.get(Challenge, target_challenge_id)
             if challenge and challenge.is_started:
                 return (
@@ -1036,6 +1118,7 @@ def update_user(user_id):
 
 @admin_bp.route("/users/<uuid:user_id>/reset-password", methods=["POST"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def reset_user_password(user_id):
     """
     Generate a new random password for a specific user.
@@ -1098,6 +1181,7 @@ def reset_user_password(user_id):
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/reset-all-passwords", methods=["POST"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def reset_all_challenge_passwords(challenge_id):
     """
     Generate new passwords for all competitors in a challenge.
@@ -1163,6 +1247,7 @@ def reset_all_challenge_passwords(challenge_id):
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def download_scores_csv(challenge_id):
     """
     Generate and download a CSV of all competitor scores for a challenge.
@@ -1205,6 +1290,7 @@ def download_scores_csv(challenge_id):
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-submissions-zip", methods=["GET"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def download_submissions_zip(challenge_id):
     """
     Download all completed student submissions as a ZIP archive.
@@ -1396,7 +1482,14 @@ def stream_worker_stats():
             except:
                 pass
 
-    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return Response(
+        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+    )
 
 
 def _get_worker_stats_response():

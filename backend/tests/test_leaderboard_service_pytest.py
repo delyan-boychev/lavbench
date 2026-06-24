@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import math
 import pytest
 from datetime import datetime, timedelta
 
@@ -9,7 +8,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission, is_metric_lower_better
+from models import db, User, Challenge, Task, Submission
 from services.leaderboard_service import build_and_cache_leaderboard, get_task_leaderboard_data
 
 

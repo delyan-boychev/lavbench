@@ -1,6 +1,5 @@
 import json
 import uuid
-import pytest
 
 
 class TestCsrfEndpoint:

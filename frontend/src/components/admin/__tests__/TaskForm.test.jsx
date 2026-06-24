@@ -97,6 +97,7 @@ vi.mock('lucide-react', () => ({
   Box: () => <span data-testid="icon-box" />,
   Folder: () => <span data-testid="icon-folder" />,
   Plus: () => <span data-testid="icon-plus" />,
+  FileText: () => <span data-testid="icon-filetext" />,
 }));
 
 describe('TaskForm', () => {
@@ -375,22 +376,15 @@ describe('TaskForm', () => {
   });
 
   describe('Files Tab', () => {
-    it('renders FileUploader for labels.parquet with correct accept', () => {
+    it('renders a unified FileUploader for both baseline and resource files', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Files'));
-      const uploader = screen.getByTestId('fileuploader-ground-truth-&-resources');
+      const uploader = screen.getByTestId('fileuploader-task-files-&-baseline-notebook');
       expect(uploader).toBeInTheDocument();
       const acceptElements = screen.getAllByTestId('fileuploader-accept');
-      expect(acceptElements[0]).toHaveTextContent('.parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl');
-    });
-
-    it('renders FileUploader for baseline notebook with .ipynb accept', () => {
-      renderTaskForm();
-      fireEvent.click(screen.getByText('Files'));
-      const uploader = screen.getByTestId('fileuploader-baseline-code');
-      expect(uploader).toBeInTheDocument();
-      const acceptElements = screen.getAllByTestId('fileuploader-accept');
-      expect(acceptElements[1]).toHaveTextContent('.ipynb');
+      expect(acceptElements[0]).toHaveTextContent(
+        '.parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl,.ipynb',
+      );
     });
 
     it('shows existing files from editingTask', () => {

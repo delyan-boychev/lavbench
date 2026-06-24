@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import csv
 import io
 import pytest
@@ -11,7 +10,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission, AuditLog
+from models import User, Challenge, Task, AuditLog
 from auth_utils import generate_token
 
 

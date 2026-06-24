@@ -29,7 +29,8 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 * **Multi-Stage Competitions:** Support for stages with independent deadlines, grace periods, and score visibility controls.
 * **Custom Evaluators:** Jury members can upload Python evaluation scripts with per-metric weighting and configuration.
 * **GPU/CPU Routing:** Celery queue routing intelligently separates GPU and CPU workloads across different worker pools.
-* **Automated Backups:** Database and uploaded files are backed up every 20 minutes during active competitions (every 6 hours when idle), including competition lifecycle snapshots.
+* **Automated Backups:** Database and uploaded files are backed up every 20 minutes during active competitions (every 6 hours when idle).
+* **Audit Logs:** Full logging of administrative actions (e.g. creating/deleting challenges, resetting passwords, editing scores) with detailed metadata payloads and justification tracking.
 * **i18n Support:** Available in English and Bulgarian (contributions for additional languages are welcome).
 * **Strict Security:** Includes httpOnly cookie auth, token revocation with a Redis blacklist, rate limiting, encrypted PII, and ProxyFix for trusted reverse proxies.
 * **Typed API & Validation:** OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls. `tsc --noEmit` verifies all JSDoc annotations and component props.
@@ -238,16 +239,30 @@ Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Work
 
 Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No direct database access is needed.
 
+#### Launching Workers via `scripts/start-worker.sh`
+You can invoke the launcher script directly to customize worker execution:
 ```bash
-# General Syntax
-make start-worker REDIS_URL=redis://... [GPU_ID=0]
-
-# GPU worker example
-make start-worker REDIS_URL=redis://:password@server:6379/0 GPU_ID=0
-
-# CPU worker example
-make start-worker REDIS_URL=redis://:password@server:6379/0
+scripts/start-worker.sh <REDIS_URL> [options]
 ```
+
+**Options**:
+* `-g, --gpu <GPU_ID>`: Configure worker for specific GPU device(s) (e.g., `0` or a list like `0,1`).
+* `-c, --concurrency <N>`: Set the number of concurrent worker processes manually. If omitted, concurrency is safely auto-calculated.
+* `-i, --internal`: Run the worker for system/internal tasks only (e.g., database backups, leaderboards), unregistering all evaluation tasks.
+
+**Examples**:
+```bash
+# Start a CPU-only evaluation worker with 4 concurrency slots
+scripts/start-worker.sh redis://:password@server:6379/0 -c 4
+
+# Start a GPU worker on GPU device 0 with 2 concurrency slots
+scripts/start-worker.sh redis://:password@server:6379/0 -g 0 -c 2
+
+# Start a local internal task worker
+scripts/start-worker.sh redis://:password@server:6379/0 -i -c 2
+```
+
+*(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... [GPU_ID=0]` is still fully supported.)*
 
 ---
 

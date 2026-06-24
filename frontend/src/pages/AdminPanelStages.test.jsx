@@ -26,6 +26,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     title: 'Challenge Alpha',
     is_active: true,
     is_archived: false,
+    end_time: '2026-06-13T12:00:00Z',
     stages: [
       {
         id: 10,
@@ -158,6 +159,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
           stage_number: 1,
           start_time: '2026-06-13T10:00',
           end_time: '2026-06-13T12:00',
+          reveal_results: false,
         }),
       }),
     );
@@ -240,7 +242,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
     // Since mockStagesChallenge has an unfinalized stage (is_finalized: false),
     // the "Finalize Challenge" button should be disabled
-    const finalizeChallengeBtn = screen.getByRole('button', { name: /Finalize Challenge/i });
+    const finalizeChallengeBtn = screen.getAllByRole('button', { name: /Finalize/i })[0];
     expect(finalizeChallengeBtn).toBeDisabled();
     expect(finalizeChallengeBtn).toHaveAttribute('title', 'All stages must be finalized first');
   });

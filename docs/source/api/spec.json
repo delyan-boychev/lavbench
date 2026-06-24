@@ -279,6 +279,55 @@
   },
   "openapi": "3.0.0",
   "paths": {
+    "/api/admin/audit-logs": {
+      "get": {
+        "description": "Only available to admins.<br/>",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "challenge_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get paginated audit logs, optionally filtered by challenge_id and action_type.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/admin/backups": {
       "get": {
         "responses": {
@@ -419,84 +468,6 @@
           }
         ],
         "summary": "Download a specific backup archive file.",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/challenges/{challenge_id}/backups": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "List competition lifecycle backups for a specific challenge.",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/challenges/{challenge_id}/backups/{filename}/download": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "filename",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Download a competition lifecycle backup file.",
         "tags": [
           "Admin"
         ]
@@ -1169,14 +1140,9 @@
     },
     "/api/challenges/import": {
       "post": {
-        "description": "Creates challenge, stages, and tasks. File attachments are NOT restored.<br/>",
+        "description": "Creates challenge, stages, and tasks, and restores files.<br/>",
         "requestBody": {
           "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            },
             "multipart/form-data": {
               "schema": {
                 "properties": {
@@ -1208,7 +1174,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Import a challenge configuration from JSON (previously exported via /export).",
+        "summary": "Import a challenge configuration from a ZIP archive.",
         "tags": [
           "Challenges"
         ]
@@ -1352,27 +1318,27 @@
     },
     "/api/challenges/{challenge_id}/export": {
       "get": {
-        "description": "File attachments (baseline notebooks, evaluator scripts) are NOT included.<br/>",
         "parameters": [
           {
             "in": "path",
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "application/json": {
+              "application/zip": {
                 "schema": {
-                  "type": "object"
+                  "format": "binary",
+                  "type": "string"
                 }
               }
             },
-            "description": "Challenge export JSON"
+            "description": "Challenge export ZIP file"
           }
         },
         "security": [
@@ -1380,7 +1346,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Export a challenge configuration as JSON, including tasks and stages.",
+        "summary": "Export a challenge configuration as ZIP, including tasks, stages, and uploaded files.",
         "tags": [
           "Challenges"
         ]
@@ -2018,7 +1984,7 @@
         ]
       }
     },
-    "/api/challenges/{challenge_id}/test-competition": {
+    "/api/challenges/{challenge_id}/test-stage": {
       "post": {
         "parameters": [
           {
@@ -2030,8 +1996,31 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "end_time": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "start_time": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2039,7 +2028,7 @@
                 }
               }
             },
-            "description": "Success"
+            "description": "Test stage created"
           }
         },
         "security": [
@@ -2047,7 +2036,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Create a test competition that starts immediately for testing purposes.",
+        "summary": "Create a test stage before the competition starts for testing purposes.",
         "tags": [
           "Challenges"
         ]

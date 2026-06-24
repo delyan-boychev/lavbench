@@ -159,7 +159,6 @@ The platform features an automated backup protocol to prevent data loss. All bac
 |------|-----------|-----------|----------|
 | **Auto** | Every **20 minutes** when competitions are active, every **6 hours** when idle | Latest **6** | `auto_YYYYMMDD_HHMMSS.tar.gz` in `/backups/` |
 | **Manual** | On demand via "Force Backup Now" button | Never auto-deleted | `manual_YYYYMMDD_HHMMSS.tar.gz` in `/backups/` |
-| **Competition Lifecycle** | Triggered on deadline, grace period end, and finalization | Until challenge is deleted | `challenge_{id}/{state}_YYYYMMDD_HHMMSS.tar.gz` |
 
 ### Backup Management UI
 Go to the **Admin Panel** → **Backups** tab:
@@ -167,20 +166,10 @@ Go to the **Admin Panel** → **Backups** tab:
 - **Force Backup Now** — creates an immediate manual backup. Shows a loading spinner while in progress via SSE.
 - **Download** — download any backup file.
 - **Delete** — delete manual backups only (auto-backups cannot be deleted manually, returns 403).
-- Competition-specific backups are viewable/downloadable from the **Competition Management** tab under each challenge's details.
 
 ### Retention Rules
 - **Auto-backups**: Only the 6 most recent are kept. The oldest ones are auto-deleted.
 - **Manual backups**: Never auto-deleted. Only removed via the delete button.
-- **Competition backups**: Persist until the challenge is deleted. Deleting a challenge removes all its associated backup files.
-
-### Competition Lifecycle Backups
-The system automatically takes database snapshots during key lifecycle events:
-- **Submission Ended** — when the official competition deadline passes.
-- **Grace Period Ended** — when the grace period expires (no more submissions are accepted).
-- **Scores Finalized** — when scores are locked and identities are revealed.
-
-These snapshots appear in the Competition Management tab under each challenge.
 
 ---
 
@@ -199,13 +188,41 @@ When a Celery evaluation task fails permanently (all retries exhausted), it is l
 
 Each entry shows the submission ID, task ID, challenge ID, failure timestamp, and the error message. This is highly useful for debugging systemic evaluation or container failures.
 
+### Audit Logs
+The platform implements a comprehensive audit trail to track all administrative actions. This is crucial for verifying the integrity of the grading process, user management, and configuration changes.
+
+- **Accessing Logs**: Go to the **Admin Panel** → **Audit Logs** tab (accessible only to users with the `admin` role).
+- **Logged Actions**:
+  - `create` / `update` / `delete` of challenges, stages, and tasks.
+  - `finalize` and `archive` transitions.
+  - Password resets (both individual and bulk/competition-wide).
+  - Manual score changes (which strictly require entering a justification reason).
+- **Filtering**: Search or filter audit records by **Action Type** (create, update, delete, etc.) or look up actions associated with a specific challenge.
+- **Log Payload Details**: Click **View** on any log entry to view the exact payload/meta-details in JSON format, along with any provided justification/reason (such as why a manual score edit was made).
+
 ### Worker Status Monitoring
 The **Cluster** badge in the navbar shows worker node status in real-time via SSE:
 - Green: workers are connected and healthy.
 - Red: workers are disconnected.
 - Click for a modal showing per-worker specs (CPU cores, RAM, GPU type, VRAM, concurrency).
 
-Workers run directly on the host machine via `scripts/start-worker.sh` — they are NOT part of Docker Compose because they require access to the host's Docker CLI to build and spawn sandbox containers dynamically.
+Workers are split into two categories to isolate system tasks from heavy evaluation workloads:
+
+1. **Internal Task Worker**: Runs inside the main web server's Docker Compose setup (`celery_worker` service). It executes system tasks (like database backups, watchdog checks, and leaderboard recalculations). By default, its concurrency is capped at `2` (using `CELERY_WORKER_CONCURRENCY`) to preserve host resources for Flask, PostgreSQL, Redis, and SSE.
+2. **Evaluation Workers**: Run directly on host/remote machines (with CPU or GPU resources) to build and run student submission Docker sandboxes.
+
+#### Launching Evaluation Workers
+To launch evaluation workers, use `scripts/start-worker.sh` directly on the host:
+```bash
+scripts/start-worker.sh <REDIS_URL> [options]
+```
+
+**Options**:
+* `--gpu, -g <GPU_ID>`: Configure worker for a specific GPU device index (e.g., `0` or a comma-separated list `0,1`).
+* `--concurrency, -c <N>`: Explicitly set the concurrent slot limit. If omitted, concurrency is auto-calculated using the safe formula `max(1, NUM_GPUS, NUM_CORES / 2)`.
+* `--internal, -i`: Configure the worker to only execute internal tasks (no submission evaluations).
+
+*Note: If running evaluation workers on the main backend web host, it is highly recommended to leave at least 2 CPU cores free to prevent resource starvation for the Gunicorn and Postgres containers.*
 
 ### Worker Specs Registration
-When a worker node starts, it automatically registers its hardware specs in Redis. These appear in the cluster modal dashboard. If Redis is unavailable, worker specs will not be registered until the next worker restart.
+When a worker node starts, it automatically registers its hardware specs in Redis (if running as an evaluation worker). These appear in the cluster modal dashboard. If Redis is unavailable, worker specs will not be registered until the next worker restart. Internal workers are excluded from cluster metrics and telemetry.

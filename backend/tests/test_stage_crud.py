@@ -5,6 +5,7 @@ Delete tests already exist in test_challenges_routes.py (TestDeleteStage).
 
 import json
 from datetime import datetime, timedelta
+import pytest
 
 
 def _iso(dt):
@@ -17,6 +18,13 @@ def _past():
 
 def _future():
     return datetime.utcnow() + timedelta(days=1)
+
+
+@pytest.fixture(autouse=True)
+def widen_challenge_bounds(db_session, sample_challenge):
+    sample_challenge.start_time = datetime.utcnow() - timedelta(days=5)
+    sample_challenge.end_time = datetime.utcnow() + timedelta(days=5)
+    db_session.commit()
 
 
 class TestCreateStage:
@@ -221,8 +229,8 @@ class TestUpdateStage:
         )
         assert res.status_code == 200
         data = res.get_json()
-        assert data["start_time"] == new_start
-        assert data["end_time"] == new_end
+        assert data["start_time"] == new_start + "Z"
+        assert data["end_time"] == new_end + "Z"
 
     def test_update_stage_stage_number(
         self, client, db_session, sample_challenge, sample_stage, sample_admin, tokens, csrf_headers

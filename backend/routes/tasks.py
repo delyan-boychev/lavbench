@@ -1,6 +1,5 @@
 import os
 import json
-import ast
 import logging
 from datetime import datetime, timedelta
 
@@ -16,8 +15,8 @@ from flask import (
     stream_with_context,
 )
 from werkzeug.utils import secure_filename
-from models import db, Challenge, Task, User, Submission, decrypt_field, is_metric_lower_better
-from auth_utils import login_required, role_required, rate_limit
+from models import db, Challenge, Task, User, Submission
+from auth_utils import login_required, role_required, rate_limit, jury_access_required
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 tasks_bp = Blueprint("tasks", __name__)
@@ -36,12 +35,10 @@ MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
 
 
 def check_competitor_access(user_id, challenge_id):
+    from auth_utils import check_competitor_access as shared_check
+
     user = db.session.get(User, user_id)
-    if not user or user.challenge_id is None or challenge_id is None:
-        return False
-    if str(user.challenge_id) != str(challenge_id):
-        return False
-    return True
+    return shared_check(user, challenge_id)
 
 
 def check_task_started(task, user_role, user_id):
@@ -178,7 +175,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
             )
 
     # Dispatch the submission via Celery
-    queue_name = "gpu_queue" if gpu_required else "celery"
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     evaluate_submission.apply_async(
         args=[submission.id, metadata], priority=priority, queue=queue_name
@@ -222,6 +219,7 @@ def _maybe_queue_baseline(task, challenge, admin_id):
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["GET"])
 @login_required
+@jury_access_required
 def get_task(task_id):
     """
     API endpoint.
@@ -261,6 +259,7 @@ def get_task(task_id):
 
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def create_task(challenge_id):
     """
     Create a new evaluation task with resource limits, metrics, and test data files.
@@ -451,12 +450,26 @@ def create_task(challenge_id):
     stage_id = request.form.get("stage_id")
     if stage_id == "":
         stage_id = None
-    if stage_id:
-        from models import Stage
+    from models import Stage
 
+    if stage_id:
         st = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first()
         if not st:
             return jsonify({"error": "Invalid stage_id for this challenge."}), 400
+    else:
+        regular_stage_count = Stage.query.filter_by(
+            challenge_id=challenge_id, is_test=False
+        ).count()
+        if regular_stage_count > 0:
+            return (
+                jsonify(
+                    {
+                        "error": "Task must be assigned to a stage when the competition has stages.",
+                        "code": "ERR_STAGE_REQUIRED",
+                    }
+                ),
+                400,
+            )
 
     task = Task(
         challenge_id=challenge_id,
@@ -567,7 +580,6 @@ def create_task(challenge_id):
             if uploaded_file.filename == "labels.parquet":
 
                 try:
-                    import pandas as pd
                     from evaluation_engine import validate_parquet_schema_columns
                     import pyarrow.parquet as pq
 
@@ -617,11 +629,12 @@ def create_task(challenge_id):
 
     # Notify workers to rebuild Docker image for this task
     try:
-        from cache_utils import get_redis_client
+        if not current_app.config.get("TESTING"):
+            from cache_utils import get_redis_client
 
-        r = get_redis_client()
-        if r:
-            r.publish("task_rebuild", str(task.id))
+            r = get_redis_client()
+            if r:
+                r.publish("task_rebuild", str(task.id))
     except Exception:
         pass
 
@@ -630,6 +643,7 @@ def create_task(challenge_id):
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def update_task(task_id):
     """
     Update an existing task configuration including files and evaluator scripts.
@@ -854,6 +868,21 @@ def update_task(task_id):
                 return jsonify({"error": "Invalid stage_id for this challenge."}), 400
             task.stage_id = stage_id_val
         else:
+            from models import Stage
+
+            regular_stage_count = Stage.query.filter_by(
+                challenge_id=task.challenge_id, is_test=False
+            ).count()
+            if regular_stage_count > 0:
+                return (
+                    jsonify(
+                        {
+                            "error": "Task must be assigned to a stage when the competition has stages.",
+                            "code": "ERR_STAGE_REQUIRED",
+                        }
+                    ),
+                    400,
+                )
             task.stage_id = None
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
@@ -955,7 +984,6 @@ def update_task(task_id):
 
             if uploaded_file.filename == "labels.parquet":
                 try:
-                    import pandas as pd
                     from evaluation_engine import validate_parquet_schema_columns
                     import pyarrow.parquet as pq
 
@@ -997,11 +1025,12 @@ def update_task(task_id):
 
     # Notify workers to rebuild Docker image for this task
     try:
-        from cache_utils import get_redis_client
+        if not current_app.config.get("TESTING"):
+            from cache_utils import get_redis_client
 
-        r = get_redis_client()
-        if r:
-            r.publish("task_rebuild", str(task.id))
+            r = get_redis_client()
+            if r:
+                r.publish("task_rebuild", str(task.id))
     except Exception:
         pass
 
@@ -1010,6 +1039,7 @@ def update_task(task_id):
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
+@jury_access_required
 def delete_task(task_id):
     """
     Remove a task and all its submissions from a challenge.
@@ -1087,6 +1117,7 @@ def delete_task(task_id):
 
 @tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
+@jury_access_required
 def download_task_file(task_id, filename):
     """
     Download a resource file attached to a task.
@@ -1163,8 +1194,9 @@ def download_task_file(task_id, filename):
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submit", methods=["POST"])
 @login_required
-@rate_limit(max_requests=30, window_seconds=60)
-def submit_task_code(task_id):
+@jury_access_required
+@rate_limit(max_requests=10, window_seconds=60)
+def submit_task(task_id):
     """
     Submit code cells for execution under a specific task.
     ---
@@ -1252,8 +1284,6 @@ def submit_task_code(task_id):
 
     if not selected_cells or not isinstance(selected_cells, list):
         return jsonify({"error": "selected_cells list is required."}), 400
-
-    from cache_utils import cache_lock
 
     lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
 
@@ -1349,7 +1379,7 @@ def submit_task_code(task_id):
     elif challenge.gpu_required is not None:
         gpu_required = challenge.gpu_required
 
-    queue_name = "gpu_queue" if gpu_required else "celery"
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
     task_files_list = []
@@ -1494,6 +1524,7 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions", methods=["GET"])
 @login_required
+@jury_access_required
 def get_task_submissions(task_id):
     """
     List submissions for a specific task with pagination.
@@ -1535,6 +1566,7 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
 
 @tasks_bp.route("/tasks/<uuid:task_id>/leaderboard", methods=["GET"])
 @login_required
+@jury_access_required
 def get_task_leaderboard(task_id):
     """
     Get cached leaderboard data for a specific task.
@@ -1562,12 +1594,17 @@ def get_task_leaderboard(task_id):
     data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
     if "error" in data:
         return jsonify(data), 403
-    return jsonify(data)
+    response = jsonify(data)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
 @login_required
-def get_task_leaderboard_live(task_id):
+@jury_access_required
+def stream_task_leaderboard(task_id):
     """
     Stream live task leaderboard updates via SSE.
     ---
@@ -1638,12 +1675,20 @@ def get_task_leaderboard_live(task_id):
             except:
                 pass
 
-    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return Response(
+        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+    )
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
-def get_task_submissions_live(task_id):
+@jury_access_required
+def stream_task_submissions(task_id):
     """
     Stream live task submission updates via SSE.
     ---
@@ -1739,7 +1784,14 @@ def get_task_submissions_live(task_id):
             except:
                 pass
 
-    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return Response(
+        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+    )
 
 
 @tasks_bp.route("/worker-status", methods=["GET"])
@@ -1849,8 +1901,7 @@ def _get_worker_status_data():
     inspect = celery.control.inspect(timeout=1.0)
     pings = inspect.ping() or {}
     stats = inspect.stats() or {}
-
-    is_online = pings is not None and len(pings) > 0
+    registered = inspect.registered() or {}
 
     r = None
     try:
@@ -1862,6 +1913,11 @@ def _get_worker_status_data():
 
     clusters = []
     for worker_name in pings.keys():
+        # Only show workers that have task evaluation capabilities
+        w_registered = registered.get(worker_name, []) if registered else []
+        if "tasks.evaluate_submission" not in w_registered:
+            continue
+
         spec = None
         if r:
             try:
@@ -1890,6 +1946,7 @@ def _get_worker_status_data():
             }
         clusters.append(spec)
 
+    is_online = len(clusters) > 0
     res_data = {"status": "online" if is_online else "offline", "clusters": clusters}
     if not is_testing:
         set_cached(cache_key, res_data, timeout=10)

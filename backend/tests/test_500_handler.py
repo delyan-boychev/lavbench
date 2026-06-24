@@ -5,9 +5,7 @@ response is used.  These tests verify 500 behaviour and demonstrate how
 a JSON error handler can be added.
 """
 
-import pytest
 from flask import Flask, jsonify
-from unittest.mock import patch, MagicMock
 
 
 def _make_test_app(register_json_handler=False):

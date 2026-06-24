@@ -1,11 +1,12 @@
 import os
+import io
 import json
 import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import joinedload
-from models import db, Challenge, Submission, User, Task
-from auth_utils import login_required, rate_limit
+from models import db, Challenge, Submission, User, Task, decrypt_field
+from auth_utils import login_required, rate_limit, role_required, jury_access_required
 from sse_utils import publish_submissions_update, publish_leaderboard_update
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ submissions_bp = Blueprint("submissions", __name__)
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/parse-notebook", methods=["POST"])
 @login_required
+@jury_access_required
 @rate_limit(max_requests=30, window_seconds=60)
 def parse_notebook(challenge_id):
     """
@@ -57,7 +59,9 @@ def parse_notebook(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or str(user.challenge_id) != str(challenge_id):
+        from auth_utils import check_competitor_access
+
+        if not user or not check_competitor_access(user, challenge_id):
             return (
                 jsonify(
                     {
@@ -109,6 +113,7 @@ def parse_notebook(challenge_id):
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submit", methods=["POST"])
 @login_required
+@jury_access_required
 @rate_limit(max_requests=30, window_seconds=60)
 def submit_code(challenge_id):
     """
@@ -169,7 +174,9 @@ def submit_code(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or str(user.challenge_id) != str(challenge_id):
+        from auth_utils import check_competitor_access
+
+        if not user or not check_competitor_access(user, challenge_id):
             return (
                 jsonify(
                     {
@@ -415,7 +422,7 @@ def submit_code(challenge_id):
     }
 
     priority = calculate_submission_priority(user_id, user_role)
-    queue_name = "gpu_queue" if gpu_required else "celery"
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     try:
         evaluate_submission.apply_async(
@@ -454,6 +461,7 @@ def submit_code(challenge_id):
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
 @login_required
+@jury_access_required
 def get_submissions(challenge_id):
     """
     Get paginated submissions for a challenge.
@@ -502,7 +510,9 @@ def get_submissions(challenge_id):
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
         user = db.session.get(User, user_id)
-        if not user or str(user.challenge_id) != str(challenge_id):
+        from auth_utils import check_competitor_access
+
+        if not user or not check_competitor_access(user, challenge_id):
             return (
                 jsonify(
                     {
@@ -513,10 +523,34 @@ def get_submissions(challenge_id):
                 403,
             )
 
-        query = Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id).options(
-            joinedload(Submission.challenge),
-            joinedload(Submission.user),
-            joinedload(Submission.task),
+        if challenge.end_time and datetime.utcnow() >= challenge.end_time:
+            return (
+                jsonify(
+                    {
+                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "code": "ERR_SUBMISSIONS_LOCKED",
+                    }
+                ),
+                403,
+            )
+
+        # Check ended stages
+
+        now = datetime.utcnow()
+        active_stages = [s for s in challenge.stages if s.end_time and now < s.end_time]
+        active_stage_ids = [s.id for s in active_stages]
+
+        from sqlalchemy import or_
+
+        query = (
+            Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id)
+            .options(
+                joinedload(Submission.challenge),
+                joinedload(Submission.user),
+                joinedload(Submission.task),
+            )
+            .join(Task)
+            .filter(or_(Task.stage_id == None, Task.stage_id.in_(active_stage_ids)))
         )
     else:
         query = Submission.query.filter_by(challenge_id=challenge_id).options(
@@ -544,6 +578,7 @@ def get_submissions(challenge_id):
 
 @submissions_bp.route("/submissions/<uuid:submission_id>", methods=["GET"])
 @login_required
+@jury_access_required
 def get_submission_detail(submission_id):
     """
     Get details of a specific submission.
@@ -585,22 +620,53 @@ def get_submission_detail(submission_id):
 
     submission = db.get_or_404(Submission, submission_id)
 
-    if user_role == "competitor" and submission.user_id != user_id:
-        return (
-            jsonify(
-                {
-                    "error": "Access denied. You can only view your own submissions.",
-                    "code": "ERR_NOT_OWNER",
-                }
-            ),
-            403,
-        )
+    if user_role == "competitor":
+        if submission.user_id != user_id:
+            return (
+                jsonify(
+                    {
+                        "error": "Access denied. You can only view your own submissions.",
+                        "code": "ERR_NOT_OWNER",
+                    }
+                ),
+                403,
+            )
+
+        challenge = db.session.get(Challenge, submission.challenge_id)
+        if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
+            return (
+                jsonify(
+                    {
+                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "code": "ERR_SUBMISSIONS_LOCKED",
+                    }
+                ),
+                403,
+            )
+
+        if submission.task_id:
+            task = db.session.get(Task, submission.task_id)
+            if task and task.stage_id:
+                from models import Stage
+
+                stage = db.session.get(Stage, task.stage_id)
+                if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
+                    return (
+                        jsonify(
+                            {
+                                "error": "Access denied. Submissions are locked because the stage has ended.",
+                                "code": "ERR_SUBMISSIONS_LOCKED",
+                            }
+                        ),
+                        403,
+                    )
 
     return jsonify(submission.to_dict(view_role=user_role, current_user_id=user_id))
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/select-final", methods=["POST"])
 @login_required
+@jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
 def select_final_submission(submission_id):
     """
@@ -748,6 +814,7 @@ def select_final_submission(submission_id):
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
 @login_required
+@jury_access_required
 def stream_submission_logs(submission_id):
     """
     Stream live logs for a submission using Server-Sent Events (SSE).
@@ -761,8 +828,38 @@ def stream_submission_logs(submission_id):
     if not submission:
         return jsonify({"error": "Submission not found.", "code": "ERR_NOT_FOUND"}), 404
 
-    if user_role == "competitor" and submission.user_id != user_id:
-        return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+    if user_role == "competitor":
+        if submission.user_id != user_id:
+            return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+
+        challenge = db.session.get(Challenge, submission.challenge_id)
+        if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
+            return (
+                jsonify(
+                    {
+                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "code": "ERR_SUBMISSIONS_LOCKED",
+                    }
+                ),
+                403,
+            )
+
+        if submission.task_id:
+            task = db.session.get(Task, submission.task_id)
+            if task and task.stage_id:
+                from models import Stage
+
+                stage = db.session.get(Stage, task.stage_id)
+                if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
+                    return (
+                        jsonify(
+                            {
+                                "error": "Access denied. Submissions are locked because the stage has ended.",
+                                "code": "ERR_SUBMISSIONS_LOCKED",
+                            }
+                        ),
+                        403,
+                    )
 
     def event_generator():
         from cache_utils import get_redis_client
@@ -895,4 +992,91 @@ def stream_submission_logs(submission_id):
     }
     return Response(
         stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+    )
+
+
+@submissions_bp.route(
+    "/challenges/<uuid:challenge_id>/tasks/<uuid:task_id>/users/<uuid:user_id>/download",
+    methods=["GET"],
+)
+@role_required(["admin", "jury"])
+@jury_access_required
+def download_competitor_submission(challenge_id, task_id, user_id):
+    """
+    Download a student's submission resolving to the final selection or the highest public score.
+    """
+    subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
+
+    best_sub = next((s for s in subs if s.is_final_selection), None)
+    if not best_sub:
+        subs_sorted = sorted(
+            subs,
+            key=lambda x: (
+                x.public_score if x.public_score is not None else -999999,
+                -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
+            ),
+            reverse=True,
+        )
+        if subs_sorted:
+            best_sub = subs_sorted[0]
+
+    if not best_sub:
+        return jsonify({"error": "No completed submissions found for this user/task."}), 404
+
+    try:
+        cells_data = (
+            json.loads(best_sub.code_cells)
+            if isinstance(best_sub.code_cells, str)
+            else best_sub.code_cells
+        )
+    except:
+        cells_data = []
+
+    ipynb_cells = []
+    for c in cells_data:
+        if isinstance(c, dict):
+            source_lines = c.get("source", "")
+            cell_type = c.get("type", "code") or c.get("cell_type", "code")
+        else:
+            source_lines = str(c)
+            cell_type = "code"
+
+        if isinstance(source_lines, str):
+            source_lines = [line + "\n" for line in source_lines.splitlines()]
+        ipynb_cells.append(
+            {
+                "cell_type": cell_type,
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": source_lines,
+            }
+        )
+
+    notebook_json = {
+        "cells": ipynb_cells,
+        "metadata": {"language_info": {"name": "python"}},
+        "nbformat": 4,
+        "nbformat_minor": 2,
+    }
+
+    notebook_str = json.dumps(notebook_json, indent=2)
+    mem_file = io.BytesIO(notebook_str.encode("utf-8"))
+
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
+
+    name_part = decrypt_field(user.name) or ""
+    surname_part = decrypt_field(user.surname) or ""
+    comp_name = f"{name_part}_{surname_part}_{user.alias_id}"
+    comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
+
+    task_title = "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-")).strip()
+
+    filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
+
+    from flask import send_file
+
+    return send_file(
+        mem_file, mimetype="application/x-ipynb+json", as_attachment=True, download_name=filename
     )

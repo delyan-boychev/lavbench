@@ -1,8 +1,6 @@
 """Flask application factory and Swagger/OpenAPI configuration."""
 
 import os
-import json
-from datetime import datetime, timedelta
 
 # Load .env before any module that reads environment variables
 from dotenv import load_dotenv
@@ -14,7 +12,7 @@ from flask_cors import CORS
 from flasgger import Swagger
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
-from models import db, User, Challenge, Submission, Task
+from models import db
 
 
 def create_app():

@@ -266,9 +266,11 @@ def _rebuild_listener(main_server_url, worker_token):
                     logger.info("Rebuild notification for task %s", task_id)
                     # Fetch updated config from the server
                     import requests
+                    from worker_utils import _sign_worker_token
 
                     url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"
-                    res = requests.get(url, headers={"X-Worker-Token": worker_token}, timeout=30)
+                    fresh_token = _sign_worker_token("worker")
+                    res = requests.get(url, headers={"X-Worker-Token": fresh_token}, timeout=30)
                     if res.status_code == 200:
                         tasks = res.json().get("tasks", [])
                         for t in tasks:

@@ -21,6 +21,7 @@ export default function UserManager({
   setUsersPage,
   challenges,
   currentUser,
+  initEditUser,
 }) {
   const { t } = useTranslation();
 
@@ -36,17 +37,10 @@ export default function UserManager({
             {t('admin.user_mgmt.register_user_account_desc')}
           </p>
 
-          <form onSubmit={handleRegisterUser} className="flex flex-col gap-4">
-            <InputField
-              label={t('admin.user_mgmt.username_label')}
-              value={newUser.username}
-              onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-              placeholder={t('admin.user_mgmt.username_placeholder_eg')}
-              required
-            />
+          <form onSubmit={handleRegisterUser} noValidate className="flex flex-col gap-4">
             <InputField
               label={t('admin.competitor_reg.email_address')}
-              type="email"
+              type="text"
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
               placeholder={t('admin.user_mgmt.email_placeholder_eg')}
@@ -117,6 +111,21 @@ export default function UserManager({
                   />
                 </div>
               </>
+            )}
+
+            {newUser.role === 'jury' && (
+              <SelectField
+                label={t('admin.user_mgmt.assign_jury_competitions', 'Assign Competitions')}
+                multiple
+                searchable
+                value={newUser.jury_challenges || []}
+                onChange={(vals) => setNewUser({ ...newUser, jury_challenges: vals })}
+                options={challenges.map((c) => ({ value: c.id.toString(), label: c.title }))}
+                placeholder={t(
+                  'admin.user_mgmt.no_competitions_assigned',
+                  'No competitions assigned',
+                )}
+              />
             )}
 
             <Button type="submit" variant="primary" className="mt-2">
@@ -217,6 +226,14 @@ export default function UserManager({
                       </td>
                       <td>{user.email || '—'}</td>
                       <td style={{ textAlign: 'right' }}>
+                        {user.id !== currentUser.id && (
+                          <button
+                            onClick={() => initEditUser(user)}
+                            className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer mr-3"
+                          >
+                            {t('common.edit', 'Edit')}
+                          </button>
+                        )}
                         {user.id !== currentUser.id ? (
                           <button
                             onClick={() => handleDeleteUser(user.id, user.username)}

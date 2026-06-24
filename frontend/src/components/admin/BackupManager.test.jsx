@@ -12,6 +12,12 @@ vi.mock('../../services/ApiService', () => ({
   },
 }));
 
+vi.mock('../../context/AppContext', () => ({
+  useApp: () => ({
+    selectedChallenge: { id: 'c1-id', timezone: 'UTC' },
+  }),
+}));
+
 describe('BackupManager Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,15 +36,5 @@ describe('BackupManager Component', () => {
     await waitFor(() => {
       expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
     });
-  });
-
-  it('renders competition backup section', async () => {
-    api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager challengeId={5} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Competition Backups')).toBeInTheDocument();
-    });
-    expect(screen.queryByText('Force Backup Now')).not.toBeInTheDocument();
   });
 });

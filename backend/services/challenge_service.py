@@ -250,9 +250,14 @@ def generate_exported_results_csv(challenge, view_role="admin"):
     return output.getvalue()
 
 
-def import_challenge_from_dict(data):
+def import_challenge_from_dict(data, zip_ref=None):
     """Create a challenge (with stages and tasks) from an exported dict.
     Returns the created Challenge object. Raises ValueError on invalid data."""
+    import os
+    from flask import current_app
+    from werkzeug.utils import secure_filename
+    from services.file_validation import check_dangerous_extension
+
     title = data.get("title")
     if not title:
         raise ValueError("Challenge title is required.")
@@ -308,12 +313,27 @@ def import_challenge_from_dict(data):
     for t_data in data.get("tasks", []):
         if not t_data.get("title"):
             continue
+        files_data = t_data.get("files", [])
+        if isinstance(files_data, list):
+            files_str = json.dumps(files_data)
+        elif isinstance(files_data, str):
+            try:
+                parsed = json.loads(files_data)
+                if isinstance(parsed, list):
+                    files_str = files_data
+                else:
+                    files_str = json.dumps([])
+            except Exception:
+                files_str = json.dumps([])
+        else:
+            files_str = json.dumps([])
+
         task = Task(
             challenge_id=challenge.id,
             stage_id=old_to_new_stage.get(t_data.get("stage_id")),
             title=t_data["title"],
             description=t_data.get("description"),
-            files=json.dumps(t_data.get("files", [])),
+            files=files_str,
             ram_limit_mb=t_data.get("ram_limit_mb"),
             time_limit_sec=t_data.get("time_limit_sec"),
             gpu_required=t_data.get("gpu_required"),
@@ -330,7 +350,68 @@ def import_challenge_from_dict(data):
             max_submissions_per_period=t_data.get("max_submissions_per_period"),
             submission_period_hours=t_data.get("submission_period_hours"),
         )
+        if t_data.get("hf_api_key"):
+            task.hf_api_key = t_data.get("hf_api_key")
+
         db.session.add(task)
+        db.session.flush()
+
+        old_task_id = t_data.get("id")
+        if zip_ref and old_task_id:
+            prefix = f"tasks/{old_task_id}/"
+            upload_folder = current_app.config.get("UPLOAD_FOLDER")
+            if upload_folder:
+                task_dir = os.path.join(upload_folder, f"task_{task.id}")
+                os.makedirs(task_dir, exist_ok=True)
+
+                for member in zip_ref.namelist():
+                    if member.startswith(prefix):
+                        basename = os.path.basename(member)
+                        if not basename:
+                            continue
+
+                        if ".." in member or member.startswith("/") or member.startswith("\\"):
+                            continue
+
+                        safe_name = secure_filename(basename)
+                        if not safe_name:
+                            continue
+
+                        target_path = os.path.join(task_dir, safe_name)
+                        try:
+                            info = zip_ref.getinfo(member)
+                            MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+                            if info.file_size > MAX_FILE_SIZE_BYTES:
+                                raise ValueError(
+                                    f"File {basename} in ZIP exceeds the maximum allowed size of 25MB."
+                                )
+
+                            if check_dangerous_extension(safe_name):
+                                raise ValueError(f"Dangerous file extension: {safe_name}")
+
+                            with zip_ref.open(member) as source, open(target_path, "wb") as target:
+                                target.write(source.read())
+                        except Exception as e:
+                            db.session.rollback()
+                            raise ValueError(f"Failed to extract {basename} from ZIP: {str(e)}")
+
+                if t_data.get("evaluator_script_path"):
+                    eval_base = os.path.basename(t_data["evaluator_script_path"])
+                    eval_path = os.path.join(task_dir, secure_filename(eval_base))
+                    if os.path.isfile(eval_path):
+                        task.evaluator_script_path = eval_path
+
+                if t_data.get("baseline_notebook_path"):
+                    base_base = os.path.basename(t_data["baseline_notebook_path"])
+                    base_path = os.path.join(task_dir, secure_filename(base_base))
+                    if os.path.isfile(base_path):
+                        task.baseline_notebook_path = base_path
+
+                if t_data.get("solution_notebook_path"):
+                    sol_base = os.path.basename(t_data["solution_notebook_path"])
+                    sol_path = os.path.join(task_dir, secure_filename(sol_base))
+                    if os.path.isfile(sol_path):
+                        task.solution_notebook_path = sol_path
 
     db.session.commit()
     return challenge

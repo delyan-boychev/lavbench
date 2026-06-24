@@ -79,6 +79,24 @@ export default function ChallengeConfig({
             required
           />
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <InputField
+            label={t('admin.test_stage_start')}
+            type="datetime-local"
+            value={newChallenge.test_stage_start_time || ''}
+            onChange={(e) =>
+              setNewChallenge({ ...newChallenge, test_stage_start_time: e.target.value })
+            }
+          />
+          <InputField
+            label={t('admin.test_stage_end')}
+            type="datetime-local"
+            value={newChallenge.test_stage_end_time || ''}
+            onChange={(e) =>
+              setNewChallenge({ ...newChallenge, test_stage_end_time: e.target.value })
+            }
+          />
+        </div>
         <div className="flex flex-col gap-3 mt-2.5">
           <ToggleField
             label={t('admin.requires_gpu_workers')}

@@ -1,6 +1,5 @@
 """Celery task for asynchronous leaderboard recalculation."""
 
-import os
 from models import Challenge
 
 

@@ -154,15 +154,9 @@ describe('CompetitorManager', () => {
     expect(screen.getByText('Import Competitors CSV')).toBeInTheDocument();
   });
 
-  it('shows edit form when editingUser is set', () => {
+  it('shows manual form even when editingUser is set', () => {
     render(<CompetitorManager {...baseProps} editingUser={{ id: 1, username: 'testuser' }} />);
-    expect(screen.getByText('Edit Competitor Details')).toBeInTheDocument();
-    expect(screen.getByText(/testuser/)).toBeInTheDocument();
-  });
-
-  it('does not show manual form when editingUser is set', () => {
-    render(<CompetitorManager {...baseProps} editingUser={{ id: 1, username: 'testuser' }} />);
-    expect(screen.queryByText('Manual Competitor Registration')).not.toBeInTheDocument();
+    expect(screen.getByText('Manual Competitor Registration')).toBeInTheDocument();
   });
 
   it('shows generated credentials when provided', () => {
@@ -228,19 +222,6 @@ describe('CompetitorManager', () => {
     render(<CompetitorManager {...baseProps} isCSVImportDisabled={true} />);
     expect(
       screen.getByText('This competition has started. Jury members cannot import competitors.'),
-    ).toBeInTheDocument();
-  });
-
-  it('shows competition started warning when edit is disabled', () => {
-    render(
-      <CompetitorManager
-        {...baseProps}
-        editingUser={{ id: 1, username: 'testuser' }}
-        isEditDisabled={true}
-      />,
-    );
-    expect(
-      screen.getByText('This competition has started. Jury members cannot modify competitors.'),
     ).toBeInTheDocument();
   });
 

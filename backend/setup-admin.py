@@ -1,5 +1,4 @@
 import os
-import sys
 import secrets
 import hashlib
 from werkzeug.security import generate_password_hash

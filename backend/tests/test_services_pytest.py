@@ -1,11 +1,9 @@
 import os
 import sys
 import pytest
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, Task
 from services.submission_service import check_execution_rules, calculate_submission_priority
 from datetime import datetime

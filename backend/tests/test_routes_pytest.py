@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
 from services.submission_service import calculate_submission_priority
@@ -604,6 +603,7 @@ class TestRouteLevelLogic:
         mock_inspect = mock_inspect_cls.return_value
 
         mock_inspect.ping.return_value = {"celery@gpu-worker": {"ok": "pong"}}
+        mock_inspect.registered.return_value = {"celery@gpu-worker": ["tasks.evaluate_submission"]}
         res = self.client.get(
             "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
         )
@@ -1177,6 +1177,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
         db.session.commit()
 
         from cache_utils import invalidate_leaderboard_cache
@@ -1232,6 +1233,12 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
 
+        self.challenge.reveal_results = True
+        db.session.commit()
+        from cache_utils import invalidate_leaderboard_cache
+
+        invalidate_leaderboard_cache(self.challenge.id)
+
         res = self.client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
@@ -1271,6 +1278,7 @@ class TestRouteLevelLogic:
 
     def test_finalize_constraints_and_permissions(self):
         self.challenge.scores_finalized = False
+        self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
         db.session.commit()
 
         jury = User(
@@ -1281,9 +1289,20 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
-        from routes.auth import generate_token
 
         jury_token = generate_token(jury.id, "jury")
+
+        res_before = self.client.post(
+            f"/api/challenges/{self.challenge.id}/finalize",
+            data=json.dumps({"reveal_results": True}),
+            content_type="application/json",
+            headers=self.get_auth_header(jury_token),
+        )
+        assert res_before.status_code == 400
+        assert "before its end time" in res_before.get_json()["error"].lower()
+
+        self.challenge.end_time = datetime.utcnow() - timedelta(minutes=1)
+        db.session.commit()
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
@@ -1323,9 +1342,12 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
-        from routes.auth import generate_token
 
         jury_token = generate_token(jury.id, "jury")
+
+        self.challenge.start_time = datetime.utcnow() - timedelta(hours=5)
+        self.challenge.end_time = datetime.utcnow() + timedelta(hours=24)
+        db.session.commit()
 
         payload = {
             "title": "Stage 1",
@@ -1398,6 +1420,16 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 400
         assert "has not started yet" in res.get_json()["error"]
+
+        # Try to finalize before the stage has ended
+        res_before = self.client.post(
+            f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
+            data=json.dumps({"finalize_type": "visible"}),
+            content_type="application/json",
+            headers=self.get_auth_header(jury_token),
+        )
+        assert res_before.status_code == 400
+        assert "before its end time" in res_before.get_json()["error"].lower()
 
         from models import Stage
 
@@ -1495,45 +1527,6 @@ class TestRouteLevelLogic:
         comp_in_db = User.query.filter_by(challenge_id=self.challenge.id, role="competitor").first()
         assert comp_in_db is None
 
-    def test_test_competition_creation_and_unstarted_limits(self):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=2)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=4)
-        db.session.commit()
-        from cache_utils import invalidate_challenge_cache
-
-        invalidate_challenge_cache(self.challenge.id)
-
-        res = self.client.get(
-            f"/api/challenges/{self.challenge.id}",
-            headers=self.get_auth_header(self.competitor_token),
-        )
-        assert res.status_code == 200
-        data = res.get_json()
-        assert len(data["tasks"]) == 0
-        assert len(data["stages"]) == 0
-        assert data["num_tasks"] == 1
-
-        res = self.client.get(
-            f"/api/tasks/{self.task.id}", headers=self.get_auth_header(self.competitor_token)
-        )
-        assert res.status_code == 403
-
-        res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/test-competition",
-            headers=self.get_auth_header(self.admin_token),
-        )
-        assert res.status_code == 201
-        data = res.get_json()
-        assert "Test: " in data["test_competition"]["title"]
-        assert data["test_competition"]["max_eval_requests"] == 100
-        assert data["test_competition"]["double_blind"] is False
-        assert len(data["test_competition"]["tasks"]) == 1
-        assert data["test_competition"]["tasks"][0]["title"] == "Warm-up Test Task"
-
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=2)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
-        db.session.commit()
-
     def test_archived_challenges_visibility(self):
         self.challenge.is_archived = True
         db.session.commit()
@@ -1576,6 +1569,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
         db.session.commit()
 
         payload_no_reason = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}

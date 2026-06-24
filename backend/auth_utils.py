@@ -346,3 +346,94 @@ def check_worker_auth(token):
         return False
 
     return True
+
+
+def jury_access_required(f):
+    """Decorator: restricts jury members to only access endpoints of challenges they are assigned to.
+
+    Admins are always allowed access. Other roles are not checked here.
+    """
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not hasattr(request, "user") or not request.user:
+            token = _extract_token()
+            user_data = verify_token(token)
+            if not user_data:
+                return (
+                    jsonify(
+                        {"error": "Unauthorized access. Token is missing, expired, or invalid."}
+                    ),
+                    401,
+                )
+            request.user = user_data
+
+        user_role = request.user.get("role")
+        user_id = request.user.get("user_id")
+
+        if user_role == "jury":
+            challenge_id = kwargs.get("challenge_id")
+
+            from models import db, Task, Stage, Submission, User, JuryChallenge
+
+            if not challenge_id:
+                if "task_id" in kwargs:
+                    task = db.session.get(Task, kwargs["task_id"])
+                    if task:
+                        challenge_id = task.challenge_id
+                elif "stage_id" in kwargs:
+                    stage = db.session.get(Stage, kwargs["stage_id"])
+                    if stage:
+                        challenge_id = stage.challenge_id
+                elif "submission_id" in kwargs:
+                    sub = db.session.get(Submission, kwargs["submission_id"])
+                    if sub:
+                        challenge_id = sub.challenge_id
+                elif "user_id" in kwargs:
+                    usr = db.session.get(User, kwargs["user_id"])
+                    if usr and usr.challenge_id:
+                        challenge_id = usr.challenge_id
+
+            if not challenge_id:
+                challenge_id = request.args.get("challenge_id") or (
+                    request.json.get("challenge_id") if request.is_json else None
+                )
+
+            if not challenge_id:
+                return (
+                    jsonify(
+                        {
+                            "error": "Access denied. Challenge context not found.",
+                            "code": "ERR_ACCESS_DENIED",
+                        }
+                    ),
+                    403,
+                )
+
+            assigned = (
+                db.session.query(JuryChallenge)
+                .filter_by(jury_id=user_id, challenge_id=challenge_id)
+                .first()
+            )
+
+            if not assigned:
+                return (
+                    jsonify(
+                        {
+                            "error": "Access denied. You are not assigned to this competition.",
+                            "code": "ERR_ACCESS_DENIED",
+                        }
+                    ),
+                    403,
+                )
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def check_competitor_access(user, challenge_id):
+    """Check if a competitor user is assigned to the given challenge."""
+    if not user or user.challenge_id is None or challenge_id is None:
+        return False
+    return str(user.challenge_id) == str(challenge_id)

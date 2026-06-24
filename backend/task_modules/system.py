@@ -3,7 +3,6 @@
 import os
 import glob
 import json
-import time
 import tempfile
 import subprocess
 import urllib.parse
@@ -29,13 +28,17 @@ def run_register_worker_specs(celery_app):
 
     api_base = os.environ.get("API_BASE", "http://localhost:5001/api")
 
+    gpu_count = 0
+    if gpu_id:
+        gpu_count = len([g for g in gpu_id.split(",") if g.strip()])
+
     try:
         requests.post(
             f"{api_base}/admin/workers/register",
             json={
                 "worker_id": machine_id,
                 "ram_gb": ram_gb,
-                "gpu_count": 1 if gpu_id else 0,
+                "gpu_count": gpu_count,
                 "status": "idle",
             },
             timeout=5,
@@ -44,35 +47,18 @@ def run_register_worker_specs(celery_app):
         logger.warning("Worker registration failed for ID %s: %s", machine_id, str(e))
 
 
-def run_backup(app, auto=True, challenge_id=None, state=None, db_only=False):
+def run_backup(app, auto=True, db_only=False):
     """
     Unified backup: pg_dump via .pgpass + tar.gz of DB dump + uploads.
-    - auto=True  → saves to /backups/auto_*.tar.gz, rotates to latest 6
+    - auto=True  → saves to /backups/auto_*.tar.gz, rotates dynamically
     - auto=False → saves to /backups/manual_*.tar.gz, never auto-deleted
-    - challenge_id → saves to /backups/challenge_{id}/{state}_*.tar.gz
-    - state → one of: submission_ended, grace_ended, finalized
     - db_only → if True, only backs up the database (no uploads folder)
     """
     prefix = "auto" if auto else "manual"
-    if challenge_id and state:
-        prefix = state
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
     backup_dir = os.environ.get("BACKUPS_DIR", "/backups")
-    if challenge_id:
-        backup_dir = os.path.join(backup_dir, f"challenge_{challenge_id}")
     os.makedirs(backup_dir, exist_ok=True)
-
-    if challenge_id and state:
-        pattern = os.path.join(backup_dir, f"{state}_*.tar.gz")
-        existing_backups = glob.glob(pattern)
-        if existing_backups:
-            latest_existing = sorted(existing_backups, key=os.path.getctime)[-1]
-            filename = os.path.basename(latest_existing)
-            print(
-                f"[BACKUP] Skipping duplicate backup: {filename} already exists for challenge {challenge_id} ({state})"
-            )
-            return filename
 
     filename = f"{prefix}_{ts}.tar.gz"
     target = os.path.join(backup_dir, filename)
@@ -94,22 +80,27 @@ def run_backup(app, auto=True, challenge_id=None, state=None, db_only=False):
 
         env = os.environ.copy()
         env["PGPASSFILE"] = pgpass_path
+        env["COPYFILE_DISABLE"] = "1"
 
         dump_path = os.path.join(tmp, "db_dump.sql")
+        pg_dump_cmd = [
+            "pg_dump",
+            "-h",
+            host,
+            "-U",
+            username,
+            "-p",
+            port,
+            "-d",
+            database,
+            "-f",
+            dump_path,
+        ]
+        if auto:
+            pg_dump_cmd = ["nice", "-n", "19"] + pg_dump_cmd
+
         result = subprocess.run(
-            [
-                "pg_dump",
-                "-h",
-                host,
-                "-U",
-                username,
-                "-p",
-                port,
-                "-d",
-                database,
-                "-f",
-                dump_path,
-            ],
+            pg_dump_cmd,
             env=env,
             capture_output=True,
             text=True,
@@ -117,39 +108,92 @@ def run_backup(app, auto=True, challenge_id=None, state=None, db_only=False):
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
 
+        # Dump audit logs to audit_logs.json in temp directory
+        audit_logs_path = os.path.join(tmp, "audit_logs.json")
+        try:
+            from models import AuditLog
+
+            with app.app_context():
+                logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+
+                def serialize_audit(log):
+                    return {
+                        "id": str(log.id),
+                        "admin_id": str(log.admin_id) if log.admin_id else None,
+                        "action_type": log.action_type,
+                        "target_type": log.target_type,
+                        "target_id": str(log.target_id) if log.target_id else None,
+                        "details": log.details,
+                        "ip_address": log.ip_address,
+                        "target_user_id": str(log.target_user_id) if log.target_user_id else None,
+                        "task_id": str(log.task_id) if log.task_id else None,
+                        "old_score": log.old_score,
+                        "new_score": log.new_score,
+                        "reason": log.reason,
+                        "timestamp": log.timestamp.isoformat() + "Z" if log.timestamp else None,
+                    }
+
+                serialized_logs = [serialize_audit(log) for log in logs]
+            with open(audit_logs_path, "w") as f:
+                json.dump(serialized_logs, f, indent=2)
+        except Exception as e:
+            logger.error("Failed to dump audit logs during backup: %s", str(e))
+            raise RuntimeError(f"Failed to dump audit logs: {str(e)}")
+
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
-        tar_args = ["tar", "-czf", target, "-C", tmp, "db_dump.sql"]
+        tar_args = [
+            "tar",
+            "--exclude=backups",
+            "--exclude=*.tar.gz",
+            "-czf",
+            target,
+            "-C",
+            tmp,
+            "db_dump.sql",
+            "audit_logs.json",
+        ]
         if not db_only and uploads_path and os.path.isdir(uploads_path):
             tar_args.extend(["-C", os.path.dirname(uploads_path), os.path.basename(uploads_path)])
 
-        result = subprocess.run(tar_args, capture_output=True, text=True)
+        if auto:
+            tar_args = ["nice", "-n", "19"] + tar_args
+
+        result = subprocess.run(tar_args, env=env, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")
 
     file_size = os.path.getsize(target)
 
-    # Rotation: keep last 6 auto backups in root directory only
-    if auto and not challenge_id:
+    # Rotation: keep last N auto backups in root directory only
+    if auto:
         pattern = os.path.join(backup_dir, "auto_*.tar.gz")
         auto_files = sorted(glob.glob(pattern), key=os.path.getctime)
-        for old in auto_files[:-6]:
-            try:
-                os.remove(old)
-            except OSError:
-                pass
 
-    # Rotation: keep last 3 challenge-specific lifecycle backups
-    if challenge_id:
-        pattern = os.path.join(backup_dir, "*.tar.gz")
-        challenge_files = sorted(glob.glob(pattern), key=os.path.getctime)
-        for old in challenge_files[:-3]:
+        # Cap kept auto-backups based on active competition status
+        keep_count = 3
+        try:
+            from models import Challenge
+
+            now = datetime.utcnow()
+            active_comp = Challenge.query.filter(
+                Challenge.is_active == True,
+                Challenge.is_archived == False,
+                Challenge.start_time <= now,
+                (Challenge.end_time == None) | (Challenge.end_time >= now),
+            ).first()
+            if active_comp is not None:
+                keep_count = 6
+        except Exception:
+            pass
+
+        for old in auto_files[:-keep_count]:
             try:
                 os.remove(old)
             except OSError:
                 pass
 
     # SSE notification
-    _publish_backup_event(filename, file_size, challenge_id, state)
+    _publish_backup_event(filename, file_size, None, None)
 
     return filename
 
