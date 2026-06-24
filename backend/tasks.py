@@ -98,9 +98,7 @@ from task_modules.leaderboard import run_recalculate_all_leaderboards
 def evaluate_submission(self, submission_id, metadata=None):
     """Celery task: run a student submission through the evaluation pipeline in Docker."""
     try:
-        return run_eval_submission(
-            self, submission_id, metadata, app, db, Submission, Challenge
-        )
+        return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except Exception as e:
         from cache_utils import log_dead_letter
 
@@ -134,13 +132,9 @@ def recalculate_leaderboard(challenge_id):
         challenge = Challenge.query.get(challenge_id)
         if not challenge:
             return
-        build_and_cache_leaderboard(
-            challenge_id, is_frozen_view=False, force_rebuild=True
-        )
+        build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=True)
         if challenge.is_frozen:
-            build_and_cache_leaderboard(
-                challenge_id, is_frozen_view=True, force_rebuild=True
-            )
+            build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
 
         from cache_utils import get_redis_client
 
@@ -190,11 +184,7 @@ def check_and_backup():
 
         active_count = 0
         for c in challenges:
-            if (
-                c.start_time
-                and c.start_time <= now
-                and (not c.end_time or c.end_time >= now)
-            ):
+            if c.start_time and c.start_time <= now and (not c.end_time or c.end_time >= now):
                 active_count += 1
 
         # General auto backup: every 20min when active, every 6h when idle
@@ -302,9 +292,7 @@ def watchdog_stuck_submissions():
         ).all()
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(
-                ["running", "building_env", "running_inference", "evaluating"]
-            ),
+            Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
             Submission.executed_at.isnot(None),
         ).all()
         now = datetime.utcnow()
@@ -312,9 +300,7 @@ def watchdog_stuck_submissions():
         for sub in timed_out_candidates + running_candidates:
             task_time_limit = 300
             if sub.task:
-                task_time_limit = (
-                    sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
-                )
+                task_time_limit = sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
             if sub.executed_at:
                 max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
                 if now - sub.executed_at <= max_runtime:
@@ -326,9 +312,7 @@ def watchdog_stuck_submissions():
                 reason = "never picked up by a worker (10m+ queued)"
             sub.status = "failed"
             sub.detailed_status = "failed"
-            sub.logs = (
-                sub.logs or ""
-            ) + f"\n[WATCHDOG] Submission timed out — {reason}."
+            sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
             timeout_count += 1
             try:
                 from sse_utils import publish_submission_status
@@ -377,11 +361,7 @@ def recalculate_dirty_leaderboards():
 
         with app.app_context():
             for cid_bytes in dirty_challenges:
-                cid = (
-                    cid_bytes.decode("utf-8")
-                    if isinstance(cid_bytes, bytes)
-                    else str(cid_bytes)
-                )
+                cid = cid_bytes.decode("utf-8") if isinstance(cid_bytes, bytes) else str(cid_bytes)
 
                 # Remove from dirty set first to prevent race condition
                 r.srem("leaderboard:dirty_challenges", cid)
@@ -392,22 +372,16 @@ def recalculate_dirty_leaderboards():
                         continue
 
                     # Rebuild cache
-                    build_and_cache_leaderboard(
-                        cid, is_frozen_view=False, force_rebuild=True
-                    )
+                    build_and_cache_leaderboard(cid, is_frozen_view=False, force_rebuild=True)
                     if challenge.is_frozen:
-                        build_and_cache_leaderboard(
-                            cid, is_frozen_view=True, force_rebuild=True
-                        )
+                        build_and_cache_leaderboard(cid, is_frozen_view=True, force_rebuild=True)
 
                     # Publish event for live SSE updates
                     channel_name = f"challenge_{cid}_leaderboard"
                     r.publish(channel_name, json.dumps({"event": "update"}))
                     recalculated_count += 1
                 except Exception as e:
-                    logger.error(
-                        "recalculate_dirty_leaderboards: failed for %s: %s", cid, e
-                    )
+                    logger.error("recalculate_dirty_leaderboards: failed for %s: %s", cid, e)
 
         return {"recalculated": recalculated_count}
     except Exception as e:

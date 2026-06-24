@@ -71,9 +71,7 @@ class TestSubmissionRunnerDocker:
 
         mocker.patch("subprocess.run", side_effect=mock_run)
         mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch(
-            "task_modules.submission_runner.report_status_to_server", return_value=True
-        )
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
@@ -342,16 +340,12 @@ class TestCalculateWeightedScoreEdgeCases:
 
     def test_cfg_zero_total_weight_returns_zero(self):
         """All weights zero → total_weight 0 → return 0.0 immediately."""
-        score = calculate_weighted_score(
-            {"accuracy": 0.9}, {"accuracy": {"weight": 0.0}}
-        )
+        score = calculate_weighted_score({"accuracy": 0.9}, {"accuracy": {"weight": 0.0}})
         assert score == 0.0
 
     def test_cfg_weighted_brier_score(self):
         """In the weighted path, brier_score → 1 - val normalization."""
-        score = calculate_weighted_score(
-            {"brier_score": 0.2}, {"brier_score": {"weight": 1.0}}
-        )
+        score = calculate_weighted_score({"brier_score": 0.2}, {"brier_score": {"weight": 1.0}})
         assert score == pytest.approx(0.8)
 
     def test_cfg_lower_better_val_negative_one_returns_zero(self):
@@ -361,9 +355,7 @@ class TestCalculateWeightedScoreEdgeCases:
 
     def test_cfg_nan_norm_val_clamped_to_zero(self):
         """NaN/inf higher-is-better metric values → guard returns 0.0 contribution."""
-        score = calculate_weighted_score(
-            {"accuracy": math.inf}, {"accuracy": {"weight": 1.0}}
-        )
+        score = calculate_weighted_score({"accuracy": math.inf}, {"accuracy": {"weight": 1.0}})
         assert score == pytest.approx(0.0)
 
 
@@ -396,13 +388,9 @@ class TestFetchHFKeyFromServer:
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"hf_key": "hf_secret_token"}
-        mocker.patch(
-            "task_modules.submission_runner.requests.get", return_value=mock_resp
-        )
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server(
-            "task_1", "http://server:5000", "worker_token"
-        )
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "worker_token")
         assert result == "hf_secret_token"
 
     def test_http_403_returns_empty(self, mocker):
@@ -410,9 +398,7 @@ class TestFetchHFKeyFromServer:
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 403
-        mocker.patch(
-            "task_modules.submission_runner.requests.get", return_value=mock_resp
-        )
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_1", "http://server:5000", "bad_token")
         assert result == ""
@@ -422,9 +408,7 @@ class TestFetchHFKeyFromServer:
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 404
-        mocker.patch(
-            "task_modules.submission_runner.requests.get", return_value=mock_resp
-        )
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_999", "http://server:5000", "token")
         assert result == ""
@@ -457,9 +441,7 @@ class TestFetchHFKeyFromServer:
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {}  # No "hf_key" field
-        mocker.patch(
-            "task_modules.submission_runner.requests.get", return_value=mock_resp
-        )
+        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
         assert result == ""
@@ -495,18 +477,14 @@ class TestImageExists:
     def test_subprocess_file_not_found_returns_false(self, mocker):
         from task_modules.submission_runner import _image_exists
 
-        mocker.patch(
-            "subprocess.run", side_effect=FileNotFoundError("docker command not found")
-        )
+        mocker.patch("subprocess.run", side_effect=FileNotFoundError("docker command not found"))
         assert _image_exists("any_image") is False
 
     def test_subprocess_timeout_returns_false(self, mocker):
         from task_modules.submission_runner import _image_exists
         import subprocess
 
-        mocker.patch(
-            "subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10)
-        )
+        mocker.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10))
         assert _image_exists("any_image") is False
 
     def test_subprocess_os_error_returns_false(self, mocker):
@@ -694,9 +672,7 @@ class TestDockerNotAvailable:
 
         mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
         mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch(
-            "task_modules.submission_runner.report_status_to_server", return_value=True
-        )
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
@@ -726,9 +702,7 @@ class TestDockerNotAvailable:
 
         mocker.patch("subprocess.run", side_effect=OSError("docker binary missing"))
         mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch(
-            "task_modules.submission_runner.report_status_to_server", return_value=True
-        )
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
@@ -768,9 +742,7 @@ class TestCodeCellsParseError:
 
         mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
         mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch(
-            "task_modules.submission_runner.report_status_to_server", return_value=True
-        )
+        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
@@ -790,9 +762,7 @@ class TestCodeCellsParseError:
                 raise ValueError("Simulated malformed code_cells JSON")
             return original_loads(s, *a, **kw)
 
-        mocker.patch(
-            "task_modules.submission_runner.json.loads", side_effect=patched_loads
-        )
+        mocker.patch("task_modules.submission_runner.json.loads", side_effect=patched_loads)
 
         metadata = {
             "task_id": 1,
