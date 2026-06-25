@@ -220,7 +220,10 @@ def run_docker_prune():
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
     try:
         result = subprocess.run(
-            ["docker", "image", "prune", "-f"], capture_output=True, text=True, check=True
+            ["docker", "image", "prune", "-f"],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         logger.info("Docker image prune succeeded: %s", result.stdout.strip())
         return {"status": "success", "output": result.stdout.strip()}

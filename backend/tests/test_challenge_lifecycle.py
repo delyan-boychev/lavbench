@@ -6,8 +6,6 @@ Uses fixture-based patterns from conftest.py.
 import json
 import pytest
 
-from models import Challenge
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Finalize endpoint:  POST /challenges/<id>/finalize
 # Requires role: jury
@@ -25,7 +23,13 @@ class TestFinalizeChallenge:
         db_session.commit()
 
     def test_finalize_as_jury_success(
-        self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        sample_task,
+        create_user,
     ):
         jury = create_user(username="finalize-jury", role="jury")
         from auth_utils import generate_token
@@ -85,7 +89,13 @@ class TestFinalizeChallenge:
         assert res.status_code == 404
 
     def test_finalize_missing_manual_points(
-        self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        sample_task,
+        create_user,
     ):
         jury = create_user(username="finalize-jury-mp", role="jury")
         from auth_utils import generate_token
@@ -106,7 +116,13 @@ class TestFinalizeChallenge:
         assert "missing manual points" in res.get_json()["error"].lower()
 
     def test_finalize_repeat_finalize(
-        self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        sample_task,
+        create_user,
     ):
         jury = create_user(username="finalize-jury-rf", role="jury")
         from auth_utils import generate_token
@@ -135,7 +151,13 @@ class TestFinalizeChallenge:
         assert "already finalized" in res2.get_json()["error"].lower()
 
     def test_finalize_reveal_options(
-        self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        sample_task,
+        create_user,
     ):
         jury = create_user(username="finalize-jury-ro", role="jury")
         from auth_utils import generate_token
@@ -194,7 +216,13 @@ class TestFinalizeChallenge:
         assert sample_challenge.reveal_results is False
 
     def test_finalize_before_ended_returns_400(
-        self, client, db_session, sample_challenge, sample_competitor, sample_task, create_user
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        sample_task,
+        create_user,
     ):
         from datetime import datetime, timedelta
 
@@ -649,7 +677,13 @@ class TestTestStageScoring:
             assert not found, "Test stage submission should not appear in leaderboard"
 
     def test_regular_stage_submission_still_counts(
-        self, client, db_session, sample_challenge, sample_task, sample_competitor, tokens
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_task,
+        sample_competitor,
+        tokens,
     ):
         from models import Submission, Stage
 
@@ -710,7 +744,10 @@ class TestTaskStageAssignment:
         db_session.add(stage)
         db_session.commit()
 
-        headers = {"Authorization": f"Bearer {tokens.admin}", "Content-Type": "multipart/form-data"}
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "Content-Type": "multipart/form-data",
+        }
         import io
         import json as json_mod
 
@@ -738,7 +775,10 @@ class TestTaskStageAssignment:
     def test_task_without_stage_id_allowed_when_no_stages(
         self, client, db_session, sample_challenge, tokens
     ):
-        headers = {"Authorization": f"Bearer {tokens.admin}", "Content-Type": "multipart/form-data"}
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "Content-Type": "multipart/form-data",
+        }
         import io
         import json as json_mod
 
@@ -782,7 +822,10 @@ class TestTaskStageAssignment:
         db_session.add(test_stage)
         db_session.commit()
 
-        headers = {"Authorization": f"Bearer {tokens.admin}", "Content-Type": "multipart/form-data"}
+        headers = {
+            "Authorization": f"Bearer {tokens.admin}",
+            "Content-Type": "multipart/form-data",
+        }
         import io
         import json as json_mod
 

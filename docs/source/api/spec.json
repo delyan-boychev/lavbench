@@ -508,41 +508,6 @@
         ]
       }
     },
-    "/api/admin/challenges/{challenge_id}/download-submissions-zip": {
-      "get": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Download all completed student submissions as a ZIP archive.",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
     "/api/admin/challenges/{challenge_id}/reset-all-passwords": {
       "post": {
         "parameters": [

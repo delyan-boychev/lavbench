@@ -17,7 +17,6 @@ from evaluation_engine import validate_parquet_schema, evaluate_predictions
 
 
 class TestUnifiedParquetEvaluation:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, app_ctx, app):
         self.app = app
@@ -100,7 +99,13 @@ class TestUnifiedParquetEvaluation:
         df_labels.to_parquet(labels_parquet_path)
 
         task.files = json.dumps(
-            [{"filename": "labels.parquet", "saved_name": "labels.parquet", "size_bytes": 1000}]
+            [
+                {
+                    "filename": "labels.parquet",
+                    "saved_name": "labels.parquet",
+                    "size_bytes": 1000,
+                }
+            ]
         )
         db.session.commit()
 
@@ -134,7 +139,6 @@ class TestUnifiedParquetEvaluation:
             ),
             patch("tasks.app", self.app),
         ):
-
             res = evaluate_submission(sub.id)
             sub_reloaded = db.session.get(Submission, sub.id)
             db.session.refresh(sub_reloaded)
@@ -168,7 +172,6 @@ class TestUnifiedParquetEvaluation:
             ),
             patch("tasks.app", self.app),
         ):
-
             res = evaluate_submission(sub.id)
 
         db.session.refresh(sub)
@@ -757,7 +760,9 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
         res = evaluate_predictions(
-            df_s, df_l, {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}}
+            df_s,
+            df_l,
+            {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
         )
         assert res["accuracy"] == pytest.approx(0.0)
 
@@ -766,7 +771,9 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
         res = evaluate_predictions(
-            df_s, df_l, {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}}
+            df_s,
+            df_l,
+            {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
         )
         assert res["accuracy"] == pytest.approx(0.0)
 
@@ -774,7 +781,9 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2], "special_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "special_col": [0, 1]})
         res = evaluate_predictions(
-            df_s, df_l, {"accuracy": {"weight": 1.0, "options": {"column": "special_col"}}}
+            df_s,
+            df_l,
+            {"accuracy": {"weight": 1.0, "options": {"column": "special_col"}}},
         )
         assert res["accuracy"] == pytest.approx(1.0)
 
@@ -807,7 +816,10 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
         df_sub = pd.DataFrame({"id": [1, 2], "label_1": [1.1, 1.9], "label_2": [3.2, 4.2]})
 
         metrics_cfg = {
-            "mse": {"weight": 1.0, "options": {"column": "label_1", "multioutput": "raw_values"}},
+            "mse": {
+                "weight": 1.0,
+                "options": {"column": "label_1", "multioutput": "raw_values"},
+            },
             "mae": {"weight": 1.0, "options": {"column": "label_2"}},
         }
 

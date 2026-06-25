@@ -74,21 +74,39 @@ export default function UserManager({
 
             {newUser.role === 'competitor' && (
               <>
+                <div className="grid grid-cols-2 gap-4 mb-2">
+                  <InputField
+                    label={t('admin.competitor_reg.middle_name')}
+                    value={newUser.middle_name}
+                    onChange={(e) => setNewUser({ ...newUser, middle_name: e.target.value })}
+                    required
+                  />
+                  <InputField
+                    label={t('admin.competitor_reg.birth_date')}
+                    type="date"
+                    value={newUser.birth_date}
+                    onChange={(e) => setNewUser({ ...newUser, birth_date: e.target.value })}
+                    required
+                  />
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <InputField
                     label={t('admin.competitor_reg.grade')}
                     value={newUser.grade}
                     onChange={(e) => setNewUser({ ...newUser, grade: e.target.value })}
+                    required
                   />
                   <InputField
                     label={t('admin.competitor_reg.school')}
                     value={newUser.school}
                     onChange={(e) => setNewUser({ ...newUser, school: e.target.value })}
+                    required
                   />
                   <InputField
                     label={t('admin.competitor_reg.city')}
                     value={newUser.city}
                     onChange={(e) => setNewUser({ ...newUser, city: e.target.value })}
+                    required
                   />
                 </div>
                 <SelectField

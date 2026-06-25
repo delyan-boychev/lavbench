@@ -87,7 +87,12 @@ def parse_notebook(challenge_id):
     content = file.read(limit + 1)
     if len(content) > limit:
         return (
-            jsonify({"error": "File size exceeds the 5MB limit.", "code": "ERR_FILE_TOO_LARGE"}),
+            jsonify(
+                {
+                    "error": "File size exceeds the 5MB limit.",
+                    "code": "ERR_FILE_TOO_LARGE",
+                }
+            ),
             413,
         )
 
@@ -95,7 +100,10 @@ def parse_notebook(challenge_id):
     if not valid_content:
         return (
             jsonify(
-                {"error": f"Invalid notebook file: {content_err}", "code": "ERR_PARSING_FAILED"}
+                {
+                    "error": f"Invalid notebook file: {content_err}",
+                    "code": "ERR_PARSING_FAILED",
+                }
             ),
             400,
         )
@@ -191,7 +199,10 @@ def submit_code(challenge_id):
     if not challenge.is_active:
         return (
             jsonify(
-                {"error": "This challenge is currently inactive.", "code": "ERR_CHALLENGE_INACTIVE"}
+                {
+                    "error": "This challenge is currently inactive.",
+                    "code": "ERR_CHALLENGE_INACTIVE",
+                }
             ),
             400,
         )
@@ -294,7 +305,10 @@ def submit_code(challenge_id):
     if not selected_cells or not isinstance(selected_cells, list):
         return (
             jsonify(
-                {"error": "selected_cells list is required.", "code": "ERR_MISSING_SELECTED_CELLS"}
+                {
+                    "error": "selected_cells list is required.",
+                    "code": "ERR_MISSING_SELECTED_CELLS",
+                }
             ),
             400,
         )
@@ -305,7 +319,10 @@ def submit_code(challenge_id):
     if not task or str(task.challenge_id) != str(challenge_id):
         return (
             jsonify(
-                {"error": "Invalid task_id for this challenge.", "code": "ERR_INVALID_TASK_ID"}
+                {
+                    "error": "Invalid task_id for this challenge.",
+                    "code": "ERR_INVALID_TASK_ID",
+                }
             ),
             400,
         )
@@ -365,7 +382,10 @@ def submit_code(challenge_id):
 
     # Trigger Celery Task asynchronously
     from tasks import evaluate_submission
-    from services.submission_service import extract_code_from_cells, calculate_submission_priority
+    from services.submission_service import (
+        extract_code_from_cells,
+        calculate_submission_priority,
+    )
 
     task_files_list = []
     if task.files:
@@ -720,7 +740,10 @@ def select_final_submission(submission_id):
     if user_role == "competitor" and submission.user_id != user_id:
         return (
             jsonify(
-                {"error": "Access denied. You do not own this submission.", "code": "ERR_NOT_OWNER"}
+                {
+                    "error": "Access denied. You do not own this submission.",
+                    "code": "ERR_NOT_OWNER",
+                }
             ),
             403,
         )
@@ -991,7 +1014,9 @@ def stream_submission_logs(submission_id):
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 
@@ -1078,5 +1103,8 @@ def download_competitor_submission(challenge_id, task_id, user_id):
     from flask import send_file
 
     return send_file(
-        mem_file, mimetype="application/x-ipynb+json", as_attachment=True, download_name=filename
+        mem_file,
+        mimetype="application/x-ipynb+json",
+        as_attachment=True,
+        download_name=filename,
     )

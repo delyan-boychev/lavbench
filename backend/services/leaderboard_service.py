@@ -75,7 +75,8 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
 
         if late_users:
             is_final_active = case(
-                (Submission.user_id.in_(late_users), False), else_=Submission.is_final_selection
+                (Submission.user_id.in_(late_users), False),
+                else_=Submission.is_final_selection,
             )
         else:
             is_final_active = Submission.is_final_selection
@@ -427,7 +428,9 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         sub = user_best.get(comp.id)
         if sub:
             entry_dict = sub.to_dict(
-                view_role=user_role, current_user_id=current_user_id, include_large_fields=False
+                view_role=user_role,
+                current_user_id=current_user_id,
+                include_large_fields=False,
             )
             entry_dict["has_submitted"] = True
         else:
@@ -471,7 +474,9 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         )
         if best_baseline:
             baseline_entry = best_baseline.to_dict(
-                view_role=user_role, current_user_id=current_user_id, include_large_fields=False
+                view_role=user_role,
+                current_user_id=current_user_id,
+                include_large_fields=False,
             )
             baseline_entry["is_baseline_entry"] = True
             baseline_entry["has_submitted"] = True

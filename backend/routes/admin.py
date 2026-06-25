@@ -4,12 +4,19 @@ import io
 import re
 import secrets
 import string
-import random
 import json
 import zipfile
 import logging
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file, current_app, Response, stream_with_context
+from flask import (
+    Blueprint,
+    request,
+    jsonify,
+    send_file,
+    current_app,
+    Response,
+    stream_with_context,
+)
 from werkzeug.security import generate_password_hash
 from models import (
     db,
@@ -112,7 +119,7 @@ def generate_unique_username(name, surname, role="competitor"):
     return f"{base}_{suffix}"
 
 
-def generate_random_password(length=16):
+def generate_random_password(length=12):
     chars = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(chars) for _ in range(length))
 
@@ -143,6 +150,8 @@ def register_competitor():
     data = request.json or {}
     name = data.get("name")
     surname = data.get("surname")
+    middle_name = data.get("middle_name")
+    birth_date = data.get("birth_date")
     grade = data.get("grade")
     school = data.get("school")
     city = data.get("city")
@@ -167,11 +176,57 @@ def register_competitor():
                 403,
             )
 
-    if not name or not surname:
-        return jsonify({"error": "Name and Surname are required."}), 400
+    if (
+        not name
+        or not surname
+        or not middle_name
+        or not birth_date
+        or not grade
+        or not school
+        or not city
+    ):
+        return (
+            jsonify(
+                {
+                    "error": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required."
+                }
+            ),
+            400,
+        )
+
+    # Check if a competitor with the same demographics is already registered for this competition
+    competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
+    norm = lambda s: s.strip().lower() if s else ""
+    target_name = norm(name)
+    target_middle = norm(middle_name)
+    target_surname = norm(surname)
+    target_birth = norm(birth_date)
+    target_grade = norm(grade)
+    target_school = norm(school)
+    target_city = norm(city)
+
+    for c in competitors:
+        if (
+            norm(decrypt_field(c.name)) == target_name
+            and norm(decrypt_field(c.middle_name)) == target_middle
+            and norm(decrypt_field(c.surname)) == target_surname
+            and norm(decrypt_field(c.birth_date)) == target_birth
+            and norm(decrypt_field(c.grade)) == target_grade
+            and norm(decrypt_field(c.school)) == target_school
+            and norm(decrypt_field(c.city)) == target_city
+        ):
+            return (
+                jsonify(
+                    {
+                        "error": "A competitor with these demographic details is already registered for this competition.",
+                        "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
+                    }
+                ),
+                400,
+            )
 
     username = generate_unique_username(name, surname)
-    password = generate_random_password()
+    password = generate_random_password(12)
 
     user = User(
         username=username,
@@ -180,7 +235,15 @@ def register_competitor():
         alias_id=generate_pseudonym(),
         challenge_id=challenge_id,
     )
-    user.set_demographics(name, surname, grade, school, city)
+    user.set_demographics(
+        name,
+        surname,
+        grade,
+        school,
+        city,
+        middle_name=middle_name,
+        birth_date=birth_date,
+    )
     db.session.add(user)
     db.session.commit()
 
@@ -191,7 +254,11 @@ def register_competitor():
         "create",
         "user",
         target_id=user.id,
-        details={"username": username, "role": "competitor", "challenge_id": challenge_id},
+        details={
+            "username": username,
+            "role": "competitor",
+            "challenge_id": challenge_id,
+        },
     )
 
     from cache_utils import invalidate_leaderboard_cache
@@ -412,6 +479,11 @@ def register_user():
     password = data.get("password")
     name = data.get("name")
     surname = data.get("surname")
+    middle_name = data.get("middle_name")
+    birth_date = data.get("birth_date")
+    grade = data.get("grade")
+    school = data.get("school")
+    city = data.get("city")
     role = data.get("role")
     challenge_id = data.get("challenge_id")
 
@@ -436,11 +508,51 @@ def register_user():
         return jsonify({"error": "Name and Surname are required."}), 400
 
     if role == "competitor":
+        if not middle_name or not birth_date or not grade or not school or not city:
+            return (
+                jsonify(
+                    {
+                        "error": "Middle Name, Birth Date, Grade, School and City are required for competitor accounts."
+                    }
+                ),
+                400,
+            )
         if not challenge_id:
             return jsonify({"error": "challenge_id is required for competitor registration."}), 400
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge:
             return jsonify({"error": "Invalid challenge_id."}), 400
+
+        # Check if a competitor with the same demographics is already registered for this competition
+        competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
+        norm = lambda s: s.strip().lower() if s else ""
+        target_name = norm(name)
+        target_middle = norm(middle_name)
+        target_surname = norm(surname)
+        target_birth = norm(birth_date)
+        target_grade = norm(grade)
+        target_school = norm(school)
+        target_city = norm(city)
+
+        for c in competitors:
+            if (
+                norm(decrypt_field(c.name)) == target_name
+                and norm(decrypt_field(c.middle_name)) == target_middle
+                and norm(decrypt_field(c.surname)) == target_surname
+                and norm(decrypt_field(c.birth_date)) == target_birth
+                and norm(decrypt_field(c.grade)) == target_grade
+                and norm(decrypt_field(c.school)) == target_school
+                and norm(decrypt_field(c.city)) == target_city
+            ):
+                return (
+                    jsonify(
+                        {
+                            "error": "A competitor with these demographic details is already registered for this competition.",
+                            "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
+                        }
+                    ),
+                    400,
+                )
         # Check if the competition has started
         if challenge.is_started:
             if request.user["role"] != "admin":
@@ -454,7 +566,7 @@ def register_user():
                 )
 
     if not password:
-        password = generate_random_password(8)
+        password = generate_random_password(12)
 
     # Pregenerate username for competitors and judges (jury) if not provided
     if role in ["competitor", "jury"] and not username:
@@ -466,9 +578,6 @@ def register_user():
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "User with this username already exists."}), 400
 
-    grade = data.get("grade")
-    school = data.get("school")
-    city = data.get("city")
     is_anon = bool(data.get("is_anonymous", False))
 
     user = User(
@@ -480,7 +589,15 @@ def register_user():
         challenge_id=challenge_id if role == "competitor" else None,
         is_anonymous=is_anon,
     )
-    user.set_demographics(name, surname, grade, school, city)
+    user.set_demographics(
+        name,
+        surname,
+        grade,
+        school,
+        city,
+        middle_name=middle_name,
+        birth_date=birth_date,
+    )
     db.session.add(user)
     db.session.commit()
 
@@ -582,30 +699,109 @@ def import_competitors_csv():
         stream = io.StringIO(raw.decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
 
-        csv_reader.fieldnames = [f.strip().lower() for f in csv_reader.fieldnames]
+        # Standardize headers to handle synonyms and casing
+        normalized_headers = []
+        header_mapping = {}
+        for f in csv_reader.fieldnames:
+            normalized = f.strip().lower().replace(" ", "_")
+            if normalized in ("middle_name", "middle name", "patronymic"):
+                normalized = "middle_name"
+            elif normalized in (
+                "birth_date",
+                "birth date",
+                "date_of_birth",
+                "date of birth",
+                "birthday",
+                "birth_day",
+            ):
+                normalized = "birth_date"
+            header_mapping[f] = normalized
+            normalized_headers.append(normalized)
 
-        required = ["name", "surname"]
+        required = [
+            "name",
+            "surname",
+            "middle_name",
+            "birth_date",
+            "grade",
+            "school",
+            "city",
+        ]
         for r in required:
-            if r not in csv_reader.fieldnames:
-                return jsonify({"error": f"CSV missing required column: '{r}'"}), 400
+            if r not in normalized_headers:
+                readable_name = r.replace("_", " ")
+                return jsonify({"error": f"CSV missing required column: '{readable_name}'"}), 400
+
+        # Fetch existing competitors in this challenge to prevent duplicate rows
+        existing_competitors = User.query.filter_by(
+            role="competitor", challenge_id=challenge_id
+        ).all()
+        norm = lambda s: s.strip().lower() if s else ""
+        seen_demographics = set()
+        for c in existing_competitors:
+            seen_demographics.add(
+                (
+                    norm(decrypt_field(c.name)),
+                    norm(decrypt_field(c.middle_name)),
+                    norm(decrypt_field(c.surname)),
+                    norm(decrypt_field(c.birth_date)),
+                    norm(decrypt_field(c.grade)),
+                    norm(decrypt_field(c.school)),
+                    norm(decrypt_field(c.city)),
+                )
+            )
 
         imported = []
         for row in csv_reader:
-            name = row.get("name", "").strip()
-            surname = row.get("surname", "").strip()
-            grade = row.get("grade", "").strip()
-            school = row.get("school", "").strip()
-            city = row.get("city", "").strip()
+            # Map row keys to normalized keys
+            mapped_row = {header_mapping[k]: v for k, v in row.items() if k in header_mapping}
+            name = mapped_row.get("name", "").strip()
+            surname = mapped_row.get("surname", "").strip()
+            middle_name = mapped_row.get("middle_name", "").strip()
+            birth_date = mapped_row.get("birth_date", "").strip()
+            email = mapped_row.get("email", "").strip() or None
+            grade = mapped_row.get("grade", "").strip()
+            school = mapped_row.get("school", "").strip()
+            city = mapped_row.get("city", "").strip()
 
-            if not name or not surname:
+            if (
+                not name
+                or not surname
+                or not middle_name
+                or not birth_date
+                or not grade
+                or not school
+                or not city
+            ):
                 continue
 
-            username = generate_unique_username(name, surname)
-            password = generate_random_password(8)
+            # Check duplicate demographics
+            demo_tuple = (
+                norm(name),
+                norm(middle_name),
+                norm(surname),
+                norm(birth_date),
+                norm(grade),
+                norm(school),
+                norm(city),
+            )
+            if demo_tuple in seen_demographics:
+                continue
+            seen_demographics.add(demo_tuple)
 
-            # Anonymity preference
-            is_anon_str = (row.get("is_anonymous") or row.get("anonymous") or "").strip().lower()
-            is_anon = is_anon_str in ("1", "true", "yes")
+            username = generate_unique_username(name, surname)
+            password = generate_random_password(12)
+
+            # Anonymity preference: accepts column names 'anonymous' or 'is_anonymous'. Can be 1 or 0, default is 0.
+            is_anon_val = mapped_row.get("anonymous")
+            if is_anon_val is None:
+                is_anon_val = mapped_row.get("is_anonymous")
+
+            is_anon = False
+            if is_anon_val is not None:
+                is_anon_clean = is_anon_val.strip().lower()
+                if is_anon_clean in ("1", "true", "yes"):
+                    is_anon = True
 
             user = User(
                 username=username,
@@ -614,13 +810,27 @@ def import_competitors_csv():
                 alias_id=generate_pseudonym(),
                 challenge_id=challenge_id,
                 is_anonymous=is_anon,
+                email=email,
             )
-            user.set_demographics(name, surname, grade, school, city)
+            user.set_demographics(
+                name,
+                surname,
+                grade,
+                school,
+                city,
+                middle_name=middle_name,
+                birth_date=birth_date,
+            )
             db.session.add(user)
+            db.session.flush()
             imported.append(
                 {
+                    "id": str(user.id),
                     "name": name,
+                    "middle_name": middle_name,
                     "surname": surname,
+                    "birth_date": birth_date,
+                    "email": email,
                     "grade": grade,
                     "school": school,
                     "city": city,
@@ -1011,6 +1221,8 @@ def update_user(user_id):
     data = request.json or {}
     name = data.get("name")
     surname = data.get("surname")
+    middle_name = data.get("middle_name")
+    birth_date = data.get("birth_date")
     grade = data.get("grade")
     school = data.get("school")
     city = data.get("city")
@@ -1074,17 +1286,91 @@ def update_user(user_id):
     # Update demographics using fallback decryption
     dec_name = decrypt_field(user.name)
     dec_surname = decrypt_field(user.surname)
+    dec_middle_name = decrypt_field(user.middle_name) if getattr(user, "middle_name", None) else ""
+    dec_birth_date = decrypt_field(user.birth_date) if getattr(user, "birth_date", None) else ""
     dec_grade = decrypt_field(user.grade)
     dec_school = decrypt_field(user.school)
     dec_city = decrypt_field(user.city)
 
     new_name = name if name is not None else dec_name
     new_surname = surname if surname is not None else dec_surname
+    new_middle_name = middle_name if middle_name is not None else dec_middle_name
+    new_birth_date = birth_date if birth_date is not None else dec_birth_date
     new_grade = grade if grade is not None else dec_grade
     new_school = school if school is not None else dec_school
     new_city = city if city is not None else dec_city
 
-    user.set_demographics(new_name, new_surname, new_grade, new_school, new_city)
+    # Validate that middle name, birth date, grade, school and city are present for competitors if they are being updated
+    if user.role == "competitor" and (
+        "name" in data
+        or "surname" in data
+        or "middle_name" in data
+        or "birth_date" in data
+        or "grade" in data
+        or "school" in data
+        or "city" in data
+        or role == "competitor"
+    ):
+        if (
+            not new_name
+            or not new_surname
+            or not new_middle_name
+            or not new_birth_date
+            or not new_grade
+            or not new_school
+            or not new_city
+        ):
+            return (
+                jsonify(
+                    {
+                        "error": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required for competitor accounts."
+                    }
+                ),
+                400,
+            )
+
+        # Check if a competitor with the same demographics is already registered for this competition (excluding this user themselves)
+        competitors = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
+        norm = lambda s: s.strip().lower() if s else ""
+        target_name = norm(new_name)
+        target_middle = norm(new_middle_name)
+        target_surname = norm(new_surname)
+        target_birth = norm(new_birth_date)
+        target_grade = norm(new_grade)
+        target_school = norm(new_school)
+        target_city = norm(new_city)
+
+        for c in competitors:
+            if c.id == user.id:
+                continue
+            if (
+                norm(decrypt_field(c.name)) == target_name
+                and norm(decrypt_field(c.middle_name)) == target_middle
+                and norm(decrypt_field(c.surname)) == target_surname
+                and norm(decrypt_field(c.birth_date)) == target_birth
+                and norm(decrypt_field(c.grade)) == target_grade
+                and norm(decrypt_field(c.school)) == target_school
+                and norm(decrypt_field(c.city)) == target_city
+            ):
+                return (
+                    jsonify(
+                        {
+                            "error": "A competitor with these demographic details is already registered for this competition.",
+                            "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
+                        }
+                    ),
+                    400,
+                )
+
+    user.set_demographics(
+        new_name,
+        new_surname,
+        new_grade,
+        new_school,
+        new_city,
+        middle_name=new_middle_name,
+        birth_date=new_birth_date,
+    )
 
     if email is not None:
         user.email = email
@@ -1164,7 +1450,7 @@ def reset_user_password(user_id):
                     403,
                 )
 
-    new_password = generate_random_password(8)
+    new_password = generate_random_password(12)
     user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
     db.session.commit()
 
@@ -1225,15 +1511,29 @@ def reset_all_challenge_passwords(challenge_id):
 
     results = []
     for user in competitors:
-        new_password = generate_random_password()
+        new_password = generate_random_password(12)
         user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
 
-        # Decrypt name/surname for output
+        # Decrypt demographics for output
         dec_name = decrypt_field(user.name)
         dec_surname = decrypt_field(user.surname)
+        dec_middle_name = (
+            decrypt_field(user.middle_name) if getattr(user, "middle_name", None) else ""
+        )
+        dec_birth_date = decrypt_field(user.birth_date) if getattr(user, "birth_date", None) else ""
 
         results.append(
-            {"username": user.username, "name": dec_name or "", "surname": dec_surname or ""}
+            {
+                "id": str(user.id),
+                "username": user.username,
+                "name": dec_name or "",
+                "middle_name": dec_middle_name or "",
+                "surname": dec_surname or "",
+                "birth_date": dec_birth_date or "",
+                "password": new_password,
+                "alias_id": user.alias_id,
+                "email": user.email,
+            }
         )
 
     db.session.commit()
@@ -1550,7 +1850,9 @@ def stream_worker_stats():
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 
@@ -1575,8 +1877,18 @@ def _get_worker_stats_response():
         system_resources = {
             "cpu_count": os.cpu_count(),
             "load_avg": [0.0, 0.0, 0.0],
-            "memory": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
-            "disk": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
+            "memory": {
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "free_gb": 0.0,
+                "percent_used": 0.0,
+            },
+            "disk": {
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "free_gb": 0.0,
+                "percent_used": 0.0,
+            },
             "os": platform.system(),
             "platform_release": platform.release(),
             "python_version": platform.python_version(),

@@ -207,7 +207,8 @@ class TestWorkerEndpoints:
 
     def test_download_task_file_wrong_task(self):
         resp = self.client.get(
-            "/api/worker/tasks/99999/files/data.csv", headers={"X-Worker-Token": self.worker_token}
+            "/api/worker/tasks/99999/files/data.csv",
+            headers={"X-Worker-Token": self.worker_token},
         )
         assert resp.status_code == 404
 
@@ -234,12 +235,14 @@ class TestWorkerEndpoints:
 
     def test_get_task_hf_key_invalid_token(self):
         resp = self.client.get(
-            f"/api/worker/tasks/{self.task.id}/hf-key", headers={"X-Worker-Token": "bad"}
+            f"/api/worker/tasks/{self.task.id}/hf-key",
+            headers={"X-Worker-Token": "bad"},
         )
         assert resp.status_code == 401
 
     def test_get_task_hf_key_task_not_found(self):
         resp = self.client.get(
-            "/api/worker/tasks/99999/hf-key", headers={"X-Worker-Token": self.worker_token}
+            "/api/worker/tasks/99999/hf-key",
+            headers={"X-Worker-Token": self.worker_token},
         )
         assert resp.status_code == 404

@@ -176,7 +176,9 @@ export default function AdminPanel() {
   // Manual Competitor Register State
   const [newCompetitor, setNewCompetitor] = useState({
     name: '',
+    middle_name: '',
     surname: '',
+    birth_date: '',
     grade: '',
     school: '',
     city: '',
@@ -196,7 +198,9 @@ export default function AdminPanel() {
     email: '',
     password: '',
     name: '',
+    middle_name: '',
     surname: '',
+    birth_date: '',
     role: 'competitor',
     grade: '',
     school: '',
@@ -214,7 +218,9 @@ export default function AdminPanel() {
     email: '',
     password: '',
     name: '',
+    middle_name: '',
     surname: '',
+    birth_date: '',
     grade: '',
     school: '',
     city: '',
@@ -1076,7 +1082,9 @@ export default function AdminPanel() {
         });
         setNewCompetitor({
           name: '',
+          middle_name: '',
           surname: '',
+          birth_date: '',
           grade: '',
           school: '',
           city: '',
@@ -1150,7 +1158,9 @@ export default function AdminPanel() {
           email: '',
           password: '',
           name: '',
+          middle_name: '',
           surname: '',
+          birth_date: '',
           role: 'competitor',
           grade: '',
           school: '',
@@ -1225,7 +1235,8 @@ export default function AdminPanel() {
             count: data.competitors?.length || 0,
           }),
         );
-        setImportedCompetitors(data.competitors || []);
+        const competitors = data.competitors || [];
+        setImportedCompetitors(competitors);
         setCsvFile(null);
         fetchCompetitors();
       } else {
@@ -1389,7 +1400,9 @@ export default function AdminPanel() {
       email: user.email || '',
       password: '',
       name: user.name || '',
+      middle_name: user.middle_name || '',
       surname: user.surname || '',
+      birth_date: user.birth_date || '',
       grade: user.grade || '',
       school: user.school || '',
       city: user.city || '',
@@ -1424,7 +1437,9 @@ export default function AdminPanel() {
           email: editUserForm.email || null,
           password: editUserForm.password || null,
           name: editUserForm.name,
+          middle_name: editUserForm.middle_name || null,
           surname: editUserForm.surname,
+          birth_date: editUserForm.birth_date || null,
           grade: editUserForm.grade || null,
           school: editUserForm.school || null,
           city: editUserForm.city || null,
@@ -2429,11 +2444,19 @@ export default function AdminPanel() {
 
                 {/* Form Body (Scrollable) */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <InputField
                       label={t('admin.competitor_reg.first_name')}
                       value={editUserForm.name}
                       onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                      required
+                    />
+                    <InputField
+                      label={t('admin.competitor_reg.middle_name')}
+                      value={editUserForm.middle_name || ''}
+                      onChange={(e) =>
+                        setEditUserForm({ ...editUserForm, middle_name: e.target.value })
+                      }
                       required
                     />
                     <InputField
@@ -2446,21 +2469,34 @@ export default function AdminPanel() {
                     />
                   </div>
 
+                  <InputField
+                    label={t('admin.competitor_reg.birth_date')}
+                    type="date"
+                    value={editUserForm.birth_date || ''}
+                    onChange={(e) =>
+                      setEditUserForm({ ...editUserForm, birth_date: e.target.value })
+                    }
+                    required
+                  />
+
                   <div className="grid grid-cols-3 gap-4">
                     <InputField
                       label={t('admin.competitor_reg.grade')}
                       value={editUserForm.grade || ''}
                       onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })}
+                      required
                     />
                     <InputField
                       label={t('admin.competitor_reg.school')}
                       value={editUserForm.school || ''}
                       onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })}
+                      required
                     />
                     <InputField
                       label={t('admin.competitor_reg.city')}
                       value={editUserForm.city || ''}
                       onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -2603,6 +2639,25 @@ export default function AdminPanel() {
 
                   {editUserForm.role === 'competitor' && (
                     <>
+                      <div className="grid grid-cols-2 gap-4 mb-2">
+                        <InputField
+                          label={t('admin.competitor_reg.middle_name')}
+                          value={editUserForm.middle_name || ''}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, middle_name: e.target.value })
+                          }
+                          required
+                        />
+                        <InputField
+                          label={t('admin.competitor_reg.birth_date')}
+                          type="date"
+                          value={editUserForm.birth_date || ''}
+                          onChange={(e) =>
+                            setEditUserForm({ ...editUserForm, birth_date: e.target.value })
+                          }
+                          required
+                        />
+                      </div>
                       <div className="grid grid-cols-3 gap-2">
                         <InputField
                           label={t('admin.competitor_reg.grade')}
@@ -2610,6 +2665,7 @@ export default function AdminPanel() {
                           onChange={(e) =>
                             setEditUserForm({ ...editUserForm, grade: e.target.value })
                           }
+                          required
                         />
                         <InputField
                           label={t('admin.competitor_reg.school')}
@@ -2617,6 +2673,7 @@ export default function AdminPanel() {
                           onChange={(e) =>
                             setEditUserForm({ ...editUserForm, school: e.target.value })
                           }
+                          required
                         />
                         <InputField
                           label={t('admin.competitor_reg.city')}
@@ -2624,6 +2681,7 @@ export default function AdminPanel() {
                           onChange={(e) =>
                             setEditUserForm({ ...editUserForm, city: e.target.value })
                           }
+                          required
                         />
                       </div>
                       <SelectField

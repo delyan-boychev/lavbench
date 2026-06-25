@@ -42,6 +42,96 @@ export default function CompetitorManager({
 }) {
   const { t } = useTranslation();
 
+  const handleDownloadImportedCSV = () => {
+    if (!importedCompetitors || importedCompetitors.length === 0) return;
+
+    const headers = ['ID', 'Name', 'Middle Name', 'Surname', 'Birth Date', 'Alias ID', 'Password'];
+    const rows = importedCompetitors.map((c) => [
+      c.id || '',
+      c.name || '',
+      c.middle_name || '',
+      c.surname || '',
+      c.birth_date || '',
+      c.generated_username || '',
+      c.generated_password || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+
+    const compName = selectedChallenge?.title
+      ? selectedChallenge.title
+          .toLowerCase()
+          .replace(/[^a-z0-9а-яё\s-_]+/gi, '')
+          .trim()
+          .replace(/\s+/g, '_')
+      : 'competition';
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const fileName = `${compName}_competitors_credentials_${dateStr}.csv`;
+
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadResetCSV = () => {
+    if (!bulkResetCredentials || bulkResetCredentials.length === 0) return;
+
+    const headers = ['ID', 'Name', 'Middle Name', 'Surname', 'Birth Date', 'Alias ID', 'Password'];
+    const rows = bulkResetCredentials.map((c) => [
+      c.id || '',
+      c.name || '',
+      c.middle_name || '',
+      c.surname || '',
+      c.birth_date || '',
+      c.username || '',
+      c.password || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+
+    const compName = selectedChallenge?.title
+      ? selectedChallenge.title
+          .toLowerCase()
+          .replace(/[^a-z0-9а-яё\s-_]+/gi, '')
+          .trim()
+          .replace(/\s+/g, '_')
+      : 'competition';
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const fileName = `${compName}_competitors_credentials_${dateStr}.csv`;
+
+    link.setAttribute('download', fileName);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex flex-col gap-8 animate-fadein">
       {/* Registration Workspace */}
@@ -56,11 +146,19 @@ export default function CompetitorManager({
           </p>
 
           <form onSubmit={handleRegisterCompetitor} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <InputField
                 label={t('admin.competitor_reg.first_name')}
                 value={newCompetitor.name}
                 onChange={(e) => setNewCompetitor({ ...newCompetitor, name: e.target.value })}
+                required
+              />
+              <InputField
+                label={t('admin.competitor_reg.middle_name')}
+                value={newCompetitor.middle_name}
+                onChange={(e) =>
+                  setNewCompetitor({ ...newCompetitor, middle_name: e.target.value })
+                }
                 required
               />
               <InputField
@@ -70,21 +168,31 @@ export default function CompetitorManager({
                 required
               />
             </div>
+            <InputField
+              label={t('admin.competitor_reg.birth_date')}
+              type="date"
+              value={newCompetitor.birth_date}
+              onChange={(e) => setNewCompetitor({ ...newCompetitor, birth_date: e.target.value })}
+              required
+            />
             <div className="grid grid-cols-3 gap-4">
               <InputField
                 label={t('admin.competitor_reg.grade')}
                 value={newCompetitor.grade}
                 onChange={(e) => setNewCompetitor({ ...newCompetitor, grade: e.target.value })}
+                required
               />
               <InputField
                 label={t('admin.competitor_reg.school')}
                 value={newCompetitor.school}
                 onChange={(e) => setNewCompetitor({ ...newCompetitor, school: e.target.value })}
+                required
               />
               <InputField
                 label={t('admin.competitor_reg.city')}
                 value={newCompetitor.city}
                 onChange={(e) => setNewCompetitor({ ...newCompetitor, city: e.target.value })}
+                required
               />
             </div>
 
@@ -196,37 +304,26 @@ export default function CompetitorManager({
 
           {importedCompetitors.length > 0 && (
             <div className="mt-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3">
-              <h3 className="font-bold text-sm text-emerald-400">
-                {t('admin.competitor_reg.successfully_imported_count', {
-                  count: importedCompetitors.length,
-                })}
-              </h3>
-              <div className="max-h-60 overflow-y-auto pr-1">
-                <table className="w-full text-left border-collapse text-[10px]">
-                  <thead>
-                    <tr className="border-b border-white/5 text-slate-400">
-                      <th className="py-1.5">
-                        {t('admin.competitor_reg.competitor_table_header')}
-                      </th>
-                      <th className="py-1.5">{t('admin.competitor_reg.username_table_header')}</th>
-                      <th className="py-1.5">{t('admin.competitor_reg.password_table_header')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importedCompetitors.map((item, idx) => (
-                      <tr key={idx} className="border-b border-white/5 text-slate-300">
-                        <td className="py-1.5 font-semibold">
-                          {item.name} {item.surname}
-                        </td>
-                        <td className="py-1.5 font-mono">{item.generated_username}</td>
-                        <td className="py-1.5 font-mono font-bold text-indigo-400">
-                          {item.generated_password}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <h3 className="font-bold text-sm text-emerald-400">
+                  {t('admin.competitor_reg.successfully_imported_count', {
+                    count: importedCompetitors.length,
+                  })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {t(
+                    'admin.competitor_reg.download_credentials_help',
+                    'Competitor accounts successfully created. Click below to download their login credentials securely.',
+                  )}
+                </p>
               </div>
+              <Button
+                variant="accent"
+                className="w-full py-2 text-xs font-semibold"
+                onClick={handleDownloadImportedCSV}
+              >
+                {t('admin.competitor_reg.download_credentials_csv', 'Download Credentials (CSV)')}
+              </Button>
             </div>
           )}
         </div>
@@ -299,12 +396,20 @@ export default function CompetitorManager({
 
         {bulkResetCredentials.length > 0 && (
           <div className="mb-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3 animate-fadein">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-sm text-emerald-400 font-sans">
-                {t('admin.competitor_reg.generated_passwords_bulk_title', {
-                  count: bulkResetCredentials.length,
-                })}
-              </h3>
+            <div className="flex justify-between items-center gap-2">
+              <div>
+                <h3 className="font-bold text-sm text-emerald-400 font-sans">
+                  {t('admin.competitor_reg.generated_passwords_bulk_title', {
+                    count: bulkResetCredentials.length,
+                  })}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {t(
+                    'admin.competitor_reg.download_reset_credentials_help',
+                    'Passwords reset successfully. Click below to download their updated credentials securely.',
+                  )}
+                </p>
+              </div>
               <button
                 onClick={() => setBulkResetCredentials([])}
                 className="text-xs font-bold text-emerald-400 hover:underline bg-transparent border-0 cursor-pointer"
@@ -312,32 +417,13 @@ export default function CompetitorManager({
                 {t('admin.competitor_reg.clear_list')}
               </button>
             </div>
-            <div className="max-h-60 overflow-y-auto pr-1">
-              <table className="w-full text-left border-collapse text-[10px]">
-                <thead>
-                  <tr className="border-b border-white/5 text-slate-400 font-semibold">
-                    <th className="py-1.5">{t('admin.competitor_reg.competitor_table_header')}</th>
-                    <th className="py-1.5">{t('admin.competitor_reg.username_table_header')}</th>
-                    <th className="py-1.5">
-                      {t('admin.competitor_reg.new_password_table_header')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkResetCredentials.map((item, idx) => (
-                    <tr key={idx} className="border-b border-white/5 text-slate-300">
-                      <td className="py-1.5 font-semibold">
-                        {item.name} {item.surname}
-                      </td>
-                      <td className="py-1.5 font-mono">{item.username}</td>
-                      <td className="py-1.5 font-mono font-bold text-indigo-400">
-                        {item.password}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Button
+              variant="accent"
+              className="w-full py-2 text-xs font-semibold"
+              onClick={handleDownloadResetCSV}
+            >
+              {t('admin.competitor_reg.download_credentials_csv', 'Download Credentials (CSV)')}
+            </Button>
           </div>
         )}
 

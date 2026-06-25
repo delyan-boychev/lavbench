@@ -13,7 +13,6 @@ from services.submission_service import calculate_submission_priority
 
 
 class TestRouteLevelLogic:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -422,7 +421,15 @@ class TestRouteLevelLogic:
         res = self.client.put(
             f"/api/admin/users/{target_user.id}",
             headers={"Authorization": f"Bearer {jury_token}"},
-            json={"name": "NewName", "surname": "NewSurname"},
+            json={
+                "name": "NewName",
+                "surname": "NewSurname",
+                "middle_name": "NewMiddle",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Sofia High",
+                "city": "Sofia",
+            },
         )
         assert res.status_code == 200
 
@@ -561,7 +568,8 @@ class TestRouteLevelLogic:
         assert other_item["user"]["alias_id"] == "Other-Pseudonym"
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard", headers=self.get_auth_header(jury_token)
+            f"/api/tasks/{self.task.id}/leaderboard",
+            headers=self.get_auth_header(jury_token),
         )
         assert res.status_code == 200
         leaderboard = res.get_json()["leaderboard"]
@@ -640,7 +648,8 @@ class TestRouteLevelLogic:
         }
 
         res = self.client.get(
-            "/api/admin/workers/stats", headers=self.get_auth_header(self.competitor_token)
+            "/api/admin/workers/stats",
+            headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 403
 
@@ -706,7 +715,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 400
         assert "Baseline notebook is required" in res.get_json()["error"]
@@ -718,7 +729,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 400
         assert "cannot exceed 16384 MB" in res.get_json()["error"]
@@ -730,7 +743,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 400
         assert "Invalid base Docker image" in res.get_json()["error"]
@@ -742,7 +757,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 400
         assert "Invalid APT package name" in res.get_json()["error"]
@@ -754,7 +771,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 400
         assert "Invalid pip requirement line" in res.get_json()["error"]
@@ -830,7 +849,9 @@ class TestRouteLevelLogic:
             "solution_notebook": (io.BytesIO(b'{"cells": []}'), "solution.ipynb"),
         }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/tasks", data=data, headers=admin_header
+            f"/api/challenges/{self.challenge.id}/tasks",
+            data=data,
+            headers=admin_header,
         )
         assert res.status_code == 201
         mock_delete.assert_any_call("challenges:all")
@@ -858,14 +879,18 @@ class TestRouteLevelLogic:
 
         payload = {"selected_cells": ["print('hello')"]}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit", json=payload, headers=comp_header
+            f"/api/challenges/{self.challenge.id}/submit",
+            json=payload,
+            headers=comp_header,
         )
         assert res.status_code == 400
         assert "task_id is required" in res.get_json()["error"]
 
         payload = {"selected_cells": ["print('hello')"], "task_id": 99999}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit", json=payload, headers=comp_header
+            f"/api/challenges/{self.challenge.id}/submit",
+            json=payload,
+            headers=comp_header,
         )
         assert res.status_code == 400
         assert "Invalid task_id" in res.get_json()["error"]
@@ -873,9 +898,14 @@ class TestRouteLevelLogic:
         self.task.banned_imports = "os,sys,subprocess"
         db.session.commit()
 
-        payload = {"selected_cells": ["import os\nprint('hack')"], "task_id": self.task.id}
+        payload = {
+            "selected_cells": ["import os\nprint('hack')"],
+            "task_id": self.task.id,
+        }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit", json=payload, headers=comp_header
+            f"/api/challenges/{self.challenge.id}/submit",
+            json=payload,
+            headers=comp_header,
         )
         assert res.status_code == 400
         assert "Import of library 'os' is banned" in res.get_json()["error"]
@@ -886,14 +916,21 @@ class TestRouteLevelLogic:
 
         payload = {"selected_cells": ["!pip install requests"], "task_id": self.task.id}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit", json=payload, headers=comp_header
+            f"/api/challenges/{self.challenge.id}/submit",
+            json=payload,
+            headers=comp_header,
         )
         assert res.status_code == 400
         assert "magic commands" in res.get_json()["error"]
 
-        payload = {"selected_cells": ["# SUBMIT\nprint('hello')"], "task_id": self.task.id}
+        payload = {
+            "selected_cells": ["# SUBMIT\nprint('hello')"],
+            "task_id": self.task.id,
+        }
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit", json=payload, headers=comp_header
+            f"/api/challenges/{self.challenge.id}/submit",
+            json=payload,
+            headers=comp_header,
         )
         assert res.status_code == 202
 
@@ -936,7 +973,9 @@ class TestRouteLevelLogic:
     def test_bulgarian_name_transliteration(self):
         payload = {
             "name": "Иван",
+            "middle_name": "Георгиев",
             "surname": "Петров",
+            "birth_date": "2008-05-14",
             "grade": "10",
             "school": "Sofia High",
             "city": "Sofia",
@@ -954,9 +993,9 @@ class TestRouteLevelLogic:
 
     def test_csv_import_anonymity_support(self):
         csv_data = (
-            "name,surname,grade,school,city,is_anonymous\n"
-            "Ivan,Petrov,10,Sofia High,Sofia,1\n"
-            "Maria,Georgieva,11,Plovdiv High,Plovdiv,0\n"
+            "name,surname,middle_name,birth_date,grade,school,city,is_anonymous\n"
+            "Ivan,Petrov,Georgiev,2008-05-14,10,Sofia High,Sofia,1\n"
+            "Maria,Georgieva,Stoyanova,2007-06-15,11,Plovdiv High,Plovdiv,0\n"
         )
         import io
 
@@ -1031,6 +1070,9 @@ class TestRouteLevelLogic:
         data = json.loads(res.data)
         assert "reset_accounts" in data
         assert len(data["reset_accounts"]) > 0
+        account = data["reset_accounts"][0]
+        assert "middle_name" in account
+        assert "birth_date" in account
 
         self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
         db.session.commit()
@@ -1403,7 +1445,8 @@ class TestRouteLevelLogic:
         assert len(res.get_json()["tasks"]) == 0
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}", headers=self.get_auth_header(self.competitor_token)
+            f"/api/tasks/{self.task.id}",
+            headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code in [403, 404]
 
@@ -1506,7 +1549,10 @@ class TestRouteLevelLogic:
         login_res = self.client.post(
             "/api/auth/login",
             data=json.dumps(
-                {"username": self.competitor.username, "password": "my-competitor-password"}
+                {
+                    "username": self.competitor.username,
+                    "password": "my-competitor-password",
+                }
             ),
             content_type="application/json",
         )
@@ -1520,7 +1566,8 @@ class TestRouteLevelLogic:
         assert comp_in_db is not None
 
         res = self.client.delete(
-            f"/api/challenges/{self.challenge.id}", headers=self.get_auth_header(self.admin_token)
+            f"/api/challenges/{self.challenge.id}",
+            headers=self.get_auth_header(self.admin_token),
         )
         assert res.status_code == 200
 
@@ -1547,7 +1594,8 @@ class TestRouteLevelLogic:
         assert res_detail.status_code == 404
 
         res_admin = self.client.get(
-            f"/api/challenges/{self.challenge.id}", headers=self.get_auth_header(self.admin_token)
+            f"/api/challenges/{self.challenge.id}",
+            headers=self.get_auth_header(self.admin_token),
         )
         assert res_admin.status_code == 200
         assert res_admin.get_json()["is_archived"] is True
@@ -1572,7 +1620,10 @@ class TestRouteLevelLogic:
         self.challenge.reveal_results = False
         db.session.commit()
 
-        payload_no_reason = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
+        payload_no_reason = {
+            "user_id": self.competitor.id,
+            "points": {str(self.task.id): 50},
+        }
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
             data=json.dumps(payload_no_reason),

@@ -96,7 +96,12 @@ class TestExportChallenge:
             assert len(data["stages"]) == 2
 
     def test_export_challenge_as_jury(
-        self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user
+        self,
+        client,
+        db_session,
+        auth_headers,
+        challenge_with_stages_and_tasks,
+        create_user,
     ):
         import zipfile
         import io
@@ -372,7 +377,7 @@ class TestImportChallenge:
         import io
         import os
         from flask import current_app
-        from models import Challenge, Task
+        from models import Challenge
 
         zip_buf = io.BytesIO()
         old_task_uuid = "019efa69-ec26-718d-9fbc-d05408b246f3"
@@ -477,7 +482,12 @@ class TestExportResultsCsv:
         assert "Rank,Username,Alias ID" in res.data.decode("utf-8")
 
     def test_export_results_as_jury(
-        self, client, db_session, auth_headers, challenge_with_stages_and_tasks, create_user
+        self,
+        client,
+        db_session,
+        auth_headers,
+        challenge_with_stages_and_tasks,
+        create_user,
     ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export_csv", role="jury")
@@ -529,9 +539,9 @@ class TestImportCompetitorsCsv:
     """POST /api/admin/import-competitors-csv"""
 
     VALID_CSV = (
-        "name,surname,grade,school,city\n"
-        "Alice,Smith,10,High School A,New York\n"
-        "Bob,Jones,11,High School B,Los Angeles\n"
+        "name,surname,middle_name,birth_date,grade,school,city\n"
+        "Alice,Smith,Marie,2008-05-14,10,High School A,New York\n"
+        "Bob,Jones,Robert,2007-09-22,11,High School B,Los Angeles\n"
     )
 
     def _upload_csv(self, client, challenge_id, token, csv_data=None, filename="competitors.csv"):
@@ -627,15 +637,43 @@ class TestImportCompetitorsCsv:
         assert "role" in res.get_json()["error"].lower()
 
     def test_import_competitors_skips_empty_rows(self, client, tokens, sample_challenge):
-        csv_data = "name,surname\n" "Alice,Smith\n" ",\n" "Bob,Jones\n"
+        csv_data = (
+            "name,surname,middle_name,birth_date,grade,school,city\n"
+            "Alice,Smith,Marie,2008-05-14,10,School A,City A\n"
+            ",,,,,,\n"
+            "Bob,Jones,Robert,2007-09-22,11,School B,City B\n"
+        )
         res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data)
         assert res.status_code == 201
         assert len(res.get_json()["competitors"]) == 2
 
+    def test_import_competitors_skips_duplicates(self, client, tokens, sample_challenge):
+        csv_data1 = (
+            "name,surname,middle_name,birth_date,grade,school,city\n"
+            "Alice,Smith,Marie,2008-05-14,10,School A,City A\n"
+        )
+        res1 = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data1)
+        assert res1.status_code == 201
+        assert len(res1.get_json()["competitors"]) == 1
+
+        csv_data2 = (
+            "name,surname,middle_name,birth_date,grade,school,city\n"
+            "Alice,Smith,Marie,2008-05-14,10,School A,City A\n"
+            "Bob,Jones,Robert,2007-09-22,11,School B,City B\n"
+        )
+        res2 = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data2)
+        assert res2.status_code == 201
+        assert len(res2.get_json()["competitors"]) == 1
+        assert res2.get_json()["competitors"][0]["name"] == "Bob"
+
     def test_import_competitors_with_anonymity_flag(
         self, client, tokens, sample_challenge, db_session
     ):
-        csv_data = "name,surname,is_anonymous\n" "Alice,Smith,1\n" "Bob,Jones,0\n"
+        csv_data = (
+            "name,surname,middle_name,birth_date,grade,school,city,is_anonymous\n"
+            "Alice,Smith,Marie,2008-05-14,10,School A,City A,1\n"
+            "Bob,Jones,Robert,2007-09-22,11,School B,City B,0\n"
+        )
         res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data)
         assert res.status_code == 201
         data = res.get_json()
@@ -648,3 +686,39 @@ class TestImportCompetitorsCsv:
         bob = User.query.filter_by(username=data["competitors"][1]["generated_username"]).first()
         assert bob is not None
         assert bob.is_anonymous is False
+
+    def test_import_competitors_anonymity_defaults(
+        self, client, tokens, sample_challenge, db_session
+    ):
+        # 1. Test no column for anonymity (neither "anonymous" nor "is_anonymous")
+        csv_data_no_col = (
+            "name,surname,middle_name,birth_date,grade,school,city\n"
+            "Charlie,Brown,C,2008-03-03,10,School A,City A\n"
+        )
+        res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data_no_col)
+        assert res.status_code == 201
+        data = res.get_json()
+        charlie = User.query.filter_by(
+            username=data["competitors"][0]["generated_username"]
+        ).first()
+        assert charlie is not None
+        assert charlie.is_anonymous is False
+
+        # 2. Test columns exist but values are empty, spaces, or missing
+        csv_data_empty_val = (
+            "name,surname,middle_name,birth_date,grade,school,city,anonymous,is_anonymous\n"
+            "Dave,Miller,D,2007-04-04,10,School A,City A,,\n"
+            "Eve,Wilson,E,2008-05-05,11,School B,City B,  ,  \n"
+        )
+        res = self._upload_csv(client, sample_challenge.id, tokens.admin, csv_data_empty_val)
+        assert res.status_code == 201
+        data = res.get_json()
+        assert len(data["competitors"]) == 2
+
+        dave = User.query.filter_by(username=data["competitors"][0]["generated_username"]).first()
+        assert dave is not None
+        assert dave.is_anonymous is False
+
+        eve = User.query.filter_by(username=data["competitors"][1]["generated_username"]).first()
+        assert eve is not None
+        assert eve.is_anonymous is False

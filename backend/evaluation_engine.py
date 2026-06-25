@@ -39,7 +39,10 @@ AVAILABLE_METRICS = {
     "recall": {"average": ["macro", "micro", "weighted", "binary"]},
     "cohen_kappa": {},
     "matthews_corrcoef": {},
-    "auc_roc": {"average": ["macro", "micro", "weighted"], "multi_class": ["raise", "ovr", "ovo"]},
+    "auc_roc": {
+        "average": ["macro", "micro", "weighted"],
+        "multi_class": ["raise", "ovr", "ovo"],
+    },
     "logloss": {},
     "brier_score": {},
     "rmse": {"shape": "string", "multioutput": ["uniform_average", "raw_values"]},
@@ -697,7 +700,10 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
         elif m_name_clean == "precision":
             try:
                 val = precision_score(
-                    y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
+                    y_true,
+                    y_pred,
+                    average=m_opts.get("average", "macro"),
+                    zero_division=0,
                 )
             except Exception as e:
                 logger.warning("precision calculation failed, using fallback 0.0: %s", e)
@@ -725,7 +731,10 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             else:
                 try:
                     val = recall_score(
-                        y_true, y_pred, average=m_opts.get("average", "macro"), zero_division=0
+                        y_true,
+                        y_pred,
+                        average=m_opts.get("average", "macro"),
+                        zero_division=0,
                     )
                 except Exception as e:
                     logger.warning("recall calculation failed, using fallback 0.0: %s", e)
@@ -751,7 +760,9 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                 val = roc_auc_score(y_true, y_pred, average=avg, multi_class=mc)
             except Exception as e:
                 logger.warning(
-                    "roc_auc_score failed for metric '%s', using fallback 0.5: %s", m_name, e
+                    "roc_auc_score failed for metric '%s', using fallback 0.5: %s",
+                    m_name,
+                    e,
                 )
                 val = 0.5
         elif m_name_clean == "logloss":
@@ -759,7 +770,9 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                 val = log_loss(y_true, y_pred)
             except Exception as e:
                 logger.warning(
-                    "log_loss failed for metric '%s', using fallback 10.0: %s", m_name, e
+                    "log_loss failed for metric '%s', using fallback 10.0: %s",
+                    m_name,
+                    e,
                 )
                 val = 10.0
         elif m_name_clean == "brier_score":
@@ -767,7 +780,9 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                 val = brier_score_loss(y_true, y_pred)
             except Exception as e:
                 logger.warning(
-                    "brier_score_loss failed for metric '%s', using fallback 1.0: %s", m_name, e
+                    "brier_score_loss failed for metric '%s', using fallback 1.0: %s",
+                    m_name,
+                    e,
                 )
                 val = 1.0
 
@@ -823,7 +838,9 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                             val = np.mean(scores)
                         except Exception as e:
                             logger.warning(
-                                "Shape error for metric '%s', using fallback 999.0: %s", m_name, e
+                                "Shape error for metric '%s', using fallback 999.0: %s",
+                                m_name,
+                                e,
                             )
                             val = 999.0  # Fallback on shape error
             except Exception as e:

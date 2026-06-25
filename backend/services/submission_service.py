@@ -144,7 +144,10 @@ def check_execution_rules(task, cells_list):
         for line in cleaned.splitlines():
             stripped = line.strip()
             if stripped.startswith("!") or stripped.startswith("%"):
-                return False, "Rule Violation: Jupyter magic commands ('!' or '%') are banned."
+                return (
+                    False,
+                    "Rule Violation: Jupyter magic commands ('!' or '%') are banned.",
+                )
 
     if task.banned_imports:
         banned = [lib.strip().lower() for lib in task.banned_imports.split(",") if lib.strip()]

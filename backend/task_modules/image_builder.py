@@ -181,7 +181,10 @@ def build_task_image(metadata):
                     f,
                 )
             logger.info(
-                "Task %s image built successfully in %.1fs (tag: %s)", task_id, elapsed, tag
+                "Task %s image built successfully in %.1fs (tag: %s)",
+                task_id,
+                elapsed,
+                tag,
             )
             return True
         logger.error("Task %s image build failed (rc=%s)\n%s", task_id, retcode, "\n".join(logs))

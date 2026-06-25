@@ -13,7 +13,6 @@ from auth_utils import generate_token
 
 
 class TestSelectFinalSubmission:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -207,7 +206,8 @@ class TestSelectFinalSubmission:
         db.session.add(late_sub)
         db.session.commit()
         resp = self.client.post(
-            f"/api/submissions/{late_sub.id}/select-final", headers=self._auth(self.comp_token)
+            f"/api/submissions/{late_sub.id}/select-final",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
         data = resp.get_json()
@@ -265,7 +265,6 @@ class TestSelectFinalSubmission:
 
 
 class TestParseNotebook:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -402,7 +401,6 @@ class TestParseNotebook:
 
 
 class TestSubmitCode:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush, app):
         self.client = client
@@ -691,7 +689,6 @@ class TestSubmitCode:
 
 
 class TestGetSubmissions:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -772,7 +769,8 @@ class TestGetSubmissions:
 
     def test_competitor_sees_only_own_submissions(self):
         resp = self.client.get(
-            f"/api/challenges/{self.challenge.id}/submissions", headers=self._auth(self.comp_token)
+            f"/api/challenges/{self.challenge.id}/submissions",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 200
         body = resp.get_json()
@@ -781,7 +779,8 @@ class TestGetSubmissions:
 
     def test_other_competitor_sees_only_own_submissions(self):
         resp = self.client.get(
-            f"/api/challenges/{self.challenge.id}/submissions", headers=self._auth(self.other_token)
+            f"/api/challenges/{self.challenge.id}/submissions",
+            headers=self._auth(self.other_token),
         )
         assert resp.status_code == 200
         body = resp.get_json()
@@ -790,7 +789,8 @@ class TestGetSubmissions:
 
     def test_admin_sees_all_submissions(self):
         resp = self.client.get(
-            f"/api/challenges/{self.challenge.id}/submissions", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/submissions",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         body = resp.get_json()
@@ -798,13 +798,18 @@ class TestGetSubmissions:
 
     def test_not_registered_competitor(self):
         unreg = User(
-            username="unreg", password_hash="x", role="competitor", alias_id="UR", challenge_id=999
+            username="unreg",
+            password_hash="x",
+            role="competitor",
+            alias_id="UR",
+            challenge_id=999,
         )
         db.session.add(unreg)
         db.session.commit()
         token = generate_token(unreg.id, role="competitor")
         resp = self.client.get(
-            f"/api/challenges/{self.challenge.id}/submissions", headers=self._auth(token)
+            f"/api/challenges/{self.challenge.id}/submissions",
+            headers=self._auth(token),
         )
         assert resp.status_code == 403
         assert resp.get_json()["code"] == "ERR_NOT_REGISTERED"
@@ -848,7 +853,6 @@ class TestGetSubmissions:
 
 
 class TestGetSubmissionDetail:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -920,7 +924,8 @@ class TestGetSubmissionDetail:
 
     def test_owner_can_view_own_submission(self):
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}", headers=self._auth(self.owner_token)
+            f"/api/submissions/{self.submission.id}",
+            headers=self._auth(self.owner_token),
         )
         assert resp.status_code == 200
         body = resp.get_json()
@@ -928,7 +933,8 @@ class TestGetSubmissionDetail:
 
     def test_admin_can_view_any_submission(self):
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}", headers=self._auth(self.admin_token)
+            f"/api/submissions/{self.submission.id}",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         body = resp.get_json()
@@ -936,7 +942,8 @@ class TestGetSubmissionDetail:
 
     def test_competitor_cannot_view_others_submission(self):
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}", headers=self._auth(self.other_token)
+            f"/api/submissions/{self.submission.id}",
+            headers=self._auth(self.other_token),
         )
         assert resp.status_code == 403
         assert resp.get_json()["code"] == "ERR_NOT_OWNER"
@@ -947,7 +954,8 @@ class TestGetSubmissionDetail:
 
     def test_to_dict_includes_expected_fields(self):
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}", headers=self._auth(self.owner_token)
+            f"/api/submissions/{self.submission.id}",
+            headers=self._auth(self.owner_token),
         )
         body = resp.get_json()
         assert "id" in body
@@ -959,7 +967,6 @@ class TestGetSubmissionDetail:
 
 
 class TestStreamSubmissionLogs:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
         self.client = client
@@ -1037,7 +1044,8 @@ class TestStreamSubmissionLogs:
 
     def test_competitor_cannot_view_others_logs(self):
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}/logs/live", headers=self._auth(self.other_token)
+            f"/api/submissions/{self.submission.id}/logs/live",
+            headers=self._auth(self.other_token),
         )
         assert resp.status_code == 403
 
@@ -1045,7 +1053,8 @@ class TestStreamSubmissionLogs:
         self.submission.status = "completed"
         db.session.commit()
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}/logs/live", headers=self._auth(self.owner_token)
+            f"/api/submissions/{self.submission.id}/logs/live",
+            headers=self._auth(self.owner_token),
         )
         assert resp.status_code == 200
         assert resp.mimetype == "text/event-stream"
@@ -1054,7 +1063,8 @@ class TestStreamSubmissionLogs:
         self.submission.status = "completed"
         db.session.commit()
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}/logs/live", headers=self._auth(self.admin_token)
+            f"/api/submissions/{self.submission.id}/logs/live",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         assert resp.mimetype == "text/event-stream"
@@ -1063,7 +1073,8 @@ class TestStreamSubmissionLogs:
         self.submission.status = "completed"
         db.session.commit()
         resp = self.client.get(
-            f"/api/submissions/{self.submission.id}/logs/live", headers=self._auth(self.owner_token)
+            f"/api/submissions/{self.submission.id}/logs/live",
+            headers=self._auth(self.owner_token),
         )
         data = resp.data.decode("utf-8")
         assert "data: " in data

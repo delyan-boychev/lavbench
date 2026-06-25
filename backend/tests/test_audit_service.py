@@ -59,7 +59,11 @@ class TestAuditService:
 
     def test_log_action_multiple_entries(self):
         for i in range(3):
-            self._log(action_type="delete", target_type="task", target_id=self.dummy_uuids[3 + i])
+            self._log(
+                action_type="delete",
+                target_type="task",
+                target_id=self.dummy_uuids[3 + i],
+            )
         assert self._query(action_type="delete").count() == 3
 
     def test_log_action_handles_none_details(self):
@@ -173,7 +177,7 @@ class TestAuditLogsRoute:
 
     def test_get_audit_logs_filter_by_challenge(self):
         # Create a challenge, tasks, stages, users
-        from models import Challenge, Stage, Task, User, AuditLog
+        from models import Challenge, AuditLog
         from datetime import datetime, timedelta
         from models import db
 

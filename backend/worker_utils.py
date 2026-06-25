@@ -202,11 +202,14 @@ def report_status_to_server(
                 return True
             if res.status_code == 404:
                 logger.warning(
-                    "Submission %s not found on server (404) — stopping retries", submission_id
+                    "Submission %s not found on server (404) — stopping retries",
+                    submission_id,
                 )
                 return False
             logger.warning(
-                "Server returned status %s for report attempt %s", res.status_code, attempt + 1
+                "Server returned status %s for report attempt %s",
+                res.status_code,
+                attempt + 1,
             )
         except Exception as e:
             logger.warning(

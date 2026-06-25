@@ -20,7 +20,8 @@ def generate_scores_csv(challenge):
         late_user_ids = (
             db.session.query(Submission.user_id)
             .filter(
-                Submission.challenge_id == challenge.id, Submission.executed_at > challenge.end_time
+                Submission.challenge_id == challenge.id,
+                Submission.executed_at > challenge.end_time,
             )
             .distinct()
             .all()
@@ -31,7 +32,8 @@ def generate_scores_csv(challenge):
 
     if late_users:
         is_final_active = case(
-            (Submission.user_id.in_(late_users), False), else_=Submission.is_final_selection
+            (Submission.user_id.in_(late_users), False),
+            else_=Submission.is_final_selection,
         )
     else:
         is_final_active = Submission.is_final_selection
@@ -91,7 +93,17 @@ def generate_scores_csv(challenge):
     output = io.StringIO()
     writer = csv.writer(output)
 
-    header = ["Rank", "Alias ID", "Name", "Surname", "Username", "Email", "School", "City", "Grade"]
+    header = [
+        "Rank",
+        "Alias ID",
+        "Name",
+        "Surname",
+        "Username",
+        "Email",
+        "School",
+        "City",
+        "Grade",
+    ]
     for task in tasks:
         header.append(f"Task: {task.title}")
     header.append("Total Score")
@@ -212,7 +224,11 @@ def generate_exported_results_csv(challenge, view_role="admin"):
             m_pts = manual_pts.get(str(task.id), 0)
 
             row.extend(
-                [pub if pub is not None else "N/A", priv if priv is not None else "N/A", m_pts]
+                [
+                    pub if pub is not None else "N/A",
+                    priv if priv is not None else "N/A",
+                    m_pts,
+                ]
             )
 
         writer.writerow(row)
@@ -220,7 +236,15 @@ def generate_exported_results_csv(challenge, view_role="admin"):
     writer.writerow([])
     writer.writerow(["--- SCORE CORRECTION AUDIT LOG ---"])
     writer.writerow(
-        ["Timestamp (UTC)", "Admin", "Target Student", "Task", "Old Score", "New Score", "Reason"]
+        [
+            "Timestamp (UTC)",
+            "Admin",
+            "Target Student",
+            "Task",
+            "Old Score",
+            "New Score",
+            "Reason",
+        ]
     )
 
     for log in audit_logs:
@@ -389,7 +413,10 @@ def import_challenge_from_dict(data, zip_ref=None):
                             if check_dangerous_extension(safe_name):
                                 raise ValueError(f"Dangerous file extension: {safe_name}")
 
-                            with zip_ref.open(member) as source, open(target_path, "wb") as target:
+                            with (
+                                zip_ref.open(member) as source,
+                                open(target_path, "wb") as target,
+                            ):
                                 target.write(source.read())
                         except Exception as e:
                             db.session.rollback()

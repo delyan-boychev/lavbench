@@ -469,7 +469,9 @@ class TestUpdateTask:
 
         # Override UPLOAD_FOLDER for this test
         with patch.dict(
-            client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
+            client.application.config,
+            {"UPLOAD_FOLDER": tempfile.gettempdir()},
+            clear=False,
         ):
             url = f"/api/tasks/{task.id}"
             headers = auth_headers(tokens.admin)
@@ -540,7 +542,10 @@ class TestUpdateTask:
         url = f"/api/tasks/{task.id}"
         headers = auth_headers(tokens.competitor)
         resp = client.put(
-            url, data={"title": "Hacked"}, headers=headers, content_type="multipart/form-data"
+            url,
+            data={"title": "Hacked"},
+            headers=headers,
+            content_type="multipart/form-data",
         )
         assert resp.status_code == 403
 
@@ -548,7 +553,10 @@ class TestUpdateTask:
         url = "/api/tasks/99999"
         headers = auth_headers(tokens.admin)
         resp = client.put(
-            url, data={"title": "Ghost"}, headers=headers, content_type="multipart/form-data"
+            url,
+            data={"title": "Ghost"},
+            headers=headers,
+            content_type="multipart/form-data",
         )
         assert resp.status_code == 404
 
@@ -603,7 +611,9 @@ class TestUpdateTask:
         os.makedirs(upload_dir, exist_ok=True)
 
         with patch.dict(
-            client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
+            client.application.config,
+            {"UPLOAD_FOLDER": tempfile.gettempdir()},
+            clear=False,
         ):
             url = f"/api/tasks/{task.id}"
             headers = auth_headers(tokens.admin)

@@ -13,7 +13,6 @@ from auth_utils import generate_token
 
 
 class TestCheckCompetitorAccess:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush):
         self.challenge = Challenge(
@@ -53,7 +52,6 @@ class TestCheckCompetitorAccess:
 
 
 class TestCheckTaskStarted:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush):
         self.challenge = Challenge(
@@ -126,7 +124,6 @@ class TestCheckTaskStarted:
 
 
 class TestQueueSystemSubmission:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush):
         self.challenge = Challenge(
@@ -182,7 +179,10 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         assert mock_apply.call_args[1]["queue"] == "gpu_queue"
 
@@ -193,7 +193,10 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         assert mock_apply.call_args[1]["queue"] == "cpu_queue"
 
@@ -223,7 +226,10 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert "submission_id" in metadata
@@ -240,7 +246,10 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
@@ -253,7 +262,10 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["custom_eval_code"] == "def custom(): pass"
@@ -281,14 +293,16 @@ class TestQueueSystemSubmission:
         from routes.tasks import queue_system_submission
 
         queue_system_submission(
-            self.task, self.challenge, [{"cell_type": "code", "source": ["x=1"]}], self.admin.id
+            self.task,
+            self.challenge,
+            [{"cell_type": "code", "source": ["x=1"]}],
+            self.admin.id,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["time_limit"] == 600
 
 
 class TestMaybeQueueBaseline:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush):
         self.challenge = Challenge(
@@ -371,7 +385,6 @@ class TestMaybeQueueBaseline:
 
 
 class TestGetTask:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, redis_flush):
         self.client = client
@@ -440,7 +453,6 @@ class TestGetTask:
 
 
 class TestDeleteTask:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, redis_flush):
         self.client = client
@@ -514,7 +526,6 @@ class TestDeleteTask:
 
 
 class TestDownloadTaskFile:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, redis_flush, app):
         self.client = client
@@ -575,7 +586,8 @@ class TestDownloadTaskFile:
         self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
         db.session.commit()
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/download/test.txt", headers=self._auth(self.comp_token)
+            f"/api/tasks/{self.task.id}/download/test.txt",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
 
@@ -597,7 +609,6 @@ class TestDownloadTaskFile:
 
 
 class TestGetTaskSubmissions:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, redis_flush):
         self.client = client
@@ -655,7 +666,8 @@ class TestGetTaskSubmissions:
 
     def test_admin_sees_all_submissions(self):
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions?page=1", headers=self._auth(self.admin_token)
+            f"/api/tasks/{self.task.id}/submissions?page=1",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -664,7 +676,8 @@ class TestGetTaskSubmissions:
 
     def test_competitor_only_sees_own_submissions(self):
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions?page=1", headers=self._auth(self.comp_token)
+            f"/api/tasks/{self.task.id}/submissions?page=1",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -677,7 +690,8 @@ class TestGetTaskSubmissions:
         self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
         db.session.commit()
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions", headers=self._auth(self.comp_token)
+            f"/api/tasks/{self.task.id}/submissions",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
 
@@ -685,7 +699,8 @@ class TestGetTaskSubmissions:
         self.challenge.scores_finalized = True
         db.session.commit()
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions", headers=self._auth(self.comp_token)
+            f"/api/tasks/{self.task.id}/submissions",
+            headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
 
@@ -693,7 +708,8 @@ class TestGetTaskSubmissions:
         self.challenge.scores_finalized = True
         db.session.commit()
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions", headers=self._auth(self.admin_token)
+            f"/api/tasks/{self.task.id}/submissions",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
 
@@ -708,7 +724,8 @@ class TestGetTaskSubmissions:
 
     def test_includes_submission_details(self):
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions?page=1", headers=self._auth(self.admin_token)
+            f"/api/tasks/{self.task.id}/submissions?page=1",
+            headers=self._auth(self.admin_token),
         )
         data = resp.get_json()
         item = data["items"][0]
@@ -722,7 +739,6 @@ class TestGetTaskSubmissions:
 
 
 class TestGetTaskLeaderboard:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, auth_headers, redis_flush):
         self.client = client
@@ -756,7 +772,8 @@ class TestGetTaskLeaderboard:
     def test_returns_leaderboard_data(self, mock_get_data):
         mock_get_data.return_value = {"leaderboard": [{"rank": 1, "score": 0.95}]}
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/tasks/{self.task.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -766,7 +783,8 @@ class TestGetTaskLeaderboard:
     def test_returns_403_on_error(self, mock_get_data):
         mock_get_data.return_value = {"error": "Access denied"}
         resp = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/tasks/{self.task.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 403
 
@@ -776,7 +794,6 @@ class TestGetTaskLeaderboard:
 
 
 class TestWorkerDownloadTaskFile:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush, app):
         self.app = app
@@ -840,7 +857,6 @@ class TestWorkerDownloadTaskFile:
 
 
 class TestGetActiveDatasets:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, redis_flush):
         self.client = client
@@ -894,7 +910,6 @@ class TestGetActiveDatasets:
 
 
 class TestGetTaskHfKey:
-
     @pytest.fixture(autouse=True)
     def setup(self, db_session, client, redis_flush):
         self.client = client
@@ -925,7 +940,8 @@ class TestGetTaskHfKey:
         mock_verify.return_value = True
         with patch.object(Task, "get_hf_api_key", return_value="my-key"):
             resp = self.client.get(
-                f"/api/worker/tasks/{self.task.id}/hf-key", headers={"X-Worker-Token": "token"}
+                f"/api/worker/tasks/{self.task.id}/hf-key",
+                headers={"X-Worker-Token": "token"},
             )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -935,7 +951,8 @@ class TestGetTaskHfKey:
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
-            f"/api/worker/tasks/{self.task.id}/hf-key", headers={"X-Worker-Token": "bad"}
+            f"/api/worker/tasks/{self.task.id}/hf-key",
+            headers={"X-Worker-Token": "bad"},
         )
         assert resp.status_code == 401
 

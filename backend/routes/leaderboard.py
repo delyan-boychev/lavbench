@@ -83,7 +83,12 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
             for t in visible_tasks:
                 tid_str = str(t.id)
                 sc_dict = entry.get("task_scores", {}).get(
-                    tid_str, {"public_score": None, "private_score": None, "submission_id": None}
+                    tid_str,
+                    {
+                        "public_score": None,
+                        "private_score": None,
+                        "submission_id": None,
+                    },
                 )
 
                 s_copy = dict(sc_dict)
@@ -163,6 +168,8 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 }
             else:
                 user_copy = dict(comp_user)
+                user_copy.pop("middle_name", None)
+                user_copy.pop("birth_date", None)
                 user_copy["manual_points"] = (
                     manual_points_dict if (challenge_finalized and challenge.reveal_results) else {}
                 )
@@ -432,7 +439,9 @@ def stream_challenge_leaderboard(challenge_id):
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 
@@ -513,7 +522,10 @@ def save_manual_points(challenge_id):
     if not user_id or not isinstance(points_dict, dict):
         return (
             jsonify(
-                {"error": "Missing user_id or points dictionary.", "code": "ERR_MISSING_FIELDS"}
+                {
+                    "error": "Missing user_id or points dictionary.",
+                    "code": "ERR_MISSING_FIELDS",
+                }
             ),
             400,
         )

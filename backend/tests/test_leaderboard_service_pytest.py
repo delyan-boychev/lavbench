@@ -9,7 +9,10 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, User, Challenge, Task, Submission
-from services.leaderboard_service import build_and_cache_leaderboard, get_task_leaderboard_data
+from services.leaderboard_service import (
+    build_and_cache_leaderboard,
+    get_task_leaderboard_data,
+)
 
 
 class TestBuildAndCacheLeaderboard:
@@ -64,7 +67,13 @@ class TestBuildAndCacheLeaderboard:
         return comp
 
     def _create_submission(
-        self, user_id, task_id, public_score, private_score, status="completed", execution_time_ms=0
+        self,
+        user_id,
+        task_id,
+        public_score,
+        private_score,
+        status="completed",
+        execution_time_ms=0,
     ):
         sub = Submission(
             challenge_id=self.challenge.id,

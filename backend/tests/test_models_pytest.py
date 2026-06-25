@@ -31,7 +31,10 @@ class TestSubmissionFileCleanup:
         db.session.commit()
 
         sub = Submission(
-            user_id=user.id, challenge_id=challenge.id, task_id=task.id, status="completed"
+            user_id=user.id,
+            challenge_id=challenge.id,
+            task_id=task.id,
+            status="completed",
         )
         sub.code_cells = "[]"
         sub.logs = "test log"
@@ -65,7 +68,9 @@ class TestSubmissionToDict:
         user = User(username="testuser_dict", password_hash="x", role="competitor")
         db.session.add(user)
         challenge = Challenge(
-            title="Test Dict", start_time=datetime(2024, 1, 1), end_time=datetime(2026, 1, 1)
+            title="Test Dict",
+            start_time=datetime(2024, 1, 1),
+            end_time=datetime(2026, 1, 1),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -75,7 +80,10 @@ class TestSubmissionToDict:
         db.session.commit()
 
         sub = Submission(
-            user_id=user.id, challenge_id=challenge.id, task_id=task.id, status="completed"
+            user_id=user.id,
+            challenge_id=challenge.id,
+            task_id=task.id,
+            status="completed",
         )
         sub.code_cells = '["print(1)"]'
         sub.logs = "evaluated logs"

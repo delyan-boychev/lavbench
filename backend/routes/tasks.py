@@ -249,7 +249,10 @@ def get_task(task_id):
     if not check_task_started(task, user_role, user_id):
         return (
             jsonify(
-                {"error": "Access denied or task not available yet.", "code": "ERR_NOT_AVAILABLE"}
+                {
+                    "error": "Access denied or task not available yet.",
+                    "code": "ERR_NOT_AVAILABLE",
+                }
             ),
             403,
         )
@@ -578,7 +581,6 @@ def create_task(challenge_id):
             uploaded_file.save(save_path)
 
             if uploaded_file.filename == "labels.parquet":
-
                 try:
                     from evaluation_engine import validate_parquet_schema_columns
                     import pyarrow.parquet as pq
@@ -602,7 +604,11 @@ def create_task(challenge_id):
                     return jsonify({"error": f"Failed to parse labels.parquet: {str(e)}"}), 400
 
             uploaded_files_meta.append(
-                {"filename": uploaded_file.filename, "saved_name": safe_name, "size_bytes": size}
+                {
+                    "filename": uploaded_file.filename,
+                    "saved_name": safe_name,
+                    "size_bytes": size,
+                }
             )
 
     task.files = json.dumps(uploaded_files_meta)
@@ -1002,7 +1008,11 @@ def update_task(task_id):
                     return jsonify({"error": f"Failed to parse labels.parquet: {str(e)}"}), 400
 
             current_files.append(
-                {"filename": uploaded_file.filename, "saved_name": safe_name, "size_bytes": size}
+                {
+                    "filename": uploaded_file.filename,
+                    "saved_name": safe_name,
+                    "size_bytes": size,
+                }
             )
     task.files = json.dumps(current_files)
     db.session.commit()
@@ -1443,7 +1453,10 @@ def submit_task(task_id):
             db.session.commit()
             return (
                 jsonify(
-                    {"error": "Failed to load evaluator script.", "submission_id": submission.id}
+                    {
+                        "error": "Failed to load evaluator script.",
+                        "submission_id": submission.id,
+                    }
                 ),
                 500,
             )
@@ -1501,7 +1514,9 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
     from sqlalchemy.orm import joinedload
 
     query = query.options(
-        joinedload(Submission.challenge), joinedload(Submission.user), joinedload(Submission.task)
+        joinedload(Submission.challenge),
+        joinedload(Submission.user),
+        joinedload(Submission.task),
     )
 
     if page is not None:
@@ -1681,7 +1696,9 @@ def stream_task_leaderboard(task_id):
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 
@@ -1790,7 +1807,9 @@ def stream_task_submissions(task_id):
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 
@@ -1880,7 +1899,9 @@ def stream_worker_status():
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(event_generator()), mimetype="text/event-stream", headers=headers
+        stream_with_context(event_generator()),
+        mimetype="text/event-stream",
+        headers=headers,
     )
 
 

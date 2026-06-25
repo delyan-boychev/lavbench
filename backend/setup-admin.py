@@ -49,7 +49,8 @@ def generate_master_key():
 
         # Save credentials to a persistent text file in the workspace
         creds_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "admin_credentials.txt"
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "admin_credentials.txt",
         )
         try:
             with open(creds_path, "w") as f:

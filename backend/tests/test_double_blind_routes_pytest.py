@@ -117,7 +117,8 @@ class TestDoubleBlindAndLeaderboardRules:
 
         # Request as jury
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.jury_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.jury_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -130,7 +131,8 @@ class TestDoubleBlindAndLeaderboardRules:
 
         # Request as admin (should see names)
         res_admin = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert res_admin.status_code == 200
         user_info_admin = res_admin.get_json()["leaderboard"][0]["user"]
@@ -179,7 +181,8 @@ class TestDoubleBlindAndLeaderboardRules:
 
         # Jury gets points for grading even if details are anonymized
         res_jury = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.jury_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.jury_token),
         )
         assert res_jury.status_code == 200
         jury_leaderboard = res_jury.get_json()["leaderboard"]

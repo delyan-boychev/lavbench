@@ -209,7 +209,18 @@ class TestComputeMapDetection:
     def test_empty_true(self):
         ap = compute_map_detection(
             [[]],
-            [[{"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "score": 0.9, "label": "cat"}]],
+            [
+                [
+                    {
+                        "x_min": 0,
+                        "y_min": 0,
+                        "x_max": 10,
+                        "y_max": 10,
+                        "score": 0.9,
+                        "label": "cat",
+                    }
+                ]
+            ],
         )
         assert ap == 0.0
 
@@ -225,13 +236,27 @@ class TestComputeMapDetection:
 
     def test_perfect_match(self):
         true_box = {"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "label": "cat"}
-        pred_box = {"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "score": 0.9, "label": "cat"}
+        pred_box = {
+            "x_min": 0,
+            "y_min": 0,
+            "x_max": 10,
+            "y_max": 10,
+            "score": 0.9,
+            "label": "cat",
+        }
         ap = compute_map_detection([[true_box]], [[pred_box]])
         assert ap > 0.0
 
     def test_wrong_label(self):
         true_box = {"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "label": "cat"}
-        pred_box = {"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10, "score": 0.9, "label": "dog"}
+        pred_box = {
+            "x_min": 0,
+            "y_min": 0,
+            "x_max": 10,
+            "y_max": 10,
+            "score": 0.9,
+            "label": "dog",
+        }
         ap = compute_map_detection([[true_box]], [[pred_box]])
         assert ap == 0.0
 
@@ -489,7 +514,11 @@ class TestComputeRetrievalMetrics:
     def test_multiple_queries(self):
         df_true = pd.DataFrame({"query_id": [1, 1, 2, 2], "doc_id": [10, 20, 30, 40]})
         df_pred = pd.DataFrame(
-            {"query_id": [1, 1, 2, 2], "doc_id": [10, 20, 30, 40], "score": [0.9, 0.8, 0.7, 0.6]}
+            {
+                "query_id": [1, 1, 2, 2],
+                "doc_id": [10, 20, 30, 40],
+                "score": [0.9, 0.8, 0.7, 0.6],
+            }
         )
         result = compute_retrieval_metrics(df_true, df_pred, k=10)
         assert result["mrr"] == pytest.approx(1.0)
@@ -571,7 +600,9 @@ class TestEvaluatePredictionsEdgeCases:
         df_sub = pd.DataFrame({"id": [1], "my_pred": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "my_label": [0.5]})
         result = evaluate_predictions(
-            df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "my_label"}}}
+            df_sub,
+            df_labels,
+            {"rmse": {"weight": 1.0, "options": {"column": "my_label"}}},
         )
         assert "rmse" in result
 
@@ -579,7 +610,9 @@ class TestEvaluatePredictionsEdgeCases:
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "label": [0.5]})
         result = evaluate_predictions(
-            df_sub, df_labels, {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}}
+            df_sub,
+            df_labels,
+            {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}},
         )
         assert result["rmse"] == 0.0
 
@@ -587,7 +620,9 @@ class TestEvaluatePredictionsEdgeCases:
         df_sub = pd.DataFrame({"id": [1, 2, 3, 4], "prediction": [0, 0, 0, 1]})
         df_labels = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 0, 1, 1]})
         result = evaluate_predictions(
-            df_sub, df_labels, {"accuracy": {"weight": 1.0, "options": {"balanced": "true"}}}
+            df_sub,
+            df_labels,
+            {"accuracy": {"weight": 1.0, "options": {"balanced": "true"}}},
         )
         assert "accuracy" in result
 

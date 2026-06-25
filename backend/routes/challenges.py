@@ -74,7 +74,6 @@ def filter_challenge_for_competitor(challenge_dict):
     has_stages = len(regular_stages) > 0
     active_stage_ids = []
     if has_stages:
-
         for s in regular_stages:
             try:
                 st_start_str = s.get("start_time")
@@ -283,7 +282,12 @@ def get_challenge(challenge_id):
             challenge = db.session.get(Challenge, challenge_id)
             if not challenge or challenge.is_archived:
                 return (
-                    jsonify({"error": "Challenge not found.", "code": "ERR_CHALLENGE_NOT_FOUND"}),
+                    jsonify(
+                        {
+                            "error": "Challenge not found.",
+                            "code": "ERR_CHALLENGE_NOT_FOUND",
+                        }
+                    ),
                     404,
                 )
             challenge_dict = challenge.to_dict()
@@ -363,7 +367,12 @@ def create_challenge():
 
     if not title:
         return (
-            jsonify({"error": "Competition title is required.", "code": "ERR_TITLE_REQUIRED"}),
+            jsonify(
+                {
+                    "error": "Competition title is required.",
+                    "code": "ERR_TITLE_REQUIRED",
+                }
+            ),
             400,
         )
 
@@ -391,21 +400,34 @@ def create_challenge():
 
     if ram_limit_mb is not None and ram_limit_mb < 128:
         return (
-            jsonify({"error": "RAM limit must be at least 128 MB.", "code": "ERR_INVALID_LIMITS"}),
+            jsonify(
+                {
+                    "error": "RAM limit must be at least 128 MB.",
+                    "code": "ERR_INVALID_LIMITS",
+                }
+            ),
             400,
         )
 
     if time_limit_sec is not None and time_limit_sec < 1:
         return (
             jsonify(
-                {"error": "Time limit must be at least 1 second.", "code": "ERR_INVALID_LIMITS"}
+                {
+                    "error": "Time limit must be at least 1 second.",
+                    "code": "ERR_INVALID_LIMITS",
+                }
             ),
             400,
         )
 
     if end_time <= start_time:
         return (
-            jsonify({"error": "End time must be after start time.", "code": "ERR_INVALID_DATES"}),
+            jsonify(
+                {
+                    "error": "End time must be after start time.",
+                    "code": "ERR_INVALID_DATES",
+                }
+            ),
             400,
         )
 
@@ -534,7 +556,11 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
         # Set files metadata
         labels_size = os.path.getsize(dest_labels)
         files_meta = [
-            {"filename": labels_filename, "saved_name": labels_filename, "size_bytes": labels_size}
+            {
+                "filename": labels_filename,
+                "saved_name": labels_filename,
+                "size_bytes": labels_size,
+            }
         ]
         test_task.files = json_mod.dumps(files_meta)
         db.session.commit()
@@ -614,7 +640,10 @@ def update_challenge(challenge_id):
         if val < 128:
             return (
                 jsonify(
-                    {"error": "RAM limit must be at least 128 MB.", "code": "ERR_INVALID_LIMITS"}
+                    {
+                        "error": "RAM limit must be at least 128 MB.",
+                        "code": "ERR_INVALID_LIMITS",
+                    }
                 ),
                 400,
             )
@@ -624,7 +653,10 @@ def update_challenge(challenge_id):
         if val < 1:
             return (
                 jsonify(
-                    {"error": "Time limit must be at least 1 second.", "code": "ERR_INVALID_LIMITS"}
+                    {
+                        "error": "Time limit must be at least 1 second.",
+                        "code": "ERR_INVALID_LIMITS",
+                    }
                 ),
                 400,
             )
@@ -636,7 +668,12 @@ def update_challenge(challenge_id):
         st = parse_datetime(data.get("start_time"))
         if not st:
             return (
-                jsonify({"error": "Start time is required.", "code": "ERR_DATETIME_REQUIRED"}),
+                jsonify(
+                    {
+                        "error": "Start time is required.",
+                        "code": "ERR_DATETIME_REQUIRED",
+                    }
+                ),
                 400,
             )
         challenge.start_time = st
@@ -648,7 +685,12 @@ def update_challenge(challenge_id):
 
     if challenge.end_time <= challenge.start_time:
         return (
-            jsonify({"error": "End time must be after start time.", "code": "ERR_INVALID_DATES"}),
+            jsonify(
+                {
+                    "error": "End time must be after start time.",
+                    "code": "ERR_INVALID_DATES",
+                }
+            ),
             400,
         )
 
@@ -1347,7 +1389,6 @@ def finalize_stage(challenge_id, stage_id):
                 name_str = comp.username
                 if comp.name:
                     try:
-
                         dec_name = decrypt_field(comp.name)
                         dec_surname = decrypt_field(comp.surname)
                         name_str = f"{dec_name} {dec_surname}"
@@ -1370,7 +1411,10 @@ def finalize_stage(challenge_id, stage_id):
         stage.reveal_results = True
     else:
         stage.reveal_results = bool(
-            data.get("reveal_results", data.get("reveal_private", data.get("reveal_points", False)))
+            data.get(
+                "reveal_results",
+                data.get("reveal_private", data.get("reveal_points", False)),
+            )
         )
 
     db.session.commit()
@@ -1442,7 +1486,10 @@ def create_test_stage(challenge_id):
     if not start_time or not end_time:
         return (
             jsonify(
-                {"error": "start_time and end_time are required.", "code": "ERR_MISSING_DATES"}
+                {
+                    "error": "start_time and end_time are required.",
+                    "code": "ERR_MISSING_DATES",
+                }
             ),
             400,
         )

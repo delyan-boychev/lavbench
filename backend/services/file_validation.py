@@ -102,7 +102,11 @@ def validate_notebook_content(content_bytes):
             missing = required_keys - cell.keys()
             return False, f"Cell at index {i} missing keys: {missing}", None
         if cell.get("cell_type") not in ("code", "markdown", "raw"):
-            return False, f"Cell at index {i} has invalid cell_type '{cell.get('cell_type')}'", None
+            return (
+                False,
+                f"Cell at index {i} has invalid cell_type '{cell.get('cell_type')}'",
+                None,
+            )
     return True, None, notebook
 
 

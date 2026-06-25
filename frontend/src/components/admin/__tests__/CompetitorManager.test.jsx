@@ -90,7 +90,9 @@ const baseProps = {
   setEditingUser: vi.fn(),
   editUserForm: {
     name: '',
+    middle_name: '',
     surname: '',
+    birth_date: '',
     grade: '',
     school: '',
     city: '',
@@ -105,7 +107,9 @@ const baseProps = {
   isEditDisabled: false,
   newCompetitor: {
     name: '',
+    middle_name: '',
     surname: '',
+    birth_date: '',
     grade: '',
     school: '',
     city: '',
@@ -175,14 +179,22 @@ describe('CompetitorManager', () => {
     expect(screen.getByText('pass123')).toBeInTheDocument();
   });
 
-  it('shows imported competitors when list is non-empty', () => {
+  it('does not show imported competitors in the document (privacy constraint) but shows download button', () => {
     const imported = [
-      { name: 'Alice', surname: 'Smith', generated_username: 'alice_s', generated_password: 'p1' },
+      {
+        name: 'Alice',
+        middle_name: 'Marie',
+        surname: 'Smith',
+        birth_date: '2010-05-15',
+        generated_username: 'alice_s',
+        generated_password: 'p1',
+      },
     ];
     render(<CompetitorManager {...baseProps} importedCompetitors={imported} />);
-    expect(screen.getByText(/Alice/)).toBeInTheDocument();
-    expect(screen.getByText(/Smith/)).toBeInTheDocument();
-    expect(screen.getByText('alice_s')).toBeInTheDocument();
+    expect(screen.queryByText(/Alice/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Smith/)).not.toBeInTheDocument();
+    expect(screen.queryByText('alice_s')).not.toBeInTheDocument();
+    expect(screen.getByText('Download Credentials (CSV)')).toBeInTheDocument();
   });
 
   it('shows registered competitors table when list is non-empty', () => {
@@ -236,11 +248,21 @@ describe('CompetitorManager', () => {
     expect(screen.getByText('new_pass')).toBeInTheDocument();
   });
 
-  it('shows bulk reset credentials table when list is non-empty', () => {
-    const bulk = [{ name: 'User1', surname: 'Test', username: 'u1', password: 'p1' }];
+  it('does not show bulk reset credentials in the document (privacy constraint) but shows download button', () => {
+    const bulk = [
+      {
+        name: 'User1',
+        middle_name: 'Jane',
+        surname: 'Test',
+        birth_date: '2010-05-15',
+        username: 'u1',
+        password: 'p1',
+      },
+    ];
     render(<CompetitorManager {...baseProps} bulkResetCredentials={bulk} />);
-    expect(screen.getByText(/User1/)).toBeInTheDocument();
-    expect(screen.getByText(/Test/)).toBeInTheDocument();
+    expect(screen.queryByText(/User1/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Test/)).not.toBeInTheDocument();
+    expect(screen.getByText('Download Credentials (CSV)')).toBeInTheDocument();
   });
 
   it('renders pagination info for competitors list', () => {

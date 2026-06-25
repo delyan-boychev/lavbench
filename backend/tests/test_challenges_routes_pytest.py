@@ -339,7 +339,8 @@ class TestArchiveChallenge:
     def test_archive_challenge_toggle_on(self, client):
         assert self.challenge.is_archived is False
         res = client.post(
-            f"/api/challenges/{self.challenge.id}/archive", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/archive",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -350,7 +351,8 @@ class TestArchiveChallenge:
         self.challenge.is_archived = True
         db_session.commit()
         res = client.post(
-            f"/api/challenges/{self.challenge.id}/archive", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/archive",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         data = res.get_json()

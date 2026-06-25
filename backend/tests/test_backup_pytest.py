@@ -6,7 +6,6 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app import create_app
 from models import db, User, Challenge
 from task_modules.system import run_backup, run_register_worker_specs
 from tasks import check_and_backup
@@ -100,7 +99,13 @@ class TestRunBackup:
     @patch("task_modules.system.os.remove")
     @patch("task_modules.system.os.path.getctime")
     def test_run_backup_rotation_respects_custom_dir(
-        self, mock_getctime, mock_remove, mock_glob, mock_getsize, mock_makedirs, mock_run
+        self,
+        mock_getctime,
+        mock_remove,
+        mock_glob,
+        mock_getsize,
+        mock_makedirs,
+        mock_run,
     ):
         mock_run.return_value.returncode = 0
         mock_getsize.return_value = 1024
@@ -283,25 +288,29 @@ class TestAdminBackupEndpoints:
 
     def test_download_backup_not_found(self):
         resp = self.client.get(
-            "/api/admin/backups/nonexistent.tar.gz/download", headers=self._auth(self.admin_token)
+            "/api/admin/backups/nonexistent.tar.gz/download",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 404
 
     def test_download_backup_competitor_forbidden(self):
         resp = self.client.get(
-            "/api/admin/backups/test.tar.gz/download", headers=self._auth(self.user_token)
+            "/api/admin/backups/test.tar.gz/download",
+            headers=self._auth(self.user_token),
         )
         assert resp.status_code == 403
 
     def test_download_backup_jury_forbidden(self):
         resp = self.client.get(
-            "/api/admin/backups/test.tar.gz/download", headers=self._auth(self.jury_token)
+            "/api/admin/backups/test.tar.gz/download",
+            headers=self._auth(self.jury_token),
         )
         assert resp.status_code == 403
 
     def test_delete_backup_not_found(self):
         resp = self.client.delete(
-            "/api/admin/backups/nonexistent.tar.gz", headers=self._auth(self.admin_token)
+            "/api/admin/backups/nonexistent.tar.gz",
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 404
 

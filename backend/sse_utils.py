@@ -30,10 +30,15 @@ def publish_submissions_update(task_id, user_id):
     try:
         r = _redis()
         if r:
-            r.publish(f"task_{task_id}_user_{user_id}_submissions", json.dumps({"event": "update"}))
+            r.publish(
+                f"task_{task_id}_user_{user_id}_submissions",
+                json.dumps({"event": "update"}),
+            )
     except Exception:
         logger.exception(
-            "Redis publish submissions update error for task %s user %s", task_id, user_id
+            "Redis publish submissions update error for task %s user %s",
+            task_id,
+            user_id,
         )
 
 

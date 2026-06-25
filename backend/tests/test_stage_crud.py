@@ -167,7 +167,13 @@ class TestCreateStage:
         assert "invalid date" in res.get_json()["error"].lower()
 
     def test_create_stage_competitor_forbidden(
-        self, client, db_session, sample_challenge, sample_competitor, tokens, csrf_headers
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_competitor,
+        tokens,
+        csrf_headers,
     ):
         payload = {
             "title": "Competitor Stage",
@@ -203,7 +209,14 @@ class TestUpdateStage:
     """PUT /api/challenges/<id>/stages/<id>"""
 
     def test_update_stage_title(
-        self, client, db_session, sample_challenge, sample_stage, sample_admin, tokens, csrf_headers
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        sample_admin,
+        tokens,
+        csrf_headers,
     ):
         payload = {"title": "Updated Title"}
         res = client.put(
@@ -216,7 +229,14 @@ class TestUpdateStage:
         assert res.get_json()["title"] == "Updated Title"
 
     def test_update_stage_dates(
-        self, client, db_session, sample_challenge, sample_stage, sample_admin, tokens, csrf_headers
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        sample_admin,
+        tokens,
+        csrf_headers,
     ):
         new_start = _iso(datetime.utcnow() - timedelta(days=2))
         new_end = _iso(datetime.utcnow() + timedelta(days=2))
@@ -233,7 +253,14 @@ class TestUpdateStage:
         assert data["end_time"] == new_end + "Z"
 
     def test_update_stage_stage_number(
-        self, client, db_session, sample_challenge, sample_stage, sample_admin, tokens, csrf_headers
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        sample_admin,
+        tokens,
+        csrf_headers,
     ):
         payload = {"stage_number": 10}
         res = client.put(
@@ -246,7 +273,14 @@ class TestUpdateStage:
         assert res.get_json()["stage_number"] == 10
 
     def test_update_stage_partial(
-        self, client, db_session, sample_challenge, sample_stage, sample_admin, tokens, csrf_headers
+        self,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        sample_admin,
+        tokens,
+        csrf_headers,
     ):
         original_data = sample_stage.to_dict()
         payload = {"title": "Partial Update"}

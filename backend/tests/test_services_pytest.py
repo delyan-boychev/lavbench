@@ -5,7 +5,10 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import db, Task
-from services.submission_service import check_execution_rules, calculate_submission_priority
+from services.submission_service import (
+    check_execution_rules,
+    calculate_submission_priority,
+)
 from datetime import datetime
 
 
@@ -60,7 +63,10 @@ class TestServiceSandboxAndPriority:
         assert calculate_submission_priority(2, "jury") == 9
 
     def test_evaluation_templates_formatting(self):
-        from task_modules.templates import DEFAULT_EVALUATION_TEMPLATE, render_eval_template
+        from task_modules.templates import (
+            DEFAULT_EVALUATION_TEMPLATE,
+            render_eval_template,
+        )
 
         formatted_default = render_eval_template(
             DEFAULT_EVALUATION_TEMPLATE,
@@ -76,7 +82,9 @@ class TestServiceSandboxAndPriority:
         from services.submission_service import get_best_submission
 
         challenge = Challenge(
-            title="Test Challenge", start_time=datetime.utcnow(), end_time=datetime.utcnow()
+            title="Test Challenge",
+            start_time=datetime.utcnow(),
+            end_time=datetime.utcnow(),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -106,7 +114,9 @@ class TestServiceSandboxAndPriority:
         from services.submission_service import get_best_submission
 
         challenge = Challenge(
-            title="Test Challenge", start_time=datetime.utcnow(), end_time=datetime.utcnow()
+            title="Test Challenge",
+            start_time=datetime.utcnow(),
+            end_time=datetime.utcnow(),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -137,7 +147,10 @@ class TestServiceSandboxAndPriority:
 
     def test_challenge_csv_generation(self):
         from models import Challenge, User, Submission
-        from services.challenge_service import generate_scores_csv, generate_exported_results_csv
+        from services.challenge_service import (
+            generate_scores_csv,
+            generate_exported_results_csv,
+        )
 
         challenge = Challenge(
             title="Test Challenge",
@@ -149,12 +162,18 @@ class TestServiceSandboxAndPriority:
         db.session.commit()
 
         task = Task(
-            challenge_id=challenge.id, title="Test Task", ban_magic_commands=False, files="[]"
+            challenge_id=challenge.id,
+            title="Test Task",
+            ban_magic_commands=False,
+            files="[]",
         )
         db.session.add(task)
 
         comp = User(
-            username="student1", role="competitor", challenge_id=challenge.id, password_hash="dummy"
+            username="student1",
+            role="competitor",
+            challenge_id=challenge.id,
+            password_hash="dummy",
         )
         db.session.add(comp)
         db.session.commit()

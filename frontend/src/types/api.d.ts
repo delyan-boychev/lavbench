@@ -268,44 +268,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/challenges/{challenge_id}/download-submissions-zip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download all completed student submissions as a ZIP archive. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/challenges/{challenge_id}/reset-all-passwords": {
         parameters: {
             query?: never;

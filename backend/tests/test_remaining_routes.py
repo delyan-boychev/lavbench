@@ -113,7 +113,13 @@ class TestTaskFileDownload:
     # --- task not started ---
 
     def test_competitor_blocked_when_task_not_started(
-        self, client, db_session, sample_future_challenge, tokens, auth_headers, create_user
+        self,
+        client,
+        db_session,
+        sample_future_challenge,
+        tokens,
+        auth_headers,
+        create_user,
     ):
         future_task = Task(
             title="Future Task",
@@ -249,7 +255,9 @@ class TestRegisterCompetitor:
 
     COMP_PAYLOAD = {
         "name": "Ivan",
+        "middle_name": "Georgiev",
         "surname": "Petrov",
+        "birth_date": "2008-05-14",
         "grade": "10",
         "school": "Sofia High",
         "city": "Sofia",
@@ -300,7 +308,10 @@ class TestRegisterCompetitor:
             json=payload,
         )
         assert resp.status_code == 400
-        assert "Name and Surname" in resp.get_json()["error"]
+        assert (
+            "Name, Surname, Middle Name, Birth Date, Grade, School and City"
+            in resp.get_json()["error"]
+        )
 
     def test_jury_registers_competitor_before_start(
         self, client, db_session, sample_future_challenge, auth_headers

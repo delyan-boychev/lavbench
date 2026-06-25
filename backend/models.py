@@ -268,12 +268,14 @@ class User(db.Model):
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
     username = db.Column(db.String(100), unique=True, nullable=False)
-    email = db.Column(db.String(255), unique=True, nullable=True)
+    email = db.Column(db.String(255), unique=False, nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
 
     # Encrypted demographic columns (stored as ciphertext text blocks)
     name = db.Column(db.Text, nullable=True)
     surname = db.Column(db.Text, nullable=True)
+    middle_name = db.Column(db.Text, nullable=True)
+    birth_date = db.Column(db.Text, nullable=True)
     grade = db.Column(db.Text, nullable=True)
     school = db.Column(db.Text, nullable=True)
     city = db.Column(db.Text, nullable=True)
@@ -288,12 +290,16 @@ class User(db.Model):
         "Submission", backref="user", lazy=True, cascade="all, delete-orphan"
     )
 
-    def set_demographics(self, name, surname, grade, school, city):
+    def set_demographics(
+        self, name, surname, grade, school, city, middle_name=None, birth_date=None
+    ):
         """
         Encrypts demographics before database write.
         """
         self.name = encrypt_field(name)
         self.surname = encrypt_field(surname)
+        self.middle_name = encrypt_field(middle_name) if middle_name is not None else None
+        self.birth_date = encrypt_field(birth_date) if birth_date is not None else None
         self.grade = encrypt_field(grade)
         self.school = encrypt_field(school)
         self.city = encrypt_field(city)
@@ -392,6 +398,10 @@ class User(db.Model):
         # Decrypt fields for display to authorized viewers
         dec_name = decrypt_field(self.name)
         dec_surname = decrypt_field(self.surname)
+        dec_middle_name = (
+            decrypt_field(self.middle_name) if getattr(self, "middle_name", None) else ""
+        )
+        dec_birth_date = decrypt_field(self.birth_date) if getattr(self, "birth_date", None) else ""
         dec_grade = decrypt_field(self.grade)
         dec_school = decrypt_field(self.school)
         dec_city = decrypt_field(self.city)
@@ -402,6 +412,8 @@ class User(db.Model):
             "email": self.email,
             "name": dec_name,
             "surname": dec_surname,
+            "middle_name": dec_middle_name,
+            "birth_date": dec_birth_date,
             "grade": dec_grade,
             "school": dec_school,
             "city": dec_city,
@@ -431,7 +443,8 @@ class JuryChallenge(db.Model):
         "User", backref=db.backref("jury_assignments", cascade="all, delete-orphan")
     )
     challenge = db.relationship(
-        "Challenge", backref=db.backref("jury_assignments", cascade="all, delete-orphan")
+        "Challenge",
+        backref=db.backref("jury_assignments", cascade="all, delete-orphan"),
     )
 
 
@@ -725,7 +738,12 @@ class Submission(db.Model):
         db.Index("idx_sub_challenge_status_baseline", "challenge_id", "status", "is_baseline"),
         db.Index("idx_sub_challenge_created", "challenge_id", db.text("created_at DESC")),
         db.Index("idx_sub_task_created", "task_id", db.text("created_at DESC")),
-        db.Index("idx_sub_task_user_created", "task_id", "user_id", db.text("created_at DESC")),
+        db.Index(
+            "idx_sub_task_user_created",
+            "task_id",
+            "user_id",
+            db.text("created_at DESC"),
+        ),
     )
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
@@ -840,7 +858,9 @@ class Submission(db.Model):
         )
         owner_info = (
             self.user.to_dict(
-                view_role=view_role, scores_finalized=finalized, current_user_id=current_user_id
+                view_role=view_role,
+                scores_finalized=finalized,
+                current_user_id=current_user_id,
             )
             if self.user
             else None
@@ -910,7 +930,9 @@ class Submission(db.Model):
 
     def to_dict_light(self, view_role="competitor", current_user_id=None):
         res = self.to_dict(
-            view_role=view_role, current_user_id=current_user_id, include_large_fields=False
+            view_role=view_role,
+            current_user_id=current_user_id,
+            include_large_fields=False,
         )
         res.pop("code_cells", None)
         res.pop("logs", None)

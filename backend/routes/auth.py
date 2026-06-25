@@ -151,7 +151,12 @@ def login():
 
     if not username or not password:
         return (
-            jsonify({"error": "Missing username or password.", "code": "ERR_MISSING_CREDENTIALS"}),
+            jsonify(
+                {
+                    "error": "Missing username or password.",
+                    "code": "ERR_MISSING_CREDENTIALS",
+                }
+            ),
             400,
         )
 

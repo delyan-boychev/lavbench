@@ -246,4 +246,75 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     expect(finalizeChallengeBtn).toBeDisabled();
     expect(finalizeChallengeBtn).toHaveAttribute('title', 'All stages must be finalized first');
   });
+
+  it('allows challenge finalization when all stages are finalized', async () => {
+    const mockFinalizedChallenge = {
+      ...mockStagesChallenge,
+      stages: [
+        {
+          id: 10,
+          title: 'Stage 1',
+          stage_number: 1,
+          start_time: '2026-06-13T10:00:00Z',
+          end_time: '2026-06-13T12:00:00Z',
+          is_finalized: true,
+        },
+      ],
+    };
+
+    useApp.mockReturnValue({
+      challenges: [mockFinalizedChallenge],
+      selectedChallenge: mockFinalizedChallenge,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      fetchChallenges: mockFetchChallenges,
+      showToast: mockShowToast,
+      confirm: mockConfirm,
+    });
+
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [mockFinalizedChallenge],
+            total: 1,
+            pages: 1,
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({}),
+      });
+    });
+
+    render(<AdminPanel />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
+    });
+
+    // The "Finalize" button should be enabled now
+    const finalizeChallengeBtn = screen.getAllByRole('button', { name: /Finalize/i })[0];
+    expect(finalizeChallengeBtn).not.toBeDisabled();
+
+    fireEvent.click(finalizeChallengeBtn);
+
+    expect(screen.getByText(/Finalize Competition:/i)).toBeInTheDocument();
+
+    const confirmBtn = screen.getByRole('button', { name: 'Finalize' });
+
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/challenges/1/finalize'),
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+
+    expect(mockShowToast).toHaveBeenCalledWith('Scores finalized and de-anonymized!');
+  });
 });

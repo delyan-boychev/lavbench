@@ -70,7 +70,8 @@ class TestAuthLogin:
 
     def test_login_success_competitor(self, client):
         res = client.post(
-            "/api/auth/login", json={"username": "test_competitor", "password": self.password}
+            "/api/auth/login",
+            json={"username": "test_competitor", "password": self.password},
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -80,7 +81,8 @@ class TestAuthLogin:
 
     def test_login_success_admin(self, client):
         res = client.post(
-            "/api/auth/login", json={"username": "test_admin", "password": self.password}
+            "/api/auth/login",
+            json={"username": "test_admin", "password": self.password},
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -90,7 +92,8 @@ class TestAuthLogin:
 
     def test_login_wrong_password(self, client):
         res = client.post(
-            "/api/auth/login", json={"username": "test_competitor", "password": "wrongpassword"}
+            "/api/auth/login",
+            json={"username": "test_competitor", "password": "wrongpassword"},
         )
         assert res.status_code == 401
         assert res.get_json()["code"] == "ERR_INVALID_CREDENTIALS"
@@ -117,7 +120,8 @@ class TestAuthLogin:
 
     def test_login_archived_challenge_blocked(self, client):
         res = client.post(
-            "/api/auth/login", json={"username": "archived_comp", "password": self.password}
+            "/api/auth/login",
+            json={"username": "archived_comp", "password": self.password},
         )
         assert res.status_code == 403
         assert res.get_json()["code"] == "ERR_COMPETITION_ARCHIVED"
@@ -128,7 +132,8 @@ class TestAuthLogin:
         )
         db.session.commit()
         res = client.post(
-            "/api/auth/login", json={"username": "no_challenge_comp", "password": self.password}
+            "/api/auth/login",
+            json={"username": "no_challenge_comp", "password": self.password},
         )
         assert res.status_code == 200
 
@@ -137,7 +142,10 @@ class TestAuthLogout:
     @pytest.fixture(autouse=True)
     def setup(self, db_session, app_ctx):
         self.user = User(
-            username="logout_user", password_hash="x", role="competitor", alias_id="Logout-001"
+            username="logout_user",
+            password_hash="x",
+            role="competitor",
+            alias_id="Logout-001",
         )
         db.session.add(self.user)
         db.session.commit()

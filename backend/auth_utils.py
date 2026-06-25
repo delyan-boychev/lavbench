@@ -75,7 +75,13 @@ def clear_auth_cookie(response):
     if token:
         revoke_token(token)
     response.set_cookie(
-        AUTH_COOKIE_NAME, "", max_age=0, httponly=True, samesite="Strict", secure=False, path="/"
+        AUTH_COOKIE_NAME,
+        "",
+        max_age=0,
+        httponly=True,
+        samesite="Strict",
+        secure=False,
+        path="/",
     )
 
 
@@ -111,7 +117,9 @@ def revoke_token(token):
                     r.setex(f"revoked:{jti}", ttl, "1")
                 except Exception:
                     logger.warning(
-                        "Failed to write revocation for jti=%s to Redis", jti, exc_info=True
+                        "Failed to write revocation for jti=%s to Redis",
+                        jti,
+                        exc_info=True,
                     )
     except Exception:
         pass
@@ -168,7 +176,12 @@ def login_required(f):
         request.user = user_data
         if not verify_csrf_token():
             return (
-                jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                jsonify(
+                    {
+                        "error": "CSRF token missing or invalid.",
+                        "code": "ERR_CSRF_FAILED",
+                    }
+                ),
                 403,
             )
         return f(*args, **kwargs)
@@ -189,7 +202,12 @@ def role_required(allowed_roles):
             request.user = user_data
             if not verify_csrf_token():
                 return (
-                    jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                    jsonify(
+                        {
+                            "error": "CSRF token missing or invalid.",
+                            "code": "ERR_CSRF_FAILED",
+                        }
+                    ),
                     403,
                 )
             return f(*args, **kwargs)
@@ -287,7 +305,12 @@ def csrf_required(f):
     def decorated(*args, **kwargs):
         if not verify_csrf_token():
             return (
-                jsonify({"error": "CSRF token missing or invalid.", "code": "ERR_CSRF_FAILED"}),
+                jsonify(
+                    {
+                        "error": "CSRF token missing or invalid.",
+                        "code": "ERR_CSRF_FAILED",
+                    }
+                ),
                 403,
             )
         return f(*args, **kwargs)

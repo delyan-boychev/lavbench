@@ -71,8 +71,14 @@ def create_app():
                     "name": "Leaderboard",
                     "description": "Rankings, manual points, score corrections",
                 },
-                {"name": "Admin", "description": "User management, backups, workers, dead letters"},
-                {"name": "SSE Streaming", "description": "Real-time Server-Sent Event streams"},
+                {
+                    "name": "Admin",
+                    "description": "User management, backups, workers, dead letters",
+                },
+                {
+                    "name": "SSE Streaming",
+                    "description": "Real-time Server-Sent Event streams",
+                },
                 {"name": "Docs", "description": "In-app guide endpoints"},
             ],
             "components": {
@@ -106,7 +112,10 @@ def create_app():
                             "id": {"type": "string", "format": "uuid"},
                             "username": {"type": "string"},
                             "email": {"type": "string"},
-                            "role": {"type": "string", "enum": ["competitor", "jury", "admin"]},
+                            "role": {
+                                "type": "string",
+                                "enum": ["competitor", "jury", "admin"],
+                            },
                             "alias_id": {
                                 "type": "string",
                                 "description": "Pseudonym for leaderboard display",

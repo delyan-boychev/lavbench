@@ -89,6 +89,11 @@ class TestRegisterUser:
             json={
                 "name": "John",
                 "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
                 "role": "competitor",
                 "challenge_id": self.challenge.id,
             },
@@ -103,7 +108,12 @@ class TestRegisterUser:
     def test_register_jury_success(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"username": "newjury", "name": "Jane", "surname": "Juror", "role": "jury"},
+            json={
+                "username": "newjury",
+                "name": "Jane",
+                "surname": "Juror",
+                "role": "jury",
+            },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
@@ -115,6 +125,8 @@ class TestRegisterUser:
                 "username": "johndoe",
                 "name": "John",
                 "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
                 "email": "john@test.com",
                 "role": "competitor",
                 "challenge_id": self.challenge.id,
@@ -158,7 +170,11 @@ class TestRegisterUser:
     def test_missing_name_or_surname_returns_400(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"name": "John", "role": "competitor", "challenge_id": self.challenge.id},
+            json={
+                "name": "John",
+                "role": "competitor",
+                "challenge_id": self.challenge.id,
+            },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
@@ -167,7 +183,16 @@ class TestRegisterUser:
     def test_competitor_missing_challenge_id_returns_400(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"name": "John", "surname": "Doe", "role": "competitor"},
+            json={
+                "name": "John",
+                "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
+                "role": "competitor",
+            },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
@@ -176,7 +201,17 @@ class TestRegisterUser:
     def test_competitor_invalid_challenge_returns_400(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"name": "John", "surname": "Doe", "role": "competitor", "challenge_id": 99999},
+            json={
+                "name": "John",
+                "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
+                "role": "competitor",
+                "challenge_id": 99999,
+            },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 400
@@ -188,6 +223,11 @@ class TestRegisterUser:
             json={
                 "name": "John",
                 "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
                 "role": "competitor",
                 "challenge_id": self.started_challenge.id,
             },
@@ -202,6 +242,11 @@ class TestRegisterUser:
             json={
                 "name": "John",
                 "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
                 "role": "competitor",
                 "challenge_id": self.started_challenge.id,
             },
@@ -216,6 +261,11 @@ class TestRegisterUser:
                 "username": "existing_user",
                 "name": "John",
                 "surname": "Doe",
+                "middle_name": "James",
+                "birth_date": "2008-01-01",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
                 "role": "competitor",
                 "challenge_id": self.challenge.id,
             },
@@ -242,24 +292,75 @@ class TestRegisterUser:
             json={
                 "name": "Alice",
                 "surname": "Smith",
+                "middle_name": "Marie",
+                "birth_date": "2008-05-14",
+                "grade": "10",
+                "school": "Test HS",
+                "city": "Sofia",
                 "role": "competitor",
                 "challenge_id": self.challenge.id,
             },
             headers=self._auth(self.admin_token),
         )
         data = resp.get_json()
-        assert len(data["generated_password"]) == 8
+        assert len(data["generated_password"]) == 12
 
     def test_persists_user_in_database(self, client):
         resp = client.post(
             "/api/admin/register-user",
-            json={"username": "persist_test", "name": "Persist", "surname": "Test", "role": "jury"},
+            json={
+                "username": "persist_test",
+                "name": "Persist",
+                "surname": "Test",
+                "role": "jury",
+            },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
         user = User.query.filter_by(username="persist_test").first()
         assert user is not None
         assert user.role == "jury"
+
+    def test_duplicate_demographics_returns_400(self, client, db_session):
+        payload = {
+            "name": "Jane",
+            "surname": "Doe",
+            "middle_name": "Valerie",
+            "birth_date": "2009-02-02",
+            "grade": "10",
+            "school": "Sofia Math",
+            "city": "Sofia",
+            "role": "competitor",
+            "challenge_id": self.challenge.id,
+        }
+        resp1 = client.post(
+            "/api/admin/register-user",
+            json=payload,
+            headers=self._auth(self.admin_token),
+        )
+        assert resp1.status_code == 201
+
+        resp2 = client.post(
+            "/api/admin/register-user",
+            json=payload,
+            headers=self._auth(self.admin_token),
+        )
+        assert resp2.status_code == 400
+        assert "already registered for this competition" in resp2.get_json()["error"]
+        assert resp2.get_json().get("code") == "ERR_COMPETITOR_ALREADY_REGISTERED"
+
+        challenge2 = Challenge(
+            title="AI Challenge 2", start_time=datetime.utcnow(), end_time=datetime.utcnow()
+        )
+        db_session.add(challenge2)
+        db_session.commit()
+        payload2 = {**payload, "challenge_id": challenge2.id}
+        resp3 = client.post(
+            "/api/admin/register-user",
+            json=payload2,
+            headers=self._auth(self.admin_token),
+        )
+        assert resp3.status_code == 201
 
 
 class TestGetUsers:
@@ -295,7 +396,12 @@ class TestGetUsers:
 
     def test_pagination(self, client, db_session):
         for i in range(15):
-            u = User(username=f"user{i}", password_hash="x", role="competitor", alias_id=f"U{i}")
+            u = User(
+                username=f"user{i}",
+                password_hash="x",
+                role="competitor",
+                alias_id=f"U{i}",
+            )
             db_session.add(u)
         db_session.commit()
         resp = client.get(
@@ -385,6 +491,8 @@ class TestUpdateUser:
 
     def test_update_nonexistent_user(self, client):
         resp = client.put(
-            "/api/admin/users/99999", json={"role": "jury"}, headers=self._auth(self.admin_token)
+            "/api/admin/users/99999",
+            json={"role": "jury"},
+            headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 404

@@ -113,7 +113,8 @@ class TestChallengeLeaderboardGetEndpoint:
         unreg_token = generate_token(unreg_user.id, unreg_user.role)
 
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(unreg_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(unreg_token),
         )
         assert res.status_code == 403
         assert "not registered" in res.get_json()["error"].lower()
@@ -122,7 +123,8 @@ class TestChallengeLeaderboardGetEndpoint:
     def test_admin_can_access_any_leaderboard(self, mock_build, client):
         mock_build.return_value = []
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -152,7 +154,8 @@ class TestChallengeLeaderboardGetEndpoint:
 
         mock_build.return_value = []
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         mock_build.assert_called_once_with(self.challenge.id, False)
@@ -178,7 +181,8 @@ class TestChallengeLeaderboardGetEndpoint:
         set_cached(f"leaderboard:raw:{self.challenge.id}:unfrozen", [entry], timeout=60)
 
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         mock_build.assert_not_called()
@@ -356,7 +360,8 @@ class TestChallengeLeaderboardGetEndpoint:
     def test_leaderboard_response_shape(self, mock_build, client):
         mock_build.return_value = []
         res = client.get(
-            f"/api/challenges/{self.challenge.id}/leaderboard", headers=self._auth(self.admin_token)
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
         data = res.get_json()
@@ -381,7 +386,10 @@ class TestManualPointsEndpoint:
         db_session.add(self.admin)
 
         self.jury = User(
-            username="mp_jury", password_hash="pbkdf2:sha256:...", role="jury", alias_id="Jury-MP"
+            username="mp_jury",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-MP",
         )
         db_session.add(self.jury)
 

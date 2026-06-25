@@ -63,7 +63,9 @@ class TestBackendExceptionAndErrorCases:
         db.session.commit()
 
         self.task_a = Task(
-            challenge_id=self.challenge_a.id, title="Task A", description="Task A description"
+            challenge_id=self.challenge_a.id,
+            title="Task A",
+            description="Task A description",
         )
         db.session.add(self.task_a)
         db.session.commit()
@@ -86,7 +88,8 @@ class TestBackendExceptionAndErrorCases:
         assert "Invalid credentials" in res.json["error"]
 
         res = self.client.post(
-            "/api/auth/login", json={"username": "admin_user", "password": "wrong_password"}
+            "/api/auth/login",
+            json={"username": "admin_user", "password": "wrong_password"},
         )
         assert res.status_code == 401
         assert "Invalid credentials" in res.json["error"]
@@ -162,7 +165,9 @@ class TestBackendExceptionAndErrorCases:
         file_content = BytesIO(b"print('not a notebook')")
         data = {"file": (file_content, "submission.py")}
         res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/parse-notebook", data=data, headers=headers
+            f"/api/challenges/{self.challenge_a.id}/parse-notebook",
+            data=data,
+            headers=headers,
         )
         assert res.status_code == 400
         assert "not allowed" in res.json["error"]
@@ -172,7 +177,9 @@ class TestBackendExceptionAndErrorCases:
         file_content = BytesIO(b"this is not a valid JSON notebook")
         data = {"file": (file_content, "submission.ipynb")}
         res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/parse-notebook", data=data, headers=headers
+            f"/api/challenges/{self.challenge_a.id}/parse-notebook",
+            data=data,
+            headers=headers,
         )
         assert res.status_code == 400
         assert "Invalid notebook file" in res.json["error"]

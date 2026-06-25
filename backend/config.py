@@ -36,7 +36,8 @@ class Config:
 
     # Hugging Face Settings
     HF_CACHE_DIR = os.environ.get(
-        "HF_CACHE_DIR", os.path.join(os.path.abspath(os.path.dirname(__file__)), "hf_cache")
+        "HF_CACHE_DIR",
+        os.path.join(os.path.abspath(os.path.dirname(__file__)), "hf_cache"),
     )
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
