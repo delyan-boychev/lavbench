@@ -34,7 +34,8 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
-      - run: python -m pytest backend/tests/ -n auto -v --timeout=120 --cov=backend --cov-report=xml --cov-report=term-missing        env:
+      - run: python -m pytest backend/tests/ -n auto -v --timeout=120 --cov=backend --cov-report=xml --cov-report=term-missing        
+        env:
           REDIS_URL: "redis://localhost:6379/0"
           DATABASE_URL: "sqlite:///:memory:"
       - uses: actions/upload-artifact@v4
