@@ -1496,7 +1496,9 @@ def submit_task(task_id):
     )
 
 
-def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=10):
+def _get_task_submissions_data(
+    task_id, user_role, user_id, page=None, per_page=10, filter_user_id=None
+):
     task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
@@ -1510,6 +1512,9 @@ def _get_task_submissions_data(task_id, user_role, user_id, page=None, per_page=
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
         query = Submission.query.filter_by(task_id=task_id)
+
+    if filter_user_id and user_role in ("admin", "jury"):
+        query = query.filter_by(user_id=filter_user_id)
 
     from sqlalchemy.orm import joinedload
 
@@ -1566,8 +1571,9 @@ def get_task_submissions(task_id):
     user_id = request.user["user_id"]
     page = request.args.get("page", type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
+    filter_user_id = request.args.get("user_id")
 
-    data = _get_task_submissions_data(task_id, user_role, user_id, page, per_page)
+    data = _get_task_submissions_data(task_id, user_role, user_id, page, per_page, filter_user_id)
     if isinstance(data, dict) and "error" in data:
         return jsonify(data), 403
     return jsonify(data)
@@ -1657,9 +1663,9 @@ def stream_task_leaderboard(task_id):
             )
 
     def event_generator():
-        with current_app.app_context():
-            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+        # Clean up: Removed "with current_app.app_context():" block from the initial yield
+        data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
+        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
 
         from cache_utils import get_redis_client
 
@@ -1671,9 +1677,9 @@ def stream_task_leaderboard(task_id):
             while True:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
                 if message:
-                    with current_app.app_context():
-                        data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+                    # Clean up: Removed "with current_app.app_context():" block from the loop
+                    data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
+                    yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
                 else:
                     yield ": keep-alive\n\n"
         except GeneratorExit:
@@ -1756,9 +1762,9 @@ def stream_task_submissions(task_id):
             )
 
     def event_generator():
-        with current_app.app_context():
-            data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
-            yield f"data: {json.dumps(data)}\n\n"
+        # Clean up: Removed "with current_app.app_context():" block from the initial yield
+        data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
+        yield f"data: {json.dumps(data)}\n\n"
 
         from cache_utils import get_redis_client
 
@@ -1774,11 +1780,11 @@ def stream_task_submissions(task_id):
             while True:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
                 if message:
-                    with current_app.app_context():
-                        data = _get_task_submissions_data(
-                            task_id, user_role, current_user_id, page, per_page
-                        )
-                        yield f"data: {json.dumps(data)}\n\n"
+                    # Clean up: Removed "with current_app.app_context():" block from the loop
+                    data = _get_task_submissions_data(
+                        task_id, user_role, current_user_id, page, per_page
+                    )
+                    yield f"data: {json.dumps(data)}\n\n"
                 else:
                     yield ": keep-alive\n\n"
         except GeneratorExit:
@@ -1857,9 +1863,9 @@ def stream_worker_status():
     from flask import current_app, Response, stream_with_context
 
     def event_generator():
-        with current_app.app_context():
-            res_data = _get_worker_status_data()
-            yield f"data: {json.dumps(res_data)}\n\n"
+        # Clean up: Removed "with current_app.app_context():" block from the initial yield
+        res_data = _get_worker_status_data()
+        yield f"data: {json.dumps(res_data)}\n\n"
 
         from cache_utils import get_redis_client
 
@@ -1873,15 +1879,15 @@ def stream_worker_status():
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
                 now = datetime.utcnow()
                 if message:
-                    with current_app.app_context():
-                        res_data = _get_worker_status_data()
-                        yield f"data: {json.dumps(res_data)}\n\n"
-                        last_sent = now
+                    # Clean up: Removed "with current_app.app_context():" block
+                    res_data = _get_worker_status_data()
+                    yield f"data: {json.dumps(res_data)}\n\n"
+                    last_sent = now
                 elif (now - last_sent).total_seconds() >= 10:
-                    with current_app.app_context():
-                        res_data = _get_worker_status_data()
-                        yield f"data: {json.dumps(res_data)}\n\n"
-                        last_sent = now
+                    # Clean up: Removed "with current_app.app_context():" block
+                    res_data = _get_worker_status_data()
+                    yield f"data: {json.dumps(res_data)}\n\n"
+                    last_sent = now
                 else:
                     yield ": keep-alive\n\n"
         except GeneratorExit:

@@ -172,7 +172,13 @@
     "selection_closed": "Selection closed",
     "time_remaining_select_final": "Time remaining to select final: {{time}}",
     "connecting_live_logs": "Connecting to live logs...",
-    "execution_log_live": "Execution Log (Live)"
+    "execution_log_live": "Execution Log (Live)",
+    "best_submission": "Best Submission",
+    "select_competitor": "Select Competitor",
+    "no_competitors_found": "No competitors found",
+    "search_competitor_placeholder": "Search by alias, name, or school...",
+    "all_submissions_for": "All Submissions",
+    "switch_competitor": "Switch Competitor"
   },
   "challenge": {
     "judge_session_active": "Judge / Admin Session Active",

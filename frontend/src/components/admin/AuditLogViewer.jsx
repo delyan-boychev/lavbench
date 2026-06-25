@@ -4,6 +4,7 @@ import api from '../../services/ApiService';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import { useApp } from '../../context/AppContext';
+import { formatDateTime } from '../../utils/formatDate';
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();
@@ -40,27 +41,15 @@ export default function AuditLogViewer() {
 
   useEffect(() => {
     fetchLogs();
-  }, [fetchLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, selectedChallengeId, selectedAction]);
 
   // Reset page to 1 when filters change
   useEffect(() => {
     setPage(1);
   }, [selectedChallengeId, selectedAction]);
 
-  const formatDate = (iso) => {
-    try {
-      if (!iso) return '';
-      const date = new Date(iso);
-      const tz = selectedChallenge?.timezone || 'UTC';
-      const formatted = date.toLocaleString(undefined, {
-        timeZone: tz,
-        hour12: false,
-      });
-      return `${formatted} (${tz.replace(/_/g, ' ')})`;
-    } catch {
-      return iso;
-    }
-  };
+  const formatDate = (iso) => formatDateTime(iso, selectedChallenge?.timezone || 'UTC');
 
   const getActionBadge = (action) => {
     const base = 'px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ';

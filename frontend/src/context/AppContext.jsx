@@ -176,17 +176,34 @@ export const AppProvider = ({ children }) => {
   // Fetch challenges when user logs in
 
   useEffect(() => {
-    if (currentUser) fetchChallenges();
-    else {
+    if (currentUser) {
+      (async () => {
+        try {
+          const { ok, data } = await api.get('/challenges');
+          if (ok) {
+            setChallenges(data);
+            if (data.length > 0) {
+              setSelectedChallengeState((prev) => {
+                const keep = prev ? data.find((c) => c.id === prev.id) : null;
+                return keep || data[0];
+              });
+            } else {
+              setSelectedChallengeState(null);
+              setSelectedTask(null);
+            }
+          }
+        } catch (e) {
+          console.error('fetchChallenges error:', e);
+        }
+      })();
+    } else {
       setChallenges([]);
       setSelectedChallengeState(null);
       setSelectedTask(null);
     }
-  }, [currentUser, fetchChallenges]);
+  }, [currentUser]);
 
-  // Reset task when the selected challenge changes (separate effect to avoid
-  // calling setSelectedTask inside a state updater, which causes ordering flakes)
-
+  // Reset task when the selected challenge changes
   useEffect(() => {
     if (selectedChallenge) {
       setSelectedTask((t) => {

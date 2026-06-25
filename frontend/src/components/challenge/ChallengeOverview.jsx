@@ -1,6 +1,7 @@
 import React from 'react';
 import Badge from '../ui/Badge';
 import { useTranslation } from 'react-i18next';
+import { formatDateTime } from '../../utils/formatDate';
 
 function StatCard({ label, value, accent = undefined }) {
   return (
@@ -41,31 +42,6 @@ export default function ChallengeOverview({ challenge }) {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const formatDateTime = (dateStr, tz) => {
-    if (!dateStr) return '—';
-    try {
-      const d = new Date(dateStr);
-      const targetTz = tz || 'UTC';
-      const formatter = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: targetTz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-      const parts = formatter.formatToParts(d);
-      const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
-      const tzLabel = targetTz.replace(/_/g, ' ');
-      return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
-    } catch {
-      const d = new Date(dateStr);
-      const pad = (n) => n.toString().padStart(2, '0');
-      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} (UTC)`;
-    }
-  };
 
   if (!challenge) return null;
 

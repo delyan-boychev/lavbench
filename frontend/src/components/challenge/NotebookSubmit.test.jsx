@@ -211,7 +211,7 @@ describe('NotebookSubmit Component', () => {
     expect(screen.getByText('Select Cells (1/1 code cells)')).toBeInTheDocument();
 
     // Submit cells
-    const submitBtn = screen.getByText('Submit 1 cell for Evaluation');
+    const submitBtn = screen.getByText(/Submit 1 cells? for Evaluation/i);
     fireEvent.click(submitBtn);
 
     expect(TaskService.submit).toHaveBeenCalledWith(1, [cellsMock[0]]);

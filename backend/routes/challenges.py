@@ -890,7 +890,9 @@ def finalize_challenge(challenge_id):
                         400,
                     )
 
+    data = request.get_json() or {}
     challenge.scores_finalized = True
+    challenge.reveal_results = bool(data.get("reveal_results", False))
     db.session.commit()
 
     from services.audit_service import log_action

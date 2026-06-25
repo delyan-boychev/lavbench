@@ -38,7 +38,7 @@ export default function LeaderboardDemo() {
 
   // Animate on mount
   useEffect(() => {
-    const timer = setInterval(shuffle, 3000); // eslint-disable-line react-hooks/set-state-in-effect
+    const timer = setInterval(shuffle, 3000);
     return () => clearInterval(timer);
   }, []);
 

@@ -2,54 +2,44 @@ import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 import mockEnTranslation from '../public/locales/en/translation.json';
 
-vi.mock('react-i18next', () => {
-  const React = require('react');
-  // Define helper inside or access it since it starts with mock
-  const getTranslationVal = (key, count) => {
-    const lookup = (k) => {
-      const parts = k.split('.');
+vi.mock('react-i18next', async (importOriginal) => {
+  // 1. Inherit all standard exports (crucial for initReactI18next)
+  const actual = await importOriginal();
+
+  // 2. Dynamically import React to avoid ESM require() crashes
+  const React = await import('react');
+
+  const useTranslationMock = () => ({
+    t: (key, options) => {
+      // Basic fallback logic for translations
+      const parts = key.split('.');
       let current = mockEnTranslation;
       for (const part of parts) {
         if (current && typeof current === 'object') {
           current = current[part];
         } else {
-          return undefined;
+          return key;
         }
       }
-      return current;
-    };
+      let value = typeof current === 'string' ? current : key;
 
-    if (count !== undefined) {
-      const suffix = count === 1 ? '_one' : '_other';
-      const val = lookup(key + suffix);
-      if (val !== undefined) return val;
-    }
-    return lookup(key);
-  };
-
-  const useTranslationMock = () => ({
-    t: (key, options) => {
-      const count = options && typeof options === 'object' ? options.count : undefined;
-      let value = /** @type {string|any} */ (getTranslationVal(key, count));
-      if (value === undefined) {
-        return key;
-      }
+      // Handle simple interpolation if options exist
       if (options && typeof options === 'object') {
         Object.keys(options).forEach((optKey) => {
-          if (typeof value === 'string') {
-            value = value.replace(new RegExp(`{{${optKey}}}`, 'g'), options[optKey]);
-          }
+          value = value.replace(new RegExp(`{{${optKey}}}`, 'g'), options[optKey]);
         });
       }
       return value;
     },
     i18n: {
-      changeLanguage: vi.fn().mockImplementation(() => Promise.resolve()),
+      changeLanguage: vi.fn().mockResolvedValue(),
       language: 'en',
     },
   });
 
   return {
+    ...actual, // <--- This provides initReactI18next to your app
+    initReactI18next: { type: '3rdParty', init: vi.fn() },
     useTranslation: useTranslationMock,
     withTranslation: () => (Component) => {
       const Wrapped = (props) => {
@@ -69,10 +59,6 @@ vi.mock('react-i18next', () => {
         }
       }
       return typeof current === 'string' ? current : i18nKey;
-    },
-    initReactI18next: {
-      type: '3rdParty',
-      init: () => {},
     },
   };
 });

@@ -37,14 +37,13 @@ export default function SubmissionViewer({
       setCurrentId(submission.id);
       setLiveLogs('');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission?.id]);
 
   useEffect(() => {
     if (!submission) {
       return;
     }
-
-    setLiveLogs('');
 
     const sseUrl = `/api/submissions/${submission.id}/logs/live`;
 

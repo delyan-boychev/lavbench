@@ -25,6 +25,7 @@ import SidebarNav from '../components/admin/SidebarNav';
 import AuditLogViewer from '../components/admin/AuditLogViewer';
 import { TIMEZONES } from '../utils/timezones';
 import { formatMetricName } from '../utils/metrics';
+import { formatDateTime } from '../utils/formatDate';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName };
 
@@ -57,31 +58,6 @@ export default function AdminPanel() {
   const formatDateTimeLocal = (dateStr) => {
     if (!dateStr) return '';
     return dateStr.substring(0, 16);
-  };
-
-  const formatDateTime = (dateStr, tz) => {
-    if (!dateStr) return '—';
-    try {
-      const d = new Date(dateStr);
-      const targetTz = tz || 'UTC';
-      const formatter = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: targetTz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-      const parts = formatter.formatToParts(d);
-      const getPart = (type) => parts.find((p) => p.type === type)?.value || '';
-      const tzLabel = targetTz.replace(/_/g, ' ');
-      return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')} (${tzLabel})`;
-    } catch {
-      const d = new Date(dateStr);
-      const pad = (n) => n.toString().padStart(2, '0');
-      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} (UTC)`;
-    }
   };
 
   const isChallengeStarted = (challengeId) => {

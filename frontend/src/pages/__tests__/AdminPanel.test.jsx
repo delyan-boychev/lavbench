@@ -2,14 +2,6 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ── i18n stub ──────────────────────────────────────────────────────────────
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key) => key,
-    i18n: { language: 'en' },
-  }),
-}));
-
 // ── Shared UI component stubs ──────────────────────────────────────────────
 vi.mock('../../components/ui/InputField', () => ({
   default: ({ label, value, onChange, type, required }) => (
@@ -89,8 +81,8 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    expect(screen.getByLabelText('admin.test_stage_start')).toBeInTheDocument();
-    expect(screen.getByLabelText('admin.test_stage_end')).toBeInTheDocument();
+    expect(screen.getByLabelText('Test Stage Start (optional)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Test Stage End (optional)')).toBeInTheDocument();
   });
 
   it('test stage fields are empty by default', () => {
@@ -102,8 +94,8 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    expect(screen.getByLabelText('admin.test_stage_start')).toHaveValue('');
-    expect(screen.getByLabelText('admin.test_stage_end')).toHaveValue('');
+    expect(screen.getByLabelText('Test Stage Start (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('Test Stage End (optional)')).toHaveValue('');
   });
 
   it('calls setNewChallenge with updated test_stage_start_time on change', () => {
@@ -116,7 +108,7 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    fireEvent.change(screen.getByLabelText('admin.test_stage_start'), {
+    fireEvent.change(screen.getByLabelText('Test Stage Start (optional)'), {
       target: { value: '2026-06-20T10:00' },
     });
     expect(setNewChallenge).toHaveBeenCalledWith(
@@ -134,7 +126,7 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    fireEvent.change(screen.getByLabelText('admin.test_stage_end'), {
+    fireEvent.change(screen.getByLabelText('Test Stage End (optional)'), {
       target: { value: '2026-06-21T18:00' },
     });
     expect(setNewChallenge).toHaveBeenCalledWith(
@@ -156,8 +148,8 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    expect(screen.getByLabelText('admin.test_stage_start')).toHaveValue('2026-06-28T08:00');
-    expect(screen.getByLabelText('admin.test_stage_end')).toHaveValue('2026-06-28T16:00');
+    expect(screen.getByLabelText('Test Stage Start (optional)')).toHaveValue('2026-06-28T08:00');
+    expect(screen.getByLabelText('Test Stage End (optional)')).toHaveValue('2026-06-28T16:00');
   });
 
   it('test stage fields are optional — form submits without them', () => {
@@ -170,7 +162,7 @@ describe('ChallengeConfig — test stage fields', () => {
         timezones={TIMEZONES}
       />,
     );
-    const form = screen.getByLabelText('admin.test_stage_start').closest('form');
+    const form = screen.getByLabelText('Test Stage Start (optional)').closest('form');
     fireEvent.submit(form);
     expect(handleCreateChallenge).toHaveBeenCalledTimes(1);
   });
@@ -211,21 +203,21 @@ describe('AdminPanel component', () => {
 
   it('renders the sidebar with admin controls', () => {
     render(<AdminPanel />);
-    expect(screen.getByText('admin.jury_control_hub')).toBeInTheDocument();
-    expect(screen.getByText('admin.manage_competitions')).toBeInTheDocument();
-    expect(screen.getByText('admin.create_competition')).toBeInTheDocument();
-    expect(screen.getByText('admin.competitor_registrations')).toBeInTheDocument();
+    expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
+    expect(screen.getByText('Manage Competitions & Tasks')).toBeInTheDocument();
+    expect(screen.getByText('Create Competition')).toBeInTheDocument();
+    expect(screen.getByText('Competitor Registrations')).toBeInTheDocument();
   });
 
   it('shows backup and user management buttons for admin', () => {
     render(<AdminPanel />);
-    expect(screen.getByText('admin.database_backup')).toBeInTheDocument();
-    expect(screen.getByText('admin.user_management')).toBeInTheDocument();
+    expect(screen.getByText('Database Backup')).toBeInTheDocument();
+    expect(screen.getByText('User Management')).toBeInTheDocument();
   });
 
   it('shows workers and resources button for admin', () => {
     render(<AdminPanel />);
-    expect(screen.getByText('admin.workers_resources')).toBeInTheDocument();
+    expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
   });
 });
 

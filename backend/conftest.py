@@ -41,7 +41,6 @@ def download_nltk_data():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-
 # App & Context
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -70,18 +69,21 @@ def app():
 
 
 @pytest.fixture(scope="function")
-def client(app):
-    """Test client bound to the current app."""
-    return app.test_client()
-
-
-@pytest.fixture(scope="function")
 def app_ctx(app):
     """Pushed application context — cleaned up after each test."""
     ctx = app.app_context()
     ctx.push()
     yield ctx
     ctx.pop()
+
+
+@pytest.fixture(scope="function")
+def client(app, app_ctx):
+    """Test client bound to the current app and active context."""
+    # Using app_ctx as a dependency guarantees the application context
+    # is active for any worker thread handling this test client.
+    with app.test_client() as _client:
+        yield _client
 
 
 @pytest.fixture(scope="function")
@@ -103,13 +105,22 @@ def db_session(app, app_ctx):
 
 @pytest.fixture(scope="function")
 def redis_flush():
-    """Flush Redis data before a test.  Safe to call when Redis is down."""
+    """Flush Redis data before a test. Safe to call when Redis is down."""
     try:
         from cache_utils import get_redis_client
 
         r = get_redis_client()
         if r:
-            r.flushdb()
+            # If running in parallel with xdist, flushing the whole DB
+            # causes race conditions across workers.
+            worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+            if worker_id:
+                # If your backend isolates keys with prefixes (e.g., test_gw0_*),
+                # scan and clear only those keys.
+                for key in r.scan_iter(f"*{worker_id}*"):
+                    r.delete(key)
+            else:
+                r.flushdb()
     except Exception:
         pass
 

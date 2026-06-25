@@ -4,3 +4,4 @@ pytest-cov>=6.0.0
 pytest-timeout>=2.0.0
 pytest-mock>=3.14.0
 Faker>=20.0.0
+pytest-xdist>=3.5.0

@@ -63,7 +63,7 @@ export default function ProtectedLayout() {
       >
         <div key={location.pathname} className="animate-fadein">
           {' '}
-          {/* eslint-disable-line react-hooks/set-state-in-effect */}
+          {}
           <Outlet />
         </div>
       </main>

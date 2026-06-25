@@ -119,6 +119,7 @@ class TestWorkerEndpoints:
             },
             headers=self._worker_headers(),
         )
+        db.session.expire_all()
         sub = db.session.get(Submission, self.submission.id)
         assert sub.status == "completed"
         assert sub.public_score == 0.95

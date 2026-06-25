@@ -44,12 +44,6 @@ export default function SelectField({
   };
 
   useEffect(() => {
-    if (value && (!multiple || value.length > 0)) {
-      setHasError(false);
-    }
-  }, [value, multiple]);
-
-  useEffect(() => {
     function handleClickOutside(event) {
       if (
         containerRef.current &&
@@ -99,6 +93,7 @@ export default function SelectField({
   };
 
   const toggleOption = (optValue) => {
+    if (hasError) setHasError(false);
     if (multiple) {
       const currentValues = Array.isArray(value) ? value : [];
       let newValues;

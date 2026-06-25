@@ -4,6 +4,7 @@ import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import api from '../../services/ApiService';
 import { useApp } from '../../context/AppContext';
+import { formatDateTime } from '../../utils/formatDate';
 
 export default function BackupManager() {
   const { t } = useTranslation();
@@ -50,7 +51,8 @@ export default function BackupManager() {
       }
     };
     return () => eventSource.close();
-  }, [loadBackups]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleForce = async () => {
     setForcing(true);
@@ -75,20 +77,7 @@ export default function BackupManager() {
     window.open(url, '_blank');
   };
 
-  const formatDate = (iso) => {
-    try {
-      if (!iso) return '';
-      const date = new Date(iso);
-      const tz = selectedChallenge?.timezone || 'UTC';
-      const formatted = date.toLocaleString(undefined, {
-        timeZone: tz,
-        hour12: false,
-      });
-      return `${formatted} (${tz.replace(/_/g, ' ')})`;
-    } catch {
-      return iso;
-    }
-  };
+  const formatDate = (iso) => formatDateTime(iso, selectedChallenge?.timezone || 'UTC');
 
   return (
     <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">

@@ -187,7 +187,7 @@ cp .env.example .env
 
 ```bash
 cd backend
-micromamba run -n lavbench_backend python -m pytest tests/ -v
+micromamba run -n lavbench_backend python -m pytest -n auto tests/ -v
 ```
 Includes 941 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
 

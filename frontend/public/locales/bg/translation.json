@@ -172,7 +172,13 @@
     "selection_closed": "Изборът е затворен",
     "time_remaining_select_final": "Оставащо време за избор на окончателно решение: {{time}}",
     "connecting_live_logs": "Свързване към логове на живо...",
-    "execution_log_live": "Лог от изпълнение (На живо)"
+    "execution_log_live": "Лог от изпълнение (На живо)",
+    "best_submission": "Най-добро решение",
+    "select_competitor": "Избор на участник",
+    "no_competitors_found": "Няма намерени участници",
+    "search_competitor_placeholder": "Търсене по псевдоним, име или училище...",
+    "all_submissions_for": "Всички решения",
+    "switch_competitor": "Смени участник"
   },
   "challenge": {
     "judge_session_active": "Активна сесия за жури / администратор",

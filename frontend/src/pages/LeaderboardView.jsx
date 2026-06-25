@@ -26,7 +26,6 @@ export default function LeaderboardView() {
   }, [challengeId, setSelectedChallengeById]);
 
   useEffect(() => {
-    // Reset SSE usage if challenge changes
     setUseSse(true);
   }, [challengeId, selectedChallenge?.id]);
 
@@ -57,13 +56,22 @@ export default function LeaderboardView() {
     if (activeId) {
       loadLeaderboard(true);
     }
-  }, [challengeId, selectedChallenge?.id, loadLeaderboard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeId, selectedChallenge?.id]);
 
   useEffect(() => {
     const activeId = challengeId || selectedChallenge?.id;
     if (!activeId) return;
 
-    if (useSse && typeof EventSource !== 'undefined') {
+    const hasSse = typeof EventSource !== 'undefined';
+    if (!hasSse) {
+      const interval = setInterval(() => {
+        loadLeaderboard(false);
+      }, 15000);
+      return () => clearInterval(interval);
+    }
+
+    if (useSse) {
       const sseUrl = `/api/challenges/${activeId}/leaderboard/live`;
       const eventSource = new EventSource(sseUrl);
 
@@ -90,16 +98,14 @@ export default function LeaderboardView() {
         eventSource.close();
       };
     } else {
-      if (useSse) {
-        setUseSse(false);
-      }
       const interval = setInterval(() => {
         loadLeaderboard(false);
       }, 15000);
 
       return () => clearInterval(interval);
     }
-  }, [challengeId, selectedChallenge?.id, useSse, loadLeaderboard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeId, selectedChallenge?.id, useSse]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">

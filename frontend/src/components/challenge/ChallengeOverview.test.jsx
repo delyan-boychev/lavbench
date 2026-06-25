@@ -91,10 +91,10 @@ describe('ChallengeOverview Component', () => {
     render(<ChallengeOverview challenge={challenge} />);
 
     // In Europe/Sofia (UTC+3 in June), 18:00 UTC is 21:00 Sofia time
-    expect(screen.getAllByText(/2026-06-13 21:00 \(Europe\/Sofia\)/).length).toBeGreaterThanOrEqual(
-      1,
-    );
-    expect(screen.getByText(/2026-06-14 21:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
-    expect(screen.getByText(/to 2026-06-13 23:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Jun 13, 2026, 21:00 \(Europe\/Sofia\)/).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Jun 14, 2026, 21:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Jun 13, 2026, 23:00 \(Europe\/Sofia\)/)).toBeInTheDocument();
   });
 });

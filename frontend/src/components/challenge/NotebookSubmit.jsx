@@ -13,13 +13,13 @@ export default function NotebookSubmit({ task, challenge }) {
   const { showToast } = useApp();
   const { t } = useTranslation();
 
-  const [cells, setCells] = useState([]); // eslint-disable-line no-unused-vars
+  const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState([]);
   const [fileName, setFileName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const isCompetitor = currentUser?.role === 'competitor'; // eslint-disable-line no-unused-vars
+  const isCompetitor = currentUser?.role === 'competitor';
   const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
   const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
   const stageEnded = stage
@@ -100,7 +100,7 @@ export default function NotebookSubmit({ task, challenge }) {
       if (res.ok) {
         const parsedCells = res.data.cells || [];
         setCells(parsedCells);
-        setFileName(res.data.filename); // eslint-disable-line no-unused-vars
+        setFileName(res.data.filename);
 
         // Auto-select cells containing "# SUBMIT" tag
         const submitTagRegex = /#\s*SUBMIT/i;
