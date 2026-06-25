@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 export default function LeaderboardView() {
   const { challengeId } = useParams();
-  const { selectedChallenge, setSelectedChallengeById } = useApp();
+  const { selectedChallenge, setSelectedChallengeById, fetchChallenges } = useApp();
   const { t } = useTranslation();
 
   const [leaderboardData, setLeaderboardData] = useState([]);
@@ -111,7 +111,10 @@ export default function LeaderboardView() {
           loading={loading}
           metricName={metricName}
           isNormalized={isNormalized}
-          onRefresh={() => loadLeaderboard(true)}
+          onRefresh={async () => {
+            await fetchChallenges();
+            loadLeaderboard(true);
+          }}
         />
       ) : (
         <EmptyState message={t('challenge.no_competition_selected_brief')} minHeight={200} />

@@ -25,7 +25,7 @@ function ToastContainer() {
 
   return (
     <div
-      className={`fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-white/10 p-4 rounded-lg shadow-2xl z-50 transition-all duration-300 ${toast.type === 'rose' || toast.type === 'error' ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-indigo-600'}`}
+      className={`fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-white/10 p-4 rounded-lg shadow-2xl z-[200] transition-all duration-300 ${toast.type === 'rose' || toast.type === 'error' ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-indigo-600'}`}
     >
       <div
         className={`h-2 w-2 rounded-full ${toast.type === 'rose' || toast.type === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`}

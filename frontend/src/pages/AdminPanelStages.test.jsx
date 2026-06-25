@@ -222,10 +222,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          finalize_type: 'visible',
-          reveal_public: true,
-          reveal_private: false,
-          reveal_points: false,
+          reveal_results: true,
         }),
       }),
     );

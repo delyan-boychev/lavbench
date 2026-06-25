@@ -326,7 +326,6 @@ def import_challenge_from_dict(data, zip_ref=None):
             start_time=_parse_dt(s_data.get("start_time")) or datetime.utcnow(),
             end_time=_parse_dt(s_data.get("end_time")) or datetime.utcnow(),
             is_finalized=False,
-            finalize_type=s_data.get("finalize_type"),
             reveal_results=bool(s_data.get("reveal_results", False)),
         )
         db.session.add(stage)

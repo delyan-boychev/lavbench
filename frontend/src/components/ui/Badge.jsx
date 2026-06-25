@@ -11,6 +11,8 @@ import {
   Flag,
   Archive,
   CalendarClock,
+  Lock,
+  Eye,
 } from 'lucide-react';
 
 const ICON = {
@@ -28,6 +30,9 @@ const ICON = {
   frozen: Snowflake,
   ended: Flag,
   finalized: Check,
+  grading: Clock,
+  internal: Lock,
+  public: Eye,
 };
 
 const CONFIG = {
@@ -68,6 +73,18 @@ const CONFIG = {
   finalized: {
     style: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
     key: 'badge.finalized',
+  },
+  grading: {
+    style: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+    key: 'badge.grading',
+  },
+  internal: {
+    style: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    key: 'badge.internal',
+  },
+  public: {
+    style: 'border-sky-500/30 bg-sky-500/10 text-sky-400',
+    key: 'badge.public',
   },
   admin: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.admin' },
   jury: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.jury' },

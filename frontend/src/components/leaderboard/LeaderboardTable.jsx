@@ -7,7 +7,16 @@ import Modal from '../ui/Modal';
 import TabScrollContainer from '../ui/TabScrollContainer';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, RefreshCw, BarChart3, Layers, CheckSquare, Download } from 'lucide-react';
+import {
+  ChevronRight,
+  RefreshCw,
+  BarChart3,
+  Layers,
+  CheckSquare,
+  Download,
+  Pencil,
+} from 'lucide-react';
+import Badge from '../ui/Badge';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
@@ -28,6 +37,8 @@ function Row({
   showPublicCols,
   showPrivateCols,
   showPointsCols,
+  perTaskShowPrivateCols,
+  perTaskShowPointsCols,
   activeTab,
   rowRef,
   challenge,
@@ -195,8 +206,8 @@ function Row({
     if (showPointsCols) colSpanCount += 1;
   } else {
     if (showPublicCols) colSpanCount++;
-    if (showPrivateCols) colSpanCount++;
-    if (showPointsCols) colSpanCount++;
+    if (perTaskShowPrivateCols) colSpanCount++;
+    if (perTaskShowPointsCols) colSpanCount++;
   }
 
   const isTaskEditingBlocked = (task) => {
@@ -222,9 +233,10 @@ function Row({
       return (
         <button
           onClick={() => onEditPoints && onEditPoints(entry.user, task, pts)}
-          className="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold font-mono transition-colors cursor-pointer text-xs"
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold font-mono transition-colors cursor-pointer text-xs"
           title={t('leaderboard.edit_points_tooltip', 'Click to edit manual points')}
         >
+          <Pencil size={10} className="stroke-[2.5]" />
           {t('leaderboard.points_short', { count: pts })}
         </button>
       );
@@ -376,14 +388,14 @@ function Row({
                 {scoreObj.public_score != null ? scoreObj.public_score.toFixed(4) : '—'}
               </td>
             )}
-            {showPrivateCols && (
+            {perTaskShowPrivateCols && (
               <td
                 className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
               >
                 {scoreObj.private_score != null ? scoreObj.private_score.toFixed(4) : '—'}
               </td>
             )}
-            {showPointsCols && (
+            {perTaskShowPointsCols && (
               <td className="px-4 py-3 text-right">
                 {renderManualPointsBadge(
                   activeTask,
@@ -599,14 +611,8 @@ export default function LeaderboardTable({
   };
 
   const isReasonMandatory = React.useMemo(() => {
-    if (!scoringTask) return false;
-    if (challenge?.scores_finalized) return true;
-    if (scoringTask.stage_id && challenge?.stages) {
-      const stage = challenge.stages.find((st) => st.id === scoringTask.stage_id);
-      if (stage && stage.is_finalized) return true;
-    }
-    return false;
-  }, [scoringTask, challenge]);
+    return !!challenge?.scores_finalized;
+  }, [challenge]);
 
   const handleSavePointsSubmit = async () => {
     const pts = parseInt(scoringPoints);
@@ -639,7 +645,11 @@ export default function LeaderboardTable({
         setScoringModalOpen(false);
         if (onRefresh) onRefresh();
       } else {
-        showToast(res.data?.error || t('leaderboard.save_points_failed'), 'error');
+        const errCode = res.data?.code;
+        const errMsg = errCode
+          ? t(`api.${errCode}`, res.data?.error || t('leaderboard.save_points_failed'))
+          : res.data?.error || t('leaderboard.save_points_failed');
+        showToast(errMsg, 'error');
       }
     } catch {
       showToast(t('leaderboard.server_error'), 'error');
@@ -683,8 +693,61 @@ export default function LeaderboardTable({
   }
   // Calculate Sub-column visibility rules
   const showPublicCols = true;
-  const showPrivateCols = isJuryOrAdmin || (isFinalized && revealResults);
-  const showPointsCols = isJuryOrAdmin || (isFinalized && revealResults);
+
+  // Data-driven checks: only show columns that have actual data
+  const hasPrivateData = data.some((e) => e.private_score != null);
+  const hasPointsData = data.some((e) => e.total_points > 0);
+
+  // Determine if current stage tab has its own reveal
+  const activeStage = isStageTab ? visibleStages.find((st) => st.id === activeTab) : null;
+  const stageRevealed = activeStage && activeStage.is_finalized && activeStage.reveal_results;
+
+  // Any revealed stage makes private/points columns relevant in the general tab too
+  const anyStageRevealed = visibleStages.some((st) => st.is_finalized && st.reveal_results);
+
+  const showPrivateCols =
+    (isJuryOrAdmin ||
+      (isFinalized && revealResults) ||
+      (!isJuryOrAdmin &&
+        !isFinalized &&
+        (stageRevealed || (activeTab === 'general' && anyStageRevealed)))) &&
+    hasPrivateData;
+  const showPointsCols =
+    (isJuryOrAdmin ||
+      (isFinalized && revealResults) ||
+      (!isJuryOrAdmin &&
+        !isFinalized &&
+        (stageRevealed || (activeTab === 'general' && anyStageRevealed)))) &&
+    hasPointsData;
+
+  // Per-task tab visibility: check the specific task's stage reveal status
+  const activeTaskForPerTab =
+    !isStageTab && activeTab !== 'general' ? tasks.find((t) => t.id === activeTab) : null;
+  const taskStage = activeTaskForPerTab?.stage_id
+    ? challengeStages?.find((st) => st.id === activeTaskForPerTab.stage_id)
+    : null;
+  const taskStageRevealed = taskStage?.is_finalized && taskStage?.reveal_results;
+
+  const perTaskShowPrivateCols =
+    isJuryOrAdmin ||
+    (isFinalized && revealResults) ||
+    (!isJuryOrAdmin && !isFinalized && taskStageRevealed);
+
+  const perTaskShowPointsCols =
+    isJuryOrAdmin ||
+    (isFinalized && revealResults) ||
+    (!isJuryOrAdmin && !isFinalized && taskStageRevealed);
+
+  // Competition status for the header badge
+  const competitionStatus = isFinalized
+    ? revealResults
+      ? 'public'
+      : 'internal'
+    : challenge?.start_time && new Date() < new Date(challenge.start_time)
+      ? 'future'
+      : challenge?.end_time && new Date() > new Date(challenge.end_time)
+        ? 'grading'
+        : 'active';
   // 1. Sort and rank display data dynamically based on active tab
   let displayData = [...data];
 
@@ -741,6 +804,9 @@ export default function LeaderboardTable({
       });
 
       if (isFinalized && (isJuryOrAdmin || revealResults)) {
+        if (ptsSumA !== ptsSumB) return ptsSumB - ptsSumA;
+      } else if (stageRevealed) {
+        // Stage is revealed — sort by points for this stage
         if (ptsSumA !== ptsSumB) return ptsSumB - ptsSumA;
       } else {
         if (hasPubA && hasPubB) {
@@ -808,7 +874,7 @@ export default function LeaderboardTable({
           });
 
           let isTie;
-          if (isFinalized && (isJuryOrAdmin || revealResults)) {
+          if ((isFinalized && (isJuryOrAdmin || revealResults)) || stageRevealed) {
             isTie = currPts === prevPts;
           } else {
             isTie = currPub === prevPub;
@@ -920,18 +986,20 @@ export default function LeaderboardTable({
               )}
               {' · '}
               {t('leaderboard.participants', { count: data.length })}
-              {isFinalized && (
-                <span className="pill pill-success ml-2">{t('leaderboard.finalized')}</span>
-              )}
+              <span className="ml-2">
+                <Badge status={competitionStatus} />
+              </span>
             </p>
           </div>
-          <button
-            onClick={() => onRefresh && onRefresh()}
-            className="p-2 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition-colors"
-            title={t('leaderboard.refresh')}
-          >
-            <RefreshCw size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onRefresh && onRefresh()}
+              className="p-2 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition-colors"
+              title={t('leaderboard.refresh')}
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -989,6 +1057,28 @@ export default function LeaderboardTable({
                         number: stage.stage_number,
                         title: stage.title,
                       })}
+                      {(() => {
+                        const now = new Date();
+                        const start = new Date(stage.start_time);
+                        const end = new Date(stage.end_time);
+                        let stStatus;
+                        if (stage.is_finalized && stage.reveal_results) {
+                          stStatus = 'public';
+                        } else if (stage.is_finalized && !stage.reveal_results) {
+                          stStatus = 'internal';
+                        } else if (now > end) {
+                          stStatus = 'grading';
+                        } else if (now < start) {
+                          stStatus = 'future';
+                        } else {
+                          stStatus = 'active';
+                        }
+                        return (
+                          <span className="ml-1.5">
+                            <Badge status={stStatus} />
+                          </span>
+                        );
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -1028,6 +1118,16 @@ export default function LeaderboardTable({
           </div>
         )}
       </div>
+
+      {/* Finalized Internal Notice */}
+      {isStageTab && activeStage?.is_finalized && !activeStage?.reveal_results && (
+        <div className="px-4 py-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 mb-3">
+          {t(
+            'leaderboard.stage_finalized_internal_notice',
+            'This stage is finalized internally. Results are not public.',
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="surface overflow-hidden">
@@ -1069,12 +1169,12 @@ export default function LeaderboardTable({
                           {t('leaderboard.public_score')}
                         </th>
                       )}
-                      {showPrivateCols && (
+                      {perTaskShowPrivateCols && (
                         <th className="px-4 py-3 text-right text-emerald-400 text-[10px] font-bold whitespace-nowrap">
                           {t('leaderboard.private_score')}
                         </th>
                       )}
-                      {showPointsCols && (
+                      {perTaskShowPointsCols && (
                         <th className="px-4 py-3 text-right text-amber-400 text-[10px] font-bold whitespace-nowrap">
                           {t('leaderboard.manual_points')}
                         </th>
@@ -1108,6 +1208,8 @@ export default function LeaderboardTable({
                       showPublicCols={showPublicCols}
                       showPrivateCols={showPrivateCols}
                       showPointsCols={showPointsCols}
+                      perTaskShowPrivateCols={perTaskShowPrivateCols}
+                      perTaskShowPointsCols={perTaskShowPointsCols}
                       activeTab={activeTab}
                       challenge={challenge}
                       onEditPoints={handleEditPoints}
@@ -1213,34 +1315,27 @@ export default function LeaderboardTable({
             />
           </div>
 
-          {/* Reason Input */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between">
-              <span>{t('leaderboard.reason_label', 'Justification Reason')}</span>
-              {isReasonMandatory && (
+          {/* Reason Input (only shown when mandatory after finalization) */}
+          {isReasonMandatory && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+                <span>{t('leaderboard.reason_label', 'Justification Reason')}</span>
                 <span className="text-rose-400 text-[10px] font-extrabold uppercase">
                   {t('common.required', 'Required')}
                 </span>
-              )}
-            </label>
-            <textarea
-              value={scoringReason}
-              onChange={(e) => setScoringReason(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-sm text-slate-300 resize-none"
-              placeholder={
-                isReasonMandatory
-                  ? t(
-                      'leaderboard.reason_required_placeholder',
-                      'Enter justification (mandatory)...',
-                    )
-                  : t(
-                      'leaderboard.reason_optional_placeholder',
-                      'Enter justification (optional)...',
-                    )
-              }
-            />
-          </div>
+              </label>
+              <textarea
+                value={scoringReason}
+                onChange={(e) => setScoringReason(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-sm text-slate-300 resize-none"
+                placeholder={t(
+                  'leaderboard.reason_required_placeholder',
+                  'Enter justification (mandatory)...',
+                )}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     </div>

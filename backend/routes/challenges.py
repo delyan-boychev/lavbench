@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, request, jsonify
-from models import db, Challenge, User, decrypt_field
+from models import db, Challenge, User, decrypt_field, Submission
 from auth_utils import login_required, role_required, jury_access_required
 
 challenges_bp = Blueprint("challenges", __name__)
@@ -875,17 +875,20 @@ def finalize_challenge(challenge_id):
                     manual_points_dict = {}
 
         for task in tasks:
-            pts = manual_points_dict.get(str(task.id))
-            if pts is None:
-                return (
-                    jsonify(
-                        {
-                            "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id}).",
-                            "code": "ERR_MISSING_MANUAL_POINTS",
-                        }
-                    ),
-                    400,
-                )
+            # Check if this competitor has any submissions for this task
+            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
+            if total_subs > 0:
+                pts = manual_points_dict.get(str(task.id))
+                if pts is None:
+                    return (
+                        jsonify(
+                            {
+                                "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id}).",
+                                "code": "ERR_MISSING_MANUAL_POINTS",
+                            }
+                        ),
+                        400,
+                    )
 
     challenge.scores_finalized = True
     db.session.commit()
@@ -1169,8 +1172,6 @@ def update_stage(challenge_id, stage_id):
         stage.reveal_results = bool(data["reveal_results"])
     if "is_finalized" in data:
         stage.is_finalized = bool(data["is_finalized"])
-    if "finalize_type" in data:
-        stage.finalize_type = data["finalize_type"]
 
     if stage.end_time <= stage.start_time:
         return (
@@ -1222,6 +1223,37 @@ def update_stage(challenge_id, stage_id):
     invalidate_challenge_cache(challenge_id)
     invalidate_leaderboard_cache(challenge_id)
 
+    return jsonify(stage.to_dict())
+
+
+@challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/reveal-results", methods=["PUT"])
+@login_required
+@role_required(["admin", "jury"])
+@jury_access_required
+def toggle_stage_reveal_results(challenge_id, stage_id):
+    """Toggle reveal_results on a finalized stage."""
+    db.get_or_404(Challenge, challenge_id)
+    from models import Stage
+
+    stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    if not stage.is_finalized:
+        return (
+            jsonify(
+                {
+                    "error": "Stage must be finalized before toggling reveal.",
+                    "code": "ERR_NOT_FINALIZED",
+                }
+            ),
+            400,
+        )
+    data = request.get_json() or {}
+    stage.reveal_results = bool(data.get("reveal_results", not stage.reveal_results))
+    db.session.commit()
+
+    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+
+    invalidate_challenge_cache(challenge_id)
+    invalidate_leaderboard_cache(challenge_id)
     return jsonify(stage.to_dict())
 
 
@@ -1344,18 +1376,6 @@ def finalize_stage(challenge_id, stage_id):
         )
     data = request.json or {}
 
-    finalize_type = data.get("finalize_type", "visible")
-    if finalize_type not in ("visible", "internal"):
-        return (
-            jsonify(
-                {
-                    "error": "finalize_type must be either 'visible' or 'internal'.",
-                    "code": "ERR_INVALID_FINALIZE_TYPE",
-                }
-            ),
-            400,
-        )
-
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
     if not competitors:
@@ -1384,38 +1404,31 @@ def finalize_stage(challenge_id, stage_id):
                     manual_points_dict = {}
 
         for task in stage_tasks:
-            pts = manual_points_dict.get(str(task.id))
-            if pts is None:
-                name_str = comp.username
-                if comp.name:
-                    try:
-                        dec_name = decrypt_field(comp.name)
-                        dec_surname = decrypt_field(comp.surname)
-                        name_str = f"{dec_name} {dec_surname}"
-                    except Exception:
-                        pass
-                return (
-                    jsonify(
-                        {
-                            "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'.",
-                            "code": "ERR_MISSING_MANUAL_POINTS",
-                        }
-                    ),
-                    400,
-                )
+            # Check if this competitor has any submissions for this task
+            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
+            if total_subs > 0:
+                pts = manual_points_dict.get(str(task.id))
+                if pts is None:
+                    name_str = comp.username
+                    if comp.name:
+                        try:
+                            dec_name = decrypt_field(comp.name)
+                            dec_surname = decrypt_field(comp.surname)
+                            name_str = f"{dec_name} {dec_surname}"
+                        except Exception:
+                            pass
+                    return (
+                        jsonify(
+                            {
+                                "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'.",
+                                "code": "ERR_MISSING_MANUAL_POINTS",
+                            }
+                        ),
+                        400,
+                    )
 
     stage.is_finalized = True
-    stage.finalize_type = finalize_type
-    num_stages = Stage.query.filter_by(challenge_id=challenge_id).count()
-    if num_stages == 1:
-        stage.reveal_results = True
-    else:
-        stage.reveal_results = bool(
-            data.get(
-                "reveal_results",
-                data.get("reveal_private", data.get("reveal_points", False)),
-            )
-        )
+    stage.reveal_results = bool(data.get("reveal_results", False))
 
     db.session.commit()
 

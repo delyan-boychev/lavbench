@@ -71,14 +71,15 @@ export default function ChallengeOverview({ challenge }) {
 
   const getStatus = () => {
     if (challenge.is_archived) return 'archived';
-    if (challenge.scores_finalized) return 'finalized';
     if (challenge.is_frozen) return 'frozen';
+    if (challenge.scores_finalized && challenge.reveal_results) return 'public';
+    if (challenge.scores_finalized && !challenge.reveal_results) return 'internal';
 
     const startTime = challenge.start_time ? new Date(challenge.start_time).getTime() : null;
     const endTime = challenge.end_time ? new Date(challenge.end_time).getTime() : null;
 
     if (startTime && nowMs < startTime) return 'future';
-    if (endTime && nowMs > endTime) return 'ended';
+    if (endTime && nowMs > endTime) return 'grading';
 
     return 'active';
   };
@@ -300,18 +301,17 @@ export default function ChallengeOverview({ challenge }) {
                 const now = new Date();
                 const start = new Date(st.start_time);
                 const end = new Date(st.end_time);
-                let statusText = t('challenge.upcoming');
-                let statusColor = 'var(--text-muted)';
-                if (now >= start && now <= end) {
-                  statusText = t('challenge.active_now');
-                  statusColor = 'var(--info)';
+                let stageStatus;
+                if (st.is_finalized && st.reveal_results) {
+                  stageStatus = 'public';
+                } else if (st.is_finalized && !st.reveal_results) {
+                  stageStatus = 'internal';
+                } else if (now < start) {
+                  stageStatus = 'future';
                 } else if (now > end) {
-                  statusText = t('challenge.ended');
-                  statusColor = 'var(--accent)';
-                }
-                if (st.is_finalized) {
-                  statusText = t('challenge.stage_status_finalized', { type: st.finalize_type });
-                  statusColor = 'var(--success)';
+                  stageStatus = 'grading';
+                } else {
+                  stageStatus = 'active';
                 }
 
                 return (
@@ -339,16 +339,7 @@ export default function ChallengeOverview({ challenge }) {
                         })}
                       </span>
                     </div>
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        color: statusColor,
-                        fontSize: '0.75rem',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {statusText}
-                    </span>
+                    <Badge status={stageStatus} />
                   </div>
                 );
               })}

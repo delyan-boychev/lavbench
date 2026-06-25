@@ -122,7 +122,11 @@ export default function NotebookSubmit({ task, challenge }) {
           );
         }
       } else {
-        showToast(res.data?.error || t('challenge.failed_parse'), 'error');
+        const errCode = res.data?.code;
+        const errMsg = errCode
+          ? t(`api.${errCode}`, res.data?.error || t('challenge.failed_parse'))
+          : res.data?.error || t('challenge.failed_parse');
+        showToast(errMsg, 'error');
       }
     } catch {
       showToast(t('challenge.network_error_parse'), 'error');
@@ -146,7 +150,11 @@ export default function NotebookSubmit({ task, challenge }) {
         setSelectedCellIds([]);
         setFileName('');
       } else {
-        showToast(res.data?.error || t('challenge.submission_failed'), 'error');
+        const errCode = res.data?.code;
+        const errMsg = errCode
+          ? t(`api.${errCode}`, res.data?.error || t('challenge.submission_failed'))
+          : res.data?.error || t('challenge.submission_failed');
+        showToast(errMsg, 'error');
       }
     } catch {
       showToast(t('challenge.network_error_submit'), 'error');

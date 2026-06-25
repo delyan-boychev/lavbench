@@ -257,12 +257,13 @@ describe('LeaderboardTable Component', () => {
       id: 12,
       title: 'Challenge A',
       scores_finalized: true,
+      reveal_results: true,
       metric_name: 'Accuracy',
     };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
     render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
-    expect(screen.getByText('Finalized')).toBeInTheDocument();
+    expect(screen.getByText('Public')).toBeInTheDocument();
   });
 
   it('renders task tab buttons and switches view on click', () => {
@@ -281,6 +282,7 @@ describe('LeaderboardTable Component', () => {
       {
         rank: 1,
         public_score: 0.9,
+        total_points: 1,
         user: { id: 1, username: 'me' },
         task_scores: { 10: { public_score: 0.9 }, 20: { public_score: 0.8 } },
       },
@@ -311,6 +313,7 @@ describe('LeaderboardTable Component', () => {
       {
         rank: 1,
         public_score: 0.9,
+        total_points: 1,
         user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
         task_scores: { 10: { public_score: 0.9 } },
       },
@@ -357,6 +360,7 @@ describe('LeaderboardTable Component', () => {
       {
         rank: 1,
         public_score: 0.9,
+        total_points: 1,
         user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
         task_scores: { 10: { public_score: 0.9 } },
       },
@@ -401,7 +405,7 @@ describe('LeaderboardTable Component', () => {
         public_score: 1.5,
         user: { id: 1, username: 'user1', alias_id: 'Alias-1' },
         task_scores: {
-          10: { public_score: 0.9, submission_id: 101 },
+          10: { public_score: 0.9, total_points: 1, submission_id: 101 },
           20: { public_score: 0.6, submission_id: 102 },
         },
       },

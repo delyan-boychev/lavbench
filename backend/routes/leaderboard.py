@@ -80,6 +80,9 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     except Exception:
                         manual_points_dict = {}
 
+            # Will accumulate only the tasks whose points are allowed to be revealed
+            revealed_manual_points = {}
+
             for t in visible_tasks:
                 tid_str = str(t.id)
                 sc_dict = entry.get("task_scores", {}).get(
@@ -105,10 +108,9 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     reveal_task_pts = challenge.reveal_results
                 elif stage:
                     if stage.is_finalized:
-                        if stage.finalize_type == "visible":
-                            reveal_task_pub = True
-                            reveal_task_priv = stage.reveal_results
-                            reveal_task_pts = stage.reveal_results
+                        reveal_task_pub = True
+                        reveal_task_priv = stage.reveal_results
+                        reveal_task_pts = stage.reveal_results
                     else:
                         reveal_task_pub = True
                 else:
@@ -137,12 +139,15 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     tot_priv += 0.0
 
                 if reveal_task_pts:
-                    tot_pts += manual_points_dict.get(tid_str, 0)
+                    pts_val = manual_points_dict.get(tid_str, 0)
+                    tot_pts += pts_val
+                    revealed_manual_points[tid_str] = pts_val
 
             entry_copy["task_scores"] = filtered_task_scores
             entry_copy["public_score"] = tot_pub if has_pub_sum else None
             entry_copy["private_score"] = tot_priv if has_priv_sum else None
             entry_copy["total_points"] = tot_pts
+            entry_copy["has_submitted"] = has_pub_sum
 
             if challenge.double_blind:
                 show_details = challenge.scores_finalized or is_self
@@ -160,19 +165,13 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     "role": comp_user.get("role"),
                     "challenge_id": comp_user.get("challenge_id"),
                     "is_anonymous": is_anonymous,
-                    "manual_points": (
-                        manual_points_dict
-                        if (is_self and challenge_finalized and challenge.reveal_results)
-                        else {}
-                    ),
+                    "manual_points": revealed_manual_points,
                 }
             else:
                 user_copy = dict(comp_user)
                 user_copy.pop("middle_name", None)
                 user_copy.pop("birth_date", None)
-                user_copy["manual_points"] = (
-                    manual_points_dict if (challenge_finalized and challenge.reveal_results) else {}
-                )
+                user_copy["manual_points"] = revealed_manual_points
                 entry_copy["user"] = user_copy
 
             post_processed_leaderboard.append(entry_copy)
@@ -186,6 +185,8 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 if pa != pb:
                     return -1 if pa > pb else 1
             else:
+                if a["has_submitted"] != b["has_submitted"]:
+                    return -1 if a["has_submitted"] else 1
                 score_a = a["public_score"]
                 score_b = b["public_score"]
                 if score_a is not None and score_b is not None and score_a != score_b:
@@ -610,16 +611,14 @@ def save_manual_points(challenge_id):
                 400,
             )
 
-        # Check completed submissions count
-        completed_count = Submission.query.filter_by(
-            user_id=user_id, task_id=task_id, status="completed"
-        ).count()
-        if completed_count == 0:
+        # Check if the user has any submissions at all for this task
+        total_count = Submission.query.filter_by(user_id=user_id, task_id=task_id).count()
+        if total_count == 0:
             return (
                 jsonify(
                     {
-                        "error": f"Cannot assign manual points. User {user.username} has no completed submissions for task ID {task_id}.",
-                        "code": "ERR_NO_COMPLETED_SUBMISSIONS",
+                        "error": "Only students with submissions can be assigned manual points. Students without submissions automatically receive 0 points.",
+                        "code": "ERR_NO_SUBMISSIONS",
                     }
                 ),
                 400,

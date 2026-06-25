@@ -97,6 +97,19 @@ class TestFinalizeChallenge:
         sample_task,
         create_user,
     ):
+        from models import Submission
+
+        sub = Submission(
+            user_id=sample_competitor.id,
+            challenge_id=sample_challenge.id,
+            task_id=sample_task.id,
+            status="completed",
+            public_score=0.85,
+            code_cells="[]",
+        )
+        db_session.add(sub)
+        db_session.commit()
+
         jury = create_user(username="finalize-jury-mp", role="jury")
         from auth_utils import generate_token
 

@@ -46,13 +46,23 @@ export default function UserManager({
               placeholder={t('admin.user_mgmt.email_placeholder_eg')}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <div
+              className={`grid ${newUser.role === 'competitor' ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}
+            >
               <InputField
                 label={t('admin.competitor_reg.first_name')}
                 value={newUser.name}
                 onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                 required
               />
+              {newUser.role === 'competitor' && (
+                <InputField
+                  label={t('admin.competitor_reg.middle_name')}
+                  value={newUser.middle_name}
+                  onChange={(e) => setNewUser({ ...newUser, middle_name: e.target.value })}
+                  required
+                />
+              )}
               <InputField
                 label={t('admin.competitor_reg.last_name')}
                 value={newUser.surname}
@@ -74,13 +84,7 @@ export default function UserManager({
 
             {newUser.role === 'competitor' && (
               <>
-                <div className="grid grid-cols-2 gap-4 mb-2">
-                  <InputField
-                    label={t('admin.competitor_reg.middle_name')}
-                    value={newUser.middle_name}
-                    onChange={(e) => setNewUser({ ...newUser, middle_name: e.target.value })}
-                    required
-                  />
+                <div className="grid grid-cols-1 gap-4 mb-2">
                   <InputField
                     label={t('admin.competitor_reg.birth_date')}
                     type="date"

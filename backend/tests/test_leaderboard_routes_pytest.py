@@ -373,6 +373,71 @@ class TestChallengeLeaderboardGetEndpoint:
         assert "tasks" in data
         assert "leaderboard" in data
 
+    @patch("routes.leaderboard.build_and_cache_leaderboard")
+    def test_competitor_sorting_by_has_submitted(self, mock_build, client):
+        mock_build.return_value = [
+            {
+                "user": {
+                    "id": "1",
+                    "username": "alice",
+                    "alias_id": "Alice",
+                    "role": "competitor",
+                },
+                "task_scores": {},
+                "public_score": None,
+                "private_score": None,
+                "total_points": 0,
+                "has_submitted": False,
+            },
+            {
+                "user": {
+                    "id": "2",
+                    "username": "bob",
+                    "alias_id": "Bob",
+                    "role": "competitor",
+                },
+                "task_scores": {
+                    str(self.task.id): {
+                        "public_score": 0.5,
+                        "private_score": 0.5,
+                        "submission_id": "sub-1",
+                    }
+                },
+                "public_score": 0.5,
+                "private_score": 0.5,
+                "total_points": 0,
+                "has_submitted": True,
+            },
+            {
+                "user": {
+                    "id": "3",
+                    "username": "charlie",
+                    "alias_id": "Charlie",
+                    "role": "competitor",
+                },
+                "task_scores": {},
+                "public_score": None,
+                "private_score": None,
+                "total_points": 0,
+                "has_submitted": False,
+            },
+        ]
+
+        res = client.get(
+            f"/api/challenges/{self.challenge.id}/leaderboard",
+            headers=self._auth(self.competitor_token),
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        leaderboard = data["leaderboard"]
+        assert leaderboard[0]["user"]["alias_id"] == "Bob"
+        assert leaderboard[0]["rank"] == 1
+        assert leaderboard[0]["has_submitted"] is True
+        assert leaderboard[1]["user"]["alias_id"] == "Alice"
+        assert leaderboard[1]["has_submitted"] is False
+        assert leaderboard[2]["user"]["alias_id"] == "Charlie"
+        assert leaderboard[2]["has_submitted"] is False
+
 
 class TestManualPointsEndpoint:
     @pytest.fixture(autouse=True)
@@ -588,7 +653,7 @@ class TestManualPointsEndpoint:
         assert res.status_code == 400
         assert "must be between 0 and 100" in res.get_json()["error"]
 
-    def test_no_completed_submissions_returns_400(self, client):
+    def test_no_submissions_returns_400(self, client):
         payload = {
             "user_id": self.competitor.id,
             "points": {str(self.task.id): 50},
@@ -600,7 +665,31 @@ class TestManualPointsEndpoint:
             json=payload,
         )
         assert res.status_code == 400
-        assert "no completed submissions" in res.get_json()["error"].lower()
+        assert "only students with submissions" in res.get_json()["error"].lower()
+
+    def test_failed_submissions_allowed(self, client, db_session):
+        sub = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            status="failed",
+            code_cells="[]",
+        )
+        db_session.add(sub)
+        db_session.commit()
+
+        payload = {
+            "user_id": self.competitor.id,
+            "points": {str(self.task.id): 45},
+            "reason": "Testing failed submissions",
+        }
+        res = client.post(
+            f"/api/challenges/{self.challenge.id}/manual-points",
+            headers=self._auth(self.admin_token),
+            json=payload,
+        )
+        assert res.status_code == 200
+        assert res.get_json()["manual_points"][str(self.task.id)] == 45
 
     def test_manual_points_updates_single_task(self, client, db_session):
         self._seed_completed_submission(db_session)

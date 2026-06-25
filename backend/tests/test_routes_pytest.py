@@ -1321,6 +1321,16 @@ class TestRouteLevelLogic:
     def test_finalize_constraints_and_permissions(self):
         self.challenge.scores_finalized = False
         self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
+        # Create a submission so competitor is required to have manual points
+        sub = Submission(
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            user_id=self.competitor.id,
+            status="completed",
+            public_score=80.0,
+            private_score=85.0,
+        )
+        db.session.add(sub)
         db.session.commit()
 
         jury = User(
@@ -1467,7 +1477,7 @@ class TestRouteLevelLogic:
         # Try to finalize before the stage has ended
         res_before = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
-            data=json.dumps({"finalize_type": "visible"}),
+            data=json.dumps({}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
@@ -1505,9 +1515,21 @@ class TestRouteLevelLogic:
         assert res.status_code == 400
         assert "has passed" in res.get_json()["error"]
 
+        from models import Submission
+
+        db.session.add(
+            Submission(
+                user_id=self.competitor.id,
+                challenge_id=self.challenge.id,
+                task_id=self.task.id,
+                status="completed",
+            )
+        )
+        db.session.commit()
+
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
-            data=json.dumps({"finalize_type": "visible"}),
+            data=json.dumps({}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
@@ -1519,7 +1541,7 @@ class TestRouteLevelLogic:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
-            data=json.dumps({"finalize_type": "visible", "reveal_results": True}),
+            data=json.dumps({"reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
@@ -1529,7 +1551,7 @@ class TestRouteLevelLogic:
         # Verify repeat stage finalization returns 400
         res_repeat = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages/{future_stage_id}/finalize",
-            data=json.dumps({"finalize_type": "visible", "reveal_results": True}),
+            data=json.dumps({"reveal_results": True}),
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )

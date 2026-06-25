@@ -569,7 +569,6 @@ class Stage(db.Model):
     end_time = db.Column(db.DateTime, nullable=False)
 
     is_finalized = db.Column(db.Boolean, default=False, nullable=False)
-    finalize_type = db.Column(db.String(50), nullable=True)  # "internal" or "visible"
     reveal_results = db.Column(db.Boolean, default=False, nullable=False)
     is_test = db.Column(db.Boolean, default=False, nullable=False)
 
@@ -582,7 +581,6 @@ class Stage(db.Model):
             "start_time": self.start_time.isoformat() + "Z" if self.start_time else None,
             "end_time": self.end_time.isoformat() + "Z" if self.end_time else None,
             "is_finalized": self.is_finalized,
-            "finalize_type": self.finalize_type,
             "reveal_results": self.reveal_results,
             "is_test": self.is_test,
         }

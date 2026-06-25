@@ -240,7 +240,6 @@ describe('Stage is_test field contract', () => {
       start_time: '2026-06-28T08:00:00Z',
       end_time: '2026-06-28T16:00:00Z',
       is_finalized: false,
-      finalize_type: null,
       reveal_results: false,
       is_test: true,
     };
@@ -257,7 +256,6 @@ describe('Stage is_test field contract', () => {
       start_time: '2026-07-01T09:00:00Z',
       end_time: '2026-07-01T17:00:00Z',
       is_finalized: false,
-      finalize_type: null,
       reveal_results: false,
       is_test: false,
     };

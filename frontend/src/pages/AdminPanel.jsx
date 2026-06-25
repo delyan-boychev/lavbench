@@ -5,6 +5,7 @@ import ChallengeService from '../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
+import Badge from '../components/ui/Badge';
 import useDebounce from '../hooks/useDebounce';
 import { Navigate } from 'react-router-dom';
 import InputField from '../components/ui/InputField';
@@ -41,6 +42,13 @@ export default function AdminPanel() {
   } = useApp();
 
   const API_BASE = '/api';
+  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
+    if (data?.code) {
+      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
+    } else {
+      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
+    }
+  };
   const importFileRef = useRef(null);
 
   // Sub tab navigation
@@ -162,10 +170,7 @@ export default function AdminPanel() {
 
   const [finalizingStage, setFinalizingStage] = useState(null);
   const [stageFinalizeForm, setStageFinalizeForm] = useState({
-    finalize_type: 'visible',
-    reveal_public: true,
-    reveal_private: false,
-    reveal_points: false,
+    reveal_results: false,
   });
 
   const [finalizingChallenge, setFinalizingChallenge] = useState(null);
@@ -464,7 +469,7 @@ export default function AdminPanel() {
         fetchPaginatedChallenges();
         setAdminSubTab('competition-mgmt');
       } else {
-        showToast(data.error || t('admin.notifications.competition_create_failed'), 'rose');
+        showApiError(data, 'admin.notifications.competition_create_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_create_competition'), 'rose');
@@ -490,7 +495,7 @@ export default function AdminPanel() {
         fetchPaginatedChallenges();
         return { success: true };
       } else {
-        showToast(data.error || t('admin.notifications.competition_update_failed'), 'rose');
+        showApiError(data, 'admin.notifications.competition_update_failed');
         return { success: false };
       }
     } catch {
@@ -520,7 +525,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.competition_delete_failed'), 'rose');
+        showApiError(data, 'admin.notifications.competition_delete_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_delete_competition'), 'rose');
@@ -554,7 +559,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.scores_finalize_failed'), 'rose');
+        showApiError(data, 'admin.notifications.scores_finalize_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
@@ -582,7 +587,35 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || 'Failed to toggle reveal', 'rose');
+        showApiError(data, '', 'Failed to toggle reveal');
+      }
+    } catch {
+      showToast(t('admin.notifications.network_error'), 'rose');
+    }
+  };
+
+  const handleToggleRevealStage = async (challengeId, stageId, currentRevealResults) => {
+    const nextVal = !currentRevealResults;
+    try {
+      const res = await api.fetch(
+        `${API_BASE}/challenges/${challengeId}/stages/${stageId}/reveal-results`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reveal_results: nextVal }),
+        },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        showToast(
+          nextVal
+            ? t('admin.notifications.stage_results_revealed', 'Stage results revealed.')
+            : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
+        );
+        fetchChallenges();
+        fetchPaginatedChallenges();
+      } else {
+        showApiError(data, '', 'Failed to toggle stage reveal');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -604,7 +637,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.archive_failed'), 'rose');
+        showApiError(data, 'admin.notifications.archive_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -643,10 +676,7 @@ export default function AdminPanel() {
     setStageChallengeId(challengeId);
     setFinalizingStage(stage);
     setStageFinalizeForm({
-      finalize_type: 'visible',
-      reveal_public: true,
-      reveal_private: false,
-      reveal_points: false,
+      reveal_results: true,
     });
   };
 
@@ -675,7 +705,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.stage_create_failed'), 'rose');
+        showApiError(data, 'admin.notifications.stage_create_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_create_stage'), 'rose');
@@ -711,7 +741,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.stage_update_failed'), 'rose');
+        showApiError(data, 'admin.notifications.stage_update_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_update_stage'), 'rose');
@@ -737,7 +767,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.stage_delete_failed'), 'rose');
+        showApiError(data, 'admin.notifications.stage_delete_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_delete_stage'), 'rose');
@@ -748,10 +778,7 @@ export default function AdminPanel() {
     e.preventDefault();
     try {
       const payload = {
-        finalize_type: stageFinalizeForm.finalize_type,
-        reveal_public: stageFinalizeForm.reveal_public,
-        reveal_private: stageFinalizeForm.reveal_private,
-        reveal_points: stageFinalizeForm.reveal_points,
+        reveal_results: stageFinalizeForm.reveal_results,
       };
       /** @type {Response} */
       const res = await api.fetch(
@@ -772,7 +799,7 @@ export default function AdminPanel() {
         fetchChallenges();
         fetchPaginatedChallenges();
       } else {
-        showToast(data.error || t('admin.notifications.stage_finalize_failed'), 'rose');
+        showApiError(data, 'admin.notifications.stage_finalize_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_stage'), 'rose');
@@ -951,7 +978,7 @@ export default function AdminPanel() {
         fetchPaginatedChallenges();
         setIsCreatingTask(false);
       } else {
-        showToast(data.error || t('admin.notifications.task_create_failed'), 'rose');
+        showApiError(data, 'admin.notifications.task_create_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
@@ -1014,7 +1041,7 @@ export default function AdminPanel() {
         fetchPaginatedChallenges();
         setEditingTask(null);
       } else {
-        showToast(data.error || t('admin.notifications.task_update_failed'), 'rose');
+        showApiError(data, 'admin.notifications.task_update_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
@@ -1046,7 +1073,7 @@ export default function AdminPanel() {
         fetchPaginatedChallenges();
       } else {
         const data = await res.json();
-        showToast(data.error || t('admin.notifications.task_delete_failed'), 'rose');
+        showApiError(data, 'admin.notifications.task_delete_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -1094,7 +1121,7 @@ export default function AdminPanel() {
         showToast(t('admin.notifications.competitor_registered'));
         fetchCompetitors();
       } else {
-        showToast(data.error || t('admin.notifications.competitor_register_failed'), 'rose');
+        showApiError(data, 'admin.notifications.competitor_register_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -1171,7 +1198,7 @@ export default function AdminPanel() {
         });
         fetchUsers();
       } else {
-        showToast(data.error || t('admin.notifications.user_register_failed'), 'rose');
+        showApiError(data, 'admin.notifications.user_register_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -1196,7 +1223,7 @@ export default function AdminPanel() {
         fetchUsers();
       } else {
         const data = await res.json();
-        showToast(data.error || t('admin.notifications.user_delete_failed'), 'rose');
+        showApiError(data, 'admin.notifications.user_delete_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -1240,7 +1267,7 @@ export default function AdminPanel() {
         setCsvFile(null);
         fetchCompetitors();
       } else {
-        showToast(data.error || t('admin.notifications.import_csv_failed'), 'rose');
+        showApiError(data, 'admin.notifications.import_csv_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
@@ -1263,7 +1290,7 @@ export default function AdminPanel() {
       );
       if (!res.ok) {
         const errData = await res.json();
-        showToast(errData.error || t('admin.notifications.download_scores_failed'), 'rose');
+        showApiError(errData, 'admin.notifications.download_scores_failed');
         return;
       }
       const blob = await res.blob();
@@ -1298,7 +1325,7 @@ export default function AdminPanel() {
       });
       if (!res.ok) {
         const errData = await res.json();
-        showToast(errData.error || t('admin.notifications.download_submissions_failed'), 'rose');
+        showApiError(errData, 'admin.notifications.download_submissions_failed');
         return;
       }
       const blob = await res.blob();
@@ -1384,7 +1411,7 @@ export default function AdminPanel() {
         showToast('Challenge imported successfully.');
         fetchPaginatedChallenges();
       } else {
-        showToast(res.data?.error || 'Failed to import challenge.', 'rose');
+        showApiError(res.data, '', 'Failed to import challenge.');
       }
     } catch {
       showToast('Failed to import challenge.', 'rose');
@@ -1457,7 +1484,7 @@ export default function AdminPanel() {
         fetchUsers();
         fetchCompetitors();
       } else {
-        showToast(data.error || t('admin.notifications.competitor_update_failed'), 'rose');
+        showApiError(data, 'admin.notifications.competitor_update_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_update_competitor'), 'rose');
@@ -1485,7 +1512,7 @@ export default function AdminPanel() {
         setResetCredentials({ username: data.username, password: data.password });
         setBulkResetCredentials([]);
       } else {
-        showToast(data.error || t('admin.notifications.password_reset_failed'), 'rose');
+        showApiError(data, 'admin.notifications.password_reset_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_reset_password'), 'rose');
@@ -1542,7 +1569,7 @@ export default function AdminPanel() {
         setBulkResetCredentials(data.reset_accounts || []);
         setResetCredentials(null);
       } else {
-        showToast(data.error || t('admin.notifications.bulk_reset_failed'), 'rose');
+        showApiError(data, 'admin.notifications.bulk_reset_failed');
       }
     } catch {
       showToast(t('admin.notifications.network_error_bulk_reset'), 'rose');
@@ -1817,11 +1844,28 @@ export default function AdminPanel() {
                             <div>
                               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                                 {c.title}
-                                {c.is_archived && (
-                                  <span className="text-[10px] bg-slate-800 border border-white/5 text-slate-400 px-2 py-0.5 rounded-full font-bold">
-                                    {t('admin.archived')}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const now = new Date();
+                                  const start = c.start_time ? new Date(c.start_time) : null;
+                                  const end = c.end_time ? new Date(c.end_time) : null;
+                                  let compStatus;
+                                  if (c.is_archived) {
+                                    compStatus = 'archived';
+                                  } else if (c.is_frozen) {
+                                    compStatus = 'frozen';
+                                  } else if (c.scores_finalized && c.reveal_results) {
+                                    compStatus = 'public';
+                                  } else if (c.scores_finalized && !c.reveal_results) {
+                                    compStatus = 'internal';
+                                  } else if (start && now < start) {
+                                    compStatus = 'future';
+                                  } else if (end && now > end) {
+                                    compStatus = 'grading';
+                                  } else {
+                                    compStatus = 'active';
+                                  }
+                                  return <Badge status={compStatus} />;
+                                })()}
                               </h2>
                               <p className="text-xs text-slate-400 mt-1">
                                 {c.description || t('admin.no_description')}
@@ -1837,17 +1881,12 @@ export default function AdminPanel() {
                               </Button>
 
                               {c.scores_finalized && (
-                                <>
-                                  <span className="text-[10px] font-bold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 px-2.5 py-1.5 rounded-lg flex items-center">
-                                    {t('leaderboard.finalized')}
-                                  </span>
-                                  <Button
-                                    variant="accent"
-                                    onClick={() => handleDownloadScores(c.id, c.title)}
-                                  >
-                                    {t('admin.download_csv_scores_short', 'Scores (CSV)')}
-                                  </Button>
-                                </>
+                                <Button
+                                  variant="accent"
+                                  onClick={() => handleDownloadScores(c.id, c.title)}
+                                >
+                                  {t('admin.download_csv_scores_short', 'Scores (CSV)')}
+                                </Button>
                               )}
 
                               {(c.scores_finalized ||
@@ -1873,16 +1912,18 @@ export default function AdminPanel() {
                                   >
                                     {t('admin.download_audits_json_short', 'Audits (JSON)')}
                                   </Button>
-                                  <Button
-                                    variant="secondary"
-                                    onClick={() =>
-                                      handleToggleRevealChallenge(c.id, c.reveal_results)
-                                    }
-                                  >
-                                    {c.reveal_results
-                                      ? t('admin.hide_results', 'Hide')
-                                      : t('admin.reveal_results', 'Reveal')}
-                                  </Button>
+                                  {currentUser.role === 'jury' && (
+                                    <Button
+                                      variant="secondary"
+                                      onClick={() =>
+                                        handleToggleRevealChallenge(c.id, c.reveal_results)
+                                      }
+                                    >
+                                      {c.reveal_results
+                                        ? t('admin.hide_results', 'Hide')
+                                        : t('admin.reveal_results', 'Reveal')}
+                                    </Button>
+                                  )}
                                 </>
                               )}
                               {!c.scores_finalized &&
@@ -1998,26 +2039,35 @@ export default function AdminPanel() {
                                     key={st.id}
                                     className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                                   >
-                                    <div>
+                                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                                       <span className="font-bold text-slate-200">
                                         {t('admin.stages.stage_label', {
                                           number: st.stage_number,
                                           title: st.title,
                                         })}
                                       </span>
-                                      <span className="text-[10px] text-indigo-400 ml-3">
+                                      <span className="text-[10px] text-indigo-400">
                                         {formatDateTime(st.start_time, c.timezone)} {t('common.to')}{' '}
                                         {formatDateTime(st.end_time, c.timezone)}
                                       </span>
-                                      {st.is_finalized && (
-                                        <span
-                                          className={`text-[9px] font-bold ml-2 px-1.5 py-0.5 rounded border ${st.finalize_type === 'internal' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
-                                        >
-                                          {t('admin.stages.finalized_type', {
-                                            type: st.finalize_type,
-                                          })}
-                                        </span>
-                                      )}
+                                      {(() => {
+                                        const now = new Date();
+                                        const start = new Date(st.start_time);
+                                        const end = new Date(st.end_time);
+                                        let stageStatus;
+                                        if (st.is_finalized && st.reveal_results) {
+                                          stageStatus = 'public';
+                                        } else if (st.is_finalized && !st.reveal_results) {
+                                          stageStatus = 'internal';
+                                        } else if (now < start) {
+                                          stageStatus = 'future';
+                                        } else if (now > end) {
+                                          stageStatus = 'grading';
+                                        } else {
+                                          stageStatus = 'active';
+                                        }
+                                        return <Badge status={stageStatus} />;
+                                      })()}
                                     </div>
                                     <div className="flex gap-2">
                                       <Button
@@ -2028,6 +2078,7 @@ export default function AdminPanel() {
                                         {t('admin.stages.edit')}
                                       </Button>
                                       {!st.is_finalized &&
+                                        currentUser.role === 'jury' &&
                                         (st.end_time
                                           ? new Date(st.end_time) <= new Date()
                                           : false) && (
@@ -2039,6 +2090,20 @@ export default function AdminPanel() {
                                             {t('admin.stages.finalize')}
                                           </Button>
                                         )}
+                                      {st.is_finalized && currentUser.role === 'jury' && (
+                                        <Button
+                                          variant="secondary"
+                                          className="py-1 px-2.5"
+                                          onClick={() =>
+                                            handleToggleRevealStage(c.id, st.id, st.reveal_results)
+                                          }
+                                        >
+                                          {st.reveal_results
+                                            ? t('admin.hide_results', 'Hide')
+                                            : t('admin.reveal_results', 'Reveal')}
+                                        </Button>
+                                      )}
+
                                       {(c.scores_finalized ||
                                         st.is_finalized ||
                                         (st.end_time
@@ -2138,22 +2203,7 @@ export default function AdminPanel() {
                     required
                   />
                 </div>
-                {!isCreatingStage && (
-                  <ToggleField
-                    label={t(
-                      'admin.stages.reveal_results_label',
-                      'Reveal private scores and points to students',
-                    )}
-                    id="stage-reveal-results-edit"
-                    checked={stageForm.reveal_results || false}
-                    onChange={(e) =>
-                      setStageForm({
-                        ...stageForm,
-                        reveal_results: e.target.checked,
-                      })
-                    }
-                  />
-                )}
+
                 <div className="flex gap-3 mt-4">
                   <Button type="submit" variant="primary">
                     {isCreatingStage
@@ -2184,78 +2234,22 @@ export default function AdminPanel() {
               </div>
 
               <form onSubmit={handleSaveFinalizeStage} className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-slate-300">
-                    {t('admin.stages.finalize_type_label')}
-                  </label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                      <input
-                        type="radio"
-                        name="finalize_type"
-                        value="visible"
-                        checked={stageFinalizeForm.finalize_type === 'visible'}
-                        onChange={() =>
-                          setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'visible' })
-                        }
-                      />
-                      {t('admin.stages.finalize_type_visible')}
-                    </label>
-                    <label className="flex items-center gap-2 text-slate-200 text-sm cursor-pointer">
-                      <input
-                        type="radio"
-                        name="finalize_type"
-                        value="internal"
-                        checked={stageFinalizeForm.finalize_type === 'internal'}
-                        onChange={() =>
-                          setStageFinalizeForm({ ...stageFinalizeForm, finalize_type: 'internal' })
-                        }
-                      />
-                      {t('admin.stages.finalize_type_internal')}
-                    </label>
-                  </div>
+                <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
+                  <ToggleField
+                    label={t(
+                      'admin.stages.reveal_results_and_points_desc',
+                      'Разкриване на резултатите и точките за състезателите (в противен случай завършването е само вътрешно за журито)',
+                    )}
+                    id="stage-reveal-results-and-points"
+                    checked={stageFinalizeForm.reveal_results}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setStageFinalizeForm({
+                        reveal_results: checked,
+                      });
+                    }}
+                  />
                 </div>
-
-                {stageFinalizeForm.finalize_type === 'visible' && (
-                  <div className="flex flex-col gap-3 p-4 bg-slate-900/40 border border-white/5 rounded-xl">
-                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">
-                      {t('admin.stages.visibility_rules_students')}
-                    </h4>
-                    <ToggleField
-                      label={t('admin.stages.reveal_public_split')}
-                      id="stage-reveal-public"
-                      checked={stageFinalizeForm.reveal_public}
-                      onChange={(e) =>
-                        setStageFinalizeForm({
-                          ...stageFinalizeForm,
-                          reveal_public: e.target.checked,
-                        })
-                      }
-                    />
-                    <ToggleField
-                      label={t('admin.stages.reveal_private_split')}
-                      id="stage-reveal-private"
-                      checked={stageFinalizeForm.reveal_private}
-                      onChange={(e) =>
-                        setStageFinalizeForm({
-                          ...stageFinalizeForm,
-                          reveal_private: e.target.checked,
-                        })
-                      }
-                    />
-                    <ToggleField
-                      label={t('admin.stages.reveal_total_points')}
-                      id="stage-reveal-points"
-                      checked={stageFinalizeForm.reveal_points}
-                      onChange={(e) =>
-                        setStageFinalizeForm({
-                          ...stageFinalizeForm,
-                          reveal_points: e.target.checked,
-                        })
-                      }
-                    />
-                  </div>
-                )}
 
                 <div className="flex gap-3 mt-4">
                   <Button type="submit" variant="primary">
@@ -2609,13 +2603,25 @@ export default function AdminPanel() {
                       'Leave blank to keep current',
                     )}
                   />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div
+                    className={`grid ${editUserForm.role === 'competitor' ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}
+                  >
                     <InputField
                       label={t('admin.competitor_reg.first_name')}
                       value={editUserForm.name}
                       onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
                       required
                     />
+                    {editUserForm.role === 'competitor' && (
+                      <InputField
+                        label={t('admin.competitor_reg.middle_name')}
+                        value={editUserForm.middle_name || ''}
+                        onChange={(e) =>
+                          setEditUserForm({ ...editUserForm, middle_name: e.target.value })
+                        }
+                        required
+                      />
+                    )}
                     <InputField
                       label={t('admin.competitor_reg.last_name')}
                       value={editUserForm.surname}
@@ -2639,15 +2645,7 @@ export default function AdminPanel() {
 
                   {editUserForm.role === 'competitor' && (
                     <>
-                      <div className="grid grid-cols-2 gap-4 mb-2">
-                        <InputField
-                          label={t('admin.competitor_reg.middle_name')}
-                          value={editUserForm.middle_name || ''}
-                          onChange={(e) =>
-                            setEditUserForm({ ...editUserForm, middle_name: e.target.value })
-                          }
-                          required
-                        />
+                      <div className="grid grid-cols-1 gap-4 mb-2">
                         <InputField
                           label={t('admin.competitor_reg.birth_date')}
                           type="date"
