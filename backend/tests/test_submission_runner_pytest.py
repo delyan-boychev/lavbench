@@ -1,5 +1,7 @@
 import math
+
 import pytest
+
 from task_modules.submission_runner import calculate_weighted_score
 
 
@@ -44,7 +46,7 @@ class TestSubmissionRunnerMetrics:
         assert score == 0.0
 
 
-class CommandInterrupted(Exception):
+class CommandInterruptedError(Exception):
     def __init__(self, cmd):
         super().__init__()
         self.cmd = cmd
@@ -78,7 +80,7 @@ class TestSubmissionRunnerDocker:
         )
 
         def mock_stream(cmd, logs, time_limit=None):
-            raise CommandInterrupted(cmd)
+            raise CommandInterruptedError(cmd)
 
         mocker.patch(
             "task_modules.submission_runner.run_command_streaming",
@@ -109,15 +111,15 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterrupted) as exc_info:
+        with pytest.raises(CommandInterruptedError) as exc_info:
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
                 metadata=metadata,
                 app=None,
                 db=None,
-                Submission=None,
-                Challenge=None,
+                submission_cls=None,
+                challenge_cls=None,
             )
 
         cmd = exc_info.value.cmd
@@ -163,9 +165,13 @@ class TestSubmissionRunnerDocker:
         }
 
         # But challenge has ram_limit
-        # In run_eval_submission, Challenge.ram_limit is mocked using the metadata's "ram_limit" key:
+        # In run_eval_submission, Challenge.ram_limit
+        # is mocked using the metadata's "ram_limit" key:
+
         # Challenge constructor uses: ram_limit_mb=metadata.get("ram_limit")
-        # So we can't test challenge fallback via metadata dictionary easily since both refer to "ram_limit",
+        # So we can't test challenge fallback via metadata
+        # dictionary easily since both refer to "ram_limit",
+
         # but let's test that if ram_limit is provided, it goes into the memory limit flags.
         # Wait, let's look at how ram_limit is read:
         # ram_limit = 8192
@@ -176,15 +182,15 @@ class TestSubmissionRunnerDocker:
         # Let's test that if ram_limit is 2048, it is set correctly to 2048m.
         metadata["ram_limit"] = 2048
 
-        with pytest.raises(CommandInterrupted) as exc_info:
+        with pytest.raises(CommandInterruptedError) as exc_info:
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
                 metadata=metadata,
                 app=None,
                 db=None,
-                Submission=None,
-                Challenge=None,
+                submission_cls=None,
+                challenge_cls=None,
             )
 
         cmd = exc_info.value.cmd
@@ -219,15 +225,15 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterrupted) as exc_info:
+        with pytest.raises(CommandInterruptedError) as exc_info:
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
                 metadata=metadata,
                 app=None,
                 db=None,
-                Submission=None,
-                Challenge=None,
+                submission_cls=None,
+                challenge_cls=None,
             )
 
         cmd = exc_info.value.cmd
@@ -260,15 +266,15 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterrupted) as exc_info:
+        with pytest.raises(CommandInterruptedError) as exc_info:
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
                 metadata=metadata,
                 app=None,
                 db=None,
-                Submission=None,
-                Challenge=None,
+                submission_cls=None,
+                challenge_cls=None,
             )
 
         cmd = exc_info.value.cmd
@@ -302,15 +308,15 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterrupted) as exc_info:
+        with pytest.raises(CommandInterruptedError) as exc_info:
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
                 metadata=metadata,
                 app=None,
                 db=None,
-                Submission=None,
-                Challenge=None,
+                submission_cls=None,
+                challenge_cls=None,
             )
 
         cmd = exc_info.value.cmd
@@ -414,8 +420,9 @@ class TestFetchHFKeyFromServer:
         assert result == ""
 
     def test_connection_error_returns_empty(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
         import requests as req
+
+        from task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(
             "task_modules.submission_runner.requests.get",
@@ -425,8 +432,9 @@ class TestFetchHFKeyFromServer:
         assert result == ""
 
     def test_timeout_exception_returns_empty(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
         import requests as req
+
+        from task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(
             "task_modules.submission_runner.requests.get",
@@ -481,8 +489,9 @@ class TestImageExists:
         assert _image_exists("any_image") is False
 
     def test_subprocess_timeout_returns_false(self, mocker):
-        from task_modules.submission_runner import _image_exists
         import subprocess
+
+        from task_modules.submission_runner import _image_exists
 
         mocker.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10))
         assert _image_exists("any_image") is False
@@ -511,7 +520,7 @@ class TestPreloadSubmissionDatasets:
         task = self._make_task(datasets=None, models=None)
         logs = []
         preload_submission_datasets(task, None, "/tmp", None, logs)
-        assert not any("Preloading" in l for l in logs)
+        assert not any("Preloading" in log for log in logs)
 
     def test_malformed_datasets_json_is_ignored(self):
         from task_modules.submission_runner import preload_submission_datasets
@@ -519,7 +528,7 @@ class TestPreloadSubmissionDatasets:
         task = self._make_task(datasets="{malformed", models=None)
         logs = []
         preload_submission_datasets(task, None, "/tmp", None, logs)
-        assert not any("Preloading datasets" in l for l in logs)
+        assert not any("Preloading datasets" in log for log in logs)
 
     def test_malformed_models_json_is_ignored(self):
         from task_modules.submission_runner import preload_submission_datasets
@@ -527,7 +536,7 @@ class TestPreloadSubmissionDatasets:
         task = self._make_task(datasets=None, models="[not valid json")
         logs = []
         preload_submission_datasets(task, None, "/tmp", None, logs)
-        assert not any("Preloading" in l for l in logs)
+        assert not any("Preloading" in log for log in logs)
 
     def test_datasets_list_without_cache_dir_skips(self):
         from task_modules.submission_runner import preload_submission_datasets
@@ -536,7 +545,7 @@ class TestPreloadSubmissionDatasets:
         logs = []
         # No cache_dir → should not try to load datasets
         preload_submission_datasets(task, None, "/tmp", None, logs)
-        assert not any("Preloading datasets" in l for l in logs)
+        assert not any("Preloading datasets" in log for log in logs)
 
     def test_models_list_without_cache_dir_skips(self):
         from task_modules.submission_runner import preload_submission_datasets
@@ -544,7 +553,7 @@ class TestPreloadSubmissionDatasets:
         task = self._make_task(datasets=None, models='["bert-base-uncased"]')
         logs = []
         preload_submission_datasets(task, None, "/tmp", None, logs)
-        assert not any("Preloading HF models" in l for l in logs)
+        assert not any("Preloading HF models" in log for log in logs)
 
     def test_datasets_with_cache_dir_attempts_preload(self, mocker, tmp_path):
         """When cache_dir and datasets are set, preload is attempted."""
@@ -559,7 +568,7 @@ class TestPreloadSubmissionDatasets:
         mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
 
         preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
-        assert any("Preloading datasets" in l for l in logs)
+        assert any("Preloading datasets" in log for log in logs)
 
     def test_datasets_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
         """Even if preload fails, it should log a warning and continue without crashing."""
@@ -574,7 +583,7 @@ class TestPreloadSubmissionDatasets:
         mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
 
         preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
-        assert any("Warning" in l for l in logs)
+        assert any("Warning" in log for log in logs)
 
     def test_models_with_cache_dir_attempts_preload(self, mocker, tmp_path):
         from task_modules.submission_runner import preload_submission_datasets
@@ -588,7 +597,7 @@ class TestPreloadSubmissionDatasets:
         mocker.patch.dict("sys.modules", {"huggingface_hub": mock_hub_module})
 
         preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
-        assert any("Preloading HF models" in l for l in logs)
+        assert any("Preloading HF models" in log for log in logs)
 
     def test_model_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
         from task_modules.submission_runner import preload_submission_datasets
@@ -602,7 +611,7 @@ class TestPreloadSubmissionDatasets:
         mocker.patch.dict("sys.modules", {"huggingface_hub": mock_hub_module})
 
         preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
-        assert any("Warning" in l for l in logs)
+        assert any("Warning" in log for log in logs)
 
     def test_empty_dataset_names_are_filtered(self):
         """Empty strings in the dataset list should not be added to datasets_to_load."""
@@ -611,14 +620,14 @@ class TestPreloadSubmissionDatasets:
         task = self._make_task(datasets='["", ""]', models=None)
         logs = []
         preload_submission_datasets(task, None, "/tmp", "/tmp/cache", logs)
-        assert not any("Preloading datasets" in l for l in logs)
+        assert not any("Preloading datasets" in log for log in logs)
 
     def test_task_is_none_handled_gracefully(self):
         from task_modules.submission_runner import preload_submission_datasets
 
         logs = []
         preload_submission_datasets(None, None, "/tmp", None, logs)
-        assert not any("Preloading" in l for l in logs)
+        assert not any("Preloading" in log for log in logs)
 
     def test_list_datasets_directly_set(self, mocker, tmp_path):
         """Task with hf_datasets already as a Python list (not JSON string)."""
@@ -633,7 +642,7 @@ class TestPreloadSubmissionDatasets:
         mocker.patch.dict("sys.modules", {"datasets": mock_ds_module})
 
         preload_submission_datasets(task, None, str(tmp_path), cache_dir, logs)
-        assert any("Preloading datasets" in l for l in logs)
+        assert any("Preloading datasets" in log for log in logs)
 
 
 class TestDockerNotAvailable:
@@ -692,8 +701,8 @@ class TestDockerNotAvailable:
             metadata=self._metadata(),
             app=None,
             db=None,
-            Submission=None,
-            Challenge=None,
+            submission_cls=None,
+            challenge_cls=None,
         )
         assert result is None
 
@@ -718,8 +727,8 @@ class TestDockerNotAvailable:
             metadata=self._metadata(),
             app=None,
             db=None,
-            Submission=None,
-            Challenge=None,
+            submission_cls=None,
+            challenge_cls=None,
         )
         assert result is None
 
@@ -728,8 +737,9 @@ class TestCodeCellsParseError:
     """Test that malformed code_cells JSON causes graceful failure."""
 
     def test_malformed_code_cells_json_returns_none(self, mocker):
-        from task_modules.submission_runner import run_eval_submission
         import json as _json
+
+        from task_modules.submission_runner import run_eval_submission
 
         # Docker is available
         def mock_subprocess_run(args, *a, **kw):
@@ -791,7 +801,7 @@ class TestCodeCellsParseError:
             metadata=metadata,
             app=None,
             db=None,
-            Submission=None,
-            Challenge=None,
+            submission_cls=None,
+            challenge_cls=None,
         )
         assert result is None

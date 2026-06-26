@@ -1,7 +1,7 @@
-import os
-import sys
-import secrets
 import hashlib
+import os
+import secrets
+import sys
 from datetime import datetime
 
 from werkzeug.security import generate_password_hash
@@ -10,20 +10,20 @@ backend_path = os.path.dirname(os.path.abspath(__file__))
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from app import create_app
-from models import db, User
+from app import create_app  # noqa: E402
+from models import User, db  # noqa: E402
 
 
 def reset_and_create_admin():
     app = create_app()
     with app.app_context():
-        print("Dropping all database tables...")
+        print("Dropping all database tables...")  # noqa: T201
         # Use raw engine connection to bypass SQLAlchemy session autoflush
         with db.engine.connect() as conn:
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(db.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
 
-        print("Creating database tables...")
+        print("Creating database tables...")  # noqa: T201
         db.create_all()
 
         admin_username = f"admin_{secrets.token_hex(4)}"
@@ -57,15 +57,15 @@ def reset_and_create_admin():
         except Exception as e:
             saved_msg = f"Failed to save credentials file: {e}"
 
-        print("\n" + "=" * 60)
-        print("         NEUROBENCH ADMIN GENERATOR")
-        print("=" * 60)
-        print("  A secure administrator profile has been generated.")
-        print("  Keep these credentials safe. Paste them to log in.")
-        print(f"\n  Admin Username: \033[96m{admin_username}\033[0m")
-        print(f"  Master Key:     \033[92m{raw_key}\033[0m")
-        print(f"\n  {saved_msg}")
-        print("=" * 60 + "\n")
+        print("\n" + "=" * 60)  # noqa: T201
+        print("         LAVBENCH ADMIN GENERATOR")  # noqa: T201
+        print("=" * 60)  # noqa: T201
+        print("  A secure administrator profile has been generated.")  # noqa: T201
+        print("  Keep these credentials safe. Paste them to log in.")  # noqa: T201
+        print(f"\n  Admin Username: \033[96m{admin_username}\033[0m")  # noqa: T201
+        print(f"  Master Key:     \033[92m{raw_key}\033[0m")  # noqa: T201
+        print(f"\n  {saved_msg}")  # noqa: T201
+        print("=" * 60 + "\n")  # noqa: T201
 
 
 if __name__ == "__main__":

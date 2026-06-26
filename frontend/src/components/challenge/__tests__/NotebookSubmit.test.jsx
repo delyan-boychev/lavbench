@@ -1,29 +1,29 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { useAuth } from '../../AuthContext';
-import { useApp } from '../../context/AppContext';
-import ChallengeService from '../../services/ChallengeService';
-import TaskService from '../../services/TaskService';
-import NotebookSubmit from './NotebookSubmit';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { useAuth } from '../../../AuthContext';
+import { useApp } from '../../../context/AppContext';
+import ChallengeService from '../../../services/ChallengeService';
+import TaskService from '../../../services/TaskService';
+import NotebookSubmit from '../NotebookSubmit';
 
 // Mock contexts
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
 // Mock services
-vi.mock('../../services/ChallengeService', () => ({
+vi.mock('../../../services/ChallengeService', () => ({
   default: {
     parseNotebook: vi.fn(),
   },
 }));
 
-vi.mock('../../services/TaskService', () => ({
+vi.mock('../../../services/TaskService', () => ({
   default: {
     submit: vi.fn(),
   },
@@ -81,12 +81,13 @@ describe('NotebookSubmit Component', () => {
     expect(screen.getByText('Upload Jupyter Notebook (.ipynb)')).toBeInTheDocument();
   });
 
-  it('validates file extension upon upload selection', () => {
+  it('validates file extension upon upload selection', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
 
     // Query file input element
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
@@ -94,6 +95,7 @@ describe('NotebookSubmit Component', () => {
     // Mock an invalid text file
     const invalidFile = new File(['print("hello")'], 'solution.py', { type: 'text/x-python' });
     fireEvent.change(fileInput, { target: { files: [invalidFile] } });
+    await act(async () => {});
 
     expect(mockShowToast).toHaveBeenCalledWith('Only .ipynb files are supported.', 'error');
     expect(ChallengeService.parseNotebook).not.toHaveBeenCalled();
@@ -119,11 +121,13 @@ describe('NotebookSubmit Component', () => {
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['{}'], 'my_solution.ipynb', { type: 'application/json' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    await act(async () => {});
 
     expect(ChallengeService.parseNotebook).toHaveBeenCalledWith(10, validFile);
 
@@ -147,11 +151,13 @@ describe('NotebookSubmit Component', () => {
     });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['invalidjson'], 'my_solution.ipynb', { type: 'application/json' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    await act(async () => {});
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Invalid notebook JSON format.', 'error');
@@ -166,11 +172,13 @@ describe('NotebookSubmit Component', () => {
     ChallengeService.parseNotebook.mockRejectedValue(new Error('DNS failure'));
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['{}'], 'my_solution.ipynb', { type: 'application/json' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    await act(async () => {});
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Network error parsing notebook.', 'error');
@@ -191,10 +199,12 @@ describe('NotebookSubmit Component', () => {
     TaskService.submit.mockResolvedValue({ ok: true });
 
     render(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
     const validFile = new File(['{}'], 'sol.ipynb', { type: 'application/json' });
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    await act(async () => {});
 
     // Wait for file parsing to complete and render the cells list
     await vi.waitFor(() => {
@@ -207,12 +217,14 @@ describe('NotebookSubmit Component', () => {
 
     // Select the cell by clicking its checkbox
     fireEvent.click(checkbox);
+    await act(async () => {});
     expect(checkbox).toBeChecked();
     expect(screen.getByText('Select Cells (1/1 code cells)')).toBeInTheDocument();
 
     // Submit cells
     const submitBtn = screen.getByText(/Submit 1 cells? for Evaluation/i);
     fireEvent.click(submitBtn);
+    await act(async () => {});
 
     expect(TaskService.submit).toHaveBeenCalledWith(1, [cellsMock[0]]);
 

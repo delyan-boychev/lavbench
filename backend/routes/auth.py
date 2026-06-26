@@ -1,11 +1,14 @@
-from flask import Blueprint, request, jsonify, make_response
-from werkzeug.security import check_password_hash, generate_password_hash
-from models import db, User
-from auth_utils import login_required, set_auth_cookie, clear_auth_cookie
-
-auth_bp = Blueprint("auth", __name__)
-
+import logging
 import time
+
+from flask import Blueprint, jsonify, make_response, request
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from auth_utils import clear_auth_cookie, login_required, set_auth_cookie
+from models import User, db
+
+logger = logging.getLogger(__name__)
+auth_bp = Blueprint("auth", __name__)
 
 
 def _login_rate_limit_exceeded(username, ip):
@@ -51,8 +54,8 @@ def _record_login_failure(username, ip):
         r.zadd(f"login_failures:ip:{ip}", {str(now): now})
         r.expire(f"login_failures:user:{username}", 120)
         r.expire(f"login_failures:ip:{ip}", 120)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to record login failure for user %s: %s", username, e)
 
 
 def _clear_login_failures(username, ip):
@@ -65,8 +68,8 @@ def _clear_login_failures(username, ip):
             return
         r.delete(f"login_failures:user:{username}")
         r.delete(f"login_failures:ip:{ip}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to clear login failures for user %s: %s", username, e)
 
 
 def get_client_ip():
@@ -200,7 +203,10 @@ def login():
             return (
                 jsonify(
                     {
-                        "error": "This competition has been archived. Registered students are not allowed to log in.",
+                        "error": (
+                            "This competition has been archived. "
+                            "Registered students are not allowed to log in."
+                        ),
                         "code": "ERR_COMPETITION_ARCHIVED",
                     }
                 ),

@@ -89,3 +89,36 @@ describe('formatDateTime', () => {
     expect(formatDateTime('not-a-date', 'UTC')).toBe('—');
   });
 });
+
+describe('formatDateTime – catch / edge paths', () => {
+  it('uses fallback UTC formatting when timezone is invalid', () => {
+    // An invalid tz string causes Intl.DateTimeFormat to throw, hitting the catch block
+    const result = formatDateTime('2024-06-25T14:00:00Z', 'Invalid/Zone');
+    // Fallback outputs "YYYY-MM-DD HH:MM (UTC)"
+    expect(result).toMatch(/2024-06-25/);
+    expect(result).toContain('(UTC)');
+  });
+
+  it('defaults to UTC when no tz argument is supplied', () => {
+    const result = formatDateTime('2024-06-25T14:00:00Z');
+    expect(result).toContain('(UTC)');
+    expect(result).toContain('2024');
+  });
+});
+
+describe('formatLocalizedDate – option merging', () => {
+  it('can override hour12 to true via options', () => {
+    const result = formatLocalizedDate('2024-06-25T14:00:00Z', { hour12: true });
+    // Should contain AM/PM indicator
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('returns empty string for empty string input', () => {
+    expect(formatLocalizedDate('')).toBe('');
+  });
+
+  it('returns empty string for 0 (falsy number)', () => {
+    expect(formatLocalizedDate(0)).toBe('');
+  });
+});

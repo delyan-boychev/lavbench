@@ -1,24 +1,26 @@
+import hashlib
 import os
 import secrets
-import hashlib
+
 from werkzeug.security import generate_password_hash
+
 from app import create_app
-from models import db, User
+from models import User, db
 
 
 def generate_master_key():
     app = create_app()
     with app.app_context():
         # Drop and recreate database to clean old runs
-        print("Dropping all existing database tables...")
+        print("Dropping all existing database tables...")  # noqa: T201
         try:
             db.session.execute(db.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")
+            print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")  # noqa: T201
             db.drop_all()
-        print("Recreating database tables...")
+        print("Recreating database tables...")  # noqa: T201
         db.create_all()
 
         # Generate random unique admin username (not standard "admin")
@@ -67,17 +69,17 @@ def generate_master_key():
         except Exception as e:
             saved_msg = f"Failed to save credentials file: {str(e)}"
 
-        print("\n" + "=" * 60)
-        print("         MASTER ADMIN PROFILE GENERATOR ONLINE")
-        print("=" * 60)
-        print("  A secure administrator profile has been generated.")
-        print("  Keep these credentials safe. Paste them to log in.")
-        print("\n  Generated Admin Username:")
-        print(f"  \033[96m{admin_username}\033[0m")
-        print("  Generated Master Key:")
-        print(f"  \033[92m{raw_key}\033[0m")
-        print("\n  " + saved_msg)
-        print("=" * 60 + "\n")
+        print("\n" + "=" * 60)  # noqa: T201
+        print("         MASTER ADMIN PROFILE GENERATOR ONLINE")  # noqa: T201
+        print("=" * 60)  # noqa: T201
+        print("  A secure administrator profile has been generated.")  # noqa: T201
+        print("  Keep these credentials safe. Paste them to log in.")  # noqa: T201
+        print("\n  Generated Admin Username:")  # noqa: T201
+        print(f"  \033[96m{admin_username}\033[0m")  # noqa: T201
+        print("  Generated Master Key:")  # noqa: T201
+        print(f"  \033[92m{raw_key}\033[0m")  # noqa: T201
+        print("\n  " + saved_msg)  # noqa: T201
+        print("=" * 60 + "\n")  # noqa: T201
 
 
 if __name__ == "__main__":

@@ -1,31 +1,33 @@
 """Parquet-based evaluation engine for comparing student submissions against labels."""
 
-import math
+import contextlib
 import logging
-import numpy as np
+import math
 
-logger = logging.getLogger(__name__)
+import numpy as np
 from sklearn.metrics import (
     accuracy_score,
+    adjusted_mutual_info_score,
+    adjusted_rand_score,
     balanced_accuracy_score,
+    brier_score_loss,
+    cohen_kappa_score,
     f1_score,
+    log_loss,
+    matthews_corrcoef,
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+    median_absolute_error,
+    normalized_mutual_info_score,
     precision_score,
+    r2_score,
     recall_score,
     roc_auc_score,
-    log_loss,
-    brier_score_loss,
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score,
-    cohen_kappa_score,
-    matthews_corrcoef,
-    mean_absolute_percentage_error,
-    median_absolute_error,
-    adjusted_rand_score,
-    normalized_mutual_info_score,
-    adjusted_mutual_info_score,
     v_measure_score,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------
 # 1. TASK TYPE SCHEMAS & METRICS CONFIG
@@ -120,23 +122,23 @@ def calculate_lcs(x, y):
     x_tokens = x.split()
     y_tokens = y.split()
     m, n = len(x_tokens), len(y_tokens)
-    L = [[0] * (n + 1) for _ in range(m + 1)]
+    lcsl = [[0] * (n + 1) for _ in range(m + 1)]
     for i in range(m + 1):
         for j in range(n + 1):
             if i == 0 or j == 0:
-                L[i][j] = 0
+                lcsl[i][j] = 0
             elif x_tokens[i - 1] == y_tokens[j - 1]:
-                L[i][j] = L[i - 1][j - 1] + 1
+                lcsl[i][j] = lcsl[i - 1][j - 1] + 1
             else:
-                L[i][j] = max(L[i - 1][j], L[i][j - 1])
-    return L[m][n]
+                lcsl[i][j] = max(lcsl[i - 1][j], lcsl[i][j - 1])
+    return lcsl[m][n]
 
 
 # NLP Metric Fallbacks
 def compute_bleu(ref, hyp):
     """Compute BLEU score for machine translation quality."""
     try:
-        from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+        from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
         cc = SmoothingFunction()
         return sentence_bleu([ref.split()], hyp.split(), smoothing_function=cc.method1)
@@ -253,7 +255,7 @@ def compute_map_detection(y_true, y_pred, iou_threshold=0.5):
     all_ap = []
     # Loop over class labels if present, otherwise treat as class-agnostic
     # Simplified class-agnostic mAP calculation
-    for true_boxes, pred_boxes in zip(y_true, y_pred):
+    for true_boxes, pred_boxes in zip(y_true, y_pred, strict=False):
         if not true_boxes:
             all_ap.append(1.0 if not pred_boxes else 0.0)
             continue
@@ -294,14 +296,15 @@ def compute_map_detection(y_true, y_pred, iou_threshold=0.5):
 def compute_psnr(ref_bytes_list, hyp_bytes_list):
     """Compute Peak Signal-to-Noise Ratio for image reconstruction quality."""
     psnr_scores = []
-    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
+    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
         if not ref or not hyp:
             psnr_scores.append(0.0)
             continue
         try:
             # Try loading via PIL
-            from PIL import Image
             import io
+
+            from PIL import Image
 
             img_ref = np.array(Image.open(io.BytesIO(ref)).convert("RGB"))
             img_hyp = np.array(Image.open(io.BytesIO(hyp)).convert("RGB"))
@@ -336,14 +339,15 @@ def compute_psnr(ref_bytes_list, hyp_bytes_list):
 def compute_ssim(ref_bytes_list, hyp_bytes_list):
     """Compute Structural Similarity Index for image quality assessment."""
     ssim_scores = []
-    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
+    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
         if not ref or not hyp:
             ssim_scores.append(0.0)
             continue
         try:
-            from skimage.metrics import structural_similarity
-            from PIL import Image
             import io
+
+            from PIL import Image
+            from skimage.metrics import structural_similarity
 
             img_ref = np.array(Image.open(io.BytesIO(ref)).convert("L"))
             img_hyp = np.array(Image.open(io.BytesIO(hyp)).convert("L"))
@@ -377,7 +381,7 @@ def compute_ssim(ref_bytes_list, hyp_bytes_list):
 def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
     """Compute Signal-to-Noise Ratio for audio quality assessment."""
     snr_scores = []
-    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
+    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
         if not ref or not hyp:
             snr_scores.append(0.0)
             continue
@@ -402,7 +406,7 @@ def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
 def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
     """Compute Mel-scale Log Spectral Distance for audio quality."""
     lsd_scores = []
-    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list):
+    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
         if not ref or not hyp:
             lsd_scores.append(10.0)  # High distance fallback
             continue
@@ -434,7 +438,7 @@ def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
 def compute_segmentation_iou(y_true, y_pred):
     """Compute Intersection over Union for image segmentation."""
     iou_scores = []
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=False):
         if not t or not p:
             iou_scores.append(0.0)
             continue
@@ -451,7 +455,7 @@ def compute_segmentation_iou(y_true, y_pred):
 def compute_segmentation_dice(y_true, y_pred):
     """Compute Dice coefficient for image segmentation overlap."""
     dice_scores = []
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=False):
         if not t or not p:
             dice_scores.append(0.0)
             continue
@@ -469,7 +473,7 @@ def compute_segmentation_dice(y_true, y_pred):
 def compute_oks(y_true, y_pred):
     """Compute Object Keypoint Similarity for pose estimation."""
     oks_scores = []
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=False):
         try:
             # Expected format is list/array of coordinates
             arr_t = np.array(t, dtype=np.float32).reshape(-1, 2)
@@ -492,7 +496,7 @@ def compute_oks(y_true, y_pred):
 def compute_pck(y_true, y_pred, threshold=0.05):
     """Compute Percentage of Correct Keypoints for pose estimation."""
     pck_scores = []
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=False):
         try:
             arr_t = np.array(t, dtype=np.float32).reshape(-1, 2)
             arr_p = np.array(p, dtype=np.float32).reshape(-1, 2)
@@ -585,21 +589,15 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
     # For Retrieval task, we handle retrieval separately
     if "query_id" in df_labels.columns:
         payload = {}
-        for m_name in metrics_cfg.keys():
+        for m_name in metrics_cfg:
             m_name_clean = m_name.lower().strip()
             cfg = metrics_cfg[m_name]
             m_opts = cfg.get("options", {}) if isinstance(cfg, dict) else {}
             k_val = 10
             if "k" in m_opts:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     k_val = int(m_opts["k"])
-                except (ValueError, TypeError):
-                    pass
-            elif "ndcg_" in m_name_clean:
-                parts = m_name_clean.split("_")
-                if len(parts) > 1 and parts[1].isdigit():
-                    k_val = int(parts[1])
-            elif "recall_" in m_name_clean:
+            elif "ndcg_" in m_name_clean or "recall_" in m_name_clean:
                 parts = m_name_clean.split("_")
                 if len(parts) > 1 and parts[1].isdigit():
                     k_val = int(parts[1])
@@ -622,13 +620,14 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
 
     if len(df_sub) != len(df_labels):
         raise ValueError(
-            f"Submission ID alignment mismatch. Found {len(df_sub)} aligned items out of {len(df_labels)} ground truths."
+            f"Submission ID alignment mismatch. Found {len(df_sub)} "
+            f"aligned items out of {len(df_labels)} ground truths."
         )
 
     # Extract arrays per metric
     payload = {}
 
-    for m_name in metrics_cfg.keys():
+    for m_name in metrics_cfg:
         m_name_clean = m_name.lower().strip()
         val = 0.0
         cfg = metrics_cfg[m_name]
@@ -648,7 +647,8 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             ]
             if not non_id_cols_sub:
                 raise ValueError(
-                    "Submission parquet contains no prediction columns (only metadata columns like 'id')."
+                    "Submission parquet contains no prediction "
+                    "columns (only metadata columns like 'id')."
                 )
             if not non_id_cols_label:
                 raise ValueError(
@@ -677,7 +677,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             first_true = y_true[0] if len(y_true) > 0 else None
             if isinstance(first_true, str):
                 f1_scores = []
-                for t, p in zip(y_true, y_pred):
+                for t, p in zip(y_true, y_pred, strict=False):
                     t_words = str(t).strip().lower().split()
                     p_words = str(p).strip().lower().split()
                     if not t_words or not p_words:
@@ -713,7 +713,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             first_true = y_true[0] if len(y_true) > 0 else None
             if isinstance(first_true, list):
                 recall_scores = []
-                for true_boxes, pred_boxes in zip(y_true, y_pred):
+                for true_boxes, pred_boxes in zip(y_true, y_pred, strict=False):
                     if not true_boxes:
                         recall_scores.append(1.0)
                         continue
@@ -791,7 +791,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             try:
                 if len(y_true) > 0 and isinstance(y_true[0], (bytes, bytearray)):
                     scores = []
-                    for t, p in zip(y_true, y_pred):
+                    for t, p in zip(y_true, y_pred, strict=False):
                         if not t or not p:
                             scores.append(1.0)
                             continue
@@ -826,7 +826,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
                         try:
                             shape_tuple = tuple(int(x.strip()) for x in shape_str.split(","))
                             scores = []
-                            for t, p in zip(y_true, y_pred):
+                            for t, p in zip(y_true, y_pred, strict=False):
                                 arr_t = np.array(t).reshape(shape_tuple)
                                 arr_p = np.array(p).reshape(shape_tuple)
                                 if m_name_clean == "rmse":
@@ -897,27 +897,29 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
 
         # 5. Generative NLP Metrics
         elif m_name_clean == "bleu":
-            val = np.mean([compute_bleu(t, p) for t, p in zip(y_true, y_pred)])
+            val = np.mean([compute_bleu(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "rouge":
-            rouge_type = m_opts.get("rouge_type", "rougeL")
+            m_opts.get("rouge_type", "rougeL")
             # Currently compute_rouge_l specifically returns rougeL. We can adapt it if needed,
             # but for now we'll pass the type to a custom wrapper or just use rougeL.
-            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred)])
+            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "rouge_l":
-            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred)])
+            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "meteor":
-            val = np.mean([compute_meteor(t, p) for t, p in zip(y_true, y_pred)])
+            val = np.mean([compute_meteor(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "chrf":
             beta = m_opts.get("beta", 3)
-            val = np.mean([compute_chrf(t, p, beta=beta) for t, p in zip(y_true, y_pred)])
+            val = np.mean(
+                [compute_chrf(t, p, beta=beta) for t, p in zip(y_true, y_pred, strict=False)]
+            )
         elif m_name_clean == "ter":
-            val = np.mean([compute_ter(t, p) for t, p in zip(y_true, y_pred)])
+            val = np.mean([compute_ter(t, p) for t, p in zip(y_true, y_pred, strict=False)])
 
         # 6. QA Extractive
         elif m_name_clean == "exact_match":
             em_list = [
                 1.0 if str(t).strip().lower() == str(p).strip().lower() else 0.0
-                for t, p in zip(y_true, y_pred)
+                for t, p in zip(y_true, y_pred, strict=False)
             ]
             val = np.mean(em_list)
         # 7. CV Object Detection
@@ -938,7 +940,7 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             val = compute_segmentation_dice(y_true, y_pred)
         elif m_name_clean == "pixel_accuracy":
             accs = []
-            for t, p in zip(y_true, y_pred):
+            for t, p in zip(y_true, y_pred, strict=False):
                 if not t or not p:
                     accs.append(0.0)
                     continue

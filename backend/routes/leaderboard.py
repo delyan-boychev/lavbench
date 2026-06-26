@@ -1,9 +1,14 @@
-from flask import Blueprint, request, jsonify
 import json
+import logging
 from datetime import datetime
-from models import db, Challenge, Submission, User, Task, is_metric_lower_better
-from auth_utils import login_required, role_required, jury_access_required
 
+from flask import Blueprint, jsonify, request
+
+from auth_utils import jury_access_required, login_required, role_required
+from models import Challenge, Submission, Task, User, db, is_metric_lower_better
+from services.leaderboard_service import build_and_cache_leaderboard
+
+logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
 
@@ -14,9 +19,6 @@ class UUIDEncoder(json.JSONEncoder):
         if isinstance(obj, uuid.UUID):
             return str(obj)
         return super().default(obj)
-
-
-from services.leaderboard_service import build_and_cache_leaderboard
 
 
 def _get_leaderboard_payload(challenge, user_role, current_user_id):
@@ -32,7 +34,6 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
     from cache_utils import get_cached
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
-    is_admin_or_jury = user_role in ("admin", "jury")
     cached_entries = get_cached(cache_key)
 
     if cached_entries is None:
@@ -149,10 +150,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
             entry_copy["total_points"] = tot_pts
             entry_copy["has_submitted"] = has_pub_sum
 
-            if challenge.double_blind:
-                show_details = challenge.scores_finalized or is_self
-            else:
-                show_details = True
+            show_details = challenge.scores_finalized or is_self if challenge.double_blind else True
 
             is_anonymous = comp_user.get("is_anonymous", False)
             if is_anonymous and not is_self:
@@ -225,7 +223,6 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
     else:
         now = datetime.utcnow()
         has_started = challenge.start_time is not None and now >= challenge.start_time
-        reveal_results = challenge.reveal_results
 
         post_processed_leaderboard = []
         for entry in cached_entries:
@@ -270,14 +267,14 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     if isinstance(task.metrics_config, str)
                     else task.metrics_config
                 )
-                keys = [k for k in cfg.keys() if not k.startswith("_")]
+                keys = [k for k in cfg if not k.startswith("_")]
                 if keys:
                     m_name = keys[0]
                     metric_name = m_name.replace("_", " ").title()
                     is_normalized = is_metric_lower_better(m_name)
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
 
     return {
         "challenge_title": challenge.title,
@@ -369,7 +366,8 @@ def stream_challenge_leaderboard(challenge_id):
             schema:
               type: string
     """
-    from flask import current_app, Response, stream_with_context
+    from flask import Response, current_app, stream_with_context
+
     from cache_utils import get_redis_client
 
     user_id = request.user["user_id"]
@@ -409,8 +407,9 @@ def stream_challenge_leaderboard(challenge_id):
             channel_name = f"challenge_{challenge_id}_leaderboard"
             try:
                 pubsub.subscribe(channel_name)
-            except Exception:
-                r = None  # Fallback to standard polling if Redis errors
+            except Exception as e:
+                logger.warning("Failed to subscribe to Redis channel %s: %s", channel_name, e)
+                r = None  # Fallback to standard polling
 
         if r:
             try:
@@ -423,8 +422,8 @@ def stream_challenge_leaderboard(challenge_id):
                             yield msg
                     else:
                         yield ": keep-alive\n\n"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Leaderboard SSE stream error: %s", e)
         else:
             # Fallback to polling every 10 seconds if Redis is down
             import time
@@ -508,7 +507,10 @@ def save_manual_points(challenge_id):
         return (
             jsonify(
                 {
-                    "error": "Cannot modify manual points once the competition results are finalized and revealed.",
+                    "error": (
+                        "Cannot modify manual points once the "
+                        "competition results are finalized and revealed."
+                    ),
                     "code": "ERR_EDITING_BLOCKED",
                 }
             ),
@@ -547,7 +549,10 @@ def save_manual_points(challenge_id):
         return (
             jsonify(
                 {
-                    "error": "A justification reason is mandatory to modify manual points after the competition is finalized.",
+                    "error": (
+                        "A justification reason is mandatory to modify "
+                        "manual points after the competition is finalized."
+                    ),
                     "code": "ERR_REASON_REQUIRED",
                 }
             ),
@@ -593,7 +598,10 @@ def save_manual_points(challenge_id):
                 return (
                     jsonify(
                         {
-                            "error": f"Cannot modify manual points for task {task.title} because the stage is finalized and revealed.",
+                            "error": (
+                                f"Cannot modify manual points for task {task.title} "
+                                f"because the stage is finalized and revealed."
+                            ),
                             "code": "ERR_EDITING_BLOCKED",
                         }
                     ),
@@ -617,7 +625,10 @@ def save_manual_points(challenge_id):
             return (
                 jsonify(
                     {
-                        "error": "Only students with submissions can be assigned manual points. Students without submissions automatically receive 0 points.",
+                        "error": (
+                            "Only students with submissions can be assigned manual "
+                            "points. Students without submissions automatically receive 0 points."
+                        ),
                         "code": "ERR_NO_SUBMISSIONS",
                     }
                 ),

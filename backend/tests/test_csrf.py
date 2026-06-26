@@ -84,130 +84,146 @@ class TestCsrfFunctions:
     def test_verify_no_token_no_cookie(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(method="POST"):
-                assert verify_csrf_token() is False
+        with app.app_context(), app.test_request_context(method="POST"):
+            assert verify_csrf_token() is False
 
     def test_verify_matching_token(self, app):
         from auth_utils import verify_csrf_token
 
         token = uuid.uuid4().hex
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-CSRF-Token": token},
                 environ_overrides={"HTTP_COOKIE": f"csrf_token={token}"},
-            ):
-                assert verify_csrf_token() is True
+            ),
+        ):
+            assert verify_csrf_token() is True
 
     def test_verify_mismatched_token(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-CSRF-Token": "header-token"},
                 environ_overrides={"HTTP_COOKIE": "csrf_token=cookie-token"},
-            ):
-                assert verify_csrf_token() is False
+            ),
+        ):
+            assert verify_csrf_token() is False
 
     def test_verify_empty_header(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-CSRF-Token": ""},
                 environ_overrides={"HTTP_COOKIE": "csrf_token=some-token"},
-            ):
-                assert verify_csrf_token() is False
+            ),
+        ):
+            assert verify_csrf_token() is False
 
     def test_verify_bearer_bypasses(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"Authorization": "Bearer some-jwt-token"},
-            ):
-                assert verify_csrf_token() is True
+            ),
+        ):
+            assert verify_csrf_token() is True
 
     def test_verify_worker_token_bypasses(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-Worker-Token": "worker-token"},
-            ):
-                assert verify_csrf_token() is True
+            ),
+        ):
+            assert verify_csrf_token() is True
 
     def test_verify_no_cookie_only_header(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-CSRF-Token": "some-token"},
-            ):
-                assert verify_csrf_token() is False
+            ),
+        ):
+            assert verify_csrf_token() is False
 
     def test_verify_no_header_only_cookie(self, app):
         from auth_utils import verify_csrf_token
 
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={},
                 environ_overrides={"HTTP_COOKIE": "csrf_token=some-token"},
-            ):
-                assert verify_csrf_token() is False
+            ),
+        ):
+            assert verify_csrf_token() is False
 
 
 class TestCsrfDecorator:
     def test_csrf_required_decorator_rejects_missing(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():
             return jsonify({"ok" if False else "error": "should not reach"}), 200
 
-        with app.app_context():
-            with app.test_request_context(method="POST"):
-                resp = fake_view()
-                assert resp[1] == 403
-                data = resp[0].get_json()
-                assert data.get("code") == "ERR_CSRF_FAILED"
+        with app.app_context(), app.test_request_context(method="POST"):
+            resp = fake_view()
+            assert resp[1] == 403
+            data = resp[0].get_json()
+            assert data.get("code") == "ERR_CSRF_FAILED"
 
     def test_csrf_required_decorator_allows_valid(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():
             return jsonify({"ok": True})
 
         token = uuid.uuid4().hex
-        with app.app_context():
-            with app.test_request_context(
+        with (
+            app.app_context(),
+            app.test_request_context(
                 method="POST",
                 headers={"X-CSRF-Token": token},
                 environ_overrides={"HTTP_COOKIE": f"csrf_token={token}"},
-            ):
-                resp = fake_view()
-                assert resp.status_code == 200
-                assert resp.get_json()["ok"] is True
+            ),
+        ):
+            resp = fake_view()
+            assert resp.status_code == 200
+            assert resp.get_json()["ok"] is True
 
     def test_csrf_required_get_always_passes(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():
             return jsonify({"ok": True})
 
-        with app.app_context():
-            with app.test_request_context(method="GET"):
-                resp = fake_view()
-                assert resp.status_code == 200
+        with app.app_context(), app.test_request_context(method="GET"):
+            resp = fake_view()
+            assert resp.status_code == 200

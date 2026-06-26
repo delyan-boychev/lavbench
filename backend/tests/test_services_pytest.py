@@ -1,15 +1,17 @@
 import os
 import sys
+
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, Task
-from services.submission_service import (
-    check_execution_rules,
-    calculate_submission_priority,
-)
 from datetime import datetime
+
+from models import Task, db
+from services.submission_service import (
+    calculate_submission_priority,
+    check_execution_rules,
+)
 
 
 class TestServiceSandboxAndPriority:
@@ -146,10 +148,10 @@ class TestServiceSandboxAndPriority:
         assert best.public_score == 0.1667
 
     def test_challenge_csv_generation(self):
-        from models import Challenge, User, Submission
+        from models import Challenge, Submission, User
         from services.challenge_service import (
-            generate_scores_csv,
             generate_exported_results_csv,
+            generate_scores_csv,
         )
 
         challenge = Challenge(

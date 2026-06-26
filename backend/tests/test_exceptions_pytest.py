@@ -1,14 +1,15 @@
 import os
 import sys
-import pytest
-from io import BytesIO
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from io import BytesIO
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
+from models import Challenge, Submission, Task, User, db
 
 
 class TestBackendExceptionAndErrorCases:
@@ -273,7 +274,7 @@ class TestBackendExceptionAndErrorCases:
         assert res.status_code == 400
         assert "selected_cells list is required" in res.json["error"]
 
-        for i in range(3):
+        for _i in range(3):
             sub = Submission(
                 user_id=self.competitor.id,
                 challenge_id=self.challenge_a.id,
@@ -381,7 +382,10 @@ class TestBackendExceptionAndErrorCases:
         mock_post.return_value = MagicMock(status_code=500)
         mock_sub.return_value = MagicMock(
             returncode=0,
-            stdout='{"status": "success", "public_score": 0.85, "private_score": 0.85, "execution_time_ms": 5}',
+            stdout=(
+                '{"status": "success", "public_score": 0.85, '
+                '"private_score": 0.85, "execution_time_ms": 5}'
+            ),
             stderr="",
         )
 
@@ -394,7 +398,10 @@ class TestBackendExceptionAndErrorCases:
             "task_id": 2,
             "user_code": "def predict(x): return 1",
             "is_custom_eval": True,
-            "custom_eval_code": 'print(\'{"status": "success", "public_score": 0.85, "private_score": 0.85, "execution_time_ms": 5}\')',
+            "custom_eval_code": (
+                'print(\'{"status": "success", "public_score": '
+                '0.85, "private_score": 0.85, "execution_time_ms": 5}\')'
+            ),
         }
 
         result = evaluate_submission(submission_id=1, metadata=metadata)

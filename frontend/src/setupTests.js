@@ -1,10 +1,41 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import { setupServer } from 'msw/node';
+import { http, HttpResponse } from 'msw';
 import mockEnTranslation from '../public/locales/en/translation.json';
+
+const server = setupServer(
+  http.get('/locales/:lang/translation.json', () => {
+    return HttpResponse.json(mockEnTranslation);
+  }),
+);
+
+server.listen({ onUnhandledRequest: 'bypass' });
+
+vi.stubGlobal('localStorage', {
+  getItem: vi.fn(() => null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+  length: 0,
+  key: vi.fn(),
+});
+
+vi.stubGlobal(
+  'EventSource',
+  class {
+    constructor(url) {
+      this.url = url;
+    }
+    close() {}
+    onmessage = null;
+    onerror = null;
+  },
+);
 
 vi.mock('react-i18next', async (importOriginal) => {
   // 1. Inherit all standard exports (crucial for initReactI18next)
-  const actual = await importOriginal();
+  const actual = /** @type {Record<string, unknown>} */ (await importOriginal());
 
   // 2. Dynamically import React to avoid ESM require() crashes
   const React = await import('react');

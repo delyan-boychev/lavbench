@@ -1,34 +1,37 @@
-import os
+import contextlib
 import csv
 import io
+import json
+import logging
+import os
 import re
 import secrets
 import string
-import json
 import zipfile
-import logging
 from datetime import datetime
+
 from flask import (
     Blueprint,
-    request,
-    jsonify,
-    send_file,
-    current_app,
     Response,
+    current_app,
+    jsonify,
+    request,
+    send_file,
     stream_with_context,
 )
 from werkzeug.security import generate_password_hash
+
+from auth_utils import jury_access_required, role_required
+from evaluation_engine import AVAILABLE_METRICS
 from models import (
-    db,
-    User,
     Challenge,
     Submission,
-    generate_pseudonym,
+    User,
+    db,
     decrypt_field,
+    generate_pseudonym,
     to_base36,
 )
-from auth_utils import role_required, jury_access_required
-from evaluation_engine import AVAILABLE_METRICS
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
@@ -165,16 +168,17 @@ def register_competitor():
         return jsonify({"error": "Invalid challenge_id."}), 400
 
     # Check if the competition has started
-    if challenge.is_started:
-        if request.user["role"] != "admin":
-            return (
-                jsonify(
-                    {
-                        "error": "Jury members cannot register competitors once the competition has started."
-                    }
-                ),
-                403,
-            )
+    if challenge.is_started and request.user["role"] != "admin":
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Jury members cannot register competitors once the competition has started."
+                    )
+                }
+            ),
+            403,
+        )
 
     if (
         not name
@@ -188,7 +192,10 @@ def register_competitor():
         return (
             jsonify(
                 {
-                    "error": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required."
+                    "error": (
+                        "Name, Surname, Middle Name, Birth "
+                        "Date, Grade, School and City are required."
+                    )
                 }
             ),
             400,
@@ -196,7 +203,10 @@ def register_competitor():
 
     # Check if a competitor with the same demographics is already registered for this competition
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
-    norm = lambda s: s.strip().lower() if s else ""
+
+    def norm(s):
+        return s.strip().lower() if s else ""
+
     target_name = norm(name)
     target_middle = norm(middle_name)
     target_surname = norm(surname)
@@ -218,7 +228,10 @@ def register_competitor():
             return (
                 jsonify(
                     {
-                        "error": "A competitor with these demographic details is already registered for this competition.",
+                        "error": (
+                            "A competitor with these demographic "
+                            "details is already registered for this competition."
+                        ),
                         "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
                     }
                 ),
@@ -313,12 +326,11 @@ def get_users():
         assigned_challenges = JuryChallenge.query.filter_by(jury_id=requester_id).all()
         assigned_ids = [jc.challenge_id for jc in assigned_challenges]
         if not assigned_ids:
-            query = query.filter(User.id == None)
+            query = query.filter(User.id.is_(None))
         else:
             query = query.filter(User.role == "competitor", User.challenge_id.in_(assigned_ids))
-            if challenge_id_filter is not None:
-                if challenge_id_filter not in assigned_ids:
-                    query = query.filter(User.id == None)
+            if challenge_id_filter is not None and challenge_id_filter not in assigned_ids:
+                query = query.filter(User.id.is_(None))
     else:
         if role_filter:
             query = query.filter_by(role=role_filter)
@@ -498,7 +510,10 @@ def register_user():
         return (
             jsonify(
                 {
-                    "error": "Administrator accounts can only be generated directly on the server command line (CLI)."
+                    "error": (
+                        "Administrator accounts can only be "
+                        "generated directly on the server command line (CLI)."
+                    )
                 }
             ),
             403,
@@ -512,7 +527,10 @@ def register_user():
             return (
                 jsonify(
                     {
-                        "error": "Middle Name, Birth Date, Grade, School and City are required for competitor accounts."
+                        "error": (
+                            "Middle Name, Birth Date, Grade, School "
+                            "and City are required for competitor accounts."
+                        )
                     }
                 ),
                 400,
@@ -523,9 +541,14 @@ def register_user():
         if not challenge:
             return jsonify({"error": "Invalid challenge_id."}), 400
 
-        # Check if a competitor with the same demographics is already registered for this competition
+        # Check if a competitor with the same
+        # demographics is already registered for this competition
+
         competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
-        norm = lambda s: s.strip().lower() if s else ""
+
+        def norm(s):
+            return s.strip().lower() if s else ""
+
         target_name = norm(name)
         target_middle = norm(middle_name)
         target_surname = norm(surname)
@@ -547,23 +570,28 @@ def register_user():
                 return (
                     jsonify(
                         {
-                            "error": "A competitor with these demographic details is already registered for this competition.",
+                            "error": (
+                                "A competitor with these demographic "
+                                "details is already registered for this competition."
+                            ),
                             "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
                         }
                     ),
                     400,
                 )
         # Check if the competition has started
-        if challenge.is_started:
-            if request.user["role"] != "admin":
-                return (
-                    jsonify(
-                        {
-                            "error": "Jury members cannot register competitors once the competition has started."
-                        }
-                    ),
-                    403,
-                )
+        if challenge.is_started and request.user["role"] != "admin":
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "Jury members cannot register "
+                            "competitors once the competition has started."
+                        )
+                    }
+                ),
+                403,
+            )
 
     if not password:
         password = generate_random_password(12)
@@ -666,22 +694,23 @@ def import_competitors_csv():
         return jsonify({"error": "Invalid challenge_id."}), 400
 
     # Check if the competition has started
-    if challenge.is_started:
-        if request.user["role"] != "admin":
-            return (
-                jsonify(
-                    {
-                        "error": "Jury members cannot import competitors once the competition has started."
-                    }
-                ),
-                403,
-            )
+    if challenge.is_started and request.user["role"] != "admin":
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Jury members cannot import competitors once the competition has started."
+                    )
+                }
+            ),
+            403,
+        )
 
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded."}), 400
     file = request.files["file"]
 
-    from services.file_validation import validate_extension, validate_csv_content
+    from services.file_validation import validate_csv_content, validate_extension
 
     valid_ext, ext_err = validate_extension(file.filename, {".csv"})
     if not valid_ext:
@@ -736,7 +765,10 @@ def import_competitors_csv():
         existing_competitors = User.query.filter_by(
             role="competitor", challenge_id=challenge_id
         ).all()
-        norm = lambda s: s.strip().lower() if s else ""
+
+        def norm(s):
+            return s.strip().lower() if s else ""
+
         seen_demographics = set()
         for c in existing_competitors:
             seen_demographics.add(
@@ -792,7 +824,9 @@ def import_competitors_csv():
             username = generate_unique_username(name, surname)
             password = generate_random_password(12)
 
-            # Anonymity preference: accepts column names 'anonymous' or 'is_anonymous'. Can be 1 or 0, default is 0.
+            # Anonymity preference: accepts column names
+            # 'anonymous' or 'is_anonymous'. Can be 1 or 0, default is 0.
+
             is_anon_val = mapped_row.get("anonymous")
             if is_anon_val is None:
                 is_anon_val = mapped_row.get("is_anonymous")
@@ -987,7 +1021,11 @@ def stream_backup_status():
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
                 if message:
                     with current_app.app_context():
-                        yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR), 'event': json.loads(message['data'])})}\n\n"
+                        data = {
+                            "backups": _list_backup_files(BACKUPS_DIR),
+                            "event": json.loads(message["data"]),
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
                 else:
                     yield ": keep-alive\n\n"
         except GeneratorExit:
@@ -996,8 +1034,8 @@ def stream_backup_status():
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except Exception:
-                pass
+            except GeneratorExit:
+                logger.debug("Backup SSE client disconnected")
 
     return Response(
         stream_with_context(event_generator()),
@@ -1117,8 +1155,9 @@ def get_audit_logs():
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
 
-    from models import AuditLog, Challenge, User
     from sqlalchemy import or_
+
+    from models import AuditLog, Challenge, User
 
     query = AuditLog.query
 
@@ -1237,11 +1276,10 @@ def update_user(user_id):
     if is_anonymous is not None:
         user.is_anonymous = bool(is_anonymous)
 
-    if role is not None:
-        if role in ["competitor", "jury", "admin"]:
-            if role == "admin" and user.role != "admin":
-                return jsonify({"error": "Cannot change user role to Administrator."}), 403
-            user.role = role
+    if role is not None and role in ["competitor", "jury", "admin"]:
+        if role == "admin" and user.role != "admin":
+            return jsonify({"error": "Cannot change user role to Administrator."}), 403
+        user.role = role
 
     if jury_challenges is not None:
         from models import JuryChallenge
@@ -1300,7 +1338,9 @@ def update_user(user_id):
     new_school = school if school is not None else dec_school
     new_city = city if city is not None else dec_city
 
-    # Validate that middle name, birth date, grade, school and city are present for competitors if they are being updated
+    # Validate that middle name, birth date, grade, school and
+    # city are present for competitors if they are being updated
+
     if user.role == "competitor" and (
         "name" in data
         or "surname" in data
@@ -1323,15 +1363,23 @@ def update_user(user_id):
             return (
                 jsonify(
                     {
-                        "error": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required for competitor accounts."
+                        "error": (
+                            "Name, Surname, Middle Name, Birth Date, Grade, "
+                            "School and City are required for competitor accounts."
+                        )
                     }
                 ),
                 400,
             )
 
-        # Check if a competitor with the same demographics is already registered for this competition (excluding this user themselves)
+        # Check if a competitor with the same demographics is already
+        # registered for this competition (excluding this user themselves)
+
         competitors = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
-        norm = lambda s: s.strip().lower() if s else ""
+
+        def norm(s):
+            return s.strip().lower() if s else ""
+
         target_name = norm(new_name)
         target_middle = norm(new_middle_name)
         target_surname = norm(new_surname)
@@ -1355,7 +1403,10 @@ def update_user(user_id):
                 return (
                     jsonify(
                         {
-                            "error": "A competitor with these demographic details is already registered for this competition.",
+                            "error": (
+                                "A competitor with these demographic "
+                                "details is already registered for this competition."
+                            ),
                             "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
                         }
                     ),
@@ -1437,18 +1488,19 @@ def reset_user_password(user_id):
     """
     user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
-    if request.user["role"] == "jury":
-        if user.challenge_id:
-            challenge = db.session.get(Challenge, user.challenge_id)
-            if challenge and challenge.is_started:
-                return (
-                    jsonify(
-                        {
-                            "error": "Cannot reset password: The assigned competition has already started."
-                        }
-                    ),
-                    403,
-                )
+    if request.user["role"] == "jury" and user.challenge_id:
+        challenge = db.session.get(Challenge, user.challenge_id)
+        if challenge and challenge.is_started:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "Cannot reset password: The assigned competition has already started."
+                        )
+                    }
+                ),
+                403,
+            )
 
     new_password = generate_random_password(12)
     user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
@@ -1500,12 +1552,11 @@ def reset_all_challenge_passwords(challenge_id):
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
-    if request.user["role"] == "jury":
-        if challenge.is_started:
-            return (
-                jsonify({"error": "Cannot reset passwords: The competition has already started."}),
-                403,
-            )
+    if request.user["role"] == "jury" and challenge.is_started:
+        return (
+            jsonify({"error": "Cannot reset passwords: The competition has already started."}),
+            403,
+        )
 
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
@@ -1579,6 +1630,7 @@ def download_scores_csv(challenge_id):
               type: object
     """
     from flask import Response
+
     from services.challenge_service import generate_scores_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1623,13 +1675,17 @@ def download_submissions_zip(challenge_id):
         tasks = challenge.tasks
 
     # 2. Check if download is allowed
-    # Allowed if finalized OR (if stage_id provided, stage has ended) OR (if no stage_id, challenge has ended)
+    # Allowed if finalized OR (if stage_id provided,
+    # stage has ended) OR (if no stage_id, challenge has ended)
+
     is_allowed = False
-    if challenge.scores_finalized:
-        is_allowed = True
-    elif stage and (stage.is_finalized or stage.end_time < now):
-        is_allowed = True
-    elif not stage and (challenge.end_time and challenge.end_time < now):
+    if (
+        challenge.scores_finalized
+        or stage
+        and (stage.is_finalized or stage.end_time < now)
+        or not stage
+        and (challenge.end_time and challenge.end_time < now)
+    ):
         is_allowed = True
 
     if not is_allowed:
@@ -1644,7 +1700,9 @@ def download_submissions_zip(challenge_id):
             return (
                 jsonify(
                     {
-                        "error": "Submissions cannot be downloaded until the competition has finished."
+                        "error": (
+                            "Submissions cannot be downloaded until the competition has finished."
+                        )
                     }
                 ),
                 400,
@@ -1707,7 +1765,7 @@ def download_submissions_zip(challenge_id):
                             if isinstance(best_sub.code_cells, str)
                             else best_sub.code_cells
                         )
-                    except:
+                    except json.JSONDecodeError:
                         cells_data = []
 
                     ipynb_cells = []
@@ -1834,15 +1892,15 @@ def stream_worker_stats():
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as e:
+                logger.warning("Error during backup SSE cleanup: %s", e)
         except Exception as e:
             logger.error("Worker stats SSE error: %s", e)
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as e:
+                logger.warning("Error during worker stats SSE cleanup (GeneratorExit): %s", e)
 
     headers = {
         "Cache-Control": "no-cache",
@@ -1858,6 +1916,7 @@ def stream_worker_stats():
 
 def _get_worker_stats_response():
     from flask import current_app
+
     from cache_utils import get_cached, set_cached
 
     is_testing = current_app.config.get("TESTING", False)
@@ -1869,8 +1928,8 @@ def _get_worker_stats_response():
 
     try:
         import os
-        import shutil
         import platform
+        import shutil
         import subprocess
 
         # 1. Collect Host System Resources
@@ -1898,8 +1957,8 @@ def _get_worker_stats_response():
         try:
             if hasattr(os, "getloadavg"):
                 system_resources["load_avg"] = list(os.getloadavg())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to get load average: %s", e)
 
         # Disk usage
         try:
@@ -1910,14 +1969,14 @@ def _get_worker_stats_response():
                 "free_gb": round(free / (1024**3), 2),
                 "percent_used": round((used / total) * 100, 1) if total > 0 else 0,
             }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to get disk usage: %s", e)
 
         # Memory usage
         try:
             if platform.system() == "Linux":
                 if os.path.exists("/proc/meminfo"):
-                    with open("/proc/meminfo", "r") as f:
+                    with open("/proc/meminfo") as f:
                         lines = f.readlines()
                     mem_info = {}
                     for line in lines:
@@ -1940,10 +1999,10 @@ def _get_worker_stats_response():
                         "percent_used": round((used_kb / total_kb) * 100, 1) if total_kb > 0 else 0,
                     }
             elif platform.system() == "Darwin":
-                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())  # noqa: S607
                 total_gb = total_bytes / (1024**3)
 
-                vm_stat = subprocess.check_output(["vm_stat"]).decode("utf-8")
+                vm_stat = subprocess.check_output(["vm_stat"]).decode("utf-8")  # noqa: S607
                 pages_free = 0
                 pages_active = 0
                 pages_inactive = 0
@@ -1953,10 +2012,8 @@ def _get_worker_stats_response():
 
                 for line in vm_stat.split("\n"):
                     if "page size of" in line:
-                        try:
+                        with contextlib.suppress(Exception):
                             page_size = int(line.split("page size of")[1].split("bytes")[0].strip())
-                        except Exception:
-                            pass
                     elif "Pages free:" in line:
                         pages_free = int(line.split(":")[1].strip().replace(".", ""))
                     elif "Pages active:" in line:
@@ -1979,8 +2036,8 @@ def _get_worker_stats_response():
                         round((used_bytes / total_bytes) * 100, 1) if total_bytes > 0 else 0
                     ),
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to get memory usage: %s", e)
 
         # 2. Collect Celery Worker Statistics
         from tasks import celery
@@ -1994,7 +2051,7 @@ def _get_worker_stats_response():
         registered = inspect.registered() or {}
 
         workers_list = []
-        for worker_name in pings.keys():
+        for worker_name in pings:
             w_stats = stats.get(worker_name, {})
             w_active = active.get(worker_name, [])
             w_reserved = reserved.get(worker_name, [])

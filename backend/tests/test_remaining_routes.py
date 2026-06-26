@@ -2,15 +2,14 @@ import json
 from unittest.mock import patch
 
 import pytest
-from werkzeug.security import generate_password_hash
-
-from models import User, Task
 
 # =============================================================================
 # Area 1: Task File Download
 # =============================================================================
-
 from flask import Response
+from werkzeug.security import generate_password_hash
+
+from models import Task, User
 
 MOCK_FILE_RESPONSE = Response("test file content", 200)
 
@@ -187,7 +186,7 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
 
     def test_five_failures_exceeds_user_limit(self, redis_flush):
-        from routes.auth import _record_login_failure, _login_rate_limit_exceeded
+        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
 
         username = "rate_test_user"
         ip = "10.0.0.1"
@@ -197,9 +196,9 @@ class TestLoginRateLimiting:
 
     def test_clear_failures_resets_limit(self, redis_flush):
         from routes.auth import (
-            _record_login_failure,
-            _login_rate_limit_exceeded,
             _clear_login_failures,
+            _login_rate_limit_exceeded,
+            _record_login_failure,
         )
 
         username = "clear_test_user"
@@ -211,7 +210,7 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded(username, ip) is False
 
     def test_thirty_ip_failures_exceeds_ip_limit(self, redis_flush):
-        from routes.auth import _record_login_failure, _login_rate_limit_exceeded
+        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
 
         ip = "10.0.0.100"
         for i in range(30):

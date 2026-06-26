@@ -1,8 +1,9 @@
 """Service-layer functions for submission creation, validation, and status management."""
 
-import json
 import ast
+import json
 from datetime import datetime
+
 from models import Submission
 
 
@@ -28,7 +29,7 @@ def extract_code_from_cells(cells_list):
 def extract_code_from_notebook(filepath):
     """Open a .ipynb file and return all code cell sources as a list of strings."""
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             data = json.load(f)
         code_cells = []
         for cell in data.get("cells", []):
@@ -44,7 +45,10 @@ def extract_code_from_notebook(filepath):
 
 
 def check_execution_rules(task, cells_list):
-    """Validate student code against task rules: banned magic commands, banned/whitelisted imports."""
+    (
+        """Validate student code against task rules: """
+        """banned magic commands, banned/whitelisted imports."""
+    )
     extracted_cells = extract_code_from_cells(cells_list)
     combined_code = "\n".join(extracted_cells)
 
@@ -122,7 +126,9 @@ def check_execution_rules(task, cells_list):
                     if alias.name in banned_names:
                         return False, get_violation_message(alias.name)
     except SyntaxError:
-        # Fallback for code with syntax errors: check if any of the banned names appear as whole words not preceded by a dot
+        # Fallback for code with syntax errors: check if any of
+        # the banned names appear as whole words not preceded by a dot
+
         import re
 
         for name in banned_names:
@@ -163,14 +169,13 @@ def check_execution_rules(task, cells_list):
                                     False,
                                     f"Rule Violation: Import of library '{name.name}' is banned.",
                                 )
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            root_import = node.module.split(".")[0].lower()
-                            if root_import in banned:
-                                return (
-                                    False,
-                                    f"Rule Violation: Import from library '{node.module}' is banned.",
-                                )
+                    elif isinstance(node, ast.ImportFrom) and node.module:
+                        root_import = node.module.split(".")[0].lower()
+                        if root_import in banned:
+                            return (
+                                False,
+                                (f"Rule Violation: Import from library '{node.module}' is banned."),
+                            )
             except SyntaxError:
                 pass
 
@@ -188,16 +193,21 @@ def check_execution_rules(task, cells_list):
                             if root_import not in whitelisted:
                                 return (
                                     False,
-                                    f"Rule Violation: Import of library '{name.name}' is not allowed by whitelist.",
+                                    (
+                                        f"Rule Violation: Import of library "
+                                        f"'{name.name}' is not allowed by whitelist."
+                                    ),
                                 )
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            root_import = node.module.split(".")[0].lower()
-                            if root_import not in whitelisted:
-                                return (
-                                    False,
-                                    f"Rule Violation: Import from library '{node.module}' is not allowed by whitelist.",
-                                )
+                    elif isinstance(node, ast.ImportFrom) and node.module:
+                        root_import = node.module.split(".")[0].lower()
+                        if root_import not in whitelisted:
+                            return (
+                                False,
+                                (
+                                    f"Rule Violation: Import from library "
+                                    f"'{node.module}' is not allowed by whitelist."
+                                ),
+                            )
             except SyntaxError:
                 pass
 
@@ -205,7 +215,10 @@ def check_execution_rules(task, cells_list):
 
 
 def calculate_submission_priority(user_id, role):
-    """Return a priority integer: 9 for admin/jury, decaying from 6 for competitors per daily count."""
+    (
+        """Return a priority integer: 9 for admin/jury, """
+        """decaying from 6 for competitors per daily count."""
+    )
     if role in ["admin", "jury"]:
         return 9
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)

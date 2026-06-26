@@ -1,11 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import Logo from './Logo';
+import Logo from '../Logo';
 
 const mockUseApp = vi.hoisted(() => vi.fn());
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: () => mockUseApp(),
 }));
 

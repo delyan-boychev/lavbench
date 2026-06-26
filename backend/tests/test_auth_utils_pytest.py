@@ -1,21 +1,18 @@
-import os
 from datetime import datetime
 from unittest.mock import patch
 
 import pytest
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 
 from auth_utils import (
-    generate_token,
-    verify_token,
-    login_required,
-    role_required,
-    check_worker_auth,
     SECRET_KEY,
+    check_worker_auth,
+    generate_token,
+    login_required,
     rate_limit,
-    revoke_token,
+    role_required,
+    verify_token,
 )
-from models import db, User
 
 
 class TestAuthUtils:
@@ -64,6 +61,7 @@ class TestAuthUtils:
     def test_check_worker_auth_valid_signature(self, monkeypatch):
         import base64
         import time
+
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()
@@ -79,6 +77,7 @@ class TestAuthUtils:
     def test_check_worker_auth_wrong_signature(self, monkeypatch):
         import base64
         import time
+
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()
@@ -94,6 +93,7 @@ class TestAuthUtils:
     def test_check_worker_auth_expired_nonce(self, monkeypatch):
         import base64
         import time
+
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         k = Ed25519PrivateKey.generate()

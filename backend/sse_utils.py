@@ -2,6 +2,7 @@
 
 import json
 import logging
+
 from cache_utils import get_redis_client
 
 logger = logging.getLogger(__name__)

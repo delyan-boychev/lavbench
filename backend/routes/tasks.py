@@ -1,25 +1,34 @@
-import os
+import contextlib
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
 from flask import (
     Blueprint,
-    request,
+    Response,
+    current_app,
     jsonify,
+    request,
     send_file,
     send_from_directory,
-    current_app,
-    Response,
     stream_with_context,
 )
 from werkzeug.utils import secure_filename
-from models import db, Challenge, Task, User, Submission
-from auth_utils import login_required, role_required, rate_limit, jury_access_required
-from sse_utils import publish_submissions_update, publish_leaderboard_update
+
+from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from models import Challenge, Submission, Task, User, db
+from services.submission_service import (
+    calculate_submission_priority,
+    check_execution_rules,
+    extract_code_from_cells,
+    extract_code_from_notebook,
+)
+from sse_utils import publish_leaderboard_update, publish_submissions_update
 
 tasks_bp = Blueprint("tasks", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -32,6 +41,13 @@ class UUIDEncoder(json.JSONEncoder):
 
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
+
+DOCKER_IMAGE_REGEX = (
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$"
+)
+
+VALID_STATUSES = {"queued", "running", "completed", "failed"}
+MAX_LOG_SIZE = 100 * 1024
 
 
 def check_competitor_access(user_id, challenge_id):
@@ -82,14 +98,6 @@ def to_int(val):
         return None
 
 
-from services.submission_service import (
-    extract_code_from_cells,
-    extract_code_from_notebook,
-    check_execution_rules,
-    calculate_submission_priority,
-)
-
-
 def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     submission = Submission(
         user_id=admin_id,
@@ -108,10 +116,8 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
 
     task_files_list = []
     if task.files:
-        try:
+        with contextlib.suppress(BaseException):
             task_files_list = json.loads(task.files)
-        except:
-            pass
 
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
@@ -135,12 +141,11 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
         "is_custom_eval": (
-            True
-            if (
+            bool(
                 task.custom_eval_code
-                or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
+                or task.evaluator_script_path
+                and os.path.exists(task.evaluator_script_path)
             )
-            else False
         ),
         "metrics_config": task.metrics_config,
         "hf_datasets": (
@@ -165,7 +170,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
         metadata["custom_eval_code"] = task.custom_eval_code
     elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
         try:
-            with open(task.evaluator_script_path, "r") as ef:
+            with open(task.evaluator_script_path) as ef:
                 metadata["custom_eval_code"] = ef.read()
         except Exception:
             import logging
@@ -195,15 +200,11 @@ def _maybe_queue_baseline(task, challenge, admin_id):
 
     for code_path, log_path in paths_to_delete:
         if code_path and os.path.exists(code_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(code_path)
-            except OSError:
-                pass
         if log_path and os.path.exists(log_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(log_path)
-            except OSError:
-                pass
 
     # Parse and submit new baseline if notebook exists
     baseline_cells = []
@@ -308,38 +309,36 @@ def create_task(challenge_id):
     apt_packages = request.form.get("apt_packages")
     pip_requirements = request.form.get("pip_requirements")
 
-    if request.user.get("role") != "admin":
-        if base_docker_image or apt_packages or pip_requirements:
-            return (
-                jsonify(
-                    {
-                        "error": "Only administrators are allowed to configure custom environments.",
-                        "code": "ERR_FORBIDDEN",
-                    }
-                ),
-                403,
-            )
+    if request.user.get("role") != "admin" and (
+        base_docker_image or apt_packages or pip_requirements
+    ):
+        return (
+            jsonify(
+                {
+                    "error": ("Only administrators are allowed to configure custom environments."),
+                    "code": "ERR_FORBIDDEN",
+                }
+            ),
+            403,
+        )
 
     # Task parameter validations
-    if ram_limit_mb is not None:
-        if ram_limit_mb <= 0 or ram_limit_mb > 16384:
-            return (
-                jsonify(
-                    {
-                        "error": "RAM limit must be a positive integer and cannot exceed 16384 MB (16 GB)."
-                    }
-                ),
-                400,
-            )
+    if ram_limit_mb is not None and (ram_limit_mb <= 0 or ram_limit_mb > 16384):
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "RAM limit must be a positive integer and cannot exceed 16384 MB (16 GB)."
+                    )
+                }
+            ),
+            400,
+        )
 
     import re
 
-    if base_docker_image:
-        DOCKER_IMAGE_REGEX = (
-            r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$"
-        )
-        if not re.match(DOCKER_IMAGE_REGEX, base_docker_image):
-            return jsonify({"error": "Invalid base Docker image name format."}), 400
+    if base_docker_image and not re.match(DOCKER_IMAGE_REGEX, base_docker_image):
+        return jsonify({"error": "Invalid base Docker image name format."}), 400
 
     if apt_packages:
         packages = [p.strip() for p in apt_packages.replace(",", " ").split() if p.strip()]
@@ -367,7 +366,7 @@ def create_task(challenge_id):
     if hf_datasets_raw:
         try:
             hf_datasets = json.loads(hf_datasets_raw)
-        except:
+        except json.JSONDecodeError:
             return jsonify({"error": "hf_datasets must be valid JSON array."}), 400
         if not isinstance(hf_datasets, list):
             return jsonify({"error": "hf_datasets must be a list."}), 400
@@ -382,7 +381,7 @@ def create_task(challenge_id):
     if hf_models_raw:
         try:
             hf_models = json.loads(hf_models_raw)
-        except:
+        except json.JSONDecodeError:
             return jsonify({"error": "hf_models must be valid JSON array."}), 400
         if not isinstance(hf_models, list):
             return jsonify({"error": "hf_models must be a list."}), 400
@@ -397,21 +396,24 @@ def create_task(challenge_id):
     if metrics_config_raw:
         try:
             metrics_config = json.loads(metrics_config_raw)
-        except:
+        except json.JSONDecodeError:
             return jsonify({"error": "metrics_config must be valid JSON."}), 400
 
     if metrics_config:
         from evaluation_engine import AVAILABLE_METRICS
 
         allowed_metrics = list(AVAILABLE_METRICS.keys())
-        for metric_name in metrics_config.keys():
+        for metric_name in metrics_config:
             if metric_name == "_columns":
                 continue
             if metric_name not in allowed_metrics:
                 return (
                     jsonify(
                         {
-                            "error": f"Invalid metric '{metric_name}'. Allowed metrics: {allowed_metrics}"
+                            "error": (
+                                f"Invalid metric '{metric_name}'. "
+                                f"Allowed metrics: {allowed_metrics}"
+                            )
                         }
                     ),
                     400,
@@ -421,7 +423,10 @@ def create_task(challenge_id):
                 return (
                     jsonify(
                         {
-                            "error": f"Metric '{metric_name}' configuration must be a dictionary and include a 'weight'."
+                            "error": (
+                                f"Metric '{metric_name}' configuration must "
+                                f"be a dictionary and include a 'weight'."
+                            )
                         }
                     ),
                     400,
@@ -439,7 +444,10 @@ def create_task(challenge_id):
                 return (
                     jsonify(
                         {
-                            "error": f"Options for metric '{metric_name}' must be a dictionary/JSON object."
+                            "error": (
+                                f"Options for metric '{metric_name}' "
+                                f"must be a dictionary/JSON object."
+                            )
                         }
                     ),
                     400,
@@ -467,7 +475,9 @@ def create_task(challenge_id):
             return (
                 jsonify(
                     {
-                        "error": "Task must be assigned to a stage when the competition has stages.",
+                        "error": (
+                            "Task must be assigned to a stage when the competition has stages."
+                        ),
                         "code": "ERR_STAGE_REQUIRED",
                     }
                 ),
@@ -505,7 +515,7 @@ def create_task(challenge_id):
     db.session.commit()
 
     uploaded_files_meta = []
-    files_keys = [k for k in request.files.keys() if k.startswith("file")]
+    files_keys = [k for k in request.files if k.startswith("file")]
 
     if len(files_keys) > 5:
         db.session.delete(task)
@@ -570,7 +580,10 @@ def create_task(challenge_id):
                 return (
                     jsonify(
                         {
-                            "error": f"File '{uploaded_file.filename}' exceeds the maximum allowed size of 25MB."
+                            "error": (
+                                f"File '{uploaded_file.filename}' exceeds "
+                                f"the maximum allowed size of 25MB."
+                            )
                         }
                     ),
                     400,
@@ -582,8 +595,9 @@ def create_task(challenge_id):
 
             if uploaded_file.filename == "labels.parquet":
                 try:
-                    from evaluation_engine import validate_parquet_schema_columns
                     import pyarrow.parquet as pq
+
+                    from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
                     columns = [col.name for col in schema]
@@ -641,8 +655,8 @@ def create_task(challenge_id):
             r = get_redis_client()
             if r:
                 r.publish("task_rebuild", str(task.id))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
     return jsonify(task.to_dict()), 201
 
@@ -686,7 +700,10 @@ def update_task(task_id):
                     return (
                         jsonify(
                             {
-                                "error": "Only administrators are allowed to configure custom environments.",
+                                "error": (
+                                    "Only administrators are allowed "
+                                    "to configure custom environments."
+                                ),
                                 "code": "ERR_FORBIDDEN",
                             }
                         ),
@@ -707,7 +724,10 @@ def update_task(task_id):
             return (
                 jsonify(
                     {
-                        "error": "RAM limit must be a positive integer and cannot exceed 16384 MB (16 GB)."
+                        "error": (
+                            "RAM limit must be a positive "
+                            "integer and cannot exceed 16384 MB (16 GB)."
+                        )
                     }
                 ),
                 400,
@@ -715,12 +735,8 @@ def update_task(task_id):
 
     if "base_docker_image" in request.form:
         base_img = request.form.get("base_docker_image")
-        if base_img:
-            DOCKER_IMAGE_REGEX = (
-                r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$"
-            )
-            if not re.match(DOCKER_IMAGE_REGEX, base_img):
-                return jsonify({"error": "Invalid base Docker image name format."}), 400
+        if base_img and not re.match(DOCKER_IMAGE_REGEX, base_img):
+            return jsonify({"error": "Invalid base Docker image name format."}), 400
 
     if "apt_packages" in request.form:
         apt_pkgs = request.form.get("apt_packages")
@@ -771,11 +787,11 @@ def update_task(task_id):
         if metrics_config_raw:
             try:
                 metrics_config = json.loads(metrics_config_raw)
-            except:
+            except json.JSONDecodeError:
                 return jsonify({"error": "metrics_config must be valid JSON."}), 400
 
             if metrics_config:
-                for metric_name in metrics_config.keys():
+                for metric_name in metrics_config:
                     if metric_name == "_columns":
                         continue
                     cfg = metrics_config[metric_name]
@@ -783,7 +799,10 @@ def update_task(task_id):
                         return (
                             jsonify(
                                 {
-                                    "error": f"Metric '{metric_name}' configuration must be a dictionary and include a 'weight'."
+                                    "error": (
+                                        f"Metric '{metric_name}' configuration must "
+                                        f"be a dictionary and include a 'weight'."
+                                    )
                                 }
                             ),
                             400,
@@ -794,7 +813,10 @@ def update_task(task_id):
                         return (
                             jsonify(
                                 {
-                                    "error": f"Weight for metric '{metric_name}' must be a numeric value."
+                                    "error": (
+                                        f"Weight for metric '{metric_name}' "
+                                        f"must be a numeric value."
+                                    )
                                 }
                             ),
                             400,
@@ -803,7 +825,10 @@ def update_task(task_id):
                         return (
                             jsonify(
                                 {
-                                    "error": f"Options for metric '{metric_name}' must be a dictionary/JSON object."
+                                    "error": (
+                                        f"Options for metric '{metric_name}' "
+                                        f"must be a dictionary/JSON object."
+                                    )
                                 }
                             ),
                             400,
@@ -820,7 +845,7 @@ def update_task(task_id):
         if hf_datasets_raw:
             try:
                 hf_datasets = json.loads(hf_datasets_raw)
-            except:
+            except json.JSONDecodeError:
                 return jsonify({"error": "hf_datasets must be valid JSON array."}), 400
             if not isinstance(hf_datasets, list):
                 return jsonify({"error": "hf_datasets must be a list."}), 400
@@ -838,7 +863,7 @@ def update_task(task_id):
         if hf_models_raw:
             try:
                 hf_models = json.loads(hf_models_raw)
-            except:
+            except json.JSONDecodeError:
                 return jsonify({"error": "hf_models must be valid JSON array."}), 400
             if not isinstance(hf_models, list):
                 return jsonify({"error": "hf_models must be a list."}), 400
@@ -883,7 +908,9 @@ def update_task(task_id):
                 return (
                     jsonify(
                         {
-                            "error": "Task must be assigned to a stage when the competition has stages.",
+                            "error": (
+                                "Task must be assigned to a stage when the competition has stages."
+                            ),
                             "code": "ERR_STAGE_REQUIRED",
                         }
                     ),
@@ -917,7 +944,7 @@ def update_task(task_id):
 
     try:
         current_files = json.loads(task.files)
-    except:
+    except json.JSONDecodeError:
         current_files = []
 
     deleted_files_raw = request.form.get("deleted_files")
@@ -933,8 +960,9 @@ def update_task(task_id):
                 else:
                     updated_files.append(f)
             current_files = updated_files
-        except:
-            pass
+        except (json.JSONDecodeError, TypeError, KeyError, OSError) as e:
+            logger.warning("Failed to process deleted_files for task %s: %s", task.id, e)
+            # Keep current_files unchanged
 
     # Handle evaluator script and baseline notebook deletion
     if request.form.get("delete_evaluator") == "true" and task.evaluator_script_path:
@@ -946,7 +974,7 @@ def update_task(task_id):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
 
-    new_files_keys = [k for k in request.files.keys() if k.startswith("file")]
+    new_files_keys = [k for k in request.files if k.startswith("file")]
     if len(current_files) + len(new_files_keys) > 5:
         return jsonify({"error": "A task can contain a maximum of 5 files."}), 400
 
@@ -977,7 +1005,10 @@ def update_task(task_id):
                 return (
                     jsonify(
                         {
-                            "error": f"File '{uploaded_file.filename}' exceeds the maximum allowed size of 25MB."
+                            "error": (
+                                f"File '{uploaded_file.filename}' exceeds "
+                                f"the maximum allowed size of 25MB."
+                            )
                         }
                     ),
                     400,
@@ -990,8 +1021,9 @@ def update_task(task_id):
 
             if uploaded_file.filename == "labels.parquet":
                 try:
-                    from evaluation_engine import validate_parquet_schema_columns
                     import pyarrow.parquet as pq
+
+                    from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
                     columns = [col.name for col in schema]
@@ -1041,8 +1073,8 @@ def update_task(task_id):
             r = get_redis_client()
             if r:
                 r.publish("task_rebuild", str(task.id))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
     return jsonify(task.to_dict())
 
@@ -1084,23 +1116,17 @@ def delete_task(task_id):
 
     for s in subs:
         if s.celery_task_id:
-            try:
+            with contextlib.suppress(Exception):
                 celery.control.revoke(s.celery_task_id, terminate=True)
-            except Exception:
-                pass
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     for code_path, log_path in paths:
         if code_path and os.path.exists(code_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(code_path)
-            except OSError:
-                pass
         if log_path and os.path.exists(log_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(log_path)
-            except OSError:
-                pass
     db.session.delete(task)
     db.session.commit()
 
@@ -1174,7 +1200,7 @@ def download_task_file(task_id, filename):
 
     try:
         files_meta = json.loads(task.files)
-    except:
+    except json.JSONDecodeError:
         files_meta = []
 
     saved_name = None
@@ -1295,8 +1321,6 @@ def submit_task(task_id):
     if not selected_cells or not isinstance(selected_cells, list):
         return jsonify({"error": "selected_cells list is required."}), 400
 
-    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
-
     if True:
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
@@ -1309,7 +1333,10 @@ def submit_task(task_id):
             return (
                 jsonify(
                     {
-                        "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day."
+                        "error": (
+                            f"Daily limit reached. You can only make "
+                            f"{challenge.max_eval_requests} submissions per day."
+                        )
                     }
                 ),
                 429,
@@ -1326,7 +1353,11 @@ def submit_task(task_id):
                 return (
                     jsonify(
                         {
-                            "error": f"Task limit reached. You can only make {task.max_submissions_per_period} submissions per {task.submission_period_hours} hours."
+                            "error": (
+                                f"Task limit reached. "
+                                f"You can only make {task.max_submissions_per_period} "
+                                f"submissions per {task.submission_period_hours} hours."
+                            )
                         }
                     ),
                     429,
@@ -1394,10 +1425,8 @@ def submit_task(task_id):
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
     task_files_list = []
     if task.files:
-        try:
+        with contextlib.suppress(BaseException):
             task_files_list = json.loads(task.files)
-        except:
-            pass
 
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
@@ -1413,12 +1442,11 @@ def submit_task(task_id):
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
         "is_custom_eval": (
-            True
-            if (
+            bool(
                 task.custom_eval_code
-                or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
+                or task.evaluator_script_path
+                and os.path.exists(task.evaluator_script_path)
             )
-            else False
         ),
         "metrics_config": task.metrics_config,
         "hf_datasets": (
@@ -1443,7 +1471,7 @@ def submit_task(task_id):
         metadata["custom_eval_code"] = task.custom_eval_code
     elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
         try:
-            with open(task.evaluator_script_path, "r") as ef:
+            with open(task.evaluator_script_path) as ef:
                 metadata["custom_eval_code"] = ef.read()
         except Exception as ef_err:
             logger.error("Failed to read evaluator script for task %s: %s", task.id, ef_err)
@@ -1686,15 +1714,15 @@ def stream_task_leaderboard(task_id):
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as e:
+                logger.debug("Error during leaderboard SSE cleanup: %s", e)
         except Exception as e:
             logger.error("Leaderboard SSE error: %s", e)
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as cleanup_e:
+                logger.debug("Error during leaderboard SSE cleanup after error: %s", cleanup_e)
 
     headers = {
         "Cache-Control": "no-cache",
@@ -1754,7 +1782,9 @@ def stream_task_submissions(task_id):
             return (
                 jsonify(
                     {
-                        "error": "Access denied. Submissions are hidden for finalized competitions.",
+                        "error": (
+                            "Access denied. Submissions are hidden for finalized competitions."
+                        ),
                         "code": "ERR_COMPETITION_FINALIZED",
                     }
                 ),
@@ -1794,8 +1824,8 @@ def stream_task_submissions(task_id):
                 else:
                     pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as e:
+                logger.debug("Error during submissions SSE cleanup: %s", e)
         except Exception as e:
             logger.error("Submissions SSE error: %s", e)
             try:
@@ -1804,8 +1834,8 @@ def stream_task_submissions(task_id):
                 else:
                     pubsub.unsubscribe()
                 pubsub.close()
-            except:
-                pass
+            except Exception as cleanup_e:
+                logger.debug("Error during submissions SSE cleanup after error: %s", cleanup_e)
 
     headers = {
         "Cache-Control": "no-cache",
@@ -1860,7 +1890,7 @@ def stream_worker_status():
             schema:
               type: object
     """
-    from flask import current_app, Response, stream_with_context
+    from flask import Response, stream_with_context
 
     def event_generator():
         # Clean up: Removed "with current_app.app_context():" block from the initial yield
@@ -1878,12 +1908,7 @@ def stream_worker_status():
             while True:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
                 now = datetime.utcnow()
-                if message:
-                    # Clean up: Removed "with current_app.app_context():" block
-                    res_data = _get_worker_status_data()
-                    yield f"data: {json.dumps(res_data)}\n\n"
-                    last_sent = now
-                elif (now - last_sent).total_seconds() >= 10:
+                if message or (now - last_sent).total_seconds() >= 10:
                     # Clean up: Removed "with current_app.app_context():" block
                     res_data = _get_worker_status_data()
                     yield f"data: {json.dumps(res_data)}\n\n"
@@ -1896,8 +1921,8 @@ def stream_worker_status():
             try:
                 pubsub.unsubscribe()
                 pubsub.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error during worker status SSE cleanup: %s", e)
 
     headers = {
         "Cache-Control": "no-cache",
@@ -1913,6 +1938,7 @@ def stream_worker_status():
 
 def _get_worker_status_data():
     from flask import current_app
+
     from cache_utils import get_cached, set_cached
 
     is_testing = current_app.config.get("TESTING", False)
@@ -1922,8 +1948,9 @@ def _get_worker_status_data():
         if cached_val is not None:
             return cached_val
 
-    from tasks import celery
     import json as json_lib
+
+    from tasks import celery
 
     inspect = celery.control.inspect(timeout=1.0)
     pings = inspect.ping() or {}
@@ -1935,11 +1962,12 @@ def _get_worker_status_data():
         from cache_utils import get_redis_client
 
         r = get_redis_client()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to get Redis client for worker status: %s", e)
+        r = None
 
     clusters = []
-    for worker_name in pings.keys():
+    for worker_name in pings:
         # Only show workers that have task evaluation capabilities
         w_registered = registered.get(worker_name, []) if registered else []
         if "tasks.evaluate_submission" not in w_registered:
@@ -1951,8 +1979,8 @@ def _get_worker_status_data():
                 spec_data = r.get(f"worker_spec:{worker_name}")
                 if spec_data:
                     spec = json_lib.loads(spec_data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
 
         if not spec:
             w_stats = stats.get(worker_name, {}) if stats else {}
@@ -2013,9 +2041,6 @@ def report_worker_progress(submission_id):
         return jsonify({"error": "Request must be JSON"}), 400
     data = request.get_json()
     submission = db.get_or_404(Submission, submission_id)
-
-    VALID_STATUSES = {"queued", "running", "completed", "failed"}
-    MAX_LOG_SIZE = 100 * 1024
 
     if "status" in data:
         status_val = data["status"]
@@ -2157,24 +2182,20 @@ def get_active_tasks():
         for task in challenge.tasks:
             hf_datasets_list = []
             if task.hf_datasets:
-                try:
+                with contextlib.suppress(Exception):
                     hf_datasets_list = (
                         json.loads(task.hf_datasets)
                         if isinstance(task.hf_datasets, str)
                         else (task.hf_datasets or [])
                     )
-                except Exception:
-                    pass
             hf_models_list = []
             if task.hf_models:
-                try:
+                with contextlib.suppress(Exception):
                     hf_models_list = (
                         json.loads(task.hf_models)
                         if isinstance(task.hf_models, str)
                         else (task.hf_models or [])
                     )
-                except Exception:
-                    pass
             tasks_list.append(
                 {
                     "id": task.id,
@@ -2217,8 +2238,8 @@ def get_active_datasets():
     active_challenges = Challenge.query.filter_by(is_archived=False).all()
     datasets_set = set()
     hf_api_key = None
-    import re
     import json
+    import re
 
     for challenge in active_challenges:
         for task in challenge.tasks:
@@ -2233,8 +2254,8 @@ def get_active_datasets():
                     for d in hf_list:
                         if isinstance(d, str) and d.strip():
                             datasets_set.add(d.strip())
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logger.warning("Failed to parse hf_datasets for task %s: %s", task.id, e)
 
             # Extract from custom evaluation code
             eval_code = ""
@@ -2242,10 +2263,11 @@ def get_active_datasets():
                 eval_code = task.custom_eval_code
             elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
                 try:
-                    with open(task.evaluator_script_path, "r") as f:
+                    with open(task.evaluator_script_path) as f:
                         eval_code = f.read()
-                except (OSError, UnicodeDecodeError):
-                    pass
+                except (OSError, UnicodeDecodeError) as e:
+                    logger.warning("Failed to read evaluator script for task %s: %s", task.id, e)
+                    eval_code = ""
 
             if eval_code:
                 matches = re.findall(

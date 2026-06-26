@@ -33,23 +33,20 @@ fail_under = 70
 [tool.coverage.html]
 directory = "htmlcov"
 
-[tool.bandit]
-exclude_dirs = ["tests", "venv", ".git", "__pycache__"]
-skips = [
-    "B101",
-    "B104",
-    "B107",
-    "B108",
-    "B110",
-    "B311",
-    "B404",
-    "B601",
-    "B603",
-    "B607",
-    "B615",
-    "B701",
-]
-
-[tool.black]
+[tool.ruff]
 line-length = 100
-target-version = ["py312"]
+target-version = "py312"
+# Removed "tests" from global exclude – now formatter will include tests
+exclude = ["venv", ".git", "__pycache__", "test_stage_templates"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "S", "A", "T"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S108", "T201"]   # allow assert in tests
+"conftest.py" = ["S101", "S105", "S106", "S107", "S108", "T201"]
+"*" = ["S603"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

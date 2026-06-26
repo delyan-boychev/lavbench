@@ -135,4 +135,114 @@ describe('ChallengeConfig', () => {
     render(<ChallengeConfig {...defaultProps} />);
     expect(screen.getByRole('button', { name: /create/i })).toBeInTheDocument();
   });
+
+  it('renders input fields with initial values', () => {
+    const filledChallenge = {
+      ...defaultProps.newChallenge,
+      title: 'Test Competition',
+      description: 'Test Description',
+      max_eval_requests: 10,
+      ram_limit_mb: 8192,
+      time_limit_sec: 300,
+      start_time: '2026-06-14T12:00',
+      end_time: '2026-06-15T12:00',
+    };
+    render(<ChallengeConfig {...defaultProps} newChallenge={filledChallenge} />);
+    expect(screen.getByDisplayValue('Test Competition')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('10')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('8192')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('300')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-06-14T12:00')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-06-15T12:00')).toBeInTheDocument();
+  });
+
+  it('triggers setNewChallenge on input changes', () => {
+    const setNewChallenge = vi.fn();
+    const filledChallenge = {
+      ...defaultProps.newChallenge,
+      title: 'Test Competition',
+    };
+    render(
+      <ChallengeConfig
+        {...defaultProps}
+        newChallenge={filledChallenge}
+        setNewChallenge={setNewChallenge}
+      />,
+    );
+    const titleInput = screen.getByDisplayValue('Test Competition');
+    fireEvent.change(titleInput, { target: { value: 'New Title' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ title: 'New Title' }));
+  });
+
+  it('triggers setNewChallenge on all field changes', () => {
+    const setNewChallenge = vi.fn();
+    const filled = {
+      title: 'Comp',
+      description: 'Desc',
+      max_eval_requests: 5,
+      ram_limit_mb: 4096,
+      time_limit_sec: 600,
+      start_time: '2026-07-01T08:00',
+      end_time: '2026-07-02T18:00',
+      gpu_required: true,
+      is_frozen: false,
+      double_blind: true,
+      timezone: 'Europe/Sofia',
+      test_stage_start_time: '',
+      test_stage_end_time: '',
+    };
+    render(
+      <ChallengeConfig {...defaultProps} newChallenge={filled} setNewChallenge={setNewChallenge} />,
+    );
+
+    fireEvent.change(screen.getByDisplayValue('Desc'), { target: { value: 'New Desc' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'New Desc' }),
+    );
+
+    fireEvent.change(screen.getByDisplayValue('5'), { target: { value: '10' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ max_eval_requests: 10 }),
+    );
+
+    fireEvent.change(screen.getByDisplayValue('4096'), { target: { value: '8192' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ ram_limit_mb: 8192 }));
+
+    fireEvent.change(screen.getByDisplayValue('600'), { target: { value: '300' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ time_limit_sec: 300 }));
+
+    fireEvent.change(screen.getByDisplayValue('2026-07-01T08:00'), {
+      target: { value: '2026-08-01T08:00' },
+    });
+    expect(setNewChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ start_time: '2026-08-01T08:00' }),
+    );
+
+    fireEvent.change(screen.getByDisplayValue('2026-07-02T18:00'), {
+      target: { value: '2026-08-02T18:00' },
+    });
+    expect(setNewChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ end_time: '2026-08-02T18:00' }),
+    );
+
+    // The timezone select has options rendered from timezones prop
+    // Find it via the select role
+    const select = screen.getByDisplayValue('Europe/Sofia');
+    fireEvent.change(select, { target: { value: 'UTC' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'UTC' }));
+  });
+
+  it('triggers setNewChallenge on toggle changes', () => {
+    const setNewChallenge = vi.fn();
+    render(<ChallengeConfig {...defaultProps} setNewChallenge={setNewChallenge} />);
+
+    fireEvent.click(screen.getByLabelText('Requires GPU Workers'));
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ gpu_required: false }));
+
+    fireEvent.click(screen.getByLabelText('Double-Blind Evaluation'));
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ double_blind: false }));
+
+    fireEvent.click(screen.getByLabelText('Freeze Leaderboard & Submissions'));
+    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ is_frozen: true }));
+  });
 });

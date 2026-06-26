@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import TaskSidebar from './TaskSidebar';
+import TaskSidebar from '../TaskSidebar';
 
 describe('TaskSidebar Component', () => {
   it('renders empty state when tasks is empty or null', () => {

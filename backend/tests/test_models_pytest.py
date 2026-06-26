@@ -1,12 +1,14 @@
 import os
 import sys
 import tempfile
+
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, Submission, User, Challenge, Task, Stage, AuditLog
 from datetime import datetime, timedelta
+
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db
 
 
 class TestSubmissionFileCleanup:
@@ -110,7 +112,7 @@ class TestSubmissionToDict:
         from unittest.mock import patch
 
         with patch("builtins.open") as mock_open:
-            res = self.sub.to_dict_light()
+            self.sub.to_dict_light()
             mock_open.assert_not_called()
 
 

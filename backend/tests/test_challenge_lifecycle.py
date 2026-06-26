@@ -4,6 +4,7 @@ Uses fixture-based patterns from conftest.py.
 """
 
 import json
+
 import pytest
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -293,9 +294,10 @@ class TestCreateTestStage:
         assert data["is_test"] is True
         assert data["stage_number"] == 0
 
-        from models import Stage, Task
-        import os
         import json as json_mod
+        import os
+
+        from models import Stage, Task
 
         stage = db_session.get(Stage, data["id"])
         assert stage is not None
@@ -605,6 +607,7 @@ class TestTestStageViaCompetitionCreate:
         self, client, db_session, sample_future_challenge, tokens
     ):
         from datetime import timedelta
+
         from models import Stage
 
         test_stage = Stage(
@@ -646,7 +649,8 @@ class TestTestStageScoring:
         self, client, db_session, sample_future_challenge, sample_competitor, tokens
     ):
         from datetime import datetime, timedelta
-        from models import Stage, Task, Submission
+
+        from models import Stage, Submission, Task
 
         now = datetime.utcnow()
         comp_start = sample_future_challenge.start_time
@@ -698,7 +702,7 @@ class TestTestStageScoring:
         sample_competitor,
         tokens,
     ):
-        from models import Submission, Stage
+        from models import Stage, Submission
 
         regular_stage = Stage(
             challenge_id=sample_challenge.id,
@@ -821,6 +825,7 @@ class TestTaskStageAssignment:
         self, client, db_session, sample_future_challenge, tokens
     ):
         from datetime import datetime, timedelta
+
         from models import Stage
 
         now = datetime.utcnow()

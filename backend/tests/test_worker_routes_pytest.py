@@ -1,13 +1,14 @@
-import os
-import json
 import base64
+import json
+import os
 import time
 from datetime import datetime, timedelta
 
 import pytest
-from models import db, User, Challenge, Task, Submission
-from auth_utils import generate_token
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from auth_utils import generate_token
+from models import Challenge, Submission, Task, User, db
 
 
 class TestWorkerEndpoints:

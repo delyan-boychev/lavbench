@@ -1,17 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import AuditLogViewer from './AuditLogViewer';
-import api from '../../services/ApiService';
+import AuditLogViewer from '../AuditLogViewer';
+import api from '../../../services/ApiService';
 
-vi.mock('../../services/ApiService', () => ({
+vi.mock('../../../services/ApiService', () => ({
   default: {
     get: vi.fn(),
   },
 }));
 
 const mockSetSelectedChallengeById = vi.fn();
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: () => ({
     challenges: [
       { id: 'c1-id', title: 'Challenge One', timezone: 'Europe/Sofia' },

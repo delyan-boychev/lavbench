@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import SelectField from './SelectField';
+import SelectField from '../SelectField';
 
 describe('SelectField Component', () => {
   const options = [

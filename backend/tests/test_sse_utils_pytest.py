@@ -1,11 +1,10 @@
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import MagicMock, patch
 
 from sse_utils import (
-    publish_leaderboard_update,
-    publish_submissions_update,
-    publish_submission_log,
     clear_submission_logs,
+    publish_leaderboard_update,
+    publish_submission_log,
+    publish_submissions_update,
 )
 
 

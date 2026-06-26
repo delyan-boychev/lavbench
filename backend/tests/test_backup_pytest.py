@@ -1,15 +1,16 @@
 import os
 import sys
-import pytest
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge
+from auth_utils import generate_token
+from models import Challenge, User, db
 from task_modules.system import run_backup, run_register_worker_specs
 from tasks import check_and_backup
-from auth_utils import generate_token
 
 
 class TestRunBackup:
@@ -68,9 +69,8 @@ class TestRunBackup:
     def test_run_backup_pg_dump_failure(self, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "connection refused"
-        with self._ctx():
-            with pytest.raises(RuntimeError) as ctx:
-                run_backup(self.app)
+        with self._ctx(), pytest.raises(RuntimeError) as ctx:
+            run_backup(self.app)
         assert "pg_dump failed" in str(ctx.value)
 
     @patch("task_modules.system.subprocess.run")
@@ -87,9 +87,8 @@ class TestRunBackup:
             return result
 
         mock_run.side_effect = side_effect
-        with self._ctx():
-            with pytest.raises(RuntimeError) as ctx:
-                run_backup(self.app)
+        with self._ctx(), pytest.raises(RuntimeError) as ctx:
+            run_backup(self.app)
         assert "tar failed" in str(ctx.value)
 
     @patch("task_modules.system.subprocess.run")
@@ -129,9 +128,8 @@ class TestRunBackup:
             "/custom_backups/auto_7.tar.gz": 7,
             "/custom_backups/auto_8.tar.gz": 8,
         }.get(path, 0)
-        with patch.dict(os.environ, {"BACKUPS_DIR": "/custom_backups"}):
-            with self._ctx():
-                filename = run_backup(self.app, auto=True)
+        with patch.dict(os.environ, {"BACKUPS_DIR": "/custom_backups"}), self._ctx():
+            run_backup(self.app, auto=True)
         mock_glob.assert_called_with("/custom_backups/auto_*.tar.gz")
         assert mock_remove.call_count == 5
         mock_remove.assert_any_call("/custom_backups/auto_1.tar.gz")

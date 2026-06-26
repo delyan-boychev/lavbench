@@ -1,15 +1,16 @@
+import json
 import os
 import sys
-import json
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import User, Challenge, Task, Submission
 from auth_utils import generate_token
+from models import Challenge, Submission, Task, User
 
 
 class TestLeaderboardOrderingAndFinalizationConstraints:
@@ -174,7 +175,9 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         )
         assert res.status_code == 200
 
-        # Now finalize should succeed (other users have no submissions, so they default to 0 and don't block finalization)
+        # Now finalize should succeed (other users have no
+        # submissions, so they default to 0 and don't block finalization)
+
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
             headers=self._auth(self.jury_token),

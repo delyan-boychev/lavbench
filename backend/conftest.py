@@ -4,10 +4,10 @@ Sets required environment variables before any application code is imported so
 that config.py and models.py do not crash at module load time.
 """
 
+import hashlib
 import os
 import sys
 import uuid
-import hashlib
 from datetime import datetime, timedelta
 
 # ── Critical: set these BEFORE any app/model imports ──────────────────────
@@ -20,12 +20,14 @@ _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-import pytest
-from werkzeug.security import generate_password_hash
+import contextlib  # noqa: E402
 
-from app import create_app
-from models import db, User, Challenge, Task, Submission, Stage
-from auth_utils import generate_token
+import pytest  # noqa: E402
+from werkzeug.security import generate_password_hash  # noqa: E402
+
+from app import create_app  # noqa: E402
+from auth_utils import generate_token  # noqa: E402
+from models import Challenge, Stage, Submission, Task, User, db  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -34,10 +36,8 @@ def download_nltk_data():
     import nltk
 
     for corpus in ["wordnet", "punkt", "punkt_tab", "omw-1.4"]:
-        try:
+        with contextlib.suppress(Exception):
             nltk.download(corpus, quiet=True)
-        except Exception:
-            pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -48,8 +48,8 @@ def download_nltk_data():
 @pytest.fixture(scope="session")
 def app():
     """Flask application — created once per test session."""
-    import tempfile
     import shutil
+    import tempfile
 
     # Create temporary directory for uploads isolation
     test_upload_dir = tempfile.mkdtemp()
@@ -62,10 +62,8 @@ def app():
     yield _app
 
     # Cleanup temporary directory
-    try:
+    with contextlib.suppress(Exception):
         shutil.rmtree(test_upload_dir)
-    except Exception:
-        pass
 
 
 @pytest.fixture(scope="function")
@@ -121,7 +119,7 @@ def redis_flush():
                     r.delete(key)
             else:
                 r.flushdb()
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
 

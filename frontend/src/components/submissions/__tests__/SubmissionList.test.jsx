@@ -1,9 +1,9 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import SubmissionList from './SubmissionList';
+import SubmissionList from '../SubmissionList';
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: () => ({
     selectedChallenge: { id: 'c1-id', timezone: 'UTC' },
   }),

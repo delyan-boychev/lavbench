@@ -1,14 +1,15 @@
+import json
 import os
 import sys
-import json
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
+from models import Challenge, Submission, Task, User, db
 from services.submission_service import calculate_submission_priority
 
 
@@ -345,7 +346,7 @@ class TestRouteLevelLogic:
         db.session.commit()
         assert calculate_submission_priority(self.competitor.id, "competitor") == 5
 
-        for i in range(4):
+        for _i in range(4):
             s = Submission(
                 user_id=self.competitor.id,
                 challenge_id=self.challenge.id,
@@ -358,7 +359,7 @@ class TestRouteLevelLogic:
         db.session.commit()
         assert calculate_submission_priority(self.competitor.id, "competitor") == 1
 
-        for i in range(5):
+        for _i in range(5):
             s = Submission(
                 user_id=self.competitor.id,
                 challenge_id=self.challenge.id,
@@ -1562,9 +1563,10 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         import hashlib
+
         from werkzeug.security import generate_password_hash
 
-        client_hash = hashlib.sha256("my-competitor-password".encode()).hexdigest()
+        client_hash = hashlib.sha256(b"my-competitor-password").hexdigest()
         self.competitor.password_hash = generate_password_hash(client_hash, method="pbkdf2:sha256")
         db.session.commit()
 

@@ -1,17 +1,18 @@
-import os
-import sys
 import csv
 import io
-import pytest
+import os
+import sys
 from datetime import datetime, timedelta
 from unittest.mock import patch
+
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import User, Challenge, Task, AuditLog
 from auth_utils import generate_token
+from models import AuditLog, Challenge, Task, User
 
 
 class TestDoubleBlindAndLeaderboardRules:

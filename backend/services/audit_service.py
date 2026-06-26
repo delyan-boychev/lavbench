@@ -1,8 +1,11 @@
 """Service-layer audit logging for admin actions."""
 
 import logging
+import uuid
+
 from flask import request
-from models import db, AuditLog
+
+from models import AuditLog, db
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +14,6 @@ def get_client_ip():
     if request.headers.getlist("X-Forwarded-For"):
         return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
-
-
-import uuid
 
 
 def _clean_details(val):

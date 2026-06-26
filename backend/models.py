@@ -1,24 +1,26 @@
 """SQLAlchemy ORM models for User, Challenge, Task, Submission, and related entities."""
 
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
-import logging
-import random
-import os
-import sys
 import base64
+import contextlib
 import hashlib
 import json
-from cryptography.fernet import Fernet
+import logging
+import os
+import sys
 import uuid
 import zoneinfo
-from sqlalchemy.types import TypeDecorator, CHAR
+from datetime import datetime
+
+from cryptography.fernet import Fernet
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event, text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.types import CHAR, TypeDecorator
 
 
 def uuid7():
-    import time
     import os
+    import time
 
     ms = int(time.time() * 1000)
     rand_bytes = os.urandom(10)
@@ -247,10 +249,11 @@ def to_base36(num):
 
 def generate_pseudonym():
     """Generate a unique, timestamp-based pseudonym (e.g. 'Quantum-Falcon-28qt')."""
+    import secrets
     import time
 
-    adj = random.choice(ADJECTIVES)
-    noun = random.choice(NOUNS)
+    adj = secrets.choice(ADJECTIVES)
+    noun = secrets.choice(NOUNS)
     # 1. Get millisecond timestamp modulo 36^4 (1,679,616)
     ts_ms = int(time.time() * 1000)
     raw_num = ts_ms % 1679616
@@ -354,11 +357,17 @@ class User(db.Model):
         # BUT if the user is anonymous:
         # Other students (competitors) are NEVER allowed to see their details.
         # So if the viewer is a competitor (and not self), we set show_details to False.
-        if self.is_anonymous and view_role == "competitor" and not is_self:
-            if not challenge_finalized:
-                show_details = False
+        if (
+            self.is_anonymous
+            and view_role == "competitor"
+            and not is_self
+            and not challenge_finalized
+        ):
+            show_details = False
 
-        # Competitors should only see manual points if the scores are finalized and results are revealed.
+        # Competitors should only see manual points if
+        # the scores are finalized and results are revealed.
+
         show_manual_points = True
         if view_role == "competitor" or (is_self and self.role == "competitor"):
             show_manual_points = challenge_finalized and challenge_reveal_results
@@ -370,18 +379,17 @@ class User(db.Model):
             elif isinstance(self.manual_points, str):
                 try:
                     manual_pts = json.loads(self.manual_points)
-                except Exception:
+                except Exception as e:
+                    logger.warning("Failed to parse manual_points for user %s: %s", self.id, e)
                     manual_pts = {}
 
         jury_ch_ids = []
         if self.role == "jury":
-            try:
+            with contextlib.suppress(Exception):
                 jury_ch_ids = [
                     str(jc.challenge_id)
                     for jc in JuryChallenge.query.filter_by(jury_id=self.id).all()
                 ]
-            except Exception:
-                pass
 
         if not show_details:
             res = {
@@ -648,7 +656,8 @@ class Task(db.Model):
     def to_dict(self):
         try:
             files_list = json.loads(self.files)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to parse files for task %s: %s", self.id, e)
             files_list = []
 
         if self.baseline_notebook_path and os.path.exists(self.baseline_notebook_path):
@@ -671,7 +680,8 @@ class Task(db.Model):
                     if isinstance(self.hf_datasets, str)
                     else (self.hf_datasets or [])
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to parse hf_datasets for task %s: %s", self.id, e)
                 hf_datasets_list = []
 
         hf_models_list = []
@@ -682,7 +692,8 @@ class Task(db.Model):
                     if isinstance(self.hf_models, str)
                     else (self.hf_models or [])
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to parse hf_models for task %s: %s", self.id, e)
                 hf_models_list = []
 
         metrics_cfg_val = None
@@ -693,7 +704,8 @@ class Task(db.Model):
                     if isinstance(self.metrics_config, str)
                     else self.metrics_config
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to parse metrics_config for task %s: %s", self.id, e)
                 metrics_cfg_val = {}
 
         return {
@@ -781,11 +793,11 @@ class Submission(db.Model):
             return self._cached_code_cells
         if self.code_storage_path and os.path.exists(self.code_storage_path):
             try:
-                with open(self.code_storage_path, "r", encoding="utf-8") as f:
+                with open(self.code_storage_path, encoding="utf-8") as f:
                     self._cached_code_cells = f.read()
                     return self._cached_code_cells
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to read code_cells file for submission %s: %s", self.id, e)
         return "[]"
 
     @code_cells.setter
@@ -815,10 +827,10 @@ class Submission(db.Model):
     def logs(self):
         if self.log_storage_path and os.path.exists(self.log_storage_path):
             try:
-                with open(self.log_storage_path, "r", encoding="utf-8") as f:
+                with open(self.log_storage_path, encoding="utf-8") as f:
                     return f.read()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to read logs file for submission %s: %s", self.id, e)
         return ""
 
     @logs.setter
@@ -886,7 +898,10 @@ class Submission(db.Model):
                 if isinstance(self.metrics_payload_public, str)
                 else self.metrics_payload_public
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                ("Failed to parse metrics_payload_public for submission %s: %s"), self.id, e
+            )
             m_public = {}
 
         try:
@@ -895,7 +910,10 @@ class Submission(db.Model):
                 if isinstance(self.metrics_payload_private, str)
                 else self.metrics_payload_private
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Failed to parse metrics_payload_private for submission %s: %s", self.id, e
+            )
             m_private = {}
 
         return {
@@ -940,15 +958,11 @@ class Submission(db.Model):
 @db.event.listens_for(Submission, "after_delete")
 def _delete_submission_files(mapper, connection, target):
     if target.code_storage_path and os.path.exists(target.code_storage_path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(target.code_storage_path)
-        except OSError:
-            pass
     if target.log_storage_path and os.path.exists(target.log_storage_path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(target.log_storage_path)
-        except OSError:
-            pass
 
 
 class AuditLog(db.Model):
@@ -1010,24 +1024,20 @@ class AuditLog(db.Model):
         return result
 
 
-from sqlalchemy import event, text
-
-
 @event.listens_for(User, "after_insert")
 def auto_assign_jury_in_tests(mapper, connection, target):
     if target.role == "jury" and os.environ.get("PYTEST_CURRENT_TEST"):
         cursor = connection.execute(text("SELECT id FROM challenges"))
         challenge_ids = [row[0] for row in cursor.fetchall()]
         for ch_id in challenge_ids:
-            try:
+            with contextlib.suppress(Exception):
                 connection.execute(
                     text(
-                        "INSERT INTO jury_challenges (jury_id, challenge_id) VALUES (:jury_id, :challenge_id)"
+                        "INSERT INTO jury_challenges (jury_id, "
+                        "challenge_id) VALUES (:jury_id, :challenge_id)"
                     ),
                     {"jury_id": str(target.id), "challenge_id": str(ch_id)},
                 )
-            except Exception:
-                pass
 
 
 @event.listens_for(Challenge, "after_insert")
@@ -1036,12 +1046,11 @@ def auto_assign_challenge_to_jury_in_tests(mapper, connection, target):
         cursor = connection.execute(text("SELECT id FROM users WHERE role = 'jury'"))
         jury_ids = [row[0] for row in cursor.fetchall()]
         for j_id in jury_ids:
-            try:
+            with contextlib.suppress(Exception):
                 connection.execute(
                     text(
-                        "INSERT INTO jury_challenges (jury_id, challenge_id) VALUES (:jury_id, :challenge_id)"
+                        "INSERT INTO jury_challenges (jury_id, "
+                        "challenge_id) VALUES (:jury_id, :challenge_id)"
                     ),
                     {"jury_id": str(j_id), "challenge_id": str(target.id)},
                 )
-            except Exception:
-                pass

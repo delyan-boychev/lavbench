@@ -1,19 +1,20 @@
+import io
+import json
 import os
 import sys
-import json
-import pytest
 import tempfile
-import io
-import pandas as pd
-import numpy as np
-from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission
 from auth_utils import generate_token
-from evaluation_engine import validate_parquet_schema, evaluate_predictions
+from evaluation_engine import evaluate_predictions, validate_parquet_schema
+from models import Challenge, Submission, Task, User, db
 
 
 class TestUnifiedParquetEvaluation:
@@ -239,7 +240,9 @@ class TestEvalPredictionsAllMetricPaths:
 
     def test_auc_roc_bad_input_returns_fallback(self):
         """Multiclass labels with multi_class='raise' (default) → ValueError → fallback 0.5."""
-        # 3-class labels with 1D probability scores triggers ValueError (multi_class='raise' default)
+        # 3-class labels with 1D probability scores
+        # triggers ValueError (multi_class='raise' default)
+
         df_l = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 2]})
         df_s = pd.DataFrame({"id": [1, 2, 3], "prediction": [0.1, 0.5, 0.9]})
         res = evaluate_predictions(df_s, df_l, {"auc_roc": {"weight": 1.0}})
@@ -547,8 +550,8 @@ class TestEvalPredictionsAllMetricPaths:
         assert res["mean_iou"] == pytest.approx(1.0)
 
     def test_mean_iou_empty_mask(self):
-        df_l = pd.DataFrame({"id": [1], "label": [bytes()]})
-        df_s = pd.DataFrame({"id": [1], "prediction": [bytes()]})
+        df_l = pd.DataFrame({"id": [1], "label": [b""]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
         res = evaluate_predictions(df_s, df_l, {"mean_iou": {"weight": 1.0}})
         assert res["mean_iou"] == pytest.approx(0.0)
 
@@ -560,8 +563,8 @@ class TestEvalPredictionsAllMetricPaths:
         assert res["dice"] == pytest.approx(1.0)
 
     def test_dice_empty_mask(self):
-        df_l = pd.DataFrame({"id": [1], "label": [bytes()]})
-        df_s = pd.DataFrame({"id": [1], "prediction": [bytes()]})
+        df_l = pd.DataFrame({"id": [1], "label": [b""]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
         res = evaluate_predictions(df_s, df_l, {"dice": {"weight": 1.0}})
         assert res["dice"] == pytest.approx(0.0)
 
@@ -573,8 +576,8 @@ class TestEvalPredictionsAllMetricPaths:
         assert res["pixel_accuracy"] == pytest.approx(1.0)
 
     def test_pixel_accuracy_empty_returns_zero(self):
-        df_l = pd.DataFrame({"id": [1], "label": [bytes()]})
-        df_s = pd.DataFrame({"id": [1], "prediction": [bytes()]})
+        df_l = pd.DataFrame({"id": [1], "label": [b""]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
         res = evaluate_predictions(df_s, df_l, {"pixel_accuracy": {"weight": 1.0}})
         assert res["pixel_accuracy"] == pytest.approx(0.0)
 
@@ -647,8 +650,8 @@ class TestEvalPredictionsAllMetricPaths:
         assert res["snr"] == pytest.approx(100.0)
 
     def test_snr_empty_signal_returns_zero(self):
-        df_l = pd.DataFrame({"id": [1], "label": [bytes()]})
-        df_s = pd.DataFrame({"id": [1], "prediction": [bytes()]})
+        df_l = pd.DataFrame({"id": [1], "label": [b""]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
         res = evaluate_predictions(df_s, df_l, {"snr": {"weight": 1.0}})
         assert res["snr"] == pytest.approx(0.0)
 
@@ -889,11 +892,12 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
 
     def test_stage_timezone_conversion_utc_to_sofia(self):
         import zoneinfo
+
         from routes.challenges import _now_local_for_timezone
 
-        tz_sofia = zoneinfo.ZoneInfo("Europe/Sofia")
-        now_utc = datetime(2026, 6, 14, 12, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
-        now_sofia_expected = datetime(2026, 6, 14, 15, 0, 0)
+        zoneinfo.ZoneInfo("Europe/Sofia")
+        datetime(2026, 6, 14, 12, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
+        datetime(2026, 6, 14, 15, 0, 0)
 
         local_now = _now_local_for_timezone("Europe/Sofia")
         assert local_now.tzinfo is None
@@ -945,7 +949,9 @@ class TestMetricsCalculationEdgeCases:
         assert res["mse"] == 999.0
 
     def test_evaluate_predictions_type_mismatch_resilience(self):
-        # Classification metric receiving continuous values (raises ValueError in sklearn f1_score with average='binary')
+        # Classification metric receiving continuous values
+        # (raises ValueError in sklearn f1_score with average='binary')
+
         df_labels = pd.DataFrame({"id": [1, 2], "label": [0.5, 1.5]})
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [0.2, 1.8]})
 

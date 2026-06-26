@@ -5,6 +5,7 @@ Delete tests already exist in test_challenges_routes.py (TestDeleteStage).
 
 import json
 from datetime import datetime, timedelta
+
 import pytest
 
 

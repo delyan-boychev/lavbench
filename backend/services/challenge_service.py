@@ -4,9 +4,12 @@ import csv
 import io
 import json
 from datetime import datetime
-from models import db, User, Submission, AuditLog, Challenge, Task, Stage, decrypt_field
-from services.submission_service import get_best_submission
+
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from services.leaderboard_service import build_and_cache_leaderboard
+from services.submission_service import get_best_submission
+
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 
 
 def generate_scores_csv(challenge):
@@ -28,7 +31,7 @@ def generate_scores_csv(challenge):
         )
         late_users = {uid[0] for uid in late_user_ids}
 
-    from sqlalchemy import func, case
+    from sqlalchemy import case, func
 
     if late_users:
         is_final_active = case(
@@ -278,8 +281,10 @@ def import_challenge_from_dict(data, zip_ref=None):
     """Create a challenge (with stages and tasks) from an exported dict.
     Returns the created Challenge object. Raises ValueError on invalid data."""
     import os
+
     from flask import current_app
     from werkzeug.utils import secure_filename
+
     from services.file_validation import check_dangerous_extension
 
     title = data.get("title")
@@ -342,10 +347,7 @@ def import_challenge_from_dict(data, zip_ref=None):
         elif isinstance(files_data, str):
             try:
                 parsed = json.loads(files_data)
-                if isinstance(parsed, list):
-                    files_str = files_data
-                else:
-                    files_str = json.dumps([])
+                files_str = files_data if isinstance(parsed, list) else json.dumps([])
             except Exception:
                 files_str = json.dumps([])
         else:
@@ -403,10 +405,10 @@ def import_challenge_from_dict(data, zip_ref=None):
                         target_path = os.path.join(task_dir, safe_name)
                         try:
                             info = zip_ref.getinfo(member)
-                            MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
                             if info.file_size > MAX_FILE_SIZE_BYTES:
                                 raise ValueError(
-                                    f"File {basename} in ZIP exceeds the maximum allowed size of 25MB."
+                                    f"File {basename} in ZIP exceeds "
+                                    f"the maximum allowed size of 25MB."
                                 )
 
                             if check_dangerous_extension(safe_name):
@@ -419,7 +421,7 @@ def import_challenge_from_dict(data, zip_ref=None):
                                 target.write(source.read())
                         except Exception as e:
                             db.session.rollback()
-                            raise ValueError(f"Failed to extract {basename} from ZIP: {str(e)}")
+                            raise ValueError(f"Failed to extract {basename} from ZIP") from e
 
                 if t_data.get("evaluator_script_path"):
                     eval_base = os.path.basename(t_data["evaluator_script_path"])

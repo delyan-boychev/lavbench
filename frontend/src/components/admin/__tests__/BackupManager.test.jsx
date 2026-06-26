@@ -1,17 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-class MockEventSource {
-  constructor(url) {
-    this.url = url;
-    this.onmessage = null;
-    this.onerror = null;
-  }
-  close() {}
-}
-
-vi.stubGlobal('EventSource', MockEventSource);
 
 vi.mock('../../../services/ApiService', () => ({
   default: {
@@ -65,15 +54,17 @@ describe('BackupManager', () => {
     });
   });
 
-  it('renders database backups title without challengeId', () => {
+  it('renders database backups title without challengeId', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
     render(<BackupManager />);
+    await act(async () => {});
     expect(screen.getByText('Database Backups & Security')).toBeInTheDocument();
   });
 
-  it('shows force backup button', () => {
+  it('shows force backup button', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
     render(<BackupManager />);
+    await act(async () => {});
     expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
   });
 
@@ -143,10 +134,13 @@ describe('BackupManager', () => {
     });
     api.delete.mockResolvedValue({ ok: true, data: {} });
     render(<BackupManager />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByText('✕')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('✕'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('✕'));
+    });
     expect(api.delete).toHaveBeenCalledWith('/admin/backups/manual_backup.db');
   });
 });

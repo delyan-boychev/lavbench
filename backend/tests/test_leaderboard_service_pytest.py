@@ -1,14 +1,15 @@
+import json
 import os
 import sys
-import json
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission
+from models import Challenge, Submission, Task, User, db
 from services.leaderboard_service import (
     build_and_cache_leaderboard,
     get_task_leaderboard_data,
@@ -116,7 +117,7 @@ class TestBuildAndCacheLeaderboard:
         assert result[0]["public_score"] > result[1]["public_score"]
 
     def test_non_submitting_competitors_included(self):
-        comp = self._create_competitor("nobody")
+        self._create_competitor("nobody")
         result = build_and_cache_leaderboard(self.challenge.id)
         assert len(result) == 1
         assert result[0]["has_submitted"] is False

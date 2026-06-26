@@ -1,12 +1,16 @@
+import contextlib
+import logging
 import os
-from flask import Blueprint, request, jsonify
-from models import db, Challenge, User, decrypt_field, Submission
-from auth_utils import login_required, role_required, jury_access_required
-
-challenges_bp = Blueprint("challenges", __name__)
-
-from datetime import datetime
 import zoneinfo
+from datetime import datetime
+
+from flask import Blueprint, jsonify, request
+
+from auth_utils import jury_access_required, login_required, role_required
+from models import Challenge, Submission, User, db, decrypt_field
+
+logger = logging.getLogger(__name__)
+challenges_bp = Blueprint("challenges", __name__)
 
 
 def _now_local_for_timezone(timezone_str):
@@ -55,8 +59,8 @@ def filter_challenge_for_competitor(challenge_dict):
                     )
                     if st_start and st_end and st_start <= now <= st_end:
                         test_stage = s
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to parse test stage dates: %s", e)
 
     if comp_start and now < comp_start:
         if test_stage:
@@ -95,8 +99,8 @@ def filter_challenge_for_competitor(challenge_dict):
 
                 if st_start and st_start <= now:
                     active_stage_ids.append(str(s["id"]))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to parse regular stage dates: %s", e)
 
     filtered_tasks = []
     for t in challenge_dict.get("tasks", []):
@@ -159,8 +163,9 @@ def get_challenges():
         return jsonify([filtered])
 
     if user_role == "jury":
-        from models import JuryChallenge
         from sqlalchemy.orm import joinedload
+
+        from models import JuryChallenge
 
         assigned_challenges = JuryChallenge.query.filter_by(jury_id=user_id).all()
         assigned_ids = [jc.challenge_id for jc in assigned_challenges]
@@ -322,8 +327,8 @@ def parse_datetime(val):
                 if "T" in val:
                     val = val.split(".")[0]  # strip milliseconds
                 return datetime.strptime(val, "%Y-%m-%dT%H:%M:%S")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to parse datetime string: %s", e)
     return None
 
 
@@ -354,10 +359,7 @@ def create_challenge():
     time_limit_sec = int(data.get("time_limit_sec", 300))
     gpu_required = bool(data.get("gpu_required", True))
     double_blind = data.get("double_blind")
-    if double_blind is None:
-        double_blind = True
-    else:
-        double_blind = bool(double_blind)
+    double_blind = True if double_blind is None else bool(double_blind)
 
     start_time = parse_datetime(data.get("start_time"))
     end_time = parse_datetime(data.get("end_time"))
@@ -501,9 +503,10 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     db.session.add(stage)
     db.session.commit()
 
+    import json as json_mod
     import os
     import shutil
-    import json as json_mod
+
     from flask import current_app
 
     routes_dir = os.path.dirname(os.path.abspath(__file__))
@@ -511,7 +514,7 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     templates_dir = os.path.join(backend_dir, "test_stage_templates")
     config_path = os.path.join(templates_dir, "task_config.json")
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         task_config = json_mod.load(f)
 
     test_task = Task(
@@ -794,7 +797,10 @@ def delete_challenge(challenge_id):
 
     return jsonify(
         {
-            "message": f"Competition '{challenge.title}' and all its associated tasks and submissions have been deleted successfully."
+            "message": (
+                f"Competition '{challenge.title}' and all its associated "
+                f"tasks and submissions have been deleted successfully."
+            )
         }
     )
 
@@ -883,7 +889,12 @@ def finalize_challenge(challenge_id):
                     return (
                         jsonify(
                             {
-                                "error": f"Cannot finalize. Competitor '{comp.username}' (ID: {comp.id}) is missing manual points for task '{task.title}' (ID: {task.id}).",
+                                "error": (
+                                    f"Cannot finalize. Competitor '{comp.username}'"
+                                    f" (ID: {comp.id}) is "
+                                    f"missing manual points for"
+                                    f" task '{task.title}' (ID: {task.id})."
+                                ),
                                 "code": "ERR_MISSING_MANUAL_POINTS",
                             }
                         ),
@@ -912,7 +923,10 @@ def finalize_challenge(challenge_id):
 
     return jsonify(
         {
-            "message": "Competition finalized! Competitor identities and private scores are now fully revealed to everyone.",
+            "message": (
+                "Competition finalized! Competitor identities and "
+                "private scores are now fully revealed to everyone."
+            ),
             "challenge": challenge.to_dict(),
         }
     )
@@ -1288,7 +1302,7 @@ def delete_stage(challenge_id, stage_id):
             schema:
               type: object
     """
-    challenge = db.get_or_404(Challenge, challenge_id)
+    db.get_or_404(Challenge, challenge_id)
     from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -1351,6 +1365,8 @@ def finalize_stage(challenge_id, stage_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
+    import json
+
     from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -1417,12 +1433,17 @@ def finalize_stage(challenge_id, stage_id):
                             dec_name = decrypt_field(comp.name)
                             dec_surname = decrypt_field(comp.surname)
                             name_str = f"{dec_name} {dec_surname}"
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(
+                                ("Failed to decrypt competitor name for user %s: %s"), comp.id, e
+                            )
                     return (
                         jsonify(
                             {
-                                "error": f"Cannot finalize. Competitor '{name_str}' is missing manual points for task '{task.title}'.",
+                                "error": (
+                                    f"Cannot finalize. Competitor '{name_str}' is "
+                                    f"missing manual points for task '{task.title}'."
+                                ),
                                 "code": "ERR_MISSING_MANUAL_POINTS",
                             }
                         ),
@@ -1599,6 +1620,7 @@ def export_results(challenge_id):
               type: object
     """
     from flask import Response
+
     from services.challenge_service import generate_exported_results_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1640,10 +1662,11 @@ def export_challenge(challenge_id):
               format: binary
     """
     import io
-    import os
     import json
+    import os
     import zipfile
-    from flask import send_file, current_app
+
+    from flask import current_app, send_file
     from werkzeug.utils import secure_filename
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1705,6 +1728,7 @@ def import_challenge():
               type: object
     """
     import json
+
     from services.file_validation import validate_extension
 
     if not request.content_type or "multipart/form-data" not in request.content_type:
@@ -1731,8 +1755,8 @@ def import_challenge():
 
     try:
         if raw.startswith(b"PK\x03\x04"):
-            import zipfile
             import io
+            import zipfile
 
             zip_buffer = io.BytesIO(raw)
             try:
@@ -1758,10 +1782,8 @@ def import_challenge():
 
     finally:
         if zip_ref:
-            try:
+            with contextlib.suppress(Exception):
                 zip_ref.close()
-            except Exception:
-                pass
 
     from services.audit_service import log_action
 
@@ -1784,9 +1806,11 @@ def download_audit_logs(challenge_id):
     """
     import io
     import json
+
     from flask import send_file
-    from models import Challenge, AuditLog, User
     from sqlalchemy import or_
+
+    from models import AuditLog, Challenge, User
 
     challenge = db.get_or_404(Challenge, challenge_id)
 

@@ -1,8 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { useAuth } from '../../AuthContext';
-import ProtectedLayout from './ProtectedLayout';
+import { useAuth } from '../../../AuthContext';
+import ProtectedLayout from '../ProtectedLayout';
 
 // Mock routing components
 vi.mock('react-router-dom', () => ({
@@ -14,15 +14,15 @@ vi.mock('react-router-dom', () => ({
 }));
 
 // Mock AuthContext hook
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
 // Mock sub-layouts to avoid secondary context dependencies
-vi.mock('./Navbar', () => ({
+vi.mock('../Navbar', () => ({
   default: () => <div data-testid="navbar" />,
 }));
-vi.mock('./CompetitionBar', () => ({
+vi.mock('../CompetitionBar', () => ({
   default: () => <div data-testid="competition-bar" />,
 }));
 

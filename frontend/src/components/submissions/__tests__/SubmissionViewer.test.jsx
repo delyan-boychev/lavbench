@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import SubmissionViewer from './SubmissionViewer';
+import SubmissionViewer from '../SubmissionViewer';
 
 vi.stubGlobal(
   'EventSource',
@@ -11,7 +11,7 @@ vi.stubGlobal(
   },
 );
 
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: () => ({
     currentUser: { role: 'competitor', username: 'test_comp' },
   }),

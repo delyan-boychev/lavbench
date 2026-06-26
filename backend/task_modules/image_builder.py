@@ -11,11 +11,12 @@ owns the cache — no volume mounts, no cross-user lock file issues.
 
 import hashlib
 import json
+import logging
 import os
+import re
 import shlex
 import subprocess
 import time
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,15 @@ TASK_IMAGES_DIR = os.environ.get(
 
 def _image_exists(tag):
     """Check if a Docker image tag already exists locally."""
+    # Ensure tag only contains safe characters (alnum, -, _, .)
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", tag):
+        return False
     try:
         res = subprocess.run(
-            ["docker", "images", "-q", tag], capture_output=True, text=True, timeout=10
+            ["docker", "images", "-q", tag], # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=10,  # noqa: S607
         )
         return bool(res.stdout.strip())
     except Exception:
@@ -96,10 +103,10 @@ def build_task_image(metadata):
     existing_hash = ""
     if os.path.isfile(meta_path):
         try:
-            with open(meta_path, "r") as f:
+            with open(meta_path) as f:
                 existing_hash = json.load(f).get("hash", "")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to read metadata file %s: %s", meta_path, e)
 
     if existing_hash == config_hash and _image_exists(tag):
         logger.info("Task %s image up-to-date (hash %s), skipping build", task_id, config_hash)
@@ -151,7 +158,10 @@ def build_task_image(metadata):
         dockerfile_lines.extend(
             [
                 "COPY requirements.txt /tmp/requirements.txt",
-                "RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt",
+                (
+                    "RUN pip install --no-cache-dir -r "
+                    "/tmp/requirements.txt && rm /tmp/requirements.txt"
+                ),
             ]
         )
 
@@ -269,6 +279,7 @@ def _rebuild_listener(main_server_url, worker_token):
                     logger.info("Rebuild notification for task %s", task_id)
                     # Fetch updated config from the server
                     import requests
+
                     from worker_utils import _sign_worker_token
 
                     url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"
@@ -296,5 +307,5 @@ def _rebuild_listener(main_server_url, worker_token):
         try:
             pubsub.unsubscribe()
             pubsub.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error during Redis pubsub cleanup: %s", e)

@@ -1,12 +1,12 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { useAuth } from '../AuthContext';
-import { useApp } from '../context/AppContext';
-import AdminPanel from './AdminPanel';
-import api from '../services/ApiService';
+import { useAuth } from '../../AuthContext';
+import { useApp } from '../../context/AppContext';
+import AdminPanel from '../AdminPanel';
+import api from '../../services/ApiService';
 
-vi.mock('../services/ApiService', () => ({
+vi.mock('../../services/ApiService', () => ({
   default: {
     fetch: vi.fn(),
     get: vi.fn(),
@@ -19,11 +19,11 @@ vi.mock('../services/ApiService', () => ({
   },
 }));
 
-vi.mock('../AuthContext', () => ({
+vi.mock('../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-vi.mock('../context/AppContext', () => ({
+vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
@@ -80,13 +80,6 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    global.EventSource = class {
-      constructor(url) {
-        this.url = url;
-        this.close = vi.fn();
-      }
-    };
 
     useAuth.mockReturnValue({
       currentUser: { id: 1, username: 'admin', role: 'admin' },

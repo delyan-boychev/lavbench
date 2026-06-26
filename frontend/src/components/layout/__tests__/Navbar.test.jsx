@@ -1,17 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { useAuth } from '../../AuthContext';
-import { useApp } from '../../context/AppContext';
-import Navbar from './Navbar';
+import { useAuth } from '../../../AuthContext';
+import { useApp } from '../../../context/AppContext';
+import Navbar from '../Navbar';
 
 // Mock AuthContext
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
 // Mock AppContext
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
@@ -21,12 +21,12 @@ vi.mock('react-router-dom', () => ({
 }));
 
 // Mock Logo
-vi.mock('../ui/Logo', () => ({
+vi.mock('../../ui/Logo', () => ({
   default: () => <div data-testid="logo" />,
 }));
 
 // Mock Badge
-vi.mock('../ui/Badge', () => ({
+vi.mock('../../ui/Badge', () => ({
   default: ({ status }) => <span data-testid="badge">{status}</span>,
 }));
 
@@ -227,22 +227,25 @@ describe('Navbar Component', () => {
       logout: mockLogout,
     });
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-      if (url.includes('/api/docs/student')) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/api/docs/student')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                title: 'Student Guide',
+                content: 'Student Guide Content',
+              }),
+          });
+        }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve({
-              title: 'Student Guide',
-              content: 'Student Guide Content',
-            }),
+          json: () => Promise.resolve({ status: 'online', clusters: [] }),
         });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ status: 'online', clusters: [] }),
-      });
-    });
+      }),
+    );
 
     render(<Navbar />);
 
@@ -260,22 +263,25 @@ describe('Navbar Component', () => {
       logout: mockLogout,
     });
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-      if (url.includes('/api/docs/student')) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/api/docs/student')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                title: 'Student Guide',
+                content: '> [!NOTE]\n> This is a test note.',
+              }),
+          });
+        }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve({
-              title: 'Student Guide',
-              content: '> [!NOTE]\n> This is a test note.',
-            }),
+          json: () => Promise.resolve({ status: 'online', clusters: [] }),
         });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ status: 'online', clusters: [] }),
-      });
-    });
+      }),
+    );
 
     render(<Navbar />);
 

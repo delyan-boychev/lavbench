@@ -1,27 +1,27 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { useAuth } from '../../AuthContext';
-import { useApp } from '../../context/AppContext';
-import ChallengeService from '../../services/ChallengeService';
-import LeaderboardTable from './LeaderboardTable';
+import { useAuth } from '../../../AuthContext';
+import { useApp } from '../../../context/AppContext';
+import ChallengeService from '../../../services/ChallengeService';
+import LeaderboardTable from '../LeaderboardTable';
 
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-vi.mock('../../services/ChallengeService', () => ({
+vi.mock('../../../services/ChallengeService', () => ({
   default: {
     finalize: vi.fn(),
     saveManualPoints: vi.fn(),
   },
 }));
 
-vi.mock('../../services/ApiService', () => ({
+vi.mock('../../../services/ApiService', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),

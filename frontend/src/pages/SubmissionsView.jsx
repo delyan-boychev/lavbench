@@ -401,8 +401,8 @@ export default function SubmissionsView() {
       try {
         const params = new URLSearchParams({
           role: 'competitor',
-          challenge_id: selectedChallenge.id,
-          page: pageNum,
+          challenge_id: String(selectedChallenge.id),
+          page: String(pageNum),
           per_page: '10',
         });
         if (search) params.set('search', search);
@@ -719,6 +719,7 @@ export default function SubmissionsView() {
                   sub={bestSubmission}
                   task={selectedTask}
                   onView={handleSelectSubmission}
+                  onDownload={undefined}
                   showPrivate={false}
                   challenge={selectedChallenge}
                 />

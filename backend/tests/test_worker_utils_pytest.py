@@ -1,17 +1,17 @@
 import os
-import time
 import tempfile
+import time
 from unittest.mock import patch
 
 import pytest
 
 from worker_utils import (
-    run_command_streaming,
-    StreamingLogList,
     MockModel,
-    report_status_to_server,
-    download_task_files_to_dir,
+    StreamingLogList,
     download_labels_parquet_to_dir,
+    download_task_files_to_dir,
+    report_status_to_server,
+    run_command_streaming,
 )
 
 
@@ -46,12 +46,12 @@ class TestRunCommandStreaming:
     def test_logs_populated_on_stdout(self):
         logs = []
         run_command_streaming(["echo", "line1"], logs)
-        assert any("line1" in l for l in logs)
+        assert any("line1" in log for log in logs)
 
     def test_logs_populated_on_stderr(self):
         logs = []
         run_command_streaming(["bash", "-c", "echo errmsg >&2"], logs)
-        assert any("errmsg" in l for l in logs)
+        assert any("errmsg" in log for log in logs)
 
     def test_timeout_triggers_kill(self):
         logs = []
@@ -234,7 +234,7 @@ class TestDownloadTaskFilesToDir:
         }
         with tempfile.TemporaryDirectory() as tmp:
             download_task_files_to_dir(metadata, tmp, logs)
-        assert any("404" in l for l in logs)
+        assert any("404" in log for log in logs)
 
     @patch("worker_utils.requests.get")
     def test_empty_files_list(self, mock_get):

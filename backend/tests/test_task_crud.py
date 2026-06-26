@@ -448,6 +448,7 @@ class TestUpdateTask:
     ):
         import os
         import tempfile
+
         from models import Task
 
         task = Task(
@@ -594,6 +595,7 @@ class TestUpdateTask:
     ):
         import os
         import tempfile
+
         from models import Task
 
         task = Task(

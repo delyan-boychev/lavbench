@@ -1,13 +1,14 @@
 """Authentication, token verification, rate limiting, and authorization utilities."""
 
+import logging
 import os
 import sys
-import logging
 import uuid
-import jwt
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import request, jsonify
+
+import jwt
+from flask import jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 def _require_env(key):
     val = os.environ.get(key)
     if not val:
-        print(f"FATAL: Required environment variable '{key}' is not set.", file=sys.stderr)
+        logger.error(f"FATAL: Required environment variable '{key}' is not set.", file=sys.stderr)
         sys.exit(1)
     return val
 
@@ -35,8 +36,8 @@ def _redis_exists(key):
         if r is not None:
             val = r.exists(key)
             return bool(val)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Redis exists check failed for key %s: %s", key, e)
     return False
 
 
@@ -121,13 +122,13 @@ def revoke_token(token):
                         jti,
                         exc_info=True,
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Revocation token parsing failed: %s", e)
 
 
 def _fetch_current_role(user_id):
     try:
-        from models import db, User
+        from models import User, db
 
         if db and db.session:
             user = db.session.get(User, user_id)
@@ -254,8 +255,9 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                         ),
                         429,
                     )
-            except Exception:
-                pass  # Redis down — allow request through
+            except Exception as e:
+                logger.debug("Rate limit Redis error (allowing request): %s", e)
+                # Redis down — allow request through
             return f(*args, **kwargs)
 
         return decorated
@@ -293,9 +295,7 @@ def verify_csrf_token():
         return True
     header_token = request.headers.get("X-CSRF-Token")
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-    if not header_token or not cookie_token or header_token != cookie_token:
-        return False
-    return True
+    return not (not header_token or not cookie_token or header_token != cookie_token)
 
 
 def csrf_required(f):
@@ -349,8 +349,8 @@ def check_worker_auth(token):
         return False
 
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
         pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_key_b64))
         pub_key.verify(base64.b64decode(sig_b64), nonce.encode())
@@ -372,7 +372,8 @@ def check_worker_auth(token):
 
 
 def jury_access_required(f):
-    """Decorator: restricts jury members to only access endpoints of challenges they are assigned to.
+    """Decorator: restricts jury members to only
+    access endpoints of challenges they are assigned to.
 
     Admins are always allowed access. Other roles are not checked here.
     """
@@ -397,7 +398,7 @@ def jury_access_required(f):
         if user_role == "jury":
             challenge_id = kwargs.get("challenge_id")
 
-            from models import db, Task, Stage, Submission, User, JuryChallenge
+            from models import JuryChallenge, Stage, Submission, Task, User, db
 
             if not challenge_id:
                 if "task_id" in kwargs:

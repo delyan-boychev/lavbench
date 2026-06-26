@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import ChallengeOverview from './ChallengeOverview';
+import ChallengeOverview from '../ChallengeOverview';
 
 describe('ChallengeOverview Component', () => {
   it('renders nothing when challenge is not provided', () => {

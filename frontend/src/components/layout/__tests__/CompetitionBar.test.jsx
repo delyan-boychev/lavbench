@@ -2,22 +2,22 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { useAuth } from '../../AuthContext';
-import { useApp } from '../../context/AppContext';
-import CompetitionBar from './CompetitionBar';
+import { useAuth } from '../../../AuthContext';
+import { useApp } from '../../../context/AppContext';
+import CompetitionBar from '../CompetitionBar';
 
 // Mock AuthContext
-vi.mock('../../AuthContext', () => ({
+vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
 // Mock AppContext
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
 // Mock SelectField to make assertion on its presence simpler
-vi.mock('../ui/SelectField', () => ({
+vi.mock('../../ui/SelectField', () => ({
   default: ({ options, value, onChange, placeholder }) => (
     <div data-testid="mock-custom-select">
       <span data-testid="select-placeholder">{placeholder}</span>

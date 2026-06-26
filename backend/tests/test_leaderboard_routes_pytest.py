@@ -1,15 +1,16 @@
 import os
 import sys
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
+
+import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import User, Challenge, Task, Submission
 from auth_utils import generate_token
+from models import Challenge, Submission, Task, User
 
 
 class TestChallengeLeaderboardGetEndpoint:
@@ -345,7 +346,9 @@ class TestChallengeLeaderboardGetEndpoint:
 
         leaderboard = data["leaderboard"]
         assert len(leaderboard) == 2
-        # Since they are ranked on public score (higher is better), Beta-Comp (0.80) should be rank 1, Alpha-Comp (0.50) should be rank 2.
+        # Since they are ranked on public score (higher is better),
+        # Beta-Comp (0.80) should be rank 1, Alpha-Comp (0.50) should be rank 2.
+
         assert leaderboard[0]["user"]["id"] == str(self.other_competitor.id)
         assert leaderboard[0]["rank"] == 1
         assert leaderboard[0]["private_score"] is None

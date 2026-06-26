@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import ToggleField from './ToggleField';
+import ToggleField from '../ToggleField';
 
 describe('ToggleField Component', () => {
   it('renders check box with label', () => {

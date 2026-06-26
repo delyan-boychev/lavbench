@@ -2,7 +2,8 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
-from models import db, User, Challenge, Task, Submission
+
+from models import Challenge, Submission, Task, User, db
 from tasks import watchdog_stuck_submissions
 
 

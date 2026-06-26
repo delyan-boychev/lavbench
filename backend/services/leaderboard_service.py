@@ -1,17 +1,22 @@
 """Service-layer functions for leaderboard computation and caching."""
 
 import json
+import logging
 import time
 from datetime import datetime
 from functools import cmp_to_key
+
 from sqlalchemy.orm import joinedload
-from models import db, Challenge, Submission, User, Task, Stage, is_metric_lower_better
+
+from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from services.submission_service import get_best_submission
+
+logger = logging.getLogger(__name__)
 
 
 def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=False):
     """Compute, cache, and return the leaderboard for a challenge. Uses a distributed lock."""
-    from cache_utils import set_cached, get_cached, cache_lock
+    from cache_utils import cache_lock, get_cached, set_cached
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     lock_key = f"lock:{cache_key}"
@@ -45,14 +50,14 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                         if isinstance(task.metrics_config, str)
                         else task.metrics_config
                     )
-                    for m_name in cfg.keys():
+                    for m_name in cfg:
                         if m_name.startswith("_"):
                             continue
                         if is_metric_lower_better(m_name):
                             task_lower = True
                             break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
             task_metrics[task.id] = task_lower
 
         challenge_finalized = challenge.scores_finalized
@@ -71,7 +76,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             )
             late_users = {uid[0] for uid in late_user_ids}
 
-        from sqlalchemy import func, case
+        from sqlalchemy import case, func
 
         if late_users:
             is_final_active = case(
@@ -85,7 +90,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             s[0]
             for s in db.session.query(Task.id)
             .join(Stage, Task.stage_id == Stage.id)
-            .filter(Stage.challenge_id == challenge_id, Stage.is_test == True)
+            .filter(Stage.challenge_id == challenge_id, Stage.is_test)
             .all()
         ]
 
@@ -202,7 +207,8 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                 elif isinstance(comp.manual_points, str):
                     try:
                         manual_points_dict = json.loads(comp.manual_points)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Failed to parse manual_points for user %s: %s", comp.id, e)
                         manual_points_dict = {}
 
             total_points = sum(manual_points_dict.get(str(t.id), 0) for t in tasks)
@@ -297,13 +303,11 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
 
                 if not a["has_submitted"]:
                     name_a = (
-                        f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower()
-                        or a["user"].get("username", "").lower()
-                    )
+                        f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}"
+                    ).strip().lower() or a["user"].get("username", "").lower()
                     name_b = (
-                        f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower()
-                        or b["user"].get("username", "").lower()
-                    )
+                        f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}"
+                    ).strip().lower() or b["user"].get("username", "").lower()
                     if name_a != name_b:
                         return -1 if name_a < name_b else 1
                     return 0
@@ -380,9 +384,8 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
 
     from routes.tasks import check_task_started
 
-    if user_role == "competitor":
-        if not check_task_started(task, user_role, current_user_id):
-            return {"error": "Access denied or task not available yet."}
+    if user_role == "competitor" and not check_task_started(task, user_role, current_user_id):
+        return {"error": "Access denied or task not available yet."}
 
     all_completed = (
         Submission.query.filter_by(task_id=task_id, status="completed")
@@ -410,8 +413,8 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
                 ):
                     is_lower_better = True
                 break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
 
     competitors = User.query.filter_by(role="competitor", challenge_id=task.challenge_id).all()
     challenge_cache = {challenge.id: challenge}
@@ -538,13 +541,13 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
                 else task.metrics_config
             )
             if m_config:
-                keys = [k for k in m_config.keys() if not k.startswith("_")]
+                keys = [k for k in m_config if not k.startswith("_")]
                 if keys:
                     m_name = keys[0]
                     metric_name = m_name.replace("_", " ").title()
                     is_normalized = is_metric_lower_better(m_name)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
 
     return {
         "challenge_title": challenge.title,

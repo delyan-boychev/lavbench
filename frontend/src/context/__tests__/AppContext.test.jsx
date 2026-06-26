@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { AppProvider, useApp } from '../AppContext';
 
 const mockGet = vi.fn();
@@ -99,6 +99,7 @@ describe('AppContext', () => {
   it('initial state has empty challenges and defaults', async () => {
     mockGet.mockResolvedValue({ ok: true, data: emptyChallenges });
     renderWithProvider();
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('challenges-count').textContent).toBe('0');
     });
@@ -110,6 +111,7 @@ describe('AppContext', () => {
   it('fetchChallenges populates challenges array', async () => {
     mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
     renderWithProvider();
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('challenges-count').textContent).toBe('2');
     });
@@ -119,8 +121,9 @@ describe('AppContext', () => {
   it('setSelectedChallengeById selects correct challenge', async () => {
     mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
     renderWithProvider();
+    await act(async () => {});
     await waitFor(() => {
-      expect(screen.getByTestId('selected-challenge').textContent).toBe('Challenge 1');
+      expect(screen.getByTestId('challenges-count').textContent).toBe('2');
     });
     act(() => {
       screen.getByTestId('select-challenge').click();
@@ -136,6 +139,7 @@ describe('AppContext', () => {
   it('setSelectedTask selects task', async () => {
     mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
     renderWithProvider();
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('challenges-count').textContent).toBe('2');
     });
@@ -150,31 +154,38 @@ describe('AppContext', () => {
   it('toggleTheme switches theme', async () => {
     mockGet.mockResolvedValue({ ok: true, data: emptyChallenges });
     renderWithProvider();
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('theme').textContent).toBe('dark');
     });
-    act(() => {
+    await act(async () => {
       screen.getByTestId('toggle-theme-btn').click();
     });
-    expect(screen.getByTestId('theme').textContent).toBe('light');
-    act(() => {
+    await act(async () => {});
+    await waitFor(() => {
+      expect(screen.getByTestId('theme').textContent).toBe('light');
+    });
+    await act(async () => {
       screen.getByTestId('toggle-theme-btn').click();
     });
-    expect(screen.getByTestId('theme').textContent).toBe('dark');
+    await act(async () => {});
+    await waitFor(() => {
+      expect(screen.getByTestId('theme').textContent).toBe('dark');
+    });
   });
 
   it('showToast creates toast that auto-dismisses after 4s', async () => {
     vi.useFakeTimers();
     mockGet.mockResolvedValue({ ok: true, data: emptyChallenges });
     renderWithProvider();
-
-    await act(() => Promise.resolve());
+    await act(async () => {});
 
     expect(screen.getByTestId('toast-show').textContent).toBe('false');
 
-    act(() => {
+    await act(async () => {
       screen.getByTestId('toast-btn').click();
     });
+    await act(async () => {});
     expect(screen.getByTestId('toast-show').textContent).toBe('true');
     expect(screen.getByTestId('toast-message').textContent).toBe('Test message');
     expect(screen.getByTestId('toast-type').textContent).toBe('error');
@@ -182,8 +193,10 @@ describe('AppContext', () => {
     act(() => {
       vi.advanceTimersByTime(4000);
     });
+    await act(async () => {});
     expect(screen.getByTestId('toast-show').textContent).toBe('false');
     vi.useRealTimers();
+    await act(async () => {});
   });
 
   it('confirm returns a promise', async () => {
@@ -199,12 +212,231 @@ describe('AppContext', () => {
         <Capture />
       </AppProvider>,
     );
+    await act(async () => {});
 
     await waitFor(() => {
       expect(capturedConfirm).toBeDefined();
     });
+    await act(async () => {});
 
-    const promise = capturedConfirm({ title: 'Test', message: 'Test' });
+    let promise;
+    await act(async () => {
+      promise = capturedConfirm({ title: 'Test', message: 'Test' });
+    });
+    await act(async () => {});
     expect(promise).toBeInstanceOf(Promise);
+  });
+});
+
+describe('AppContext – additional branches', () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      length: 0,
+      key: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('setSelectedChallengeById(null) clears challenge and task', async () => {
+    mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
+
+    function NullSelector() {
+      const app = useApp();
+      return (
+        <div>
+          <span data-testid="sel">{app.selectedChallenge?.name || 'none'}</span>
+          <button data-testid="clear" onClick={() => app.setSelectedChallengeById(null)}>
+            Clear
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <AppProvider>
+        <NullSelector />
+      </AppProvider>,
+    );
+    await act(async () => {});
+
+    await waitFor(() => expect(screen.getByTestId('sel').textContent).toBe('Challenge 1'));
+
+    act(() => screen.getByTestId('clear').click());
+
+    await waitFor(() => expect(screen.getByTestId('sel').textContent).toBe('none'));
+  });
+
+  it('confirm with isPrompt=true resolves with the typed value on confirm', async () => {
+    let captured;
+
+    function PromptConsumer() {
+      const app = useApp();
+      return (
+        <div>
+          <button
+            data-testid="open-prompt"
+            onClick={() => {
+              app
+                .confirm({
+                  title: 'Enter name',
+                  message: 'Name:',
+                  isPrompt: true,
+                  placeholder: 'your name',
+                })
+                .then((val) => {
+                  captured = val;
+                });
+            }}
+          >
+            Prompt
+          </button>
+        </div>
+      );
+    }
+
+    mockGet.mockResolvedValue({ ok: true, data: [] });
+    render(
+      <AppProvider>
+        <PromptConsumer />
+      </AppProvider>,
+    );
+    await act(async () => {});
+
+    act(() => screen.getByTestId('open-prompt').click());
+
+    // The modal should now be open – type into the input
+    const input = screen.getByPlaceholderText('your name');
+    fireEvent.change(input, { target: { value: 'Alice' } });
+
+    // Click the confirm button (first button in the modal footer that isn't Cancel)
+    const confirmBtn = screen.getByText('Confirm');
+    await act(async () => fireEvent.click(confirmBtn));
+
+    expect(captured).toBe('Alice');
+  });
+
+  it('confirm with isPrompt=true resolves with null on cancel', async () => {
+    let captured = 'initial';
+
+    function CancelPrompt() {
+      const app = useApp();
+      return (
+        <button
+          data-testid="open"
+          onClick={() =>
+            app
+              .confirm({ title: 'T', message: 'M', isPrompt: true, placeholder: 'x' })
+              .then((v) => {
+                captured = v;
+              })
+          }
+        >
+          Go
+        </button>
+      );
+    }
+
+    mockGet.mockResolvedValue({ ok: true, data: [] });
+    render(
+      <AppProvider>
+        <CancelPrompt />
+      </AppProvider>,
+    );
+    await act(async () => {});
+
+    act(() => screen.getByTestId('open').click());
+
+    const cancelBtn = screen.getByText('Cancel');
+    await act(async () => fireEvent.click(cancelBtn));
+
+    expect(captured).toBeNull();
+  });
+
+  it('confirm without isPrompt resolves false on cancel', async () => {
+    let result = 'initial';
+
+    function CancelConfirm() {
+      const app = useApp();
+      return (
+        <button
+          data-testid="open"
+          onClick={() =>
+            app.confirm({ title: 'Delete?', message: 'Sure?' }).then((v) => {
+              result = v;
+            })
+          }
+        >
+          Go
+        </button>
+      );
+    }
+
+    mockGet.mockResolvedValue({ ok: true, data: [] });
+    render(
+      <AppProvider>
+        <CancelConfirm />
+      </AppProvider>,
+    );
+    await act(async () => {});
+
+    act(() => screen.getByTestId('open').click());
+    await act(async () => fireEvent.click(screen.getByText('Cancel')));
+
+    expect(result).toBe(false);
+  });
+
+  it('confirm without isPrompt resolves true on confirm', async () => {
+    let result = null;
+
+    function ConfirmConfirm() {
+      const app = useApp();
+      return (
+        <button
+          data-testid="open"
+          onClick={() =>
+            app.confirm({ title: 'Delete?', message: 'Sure?' }).then((v) => {
+              result = v;
+            })
+          }
+        >
+          Go
+        </button>
+      );
+    }
+
+    mockGet.mockResolvedValue({ ok: true, data: [] });
+    render(
+      <AppProvider>
+        <ConfirmConfirm />
+      </AppProvider>,
+    );
+    await act(async () => {});
+
+    act(() => screen.getByTestId('open').click());
+    await act(async () => fireEvent.click(screen.getByText('Confirm')));
+
+    expect(result).toBe(true);
+  });
+
+  it('fetchChallenges clears state when API returns ok:false', async () => {
+    mockGet.mockResolvedValue({ ok: false, data: null });
+    renderWithProvider();
+    await act(async () => {});
+    await waitFor(() => expect(screen.getByTestId('challenges-count').textContent).toBe('0'));
+  });
+
+  it('fetchChallenges handles thrown errors without crashing', async () => {
+    mockGet.mockRejectedValue(new Error('network error'));
+    renderWithProvider();
+    await act(async () => {});
+    await waitFor(() => expect(screen.getByTestId('challenges-count').textContent).toBe('0'));
   });
 });

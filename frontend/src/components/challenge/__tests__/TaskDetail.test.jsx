@@ -1,11 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import TaskDetail from './TaskDetail';
-import TaskService from '../../services/TaskService';
+import TaskDetail from '../TaskDetail';
+import TaskService from '../../../services/TaskService';
 
 // Mock TaskService
-vi.mock('../../services/TaskService', () => ({
+vi.mock('../../../services/TaskService', () => ({
   default: {
     getDownloadUrl: vi.fn(),
   },
@@ -80,10 +80,13 @@ describe('TaskDetail Component', () => {
     window.URL.revokeObjectURL = vi.fn();
 
     // Mock fetch for file download
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      blob: async () => mockBlob,
-    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        blob: async () => mockBlob,
+      }),
+    );
 
     TaskService.getDownloadUrl.mockReturnValue('/api/tasks/5/files/data_sample.csv');
 

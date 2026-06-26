@@ -3,8 +3,9 @@ from datetime import datetime, timedelta
 
 import pytest
 from werkzeug.security import generate_password_hash
-from models import db, User, Challenge
+
 from auth_utils import generate_token
+from models import Challenge, User, db
 
 
 class TestAuthLogin:
@@ -127,7 +128,7 @@ class TestAuthLogin:
         assert res.get_json()["code"] == "ERR_COMPETITION_ARCHIVED"
 
     def test_login_competitor_no_challenge_succeeds(self, client):
-        no_challenge = self._create_user(
+        self._create_user(
             "no_challenge_comp", self.password, role="competitor", alias_id="NoChal-001"
         )
         db.session.commit()

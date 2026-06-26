@@ -1,15 +1,16 @@
+import io
+import json
 import os
 import sys
-import json
-import io
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission, Stage
 from auth_utils import generate_token
+from models import Challenge, Stage, Submission, Task, User, db
 
 
 class TestSelectFinalSubmission:
@@ -762,6 +763,7 @@ class TestGetSubmissions:
         )
         db.session.add(self.sub2)
         db.session.commit()
+        db.session.expire_all()
 
         self.comp_token = generate_token(self.competitor.id, role="competitor")
         self.other_token = generate_token(self.other_comp.id, role="competitor")

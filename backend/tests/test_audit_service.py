@@ -1,5 +1,6 @@
-import pytest
 import uuid
+
+import pytest
 
 
 class TestAuditService:
@@ -109,8 +110,8 @@ class TestAuditLogsRoute:
         self.app = app
         self.client = app.test_client()
 
-        from models import User
         from auth_utils import generate_token
+        from models import User
 
         # Create users
         self.admin = User(
@@ -141,8 +142,9 @@ class TestAuditLogsRoute:
 
     def test_get_audit_logs_admin_allowed(self):
         # Create an audit log entry
-        from models import AuditLog
         from datetime import datetime
+
+        from models import AuditLog
 
         entry = AuditLog(
             admin_id=self.admin.id,
@@ -177,9 +179,9 @@ class TestAuditLogsRoute:
 
     def test_get_audit_logs_filter_by_challenge(self):
         # Create a challenge, tasks, stages, users
-        from models import Challenge, AuditLog
         from datetime import datetime, timedelta
-        from models import db
+
+        from models import AuditLog, Challenge, db
 
         challenge = Challenge(
             title="Audit Test Challenge",
@@ -218,9 +220,9 @@ class TestAuditLogsRoute:
         assert data["logs"][0]["target_id"] == str(challenge.id)
 
     def test_download_challenge_audit_logs_forbidden_for_jury(self):
-        from models import Challenge
-        from models import db
         from datetime import datetime, timedelta
+
+        from models import Challenge, db
 
         challenge = Challenge(
             title="Download Test Challenge",

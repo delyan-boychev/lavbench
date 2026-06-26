@@ -8,6 +8,7 @@ vi.mock('../ApiService.js', () => ({
     delete: vi.fn(),
     postForm: vi.fn(),
     putForm: vi.fn(),
+    getBlob: vi.fn(),
   },
 }));
 
@@ -182,6 +183,70 @@ describe('ChallengeService', () => {
 
       expect(result.ok).toBe(false);
       expect(result.status).toBe(422);
+    });
+  });
+
+  describe('finalizeStage', () => {
+    it('finalizes a stage', async () => {
+      api.post.mockResolvedValue({ ok: true, status: 200, data: { finalized: true } });
+
+      const result = await ChallengeService.finalizeStage(1, 5, { scores: [10] });
+
+      expect(api.post).toHaveBeenCalledWith('/challenges/1/stages/5/finalize', { scores: [10] });
+      expect(result.data).toEqual({ finalized: true });
+    });
+  });
+
+  describe('toggleRevealStage', () => {
+    it('toggles reveal results for a stage', async () => {
+      api.put.mockResolvedValue({ ok: true, status: 200, data: { reveal_results: true } });
+
+      const result = await ChallengeService.toggleRevealStage(1, 5, true);
+
+      expect(api.put).toHaveBeenCalledWith('/challenges/1/stages/5/reveal-results', {
+        reveal_results: true,
+      });
+      expect(result.data).toEqual({ reveal_results: true });
+    });
+  });
+
+  describe('downloadSubmission', () => {
+    it('downloads a submission as blob', async () => {
+      const blob = new Blob(['content']);
+      api.getBlob.mockResolvedValue({ ok: true, status: 200, data: blob });
+
+      const result = await ChallengeService.downloadSubmission(1, 10, 101);
+
+      expect(api.getBlob).toHaveBeenCalledWith('/challenges/1/tasks/10/users/101/download');
+      expect(result.data).toBe(blob);
+    });
+  });
+
+  describe('downloadAuditLogs', () => {
+    it('downloads audit logs as blob', async () => {
+      const blob = new Blob(['log content']);
+      api.getBlob.mockResolvedValue({ ok: true, status: 200, data: blob });
+
+      const result = await ChallengeService.downloadAuditLogs(1);
+
+      expect(api.getBlob).toHaveBeenCalledWith('/challenges/1/audit-logs/download');
+      expect(result.data).toBe(blob);
+    });
+  });
+
+  describe('downloadSubmissionUrl', () => {
+    it('returns download URL for submission', () => {
+      const url = ChallengeService.downloadSubmissionUrl(1, 10, 101);
+
+      expect(url).toBe('/challenges/1/tasks/10/users/101/download');
+    });
+  });
+
+  describe('downloadAuditLogsUrl', () => {
+    it('returns download URL for audit logs', () => {
+      const url = ChallengeService.downloadAuditLogsUrl(1);
+
+      expect(url).toBe('/challenges/1/audit-logs/download');
     });
   });
 });

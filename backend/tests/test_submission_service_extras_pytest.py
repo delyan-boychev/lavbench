@@ -1,15 +1,16 @@
+import json
 import os
 import sys
-import json
-import pytest
 import tempfile
+
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services.submission_service import (
+    check_execution_rules,
     extract_code_from_cells,
     extract_code_from_notebook,
-    check_execution_rules,
 )
 
 

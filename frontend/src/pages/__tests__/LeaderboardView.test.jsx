@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('react-router-dom', () => ({
   useParams: vi.fn(),
@@ -74,28 +74,36 @@ describe('LeaderboardView', () => {
     });
   });
 
-  it('sets selected challenge by id from params on mount', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sets selected challenge by id from params on mount', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     expect(mockSetSelectedChallengeById).toHaveBeenCalledWith('42');
   });
 
-  it('does not call setSelectedChallengeById when challengeId is absent', () => {
+  it('does not call setSelectedChallengeById when challengeId is absent', async () => {
     useParams.mockReturnValue({});
     render(<LeaderboardView />);
+    await act(async () => {});
     expect(mockSetSelectedChallengeById).not.toHaveBeenCalled();
   });
 
-  it('shows EmptyState when no challenge is selected', () => {
+  it('shows EmptyState when no challenge is selected', async () => {
     useApp.mockReturnValue({
       selectedChallenge: null,
       setSelectedChallengeById: mockSetSelectedChallengeById,
     });
     render(<LeaderboardView />);
+    await act(async () => {});
     expect(screen.getByTestId('empty-state')).toBeTruthy();
   });
 
   it('renders LeaderboardTable when a challenge is selected', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('leaderboard-table')).toBeTruthy();
     });
@@ -103,6 +111,7 @@ describe('LeaderboardView', () => {
 
   it('passes leaderboard data to LeaderboardTable', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('rows-count').textContent).toBe('2');
     });
@@ -110,6 +119,7 @@ describe('LeaderboardView', () => {
 
   it('passes tasks to LeaderboardTable', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('tasks-count').textContent).toBe('2');
     });
@@ -117,6 +127,7 @@ describe('LeaderboardView', () => {
 
   it('passes metric name to LeaderboardTable', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('metric-name').textContent).toBe('Accuracy');
     });
@@ -124,6 +135,7 @@ describe('LeaderboardView', () => {
 
   it('passes isNormalized to LeaderboardTable', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('is-normalized').textContent).toBe('false');
     });
@@ -131,18 +143,21 @@ describe('LeaderboardView', () => {
 
   it('passes challenge to LeaderboardTable', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('challenge-id').textContent).toBe('42');
     });
   });
 
-  it('shows loading state before leaderboard resolves', () => {
+  it('shows loading state before leaderboard resolves', async () => {
     render(<LeaderboardView />);
     expect(screen.getByTestId('loading').textContent).toBe('true');
+    await act(async () => {});
   });
 
   it('clears loading after leaderboard loads', async () => {
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('false');
     });
@@ -151,6 +166,7 @@ describe('LeaderboardView', () => {
   it('handles leaderboard API failure gracefully', async () => {
     ChallengeService.getLeaderboard.mockResolvedValue({ ok: false, data: {} });
     render(<LeaderboardView />);
+    await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('leaderboard-table')).toBeTruthy();
     });
@@ -158,18 +174,23 @@ describe('LeaderboardView', () => {
 
   it('polls leaderboard every 15 seconds', async () => {
     vi.useFakeTimers();
+    vi.stubGlobal('EventSource', undefined);
     render(<LeaderboardView />);
+    await act(async () => {});
 
     await vi.waitFor(() => {
       expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(1);
     });
 
     vi.advanceTimersByTime(15000);
+    await act(async () => {});
     expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(2);
 
     vi.advanceTimersByTime(15000);
+    await act(async () => {});
     expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(3);
 
     vi.useRealTimers();
+    await act(async () => {});
   });
 });

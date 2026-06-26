@@ -34,7 +34,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
-      - run: python -m pytest backend/tests/ -n auto -v --timeout=120 --cov=backend --cov-report=xml --cov-report=term-missing        
+      - run: python -m pytest backend/tests/ -n auto -v --timeout=120 --cov=backend --cov-report=xml --cov-report=term-missing
         env:
           REDIS_URL: "redis://localhost:6379/0"
           DATABASE_URL: "sqlite:///:memory:"
@@ -45,27 +45,17 @@ jobs:
           path: coverage.xml
           include-hidden-files: true
 
-  backend-security:
-    name: Backend security scan
+  backend-lint:
+    name: Backend lint & format (Ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
-      - run: pip install bandit
-      - run: bandit -r backend/ -c backend/pyproject.toml
-
-  backend-format:
-    name: Backend format (black)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - run: pip install "black==26.5.1"
-      - run: black --check --target-version py310 --config backend/pyproject.toml backend/
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check backend/
+      - run: ruff format --check backend/
 
   frontend-lint:
     name: Frontend lint

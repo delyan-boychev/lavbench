@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from models import User, Challenge, Task, Stage
+from models import Challenge, Stage, Task, User
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -71,8 +71,8 @@ class TestExportChallenge:
     def test_export_challenge_as_admin(
         self, client, auth_headers, tokens, challenge_with_stages_and_tasks
     ):
-        import zipfile
         import io
+        import zipfile
 
         ch = challenge_with_stages_and_tasks
         res = client.get(
@@ -103,8 +103,8 @@ class TestExportChallenge:
         challenge_with_stages_and_tasks,
         create_user,
     ):
-        import zipfile
         import io
+        import zipfile
 
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export", role="jury")
@@ -186,8 +186,8 @@ class TestImportChallenge:
     }
 
     def _import_zip(self, client, headers, payload=None, filename="challenge.zip"):
-        import zipfile
         import io
+        import zipfile
 
         if payload is None:
             payload = self.EXPORT_PAYLOAD
@@ -258,8 +258,8 @@ class TestImportChallenge:
         assert "title" in res.get_json()["error"].lower()
 
     def test_import_challenge_invalid_json(self, client, tokens):
-        import zipfile
         import io
+        import zipfile
 
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -282,8 +282,8 @@ class TestImportChallenge:
         )
 
     def test_import_challenge_not_a_dict(self, client, tokens):
-        import zipfile
         import io
+        import zipfile
 
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -358,7 +358,6 @@ class TestImportChallenge:
     def test_import_challenge_jury_forbidden(
         self, client, db_session, challenge_with_stages_and_tasks, create_user
     ):
-        ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_noimport", role="jury")
         from auth_utils import generate_token
 
@@ -373,10 +372,12 @@ class TestImportChallenge:
         assert "role" in res.get_json()["error"].lower()
 
     def test_import_challenge_with_zip_files(self, client, db_session, tokens):
-        import zipfile
         import io
         import os
+        import zipfile
+
         from flask import current_app
+
         from models import Challenge
 
         zip_buf = io.BytesIO()
@@ -403,7 +404,9 @@ class TestImportChallenge:
                         }
                     ],
                     "evaluator_script_path": f"/some/old/path/task_{old_task_uuid}/evaluator.py",
-                    "baseline_notebook_path": f"/some/old/path/task_{old_task_uuid}/baseline_test.ipynb",
+                    "baseline_notebook_path": (
+                        f"/some/old/path/task_{old_task_uuid}/baseline_test.ipynb"
+                    ),
                 }
             ],
         }

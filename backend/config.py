@@ -1,8 +1,12 @@
 """Application configuration loaded from environment variables."""
 
+import logging
 import os
 import sys
+
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env in workspace root
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
@@ -12,7 +16,7 @@ def _require_env(key, message=None):
     val = os.environ.get(key)
     if not val:
         msg = message or f"Required environment variable '{key}' is not set."
-        print(f"FATAL: {msg}", file=sys.stderr)
+        logger.error(f"FATAL: {msg}", file=sys.stderr)
         sys.exit(1)
     return val
 

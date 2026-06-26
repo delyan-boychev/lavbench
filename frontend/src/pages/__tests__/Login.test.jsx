@@ -120,4 +120,62 @@ describe('Login Page', () => {
 
     expect(screen.getByText('BG')).toBeInTheDocument();
   });
+
+  it('toggles language when language button is clicked', async () => {
+    render(<Login />);
+
+    const langBtn = screen.getByTitle('Премини на български');
+    await act(async () => {
+      fireEvent.click(langBtn);
+    });
+
+    expect(screen.getByText('BG')).toBeInTheDocument();
+  });
+
+  it('renders theme toggle button', () => {
+    render(<Login />);
+
+    expect(screen.getByTitle('Switch to light mode')).toBeInTheDocument();
+  });
+
+  it('renders MoonIcon when theme is light', () => {
+    useApp.mockReturnValue({
+      theme: 'light',
+      toggleTheme: vi.fn(),
+    });
+
+    render(<Login />);
+
+    expect(screen.getByTitle('Switch to dark mode')).toBeInTheDocument();
+  });
+
+  it('calls toggleTheme when theme button is clicked', async () => {
+    const mockToggleTheme = vi.fn();
+    useApp.mockReturnValue({
+      theme: 'dark',
+      toggleTheme: mockToggleTheme,
+    });
+
+    render(<Login />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Switch to light mode'));
+    });
+
+    expect(mockToggleTheme).toHaveBeenCalled();
+  });
+
+  it('displays error from authError object with code', () => {
+    useAuth.mockReturnValue({
+      currentUser: null,
+      authLoading: false,
+      authError: { code: 'INVALID_CREDENTIALS', error: 'Invalid email or password' },
+      login: mockLogin,
+    });
+
+    render(<Login />);
+
+    // The t() function returns the key itself when translation is missing
+    expect(screen.getByText('api.INVALID_CREDENTIALS')).toBeInTheDocument();
+  });
 });

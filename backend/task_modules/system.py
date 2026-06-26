@@ -1,14 +1,16 @@
 """Celery task for system maintenance — cleanup, watchdog, diagnostics."""
 
-import os
+import contextlib
 import glob
 import json
-import tempfile
-import subprocess
-import urllib.parse
-import requests
 import logging
+import os
+import subprocess
+import tempfile
+import urllib.parse
 from datetime import datetime
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +140,7 @@ def run_backup(app, auto=True, db_only=False):
                 json.dump(serialized_logs, f, indent=2)
         except Exception as e:
             logger.error("Failed to dump audit logs during backup: %s", str(e))
-            raise RuntimeError(f"Failed to dump audit logs: {str(e)}")
+            raise RuntimeError(f"Failed to dump audit logs: {str(e)}") from e
 
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
         tar_args = [
@@ -176,21 +178,19 @@ def run_backup(app, auto=True, db_only=False):
 
             now = datetime.utcnow()
             active_comp = Challenge.query.filter(
-                Challenge.is_active == True,
-                Challenge.is_archived == False,
+                Challenge.is_active,
+                not Challenge.is_archived,
                 Challenge.start_time <= now,
-                (Challenge.end_time == None) | (Challenge.end_time >= now),
+                (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
             ).first()
             if active_comp is not None:
                 keep_count = 6
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to publish backup event: %s", e)
 
         for old in auto_files[:-keep_count]:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(old)
-            except OSError:
-                pass
 
     # SSE notification
     _publish_backup_event(filename, file_size, None, None)
@@ -212,15 +212,15 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
                 "state": state,
             }
             r.publish("backup_status", json.dumps(payload))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to publish backup event: %s", e)
 
 
 def run_docker_prune():
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
     try:
         result = subprocess.run(
-            ["docker", "image", "prune", "-f"],
+            ["docker", "image", "prune", "-f"], # noqa: S607
             capture_output=True,
             text=True,
             check=True,

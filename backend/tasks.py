@@ -1,10 +1,22 @@
 """Celery task definitions and beat schedule for async evaluation and backups."""
 
+import contextlib
+import logging
 import os
 import time
-import logging
-from celery import Celery
 from datetime import datetime, timedelta
+
+from celery import Celery
+
+from task_modules.leaderboard import run_recalculate_all_leaderboards
+from task_modules.submission_runner import run_eval_submission
+from task_modules.system import (
+    run_backup as _do_backup,
+)
+from task_modules.system import (
+    run_docker_prune,
+    run_register_worker_specs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +40,7 @@ if RUNNING_AS_WORKER:
     Challenge = None
 else:
     from app import create_app
-    from models import db, Submission, Challenge
+    from models import Challenge, Submission, db
 
     app = create_app()
     celery = Celery(
@@ -73,14 +85,6 @@ celery.conf.update(
     worker_max_tasks_per_child=50,
     worker_concurrency=1,
 )
-
-from task_modules.submission_runner import run_eval_submission
-from task_modules.system import (
-    run_register_worker_specs,
-    run_backup as _do_backup,
-    run_docker_prune,
-)
-from task_modules.leaderboard import run_recalculate_all_leaderboards
 
 
 @celery.task(
@@ -173,14 +177,12 @@ def check_and_backup():
         from config import Config
 
         now = datetime.utcnow()
-        grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
-        window = timedelta(minutes=20)
+        timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+        timedelta(minutes=20)
 
         from models import Challenge
 
-        challenges = Challenge.query.filter(
-            Challenge.is_active == True, Challenge.is_archived == False
-        ).all()
+        challenges = Challenge.query.filter(Challenge.is_active, not Challenge.is_archived).all()
 
         active_count = 0
         for c in challenges:
@@ -189,7 +191,7 @@ def check_and_backup():
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
-        from cache_utils import get_redis_client, get_cached, set_cached
+        from cache_utils import get_cached, get_redis_client, set_cached
 
         r = get_redis_client()
         if r:
@@ -272,8 +274,12 @@ def watchdog_stuck_submissions():
                             from sse_utils import publish_submission_status
 
                             publish_submission_status(sub.id, sub.status)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(
+                                ("Failed to publish status for recovered submission %s: %s"),
+                                sub.id,
+                                e,
+                            )
                     except Exception as e:
                         logger.error(
                             "Watchdog: failed to recover fallback for submission %s: %s",
@@ -318,8 +324,10 @@ def watchdog_stuck_submissions():
                 from sse_utils import publish_submission_status
 
                 publish_submission_status(sub.id, sub.status)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    ("Failed to publish status for timed-out submission %s: %s"), sub.id, e
+                )
 
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
@@ -355,9 +363,10 @@ def recalculate_dirty_leaderboards():
             return {"recalculated": 0}
 
         recalculated_count = 0
-        from services.leaderboard_service import build_and_cache_leaderboard
-        from models import Challenge
         import json
+
+        from models import Challenge
+        from services.leaderboard_service import build_and_cache_leaderboard
 
         with app.app_context():
             for cid_bytes in dirty_challenges:
@@ -439,13 +448,11 @@ if INTERNAL_ONLY_WORKER or EVALUATION_ONLY_WORKER:
         "tasks.prune_docker_images",
     }
     for tname in all_task_names:
-        if INTERNAL_ONLY_WORKER and tname in evaluation_tasks:
-            try:
+        if (
+            INTERNAL_ONLY_WORKER
+            and tname in evaluation_tasks
+            or EVALUATION_ONLY_WORKER
+            and tname not in evaluation_tasks
+        ):
+            with contextlib.suppress(KeyError):
                 celery.tasks.unregister(tname)
-            except KeyError:
-                pass
-        elif EVALUATION_ONLY_WORKER and tname not in evaluation_tasks:
-            try:
-                celery.tasks.unregister(tname)
-            except KeyError:
-                pass

@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import Pagination from './Pagination';
+import Pagination from '../Pagination';
 
 describe('Pagination Component', () => {
   it('renders nothing when pages <= 1 and total is 0', () => {

@@ -1,5 +1,7 @@
 import os
+
 from flask import Blueprint, jsonify, request
+
 from auth_utils import role_required
 
 docs_bp = Blueprint("docs", __name__)
@@ -36,14 +38,14 @@ def read_doc_file(filename, lang="en"):
     # Determine guides base directory and ensure we never escape it
     guides_base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "guides"))
 
-    for l in langs_to_try:
-        safe_path = os.path.abspath(os.path.join(guides_base, l, filename))
+    for lng in langs_to_try:
+        safe_path = os.path.abspath(os.path.join(guides_base, lng, filename))
         # Verify the resolved path stays within guides_base
         if os.path.commonpath([safe_path, guides_base]) != guides_base:
             continue
         if os.path.isfile(safe_path):
             try:
-                with open(safe_path, "r", encoding="utf-8") as f:
+                with open(safe_path, encoding="utf-8") as f:
                     return f.read()
             except Exception as e:
                 return f"Error reading documentation file: {str(e)}"

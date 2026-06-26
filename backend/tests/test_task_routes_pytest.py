@@ -1,15 +1,16 @@
+import json
 import os
 import sys
-import json
-import pytest
 import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import db, User, Challenge, Task, Submission, Stage
 from auth_utils import generate_token
+from models import Challenge, Stage, Submission, Task, User, db
 
 
 class TestCheckCompetitorAccess:
@@ -376,8 +377,8 @@ class TestMaybeQueueBaseline:
         mock_exists.return_value = True
         self.task.baseline_notebook_path = "/tmp/empty.ipynb"
         db.session.commit()
-        from routes.tasks import _maybe_queue_baseline
         import routes.tasks
+        from routes.tasks import _maybe_queue_baseline
 
         with patch.object(routes.tasks, "extract_code_from_notebook", return_value=[]):
             _maybe_queue_baseline(self.task, self.challenge, self.admin.id)

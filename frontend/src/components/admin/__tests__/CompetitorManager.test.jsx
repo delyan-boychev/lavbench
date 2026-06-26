@@ -20,13 +20,14 @@ vi.mock('../../ui/InputField', () => ({
 }));
 
 vi.mock('../../ui/Button', () => ({
-  default: ({ children, type, variant, className, disabled, size }) => (
+  default: ({ children, type, variant, className, disabled, size, onClick }) => (
     <button
       type={type}
       data-variant={variant}
       data-size={size}
       className={className}
       disabled={disabled}
+      onClick={onClick}
     >
       {children}
     </button>
@@ -342,5 +343,102 @@ describe('CompetitorManager', () => {
     const forms = screen.getAllByText('Upload & Parse CSV').map((el) => el.closest('form'));
     fireEvent.submit(forms[0]);
     expect(handleCSVImport).toHaveBeenCalled();
+  });
+
+  it('allows downloading imported CSV credentials', () => {
+    const mockImported = [{ id: '1', name: 'Test', generated_password: 'pwd' }];
+    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    window.URL.createObjectURL = mockCreateObjectURL;
+    const clickSpy = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    render(<CompetitorManager {...baseProps} importedCompetitors={mockImported} />);
+    const downloadBtn = screen.getByText('Download Credentials (CSV)');
+    fireEvent.click(downloadBtn);
+
+    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+  });
+
+  it('allows downloading bulk reset credentials CSV', () => {
+    const mockReset = [{ id: '2', username: 'Test', password: 'pwd' }];
+    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    window.URL.createObjectURL = mockCreateObjectURL;
+    const clickSpy = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    render(<CompetitorManager {...baseProps} bulkResetCredentials={mockReset} />);
+    const downloadBtn = screen.getByText('Download Credentials (CSV)');
+    fireEvent.click(downloadBtn);
+
+    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+  });
+
+  it('triggers table actions (Edit and Reset Password)', () => {
+    const competitors = [
+      {
+        id: 10,
+        alias_id: 'comp1',
+        name: 'Alice',
+        surname: 'Smith',
+        role: 'competitor',
+        username: 'alice123',
+        is_anonymous: false,
+        grade: '10',
+        school: 'Math School',
+        city: 'Sofia',
+        challenge_id: 1,
+      },
+    ];
+    const initEditUser = vi.fn();
+    const handleResetUserPassword = vi.fn();
+    render(
+      <CompetitorManager
+        {...baseProps}
+        competitorsList={competitors}
+        initEditUser={initEditUser}
+        handleResetUserPassword={handleResetUserPassword}
+      />,
+    );
+    fireEvent.click(screen.getByText('Edit'));
+    expect(initEditUser).toHaveBeenCalledWith(competitors[0]);
+
+    fireEvent.click(screen.getByText('Reset PW'));
+    expect(handleResetUserPassword).toHaveBeenCalledWith(10, 'Alice Smith');
+  });
+
+  it('triggers bulk password reset', () => {
+    const competitors = [
+      {
+        id: 10,
+        alias_id: 'comp1',
+        name: 'Alice',
+        surname: 'Smith',
+        role: 'competitor',
+        username: 'alice123',
+        is_anonymous: false,
+        grade: '10',
+        school: 'Math School',
+        city: 'Sofia',
+        challenge_id: 1,
+      },
+    ];
+    const handleBulkResetPasswords = vi.fn();
+    render(
+      <CompetitorManager
+        {...baseProps}
+        competitorsList={competitors}
+        handleBulkResetPasswords={handleBulkResetPasswords}
+      />,
+    );
+    fireEvent.click(screen.getByText('Reset All Passwords in Challenge'));
+    expect(handleBulkResetPasswords).toHaveBeenCalledTimes(1);
   });
 });

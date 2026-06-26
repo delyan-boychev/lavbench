@@ -1,11 +1,12 @@
 """Redis connection pool, distributed cache locking, and dead-letter logging."""
 
-import os
 import json
-import uuid
-from datetime import datetime
-from contextlib import contextmanager
 import logging
+import os
+import uuid
+from contextlib import contextmanager, suppress
+from datetime import datetime
+
 import redis as redis_lib
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,8 @@ def cache_lock(lock_key, ttl=120):
                 return 0
                 """
                 r.eval(lua_script, 1, lock_key, owner)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
 
 
 def acquire_cache_lock(lock_key, ttl=30):
@@ -93,10 +94,8 @@ def release_cache_lock(lock_key):
     r = get_redis_client()
     if not r:
         return
-    try:
+    with suppress(Exception):
         r.delete(lock_key)
-    except Exception:
-        pass
 
 
 def log_dead_letter(submission_id, task_id=None, challenge_id=None, error=None):
@@ -179,10 +178,8 @@ def invalidate_leaderboard_cache(challenge_id, delete_only=False):
         delete_cached(f"leaderboard:pending:{challenge_id}")
         r = get_redis_client()
         if r:
-            try:
+            with suppress(Exception):
                 r.srem("leaderboard:dirty_challenges", challenge_id)
-            except Exception:
-                pass
         return
 
     r = get_redis_client()
@@ -190,8 +187,8 @@ def invalidate_leaderboard_cache(challenge_id, delete_only=False):
         try:
             r.sadd("leaderboard:dirty_challenges", challenge_id)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to mark challenge %s as dirty in Redis: %s", challenge_id, e)
 
     # Fallback if Redis is down/unavailable: delete cache to avoid serving stale indefinitely
     delete_cached(f"leaderboard:raw:{challenge_id}:frozen")

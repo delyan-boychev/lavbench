@@ -1,11 +1,12 @@
 import json
+
 from services.file_validation import (
+    check_dangerous_extension,
+    check_dangerous_magic,
+    validate_csv_content,
     validate_extension,
     validate_mime_type,
     validate_notebook_content,
-    validate_csv_content,
-    check_dangerous_magic,
-    check_dangerous_extension,
 )
 
 

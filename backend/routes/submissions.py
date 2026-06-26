@@ -1,13 +1,16 @@
-import os
+import contextlib
 import io
 import json
 import logging
+import os
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+
+from flask import Blueprint, jsonify, request
 from sqlalchemy.orm import joinedload
-from models import db, Challenge, Submission, User, Task, decrypt_field
-from auth_utils import login_required, rate_limit, role_required, jury_access_required
-from sse_utils import publish_submissions_update, publish_leaderboard_update
+
+from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from models import Challenge, Submission, Task, User, db, decrypt_field
+from sse_utils import publish_leaderboard_update, publish_submissions_update
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +224,9 @@ def submit_code(challenge_id):
         return (
             jsonify(
                 {
-                    "error": "This competition is currently frozen. Submissions are temporarily blocked.",
+                    "error": (
+                        "This competition is currently frozen. Submissions are temporarily blocked."
+                    ),
                     "code": "ERR_COMPETITION_FROZEN",
                 }
             ),
@@ -251,6 +256,7 @@ def submit_code(challenge_id):
     if user_role == "competitor":
         now = datetime.utcnow()
         from datetime import timedelta
+
         from config import Config
 
         grace_seconds = Config.DEADLINE_GRACE_PERIOD_SECONDS
@@ -295,7 +301,9 @@ def submit_code(challenge_id):
                 return (
                     jsonify(
                         {
-                            "error": "This competition has ended and no longer accepts submissions.",
+                            "error": (
+                                "This competition has ended and no longer accepts submissions."
+                            ),
                             "code": "ERR_COMPETITION_ENDED",
                         }
                     ),
@@ -362,7 +370,10 @@ def submit_code(challenge_id):
             return (
                 jsonify(
                     {
-                        "error": f"Daily limit reached. You can only make {challenge.max_eval_requests} submissions per day.",
+                        "error": (
+                            f"Daily limit reached. You can only make "
+                            f"{challenge.max_eval_requests} submissions per day."
+                        ),
                         "code": "ERR_DAILY_LIMIT_REACHED",
                     }
                 ),
@@ -381,20 +392,18 @@ def submit_code(challenge_id):
         db.session.commit()
 
     # Trigger Celery Task asynchronously
-    from tasks import evaluate_submission
     from services.submission_service import (
-        extract_code_from_cells,
         calculate_submission_priority,
+        extract_code_from_cells,
     )
+    from tasks import evaluate_submission
 
     task_files_list = []
     if task.files:
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
             task_files_list = json.loads(task.files)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
 
-    hf_token = task.get_hf_api_key() or ""
+    task.get_hf_api_key() or ""
     main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
     gpu_required = False
@@ -415,12 +424,11 @@ def submit_code(challenge_id):
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
         "is_custom_eval": (
-            True
-            if (
+            bool(
                 task.custom_eval_code
-                or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
+                or task.evaluator_script_path
+                and os.path.exists(task.evaluator_script_path)
             )
-            else False
         ),
         "metrics_config": task.metrics_config,
         "hf_datasets": (
@@ -547,7 +555,10 @@ def get_submissions(challenge_id):
             return (
                 jsonify(
                     {
-                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "error": (
+                            "Access denied. Submissions are "
+                            "locked because the competition has ended."
+                        ),
                         "code": "ERR_SUBMISSIONS_LOCKED",
                     }
                 ),
@@ -570,7 +581,7 @@ def get_submissions(challenge_id):
                 joinedload(Submission.task),
             )
             .join(Task)
-            .filter(or_(Task.stage_id == None, Task.stage_id.in_(active_stage_ids)))
+            .filter(or_(Task.stage_id.is_(None), Task.stage_id.in_(active_stage_ids)))
         )
     else:
         query = Submission.query.filter_by(challenge_id=challenge_id).options(
@@ -657,7 +668,10 @@ def get_submission_detail(submission_id):
             return (
                 jsonify(
                     {
-                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "error": (
+                            "Access denied. Submissions are "
+                            "locked because the competition has ended."
+                        ),
                         "code": "ERR_SUBMISSIONS_LOCKED",
                     }
                 ),
@@ -674,7 +688,10 @@ def get_submission_detail(submission_id):
                     return (
                         jsonify(
                             {
-                                "error": "Access denied. Submissions are locked because the stage has ended.",
+                                "error": (
+                                    "Access denied. Submissions are "
+                                    "locked because the stage has ended."
+                                ),
                                 "code": "ERR_SUBMISSIONS_LOCKED",
                             }
                         ),
@@ -773,7 +790,9 @@ def select_final_submission(submission_id):
                     return (
                         jsonify(
                             {
-                                "error": "Cannot select a submission created after the stage deadline.",
+                                "error": (
+                                    "Cannot select a submission created after the stage deadline."
+                                ),
                                 "code": "ERR_SUBMISSION_LATE",
                             }
                         ),
@@ -842,7 +861,7 @@ def stream_submission_logs(submission_id):
     """
     Stream live logs for a submission using Server-Sent Events (SSE).
     """
-    from flask import current_app, Response, stream_with_context
+    from flask import Response, current_app, stream_with_context
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -860,7 +879,10 @@ def stream_submission_logs(submission_id):
             return (
                 jsonify(
                     {
-                        "error": "Access denied. Submissions are locked because the competition has ended.",
+                        "error": (
+                            "Access denied. Submissions are "
+                            "locked because the competition has ended."
+                        ),
                         "code": "ERR_SUBMISSIONS_LOCKED",
                     }
                 ),
@@ -877,7 +899,10 @@ def stream_submission_logs(submission_id):
                     return (
                         jsonify(
                             {
-                                "error": "Access denied. Submissions are locked because the stage has ended.",
+                                "error": (
+                                    "Access denied. Submissions are "
+                                    "locked because the stage has ended."
+                                ),
                                 "code": "ERR_SUBMISSIONS_LOCKED",
                             }
                         ),
@@ -906,8 +931,10 @@ def stream_submission_logs(submission_id):
                         if sub and sub.logs:
                             for line in sub.logs.splitlines():
                                 yield f"data: {json.dumps({'log': line})}\n\n"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    ("Failed to retrieve existing logs for submission %s: %s"), submission_id, e
+                )
         else:
             with current_app.app_context():
                 sub = db.session.get(Submission, submission_id)
@@ -945,8 +972,8 @@ def stream_submission_logs(submission_id):
                                 "failed",
                             ):
                                 break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Failed to parse SSE message: %s", e)
                     else:
                         yield ": keep-alive\n\n"
 
@@ -964,15 +991,15 @@ def stream_submission_logs(submission_id):
                 try:
                     pubsub.unsubscribe()
                     pubsub.close()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug("Error during pubsub cleanup on GeneratorExit: %s", e)
             except Exception as e:
                 logger.error("SSE logs streaming error: %s", e)
                 try:
                     pubsub.unsubscribe()
                     pubsub.close()
-                except:
-                    pass
+                except Exception as cleanup_e:
+                    logger.debug("Error during pubsub cleanup after SSE error: %s", cleanup_e)
         else:
             # Fallback to database/file logs and simple polling
             last_yielded_len = 0
@@ -1054,7 +1081,7 @@ def download_competitor_submission(challenge_id, task_id, user_id):
             if isinstance(best_sub.code_cells, str)
             else best_sub.code_cells
         )
-    except:
+    except json.JSONDecodeError:
         cells_data = []
 
     ipynb_cells = []

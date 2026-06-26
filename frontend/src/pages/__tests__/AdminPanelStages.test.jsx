@@ -1,17 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
-import { useAuth } from '../AuthContext';
-import { useApp } from '../context/AppContext';
-import AdminPanel from './AdminPanel';
+import { useAuth } from '../../AuthContext';
+import { useApp } from '../../context/AppContext';
+import AdminPanel from '../AdminPanel';
 
 // Mock AuthContext
-vi.mock('../AuthContext', () => ({
+vi.mock('../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
 // Mock AppContext
-vi.mock('../context/AppContext', () => ({
+vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
@@ -56,26 +56,32 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       confirm: mockConfirm,
     });
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-      if (url.includes('/challenges')) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/challenges')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              items: [mockStagesChallenge],
+              total: 1,
+              pages: 1,
+            }),
+          });
+        }
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            items: [mockStagesChallenge],
-            total: 1,
-            pages: 1,
-          }),
+          json: async () => ({}),
         });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      });
-    });
+      }),
+    );
   });
 
   it('renders stages list in the challenge view', async () => {
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
     });
@@ -84,6 +90,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('triggers stage creation modal when "+ Add Stage" is clicked and handles submission', async () => {
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -130,6 +139,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('triggers stage editing and submits update', async () => {
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -170,6 +182,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   it('triggers stage deletion API call when confirmed', async () => {
     mockConfirm.mockResolvedValue(true);
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -200,6 +215,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('triggers stage finalization modal and submits configuration', async () => {
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -232,6 +250,9 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('disables challenge finalization button if any stage is unfinalized', async () => {
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -268,24 +289,30 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       confirm: mockConfirm,
     });
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-      if (url.includes('/challenges')) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/challenges')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              items: [mockFinalizedChallenge],
+              total: 1,
+              pages: 1,
+            }),
+          });
+        }
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            items: [mockFinalizedChallenge],
-            total: 1,
-            pages: 1,
-          }),
+          json: async () => ({}),
         });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      });
-    });
+      }),
+    );
 
     render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
 
     await vi.waitFor(() => {
       expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
@@ -313,5 +340,101 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     );
 
     expect(mockShowToast).toHaveBeenCalledWith('Scores finalized and de-anonymized!');
+  });
+
+  // ── Stage error paths ────────────────────────────────────────────────────
+
+  it('handles stage finalization API error', async () => {
+    render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
+    });
+
+    const stageRow = screen.getByText(/Stage 1\s*:\s*Stage 1/).closest('div').parentElement;
+    const finalizeBtn = within(stageRow).getByRole('button', { name: 'Finalize' });
+    fireEvent.click(finalizeBtn);
+    expect(screen.getByText('Finalize Stage: Stage 1')).toBeInTheDocument();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/api/challenges/1/stages/10/finalize')) {
+          return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'fail' }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }),
+    );
+
+    const submitBtn = screen.getByRole('button', { name: 'Finalize Stage' });
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+
+    expect(mockShowToast).toHaveBeenCalled();
+  });
+
+  it('skips stage delete API call when user cancels confirm', async () => {
+    mockConfirm.mockResolvedValue(false);
+
+    render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
+    });
+
+    const stageRow = screen.getByText(/Stage 1\s*:\s*Stage 1/).closest('div').parentElement;
+    const deleteBtn = within(stageRow).getByText('Delete');
+    fireEvent.click(deleteBtn);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(mockConfirm).toHaveBeenCalled();
+    const deleteCalls = global.fetch.mock.calls.filter(
+      ([url]) => typeof url === 'string' && url.includes('/challenges/1/stages/10'),
+    );
+    expect(deleteCalls).toHaveLength(0);
+  });
+
+  it('renders public stage badge for finalized revealed stage', async () => {
+    const revealedStageChallenge = {
+      ...mockStagesChallenge,
+      stages: [{ ...mockStagesChallenge.stages[0], is_finalized: true, reveal_results: true }],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url) => {
+        if (url.includes('/challenges')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              items: [revealedStageChallenge],
+              total: 1,
+              pages: 1,
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }),
+    );
+
+    render(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
+    });
+
+    // The stage badge should show "public" when finalized and revealed
+    expect(screen.getByText('Public')).toBeInTheDocument();
   });
 });

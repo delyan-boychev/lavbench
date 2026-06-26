@@ -1,29 +1,32 @@
 """Celery task for executing student submissions in Docker sandboxes."""
 
-import os
+import contextlib
+import fcntl
 import json
+import logging
+import math
+import os
 import subprocess
 import tempfile
 import time
-import math
 import traceback
-import requests
-import fcntl
 from datetime import datetime
-import logging
+
+import requests
+from celery.signals import worker_ready
+
 from cache_utils import get_redis_client
+from worker_utils import (
+    MockModel,
+    StreamingLogList,
+    _sign_worker_token,
+    download_labels_parquet_to_dir,
+    download_task_files_to_dir,
+    report_status_to_server,
+    run_command_streaming,
+)
 
 logger = logging.getLogger(__name__)
-
-from worker_utils import (
-    run_command_streaming,
-    StreamingLogList,
-    MockModel,
-    report_status_to_server,
-    download_task_files_to_dir,
-    download_labels_parquet_to_dir,
-    _sign_worker_token,
-)
 
 
 def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
@@ -53,7 +56,10 @@ def _image_exists(tag):
     """Check if a Docker image tag already exists locally."""
     try:
         res = subprocess.run(
-            ["docker", "images", "-q", tag], capture_output=True, text=True, timeout=10
+            ["docker", "images", "-q", tag], # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return bool(res.stdout.strip())
     except Exception:
@@ -99,10 +105,8 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
 
     hf_token = None
     if task and hasattr(task, "get_hf_api_key"):
-        try:
+        with contextlib.suppress(Exception):
             hf_token = task.get_hf_api_key()
-        except Exception:
-            pass
 
     if not hf_token:
         hf_token = None
@@ -136,7 +140,8 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
                     logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
         except Exception as import_err:
             logs.append(
-                f"Warning: Could not import 'huggingface_hub' on host to preload models: {import_err}"
+                f"Warning: Could not import 'huggingface_hub' "
+                f"on host to preload models: {import_err}"
             )
 
 
@@ -179,8 +184,8 @@ def calculate_weighted_score(metrics_payload, metrics_cfg):
     return weighted_sum / total_weight
 
 
-def run_eval_submission(self_task, submission_id, metadata, app, db, Submission, Challenge):
-    RUNNING_AS_WORKER = app is None
+def run_eval_submission(self_task, submission_id, metadata, app, db, submission_cls, challenge_cls):
+    running_as_worker = app is None
     # 1. Setup mock/real models
     if metadata:
         task = MockModel(
@@ -223,7 +228,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         )
     else:
         with app.app_context():
-            db_submission = db.session.get(Submission, submission_id)
+            db_submission = db.session.get(submission_cls, submission_id)
             if not db_submission:
                 return f"Submission {submission_id} not found."
             # Idempotency: skip if already in a terminal state
@@ -339,7 +344,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                             json.dumps(fallback, default=str),
                         )
                         logs_list.append(
-                            "[WARNING] Could not reach main server. Result saved to Redis fallback — server watchdog will recover it."
+                            "[WARNING] Could not reach main server. Result saved "
+                            "to Redis fallback — server watchdog will recover it."
                         )
                     except Exception as fallback_err:
                         logs_list.append(
@@ -356,20 +362,26 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                             logs_list.append(
                                 f"[CRITICAL] Result saved to local file: {fallback_path}"
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(
+                                ("Failed to write local fallback file for submission %s: %s"),
+                                submission_id,
+                                e,
+                            )
                 else:
-                    # Intermediate status: best-effort — already logged to Redis via StreamingLogList
+                    # Intermediate status: best-effort —
+                    # already logged to Redis via StreamingLogList
+
                     pass
         else:
             with app.app_context():
                 from sse_utils import (
-                    publish_submissions_update,
                     publish_leaderboard_update,
+                    publish_submissions_update,
                 )
 
                 db.session.expire_all()
-                sub = db.session.get(Submission, submission_id)
+                sub = db.session.get(submission_cls, submission_id)
                 if sub:
                     sub.status = status_val
                     sub.detailed_status = detailed_val
@@ -443,14 +455,11 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             time_limit = challenge.time_limit_sec
 
             # Check if this is a unified evaluation plan (modalities-specific)
-        if metadata:
-            is_unified_parquet = metadata.get("is_unified_parquet", True)
-        else:
-            is_unified_parquet = True
+        is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
 
         # Write user code to temporary file / directory
         temp_dir = tempfile.mkdtemp()
-        os.chmod(temp_dir, 0o777)  # nosec B103 — temp dir for Docker mount, deleted after
+        os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
@@ -508,12 +517,12 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     for g_id in gpus:
                         lock_path = os.path.join(tempfile.gettempdir(), f"gpu_lock_{g_id}.lock")
                         try:
-                            f = open(lock_path, "w")
+                            f = open(lock_path, "w")  # noqa: SIM115  # intentionally kept open for lock
                             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
                             acquired_gpu = g_id
                             gpu_lock_file = f
                             break
-                        except (IOError, OSError):
+                        except OSError:
                             continue
                     if acquired_gpu is None:
                         time.sleep(1)
@@ -530,7 +539,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             gpu_id = None
 
         hf_cache_dir = os.environ.get("HF_CACHE_DIR")
-        if not hf_cache_dir and not RUNNING_AS_WORKER:
+        if not hf_cache_dir and not running_as_worker:
             hf_cache_dir = app.config.get("HF_CACHE_DIR")
 
         valid_cache = False
@@ -538,16 +547,16 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             try:
                 os.makedirs(hf_cache_dir, exist_ok=True)
                 valid_cache = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not create HF cache dir %s: %s", hf_cache_dir, e)
 
         if not valid_cache:
             relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "hf_cache"))
             try:
                 os.makedirs(relative_path, exist_ok=True)
                 hf_cache_dir = relative_path
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not create fallback HF cache dir %s: %s", hf_cache_dir, e)
 
         if hf_cache_dir:
             env["HF_HOME"] = hf_cache_dir
@@ -564,11 +573,11 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         # Phase 2: Build / Prepare environment (image pre-built by worker startup)
         docker_available = False
         try:
-            res = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+            res = subprocess.run(["docker", "--version"], capture_output=True, text=True)  # noqa: S607
             if res.returncode == 0:
                 docker_available = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Docker version check failed: %s", e)
 
         if not docker_available:
             logs.append(
@@ -658,7 +667,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 "--ulimit",
                 "nproc=64:64",
                 "--tmpfs",
-                "/tmp:noexec,nosuid,size=128m",
+                "/tmp:noexec,nosuid,size=128m",  # noqa: S108
                 "-m",
                 f"{ram_limit}m",
                 "--memory-swap",
@@ -697,13 +706,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         )
         if process_timeout:
             result = subprocess.run(
-                ["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"],
+                ["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"],  # noqa: S607
                 capture_output=True,
                 text=True,
             )
             container_id = result.stdout.strip()
             if container_id:
-                subprocess.run(["docker", "kill", container_id], capture_output=True)
+                subprocess.run(["docker", "kill", container_id], capture_output=True)  # noqa: S607
 
         end_wall_time = time.time()
 
@@ -726,7 +735,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             if not os.path.exists(sub_parquet_path):
                 status = "failed"
                 logs.append(
-                    "Error: The submission did not generate 'submission.parquet'. Ensure your code saves predictions to this file."
+                    "Error: The submission did not generate "
+                    "'submission.parquet'. Ensure your code saves predictions to this file."
                 )
             else:
                 # Locate labels.parquet on the host
@@ -757,11 +767,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                 if not labels_path or not os.path.exists(labels_path):
                     status = "failed"
                     logs.append(
-                        "Error: The task ground-truth 'labels.parquet' file could not be found or loaded."
+                        "Error: The task ground-truth "
+                        "'labels.parquet' file could not be found or loaded."
                     )
                 else:
                     try:
                         import pandas as pd
+
                         from evaluation_engine import (
                             evaluate_predictions,
                             validate_parquet_schema,
@@ -883,15 +895,15 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
                     import shutil
 
                     shutil.rmtree(host_labels_dir, ignore_errors=True)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.debug("Could not remove host labels dir %s: %s", host_labels_dir, e)
 
         try:
             import shutil
 
             shutil.rmtree(temp_dir, ignore_errors=True)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.debug("Could not remove temp dir %s: %s", temp_dir, e)
 
         # Write final results status back to server or DB
         update_status(
@@ -909,8 +921,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
             from sse_utils import clear_submission_logs
 
             clear_submission_logs(submission_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to clear SSE logs for submission %s: %s", submission_id, e)
 
     except Exception as e:
         status = "failed"
@@ -921,22 +933,15 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, Submission,
         else:
             logger.error(f"[FATAL] Unhandled worker crash: {e}\n{traceback.format_exc()}")
             logs_list = [f"[FATAL] Unhandled worker crash: {e}"]
-        try:
+        with contextlib.suppress(Exception):
             update_status("failed", "failed", logs_list=logs_list)
-        except Exception:
-            pass
         raise
     finally:
         if "gpu_lock_file" in locals() and gpu_lock_file:
-            try:
+            with contextlib.suppress(Exception):
                 gpu_lock_file.close()
-            except Exception:
-                pass
 
     return f"Submission {submission_id} evaluated with status {status}"
-
-
-from celery.signals import worker_ready
 
 
 @worker_ready.connect
@@ -954,17 +959,17 @@ def register_worker_specs(sender, **kwargs):
         ram_gb = 8.0
         try:
             if platform.system() == "Linux":
-                with open("/proc/meminfo", "r") as f:
+                with open("/proc/meminfo") as f:
                     for line in f:
                         if "MemTotal" in line:
                             ram_kb = int(line.split()[1])
                             ram_gb = round(ram_kb / (1024 * 1024), 1)
                             break
             elif platform.system() == "Darwin":
-                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
+                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())  # noqa: S607
                 ram_gb = round(total_bytes / (1024**3), 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to detect system RAM, using default 8.0 GB: %s", e)
 
         gpu_id = os.environ.get("WORKER_GPU_ID", None)
         has_gpu = gpu_id is not None or "gpu" in worker_name.lower()
@@ -976,7 +981,7 @@ def register_worker_specs(sender, **kwargs):
             try:
                 gpu_name_out = (
                     subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
+                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]  # noqa: S607
                     )
                     .decode("utf-8")
                     .strip()
@@ -985,7 +990,7 @@ def register_worker_specs(sender, **kwargs):
                     gpu_type = gpu_name_out.split("\n")[0]
                 vram_out = (
                     subprocess.check_output(
-                        [
+                        [  # noqa: S607
                             "nvidia-smi",
                             "--query-gpu=memory.total",
                             "--format=csv,noheader,nounits",

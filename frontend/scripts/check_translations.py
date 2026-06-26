@@ -14,7 +14,6 @@ import os
 import re
 import json
 import sys
-from collections import defaultdict
 
 # ── Colours ────────────────────────────────────────────────────────────────
 RED = "\033[91m"
@@ -206,7 +205,7 @@ def main():
     print(f"  Bulgarian keys: {len(bg_keys)}")
 
     used_keys, dynamic_prefixes = extract_used_keys(src_dir)
-    print(f"  Source files scanned in src/")
+    print("  Source files scanned in src/")
     print(f"  Static keys used : {len(used_keys)}")
     if dynamic_prefixes:
         dyn_list = sorted(dynamic_prefixes)

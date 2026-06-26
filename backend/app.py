@@ -1,18 +1,21 @@
 """Flask application factory and Swagger/OpenAPI configuration."""
 
+import logging
 import os
 
 # Load .env before any module that reads environment variables
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+logger = logging.getLogger(__name__)
 
-from flask import Flask, jsonify
-from flask_cors import CORS
-from flasgger import Swagger
-from werkzeug.middleware.proxy_fix import ProxyFix
-from config import Config
-from models import db
+from flasgger import Swagger  # noqa: E402
+from flask import Flask, jsonify  # noqa: E402
+from flask_cors import CORS  # noqa: E402
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
+
+from config import Config  # noqa: E402
+from models import db  # noqa: E402
 
 
 def create_app():
@@ -27,13 +30,13 @@ def create_app():
     db.init_app(app)
 
     # Register Service Blueprints
-    from routes.auth import auth_bp
     from routes.admin import admin_bp
+    from routes.auth import auth_bp
     from routes.challenges import challenges_bp
-    from routes.submissions import submissions_bp
-    from routes.leaderboard import leaderboard_bp
-    from routes.tasks import tasks_bp
     from routes.docs import docs_bp
+    from routes.leaderboard import leaderboard_bp
+    from routes.submissions import submissions_bp
+    from routes.tasks import tasks_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
@@ -276,8 +279,10 @@ def create_app():
                 "used_gb": round(used / (1024**3), 1),
                 "free_gb": round(free / (1024**3), 1),
             }
-        except Exception:
-            pass
+        except Exception as e:
+            checks["disk"] = f"error: {e}"
+            logger.warning("Disk usage check failed: %s", e)
+            all_ok = False  # mark as degraded if disk check fails
 
         status_code = 200 if all_ok else 503
         return (
@@ -306,4 +311,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
-    app.run(host="0.0.0.0", port=5001, debug=debug_mode)
+    app.run(host="0.0.0.0", port=5001, debug=debug_mode)  # noqa: S104
