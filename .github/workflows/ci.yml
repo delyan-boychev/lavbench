@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install ruff==0.15.19
-      - run: ruff check backend/
+      - run: ruff check backend/ --config backend/pyproject.toml
       - run: ruff format --check backend/ --config backend/pyproject.toml
 
   frontend-lint:
