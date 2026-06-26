@@ -12,10 +12,15 @@ import zoneinfo
 from datetime import datetime
 
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import event, text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.types import CHAR, TypeDecorator
+
+# Load .env before any env-dependent module-level code
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
+from sqlalchemy import event, text  # noqa: E402
+from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
+from sqlalchemy.types import CHAR, TypeDecorator  # noqa: E402
 
 
 def uuid7():

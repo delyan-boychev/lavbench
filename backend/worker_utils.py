@@ -202,14 +202,13 @@ def report_status_to_server(
 
     import sys
 
-    if "pytest" in sys.modules:
-        import requests
-
-        if not hasattr(requests.post, "assert_called") and any(
-            lh in url for lh in ("localhost", "127.0.0.1")
-        ):
-            logger.info("Skipping real network request to localhost in test runner: %s", url)
-            return True
+    if (
+        "pytest" in sys.modules
+        and not hasattr(requests.post, "assert_called")
+        and any(lh in url for lh in ("localhost", "127.0.0.1"))
+    ):
+        logger.info("Skipping real network request to localhost in test runner: %s", url)
+        return True
     token = _sign_worker_token(submission_id)
     headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
 
