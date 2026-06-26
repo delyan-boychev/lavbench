@@ -25,6 +25,9 @@ from worker_utils import (
     run_command_streaming,
 )
 
+from task_modules.docker_utils import _get_client, check_docker_available
+from task_modules.docker_utils import image_exists as _image_exists_docker
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,20 +52,6 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     except Exception as e:
         logger.warning("_fetch_hf_key_from_server: request failed: %s", e)
     return ""
-
-
-def _image_exists(tag):
-    """Check if a Docker image tag already exists locally."""
-    try:
-        res = subprocess.run(
-            ["docker", "images", "-q", tag],  # noqa: S607
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return bool(res.stdout.strip())
-    except Exception:
-        return False
 
 
 def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
@@ -570,14 +559,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
             os.fchmod(f.fileno(), 0o644)
 
         # Phase 2: Build / Prepare environment (image pre-built by worker startup)
-        docker_available = False
-        try:
-            res = subprocess.run(["docker", "--version"], capture_output=True, text=True)  # noqa: S607
-            if res.returncode == 0:
-                docker_available = True
-        except Exception as e:
-            logger.warning("Docker version check failed: %s", e)
-
+        docker_available = check_docker_available()
         if not docker_available:
             logs.append(
                 "Error: Docker is not available on the worker node. Execution blocked for security."
@@ -591,7 +573,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
             base_image = task.base_docker_image or "python:3.10-slim"
 
-            if _image_exists(image_tag):
+            if _image_exists_docker(image_tag):
                 logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
             else:
                 logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
@@ -634,84 +616,44 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         elif challenge and challenge.ram_limit_mb is not None:
             ram_limit = challenge.ram_limit_mb
 
-        gpu_args = []
-        if gpu_required:
-            if gpu_id is not None:
-                gpu_args = [
-                    "--gpus",
-                    f"device={gpu_id}",
-                    "-e",
-                    "CUDA_VISIBLE_DEVICES=0",
-                ]
-            else:
-                gpu_args = ["--gpus", "all"]
+        environment = {
+            "HOME": "/tmp",  # noqa: S108
+            "HF_HOME": "/hf_cache",
+            "HF_DATASETS_CACHE": "/hf_cache",
+            "HF_DATASETS_OFFLINE": "1",
+            "HF_HUB_OFFLINE": "1",
+            "PYTHONUNBUFFERED": "1",
+            "RESULTS_KEY": results_key,
+        }
 
-        cmd = (
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--network",
-                "none",
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges:true",
-                "--pids-limit",
-                "64",
-                "--cpus",
-                "2",
-                "--ulimit",
-                "nofile=256:256",
-                "--ulimit",
-                "nproc=64:64",
-                "--tmpfs",
-                "/tmp:noexec,nosuid,size=128m",  # noqa: S108
-                "-m",
-                f"{ram_limit}m",
-                "--memory-swap",
-                f"{ram_limit}m",
-                "-v",
-                f"{temp_dir}:/app",
-                "-w",
-                "/app",
-            ]
-            + gpu_args
-            + [
-                "-e",
-                "HOME=/tmp",
-                "-e",
-                "HF_HOME=/hf_cache",
-                "-e",
-                "HF_DATASETS_CACHE=/hf_cache",
-                "-e",
-                "HF_DATASETS_OFFLINE=1",
-                "-e",
-                "HF_HUB_OFFLINE=1",
-                "-e",
-                "PYTHONUNBUFFERED=1",
-                "-e",
-                f"RESULTS_KEY={results_key}",
-                image_tag,
-                "python",
-                "-u",
-                exec_file,
-            ]
+        if gpu_required and gpu_id is not None:
+            environment["CUDA_VISIBLE_DEVICES"] = "0"
+
+        docker_client = _get_client()
+        logs.append(
+            f"Executing sandbox: image={image_tag}, "
+            f"command=python -u {exec_file}, "
+            f"ram={ram_limit}M, cpus=2"
         )
-
-        logs.append(f"Executing sandbox command: {' '.join(cmd)}")
         retcode, stdout, stderr, process_timeout = run_command_streaming(
-            cmd, logs, time_limit=time_limit
+            docker_client,
+            image_tag,
+            command=["python", "-u", exec_file],
+            logs_list=logs,
+            time_limit=time_limit,
+            mem_limit=f"{ram_limit}m",
+            cpu_count=2,
+            network_mode="none",
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            pids_limit=64,
+            tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+            volumes={temp_dir: {"bind": "/app", "mode": "rw"}},
+            working_dir="/app",
+            environment=environment,
+            gpu_required=gpu_required,
+            gpu_id=gpu_id,
         )
-        if process_timeout:
-            result = subprocess.run(
-                ["docker", "ps", "-q", "--filter", f"ancestor={image_tag}"],  # noqa: S607
-                capture_output=True,
-                text=True,
-            )
-            container_id = result.stdout.strip()
-            if container_id:
-                subprocess.run(["docker", "kill", container_id], capture_output=True)  # noqa: S607
 
         end_wall_time = time.time()
 

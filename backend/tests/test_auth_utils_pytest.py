@@ -257,6 +257,16 @@ class TestRateLimit:
         mock_tracker.rl2_calls = []
         mock_tracker.user1_calls = []
         mock_tracker.user2_calls = []
+        # Flush rate-limit keys (safe here because xdist_group serialises this class)
+        try:
+            from cache_utils import get_redis_client
+
+            r = get_redis_client()
+            if r:
+                for key in r.scan_iter("rate:*"):
+                    r.delete(key)
+        except Exception:  # noqa: S110
+            pass
 
     def test_allows_under_limit(self, rate_limit_client):
         for _ in range(3):

@@ -2,11 +2,11 @@
 
 import logging
 import os
-import subprocess
 import threading
 import time
 
 import requests
+from docker.types import DeviceRequest, Ulimit
 
 logger = logging.getLogger(__name__)
 
@@ -38,79 +38,115 @@ def _sign_worker_token(submission_id):
         return ""
 
 
-def run_command_streaming(cmd, logs_list, time_limit=None):
+def run_command_streaming(
+    docker_client,
+    image_tag,
+    command,
+    logs_list,
+    time_limit=None,
+    mem_limit=None,
+    cpu_count=2,
+    network_mode="none",
+    cap_drop=None,
+    security_opt=None,
+    pids_limit=64,
+    tmpfs=None,
+    volumes=None,
+    working_dir="/app",
+    environment=None,
+    gpu_required=False,
+    gpu_id=None,
+):
+    """Run a Docker container and stream its output to *logs_list* in real-time.
+
+    Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
-    Runs a command and streams stdout/stderr lines to logs_list in real-time.
-    Returns (returncode, stdout_str, stderr_str, is_timeout).
-    """
-    stdout_lines = []
-    stderr_lines = []
-    process_timeout = False
+    ulimits = [
+        Ulimit(name="nofile", soft=256, hard=256),
+        Ulimit(name="nproc", soft=64, hard=64),
+    ]
+
+    device_requests = None
+    if gpu_required:
+        if gpu_id is not None:
+            device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
+        else:
+            device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]
 
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        container = docker_client.containers.run(
+            image_tag,
+            command,
+            detach=True,
+            network_mode=network_mode,
+            cap_drop=cap_drop or ["ALL"],
+            security_opt=security_opt or ["no-new-privileges:true"],
+            pids_limit=pids_limit,
+            nano_cpus=int(cpu_count * 1e9),
+            mem_limit=mem_limit,
+            memswap_limit=mem_limit,
+            tmpfs=tmpfs or {"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+            volumes=volumes,
+            working_dir=working_dir,
+            environment=environment,
+            ulimits=ulimits,
+            device_requests=device_requests,
+        )
+    except Exception as exc:
+        logs_list.append(f"Failed to start container: {exc}")
+        return -1, "", str(exc), False
 
-        def read_pipe(pipe, collector, is_err=False):
-            try:
-                for line in iter(pipe.readline, ""):
-                    if not isinstance(line, str):
-                        break
-                    collector.append(line)
-                    clean_line = line.rstrip("\r\n")
-                    if is_err:
-                        logs_list.append(f"[stderr] {clean_line}")
-                    else:
-                        logs_list.append(clean_line)
-            except Exception:
-                logger.exception("Error reading pipe")
-            finally:
-                try:
-                    pipe.close()
-                except Exception:
-                    logger.debug("Error closing pipe", exc_info=True)
+    stdout_lines = []
+    process_timeout = False
 
-        t_out = threading.Thread(target=read_pipe, args=(proc.stdout, stdout_lines, False))
-        t_err = threading.Thread(target=read_pipe, args=(proc.stderr, stderr_lines, True))
+    def stream_logs():
+        try:
+            for chunk in container.logs(stream=True, follow=True):
+                if chunk:
+                    text = chunk.decode("utf-8", errors="replace")
+                    for line in text.splitlines(keepends=True):
+                        clean = line.rstrip("\r\n")
+                        if clean:
+                            stdout_lines.append(clean)
+                            logs_list.append(clean)
+        except Exception:
+            logger.debug("Log stream ended", exc_info=True)
 
-        t_out.start()
-        t_err.start()
+    t = threading.Thread(target=stream_logs, daemon=True)
+    t.start()
 
-        start_wait = time.time()
+    start_wait = time.time()
+    try:
         while True:
-            ret = proc.poll()
-            if ret is not None:
+            container.reload()
+            if container.status in ("exited", "removing", "dead"):
                 break
             if time_limit and (time.time() - start_wait > time_limit):
-                proc.kill()
+                container.kill()
                 process_timeout = True
                 break
             time.sleep(0.1)
-
-        t_out.join(timeout=30.0)
-        t_err.join(timeout=30.0)
-
-        # Drain any remaining pipe data after join
-        try:
-            remaining = proc.stdout.read()
-            if remaining:
-                stdout_lines.append(remaining)
-                logs_list.append(remaining.rstrip("\r\n"))
-        except Exception:
-            logger.debug("Error draining stdout pipe", exc_info=True)
-        try:
-            remaining = proc.stderr.read()
-            if remaining:
-                stderr_lines.append(remaining)
-                logs_list.append("[stderr] " + remaining.rstrip("\r\n"))
-        except Exception:
-            logger.debug("Error draining stderr pipe", exc_info=True)
-
-        stdout_str = "".join(stdout_lines)
-        stderr_str = "".join(stderr_lines)
-        return proc.returncode, stdout_str, stderr_str, process_timeout
     except Exception as exc:
-        logs_list.append(f"Failed to execute command: {exc}")
-        return -1, "", str(exc), False
+        logs_list.append(f"Error during container execution: {exc}")
+        container.kill()
+        process_timeout = True
+
+    t.join(timeout=30.0)
+
+    try:
+        result = container.wait()
+        exit_code = result.get("StatusCode", -1)
+    except Exception:
+        exit_code = -1
+
+    try:
+        container.remove(force=True)
+    except Exception:
+        logger.debug("Error removing container", exc_info=True)
+
+    stdout_str = "\n".join(stdout_lines)
+    stderr_str = ""
+    return exit_code, stdout_str, stderr_str, process_timeout
 
 
 MAX_LOG_LINES = 10000

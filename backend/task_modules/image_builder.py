@@ -13,10 +13,11 @@ import hashlib
 import json
 import logging
 import os
-import re
 import shlex
-import subprocess
 import time
+
+from task_modules.docker_utils import _get_client
+from task_modules.docker_utils import image_exists as _image_exists
 
 logger = logging.getLogger(__name__)
 
@@ -24,23 +25,6 @@ TASK_IMAGES_DIR = os.environ.get(
     "TASK_IMAGES_DIR",
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "task_images")),
 )
-
-
-def _image_exists(tag):
-    """Check if a Docker image tag already exists locally."""
-    # Ensure tag only contains safe characters (alnum, -, _, .)
-    if not re.match(r"^[a-zA-Z0-9_.-]+$", tag):
-        return False
-    try:
-        res = subprocess.run(
-            ["docker", "images", "-q", tag],  # noqa: S607
-            capture_output=True,
-            text=True,
-            timeout=10,  # noqa: S607
-        )
-        return bool(res.stdout.strip())
-    except Exception:
-        return False
 
 
 def _config_hash(base_image, pip_packages, hf_datasets, hf_models):
@@ -205,14 +189,20 @@ def build_task_image(metadata):
 
 
 def _run_docker_build(tag, build_dir, logs):
-    """Run ``docker build`` and capture output."""
-    cmd = ["docker", "build", "-t", tag, build_dir]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if result.stdout:
-        logs.append(result.stdout.strip())
-    if result.stderr:
-        logs.append(result.stderr.strip())
-    return result.returncode, result.stdout, result.stderr, False
+    """Build Docker image using the SDK and capture output."""
+    client = _get_client()
+    try:
+        build_logs = []
+        image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
+        for entry in build_logs:
+            if "stream" in entry:
+                line = entry["stream"].rstrip("\n")
+                if line:
+                    logs.append(line)
+        return 0, "", "", False
+    except Exception as e:
+        logs.append(f"Docker build failed: {e}")
+        return -1, "", str(e), False
 
 
 def build_all_active_tasks(main_server_url, worker_token):

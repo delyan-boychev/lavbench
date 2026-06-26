@@ -20,6 +20,18 @@ def _now_local_for_timezone(timezone_str):
         return datetime.utcnow()
 
 
+def _to_utc(dt, timezone_str="UTC"):
+    """Convert *dt* to offset-naive UTC.
+
+    If *dt* is already timezone-aware, convert directly to UTC and strip tzinfo.
+    If *dt* is naive, interpret it as being in *timezone_str* first.
+    """
+    if dt.tzinfo is not None:
+        return dt.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
+    tz = zoneinfo.ZoneInfo(timezone_str)
+    return dt.replace(tzinfo=tz).astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
+
+
 def filter_challenge_for_competitor(challenge_dict):
     challenge_dict = dict(challenge_dict)
     now = datetime.utcnow()
@@ -365,6 +377,11 @@ def create_challenge():
 
     timezone = data.get("timezone", "UTC")
 
+    if start_time:
+        start_time = _to_utc(start_time, timezone)
+    if end_time:
+        end_time = _to_utc(end_time, timezone)
+
     if not title:
         return (
             jsonify(
@@ -474,11 +491,9 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     """Create a test stage with warm-up task for the given challenge."""
     from models import Stage, Task
 
-    # Ensure start_time/end_time are offset-naive UTC for comparison with DB values
-    if start_time.tzinfo is not None:
-        start_time = start_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-    if end_time.tzinfo is not None:
-        end_time = end_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
+    tz = challenge.timezone or "UTC"
+    start_time = _to_utc(start_time, tz)
+    end_time = _to_utc(end_time, tz)
 
     if end_time > challenge.start_time:
         raise ValueError("Test stage must end before the competition starts.")
@@ -665,6 +680,7 @@ def update_challenge(challenge_id):
     if gpu_required is not None:
         challenge.gpu_required = bool(gpu_required)
 
+    timezone = data.get("timezone", challenge.timezone or "UTC")
     if "start_time" in data:
         st = parse_datetime(data.get("start_time"))
         if not st:
@@ -677,12 +693,12 @@ def update_challenge(challenge_id):
                 ),
                 400,
             )
-        challenge.start_time = st
+        challenge.start_time = _to_utc(st, timezone)
     if "end_time" in data:
         et = parse_datetime(data.get("end_time"))
         if not et:
             return jsonify({"error": "End time is required.", "code": "ERR_DATETIME_REQUIRED"}), 400
-        challenge.end_time = et
+        challenge.end_time = _to_utc(et, timezone)
 
     if challenge.end_time <= challenge.start_time:
         return (
@@ -1050,10 +1066,8 @@ def create_stage(challenge_id):
     if not start_time or not end_time:
         return jsonify({"error": "Invalid date format.", "code": "ERR_INVALID_DATE_FORMAT"}), 400
 
-    if start_time.tzinfo is not None:
-        start_time = start_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-    if end_time.tzinfo is not None:
-        end_time = end_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
+    start_time = _to_utc(start_time, challenge.timezone or "UTC")
+    end_time = _to_utc(end_time, challenge.timezone or "UTC")
 
     if end_time <= start_time:
         return (
@@ -1173,15 +1187,11 @@ def update_stage(challenge_id, stage_id):
     if "start_time" in data:
         t = parse_datetime(data["start_time"])
         if t:
-            if t.tzinfo is not None:
-                t = t.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-            stage.start_time = t
+            stage.start_time = _to_utc(t, challenge.timezone or "UTC")
     if "end_time" in data:
         t = parse_datetime(data["end_time"])
         if t:
-            if t.tzinfo is not None:
-                t = t.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-            stage.end_time = t
+            stage.end_time = _to_utc(t, challenge.timezone or "UTC")
     if "reveal_results" in data:
         stage.reveal_results = bool(data["reveal_results"])
     if "is_finalized" in data:

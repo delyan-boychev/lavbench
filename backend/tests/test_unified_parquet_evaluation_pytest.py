@@ -79,8 +79,7 @@ class TestUnifiedParquetEvaluation:
             "solution_notebook": (io.BytesIO(b"# Solution"), "solution.ipynb"),
         }
 
-    @patch("subprocess.run")
-    def test_celery_evaluate_submission_unified_parquet(self, mock_subproc):
+    def test_celery_evaluate_submission_unified_parquet(self):
         from tasks import evaluate_submission
 
         task = Task(
@@ -130,10 +129,20 @@ class TestUnifiedParquetEvaluation:
             df_sub.to_parquet(os.path.join(td, "submission.parquet"))
             return td
 
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="", stderr="")
-
         with (
             patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
+            patch(
+                "task_modules.submission_runner.check_docker_available",
+                return_value=True,
+            ),
+            patch(
+                "task_modules.submission_runner._get_client",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "task_modules.submission_runner._image_exists_docker",
+                return_value=True,
+            ),
             patch(
                 "task_modules.submission_runner.run_command_streaming",
                 return_value=(0, "", "", False),
@@ -160,13 +169,23 @@ class TestUnifiedParquetEvaluation:
             df_sub.to_parquet(os.path.join(td, "submission.parquet"))
             return td
 
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="", stderr="")
-
         sub.status = "queued"
         db.session.commit()
 
         with (
             patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
+            patch(
+                "task_modules.submission_runner.check_docker_available",
+                return_value=True,
+            ),
+            patch(
+                "task_modules.submission_runner._get_client",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "task_modules.submission_runner._image_exists_docker",
+                return_value=True,
+            ),
             patch(
                 "task_modules.submission_runner.run_command_streaming",
                 return_value=(0, "", "", False),

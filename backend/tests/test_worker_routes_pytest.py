@@ -15,16 +15,17 @@ class TestWorkerEndpoints:
     def setup(self, client, db_session, app_ctx, redis_flush, monkeypatch):
         self.client = client
         self._monkeypatch = monkeypatch
-        import shutil
+        import tempfile
 
-        upload_folder = os.path.join(os.path.dirname(__file__), "..", "test_uploads")
-        os.makedirs(upload_folder, exist_ok=True)
+        upload_folder = tempfile.mkdtemp()
         from flask import current_app
 
         current_app.config["UPLOAD_FOLDER"] = upload_folder
         self.upload_folder = upload_folder
         self.seed_basic_data()
         yield
+        import shutil
+
         shutil.rmtree(upload_folder, ignore_errors=True)
 
     def seed_basic_data(self):
@@ -107,7 +108,7 @@ class TestWorkerEndpoints:
         assert resp.status_code == 200
 
     def test_report_progress_updates_submission(self):
-        self.client.post(
+        resp = self.client.post(
             f"/api/worker/report/{self.submission.id}",
             json={
                 "status": "completed",
@@ -119,6 +120,7 @@ class TestWorkerEndpoints:
             },
             headers=self._worker_headers(),
         )
+        assert resp.status_code == 200
 
         # Wait for the log to be committed and visible (max 5 seconds)
         timeout = 5

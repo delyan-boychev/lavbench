@@ -112,8 +112,6 @@ def redis_flush():
             # causes race conditions across workers.
             worker_id = os.environ.get("PYTEST_XDIST_WORKER")
             if worker_id:
-                # If your backend isolates keys with prefixes (e.g., test_gw0_*),
-                # scan and clear only those keys.
                 for key in r.scan_iter(f"*{worker_id}*"):
                     r.delete(key)
             else:

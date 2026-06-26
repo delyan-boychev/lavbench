@@ -375,19 +375,16 @@ class TestBackendExceptionAndErrorCases:
 
     @patch("requests.post")
     @patch("worker_utils.download_task_files_to_dir")
-    @patch("subprocess.run")
+    @patch("task_modules.submission_runner.run_command_streaming")
+    @patch("task_modules.submission_runner._get_client")
+    @patch("task_modules.submission_runner.check_docker_available")
     def test_evaluate_submission_callback_failure_raises_runtime_error(
-        self, mock_sub, mock_dl, mock_post
+        self, mock_post, mock_dl, mock_stream, mock_get_client, mock_docker_check
     ):
+        mock_docker_check.return_value = True
+        mock_get_client.return_value = MagicMock()
         mock_post.return_value = MagicMock(status_code=500)
-        mock_sub.return_value = MagicMock(
-            returncode=0,
-            stdout=(
-                '{"status": "success", "public_score": 0.85, '
-                '"private_score": 0.85, "execution_time_ms": 5}'
-            ),
-            stderr="",
-        )
+        mock_stream.return_value = (0, "", "", False)
 
         from tasks import evaluate_submission
 

@@ -179,21 +179,43 @@ class TestTaskFileDownload:
 class TestLoginRateLimiting:
     """Rate-limiting helpers in routes/auth.py + login endpoint 429."""
 
+    @pytest.fixture(autouse=True)
+    def clear_login_failures(self):
+        """Flush login_failure keys between tests (safe under xdist_group)."""
+        try:
+            from cache_utils import get_redis_client
+
+            r = get_redis_client()
+            if r:
+                for key in r.scan_iter("login_failures:*"):
+                    r.delete(key)
+        except Exception:  # noqa: S110
+            pass
+
     def test_no_failures_not_exceeded(self, redis_flush):
+        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded
 
+        r = get_redis_client()
+        if r:
+            r.delete("login_failures:user:nonexistent_user", "login_failures:ip:1.2.3.4")
         assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
 
     def test_five_failures_exceeds_user_limit(self, redis_flush):
+        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded, _record_login_failure
 
         username = "rate_test_user"
         ip = "10.0.0.1"
+        r = get_redis_client()
+        if r:
+            r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
         for _ in range(5):
             _record_login_failure(username, ip)
         assert _login_rate_limit_exceeded(username, ip) is True
 
     def test_clear_failures_resets_limit(self, redis_flush):
+        from cache_utils import get_redis_client
         from routes.auth import (
             _clear_login_failures,
             _login_rate_limit_exceeded,
@@ -202,6 +224,9 @@ class TestLoginRateLimiting:
 
         username = "clear_test_user"
         ip = "10.0.0.2"
+        r = get_redis_client()
+        if r:
+            r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
         for _ in range(5):
             _record_login_failure(username, ip)
         assert _login_rate_limit_exceeded(username, ip) is True
@@ -209,20 +234,26 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded(username, ip) is False
 
     def test_thirty_ip_failures_exceeds_ip_limit(self, redis_flush):
+        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded, _record_login_failure
 
         ip = "10.0.0.100"
+        r = get_redis_client()
+        if r:
+            r.delete(f"login_failures:ip:{ip}")
         for i in range(30):
             _record_login_failure(f"user_{i}", ip)
         assert _login_rate_limit_exceeded("some_other_user", ip) is True
 
-    def test_login_endpoint_returns_429(self, client, db_session, app_ctx):
-        from routes.auth import _clear_login_failures
+    def test_login_endpoint_returns_429(self, client, db_session, app_ctx, redis_flush):
+        from cache_utils import get_redis_client
 
-        # Explicitly clear the tracking cache for this test's target
         target_ip = "198.51.100.99"
         target_user = "ratelimitme"
-        _clear_login_failures(target_user, target_ip)
+
+        r = get_redis_client()
+        if r:
+            r.delete(f"login_failures:user:{target_user}", f"login_failures:ip:{target_ip}")
 
         user = User(
             username=target_user,
@@ -230,18 +261,16 @@ class TestLoginRateLimiting:
             role="competitor",
         )
         db_session.add(user)
-        db_session.flush()
+        db_session.commit()
 
         headers = {"X-Forwarded-For": target_ip}
 
         for _ in range(5):
-            resp = client.post(
+            client.post(
                 "/api/auth/login",
                 json={"username": target_user, "password": "wrongpass"},
                 headers=headers,
             )
-            # Remove the assert here to just let it build up the failure count naturally
-            # without crashing if it hits the limit boundary mid-loop
 
         resp = client.post(
             "/api/auth/login",

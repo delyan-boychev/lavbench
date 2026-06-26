@@ -101,7 +101,7 @@ def run_backup(app, auto=True, db_only=False):
         if auto:
             pg_dump_cmd = ["nice", "-n", "19"] + pg_dump_cmd
 
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 — args from trusted config
             pg_dump_cmd,
             env=env,
             capture_output=True,
@@ -160,7 +160,7 @@ def run_backup(app, auto=True, db_only=False):
         if auto:
             tar_args = ["nice", "-n", "19"] + tar_args
 
-        result = subprocess.run(tar_args, env=env, capture_output=True, text=True)
+        result = subprocess.run(tar_args, env=env, capture_output=True, text=True)  # noqa: S603 — args from trusted config
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")
 
@@ -218,15 +218,6 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
 
 def run_docker_prune():
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
-    try:
-        result = subprocess.run(
-            ["docker", "image", "prune", "-f"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        logger.info("Docker image prune succeeded: %s", result.stdout.strip())
-        return {"status": "success", "output": result.stdout.strip()}
-    except Exception as e:
-        logger.exception("Docker image prune failed: %s", str(e))
-        return {"status": "failed", "error": str(e)}
+    from task_modules.docker_utils import prune_images
+
+    return prune_images()

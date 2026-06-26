@@ -45,41 +45,46 @@ class TestSubmissionRunnerMetrics:
         assert score == 0.0
 
 
+captured_run_kwargs = {}
+
+
 class CommandInterruptedError(Exception):
-    def __init__(self, cmd):
-        super().__init__()
-        self.cmd = cmd
+    pass
 
 
 class TestSubmissionRunnerDocker:
     @pytest.fixture(autouse=True)
     def setup_mocks(self, mocker):
-        # Mock subprocess.run for "docker --version"
-        import subprocess
+        captured_run_kwargs.clear()
 
-        original_run = subprocess.run
+        mock_docker_client = mocker.MagicMock()
 
-        def mock_run(args, *run_args, **run_kwargs):
-            if args == ["docker", "--version"]:
-
-                class CompletedProcessMock:
-                    returncode = 0
-                    stdout = "docker version mock"
-                    stderr = ""
-
-                return CompletedProcessMock()
-            return original_run(args, *run_args, **run_kwargs)
-
-        mocker.patch("subprocess.run", side_effect=mock_run)
-        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.check_docker_available",
+            return_value=True,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._get_client",
+            return_value=mock_docker_client,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._image_exists_docker",
+            return_value=True,
+        )
+        mocker.patch(
+            "task_modules.submission_runner.report_status_to_server",
+            return_value=True,
+        )
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
         )
 
-        def mock_stream(cmd, logs, time_limit=None):
-            raise CommandInterruptedError(cmd)
+        def mock_stream(docker_client, image_tag, command, logs_list, **kwargs):
+            captured_run_kwargs.update(kwargs)
+            captured_run_kwargs["image_tag"] = image_tag
+            captured_run_kwargs["command"] = command
+            raise CommandInterruptedError("docker run")
 
         mocker.patch(
             "task_modules.submission_runner.run_command_streaming",
@@ -110,7 +115,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterruptedError) as exc_info:
+        with pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -121,31 +126,22 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        cmd = exc_info.value.cmd
-        assert "docker" in cmd
-        assert "run" in cmd
-        assert "--network" in cmd
-        assert "none" in cmd
-        assert "--cap-drop" in cmd
-        assert "ALL" in cmd
-        assert "--security-opt" in cmd
-        assert "no-new-privileges:true" in cmd
-        assert "--pids-limit" in cmd
-        assert "64" in cmd
-        assert "--cpus" in cmd
-        assert "2" in cmd
-        assert "-m" in cmd
-        assert "4096m" in cmd
-        assert "--memory-swap" in cmd
-        assert "4096m" in cmd
+        assert captured_run_kwargs.get("network_mode") == "none"
+        assert captured_run_kwargs.get("cap_drop") == ["ALL"]
+        assert captured_run_kwargs.get("security_opt") == ["no-new-privileges:true"]
+        assert captured_run_kwargs.get("pids_limit") == 64
+        assert captured_run_kwargs.get("mem_limit") == "4096m"
+        assert captured_run_kwargs.get("working_dir") == "/app"
+        assert captured_run_kwargs.get("gpu_required") is False
+        assert captured_run_kwargs.get("gpu_id") is None
 
-    def test_ram_limit_fallback_challenge(self):
+    def test_ram_limit_2048(self):
         from task_modules.submission_runner import run_eval_submission
 
         metadata = {
             "task_id": 456,
             "time_limit": 30,
-            "ram_limit": None,  # no limit on task
+            "ram_limit": 2048,
             "gpu_required": False,
             "base_docker_image": "python:3.10-slim",
             "apt_packages": "",
@@ -163,25 +159,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        # But challenge has ram_limit
-        # In run_eval_submission, Challenge.ram_limit
-        # is mocked using the metadata's "ram_limit" key:
-
-        # Challenge constructor uses: ram_limit_mb=metadata.get("ram_limit")
-        # So we can't test challenge fallback via metadata
-        # dictionary easily since both refer to "ram_limit",
-
-        # but let's test that if ram_limit is provided, it goes into the memory limit flags.
-        # Wait, let's look at how ram_limit is read:
-        # ram_limit = 8192
-        # if task and task.ram_limit_mb is not None:
-        #     ram_limit = task.ram_limit_mb
-        # elif challenge and challenge.ram_limit_mb is not None:
-        #     ram_limit = challenge.ram_limit_mb
-        # Let's test that if ram_limit is 2048, it is set correctly to 2048m.
-        metadata["ram_limit"] = 2048
-
-        with pytest.raises(CommandInterruptedError) as exc_info:
+        with pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -192,11 +170,7 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        cmd = exc_info.value.cmd
-        assert "-m" in cmd
-        assert "2048m" in cmd
-        assert "--memory-swap" in cmd
-        assert "2048m" in cmd
+        assert captured_run_kwargs.get("mem_limit") == "2048m"
 
     def test_gpu_routing_all(self, monkeypatch):
         from task_modules.submission_runner import run_eval_submission
@@ -224,7 +198,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterruptedError) as exc_info:
+        with pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -235,9 +209,9 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        cmd = exc_info.value.cmd
-        assert "--gpus" in cmd
-        assert "all" in cmd
+        assert captured_run_kwargs.get("gpu_required") is True
+        assert captured_run_kwargs.get("gpu_id") is None
+        assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
     def test_gpu_routing_specific_device(self, monkeypatch):
         from task_modules.submission_runner import run_eval_submission
@@ -265,7 +239,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterruptedError) as exc_info:
+        with pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -276,10 +250,9 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        cmd = exc_info.value.cmd
-        assert "--gpus" in cmd
-        assert "device=2" in cmd
-        assert "CUDA_VISIBLE_DEVICES=0" in cmd
+        assert captured_run_kwargs.get("gpu_required") is True
+        assert captured_run_kwargs.get("gpu_id") == "2"
+        assert captured_run_kwargs["environment"].get("CUDA_VISIBLE_DEVICES") == "0"
 
     def test_gpu_routing_none(self, monkeypatch):
         from task_modules.submission_runner import run_eval_submission
@@ -307,7 +280,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterruptedError) as exc_info:
+        with pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -318,8 +291,9 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        cmd = exc_info.value.cmd
-        assert "--gpus" not in cmd
+        assert captured_run_kwargs.get("gpu_required") is False
+        assert captured_run_kwargs.get("gpu_id") is None
+        assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
 
 class TestCalculateWeightedScoreEdgeCases:
@@ -453,51 +427,33 @@ class TestFetchHFKeyFromServer:
 
 
 class TestImageExists:
-    """Unit tests for _image_exists."""
+    """Unit tests for docker_utils.image_exists."""
 
     def test_image_found_returns_true(self, mocker):
-        from task_modules.submission_runner import _image_exists
+        mock_client = mocker.MagicMock()
+        mock_client.images.get.return_value = "image_obj"
+        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
+        from task_modules.docker_utils import image_exists
 
-        mock_result = mocker.MagicMock()
-        mock_result.stdout = "sha256:abc123def456"
-        mocker.patch("subprocess.run", return_value=mock_result)
-        assert _image_exists("lavbench_task_42:latest") is True
+        assert image_exists("lavbench_task_42") is True
 
     def test_image_not_found_returns_false(self, mocker):
-        from task_modules.submission_runner import _image_exists
+        from docker.errors import ImageNotFound
 
-        mock_result = mocker.MagicMock()
-        mock_result.stdout = ""
-        mocker.patch("subprocess.run", return_value=mock_result)
-        assert _image_exists("nonexistent_image:v1") is False
+        mock_client = mocker.MagicMock()
+        mock_client.images.get.side_effect = ImageNotFound("not found")
+        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
+        from task_modules.docker_utils import image_exists
 
-    def test_image_whitespace_only_stdout_returns_false(self, mocker):
-        from task_modules.submission_runner import _image_exists
+        assert image_exists("nonexistent_image:v1") is False
 
-        mock_result = mocker.MagicMock()
-        mock_result.stdout = "   \n"
-        mocker.patch("subprocess.run", return_value=mock_result)
-        assert _image_exists("my_image") is False
+    def test_image_exception_returns_false(self, mocker):
+        mock_client = mocker.MagicMock()
+        mock_client.images.get.side_effect = Exception("connection error")
+        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
+        from task_modules.docker_utils import image_exists
 
-    def test_subprocess_file_not_found_returns_false(self, mocker):
-        from task_modules.submission_runner import _image_exists
-
-        mocker.patch("subprocess.run", side_effect=FileNotFoundError("docker command not found"))
-        assert _image_exists("any_image") is False
-
-    def test_subprocess_timeout_returns_false(self, mocker):
-        import subprocess
-
-        from task_modules.submission_runner import _image_exists
-
-        mocker.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10))
-        assert _image_exists("any_image") is False
-
-    def test_subprocess_os_error_returns_false(self, mocker):
-        from task_modules.submission_runner import _image_exists
-
-        mocker.patch("subprocess.run", side_effect=OSError("permission denied"))
-        assert _image_exists("any_image") is False
+        assert image_exists("any_image") is False
 
 
 class TestPreloadSubmissionDatasets:
@@ -667,18 +623,25 @@ class TestDockerNotAvailable:
             "main_server_url": "http://localhost:5000",
         }
 
-    def _setup_mocks(self, mocker, docker_returncode=1):
-        def mock_subprocess_run(args, *a, **kw):
-            class R:
-                returncode = docker_returncode
-                stdout = "Docker version 20.10" if docker_returncode == 0 else ""
-                stderr = "" if docker_returncode == 0 else "docker: command not found"
+    def _setup_mocks(self, mocker, docker_available=True):
+        mock_docker_client = mocker.MagicMock()
 
-            return R()
-
-        mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
-        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.check_docker_available",
+            return_value=docker_available,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._get_client",
+            return_value=mock_docker_client,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._image_exists_docker",
+            return_value=True,
+        )
+        mocker.patch(
+            "task_modules.submission_runner.report_status_to_server",
+            return_value=True,
+        )
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
@@ -688,39 +651,13 @@ class TestDockerNotAvailable:
             return_value=None,
         )
 
-    def test_docker_returncode_nonzero_returns_early(self, mocker):
+    def test_docker_not_available_returns_early(self, mocker):
         from task_modules.submission_runner import run_eval_submission
 
-        self._setup_mocks(mocker, docker_returncode=1)
+        self._setup_mocks(mocker, docker_available=False)
         result = run_eval_submission(
             self_task=None,
             submission_id="sub_docker_test",
-            metadata=self._metadata(),
-            app=None,
-            db=None,
-            submission_cls=None,
-            challenge_cls=None,
-        )
-        assert result is None
-
-    def test_docker_check_os_error_returns_early(self, mocker):
-        from task_modules.submission_runner import run_eval_submission
-
-        mocker.patch("subprocess.run", side_effect=OSError("docker binary missing"))
-        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
-        mocker.patch(
-            "task_modules.submission_runner.get_redis_client",
-            return_value=mocker.MagicMock(),
-        )
-        mocker.patch(
-            "task_modules.submission_runner.download_task_files_to_dir",
-            return_value=None,
-        )
-
-        result = run_eval_submission(
-            self_task=None,
-            submission_id="sub_exc_test",
             metadata=self._metadata(),
             app=None,
             db=None,
@@ -738,18 +675,24 @@ class TestCodeCellsParseError:
 
         from task_modules.submission_runner import run_eval_submission
 
-        # Docker is available
-        def mock_subprocess_run(args, *a, **kw):
-            class R:
-                returncode = 0
-                stdout = "Docker version 20.10"
-                stderr = ""
+        mock_docker_client = mocker.MagicMock()
 
-            return R()
-
-        mocker.patch("subprocess.run", side_effect=mock_subprocess_run)
-        mocker.patch("task_modules.submission_runner._image_exists", return_value=True)
-        mocker.patch("task_modules.submission_runner.report_status_to_server", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.check_docker_available",
+            return_value=True,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._get_client",
+            return_value=mock_docker_client,
+        )
+        mocker.patch(
+            "task_modules.submission_runner._image_exists_docker",
+            return_value=True,
+        )
+        mocker.patch(
+            "task_modules.submission_runner.report_status_to_server",
+            return_value=True,
+        )
         mocker.patch(
             "task_modules.submission_runner.get_redis_client",
             return_value=mocker.MagicMock(),
