@@ -70,7 +70,7 @@ if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
     exit 1
 fi
 
-export HF_CACHE_DIR="${HF_CACHE_DIR:-/app/hf_cache}"
+export HF_CACHE_DIR="${HF_CACHE_DIR:-$(pwd)/hf_cache}"
 
 if [ ! -z "$GPU_ID" ]; then
     export WORKER_GPU_ID="$GPU_ID"

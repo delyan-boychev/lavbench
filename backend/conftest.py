@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 os.environ.setdefault(
     "SECRET_KEY", "conftest-test-secret-key-2024-abcdefgh"
 )  # 32+ chars for HMAC-SHA256
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"  # force isolation — never touch the dev DB
 
 _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 if _backend_dir not in sys.path:
@@ -102,20 +102,23 @@ def db_session(app, app_ctx):
 
 @pytest.fixture(scope="function")
 def redis_flush():
-    """Flush Redis data before a test. Safe to call when Redis is down."""
+    """Flush Redis data before a test. Safe to call when Redis is down.
+
+    Never flushes Celery infrastructure keys (celery*, _kombu*, unacked*)
+    to avoid interfering with a concurrently running dev server.
+    """
     try:
         from cache_utils import get_redis_client
 
         r = get_redis_client()
         if r:
-            # If running in parallel with xdist, flushing the whole DB
-            # causes race conditions across workers.
             worker_id = os.environ.get("PYTEST_XDIST_WORKER")
-            if worker_id:
-                for key in r.scan_iter(f"*{worker_id}*"):
-                    r.delete(key)
-            else:
-                r.flushdb()
+            pattern = f"*{worker_id}*" if worker_id else "*"
+            for key in r.scan_iter(pattern):
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if key_str.startswith(("celery", "_kombu", "unacked")):
+                    continue
+                r.delete(key)
     except Exception:  # noqa: S110
         pass
 
@@ -139,7 +142,7 @@ def auth_headers():
 def csrf_headers():
     """Return a helper that builds CSRF + Authorization headers."""
 
-    def _make(token, csrf_token="test-csrf-token"):
+    def _make(token, csrf_token="test-csrf-token"):  # noqa: S107
         return {
             "Authorization": f"Bearer {token}",
             "X-CSRF-Token": csrf_token,
@@ -160,7 +163,7 @@ def create_user(db_session):
 
     def _make(
         username="testuser",
-        password="testpass123",
+        password="testpass123",  # noqa: S107
         role="competitor",
         alias_id=None,
         challenge_id=None,
