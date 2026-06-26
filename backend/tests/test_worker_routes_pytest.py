@@ -119,8 +119,18 @@ class TestWorkerEndpoints:
             },
             headers=self._worker_headers(),
         )
-        db.session.expire_all()
-        sub = db.session.get(Submission, self.submission.id)
+
+        # Wait for the log to be committed and visible (max 5 seconds)
+        timeout = 5
+        start = time.time()
+        while time.time() - start < timeout:
+            db.session.expire_all()
+            sub = db.session.get(Submission, self.submission.id)
+            if "eval completed" in sub.logs:
+                break
+            time.sleep(0.1)
+
+        # Final assertions
         assert sub.status == "completed"
         assert sub.public_score == 0.95
         assert sub.private_score == 0.85
