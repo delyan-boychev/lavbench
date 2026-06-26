@@ -15,6 +15,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 
 1. **Create tests for new code** — When adding new API endpoints, React components, or services, include accompanying tests to maintain coverage standards.
 2. **Run all tests**:
+
    ```bash
    # Backend (pytest — 941 tests, requires micromamba env)
    cd backend && micromamba run -n lavbench_backend python -m pytest tests/ -v
@@ -22,14 +23,20 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    # Frontend (vitest — 363 tests)
    cd frontend && npm run test
    ```
-3. **Format your code** — Both formatters run in CI and will block unformatted code:
+
+3. **Format and lint your code** — Both formatters and linters run in CI and will block unformatted or failing code:
+
    ```bash
-   black backend/
+   ruff format backend/ --config backend/pyproject.toml
+   ruff check --fix backend/ --config backend/pyproject.toml
    cd frontend && npm run format
+
    ```
-4. **Verify formatting** — Run format checks before pushing:
+
+4. **Verify formatting and linting** — Run format checks before pushing:
    ```bash
-   black --check backend/
+   ruff format --check backend/ --config backend/pyproject.toml
+   ruff check backend/ --config backend/pyproject.toml
    cd frontend && npm run format:check
    ```
 5. **Verify type integrity** — `npm run check-types` must pass with 0 errors.
@@ -52,7 +59,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 
 ### Backend (Python)
 
-- Formatted with **Black** (line-length 100, configured in `backend/pyproject.toml`)
+- Formatted and linted with **Ruff** (configuration in `backend/pyproject.toml`, line‑length 100, rules matching the project’s standards)
 - Tests in `backend/tests/`, one file per route module or service
 - Dev dependencies (pytest, pytest-mock, Faker, etc.) are in `dev-requirements.in` — compile with `pip-compile dev-requirements.in`
 - Use pytest fixtures from `backend/conftest.py` for common setups
@@ -83,9 +90,9 @@ pip install pre-commit
 pre-commit install
 ```
 
-After that, `git commit` will run **Black** (Python) and **Prettier** (JS/CSS/JSON) automatically. If formatting fails, the commit is blocked — run the format commands, stage the changes, and commit again.
+After that, `git commit` will run **Ruff format** and **Ruff check** (with safe fixes) for Python, and **Prettier** for JS/CSS/JSON automatically. If formatting or linting fails, the commit is blocked — run the format and fix commands (see step 3 above), stage the changes, and commit again.
 
-The same checks run in CI (`backend-format` and `frontend-format` jobs) on every push and PR.
+The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` jobs) on every push and PR.
 
 ## Frontend Type System
 
@@ -106,6 +113,7 @@ Backend flasgger docstrings
 ```
 
 API response types use precise paths from the generated file:
+
 ```
 paths['/api/endpoint']['method']['responses']['200']['content']['application/json']
 ```

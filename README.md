@@ -13,7 +13,7 @@
   <a href="https://github.com/delyan-boychev/lavbench/actions/workflows/ci.yml"><img src="https://github.com/delyan-boychev/lavbench/actions/workflows/ci.yml/badge.svg" alt="LavBench CI"></a>
 </p>
 
-**LavBench** derives its name from the "Lav" (Lion), a proud national symbol of Bulgaria. 
+**LavBench** derives its name from the "Lav" (Lion), a proud national symbol of Bulgaria.
 
 It is a secure, sandboxed machine learning competition platform. Participants submit Jupyter notebooks or raw Python code which are executed in isolated Docker containers under strict resource constraints. Real-time leaderboards stream via SSE, with double-blind review for anonymous jury scoring.
 
@@ -23,17 +23,17 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ## Features
 
-* **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
-* **Double-Blind Review:** Competitor demographics are encrypted at rest (Fernet) and only revealed after scores are finalized.
-* **Live Leaderboards:** Server-Sent Events push real-time score updates to all connected clients.
-* **Multi-Stage Competitions:** Support for stages with independent deadlines, grace periods, and score visibility controls.
-* **Custom Evaluators:** Jury members can upload Python evaluation scripts with per-metric weighting and configuration.
-* **GPU/CPU Routing:** Celery queue routing intelligently separates GPU and CPU workloads across different worker pools.
-* **Automated Backups:** Database and uploaded files are backed up every 20 minutes during active competitions (every 6 hours when idle).
-* **Audit Logs:** Full logging of administrative actions (e.g. creating/deleting challenges, resetting passwords, editing scores) with detailed metadata payloads and justification tracking.
-* **i18n Support:** Available in English and Bulgarian (contributions for additional languages are welcome).
-* **Strict Security:** Includes httpOnly cookie auth, token revocation with a Redis blacklist, rate limiting, encrypted PII, and ProxyFix for trusted reverse proxies.
-* **Typed API & Validation:** OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls. `tsc --noEmit` verifies all JSDoc annotations and component props.
+- **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
+- **Double-Blind Review:** Competitor demographics are encrypted at rest (Fernet) and only revealed after scores are finalized.
+- **Live Leaderboards:** Server-Sent Events push real-time score updates to all connected clients.
+- **Multi-Stage Competitions:** Support for stages with independent deadlines, grace periods, and score visibility controls.
+- **Custom Evaluators:** Jury members can upload Python evaluation scripts with per-metric weighting and configuration.
+- **GPU/CPU Routing:** Celery queue routing intelligently separates GPU and CPU workloads across different worker pools.
+- **Automated Backups:** Database and uploaded files are backed up every 20 minutes during active competitions (every 6 hours when idle).
+- **Audit Logs:** Full logging of administrative actions (e.g. creating/deleting challenges, resetting passwords, editing scores) with detailed metadata payloads and justification tracking.
+- **i18n Support:** Available in English and Bulgarian (contributions for additional languages are welcome).
+- **Strict Security:** Includes httpOnly cookie auth, token revocation with a Redis blacklist, rate limiting, encrypted PII, and ProxyFix for trusted reverse proxies.
+- **Typed API & Validation:** OpenAPI 3.0 spec with auto-generated TypeScript type declarations and JSDoc `@type` annotations on all frontend API calls. `tsc --noEmit` verifies all JSDoc annotations and component props.
 
 ---
 
@@ -100,14 +100,14 @@ flowchart TD
 
 ### Components
 
-| Service | Role | Port |
-|---------|------|------|
-| **PostgreSQL** | Primary database for users, challenges, tasks, and submissions | `5432` |
-| **Redis** | Celery message broker, SSE pub/sub, caching, and rate limiting | `6379` |
-| **Flask API** | REST API and SSE streaming endpoints | `5001` |
-| **Celery Worker** | Runs on the host via `scripts/start-worker.sh` to build Docker sandboxes and execute submissions | — |
-| **Celery Beat** | Handles periodic tasks like the submission watchdog and automated backups | — |
-| **Nginx/React** | Static file serving and API reverse proxy | `80` |
+| Service           | Role                                                                                             | Port   |
+| ----------------- | ------------------------------------------------------------------------------------------------ | ------ |
+| **PostgreSQL**    | Primary database for users, challenges, tasks, and submissions                                   | `5432` |
+| **Redis**         | Celery message broker, SSE pub/sub, caching, and rate limiting                                   | `6379` |
+| **Flask API**     | REST API and SSE streaming endpoints                                                             | `5001` |
+| **Celery Worker** | Runs on the host via `scripts/start-worker.sh` to build Docker sandboxes and execute submissions | —      |
+| **Celery Beat**   | Handles periodic tasks like the submission watchdog and automated backups                        | —      |
+| **Nginx/React**   | Static file serving and API reverse proxy                                                        | `80`   |
 
 ---
 
@@ -165,19 +165,19 @@ Copy and edit the environment file:
 cp .env.example .env
 ```
 
-| Variable | Description | Example / Requirement |
-|----------|-------------|-----------------------|
-| `SECRET_KEY` | Flask secret for JWT signing | **Required** — generate a random 64+ char string |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/dbname` |
-| `CELERY_BROKER_URL` | Redis broker for Celery | `redis://localhost:6379/0` |
-| `CELERY_RESULT_BACKEND` | Redis result backend | `redis://localhost:6379/0` |
-| `WORKER_SECRET_KEY` | Shared secret for worker to server auth | **Required for workers** |
-| `ENCRYPTION_KEY` | Fernet key for PII encryption | Run: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `HF_CACHE_DIR` | HuggingFace dataset cache directory | `./backend/hf_cache` |
-| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:80` |
-| `MAIN_SERVER_URL` | Server URL for worker callbacks | `http://localhost:5001` |
-| `FLASK_DEBUG` | Enable Flask debug mode | `false` |
-| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after a deadline | `60` |
+| Variable                        | Description                             | Example / Requirement                                                                            |
+| ------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SECRET_KEY`                    | Flask secret for JWT signing            | **Required** — generate a random 64+ char string                                                 |
+| `DATABASE_URL`                  | PostgreSQL connection string            | `postgresql://user:pass@localhost:5432/dbname`                                                   |
+| `CELERY_BROKER_URL`             | Redis broker for Celery                 | `redis://localhost:6379/0`                                                                       |
+| `CELERY_RESULT_BACKEND`         | Redis result backend                    | `redis://localhost:6379/0`                                                                       |
+| `WORKER_SECRET_KEY`             | Shared secret for worker to server auth | **Required for workers**                                                                         |
+| `ENCRYPTION_KEY`                | Fernet key for PII encryption           | Run: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `HF_CACHE_DIR`                  | HuggingFace dataset cache directory     | `./backend/hf_cache`                                                                             |
+| `CORS_ORIGINS`                  | Allowed CORS origins                    | `http://localhost:80`                                                                            |
+| `MAIN_SERVER_URL`               | Server URL for worker callbacks         | `http://localhost:5001`                                                                          |
+| `FLASK_DEBUG`                   | Enable Flask debug mode                 | `false`                                                                                          |
+| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after a deadline           | `60`                                                                                             |
 
 ---
 
@@ -189,6 +189,7 @@ cp .env.example .env
 cd backend
 micromamba run -n lavbench_backend python -m pytest -n auto tests/ -v
 ```
+
 Includes 941 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
 
 ### Sphinx Documentation
@@ -233,6 +234,7 @@ cd docs && make html
 ```bash
 ./scripts/deploy-docker.sh
 ```
+
 Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
 
 ### Remote Workers
@@ -240,17 +242,21 @@ Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Work
 Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No direct database access is needed.
 
 #### Launching Workers via `scripts/start-worker.sh`
+
 You can invoke the launcher script directly to customize worker execution:
+
 ```bash
 scripts/start-worker.sh <REDIS_URL> [options]
 ```
 
 **Options**:
-* `-g, --gpu <GPU_ID>`: Configure worker for specific GPU device(s) (e.g., `0` or a list like `0,1`).
-* `-c, --concurrency <N>`: Set the number of concurrent worker processes manually. If omitted, concurrency is safely auto-calculated.
-* `-i, --internal`: Run the worker for system/internal tasks only (e.g., database backups, leaderboards), unregistering all evaluation tasks.
+
+- `-g, --gpu <GPU_ID>`: Configure worker for specific GPU device(s) (e.g., `0` or a list like `0,1`).
+- `-c, --concurrency <N>`: Set the number of concurrent worker processes manually. If omitted, concurrency is safely auto-calculated.
+- `-i, --internal`: Run the worker for system/internal tasks only (e.g., database backups, leaderboards), unregistering all evaluation tasks.
 
 **Examples**:
+
 ```bash
 # Start a CPU-only evaluation worker with 4 concurrency slots
 scripts/start-worker.sh redis://:password@server:6379/0 -c 4
@@ -262,36 +268,36 @@ scripts/start-worker.sh redis://:password@server:6379/0 -g 0 -c 2
 scripts/start-worker.sh redis://:password@server:6379/0 -i -c 2
 ```
 
-*(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... [GPU_ID=0]` is still fully supported.)*
+_(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... [GPU_ID=0]` is still fully supported.)_
 
 ---
 
 ## Security Highlights
 
-| Layer | Mechanism |
-|-------|-----------|
-| **Authentication** | httpOnly cookies with JWTs (XSS-immune), 24h expiry. |
-| **Authorization** | Role-based (admin, jury, competitor) with DB-backed role lookup. |
-| **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens. |
-| **Rate Limiting** | Lua atomic counters per-user and per-endpoint; fails open if Redis is down. |
-| **PII Encryption** | Fernet symmetric encryption secures competitor demographics at rest. |
-| **Sandbox** | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. |
-| **Ground Truth** | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox. |
-| **IP Trust** | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted. |
-| **HF API Keys** | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis. |
+| Layer                | Mechanism                                                                                                                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Authentication**   | httpOnly cookies with JWTs (XSS-immune), 24h expiry.                                                                                                                                                       |
+| **Authorization**    | Role-based (admin, jury, competitor) with DB-backed role lookup.                                                                                                                                           |
+| **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens.                                                                                                                                    |
+| **Rate Limiting**    | Lua atomic counters per-user and per-endpoint; fails open if Redis is down.                                                                                                                                |
+| **PII Encryption**   | Fernet symmetric encryption secures competitor demographics at rest.                                                                                                                                       |
+| **Sandbox**          | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. |
+| **Ground Truth**     | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox.                                                                                                   |
+| **IP Trust**         | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted.                                                                                                                   |
+| **HF API Keys**      | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis.                                                                                                              |
 
 ---
 
 ## Documentation
 
-| Guide | Target Audience | Focus Areas |
-|-------|-----------------|-------------|
-| [Student Guide](guides/en/student_guide.md) | Competitors | Logging in, understanding tasks, submitting notebooks, leaderboard navigation. |
-| [Jury Guide](guides/en/jury_guide.md) | Jury Members | Monitoring submissions, manual scoring, competitor registration, exports. |
-| [Admin Guide](guides/en/admin_guide.md) | Administrators | Challenge/task management, backups, worker health monitoring, user administration. |
-| [API Reference](http://localhost:5001/apidocs) | Developers | Interactive Swagger UI detailing all 68 backend endpoints. |
-| [Translation Check](frontend/scripts/check_translations.py) | Developers | Validates i18n keys across EN/BG, highlighting missing or orphaned entries. |
-| [Sphinx Documentation](https://lavbench.readthedocs.io/) | Developers | Full auto-generated API reference (autodoc) and rendered OpenAPI spec. |
+| Guide                                                       | Target Audience | Focus Areas                                                                        |
+| ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------- |
+| [Student Guide](guides/en/student_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
+| [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
+| [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Challenge/task management, backups, worker health monitoring, user administration. |
+| [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 68 backend endpoints.                         |
+| [Translation Check](frontend/scripts/check_translations.py) | Developers      | Validates i18n keys across EN/BG, highlighting missing or orphaned entries.        |
+| [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |
 
 ---
 

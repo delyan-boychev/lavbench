@@ -2,11 +2,11 @@
 
 ## Quick Access
 
-| Resource | URL | Who |
-|----------|-----|-----|
-| **Swagger UI** (REST + SSE docs) | `http://localhost:5001/apidocs` | Backend & Frontend devs |
-| **Health check** | `http://localhost:5001/api/health` | DevOps, monitoring |
-| **Architecture overview** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | New contributors |
+| Resource                         | URL                                  | Who                     |
+| -------------------------------- | ------------------------------------ | ----------------------- |
+| **Swagger UI** (REST + SSE docs) | `http://localhost:5001/apidocs`      | Backend & Frontend devs |
+| **Health check**                 | `http://localhost:5001/api/health`   | DevOps, monitoring      |
+| **Architecture overview**        | [`ARCHITECTURE.md`](ARCHITECTURE.md) | New contributors        |
 
 ## For Frontend Developers
 
@@ -34,12 +34,12 @@ This pipeline generates `src/types/api.d.ts` (full type definitions for all ~68 
 ### Example: calling the login endpoint
 
 ```javascript
-import api from './services/ApiService';
+import api from "./services/ApiService";
 
 /** @type {{ ok: boolean, data: import('./types/api').paths['/api/auth/login']['post']['responses']['200']['content']['application/json'] }} */
-const { ok, data } = await api.post('/auth/login', {
-  username: 'admin_1c15d4d7',
-  password: hashedPassword
+const { ok, data } = await api.post("/auth/login", {
+  username: "admin_1c15d4d7",
+  password: hashedPassword,
 });
 if (ok) {
   // data.user contains the typed User object
@@ -110,7 +110,7 @@ def some_action(id):
 
 ### SSE endpoint template
 
-```python
+````python
 """
 Brief description of the live stream.
 ---
@@ -140,4 +140,4 @@ responses:
   401:
     description: Unauthorized
 """
-```
+````

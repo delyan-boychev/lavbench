@@ -17,14 +17,18 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lavbench_user} -d ${POSTGRES_DB:-lavbench_db}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-lavbench_user} -d ${POSTGRES_DB:-lavbench_db}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,7 +54,7 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: "0.5"
     logging:
       driver: json-file
       options:
@@ -94,7 +98,7 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
     logging:
       driver: json-file
       options:
@@ -137,7 +141,11 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "celery -A tasks.celery inspect ping --timeout 5 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -175,7 +183,11 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "celery -A tasks.celery inspect ping --timeout 5 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -195,7 +207,7 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: "0.5"
     logging:
       driver: json-file
       options:

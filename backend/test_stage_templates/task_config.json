@@ -9,9 +9,7 @@
   "public_eval_percentage": 30,
   "ban_magic_commands": true,
   "whitelisted_imports": "pandas,datasets,pyarrow,torch,torchvision,numpy,json,sys,os",
-  "hf_datasets": [
-    "ylecun/mnist"
-  ],
+  "hf_datasets": ["ylecun/mnist"],
   "metrics_config": {
     "accuracy": {
       "weight": 0.25
