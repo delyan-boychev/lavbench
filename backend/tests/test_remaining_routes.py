@@ -7,9 +7,8 @@ import pytest
 # Area 1: Task File Download
 # =============================================================================
 from flask import Response
-from werkzeug.security import generate_password_hash
-
 from models import Task, User
+from werkzeug.security import generate_password_hash
 
 MOCK_FILE_RESPONSE = Response("test file content", 200)
 

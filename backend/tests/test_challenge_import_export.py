@@ -12,7 +12,6 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
-
 from models import Challenge, Stage, Task, User
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -377,7 +376,6 @@ class TestImportChallenge:
         import zipfile
 
         from flask import current_app
-
         from models import Challenge
 
         zip_buf = io.BytesIO()

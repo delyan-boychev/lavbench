@@ -9,13 +9,12 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 logger = logging.getLogger(__name__)
 
+from config import Config  # noqa: E402
 from flasgger import Swagger  # noqa: E402
 from flask import Flask, jsonify  # noqa: E402
 from flask_cors import CORS  # noqa: E402
-from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
-
-from config import Config  # noqa: E402
 from models import db  # noqa: E402
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 
 def create_app():

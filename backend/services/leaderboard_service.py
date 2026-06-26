@@ -6,9 +6,9 @@ import time
 from datetime import datetime
 from functools import cmp_to_key
 
+from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from sqlalchemy.orm import joinedload
 
-from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 logger = logging.getLogger(__name__)

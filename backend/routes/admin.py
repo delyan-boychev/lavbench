@@ -10,6 +10,8 @@ import string
 import zipfile
 from datetime import datetime
 
+from auth_utils import jury_access_required, role_required
+from evaluation_engine import AVAILABLE_METRICS
 from flask import (
     Blueprint,
     Response,
@@ -19,10 +21,6 @@ from flask import (
     send_file,
     stream_with_context,
 )
-from werkzeug.security import generate_password_hash
-
-from auth_utils import jury_access_required, role_required
-from evaluation_engine import AVAILABLE_METRICS
 from models import (
     Challenge,
     Submission,
@@ -32,6 +30,7 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
+from werkzeug.security import generate_password_hash
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
@@ -1155,9 +1154,8 @@ def get_audit_logs():
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
 
-    from sqlalchemy import or_
-
     from models import AuditLog, Challenge, User
+    from sqlalchemy import or_
 
     query = AuditLog.query
 
@@ -1630,7 +1628,6 @@ def download_scores_csv(challenge_id):
               type: object
     """
     from flask import Response
-
     from services.challenge_service import generate_scores_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1915,9 +1912,8 @@ def stream_worker_stats():
 
 
 def _get_worker_stats_response():
-    from flask import current_app
-
     from cache_utils import get_cached, set_cached
+    from flask import current_app
 
     is_testing = current_app.config.get("TESTING", False)
     cache_key = "worker:status:detailed"

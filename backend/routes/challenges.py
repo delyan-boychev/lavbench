@@ -4,9 +4,8 @@ import os
 import zoneinfo
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
-
 from auth_utils import jury_access_required, login_required, role_required
+from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, User, db, decrypt_field
 
 logger = logging.getLogger(__name__)
@@ -163,9 +162,8 @@ def get_challenges():
         return jsonify([filtered])
 
     if user_role == "jury":
-        from sqlalchemy.orm import joinedload
-
         from models import JuryChallenge
+        from sqlalchemy.orm import joinedload
 
         assigned_challenges = JuryChallenge.query.filter_by(jury_id=user_id).all()
         assigned_ids = [jc.challenge_id for jc in assigned_challenges]
@@ -1620,7 +1618,6 @@ def export_results(challenge_id):
               type: object
     """
     from flask import Response
-
     from services.challenge_service import generate_exported_results_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1808,9 +1805,8 @@ def download_audit_logs(challenge_id):
     import json
 
     from flask import send_file
-    from sqlalchemy import or_
-
     from models import AuditLog, Challenge, User
+    from sqlalchemy import or_
 
     challenge = db.get_or_404(Challenge, challenge_id)
 

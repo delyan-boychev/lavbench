@@ -2,9 +2,8 @@ import json
 import logging
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
-
 from auth_utils import jury_access_required, login_required, role_required
+from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard
 
@@ -366,9 +365,8 @@ def stream_challenge_leaderboard(challenge_id):
             schema:
               type: string
     """
-    from flask import Response, current_app, stream_with_context
-
     from cache_utils import get_redis_client
+    from flask import Response, current_app, stream_with_context
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]

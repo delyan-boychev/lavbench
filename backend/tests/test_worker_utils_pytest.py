@@ -4,7 +4,6 @@ import time
 from unittest.mock import patch
 
 import pytest
-
 from worker_utils import (
     MockModel,
     StreamingLogList,

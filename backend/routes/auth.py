@@ -1,11 +1,10 @@
 import logging
 import time
 
-from flask import Blueprint, jsonify, make_response, request
-from werkzeug.security import check_password_hash, generate_password_hash
-
 from auth_utils import clear_auth_cookie, login_required, set_auth_cookie
+from flask import Blueprint, jsonify, make_response, request
 from models import User, db
+from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)

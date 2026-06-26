@@ -5,11 +5,10 @@ import logging
 import os
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
-from sqlalchemy.orm import joinedload
-
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
+from sqlalchemy.orm import joinedload
 from sse_utils import publish_leaderboard_update, publish_submissions_update
 
 logger = logging.getLogger(__name__)

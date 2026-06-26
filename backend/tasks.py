@@ -7,7 +7,6 @@ import time
 from datetime import datetime, timedelta
 
 from celery import Celery
-
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 from task_modules.submission_runner import run_eval_submission
 from task_modules.system import (

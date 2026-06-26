@@ -1,7 +1,6 @@
 import math
 
 import pytest
-
 from task_modules.submission_runner import calculate_weighted_score
 
 
@@ -421,7 +420,6 @@ class TestFetchHFKeyFromServer:
 
     def test_connection_error_returns_empty(self, mocker):
         import requests as req
-
         from task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(
@@ -433,7 +431,6 @@ class TestFetchHFKeyFromServer:
 
     def test_timeout_exception_returns_empty(self, mocker):
         import requests as req
-
         from task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(

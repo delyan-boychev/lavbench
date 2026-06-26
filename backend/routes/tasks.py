@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
+from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from flask import (
     Blueprint,
     Response,
@@ -14,9 +15,6 @@ from flask import (
     send_from_directory,
     stream_with_context,
 )
-from werkzeug.utils import secure_filename
-
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from models import Challenge, Submission, Task, User, db
 from services.submission_service import (
     calculate_submission_priority,
@@ -25,6 +23,7 @@ from services.submission_service import (
     extract_code_from_notebook,
 )
 from sse_utils import publish_leaderboard_update, publish_submissions_update
+from werkzeug.utils import secure_filename
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -596,7 +595,6 @@ def create_task(challenge_id):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
-
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
@@ -1022,7 +1020,6 @@ def update_task(task_id):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
-
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
@@ -1937,9 +1934,8 @@ def stream_worker_status():
 
 
 def _get_worker_status_data():
-    from flask import current_app
-
     from cache_utils import get_cached, set_cached
+    from flask import current_app
 
     is_testing = current_app.config.get("TESTING", False)
     cache_key = "worker:status:summary"

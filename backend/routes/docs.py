@@ -1,8 +1,7 @@
 import os
 
-from flask import Blueprint, jsonify, request
-
 from auth_utils import role_required
+from flask import Blueprint, jsonify, request
 
 docs_bp = Blueprint("docs", __name__)
 

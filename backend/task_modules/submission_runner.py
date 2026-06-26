@@ -13,9 +13,8 @@ import traceback
 from datetime import datetime
 
 import requests
-from celery.signals import worker_ready
-
 from cache_utils import get_redis_client
+from celery.signals import worker_ready
 from worker_utils import (
     MockModel,
     StreamingLogList,
@@ -773,7 +772,6 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                 else:
                     try:
                         import pandas as pd
-
                         from evaluation_engine import (
                             evaluate_predictions,
                             validate_parquet_schema,

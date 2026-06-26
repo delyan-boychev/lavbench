@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+
 from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission
 

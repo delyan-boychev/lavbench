@@ -13,16 +13,16 @@ The API proxy is configured in `nginx.conf` for production and in `vite.config.j
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server with HMR |
-| `npm run build` | Production build to `dist/` |
-| `npm run test` | Run vitest unit/component tests (362 tests) |
-| `npm run test:coverage` | Run tests with v8 coverage report |
-| `npm run lint` | ESLint across the project |
-| `npm run check-types` | TypeScript type check via `tsc --noEmit` |
+| Command                      | Description                                        |
+| ---------------------------- | -------------------------------------------------- |
+| `npm run dev`                | Start Vite dev server with HMR                     |
+| `npm run build`              | Production build to `dist/`                        |
+| `npm run test`               | Run vitest unit/component tests (362 tests)        |
+| `npm run test:coverage`      | Run tests with v8 coverage report                  |
+| `npm run lint`               | ESLint across the project                          |
+| `npm run check-types`        | TypeScript type check via `tsc --noEmit`           |
 | `npm run generate-api-types` | Generate TypeScript declarations from OpenAPI spec |
-| `npm run preview` | Preview production build locally |
+| `npm run preview`            | Preview production build locally                   |
 
 ## Testing
 
