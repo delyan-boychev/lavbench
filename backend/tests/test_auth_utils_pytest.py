@@ -216,8 +216,16 @@ mock_tracker = MockCallTracker()
 
 @pytest.mark.xdist_group(name="rate_limiting")
 class TestRateLimit:
-    @pytest.fixture(scope="class", autouse=True)
-    def setup_class_routes(self, app):
+    @pytest.fixture(scope="function")
+    def rate_limit_client(self):
+        """Create a fresh Flask app with rate‑limited routes for each test."""
+        from flask import Flask, jsonify, request
+
+        from auth_utils import login_required
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+
         @app.route("/test-rl1")
         @rate_limit(max_requests=5, window_seconds=60, per_user=False)
         def test_route_1():
@@ -241,37 +249,38 @@ class TestRateLimit:
                 mock_tracker.user2_calls.append(1)
             return jsonify({"ok": True})
 
+        return app.test_client()
+
     # Added db_session here so SQLAlchemy creates the tables for the @login_required check
     @pytest.fixture(autouse=True)
-    def setup_method_state(self, app, db_session, redis_flush):
-        self.client = app.test_client()
-        # Reset the static tracker attributes completely before every single test
+    def setup_method_state(self, db_session, redis_flush):
+        # Reset the static tracker attributes before every test
         mock_tracker.rl1_calls = []
         mock_tracker.rl2_calls = []
         mock_tracker.user1_calls = []
         mock_tracker.user2_calls = []
 
-    def test_allows_under_limit(self):
+    def test_allows_under_limit(self, rate_limit_client):
         for _ in range(3):
-            res = self.client.get("/test-rl1")
+            res = rate_limit_client.get("/test-rl1")
             assert res.status_code == 200
         assert len(mock_tracker.rl1_calls) == 3
 
-    def test_rejects_over_limit(self):
+    def test_rejects_over_limit(self, rate_limit_client):
         for _ in range(2):
-            res = self.client.get("/test-rl2")
+            res = rate_limit_client.get("/test-rl2")
             assert res.status_code == 200
-        res = self.client.get("/test-rl2")
+        res = rate_limit_client.get("/test-rl2")
         assert res.status_code == 429
 
-    def test_per_user_keying(self):
+    def test_per_user_keying(self, rate_limit_client):
         token1 = generate_token(1, "competitor")
         for _ in range(2):
-            res = self.client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
+            res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
             assert res.status_code == 200
-        res = self.client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
+        res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
         assert res.status_code == 429
 
         token2 = generate_token(2, "competitor")
-        res = self.client.get("/test-rl3", headers={"Authorization": f"Bearer {token2}"})
+        res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token2}"})
         assert res.status_code == 200

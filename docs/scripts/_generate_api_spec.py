@@ -160,7 +160,7 @@ def write_rst(tag_files):
             "Full specification",
             "------------------",
             "",
-            f".. openapi:: api/spec.json",
+            ".. openapi:: api/spec.json",
             "",
         ]
     )

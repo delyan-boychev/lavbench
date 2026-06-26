@@ -814,7 +814,6 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
     """
 
     def test_multi_column_evaluation(self):
-
         df_labels = pd.DataFrame({"id": [1, 2], "label_1": [1.0, 2.0], "label_2": [3.0, 4.0]})
         df_sub = pd.DataFrame({"id": [1, 2], "label_1": [1.1, 1.9], "label_2": [3.2, 4.2]})
 
