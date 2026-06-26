@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19
+    hooks:
+      - id: ruff
+        args: [--fix, --config, backend/pyproject.toml]
+        files: ^backend/
+      - id: ruff-format
+        args: [--config, backend/pyproject.toml]
+        files: ^backend/
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Prettier (frontend)
+        entry: npx prettier --write
+        language: system
+        files: ^frontend/.*\.(js|jsx|css|json|md)$
+        pass_filenames: true
+        require_serial: true
