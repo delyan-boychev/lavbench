@@ -56,7 +56,7 @@ def _image_exists(tag):
     """Check if a Docker image tag already exists locally."""
     try:
         res = subprocess.run(
-            ["docker", "images", "-q", tag], # noqa: S607
+            ["docker", "images", "-q", tag],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=10,

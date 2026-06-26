@@ -33,7 +33,7 @@ def _image_exists(tag):
         return False
     try:
         res = subprocess.run(
-            ["docker", "images", "-q", tag], # noqa: S607
+            ["docker", "images", "-q", tag],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=10,  # noqa: S607

@@ -220,7 +220,7 @@ def run_docker_prune():
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
     try:
         result = subprocess.run(
-            ["docker", "image", "prune", "-f"], # noqa: S607
+            ["docker", "image", "prune", "-f"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
