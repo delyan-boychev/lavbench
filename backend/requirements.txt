@@ -98,7 +98,9 @@ fsspec[http]==2025.10.0
 gevent==26.5.0
     # via -r requirements.in
 greenlet==3.2.5
-    # via gevent
+    # via
+    #   gevent
+    #   sqlalchemy
 gunicorn==26.0.0
     # via -r requirements.in
 h11==0.16.0
@@ -249,7 +251,7 @@ rpds-py==0.27.1
     #   referencing
 scikit-image==0.25.2
     # via -r requirements.in
-scikit-learn==1.6.1
+scikit-learn==1.7.2
     # via -r requirements.in
 scipy==1.13.1
     # via
