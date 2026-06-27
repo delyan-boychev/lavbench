@@ -26,9 +26,12 @@ COPY --from=builder /usr/local /usr/local
 
 COPY --chown=nobody:nogroup . .
 
-ENV HOME=/tmp
-USER nobody
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV HOME=/app
 
 EXPOSE 5001
 
-CMD ["gunicorn", "-k", "gevent", "--worker-connections", "1000", "-w", "4", "--timeout", "300", "--graceful-timeout", "30", "--pid", "/tmp/gunicorn.pid", "-b", "0.0.0.0:5001", "app:app"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["-k", "gevent", "--worker-connections", "1000", "-w", "4", "--timeout", "300", "--graceful-timeout", "30", "--pid", "/app/run/gunicorn.pid", "-b", "0.0.0.0:5001", "app:app"]

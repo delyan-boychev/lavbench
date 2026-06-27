@@ -42,8 +42,12 @@ build-worker:   # Build the minimal worker Docker image
 generate-keys:  # Re-generate missing security keys
 	@scripts/generate-keys.sh
 
-setup-admin:    # Create an admin user
-	python backend/setup-admin.py
+setup-admin:    # Create an admin user (works with and without Docker)
+	@if docker compose ps backend 2>/dev/null | grep -q "Up"; then \
+		docker compose exec backend python3 /app/setup-admin.py; \
+	else \
+		python backend/setup-admin.py; \
+	fi
 
 docs:           # Build Sphinx documentation
 	@$(MAKE) -C docs html
