@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,28 +38,28 @@ jobs:
           VERSION="${{ steps.git-cliff.outputs.version }}"
           VERSION="${VERSION#v}"
 
-          # Update backend/pyproject.toml
           sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' backend/pyproject.toml
-
-          # Update frontend/package.json
           sed -i 's/"version": ".*"/"version": "'"$VERSION"'"/' frontend/package.json
-
-          # Update docs/source/conf.py
           sed -i 's/^release = .*/release = "'"$VERSION"'"/' docs/source/conf.py
 
-      - name: Commit changelog + version bump
+      - name: Create Release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="${{ steps.git-cliff.outputs.version }}"
+          TAG="${VERSION#v}"
+          BRANCH="release/v${TAG}"
+
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git checkout -b "$BRANCH"
           git add CHANGELOG.md backend/pyproject.toml frontend/package.json docs/source/conf.py
-          git commit -m "chore: release ${{ steps.git-cliff.outputs.version }}"
-          git tag ${{ steps.git-cliff.outputs.version }}
-          git push --follow-tags
+          git commit -m "chore: release ${VERSION}"
+          git push origin "$BRANCH"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.git-cliff.outputs.version }}
-          body: ${{ steps.git-cliff.outputs.changelog }}
-          generate_release_notes: true
-
+          gh pr create \
+            --title "chore: release ${VERSION}" \
+            --body "Automated release PR for ${VERSION}." \
+            --base main \
+            --head "$BRANCH" \
+            --label release
