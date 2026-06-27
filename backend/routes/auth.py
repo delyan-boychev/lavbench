@@ -1,7 +1,7 @@
 import logging
 import time
 
-from auth_utils import clear_auth_cookie, login_required, set_auth_cookie
+from auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
 from error_utils import err
 from flask import Blueprint, jsonify, make_response, request
 from models import User, db
@@ -214,7 +214,6 @@ def get_csrf_token():
                 csrf_token:
                   type: string
     """
-    from auth_utils import generate_csrf_token
 
     return generate_csrf_token()
 

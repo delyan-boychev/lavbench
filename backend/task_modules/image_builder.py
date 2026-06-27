@@ -16,6 +16,8 @@ import os
 import shlex
 import time
 
+from cache_utils import get_redis_client
+
 from task_modules.docker_utils import _get_client
 from task_modules.docker_utils import image_exists as _image_exists
 
@@ -248,7 +250,6 @@ def start_rebuild_listener(main_server_url, worker_token):
 
 def _rebuild_listener(main_server_url, worker_token):
     """Background thread: subscribe to Redis 'task_rebuild' channel."""
-    from cache_utils import get_redis_client
 
     r = get_redis_client()
     if not r:

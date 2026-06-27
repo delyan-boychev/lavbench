@@ -4,14 +4,18 @@ import logging
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
+from services.file_validation import validate_extension, validate_notebook_content
+from services.submission_service import check_execution_rules
 from sqlalchemy.orm import joinedload
 from sse_utils import publish_leaderboard_update, publish_submissions_update
 from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
-from utils.pagination import extract_pagination, paginated_response
+from utils.metadata import build_submission_metadata
+from utils.pagination import extract_pagination
 from utils.sse import sse_response
 
 logger = logging.getLogger(__name__)
@@ -71,8 +75,6 @@ def parse_notebook(challenge_id):
     if "file" not in request.files:
         return err("ERR_NO_FILE_UPLOADED", 400)
     file = request.files["file"]
-
-    from services.file_validation import validate_extension, validate_notebook_content
 
     valid_ext, ext_err = validate_extension(file.filename, {".ipynb"})
     if not valid_ext:
@@ -228,14 +230,12 @@ def submit_code(challenge_id):
         return err("ERR_INVALID_TASK_ID", 400)
 
     # AST and general rule validation
-    from services.submission_service import check_execution_rules
 
     passed, err_msg = check_execution_rules(task, selected_cells)
     if not passed:
         return err("ERR_AST_RULE_FAILED", 400, message=err_msg)
 
     # Atomic rate-limited submission creation via Redis lock
-    from cache_utils import cache_lock
 
     lock_key = f"submit_lock:user_{user_id}:challenge_{challenge_id}"
 
@@ -276,7 +276,6 @@ def submit_code(challenge_id):
         extract_code_from_cells,
     )
     from tasks import evaluate_submission
-    from utils.metadata import build_submission_metadata
 
     task_files_list = safe_json_loads(task.files, [])
 
@@ -419,7 +418,9 @@ def get_submissions(challenge_id):
             ],
             "per_page": pagination.per_page,
             "challenge": challenge.to_dict(),
-            **paginated_response([], pagination.total, pagination.page, pagination.pages),
+            "total": pagination.total,
+            "page": pagination.page,
+            "pages": pagination.pages,
         }
     )
 
@@ -592,12 +593,10 @@ def select_final_submission(submission_id):
         s.is_final_selection = s.id == submission.id
     db.session.commit()
 
-    from cache_utils import invalidate_leaderboard_cache
-
     invalidate_leaderboard_cache(submission.challenge_id)
 
     publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id)
+    publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
     return jsonify(
         {
@@ -641,7 +640,6 @@ def stream_submission_logs(submission_id):
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     def event_generator():
-        from cache_utils import get_redis_client
 
         r = get_redis_client()
 

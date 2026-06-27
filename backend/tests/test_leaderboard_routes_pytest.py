@@ -745,7 +745,7 @@ class TestManualPointsEndpoint:
         )
         assert res.status_code == 200
 
-    @patch("cache_utils.invalidate_leaderboard_cache")
+    @patch("routes.leaderboard.invalidate_leaderboard_cache")
     def test_cache_invalidated_on_manual_points_save(self, mock_invalidate, client, db_session):
         self._seed_completed_submission(db_session)
         payload = {

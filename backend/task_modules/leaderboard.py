@@ -1,14 +1,10 @@
 """Celery task for asynchronous leaderboard recalculation."""
 
 from models import Challenge
+from services.leaderboard_service import build_and_cache_leaderboard
 
 
 def run_recalculate_all_leaderboards(app):
-    """
-    Periodically recalculates and caches leaderboards for all active challenges
-    to avoid synchronous cache invalidation and rebuild spikes.
-    """
-    from services.leaderboard_service import build_and_cache_leaderboard
 
     with app.app_context():
         # Get active or recent challenges

@@ -7,6 +7,7 @@ from datetime import datetime
 
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 
+from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission
 
@@ -285,8 +286,6 @@ def import_challenge_from_dict(data, zip_ref=None):
 
     from flask import current_app
     from werkzeug.utils import secure_filename
-
-    from services.file_validation import check_dangerous_extension
 
     title = data.get("title")
     if not title:

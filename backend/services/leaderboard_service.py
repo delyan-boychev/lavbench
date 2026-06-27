@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from functools import cmp_to_key
 
+from cache_utils import cache_lock, get_cached, set_cached
 from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from sqlalchemy.orm import joinedload
 
@@ -16,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=False):
     """Compute, cache, and return the leaderboard for a challenge. Uses a distributed lock."""
-    from cache_utils import cache_lock, get_cached, set_cached
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     lock_key = f"lock:{cache_key}"

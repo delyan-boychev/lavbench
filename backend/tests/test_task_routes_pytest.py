@@ -769,7 +769,7 @@ class TestGetTaskLeaderboard:
         db.session.commit()
         self.admin_token = generate_token(self.admin.id, role="admin")
 
-    @patch("services.leaderboard_service.get_task_leaderboard_data")
+    @patch("routes.tasks.get_task_leaderboard_data")
     def test_returns_leaderboard_data(self, mock_get_data):
         mock_get_data.return_value = {"leaderboard": [{"rank": 1, "score": 0.95}]}
         resp = self.client.get(
@@ -780,7 +780,7 @@ class TestGetTaskLeaderboard:
         data = resp.get_json()
         assert "leaderboard" in data
 
-    @patch("services.leaderboard_service.get_task_leaderboard_data")
+    @patch("routes.tasks.get_task_leaderboard_data")
     def test_returns_403_on_error(self, mock_get_data):
         mock_get_data.return_value = {"error": "Access denied"}
         resp = self.client.get(
@@ -829,7 +829,7 @@ class TestWorkerDownloadTaskFile:
         db.session.commit()
         self._upload_dir = self.app.config["UPLOAD_FOLDER"]
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_downloads_file_with_valid_token(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(
@@ -838,7 +838,7 @@ class TestWorkerDownloadTaskFile:
         )
         assert resp.status_code == 200
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -847,7 +847,7 @@ class TestWorkerDownloadTaskFile:
         )
         assert resp.status_code == 401
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_404_for_nonexistent_file(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(
@@ -885,7 +885,7 @@ class TestGetActiveDatasets:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_datasets_from_custom_eval(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
@@ -893,7 +893,7 @@ class TestGetActiveDatasets:
         data = resp.get_json()
         assert "dataset1" in data["datasets"]
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_skips_archived_challenges(self, mock_verify):
         mock_verify.return_value = True
         self.challenge.is_archived = True
@@ -903,7 +903,7 @@ class TestGetActiveDatasets:
         data = resp.get_json()
         assert data["datasets"] == []
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "bad"})
@@ -936,7 +936,7 @@ class TestGetTaskHfKey:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_hf_key(self, mock_verify):
         mock_verify.return_value = True
         with patch.object(Task, "get_hf_api_key", return_value="my-key"):
@@ -948,7 +948,7 @@ class TestGetTaskHfKey:
         data = resp.get_json()
         assert data["hf_key"] == "my-key"
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -957,7 +957,7 @@ class TestGetTaskHfKey:
         )
         assert resp.status_code == 401
 
-    @patch("auth_utils.check_worker_auth")
+    @patch("routes.tasks.check_worker_auth")
     def test_returns_404_for_nonexistent_task(self, mock_verify):
         mock_verify.return_value = True
         resp = self.client.get(

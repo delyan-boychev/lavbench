@@ -1,6 +1,10 @@
 import contextlib
+import io
+import json
 import logging
 import os
+import shutil
+import zipfile
 import zoneinfo
 from datetime import datetime
 
@@ -8,7 +12,9 @@ from auth_utils import jury_access_required, login_required, role_required
 from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from error_utils import err
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
-from models import AuditLog, Challenge, Stage, Submission, User, db, decrypt_field
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from services.challenge_service import generate_exported_results_csv
+from services.file_validation import validate_extension
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from utils.audit import log_audit
@@ -18,6 +24,7 @@ from utils.dates import parse_datetime
 from utils.dates import to_utc as _to_utc
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
+from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
@@ -371,8 +378,6 @@ def create_challenge():
 
 def _create_test_stage_for_challenge(challenge, start_time, end_time):
     """Create a test stage with warm-up task for the given challenge."""
-    from models import Task
-
     tz = challenge.timezone or "UTC"
     start_time = _to_utc(start_time, tz)
     end_time = _to_utc(end_time, tz)
@@ -398,17 +403,13 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     db.session.add(stage)
     db.session.commit()
 
-    import json as json_mod
-    import os
-    import shutil
-
     routes_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.dirname(routes_dir)
     templates_dir = os.path.join(backend_dir, "test_stage_templates")
     config_path = os.path.join(templates_dir, "task_config.json")
 
     with open(config_path, encoding="utf-8") as f:
-        task_config = json_mod.load(f)
+        task_config = json.load(f)
 
     test_task = Task(
         challenge_id=challenge.id,
@@ -458,7 +459,7 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
                 "size_bytes": labels_size,
             }
         ]
-        test_task.files = json_mod.dumps(files_meta)
+        test_task.files = json.dumps(files_meta)
         db.session.commit()
 
         # Queue baseline submission
@@ -611,8 +612,6 @@ def delete_challenge(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
 
     # Remove competition backups
-    import shutil
-
     backup_dir = os.path.join("/backups", f"challenge_{challenge_id}")
     if os.path.isdir(backup_dir):
         shutil.rmtree(backup_dir, ignore_errors=True)
@@ -1044,8 +1043,6 @@ def delete_stage(challenge_id, stage_id):
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
 
     # Nullify stage_id for tasks belonging to this stage
-    from models import Task
-
     tasks = Task.query.filter_by(stage_id=stage_id).all()
     for t in tasks:
         t.stage_id = None
@@ -1114,8 +1111,6 @@ def finalize_stage(challenge_id, stage_id):
         return err(
             "ERR_NO_COMPETITORS", 400, message="Cannot finalize a stage with no competitors."
         )
-    from models import Task
-
     stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
 
     for comp in competitors:
@@ -1282,8 +1277,6 @@ def export_results(challenge_id):
             schema:
               type: object
     """
-    from services.challenge_service import generate_exported_results_csv
-
     challenge = db.get_or_404(Challenge, challenge_id)
     csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
 
@@ -1322,12 +1315,6 @@ def export_challenge(challenge_id):
               type: string
               format: binary
     """
-    import io
-    import json
-    import os
-    import zipfile
-
-    from werkzeug.utils import secure_filename
 
     challenge = db.get_or_404(Challenge, challenge_id)
     data = challenge.to_dict()
@@ -1387,10 +1374,6 @@ def import_challenge():
             schema:
               type: object
     """
-    import json
-
-    from services.file_validation import validate_extension
-
     if not request.content_type or "multipart/form-data" not in request.content_type:
         return err("ERR_INVALID_UPLOAD_FORMAT", 400)
 

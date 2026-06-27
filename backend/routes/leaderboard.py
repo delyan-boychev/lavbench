@@ -3,9 +3,10 @@ import logging
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, role_required
+from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from flask import Blueprint, jsonify, request
-from models import Challenge, Submission, Task, User, db, is_metric_lower_better
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
@@ -355,7 +356,6 @@ def stream_challenge_leaderboard(challenge_id):
             schema:
               type: string
     """
-    from cache_utils import get_redis_client
     from flask import current_app
 
     user_id = request.user["user_id"]
@@ -532,7 +532,7 @@ def save_manual_points(challenge_id):
             )
 
         # Check if the task is in a finalized stage with revealed results
-        from models import Stage, Task
+        from models import Task
 
         task = db.session.get(Task, task_id)
         if task and task.stage_id:
@@ -568,7 +568,6 @@ def save_manual_points(challenge_id):
 
     # Create audit logs for changed points
     admin_id = request.user["user_id"]
-    from models import AuditLog
 
     for task_id_str, pts in validated_points.items():
         task_id = str(task_id_str)
@@ -589,7 +588,6 @@ def save_manual_points(challenge_id):
     db.session.commit()
 
     # Invalidate cache
-    from cache_utils import invalidate_leaderboard_cache
 
     invalidate_leaderboard_cache(challenge_id)
 

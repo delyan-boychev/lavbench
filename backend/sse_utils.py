@@ -12,14 +12,19 @@ def _redis():
     return get_redis_client()
 
 
-def publish_leaderboard_update(task_id):
-    """Publish a leaderboard-changed event to Redis channel for SSE consumers."""
+def publish_leaderboard_update(task_id, challenge_id=None):
+    """Publish a leaderboard-changed event to Redis channels for SSE consumers."""
     if not task_id:
         return
     try:
         r = _redis()
         if r:
             r.publish(f"task_{task_id}_leaderboard", json.dumps({"event": "update"}))
+            if challenge_id:
+                r.publish(
+                    f"challenge_{challenge_id}_leaderboard",
+                    json.dumps({"event": "update"}),
+                )
     except Exception:
         logger.exception("Redis publish leaderboard update error for task %s", task_id)
 

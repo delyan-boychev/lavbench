@@ -640,7 +640,7 @@ class TestSubmitCode:
         assert resp.get_json()["code"] == "ERR_INVALID_TASK_ID"
 
     @patch(
-        "services.submission_service.check_execution_rules",
+        "routes.submissions.check_execution_rules",
         return_value=(False, "Custom rule failed"),
     )
     def test_ast_rule_failed(self, mock_check):

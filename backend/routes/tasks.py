@@ -4,7 +4,14 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from auth_utils import (
+    check_worker_auth,
+    jury_access_required,
+    login_required,
+    rate_limit,
+    role_required,
+)
+from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from flask import (
     Blueprint,
@@ -14,17 +21,24 @@ from flask import (
     send_file,
     send_from_directory,
 )
-from models import Challenge, Submission, Task, db
+from models import Challenge, Stage, Submission, Task, db
+from services.leaderboard_service import get_task_leaderboard_data
 from services.submission_service import (
     calculate_submission_priority,
     check_execution_rules,
     extract_code_from_cells,
     extract_code_from_notebook,
 )
-from sse_utils import publish_leaderboard_update, publish_submissions_update
+from sse_utils import (
+    publish_leaderboard_update,
+    publish_submissions_update,
+)
+from utils.access import ensure_registered
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
+from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.json_utils import safe_json_loads
+from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
 from werkzeug.utils import secure_filename
 
@@ -53,7 +67,6 @@ MAX_LOG_SIZE = 100 * 1024
 
 
 def check_competitor_access(user_id, challenge_id):
-    from utils.access import ensure_registered
 
     return ensure_registered(user_id, challenge_id) is not None
 
@@ -113,10 +126,9 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     db.session.commit()
 
     publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id)
+    publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
     from tasks import evaluate_submission
-    from utils.metadata import build_submission_metadata
 
     task_files_list = safe_json_loads(task.files, [])
 
@@ -396,7 +408,6 @@ def create_task(challenge_id):
     stage_id = request.form.get("stage_id")
     if stage_id == "":
         stage_id = None
-    from models import Stage
 
     if stage_id:
         st = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first()
@@ -1253,7 +1264,7 @@ def submit_task(task_id):
             db.session.add(submission)
             db.session.commit()
             publish_submissions_update(submission.task_id, submission.user_id)
-            publish_leaderboard_update(submission.task_id)
+            publish_leaderboard_update(submission.task_id, submission.challenge_id)
             return err(
                 "ERR_AST_RULE_FAILED",
                 200,
@@ -1275,12 +1286,10 @@ def submit_task(task_id):
         db.session.add(submission)
         db.session.commit()
 
-    from cache_utils import invalidate_leaderboard_cache
-
     invalidate_leaderboard_cache(submission.challenge_id)
 
     publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id)
+    publish_leaderboard_update(submission.task_id, submission.challenge_id)
     from tasks import evaluate_submission
 
     gpu_required = False
@@ -1436,7 +1445,6 @@ def get_task_submissions(task_id):
 
 
 def _get_task_leaderboard_data(task_id, user_role, current_user_id):
-    from services.leaderboard_service import get_task_leaderboard_data
 
     return get_task_leaderboard_data(task_id, user_role, current_user_id)
 
@@ -1515,8 +1523,6 @@ def stream_task_leaderboard(task_id):
         data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
         yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
 
-        from cache_utils import get_redis_client
-
         r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe(f"task_{task_id}_leaderboard")
@@ -1591,8 +1597,6 @@ def stream_task_submissions(task_id):
         # Clean up: Removed "with current_app.app_context():" block from the initial yield
         data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
         yield f"data: {json.dumps(data)}\n\n"
-
-        from cache_utils import get_redis_client
 
         r = get_redis_client()
         pubsub = r.pubsub()
@@ -1683,8 +1687,6 @@ def stream_worker_status():
         res_data = _get_worker_status_data()
         yield f"data: {json.dumps(res_data)}\n\n"
 
-        from cache_utils import get_redis_client
-
         r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe("worker_status_live")
@@ -1714,73 +1716,64 @@ def stream_worker_status():
 
 
 def _get_worker_status_data():
-    from cache_utils import get_cached, set_cached
 
-    is_testing = current_app.config.get("TESTING", False)
-    cache_key = "worker:status:summary"
-    if not is_testing:
-        cached_val = get_cached(cache_key)
-        if cached_val is not None:
-            return cached_val
+    def _compute():
+        import json as json_lib
 
-    import json as json_lib
+        from tasks import celery
 
-    from tasks import celery
+        inspect = celery.control.inspect(timeout=1.0)
+        pings = inspect.ping() or {}
+        stats = inspect.stats() or {}
+        registered = inspect.registered() or {}
 
-    inspect = celery.control.inspect(timeout=1.0)
-    pings = inspect.ping() or {}
-    stats = inspect.stats() or {}
-    registered = inspect.registered() or {}
-
-    r = None
-    try:
-        from cache_utils import get_redis_client
-
-        r = get_redis_client()
-    except Exception as e:
-        logger.warning("Failed to get Redis client for worker status: %s", e)
         r = None
+        try:
+            from cache_utils import get_redis_client
 
-    clusters = []
-    for worker_name in pings:
-        # Only show workers that have task evaluation capabilities
-        w_registered = registered.get(worker_name, []) if registered else []
-        if "tasks.evaluate_submission" not in w_registered:
-            continue
+            r = get_redis_client()
+        except Exception as e:
+            logger.warning("Failed to get Redis client for worker status: %s", e)
+            r = None
 
-        spec = None
-        if r:
-            try:
-                spec_data = r.get(f"worker_spec:{worker_name}")
-                if spec_data:
-                    spec = json_lib.loads(spec_data)
-            except Exception as e:
-                logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
+        clusters = []
+        for worker_name in pings:
+            w_registered = registered.get(worker_name, []) if registered else []
+            if "tasks.evaluate_submission" not in w_registered:
+                continue
 
-        if not spec:
-            w_stats = stats.get(worker_name, {}) if stats else {}
-            pool = w_stats.get("pool", {}) if w_stats else {}
-            concurrency = pool.get("max-concurrency", 1) if pool else 1
-            try:
-                concurrency = int(concurrency)
-            except Exception:
-                concurrency = 1
-            has_gpu = "gpu" in worker_name.lower()
-            spec = {
-                "name": worker_name,
-                "type": "GPU" if has_gpu else "CPU",
-                "concurrency": concurrency,
-                "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
-                "ram_gb": 16.0 if has_gpu else 8.0,
-                "vram_gb": 8.0 if has_gpu else "N/A",
-            }
-        clusters.append(spec)
+            spec = None
+            if r:
+                try:
+                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    if spec_data:
+                        spec = json_lib.loads(spec_data)
+                except Exception as e:
+                    logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
 
-    is_online = len(clusters) > 0
-    res_data = {"status": "online" if is_online else "offline", "clusters": clusters}
-    if not is_testing:
-        set_cached(cache_key, res_data, timeout=10)
-    return res_data
+            if not spec:
+                w_stats = stats.get(worker_name, {}) if stats else {}
+                pool = w_stats.get("pool", {}) if w_stats else {}
+                concurrency = pool.get("max-concurrency", 1) if pool else 1
+                try:
+                    concurrency = int(concurrency)
+                except Exception:
+                    concurrency = 1
+                has_gpu = "gpu" in worker_name.lower()
+                spec = {
+                    "name": worker_name,
+                    "type": "GPU" if has_gpu else "CPU",
+                    "concurrency": concurrency,
+                    "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
+                    "ram_gb": 16.0 if has_gpu else 8.0,
+                    "vram_gb": 8.0 if has_gpu else "N/A",
+                }
+            clusters.append(spec)
+
+        is_online = len(clusters) > 0
+        return {"status": "online" if is_online else "offline", "clusters": clusters}
+
+    return cached_or_compute_unless_testing("worker:status:summary", _compute, timeout=10)
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
@@ -1807,7 +1800,6 @@ def report_worker_progress(submission_id):
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import check_worker_auth
 
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)
@@ -1858,7 +1850,7 @@ def report_worker_progress(submission_id):
     db.session.commit()
 
     publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id)
+    publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
     if submission.status in ("completed", "failed"):
         from sse_utils import publish_submission_status
@@ -1903,7 +1895,6 @@ def worker_download_task_file(task_id, filename):
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import check_worker_auth
 
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)
@@ -1944,7 +1935,6 @@ def get_active_tasks():
         description: Success
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import check_worker_auth
 
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)
@@ -2005,7 +1995,6 @@ def get_active_datasets():
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import check_worker_auth
 
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)
@@ -2088,7 +2077,6 @@ def get_task_hf_key(task_id):
               type: object
     """
     token = request.headers.get("X-Worker-Token")
-    from auth_utils import check_worker_auth
 
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)

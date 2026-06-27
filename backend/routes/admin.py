@@ -6,11 +6,14 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import string
+import time
 import zipfile
 from datetime import datetime
 
 from auth_utils import jury_access_required, role_required
+from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
 from flask import (
@@ -31,7 +34,11 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
+from services.challenge_service import generate_scores_csv
+from services.file_validation import validate_csv_content, validate_extension
+from sqlalchemy import or_
 from utils.audit import log_audit
+from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
 from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
@@ -104,8 +111,6 @@ def transliterate_bulgarian(text):
 
 
 def generate_unique_username(name, surname, role="competitor"):
-    import time
-
     trans_name = transliterate_bulgarian(name)
     trans_surname = transliterate_bulgarian(surname)
     norm_name = re.sub(r"[^a-zA-Z0-9]", "", trans_name)
@@ -234,8 +239,6 @@ def register_competitor():
             "challenge_id": challenge_id,
         },
     )
-
-    from cache_utils import invalidate_leaderboard_cache
 
     invalidate_leaderboard_cache(challenge_id)
 
@@ -616,8 +619,6 @@ def import_competitors_csv():
         return err("ERR_FILE_REQUIRED", 400)
     file = request.files["file"]
 
-    from services.file_validation import validate_csv_content, validate_extension
-
     valid_ext, ext_err = validate_extension(file.filename, {".csv"})
     if not valid_ext:
         return err("ERR_FILE_INVALID", 400, message=ext_err)
@@ -783,8 +784,6 @@ def import_competitors_csv():
             details={"challenge_id": challenge_id, "count": len(imported)},
         )
 
-        from cache_utils import invalidate_leaderboard_cache
-
         invalidate_leaderboard_cache(challenge_id)
         return (
             jsonify(
@@ -905,8 +904,6 @@ def stream_backup_status():
     def event_generator():
         with current_app.app_context():
             yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
-
-        from cache_utils import get_redis_client
 
         r = get_redis_client()
         pubsub = r.pubsub()
@@ -1038,8 +1035,6 @@ def get_audit_logs():
     page, per_page = extract_pagination(request, default_per_page=15, max_per_page=100)
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
-    from sqlalchemy import or_
-
     query = AuditLog.query
 
     if challenge_id:
@@ -1277,8 +1272,6 @@ def update_user(user_id):
 
     db.session.commit()
 
-    from cache_utils import invalidate_leaderboard_cache
-
     if old_challenge_id:
         invalidate_leaderboard_cache(old_challenge_id)
     if user.challenge_id and user.challenge_id != old_challenge_id:
@@ -1451,8 +1444,6 @@ def download_scores_csv(challenge_id):
             schema:
               type: object
     """
-    from services.challenge_service import generate_scores_csv
-
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return err("ERR_SCORES_NOT_FINALIZED", 400)
@@ -1644,8 +1635,6 @@ def stream_worker_stats():
             res_data = _get_worker_stats_response()
             yield f"data: {json.dumps(res_data)}\n\n"
 
-        from cache_utils import get_redis_client
-
         r = get_redis_client()
         pubsub = r.pubsub()
         pubsub.subscribe("worker_stats_update")
@@ -1680,19 +1669,9 @@ def stream_worker_stats():
 
 
 def _get_worker_stats_response():
-    from cache_utils import get_cached, set_cached
 
-    is_testing = current_app.config.get("TESTING", False)
-    cache_key = "worker:status:detailed"
-    if not is_testing:
-        cached_val = get_cached(cache_key)
-        if cached_val is not None:
-            return cached_val
-
-    try:
-        import os
+    def _compute():
         import platform
-        import shutil
         import subprocess
 
         # 1. Collect Host System Resources
@@ -1820,17 +1799,14 @@ def _get_worker_stats_response():
             w_reserved = reserved.get(worker_name, [])
             w_registered = registered.get(worker_name, [])
 
-            # Extract basic stats
             pool = w_stats.get("pool", {})
             broker = w_stats.get("broker", {})
             total_tasks = w_stats.get("total", {})
             w_rusage = w_stats.get("rusage", {})
 
-            # Format worker resource usage if available
             rusage_formatted = {}
             if w_rusage:
                 maxrss = w_rusage.get("maxrss", 0)
-                # Normalize macOS vs Linux maxrss
                 maxrss_mb = (
                     round(maxrss / (1024 * 1024), 2)
                     if platform.system() == "Darwin"
@@ -1864,14 +1840,14 @@ def _get_worker_stats_response():
                 }
             )
 
-        res_data = {
+        return {
             "connected_workers_count": len(workers_list),
             "workers": workers_list,
             "system": system_resources,
         }
-        if not is_testing:
-            set_cached(cache_key, res_data, timeout=10)
-        return res_data
+
+    try:
+        return cached_or_compute_unless_testing("worker:status:detailed", _compute, timeout=10)
     except Exception as e:
         return {"error": str(e)}
 
@@ -1895,8 +1871,6 @@ def get_dead_letters():
             schema:
               type: object
     """
-    from cache_utils import get_redis_client
-
     r = get_redis_client()
     if not r:
         return jsonify({"items": []}), 200
