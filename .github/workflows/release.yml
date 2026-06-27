@@ -61,3 +61,4 @@ jobs:
           tag_name: ${{ steps.git-cliff.outputs.version }}
           body: ${{ steps.git-cliff.outputs.changelog }}
           generate_release_notes: true
+

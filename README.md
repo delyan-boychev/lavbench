@@ -21,6 +21,16 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ---
 
+## Demo
+
+Interact with a live simulation of the real-time leaderboard at [`/demo/leaderboard`](http://localhost:5173/demo/leaderboard) (start the frontend with `npm run dev`, no backend required).
+
+Scores auto-shuffle every 4 seconds to demonstrate the SSE-like rank changes, medal styling, and expandable per-task score breakdown. Toggle streaming on/off or click **Shuffle Now** to trigger manual updates.
+
+![Live leaderboard updating scores in real-time](docs/source/_static/demo/leaderboard-live.gif)
+
+---
+
 ## Features
 
 - **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
@@ -40,23 +50,37 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 ## Quick Start
 
 ```bash
-# 1. Configure
-cp .env.example .env
-# Edit .env — set SECRET_KEY, ENCRYPTION_KEY, and any other necessary values
-# Generate ENCRYPTION_KEY: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# 1. One-command setup (creates env, generates keys, installs deps)
+make setup
 
-# Also run setup-admin.py after first deploy to create an admin user
-python backend/setup-admin.py
-
-# 2. Launch
-./scripts/deploy-debug.sh
+# 2. Launch locally
+make dev
 
 # 3. Open
 # Frontend -> http://localhost:5173
 # API      -> http://localhost:5001/api
 ```
 
-Press `Ctrl+C` in your terminal to gracefully stop all services.
+Press `Ctrl+C` to stop all services.
+
+### Deploy with Docker
+
+```bash
+make deploy-docker
+# http://localhost — full stack in containers
+```
+
+### Remote Workers
+
+```bash
+# After make setup, worker.env is ready — copy it to the worker:
+scp worker.env user@worker-machine:~/
+
+# On the worker machine (Docker only, no repo needed):
+make worker-docker
+```
+
+See the [Admin Guide](guides/en/admin_guide.md) for production deployment.
 
 ---
 
@@ -186,9 +210,9 @@ cp .env.example .env
 | `WORKER_PUBLIC_KEY`            | Ed25519 public key for worker auth       | **Required for workers** — base64 encoded                                                        |
 | `WORKER_PRIVATE_KEY`           | Ed25519 private key for worker auth      | **Required for workers** — base64 encoded                                                        |
 | `REDIS_PASSWORD`               | Redis auth password                      | `your_redis_password`                                                                            |
-| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path            | `/path/to/ca.crt`                                                                                |
-| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/path/to/client.crt`                                                                            |
-| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/path/to/client.key`                                                                            |
+| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path (container)| `/etc/ssl/certs/redis/redis-ca.crt`                                                              |
+| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/etc/ssl/certs/redis/redis-client.crt`                                                          |
+| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/etc/ssl/certs/redis/redis-client.key`                                                          |
 | `REDIS_SSL_CERT_REQS`          | Redis SSL certificate verification level | `required`                                                                                       |
 | `INTERNAL_ONLY_WORKER`         | Restrict worker to system tasks only     | `false`                                                                                          |
 | `EVALUATION_ONLY_WORKER`       | Restrict worker to evaluation tasks only | `false`                                                                                          |

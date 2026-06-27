@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY tasks.py \
+     worker_utils.py \
+     cache_utils.py \
+     sse_utils.py \
+     evaluation_engine.py \
+     models.py \
+     config.py \
+     ./
+
+COPY task_modules/ task_modules/
+COPY services/ services/
+
+CMD ["celery", "-A", "tasks.celery", "worker", "--loglevel=info", "-Q", "cpu_queue", "-c", "4"]
