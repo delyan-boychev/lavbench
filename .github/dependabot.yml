@@ -4,40 +4,50 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "python"
+    groups:
+      python-compatible:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "javascript"
+    ignore:
+      - dependency-name: "typescript"
+    groups:
+      frontend-compatible:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
-      - "docker"
+      day: "monday"
 
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
-      - "docker"
+      day: "monday"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
-      - "ci"
+      day: "monday"
+    groups:
+      actions:
+        patterns:
+          - "*"

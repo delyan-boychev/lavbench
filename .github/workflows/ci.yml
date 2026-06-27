@@ -27,10 +27,10 @@ jobs:
         ports:
           - 6379:6379
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
@@ -38,7 +38,7 @@ jobs:
         env:
           REDIS_URL: "redis://localhost:6379/0"
           DATABASE_URL: "sqlite:///:memory:"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-coverage
@@ -49,10 +49,10 @@ jobs:
     name: Backend lint & format (Ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - run: pip install ruff==0.15.19
       - run: ruff check backend/ --config backend/pyproject.toml
       - run: ruff format --check backend/ --config backend/pyproject.toml
@@ -63,8 +63,8 @@ jobs:
     name: Frontend lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "26"
           cache: npm
@@ -78,8 +78,8 @@ jobs:
     name: Frontend format (prettier)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "26"
           cache: npm
@@ -93,8 +93,8 @@ jobs:
     name: Frontend tests + coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "26"
           cache: npm
@@ -103,7 +103,7 @@ jobs:
         working-directory: frontend
       - run: npm run test:coverage
         working-directory: frontend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: frontend-coverage
@@ -114,10 +114,10 @@ jobs:
     name: Translations consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - run: python -m json.tool frontend/public/locales/en/translation.json > /dev/null
       - run: python -m json.tool frontend/public/locales/bg/translation.json > /dev/null
       - name: Check translation key parity
@@ -160,8 +160,8 @@ jobs:
     name: Frontend type check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "26"
           cache: npm
@@ -175,7 +175,7 @@ jobs:
     name: Docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t lavbench-backend backend/
       - run: docker build -t lavbench-frontend frontend/
 
@@ -183,16 +183,16 @@ jobs:
     name: Build Sphinx documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - run: pip install -r docs/requirements.txt
       - name: Build Sphinx
         env:
           API_SPEC_SKIP_FETCH: "true"
         run: cd docs && make html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sphinx-docs

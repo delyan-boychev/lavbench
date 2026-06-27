@@ -90,7 +90,7 @@ eval "$(micromamba shell hook --shell bash)"
 
 if ! micromamba env list | grep -q "lavbench_worker"; then
     echo "--> Creating micromamba environment 'lavbench_worker' with Python 3.10..."
-    micromamba create -n lavbench_worker python=3.10 -y
+    micromamba create -n lavbench_worker python=3.12 -y
 fi
 
 echo "--> Activating micromamba environment 'lavbench_worker'..."
