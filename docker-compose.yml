@@ -11,9 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # Exposed locally for native dev (make dev) — Docker services use internal network
-    ports:
-      # No host port — PostgreSQL is only accessible inside the Docker network
+    # No host port — PostgreSQL is only accessible inside the Docker network
     deploy:
       resources:
         limits:
