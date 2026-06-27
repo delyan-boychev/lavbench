@@ -212,7 +212,7 @@ WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 SECRET_KEY=${SECRET_KEY}
 ${CERTS_SECTION}
 # Optional overrides (uncomment to set):
-# Worker role: eval, internal, or both — set during first make worker-docker
+# Worker role: eval, internal, or both — set during first make setup-worker
 # WORKER_TYPE=eval
 # WORKER_GPU_ID=0
 # CELERY_WORKER_CONCURRENCY=4

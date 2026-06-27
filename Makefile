@@ -32,6 +32,7 @@ generate-keys:  # Re-generate missing security keys
 setup-admin:    # Create an admin user (works with and without Docker)
 	@if docker compose ps backend 2>/dev/null | grep -q "Up"; then \
 		docker compose exec backend python3 /app/setup-admin.py; \
+		docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt 2>/dev/null || true; \
 	else \
 		python backend/setup-admin.py; \
 	fi
