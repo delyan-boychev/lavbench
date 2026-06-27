@@ -507,6 +507,7 @@ if [ "$MODE" = "docker" ]; then
     --restart unless-stopped \
     -e CELERY_BROKER_URL \
     -e CELERY_RESULT_BACKEND \
+    -e SECRET_KEY \
     -e WORKER_PRIVATE_KEY \
     -e WORKER_GPU_ID \
     -e HF_CACHE_DIR \
