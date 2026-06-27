@@ -5,32 +5,22 @@ import zoneinfo
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, role_required
+from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from error_utils import err
-from flask import Blueprint, jsonify, request
-from models import Challenge, Submission, User, db, decrypt_field
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
+from models import AuditLog, Challenge, Stage, Submission, User, db, decrypt_field
+from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
+from utils.audit import log_audit
+from utils.cache import invalidate_entity_cache
+from utils.cache_helpers import cached_or_compute
+from utils.dates import parse_datetime
+from utils.dates import to_utc as _to_utc
+from utils.json_utils import safe_json_loads
+from utils.pagination import extract_pagination, paginated_response
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
-
-
-def _now_local_for_timezone(timezone_str):
-    try:
-        tz = zoneinfo.ZoneInfo(timezone_str or "UTC")
-        return datetime.now(tz).replace(tzinfo=None)
-    except Exception:
-        return datetime.utcnow()
-
-
-def _to_utc(dt, timezone_str="UTC"):
-    """Convert *dt* to offset-naive UTC.
-
-    If *dt* is already timezone-aware, convert directly to UTC and strip tzinfo.
-    If *dt* is naive, interpret it as being in *timezone_str* first.
-    """
-    if dt.tzinfo is not None:
-        return dt.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-    tz = zoneinfo.ZoneInfo(timezone_str)
-    return dt.replace(tzinfo=tz).astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
 
 
 def filter_challenge_for_competitor(challenge_dict):
@@ -152,8 +142,6 @@ def get_challenges():
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
-    from cache_utils import get_cached, set_cached
-
     if user_role == "competitor":
         user = db.session.get(User, user_id)
         if not user or not user.challenge_id:
@@ -165,39 +153,39 @@ def get_challenges():
             return jsonify([])
 
         cache_key = f"challenge:{challenge_id}:competitor"
-        cached_challenge = get_cached(cache_key)
-        if cached_challenge is not None:
-            return jsonify([cached_challenge])
-
-        challenge_dict = challenge.to_dict()
-        filtered = filter_challenge_for_competitor(challenge_dict)
-        set_cached(cache_key, filtered, timeout=600)
-        return jsonify([filtered])
+        return jsonify(
+            [
+                cached_or_compute(
+                    cache_key,
+                    lambda: filter_challenge_for_competitor(challenge.to_dict()),
+                    timeout=600,
+                )
+            ]
+        )
 
     if user_role == "jury":
         from models import JuryChallenge
-        from sqlalchemy.orm import joinedload
 
         assigned_challenges = JuryChallenge.query.filter_by(jury_id=user_id).all()
         assigned_ids = [jc.challenge_id for jc in assigned_challenges]
         if not assigned_ids:
             return jsonify([])
 
-        page = request.args.get("page", type=int)
-        if page is not None:
-            per_page = min(request.args.get("per_page", 10, type=int), 100)
+        page_arg = request.args.get("page", type=int)
+        if page_arg is not None:
+            _, per_page = extract_pagination(request, default_per_page=10, max_per_page=100)
             pagination = (
                 Challenge.query.filter(Challenge.id.in_(assigned_ids))
                 .options(joinedload(Challenge.tasks), joinedload(Challenge.stages))
-                .paginate(page=page, per_page=per_page, error_out=False)
+                .paginate(page=page_arg, per_page=per_page, error_out=False)
             )
             return jsonify(
-                {
-                    "items": [c.to_dict() for c in pagination.items],
-                    "total": pagination.total,
-                    "page": pagination.page,
-                    "pages": pagination.pages,
-                }
+                paginated_response(
+                    items=[c.to_dict() for c in pagination.items],
+                    total=pagination.total,
+                    page=pagination.page,
+                    pages=pagination.pages,
+                )
             )
 
         challenges = (
@@ -207,34 +195,25 @@ def get_challenges():
         )
         return jsonify([c.to_dict() for c in challenges])
 
-    from sqlalchemy.orm import joinedload
-
-    page = request.args.get("page", type=int)
-    if page is not None:
-        per_page = min(request.args.get("per_page", 10, type=int), 100)
+    page_arg = request.args.get("page", type=int)
+    if page_arg is not None:
+        _, per_page = extract_pagination(request, default_per_page=10, max_per_page=100)
         pagination = Challenge.query.options(
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
-        ).paginate(page=page, per_page=per_page, error_out=False)
+        ).paginate(page=page_arg, per_page=per_page, error_out=False)
         return jsonify(
-            {
-                "items": [c.to_dict() for c in pagination.items],
-                "total": pagination.total,
-                "page": pagination.page,
-                "pages": pagination.pages,
-            }
+            paginated_response(
+                items=[c.to_dict() for c in pagination.items],
+                total=pagination.total,
+                page=pagination.page,
+                pages=pagination.pages,
+            )
         )
-
-    cache_key = "challenges:all"
-    cached_all = get_cached(cache_key)
-    if cached_all is not None:
-        return jsonify(cached_all)
 
     challenges = Challenge.query.options(
         joinedload(Challenge.tasks), joinedload(Challenge.stages)
     ).all()
-    challenges_list = [c.to_dict() for c in challenges]
-    set_cached(cache_key, challenges_list, timeout=600)
-    return jsonify(challenges_list)
+    return jsonify([c.to_dict() for c in challenges])
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["GET"])
@@ -266,10 +245,9 @@ def get_challenge(challenge_id):
     user_role = request.user["role"]
 
     if user_role == "competitor":
-        user = db.session.get(User, user_id)
-        from auth_utils import check_competitor_access
+        from utils.access import ensure_registered
 
-        if not user or not check_competitor_access(user, challenge_id):
+        if not ensure_registered(user_id, challenge_id):
             return err(
                 "ERR_NOT_REGISTERED",
                 403,
@@ -280,52 +258,18 @@ def get_challenge(challenge_id):
         if not challenge or challenge.is_archived:
             return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
 
-    from cache_utils import get_cached, set_cached
-
     if user_role == "competitor":
         cache_key = f"challenge:{challenge_id}:competitor"
-        cached_challenge = get_cached(cache_key)
-        if cached_challenge is not None:
-            challenge_dict = cached_challenge
-        else:
-            challenge = db.session.get(Challenge, challenge_id)
-            if not challenge or challenge.is_archived:
-                return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
-            challenge_dict = challenge.to_dict()
-            challenge_dict = filter_challenge_for_competitor(challenge_dict)
-            set_cached(cache_key, challenge_dict, timeout=600)
+        challenge_dict = cached_or_compute(
+            cache_key, lambda: filter_challenge_for_competitor(challenge.to_dict()), timeout=600
+        )
     else:
         cache_key = f"challenge:{challenge_id}"
-        cached_challenge = get_cached(cache_key)
-        if cached_challenge is not None:
-            challenge_dict = cached_challenge
-        else:
-            challenge = db.get_or_404(Challenge, challenge_id)
-            challenge_dict = challenge.to_dict()
-            set_cached(cache_key, challenge_dict, timeout=600)
+        challenge_dict = cached_or_compute(
+            cache_key, lambda: db.get_or_404(Challenge, challenge_id).to_dict(), timeout=600
+        )
 
     return jsonify(challenge_dict)
-
-
-def parse_datetime(val):
-    if not val:
-        return None
-    try:
-        if isinstance(val, str):
-            if val.endswith("Z"):
-                val = val[:-1] + "+00:00"
-            # Remove milliseconds/microsecond if present and fromisoformat fails
-            try:
-                return datetime.fromisoformat(val)
-            except ValueError:
-                # Try parsing with format without timezone offset first if needed
-                # but fromisoformat is usually sufficient. Let's do a basic strip:
-                if "T" in val:
-                    val = val.split(".")[0]  # strip milliseconds
-                return datetime.strptime(val, "%Y-%m-%dT%H:%M:%S")
-    except Exception as e:
-        logger.warning("Failed to parse datetime string: %s", e)
-    return None
 
 
 @challenges_bp.route("", methods=["POST"])
@@ -406,17 +350,13 @@ def create_challenge():
     db.session.add(challenge)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "challenge",
         target_id=challenge.id,
         details={"title": challenge.title},
     )
-
-    from cache_utils import invalidate_challenge_cache
 
     invalidate_challenge_cache()
 
@@ -431,7 +371,7 @@ def create_challenge():
 
 def _create_test_stage_for_challenge(challenge, start_time, end_time):
     """Create a test stage with warm-up task for the given challenge."""
-    from models import Stage, Task
+    from models import Task
 
     tz = challenge.timezone or "UTC"
     start_time = _to_utc(start_time, tz)
@@ -461,8 +401,6 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     import json as json_mod
     import os
     import shutil
-
-    from flask import current_app
 
     routes_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.dirname(routes_dir)
@@ -528,9 +466,7 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
 
         _maybe_queue_baseline(test_task, challenge, request.user["user_id"])
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "stage",
@@ -628,8 +564,6 @@ def update_challenge(challenge_id):
         if test_stage_start and test_stage_end:
             _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
         else:
-            from models import Stage
-
             existing = Stage.query.filter_by(challenge_id=challenge.id, is_test=True).first()
             if existing:
                 db.session.delete(existing)
@@ -637,9 +571,7 @@ def update_challenge(challenge_id):
 
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "update",
         "challenge",
@@ -647,10 +579,7 @@ def update_challenge(challenge_id):
         details={"title": challenge.title},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify(challenge.to_dict())
 
@@ -698,9 +627,7 @@ def delete_challenge(challenge_id):
     db.session.delete(challenge)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "delete",
         "challenge",
@@ -708,10 +635,7 @@ def delete_challenge(challenge_id):
         details={"title": challenge.title},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id, delete_only=True)
+    invalidate_entity_cache(challenge_id, leaderboard_delete_only=True)
 
     return jsonify(
         {
@@ -768,17 +692,7 @@ def finalize_challenge(challenge_id):
     tasks = challenge.tasks
 
     for comp in competitors:
-        manual_points_dict = {}
-        if comp.manual_points:
-            if isinstance(comp.manual_points, dict):
-                manual_points_dict = comp.manual_points
-            elif isinstance(comp.manual_points, str):
-                try:
-                    import json
-
-                    manual_points_dict = json.loads(comp.manual_points)
-                except Exception:
-                    manual_points_dict = {}
+        manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in tasks:
             # Check if this competitor has any submissions for this task
@@ -802,9 +716,7 @@ def finalize_challenge(challenge_id):
     challenge.reveal_results = bool(data.get("reveal_results", False))
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "finalize",
         "challenge",
@@ -812,10 +724,7 @@ def finalize_challenge(challenge_id):
         details={"title": challenge.title},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify(
         {
@@ -843,8 +752,6 @@ def toggle_reveal_results(challenge_id):
     data = request.get_json() or {}
     challenge.reveal_results = bool(data.get("reveal_results", True))
     db.session.commit()
-
-    from cache_utils import invalidate_leaderboard_cache
 
     invalidate_leaderboard_cache(challenge_id)
     return jsonify({"reveal_results": challenge.reveal_results, "challenge": challenge.to_dict()})
@@ -879,17 +786,13 @@ def archive_challenge(challenge_id):
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "archive",
         "challenge" if challenge.is_archived else "restore",
         target_id=challenge.id,
         details={"title": challenge.title},
     )
-
-    from cache_utils import invalidate_challenge_cache
 
     invalidate_challenge_cache(challenge_id)
 
@@ -969,9 +872,6 @@ def create_stage(challenge_id):
         )
 
     if not stage_number:
-        # Auto-increment stage number
-        from models import Stage
-
         max_num = (
             db.session.query(db.func.max(Stage.stage_number))
             .filter_by(challenge_id=challenge_id)
@@ -979,8 +879,6 @@ def create_stage(challenge_id):
             or 0
         )
         stage_number = max_num + 1
-
-    from models import Stage
 
     stage = Stage(
         challenge_id=challenge_id,
@@ -993,9 +891,7 @@ def create_stage(challenge_id):
     db.session.add(stage)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "stage",
@@ -1003,10 +899,7 @@ def create_stage(challenge_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify(stage.to_dict()), 201
 
@@ -1041,7 +934,6 @@ def update_stage(challenge_id, stage_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     data = request.json or {}
@@ -1084,9 +976,7 @@ def update_stage(challenge_id, stage_id):
 
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "update",
         "stage",
@@ -1094,10 +984,7 @@ def update_stage(challenge_id, stage_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify(stage.to_dict())
 
@@ -1109,7 +996,6 @@ def update_stage(challenge_id, stage_id):
 def toggle_stage_reveal_results(challenge_id, stage_id):
     """Toggle reveal_results on a finalized stage."""
     db.get_or_404(Challenge, challenge_id)
-    from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if not stage.is_finalized:
@@ -1120,10 +1006,7 @@ def toggle_stage_reveal_results(challenge_id, stage_id):
     stage.reveal_results = bool(data.get("reveal_results", not stage.reveal_results))
     db.session.commit()
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
     return jsonify(stage.to_dict())
 
 
@@ -1157,7 +1040,6 @@ def delete_stage(challenge_id, stage_id):
               type: object
     """
     db.get_or_404(Challenge, challenge_id)
-    from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
 
@@ -1171,9 +1053,7 @@ def delete_stage(challenge_id, stage_id):
     db.session.delete(stage)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "delete",
         "stage",
@@ -1181,10 +1061,7 @@ def delete_stage(challenge_id, stage_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify({"message": f"Stage '{stage.title}' has been deleted."})
 
@@ -1219,9 +1096,6 @@ def finalize_stage(challenge_id, stage_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    import json
-
-    from models import Stage
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if stage.is_finalized:
@@ -1245,15 +1119,7 @@ def finalize_stage(challenge_id, stage_id):
     stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
 
     for comp in competitors:
-        manual_points_dict = {}
-        if comp.manual_points:
-            if isinstance(comp.manual_points, dict):
-                manual_points_dict = comp.manual_points
-            elif isinstance(comp.manual_points, str):
-                try:
-                    manual_points_dict = json.loads(comp.manual_points)
-                except Exception:
-                    manual_points_dict = {}
+        manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in stage_tasks:
             # Check if this competitor has any submissions for this task
@@ -1285,9 +1151,7 @@ def finalize_stage(challenge_id, stage_id):
 
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "finalize",
         "stage",
@@ -1295,10 +1159,7 @@ def finalize_stage(challenge_id, stage_id):
         details={"title": stage.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify(stage.to_dict())
 
@@ -1390,8 +1251,6 @@ def create_test_stage(challenge_id):
     except ValueError as e:
         return err("ERR_INVALID_DATE", 400, message=str(e))
 
-    from cache_utils import invalidate_challenge_cache
-
     invalidate_challenge_cache(challenge_id)
 
     return jsonify(stage.to_dict()), 201
@@ -1423,7 +1282,6 @@ def export_results(challenge_id):
             schema:
               type: object
     """
-    from flask import Response
     from services.challenge_service import generate_exported_results_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1469,7 +1327,6 @@ def export_challenge(challenge_id):
     import os
     import zipfile
 
-    from flask import current_app, send_file
     from werkzeug.utils import secure_filename
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1593,9 +1450,7 @@ def import_challenge():
             with contextlib.suppress(Exception):
                 zip_ref.close()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "import",
         "challenge",
@@ -1614,10 +1469,6 @@ def download_audit_logs(challenge_id):
     """
     import io
     import json
-
-    from flask import send_file
-    from models import AuditLog, Challenge, User
-    from sqlalchemy import or_
 
     challenge = db.get_or_404(Challenge, challenge_id)
 

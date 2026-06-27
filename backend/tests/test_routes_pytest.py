@@ -841,8 +841,8 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
 
     @patch("cache_utils.delete_cached")
-    @patch("cache_utils.set_cached")
-    @patch("cache_utils.get_cached")
+    @patch("utils.cache_helpers.set_cached")
+    @patch("utils.cache_helpers.get_cached")
     def test_cache_invalidation_workflows(self, mock_get, mock_set, mock_delete):
         mock_get.return_value = None
 

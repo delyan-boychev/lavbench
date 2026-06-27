@@ -7,6 +7,10 @@ from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard
+from utils.access import ensure_registered
+from utils.cache_helpers import cached_or_compute
+from utils.json_utils import safe_json_loads
+from utils.sse import sse_response
 
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
@@ -31,13 +35,10 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
     if user_role == "competitor" and challenge.is_frozen and not challenge.scores_finalized:
         is_frozen_view = True
 
-    from cache_utils import get_cached
-
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
-    cached_entries = get_cached(cache_key)
-
-    if cached_entries is None:
-        cached_entries = build_and_cache_leaderboard(challenge_id, is_frozen_view)
+    cached_entries = cached_or_compute(
+        cache_key, lambda: build_and_cache_leaderboard(challenge_id, is_frozen_view)
+    )
 
     if user_role == "competitor":
         now = datetime.utcnow()
@@ -71,15 +72,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
             has_priv_sum = False
 
             # Parse manual points safely
-            manual_points_dict = {}
-            if comp_user.get("manual_points"):
-                if isinstance(comp_user["manual_points"], dict):
-                    manual_points_dict = comp_user["manual_points"]
-                elif isinstance(comp_user["manual_points"], str):
-                    try:
-                        manual_points_dict = json.loads(comp_user["manual_points"])
-                    except Exception:
-                        manual_points_dict = {}
+            manual_points_dict = safe_json_loads(comp_user.get("manual_points"), {})
 
             # Will accumulate only the tasks whose points are allowed to be revealed
             revealed_manual_points = {}
@@ -326,12 +319,8 @@ def get_leaderboard(challenge_id):
     current_user_id = request.user["user_id"]
 
     # Restrict competitors to their registered challenge
-    if user_role == "competitor":
-        user = db.session.get(User, current_user_id)
-        from auth_utils import check_competitor_access
-
-        if not user or not check_competitor_access(user, challenge_id):
-            return err("ERR_NOT_REGISTERED", 403)
+    if user_role == "competitor" and not ensure_registered(current_user_id, challenge_id):
+        return err("ERR_NOT_REGISTERED", 403)
 
     payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
     response = jsonify(payload)
@@ -367,7 +356,7 @@ def stream_challenge_leaderboard(challenge_id):
               type: string
     """
     from cache_utils import get_redis_client
-    from flask import Response, current_app, stream_with_context
+    from flask import current_app
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -432,16 +421,7 @@ def stream_challenge_leaderboard(challenge_id):
                 for msg in get_and_yield_leaderboard():
                     yield msg
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
@@ -584,15 +564,7 @@ def save_manual_points(challenge_id):
 
         validated_points[str(task_id)] = pts
 
-    current_points = {}
-    if user.manual_points:
-        if isinstance(user.manual_points, dict):
-            current_points = user.manual_points
-        elif isinstance(user.manual_points, str):
-            try:
-                current_points = json.loads(user.manual_points)
-            except Exception:
-                current_points = {}
+    current_points = safe_json_loads(user.manual_points, {})
 
     # Create audit logs for changed points
     admin_id = request.user["user_id"]

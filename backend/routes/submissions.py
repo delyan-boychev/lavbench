@@ -1,8 +1,6 @@
-import contextlib
 import io
 import json
 import logging
-import os
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -11,6 +9,10 @@ from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from sqlalchemy.orm import joinedload
 from sse_utils import publish_leaderboard_update, publish_submissions_update
+from utils.ipynb import cells_to_ipynb_json
+from utils.json_utils import safe_json_loads
+from utils.pagination import extract_pagination, paginated_response
+from utils.sse import sse_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +63,9 @@ def parse_notebook(challenge_id):
 
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
-        user = db.session.get(User, user_id)
-        from auth_utils import check_competitor_access
+        from utils.access import ensure_registered
 
-        if not user or not check_competitor_access(user, challenge_id):
+        if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
     if "file" not in request.files:
@@ -160,10 +161,9 @@ def submit_code(challenge_id):
 
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
-        user = db.session.get(User, user_id)
-        from auth_utils import check_competitor_access
+        from utils.access import ensure_registered
 
-        if not user or not check_competitor_access(user, challenge_id):
+        if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -276,14 +276,11 @@ def submit_code(challenge_id):
         extract_code_from_cells,
     )
     from tasks import evaluate_submission
+    from utils.metadata import build_submission_metadata
 
-    task_files_list = []
-    if task.files:
-        with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
-            task_files_list = json.loads(task.files)
+    task_files_list = safe_json_loads(task.files, [])
 
     task.get_hf_api_key() or ""
-    main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
     gpu_required = False
     if task.gpu_required is not None:
@@ -291,42 +288,14 @@ def submit_code(challenge_id):
     elif challenge.gpu_required is not None:
         gpu_required = challenge.gpu_required
 
-    metadata = {
-        "submission_id": submission.id,
-        "task_id": task.id,
-        "challenge_id": challenge.id,
-        "user_code": "\n\n".join(extract_code_from_cells(selected_cells)),
-        "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
-        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
-        "gpu_required": gpu_required,
-        "base_docker_image": task.base_docker_image,
-        "apt_packages": task.apt_packages,
-        "pip_requirements": task.pip_requirements,
-        "is_custom_eval": (
-            bool(
-                task.custom_eval_code
-                or task.evaluator_script_path
-                and os.path.exists(task.evaluator_script_path)
-            )
-        ),
-        "metrics_config": task.metrics_config,
-        "hf_datasets": (
-            task.hf_datasets
-            if isinstance(task.hf_datasets, str)
-            else (json.dumps(task.hf_datasets) if task.hf_datasets else None)
-        ),
-        "hf_models": (
-            task.hf_models
-            if isinstance(task.hf_models, str)
-            else (json.dumps(task.hf_models) if task.hf_models else None)
-        ),
-        "public_eval_percentage": (
-            task.public_eval_percentage if task.public_eval_percentage is not None else 30
-        ),
-        "task_files": task_files_list,
-        "main_server_url": main_server_url,
-        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    }
+    metadata = build_submission_metadata(
+        task,
+        challenge,
+        submission,
+        user_code="\n\n".join(extract_code_from_cells(selected_cells)),
+        task_files_list=task_files_list,
+        gpu_required=gpu_required,
+    )
 
     priority = calculate_submission_priority(user_id, user_role)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
@@ -402,16 +371,13 @@ def get_submissions(challenge_id):
     user_role = request.user["role"]
     user_id = request.user["user_id"]
 
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 50, type=int)
-    per_page = min(per_page, 200)
+    page, per_page = extract_pagination(request, default_per_page=50, max_per_page=200)
 
     # Restrict competitors to their registered challenge
     if user_role == "competitor":
-        user = db.session.get(User, user_id)
-        from auth_utils import check_competitor_access
+        from utils.access import ensure_registered
 
-        if not user or not check_competitor_access(user, challenge_id):
+        if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
         if challenge.end_time and datetime.utcnow() >= challenge.end_time:
@@ -451,10 +417,9 @@ def get_submissions(challenge_id):
                 s.to_dict_light(view_role=user_role, current_user_id=user_id)
                 for s in pagination.items
             ],
-            "page": pagination.page,
             "per_page": pagination.per_page,
-            "total": pagination.total,
-            "pages": pagination.pages,
+            "challenge": challenge.to_dict(),
+            **paginated_response([], pagination.total, pagination.page, pagination.pages),
         }
     )
 
@@ -649,7 +614,7 @@ def stream_submission_logs(submission_id):
     """
     Stream live logs for a submission using Server-Sent Events (SSE).
     """
-    from flask import Response, current_app, stream_with_context
+    from flask import current_app
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -801,16 +766,7 @@ def stream_submission_logs(submission_id):
             except Exception as e:
                 logger.error("Polling logs fallback error: %s", e)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 @submissions_bp.route(
@@ -842,43 +798,11 @@ def download_competitor_submission(challenge_id, task_id, user_id):
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
 
     try:
-        cells_data = (
-            json.loads(best_sub.code_cells)
-            if isinstance(best_sub.code_cells, str)
-            else best_sub.code_cells
-        )
+        cells_data = safe_json_loads(best_sub.code_cells, [])
     except json.JSONDecodeError:
         cells_data = []
 
-    ipynb_cells = []
-    for c in cells_data:
-        if isinstance(c, dict):
-            source_lines = c.get("source", "")
-            cell_type = c.get("type", "code") or c.get("cell_type", "code")
-        else:
-            source_lines = str(c)
-            cell_type = "code"
-
-        if isinstance(source_lines, str):
-            source_lines = [line + "\n" for line in source_lines.splitlines()]
-        ipynb_cells.append(
-            {
-                "cell_type": cell_type,
-                "execution_count": None,
-                "metadata": {},
-                "outputs": [],
-                "source": source_lines,
-            }
-        )
-
-    notebook_json = {
-        "cells": ipynb_cells,
-        "metadata": {"language_info": {"name": "python"}},
-        "nbformat": 4,
-        "nbformat_minor": 2,
-    }
-
-    notebook_str = json.dumps(notebook_json, indent=2)
+    notebook_str = cells_to_ipynb_json(cells_data)
     mem_file = io.BytesIO(notebook_str.encode("utf-8"))
 
     user = db.session.get(User, user_id)

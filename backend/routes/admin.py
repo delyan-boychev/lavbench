@@ -20,9 +20,9 @@ from flask import (
     jsonify,
     request,
     send_file,
-    stream_with_context,
 )
 from models import (
+    AuditLog,
     Challenge,
     Submission,
     User,
@@ -31,6 +31,12 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
+from utils.audit import log_audit
+from utils.competitor import check_duplicate_demographics, demographics_tuple
+from utils.ipynb import cells_to_ipynb_json
+from utils.json_utils import safe_json_loads
+from utils.pagination import extract_pagination, paginated_response
+from utils.sse import sse_response
 from werkzeug.security import generate_password_hash
 
 logger = logging.getLogger(__name__)
@@ -183,35 +189,17 @@ def register_competitor():
         return err("ERR_MISSING_DEMOGRAPHICS", 400)
 
     # Check if a competitor with the same demographics is already registered for this competition
-    competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
+    existing = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
-    def norm(s):
-        return s.strip().lower() if s else ""
-
-    target_name = norm(name)
-    target_middle = norm(middle_name)
-    target_surname = norm(surname)
-    target_birth = norm(birth_date)
-    target_grade = norm(grade)
-    target_school = norm(school)
-    target_city = norm(city)
-
-    for c in competitors:
-        if (
-            norm(decrypt_field(c.name)) == target_name
-            and norm(decrypt_field(c.middle_name)) == target_middle
-            and norm(decrypt_field(c.surname)) == target_surname
-            and norm(decrypt_field(c.birth_date)) == target_birth
-            and norm(decrypt_field(c.grade)) == target_grade
-            and norm(decrypt_field(c.school)) == target_school
-            and norm(decrypt_field(c.city)) == target_city
-        ):
-            return err(
-                "ERR_COMPETITOR_ALREADY_REGISTERED",
-                400,
-                message="A competitor with these demographic "
-                "details is already registered for this competition.",
-            )
+    if check_duplicate_demographics(
+        existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
+    ):
+        return err(
+            "ERR_COMPETITOR_ALREADY_REGISTERED",
+            400,
+            message="A competitor with these demographic "
+            "details is already registered for this competition.",
+        )
 
     username = generate_unique_username(name, surname)
     password = generate_random_password(12)
@@ -235,9 +223,7 @@ def register_competitor():
     db.session.add(user)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "user",
@@ -285,8 +271,7 @@ def get_users():
             schema:
               type: object
     """
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 10, type=int), 100)
+    page, per_page = extract_pagination(request, default_per_page=10, max_per_page=100)
     role_filter = request.args.get("role")
     challenge_id_filter = request.args.get("challenge_id")
     search_term = request.args.get("search")
@@ -319,12 +304,12 @@ def get_users():
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return jsonify(
-            {
-                "items": [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
-                "total": pagination.total,
-                "page": pagination.page,
-                "pages": pagination.pages,
-            }
+            paginated_response(
+                [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
+                pagination.total,
+                pagination.page,
+                pagination.pages,
+            )
         )
 
     # Reduce result set via DB query before decrypting
@@ -375,12 +360,12 @@ def get_users():
     paginated_items = filtered_items[start:end]
 
     return jsonify(
-        {
-            "items": [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
-            "total": total,
-            "page": page,
-            "pages": (total + per_page - 1) // per_page if total > 0 else 1,
-        }
+        paginated_response(
+            [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
+            total,
+            page,
+            (total + per_page - 1) // per_page if total > 0 else 1,
+        )
     )
 
 
@@ -415,9 +400,7 @@ def delete_user(user_id):
     if not user:
         return err("ERR_USER_NOT_FOUND", 404)
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "delete",
         "user",
@@ -504,35 +487,17 @@ def register_user():
         # Check if a competitor with the same
         # demographics is already registered for this competition
 
-        competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
+        existing = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
-        def norm(s):
-            return s.strip().lower() if s else ""
-
-        target_name = norm(name)
-        target_middle = norm(middle_name)
-        target_surname = norm(surname)
-        target_birth = norm(birth_date)
-        target_grade = norm(grade)
-        target_school = norm(school)
-        target_city = norm(city)
-
-        for c in competitors:
-            if (
-                norm(decrypt_field(c.name)) == target_name
-                and norm(decrypt_field(c.middle_name)) == target_middle
-                and norm(decrypt_field(c.surname)) == target_surname
-                and norm(decrypt_field(c.birth_date)) == target_birth
-                and norm(decrypt_field(c.grade)) == target_grade
-                and norm(decrypt_field(c.school)) == target_school
-                and norm(decrypt_field(c.city)) == target_city
-            ):
-                return err(
-                    "ERR_COMPETITOR_ALREADY_REGISTERED",
-                    400,
-                    message="A competitor with these demographic "
-                    "details is already registered for this competition.",
-                )
+        if check_duplicate_demographics(
+            existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
+        ):
+            return err(
+                "ERR_COMPETITOR_ALREADY_REGISTERED",
+                400,
+                message="A competitor with these demographic "
+                "details is already registered for this competition.",
+            )
         # Check if the competition has started
         if challenge.is_started and request.user["role"] != "admin":
             return err("ERR_JURY_REGISTRATION_STARTED", 403)
@@ -583,9 +548,7 @@ def register_user():
                 db.session.add(assignment)
         db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "user",
@@ -713,22 +676,9 @@ def import_competitors_csv():
             role="competitor", challenge_id=challenge_id
         ).all()
 
-        def norm(s):
-            return s.strip().lower() if s else ""
-
         seen_demographics = set()
         for c in existing_competitors:
-            seen_demographics.add(
-                (
-                    norm(decrypt_field(c.name)),
-                    norm(decrypt_field(c.middle_name)),
-                    norm(decrypt_field(c.surname)),
-                    norm(decrypt_field(c.birth_date)),
-                    norm(decrypt_field(c.grade)),
-                    norm(decrypt_field(c.school)),
-                    norm(decrypt_field(c.city)),
-                )
-            )
+            seen_demographics.add(demographics_tuple(c, decrypt_field=decrypt_field))
 
         imported = []
         for row in csv_reader:
@@ -755,14 +705,16 @@ def import_competitors_csv():
                 continue
 
             # Check duplicate demographics
-            demo_tuple = (
-                norm(name),
-                norm(middle_name),
-                norm(surname),
-                norm(birth_date),
-                norm(grade),
-                norm(school),
-                norm(city),
+            demo_tuple = demographics_tuple(
+                {
+                    "name": name,
+                    "middle_name": middle_name,
+                    "surname": surname,
+                    "birth_date": birth_date,
+                    "grade": grade,
+                    "school": school,
+                    "city": city,
+                }
             )
             if demo_tuple in seen_demographics:
                 continue
@@ -824,9 +776,7 @@ def import_competitors_csv():
 
         db.session.commit()
 
-        from services.audit_service import log_action
-
-        log_action(
+        log_audit(
             request.user["user_id"],
             "import_competitors",
             "user",
@@ -925,9 +875,7 @@ def force_backup():
             schema:
               type: object
     """
-    from services.audit_service import log_action
-
-    log_action(request.user["user_id"], "create", "backup", details={"auto": False})
+    log_audit(request.user["user_id"], "create", "backup", details={"auto": False})
     from tasks import run_backup
 
     task = run_backup.delay(auto=False)
@@ -984,15 +932,7 @@ def stream_backup_status():
             except GeneratorExit:
                 logger.debug("Backup SSE client disconnected")
 
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+    return sse_response(event_generator)
 
 
 @admin_bp.route("/backups/<path:filename>/download", methods=["GET"])
@@ -1059,9 +999,7 @@ def delete_backup_file(filename):
     if not os.path.isfile(safe_path):
         return err("ERR_NOT_FOUND", 404, message="Not found")
     os.remove(safe_path)
-    from services.audit_service import log_action
-
-    log_action(request.user["user_id"], "delete", "backup", details={"filename": filename})
+    log_audit(request.user["user_id"], "delete", "backup", details={"filename": filename})
     return jsonify({"message": "Deleted."})
 
 
@@ -1097,12 +1035,9 @@ def get_audit_logs():
       200:
         description: Success
     """
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 15, type=int), 100)
+    page, per_page = extract_pagination(request, default_per_page=15, max_per_page=100)
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
-
-    from models import AuditLog, Challenge, User
     from sqlalchemy import or_
 
     query = AuditLog.query
@@ -1297,37 +1232,26 @@ def update_user(user_id):
         # Check if a competitor with the same demographics is already
         # registered for this competition (excluding this user themselves)
 
-        competitors = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
+        existing = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
 
-        def norm(s):
-            return s.strip().lower() if s else ""
-
-        target_name = norm(new_name)
-        target_middle = norm(new_middle_name)
-        target_surname = norm(new_surname)
-        target_birth = norm(new_birth_date)
-        target_grade = norm(new_grade)
-        target_school = norm(new_school)
-        target_city = norm(new_city)
-
-        for c in competitors:
-            if c.id == user.id:
-                continue
-            if (
-                norm(decrypt_field(c.name)) == target_name
-                and norm(decrypt_field(c.middle_name)) == target_middle
-                and norm(decrypt_field(c.surname)) == target_surname
-                and norm(decrypt_field(c.birth_date)) == target_birth
-                and norm(decrypt_field(c.grade)) == target_grade
-                and norm(decrypt_field(c.school)) == target_school
-                and norm(decrypt_field(c.city)) == target_city
-            ):
-                return err(
-                    "ERR_COMPETITOR_ALREADY_REGISTERED",
-                    400,
-                    message="A competitor with these demographic "
-                    "details is already registered for this competition.",
-                )
+        if check_duplicate_demographics(
+            existing,
+            new_name,
+            new_middle_name,
+            new_surname,
+            new_birth_date,
+            new_grade,
+            new_school,
+            new_city,
+            decrypt_field,
+            exclude_id=user.id,
+        ):
+            return err(
+                "ERR_COMPETITOR_ALREADY_REGISTERED",
+                400,
+                message="A competitor with these demographic "
+                "details is already registered for this competition.",
+            )
 
     user.set_demographics(
         new_name,
@@ -1360,9 +1284,7 @@ def update_user(user_id):
     if user.challenge_id and user.challenge_id != old_challenge_id:
         invalidate_leaderboard_cache(user.challenge_id)
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "update",
         "user",
@@ -1413,9 +1335,7 @@ def reset_user_password(user_id):
     user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "reset_password",
         "user",
@@ -1492,9 +1412,7 @@ def reset_all_challenge_passwords(challenge_id):
         )
 
     db.session.commit()
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "reset_passwords",
         "user",
@@ -1533,7 +1451,6 @@ def download_scores_csv(challenge_id):
             schema:
               type: object
     """
-    from flask import Response
     from services.challenge_service import generate_scores_csv
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1649,43 +1566,11 @@ def download_submissions_zip(challenge_id):
                         filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
 
                     try:
-                        cells_data = (
-                            json.loads(best_sub.code_cells)
-                            if isinstance(best_sub.code_cells, str)
-                            else best_sub.code_cells
-                        )
+                        cells_data = safe_json_loads(best_sub.code_cells, [])
                     except json.JSONDecodeError:
                         cells_data = []
 
-                    ipynb_cells = []
-                    for c in cells_data:
-                        if isinstance(c, dict):
-                            source_lines = c.get("source", "")
-                            cell_type = c.get("type", "code") or c.get("cell_type", "code")
-                        else:
-                            source_lines = str(c)
-                            cell_type = "code"
-
-                        if isinstance(source_lines, str):
-                            source_lines = [line + "\n" for line in source_lines.splitlines()]
-                        ipynb_cells.append(
-                            {
-                                "cell_type": cell_type,
-                                "execution_count": None,
-                                "metadata": {},
-                                "outputs": [],
-                                "source": source_lines,
-                            }
-                        )
-
-                    notebook_json = {
-                        "cells": ipynb_cells,
-                        "metadata": {"language_info": {"name": "python"}},
-                        "nbformat": 4,
-                        "nbformat_minor": 2,
-                    }
-
-                    notebook_str = json.dumps(notebook_json, indent=2)
+                    notebook_str = cells_to_ipynb_json(cells_data)
                     zip_file.writestr(filename, notebook_str)
 
         # Check if the zip file has no entries, write a readme to prevent empty/corrupted archives
@@ -1791,21 +1676,11 @@ def stream_worker_stats():
             except Exception as e:
                 logger.warning("Error during worker stats SSE cleanup (GeneratorExit): %s", e)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 def _get_worker_stats_response():
     from cache_utils import get_cached, set_cached
-    from flask import current_app
 
     is_testing = current_app.config.get("TESTING", False)
     cache_key = "worker:status:detailed"

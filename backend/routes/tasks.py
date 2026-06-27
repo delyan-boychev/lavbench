@@ -8,15 +8,13 @@ from auth_utils import jury_access_required, login_required, rate_limit, role_re
 from error_utils import err
 from flask import (
     Blueprint,
-    Response,
     current_app,
     jsonify,
     request,
     send_file,
     send_from_directory,
-    stream_with_context,
 )
-from models import Challenge, Submission, Task, User, db
+from models import Challenge, Submission, Task, db
 from services.submission_service import (
     calculate_submission_priority,
     check_execution_rules,
@@ -24,6 +22,10 @@ from services.submission_service import (
     extract_code_from_notebook,
 )
 from sse_utils import publish_leaderboard_update, publish_submissions_update
+from utils.audit import log_audit
+from utils.cache import invalidate_entity_cache
+from utils.json_utils import safe_json_loads
+from utils.sse import sse_response
 from werkzeug.utils import secure_filename
 
 tasks_bp = Blueprint("tasks", __name__)
@@ -51,10 +53,9 @@ MAX_LOG_SIZE = 100 * 1024
 
 
 def check_competitor_access(user_id, challenge_id):
-    from auth_utils import check_competitor_access as shared_check
+    from utils.access import ensure_registered
 
-    user = db.session.get(User, user_id)
-    return shared_check(user, challenge_id)
+    return ensure_registered(user_id, challenge_id) is not None
 
 
 def check_task_started(task, user_role, user_id):
@@ -114,14 +115,10 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id)
 
-    task_files_list = []
-    if task.files:
-        with contextlib.suppress(BaseException):
-            task_files_list = json.loads(task.files)
-
-    main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-
     from tasks import evaluate_submission
+    from utils.metadata import build_submission_metadata
+
+    task_files_list = safe_json_loads(task.files, [])
 
     gpu_required = False
     if task.gpu_required is not None:
@@ -129,42 +126,14 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     elif challenge.gpu_required is not None:
         gpu_required = challenge.gpu_required
 
-    metadata = {
-        "submission_id": submission.id,
-        "task_id": task.id,
-        "challenge_id": challenge.id,
-        "user_code": "\n\n".join(extract_code_from_cells(code_cells)),
-        "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
-        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
-        "gpu_required": gpu_required,
-        "base_docker_image": task.base_docker_image,
-        "apt_packages": task.apt_packages,
-        "pip_requirements": task.pip_requirements,
-        "is_custom_eval": (
-            bool(
-                task.custom_eval_code
-                or task.evaluator_script_path
-                and os.path.exists(task.evaluator_script_path)
-            )
-        ),
-        "metrics_config": task.metrics_config,
-        "hf_datasets": (
-            task.hf_datasets
-            if isinstance(task.hf_datasets, str)
-            else (json.dumps(task.hf_datasets) if task.hf_datasets else None)
-        ),
-        "hf_models": (
-            task.hf_models
-            if isinstance(task.hf_models, str)
-            else (json.dumps(task.hf_models) if task.hf_models else None)
-        ),
-        "public_eval_percentage": (
-            task.public_eval_percentage if task.public_eval_percentage is not None else 30
-        ),
-        "task_files": task_files_list,
-        "main_server_url": main_server_url,
-        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    }
+    metadata = build_submission_metadata(
+        task,
+        challenge,
+        submission,
+        user_code="\n\n".join(extract_code_from_cells(code_cells)),
+        task_files_list=task_files_list,
+        gpu_required=gpu_required,
+    )
 
     if task.custom_eval_code:
         metadata["custom_eval_code"] = task.custom_eval_code
@@ -596,9 +565,7 @@ def create_task(challenge_id):
     admin_id = request.user["user_id"]
     _maybe_queue_baseline(task, challenge, admin_id)
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "create",
         "task",
@@ -606,10 +573,7 @@ def create_task(challenge_id):
         details={"title": task.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     # Notify workers to rebuild Docker image for this task
     try:
@@ -891,10 +855,7 @@ def update_task(task_id):
             f.save(save_path)
             task.baseline_notebook_path = save_path
 
-    try:
-        current_files = json.loads(task.files)
-    except json.JSONDecodeError:
-        current_files = []
+    current_files = safe_json_loads(task.files, [])
 
     deleted_files_raw = request.form.get("deleted_files")
     if deleted_files_raw:
@@ -1002,9 +963,7 @@ def update_task(task_id):
     task.files = json.dumps(current_files)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "update",
         "task",
@@ -1012,10 +971,7 @@ def update_task(task_id):
         details={"title": task.title, "challenge_id": task.challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(task.challenge_id)
-    invalidate_leaderboard_cache(task.challenge_id)
+    invalidate_entity_cache(task.challenge_id)
     _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
 
     # Notify workers to rebuild Docker image for this task
@@ -1083,9 +1039,7 @@ def delete_task(task_id):
     db.session.delete(task)
     db.session.commit()
 
-    from services.audit_service import log_action
-
-    log_action(
+    log_audit(
         request.user["user_id"],
         "delete",
         "task",
@@ -1093,10 +1047,7 @@ def delete_task(task_id):
         details={"title": task.title, "challenge_id": challenge_id},
     )
 
-    from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
-
-    invalidate_challenge_cache(challenge_id)
-    invalidate_leaderboard_cache(challenge_id)
+    invalidate_entity_cache(challenge_id)
 
     return jsonify({"message": f"Task '{task.title}' has been deleted successfully."})
 
@@ -1341,49 +1292,18 @@ def submit_task(task_id):
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
-    task_files_list = []
-    if task.files:
-        with contextlib.suppress(BaseException):
-            task_files_list = json.loads(task.files)
+    from utils.metadata import build_submission_metadata
 
-    main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
+    task_files_list = safe_json_loads(task.files, [])
 
-    metadata = {
-        "submission_id": submission.id,
-        "task_id": task.id,
-        "challenge_id": challenge.id,
-        "user_code": "\n\n".join(extract_code_from_cells(selected_cells)),
-        "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
-        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
-        "gpu_required": gpu_required,
-        "base_docker_image": task.base_docker_image,
-        "apt_packages": task.apt_packages,
-        "pip_requirements": task.pip_requirements,
-        "is_custom_eval": (
-            bool(
-                task.custom_eval_code
-                or task.evaluator_script_path
-                and os.path.exists(task.evaluator_script_path)
-            )
-        ),
-        "metrics_config": task.metrics_config,
-        "hf_datasets": (
-            task.hf_datasets
-            if isinstance(task.hf_datasets, str)
-            else (json.dumps(task.hf_datasets) if task.hf_datasets else None)
-        ),
-        "hf_models": (
-            task.hf_models
-            if isinstance(task.hf_models, str)
-            else (json.dumps(task.hf_models) if task.hf_models else None)
-        ),
-        "public_eval_percentage": (
-            task.public_eval_percentage if task.public_eval_percentage is not None else 30
-        ),
-        "task_files": task_files_list,
-        "main_server_url": main_server_url,
-        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    }
+    metadata = build_submission_metadata(
+        task,
+        challenge,
+        submission,
+        user_code="\n\n".join(extract_code_from_cells(selected_cells)),
+        task_files_list=task_files_list,
+        gpu_required=gpu_required,
+    )
 
     if task.custom_eval_code:
         metadata["custom_eval_code"] = task.custom_eval_code
@@ -1624,16 +1544,7 @@ def stream_task_leaderboard(task_id):
             except Exception as cleanup_e:
                 logger.debug("Error during leaderboard SSE cleanup after error: %s", cleanup_e)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
@@ -1722,16 +1633,7 @@ def stream_task_submissions(task_id):
             except Exception as cleanup_e:
                 logger.debug("Error during submissions SSE cleanup after error: %s", cleanup_e)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 @tasks_bp.route("/worker-status", methods=["GET"])
@@ -1775,7 +1677,6 @@ def stream_worker_status():
             schema:
               type: object
     """
-    from flask import Response, stream_with_context
 
     def event_generator():
         # Clean up: Removed "with current_app.app_context():" block from the initial yield
@@ -1809,21 +1710,11 @@ def stream_worker_status():
             except Exception as e:
                 logger.debug("Error during worker status SSE cleanup: %s", e)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    }
-    return Response(
-        stream_with_context(event_generator()),
-        mimetype="text/event-stream",
-        headers=headers,
-    )
+    return sse_response(event_generator)
 
 
 def _get_worker_status_data():
     from cache_utils import get_cached, set_cached
-    from flask import current_app
 
     is_testing = current_app.config.get("TESTING", False)
     cache_key = "worker:status:summary"
