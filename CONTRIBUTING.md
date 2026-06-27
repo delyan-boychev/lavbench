@@ -106,10 +106,7 @@ Backend flasgger docstrings
   openapi-typescript
        │
        ▼
-  frontend/src/types/api.d.ts    (auto-generated)
-       │
-       ▼
-  scripts/_annotate_types.py     (injects @type annotations)
+  frontend/src/types/api.d.ts    (auto-generated, includes JSDoc @type annotations)
        │
        ▼
   tsc --noEmit                   (validates all types)

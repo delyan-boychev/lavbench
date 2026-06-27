@@ -52,8 +52,7 @@ The frontend uses **JSDoc `@type` annotations** with an auto-generated TypeScrip
 
 1. Backend Flasgger docstrings define the OpenAPI spec
 2. `openapi-typescript` generates `src/types/api.d.ts`
-3. `scripts/_annotate_types.py` injects `@type` annotations
-4. `tsc --noEmit` validates all types at build time
+3. `tsc --noEmit` validates all types at build time
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for type system conventions.
 

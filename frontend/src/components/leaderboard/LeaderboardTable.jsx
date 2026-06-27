@@ -660,12 +660,28 @@ export default function LeaderboardTable({
   const rowPositionsRef = useRef({});
 
   useLayoutEffect(() => {
-    // 1. Get current positions (Last)
+    const oldPositions = rowPositionsRef.current;
     const newPositions = {};
     Object.keys(rowElementsRef.current).forEach((key) => {
       const el = rowElementsRef.current[key];
       if (el) {
         newPositions[key] = el.getBoundingClientRect().top;
+      }
+    });
+
+    Object.entries(newPositions).forEach(([key, newTop]) => {
+      const oldTop = oldPositions[key];
+      if (oldTop !== undefined) {
+        const delta = oldTop - newTop;
+        if (Math.abs(delta) > 0.5) {
+          const el = rowElementsRef.current[key];
+          if (el) {
+            el.animate([{ transform: `translateY(${delta}px)` }, { transform: 'translateY(0)' }], {
+              duration: 600,
+              easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            });
+          }
+        }
       }
     });
 

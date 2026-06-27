@@ -49,6 +49,14 @@ API Reference
    :members:
    :undoc-members:
 
+.. automodule:: services.audit_service
+   :members:
+   :undoc-members:
+
+.. automodule:: services.file_validation
+   :members:
+   :undoc-members:
+
 .. automodule:: task_modules
    :members:
    :undoc-members:
@@ -66,5 +74,13 @@ API Reference
    :undoc-members:
 
 .. automodule:: task_modules.templates
+   :members:
+   :undoc-members:
+
+.. automodule:: task_modules.docker_utils
+   :members:
+   :undoc-members:
+
+.. automodule:: task_modules.image_builder
    :members:
    :undoc-members:

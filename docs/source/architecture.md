@@ -48,7 +48,7 @@ Celery Workers (host, not Docker):
 
 ## Evaluation Engine
 
-`evaluation_engine.py` resolves ~70 metrics across 12 categories, dispatching by metric name and input data type:
+`evaluation_engine.py` resolves 44 metrics across 12 categories, dispatching by metric name and input data type:
 
 | #   | Category         | Metric Names                                                                         |
 | --- | ---------------- | ------------------------------------------------------------------------------------ |
@@ -80,10 +80,7 @@ Backend route docstrings (flasgger YAML, OpenAPI 3.0)
   openapi-typescript (npm run generate-api-types)
        │
        ▼
-  src/types/api.d.ts (2700 lines, all endpoint types)
-       │
-       ▼
-  scripts/_annotate_types.py (injects JSDoc @type annotations)
+  src/types/api.d.ts (2700 lines, all endpoint types) — JSDoc @type annotations
        │
        ▼
   tsc --noEmit (npm run check-types — validates all annotations + component props)

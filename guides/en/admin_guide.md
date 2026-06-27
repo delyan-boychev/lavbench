@@ -105,7 +105,7 @@ A JSON configuration dictates how the final public and private scores are calcul
 
 ### Supported Metric Categories
 
-The evaluation engine supports ~70 metrics across 12 task types:
+The evaluation engine supports 44 metrics across 12 task types:
 
 | Category             | Metric Keys                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------ |
@@ -113,13 +113,13 @@ The evaluation engine supports ~70 metrics across 12 task types:
 | **Probabilistic**    | `auc_roc`, `logloss`, `brier_score`                                                  |
 | **Regression**       | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae`                               |
 | **Seq-label (NER)**  | `seqeval_f1`, `seqeval_precision`, `seqeval_recall`                                  |
-| **Generative NLP**   | `bleu`, `rouge`, `rouge_l`, `meteor`, `bertscore`, `chrf`, `ter`                     |
+| **Generative NLP**   | `bleu`, `rouge`, `rouge_l`, `meteor`, `chrf`, `ter`                     |
 | **QA Extractive**    | `exact_match`, `f1` (word-overlap)                                                   |
 | **Object Detection** | `map_50`, `map_75`, `map_50_95`, `recall` (box recall)                               |
 | **Segmentation**     | `mean_iou`, `dice`, `pixel_accuracy`                                                 |
 | **Keypoints**        | `oks`, `pck`                                                                         |
-| **Image Quality**    | `psnr`, `ssim`, `fid`, `is`, `clip_score`, `lpips`, `niqe`                           |
-| **Audio Quality**    | `snr`, `mel_lsd`, `si_sdr`, `nisqa`, `pesq`                                          |
+| **Image Quality**    | `psnr`, `ssim`                           |
+| **Audio Quality**    | `snr`, `mel_lsd`, `si_sdr`                                          |
 | **Clustering**       | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
 | **Retrieval**        | `ndcg_k`, `recall_k`, `mrr`                                                          |
 

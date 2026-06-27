@@ -16,16 +16,15 @@
 cd frontend
 # Start the backend first (port 5001), then:
 npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
-python3 scripts/_annotate_types.py  # Inject JSDoc @type annotations
 npm run check-types              # tsc --noEmit — verify 0 errors
 ```
 
-This pipeline generates `src/types/api.d.ts` (full type definitions for all ~68 endpoints), injects `@type` annotations into all `api.get/post/put/delete/fetch` call sites, and validates everything with TypeScript's `checkJs` mode.
+This pipeline generates `src/types/api.d.ts` (full type definitions for all ~72 endpoints), with JSDoc `@type` annotations verified by TypeScript's `checkJs` mode.
 
 ### Key things to know
 
 - **Auth**: httpOnly cookie (`auth_token`). The `ApiService` wrapper sends cookies automatically. No manual token management needed.
-- **SSE endpoints**: 6 streaming endpoints use Server-Sent Events. Connect with `new EventSource(url)`. Cookie auth is automatic.
+- **SSE endpoints**: 7 streaming endpoints use Server-Sent Events. Connect with `new EventSource(url)`. Cookie auth is automatic.
 - **Rate limiting**: Per-user, per-endpoint. Backend returns 429 with `ERR_RATE_LIMITED` code. Frontend should show a toast and throttle retries.
 - **Error format**: All errors return `{"error": "message", "code": "ERR_CODE"}`. Map `code` values to user-facing translations where needed.
 - **Type system**: JSDoc `@type` annotations reference `import('./types/api').paths['/api/...']['method']['responses']['200']['content']['application/json']`. Never use `@ts-ignore` or `@type {any}` — use specific assertions instead.
@@ -55,8 +54,7 @@ if (ok) {
 2. Add a flasgger YAML docstring with request/response schemas
 3. The Swagger UI at `/apidocs` auto-updates on next server restart
 4. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
-5. Run `python3 scripts/_annotate_types.py` to inject JSDoc annotations
-6. Run `npm run check-types` to verify 0 errors
+5. Run `npm run check-types` to verify 0 errors
 
 ### flasgger docstring template (OpenAPI 3.0)
 

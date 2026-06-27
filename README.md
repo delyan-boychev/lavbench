@@ -129,6 +129,7 @@ lavbench/
 │   ├── Dockerfile               # Backend container
 │   ├── setup-admin.py            # Creates admin user account + admin_credentials.txt
 │   ├── scripts/                 # Lint/CI scripts (check_error_codes.py)
+│   ├── utils/                  # Utility modules (access, audit, cache, dates, files, etc.)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks
@@ -142,7 +143,6 @@ lavbench/
 │   │   ├── hooks/               # Custom hooks
 │   │   └── types/               # Auto-generated TypeScript declarations (api.d.ts)
 │   ├── scripts/
-│   │   ├── _annotate_types.py    # Injects JSDoc @type annotations
 │   │   └── check_translations.py # Validates i18n keys
 │   ├── public/locales/          # i18n (en, bg)
 │   ├── tsconfig.json            # TypeScript config for JSDoc type checking
@@ -180,6 +180,18 @@ cp .env.example .env
 | `MAIN_SERVER_URL`               | Server URL for worker callbacks         | `http://localhost:5001`                                                                          |
 | `FLASK_DEBUG`                   | Enable Flask debug mode                 | `false`                                                                                          |
 | `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after a deadline           | `60`                                                                                             |
+| `UPLOAD_FOLDER`                | Upload storage path                      | `./backend/uploads`                                                                              |
+| `BACKUPS_DIR`                  | Backup file storage path                 | `./backend/backups`                                                                              |
+| `WORKER_GPU_ID`                | GPU device(s) for GPU workers            | `0` (comma-separated for multiple)                                                               |
+| `WORKER_PUBLIC_KEY`            | Ed25519 public key for worker auth       | **Required for workers** — base64 encoded                                                        |
+| `WORKER_PRIVATE_KEY`           | Ed25519 private key for worker auth      | **Required for workers** — base64 encoded                                                        |
+| `REDIS_PASSWORD`               | Redis auth password                      | `your_redis_password`                                                                            |
+| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path            | `/path/to/ca.crt`                                                                                |
+| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/path/to/client.crt`                                                                            |
+| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/path/to/client.key`                                                                            |
+| `REDIS_SSL_CERT_REQS`          | Redis SSL certificate verification level | `required`                                                                                       |
+| `INTERNAL_ONLY_WORKER`         | Restrict worker to system tasks only     | `false`                                                                                          |
+| `EVALUATION_ONLY_WORKER`       | Restrict worker to evaluation tasks only | `false`                                                                                          |
 
 ---
 
@@ -192,7 +204,7 @@ cd backend
 micromamba run -n lavbench_backend python -m pytest -n auto tests/ -v
 ```
 
-Includes 946 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
+Includes 946 tests covering routes, auth, evaluation (all 44 metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
 
 ### Sphinx Documentation
 
@@ -210,7 +222,7 @@ The Sphinx build runs automatically in CI (`.github/workflows/ci.yml`) and deplo
 ```bash
 cd frontend
 
-# Unit / component tests (vitest — 363 tests)
+# Unit / component tests (vitest — 527 tests)
 npm run test
 
 # Type checking (JSDoc annotations + component props)
@@ -294,7 +306,7 @@ _(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... 
 | [Student Guide](guides/en/student_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
 | [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Challenge/task management, backups, worker health monitoring, user administration. |
-| [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 68 backend endpoints.                         |
+| [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
 | [Error Code Linter](backend/scripts/check_error_codes.py) | Developers      | Validates `err()` usage and `api.ERR_*` translation parity across EN/BG.           |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |
 
