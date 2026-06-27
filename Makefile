@@ -1,5 +1,5 @@
 .PHONY: help setup setup-worker dev deploy-docker deploy-docker-fast deploy-debug \
-        start-worker worker worker-docker build-worker edit edit-worker \
+        start-worker worker build-worker \
         docs check-error-codes lint setup-admin
 
 help:
@@ -32,9 +32,6 @@ start-worker:   # Start a worker via micromamba (must pass REDIS_URL)
 
 worker:         # Start a worker (interactive first-run, then uses saved config)
 	@scripts/start-worker.sh
-
-worker-docker:  # Start a remote Celery worker via Docker (reads worker.env)
-	@scripts/start-worker.sh --docker
 
 build-worker:   # Build the minimal worker Docker image
 	docker build -t lavbench-worker -f backend/Dockerfile.worker backend/

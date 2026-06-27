@@ -125,19 +125,19 @@ if [ "$MODE" = "server" ]; then
   echo ""
   echo "    Workers:"
   echo "      scp worker.env user@your-server:~/"
-  echo "      On worker: make worker   (interactive first-run setup)"
+  echo "      On worker: make setup-worker   (one-time prereq check + image build)
+      On worker: make worker         (interactive first-run, then start)"
   echo "  ──────────────────────────────────────────────────────────────"
 fi
 
 # ── Worker mode ─────────────────────────────────────────────────────
 if [ "$MODE" = "worker" ]; then
-  echo "  [2/2] Worker setup complete"
+  echo "  [2/2] Building worker Docker image..."
+  docker build -t lavbench-worker -f backend/Dockerfile.worker backend/
   echo ""
   echo "  ──────────────────────────────────────────────────────────────"
   echo "    Worker ready!"
-  echo "      make worker           First-run setup, then start"
-  echo "      make worker-docker    Start Docker worker directly"
-  echo "      make build-worker     Build worker image locally"
+  echo "      make worker           Interactive first-run, then start"
   echo "  ──────────────────────────────────────────────────────────────"
 fi
 echo ""

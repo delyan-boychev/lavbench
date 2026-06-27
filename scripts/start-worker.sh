@@ -471,13 +471,11 @@ if [ "$MODE" = "docker" ]; then
   echo "  → Starting Docker-based worker...  ($TOTAL_CORES CPU cores)"
   echo ""
 
-  # Worker image: env var overrides default; try registry, fall back to local
+  # Worker image: build if not present locally
   WORKER_IMAGE="${WORKER_IMAGE:-lavbench-worker}"
   if ! docker image inspect "$WORKER_IMAGE" &>/dev/null; then
-    echo "  → Pulling $WORKER_IMAGE..."
-    docker pull "$WORKER_IMAGE" 2>/dev/null || {
-      echo "  [WARN] Could not pull $WORKER_IMAGE — will fail if not built locally"
-    }
+    echo "  → Building $WORKER_IMAGE..."
+    docker build -t "$WORKER_IMAGE" -f backend/Dockerfile.worker backend/
   fi
 
   # Build volume and env args
