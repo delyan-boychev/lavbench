@@ -41,3 +41,11 @@ jobs:
           tag_name: ${{ env.TAG }}
           body: ${{ steps.git-cliff.outputs.changelog }}
           generate_release_notes: true
+
+      - name: Activate version on Read the Docs
+        run: |
+          curl -s -X PATCH \
+            -H "Authorization: Token ${{ secrets.RTD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://readthedocs.org/api/v3/projects/lavbench/versions/${{ env.TAG }}/" \
+            -d '{"active": true}'
