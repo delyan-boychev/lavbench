@@ -4,7 +4,7 @@ version = "0.0.0b0"
 description = "Sandboxed code evaluation platform — created by the Bulgarian AI Olympiad Committee"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
+license = { text = "AGPL-3.0-only" }
 authors = [
   { name = "Bulgarian AI Olympiad Committee" },
 ]
