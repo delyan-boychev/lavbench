@@ -30,6 +30,22 @@ logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
 
 
+def _check_and_add_active_stage(stage, now, active_stage_ids):
+    st_start_str = stage.get("start_time")
+    st_start = None
+    try:
+        if st_start_str:
+            st_start = (
+                datetime.fromisoformat(st_start_str.replace("Z", "+00:00"))
+                .astimezone(zoneinfo.ZoneInfo("UTC"))
+                .replace(tzinfo=None)
+            )
+        if st_start and st_start <= now:
+            active_stage_ids.append(str(stage["id"]))
+    except Exception as e:
+        logger.warning("Failed to parse regular stage dates: %s", e)
+
+
 def filter_challenge_for_competitor(challenge_dict):
     challenge_dict = dict(challenge_dict)
     now = datetime.utcnow()
@@ -88,28 +104,7 @@ def filter_challenge_for_competitor(challenge_dict):
     active_stage_ids = []
     if has_stages:
         for s in regular_stages:
-            try:
-                st_start_str = s.get("start_time")
-                st_end_str = s.get("end_time")
-                st_start = None
-                st_end = None
-                if st_start_str:
-                    st_start = (
-                        datetime.fromisoformat(st_start_str.replace("Z", "+00:00"))
-                        .astimezone(zoneinfo.ZoneInfo("UTC"))
-                        .replace(tzinfo=None)
-                    )
-                if st_end_str:
-                    st_end = (
-                        datetime.fromisoformat(st_end_str.replace("Z", "+00:00"))
-                        .astimezone(zoneinfo.ZoneInfo("UTC"))
-                        .replace(tzinfo=None)
-                    )
-
-                if st_start and st_start <= now:
-                    active_stage_ids.append(str(s["id"]))
-            except Exception as e:
-                logger.warning("Failed to parse regular stage dates: %s", e)
+            _check_and_add_active_stage(s, now, active_stage_ids)
 
     filtered_tasks = []
     for t in challenge_dict.get("tasks", []):
@@ -1411,7 +1406,7 @@ def import_challenge():
                 import_data = json.loads(challenge_json_content)
             except Exception as e:
                 return err(
-                    "ERR_INVALID_ARCHIVE", 400, message=f"Invalid or corrupt ZIP archive: {str(e)}"
+                    "ERR_INVALID_ARCHIVE", 400, message=f"Invalid or corrupt ZIP archive: {e!s}"
                 )
         else:
             return err(

@@ -290,7 +290,7 @@ class TestLoginRateLimiting:
 class TestRegisterCompetitor:
     """POST /api/admin/register-competitor"""
 
-    COMP_PAYLOAD = {
+    COMP_PAYLOAD = {  # noqa: RUF012
         "name": "Ivan",
         "middle_name": "Georgiev",
         "surname": "Petrov",

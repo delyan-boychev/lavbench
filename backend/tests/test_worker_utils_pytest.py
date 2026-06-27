@@ -28,7 +28,7 @@ class TestRunCommandStreaming:
         mock_container = self._make_mock_container(mocker, exit_code=0)
         mock_client.containers.run.return_value = mock_container
         logs = []
-        retcode, stdout, stderr, is_timeout = run_command_streaming(
+        retcode, stdout, _stderr, is_timeout = run_command_streaming(
             mock_client,
             "test:latest",
             ["echo", "hello"],
@@ -44,7 +44,7 @@ class TestRunCommandStreaming:
         mock_container = self._make_mock_container(mocker, exit_code=1)
         mock_client.containers.run.return_value = mock_container
         logs = []
-        retcode, stdout, stderr, is_timeout = run_command_streaming(
+        retcode, _stdout, _stderr, is_timeout = run_command_streaming(
             mock_client,
             "test:latest",
             ["bash", "-c", "exit 1"],
@@ -57,7 +57,7 @@ class TestRunCommandStreaming:
         mock_client = mocker.MagicMock()
         mock_client.containers.run.side_effect = Exception("failed to create container")
         logs = []
-        retcode, stdout, stderr, is_timeout = run_command_streaming(
+        retcode, _stdout, stderr, _is_timeout = run_command_streaming(
             mock_client,
             "bad:latest",
             ["cmd"],
@@ -75,7 +75,7 @@ class TestRunCommandStreaming:
         mock_container.logs.return_value = []
         mock_client.containers.run.return_value = mock_container
         logs = []
-        retcode, stdout, stderr, is_timeout = run_command_streaming(
+        _retcode, _stdout, _stderr, is_timeout = run_command_streaming(
             mock_client,
             "test:latest",
             ["sleep", "10"],

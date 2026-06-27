@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from typing import ClassVar
 
 from dotenv import load_dotenv
 
@@ -45,7 +46,7 @@ class Config:
     )
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
-    SQLALCHEMY_ENGINE_OPTIONS = {}
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
         SQLALCHEMY_ENGINE_OPTIONS = {
             "pool_size": 50,

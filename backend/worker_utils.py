@@ -296,7 +296,7 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
                     f"Failed to download task file '{filename}': Status code {res.status_code}"
                 )
         except Exception as e:
-            logs.append(f"Error downloading task file '{filename}': {str(e)}")
+            logs.append(f"Error downloading task file '{filename}': {e!s}")
 
 
 def download_labels_parquet_to_dir(metadata, labels_dir, logs):
@@ -328,5 +328,5 @@ def download_labels_parquet_to_dir(metadata, labels_dir, logs):
                 else:
                     logs.append(f"Failed to download labels.parquet: Status code {res.status_code}")
             except Exception as e:
-                logs.append(f"Error downloading labels.parquet: {str(e)}")
+                logs.append(f"Error downloading labels.parquet: {e!s}")
     return None

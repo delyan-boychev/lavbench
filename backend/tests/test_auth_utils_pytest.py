@@ -217,7 +217,7 @@ mock_tracker = MockCallTracker()
 class TestRateLimit:
     @pytest.fixture(scope="function")
     def rate_limit_client(self):
-        """Create a fresh Flask app with rate‑limited routes for each test."""
+        """Create a fresh Flask app with rate-limited routes for each test."""
         from auth_utils import login_required
         from flask import Flask, jsonify, request
 

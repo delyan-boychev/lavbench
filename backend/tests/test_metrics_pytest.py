@@ -554,7 +554,7 @@ class TestValidateParquetSchema:
 
     def test_empty_dataframe(self):
         df = pd.DataFrame()
-        ok, msg = validate_parquet_schema(df)
+        ok, _msg = validate_parquet_schema(df)
         assert ok is False
 
 

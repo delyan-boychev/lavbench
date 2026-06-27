@@ -99,7 +99,7 @@ def run_backup(app, auto=True, db_only=False):
             dump_path,
         ]
         if auto:
-            pg_dump_cmd = ["nice", "-n", "19"] + pg_dump_cmd
+            pg_dump_cmd = ["nice", "-n", "19", *pg_dump_cmd]
 
         result = subprocess.run(  # noqa: S603 — args from trusted config
             pg_dump_cmd,
@@ -140,7 +140,7 @@ def run_backup(app, auto=True, db_only=False):
                 json.dump(serialized_logs, f, indent=2)
         except Exception as e:
             logger.error("Failed to dump audit logs during backup: %s", str(e))
-            raise RuntimeError(f"Failed to dump audit logs: {str(e)}") from e
+            raise RuntimeError(f"Failed to dump audit logs: {e!s}") from e
 
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
         tar_args = [
@@ -158,7 +158,7 @@ def run_backup(app, auto=True, db_only=False):
             tar_args.extend(["-C", os.path.dirname(uploads_path), os.path.basename(uploads_path)])
 
         if auto:
-            tar_args = ["nice", "-n", "19"] + tar_args
+            tar_args = ["nice", "-n", "19", *tar_args]
 
         result = subprocess.run(tar_args, env=env, capture_output=True, text=True)  # noqa: S603 — args from trusted config
         if result.returncode != 0:

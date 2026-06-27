@@ -558,7 +558,7 @@ def create_task(challenge_id):
                     return err(
                         "ERR_LABELS_PARSE_FAILED",
                         400,
-                        message=f"Failed to parse labels.parquet: {str(e)}",
+                        message=f"Failed to parse labels.parquet: {e!s}",
                     )
 
             uploaded_files_meta.append(
@@ -961,7 +961,7 @@ def update_task(task_id):
                     return err(
                         "ERR_LABELS_PARSE_FAILED",
                         400,
-                        message=f"Failed to parse labels.parquet: {str(e)}",
+                        message=f"Failed to parse labels.parquet: {e!s}",
                     )
 
             current_files.append(

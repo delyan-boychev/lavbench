@@ -447,11 +447,8 @@ if INTERNAL_ONLY_WORKER or EVALUATION_ONLY_WORKER:
         "tasks.prune_docker_images",
     }
     for tname in all_task_names:
-        if (
-            INTERNAL_ONLY_WORKER
-            and tname in evaluation_tasks
-            or EVALUATION_ONLY_WORKER
-            and tname not in evaluation_tasks
+        if (INTERNAL_ONLY_WORKER and tname in evaluation_tasks) or (
+            EVALUATION_ONLY_WORKER and tname not in evaluation_tasks
         ):
             with contextlib.suppress(KeyError):
                 celery.tasks.unregister(tname)

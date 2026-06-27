@@ -47,7 +47,7 @@ def read_doc_file(filename, lang="en"):
                 with open(safe_path, encoding="utf-8") as f:
                     return f.read()
             except Exception as e:
-                return f"Error reading documentation file: {str(e)}"
+                return f"Error reading documentation file: {e!s}"
 
     return "Documentation file not found."
 

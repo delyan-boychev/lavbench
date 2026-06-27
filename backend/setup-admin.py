@@ -62,7 +62,7 @@ def generate_master_key():
                 f.write("==================================================\n")
             saved_msg = f"Saved credentials to: {creds_path}"
         except Exception as e:
-            saved_msg = f"Failed to save credentials file: {str(e)}"
+            saved_msg = f"Failed to save credentials file: {e!s}"
 
         print("\n" + "=" * 60)  # noqa: T201
         print("         MASTER ADMIN PROFILE GENERATOR ONLINE")  # noqa: T201

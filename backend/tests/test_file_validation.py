@@ -47,7 +47,7 @@ class TestValidateExtension:
         assert error is None
 
     def test_empty_allowed_set(self):
-        valid, error = validate_extension("file.py", set())
+        valid, _error = validate_extension("file.py", set())
         assert valid is False
 
 
@@ -63,19 +63,19 @@ class TestValidateMimeType:
         assert "not allowed" in error
 
     def test_octet_stream_always_allowed(self):
-        valid, error = validate_mime_type("application/octet-stream", {"text/csv"})
+        valid, _error = validate_mime_type("application/octet-stream", {"text/csv"})
         assert valid is True
 
     def test_none_mimetype_allowed(self):
-        valid, error = validate_mime_type(None, {"text/csv"})
+        valid, _error = validate_mime_type(None, {"text/csv"})
         assert valid is True
 
     def test_empty_allowed_list(self):
-        valid, error = validate_mime_type("text/csv", None)
+        valid, _error = validate_mime_type("text/csv", None)
         assert valid is True
 
     def test_empty_allowed_empty_set(self):
-        valid, error = validate_mime_type("text/csv", set())
+        valid, _error = validate_mime_type("text/csv", set())
         assert valid is True  # empty set is falsy → no restriction
 
 
@@ -108,41 +108,41 @@ class TestValidateNotebookContent:
 
     def test_cells_not_a_list(self):
         content = json.dumps({"cells": "not_a_list"}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, error, _notebook = validate_notebook_content(content)
         assert valid is False
         assert "cells" in error.lower()
 
     def test_cell_missing_required_keys(self):
         content = json.dumps({"cells": [{"cell_type": "code"}]}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, error, _notebook = validate_notebook_content(content)
         assert valid is False
         assert "missing keys" in error
 
     def test_cell_invalid_type(self):
         content = json.dumps({"cells": [{"cell_type": "unknown", "source": []}]}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, error, _notebook = validate_notebook_content(content)
         assert valid is False
         assert "invalid cell_type" in error
 
     def test_cell_not_an_object(self):
         content = json.dumps({"cells": ["string_cell"]}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, error, _notebook = validate_notebook_content(content)
         assert valid is False
         assert "must be an object" in error
 
     def test_no_cells_key(self):
         content = json.dumps({"nbformat": 4}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, _error, notebook = validate_notebook_content(content)
         assert valid is True  # notebooks without cells key are valid (empty notebook)
         assert notebook is not None
 
     def test_empty_cells(self):
         content = json.dumps({"cells": []}).encode()
-        valid, error, notebook = validate_notebook_content(content)
+        valid, _error, _notebook = validate_notebook_content(content)
         assert valid is True
 
     def test_unicode_decode_error(self):
-        valid, error, notebook = validate_notebook_content(b"\xff\xfe\x00")
+        valid, error, _notebook = validate_notebook_content(b"\xff\xfe\x00")
         assert valid is False
         assert "Invalid JSON" in error or "decode" in error.lower()
 
@@ -156,17 +156,17 @@ class TestValidateCsvContent:
         assert text == "col1,col2\nval1,val2\n"
 
     def test_empty_csv(self):
-        valid, error, text = validate_csv_content(b"")
+        valid, error, _text = validate_csv_content(b"")
         assert valid is False
         assert "empty" in error
 
     def test_whitespace_only_csv(self):
-        valid, error, text = validate_csv_content(b"   \n  ")
+        valid, error, _text = validate_csv_content(b"   \n  ")
         assert valid is False
         assert "empty" in error
 
     def test_binary_content(self):
-        valid, error, text = validate_csv_content(b"\xff\xfe\x00\x01")
+        valid, error, _text = validate_csv_content(b"\xff\xfe\x00\x01")
         assert valid is False
         assert "UTF-8" in error
 

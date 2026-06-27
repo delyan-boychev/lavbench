@@ -49,13 +49,13 @@ class TestWatchdogStuckSubmissions:
         db.session.commit()
 
     def _create_submission(self, status, executed_at=None, created_at=None, time_limit=None):
-        kwargs = dict(
-            challenge_id=self.challenge.id,
-            task_id=self.task.id,
-            user_id=self.competitor.id,
-            status=status,
-            code_cells="[]",
-        )
+        kwargs = {
+            "challenge_id": self.challenge.id,
+            "task_id": self.task.id,
+            "user_id": self.competitor.id,
+            "status": status,
+            "code_cells": "[]",
+        }
         if executed_at is not None:
             kwargs["executed_at"] = executed_at
         if created_at is not None:

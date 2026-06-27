@@ -109,8 +109,7 @@ def generate_scores_csv(challenge):
         "City",
         "Grade",
     ]
-    for task in tasks:
-        header.append(f"Task: {task.title}")
+    header.extend(f"Task: {task.title}" for task in tasks)
     header.append("Total Score")
     writer.writerow(header)
 
@@ -127,8 +126,7 @@ def generate_scores_csv(challenge):
             decrypt_field(comp.city) or "—",
             decrypt_field(comp.grade) or "—",
         ]
-        for task in tasks:
-            row.append(f"{item['task_scores'][task.id]:.4f}")
+        row.extend(f"{item['task_scores'][task.id]:.4f}" for task in tasks)
         row.append(f"{item['total_score']:.4f}")
         writer.writerow(row)
 

@@ -141,7 +141,7 @@ def auth_headers():
 def csrf_headers():
     """Return a helper that builds CSRF + Authorization headers."""
 
-    def _make(token, csrf_token="test-csrf-token"):  # noqa: S107
+    def _make(token, csrf_token="test-csrf-token"):
         return {
             "Authorization": f"Bearer {token}",
             "X-CSRF-Token": csrf_token,
@@ -162,7 +162,7 @@ def create_user(db_session):
 
     def _make(
         username="testuser",
-        password="testpass123",  # noqa: S107
+        password="testpass123",
         role="competitor",
         alias_id=None,
         challenge_id=None,

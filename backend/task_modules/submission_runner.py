@@ -54,6 +54,22 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     return ""
 
 
+def _preload_dataset(load_fn, ds_name, hf_cache_dir, hf_token, logs):
+    try:
+        load_fn(ds_name, cache_dir=hf_cache_dir, token=hf_token)
+        logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache.")
+    except Exception as preload_err:
+        logs.append(f"Warning: Failed to preload dataset '{ds_name}': {preload_err}")
+
+
+def _preload_model(download_fn, model_name, hf_cache_dir, hf_token, logs):
+    try:
+        download_fn(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token)
+        logs.append(f"Successfully preloaded model '{model_name}' to host cache.")
+    except Exception as preload_err:
+        logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
+
+
 def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
     """
     Preloads HuggingFace datasets and models on the host so they are available offline in docker.
@@ -106,11 +122,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
             from datasets import load_dataset as host_load_dataset
 
             for ds_name in datasets_to_load:
-                try:
-                    host_load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_token)
-                    logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache.")
-                except Exception as preload_err:
-                    logs.append(f"Warning: Failed to preload dataset '{ds_name}': {preload_err}")
+                _preload_dataset(host_load_dataset, ds_name, hf_cache_dir, hf_token, logs)
         except Exception as import_err:
             logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
 
@@ -121,11 +133,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
             from huggingface_hub import snapshot_download
 
             for model_name in models_to_load:
-                try:
-                    snapshot_download(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token)
-                    logs.append(f"Successfully preloaded model '{model_name}' to host cache.")
-                except Exception as preload_err:
-                    logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
+                _preload_model(snapshot_download, model_name, hf_cache_dir, hf_token, logs)
         except Exception as import_err:
             logs.append(
                 f"Warning: Could not import 'huggingface_hub' "
@@ -138,7 +146,7 @@ def calculate_weighted_score(metrics_payload, metrics_cfg):
 
     if not metrics_cfg:
         if metrics_payload:
-            m_name = list(metrics_payload.keys())[0]
+            m_name = next(iter(metrics_payload.keys()))
             val = metrics_payload[m_name]
             if math.isnan(val) or math.isinf(val):
                 return 0.0
@@ -431,7 +439,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                     extracted_cells.append(str(cell))
             user_code = "\n\n".join(extracted_cells)
         except Exception as e:
-            err_msg = f"Failed to parse code cells JSON: {str(e)}"
+            err_msg = f"Failed to parse code cells JSON: {e!s}"
             update_status("failed", "failed", logs_list=[err_msg])
             return
 
@@ -826,7 +834,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
                         status = "failed"
-                        logs.append(f"Error during parquet metric calculation: {str(eval_err)}")
+                        logs.append(f"Error during parquet metric calculation: {eval_err!s}")
                         logs.append(f"Traceback: {traceback.format_exc()}")
 
             # Clean up securely downloaded labels directory on host if created

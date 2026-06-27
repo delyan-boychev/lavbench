@@ -797,7 +797,7 @@ def import_competitors_csv():
 
     except Exception as e:
         db.session.rollback()
-        return err("ERR_CSV_PARSE_FAILED", 400, message=f"Failed to parse CSV file: {str(e)}")
+        return err("ERR_CSV_PARSE_FAILED", 400, message=f"Failed to parse CSV file: {e!s}")
 
 
 BACKUPS_DIR = os.environ.get("BACKUPS_DIR", "/backups")
@@ -1492,10 +1492,8 @@ def download_submissions_zip(challenge_id):
     is_allowed = False
     if (
         challenge.scores_finalized
-        or stage
-        and (stage.is_finalized or stage.end_time < now)
-        or not stage
-        and (challenge.end_time and challenge.end_time < now)
+        or (stage and (stage.is_finalized or stage.end_time < now))
+        or (not stage and (challenge.end_time and challenge.end_time < now))
     ):
         is_allowed = True
 

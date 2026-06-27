@@ -39,6 +39,28 @@ def _config_hash(base_image, pip_packages, hf_datasets, hf_models):
     return h.hexdigest()[:16]
 
 
+def _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key):
+    try:
+        logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
+        from datasets import load_dataset
+
+        load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
+        logger.info("Successfully downloaded dataset '%s' for task %s", ds_name, task_id)
+    except Exception as e:
+        logger.warning("Failed to download dataset '%s' for task %s: %s", ds_name, task_id, e)
+
+
+def _download_model(model_name, task_id, hf_cache_dir, hf_api_key):
+    try:
+        logger.info("Downloading model '%s' for task %s...", model_name, task_id)
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
+        logger.info("Successfully downloaded model '%s' for task %s", model_name, task_id)
+    except Exception as e:
+        logger.warning("Failed to download model '%s' for task %s: %s", model_name, task_id, e)
+
+
 def build_task_image(metadata):
     """Build (or skip) a Docker image for a single task.
 
@@ -111,25 +133,11 @@ def build_task_image(metadata):
 
     # ── Download HF datasets ──
     for ds_name in hf_datasets_list:
-        try:
-            logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
-            from datasets import load_dataset
-
-            load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
-            logger.info("Successfully downloaded dataset '%s' for task %s", ds_name, task_id)
-        except Exception as e:
-            logger.warning("Failed to download dataset '%s' for task %s: %s", ds_name, task_id, e)
+        _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key)
 
     # ── Download HF models ──
     for model_name in hf_models_list:
-        try:
-            logger.info("Downloading model '%s' for task %s...", model_name, task_id)
-            from huggingface_hub import snapshot_download
-
-            snapshot_download(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
-            logger.info("Successfully downloaded model '%s' for task %s", model_name, task_id)
-        except Exception as e:
-            logger.warning("Failed to download model '%s' for task %s: %s", model_name, task_id, e)
+        _download_model(model_name, task_id, hf_cache_dir, hf_api_key)
 
     # ── Write requirements.txt ──
     req_path = os.path.join(task_dir, "requirements.txt")
@@ -163,7 +171,7 @@ def build_task_image(metadata):
     logs = []
     start = time.time()
     try:
-        retcode, stdout, stderr, _ = _run_docker_build(tag, task_dir, logs)
+        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
         elapsed = time.time() - start
         if retcode == 0:
             # Save metadata AFTER successful build
@@ -195,7 +203,7 @@ def _run_docker_build(tag, build_dir, logs):
     client = _get_client()
     try:
         build_logs = []
-        image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
+        _image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
         for entry in build_logs:
             if "stream" in entry:
                 line = entry["stream"].rstrip("\n")

@@ -30,8 +30,7 @@ def build_submission_metadata(
         "pip_requirements": task.pip_requirements,
         "is_custom_eval": bool(
             task.custom_eval_code
-            or task.evaluator_script_path
-            and os.path.exists(task.evaluator_script_path)
+            or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
         "metrics_config": task.metrics_config,
         "hf_datasets": _hf_value(task.hf_datasets),

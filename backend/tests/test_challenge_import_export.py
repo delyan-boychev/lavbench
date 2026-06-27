@@ -150,7 +150,7 @@ class TestExportChallenge:
 class TestImportChallenge:
     """POST /api/challenges/import"""
 
-    EXPORT_PAYLOAD = {
+    EXPORT_PAYLOAD = {  # noqa: RUF012
         "title": "Imported Challenge",
         "description": "Created via import",
         "max_eval_requests": 20,

@@ -171,14 +171,10 @@ def main():
     # Check 3: unused error codes defined in DEFAULT_ERROR_MESSAGES
     unused_codes = sorted(valid_codes - all_used_codes)
     if unused_codes:
-        for code in unused_codes:
-            all_violations.append(
-                (
-                    error_utils_path,
-                    0,
-                    f"Unused error code '{code}' defined in DEFAULT_ERROR_MESSAGES",
-                )
-            )
+        all_violations.extend(
+            (error_utils_path, 0, f"Unused error code '{code}' defined in DEFAULT_ERROR_MESSAGES")
+            for code in unused_codes
+        )
 
     # Check 5 & 6: frontend translation key parity
     frontend_root = root.parent / "frontend"
@@ -198,14 +194,10 @@ def main():
         # Missing translations
         missing = sorted(valid_codes - api_keys)
         if missing:
-            for code in missing[:10]:  # cap at 10 per locale to avoid noise
-                all_violations.append(
-                    (
-                        trans_path,
-                        0,
-                        f"Missing translation for '{code}' in {locale}/translation.json",
-                    )
-                )
+            all_violations.extend(
+                (trans_path, 0, f"Missing translation for '{code}' in {locale}/translation.json")
+                for code in missing[:10]
+            )
             if len(missing) > 10:
                 all_violations.append(
                     (trans_path, 0, f"  ... and {len(missing) - 10} more missing in {locale}")
@@ -213,14 +205,10 @@ def main():
         # Extra (dead) translations
         extra = sorted(api_keys - valid_codes)
         if extra:
-            for code in extra:
-                all_violations.append(
-                    (
-                        trans_path,
-                        0,
-                        f"Extra translation for '{code}' in {locale}/translation.json",
-                    )
-                )
+            all_violations.extend(
+                (trans_path, 0, f"Extra translation for '{code}' in {locale}/translation.json")
+                for code in extra
+            )
 
     if all_violations:
         print(f"ERROR: {len(all_violations)} violation(s) found.\n")
