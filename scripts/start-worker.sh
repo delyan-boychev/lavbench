@@ -15,6 +15,43 @@
 #   --help, -h                 Show this help
 set -euo pipefail
 
+# ── Validation helpers ──────────────────────────────────────────────
+validate_positive_int() {
+  local val="$1" name="$2"
+  if ! [[ "$val" =~ ^[1-9][0-9]*$ ]]; then
+    echo "  [ERROR] $name must be a positive integer (got: '$val')" >&2
+    return 1
+  fi
+}
+
+validate_even_int() {
+  local val="$1"
+  if [ $(( val % 2 )) -ne 0 ]; then
+    echo "  [ERROR] CPU cores per task must be an even number (got: $val)" >&2
+    return 1
+  fi
+}
+
+validate_gpu_ids() {
+  local input="$1" max_idx="$2"
+  local IFS=',' seen="" idx
+  for idx in $input; do
+    if ! [[ "$idx" =~ ^[0-9]+$ ]]; then
+      echo "  [ERROR] GPU index '$idx' is not a valid number" >&2
+      return 1
+    fi
+    if [ "$idx" -gt "$max_idx" ]; then
+      echo "  [ERROR] GPU index $idx exceeds available max ($max_idx)" >&2
+      return 1
+    fi
+    if [[ ",$seen," == *",$idx,"* ]]; then
+      echo "  [ERROR] Duplicate GPU index: $idx" >&2
+      return 1
+    fi
+    seen="${seen:+$seen,}$idx"
+  done
+}
+
 # ── Defaults ────────────────────────────────────────────────────────
 MODE="local"
 REDIS_URL=""
@@ -257,7 +294,16 @@ if [ -z "${WORKER_TYPE:-}" ]; then
     else
       # Eval / both
       if [ -n "$GPU_DETECTED" ]; then
-        read -p "  GPU IDs to use (e.g., 0 or 0,1 — empty for CPU-only): " GPU_ID
+        GPU_MAX_IDX=$(( GPU_COUNT - 1 ))
+        while true; do
+          read -p "  GPU IDs to use (e.g., 0 or 0,1 — empty for CPU-only): " GPU_ID
+          if [ -z "$GPU_ID" ]; then
+            break
+          fi
+          if validate_gpu_ids "$GPU_ID" "$GPU_MAX_IDX"; then
+            break
+          fi
+        done
         if [ -n "$GPU_ID" ]; then
           WORKER_GPU_ID="$GPU_ID"
           NUM_GPUS=$(echo "$GPU_ID" | tr ',' '\n' | wc -l | tr -d ' ')
@@ -268,8 +314,11 @@ if [ -z "${WORKER_TYPE:-}" ]; then
           [ "$DEFAULT_GPU_CORES" -lt 2 ] && DEFAULT_GPU_CORES=2
           echo "  CPU cores per GPU task [$DEFAULT_GPU_CORES]:"
           echo "    (${NUM_GPUS} tasks × ${DEFAULT_GPU_CORES} cores = $(( NUM_GPUS * DEFAULT_GPU_CORES )) cores)"
-          read -p "  Cores per GPU task: " GPU_INPUT
-          GPU_CORES_PER_TASK="${GPU_INPUT:-$DEFAULT_GPU_CORES}"
+          while true; do
+            read -p "  Cores per GPU task: " GPU_INPUT
+            GPU_CORES_PER_TASK="${GPU_INPUT:-$DEFAULT_GPU_CORES}"
+            validate_positive_int "$GPU_CORES_PER_TASK" "Cores per GPU task" && validate_even_int "$GPU_CORES_PER_TASK" && break
+          done
 
           # GPU RAM
           DEFAULT_GPU_RAM=8
@@ -519,6 +568,7 @@ if [ "$MODE" = "docker" ]; then
     -e RAM_CLAMP_FACTOR \
     -e INTERNAL_ONLY_WORKER="$([ "$INTERNAL_ONLY" = "true" ] || [ "${WORKER_TYPE:-eval}" = "internal" ] && echo true || echo false)" \
     -e EVALUATION_ONLY_WORKER="$([ "$INTERNAL_ONLY" != "true" ] && [ "${WORKER_TYPE:-eval}" != "internal" ] && echo true || echo false)" \
+    -e RUNNING_AS_WORKER=true \
     $ENV_ARGS \
     $VOLUME_ARGS \
     $( [ -n "${GPU_ID:-}" ] && echo "--gpus all" || echo "" ) \
