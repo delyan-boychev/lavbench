@@ -1,7 +1,7 @@
 {
   "name": "lavbench-frontend",
   "private": true,
-  "version": "0.0.1-beta.0",
+  "version": "0.1.0-beta.0",
   "description": "Sandboxed code evaluation platform — frontend",
   "author": "Bulgarian AI Olympiad Committee",
   "license": "AGPL-3.0-only",
