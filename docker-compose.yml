@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     # Exposed locally for native dev (make dev) — Docker services use internal network
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     deploy:
       resources:
         limits:
