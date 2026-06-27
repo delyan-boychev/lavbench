@@ -50,12 +50,12 @@ jobs:
         run: |
           gh label create release --color 5319e7 --description "Release PR" 2>/dev/null || true
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Create Release PR
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.GH_PAT }}
           commit-message: "chore: release ${{ steps.git-cliff.outputs.version }}"
           title: "chore: release ${{ steps.git-cliff.outputs.version }}"
           body: "Automated release PR for ${{ steps.git-cliff.outputs.version }}."
