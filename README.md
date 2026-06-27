@@ -38,8 +38,8 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 ## Quick Start
 
 ```bash
-# 1. One-command setup (creates env, generates keys, installs deps)
-make setup
+# 1. One-command server setup (creates env, generates keys, installs deps)
+make server
 
 # 2. Launch locally
 make dev
