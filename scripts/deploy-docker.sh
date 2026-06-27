@@ -93,12 +93,11 @@ echo ""
 # ── Initialize database ────────────────────────────────────────────
 echo "  → Initializing database schema..."
 docker compose exec -T backend python -c "
-from app import app, db, seed_database
+from app import app, db
 with app.app_context():
     db.create_all()
-    seed_database()
 "
-echo "    ✔ Database schema created and seeded"
+echo "    ✔ Database schema created"
 rm -f .env.docker
 echo ""
 
