@@ -20,7 +20,6 @@ export default defineConfig({
               return 'vendor-react';
             }
             if (
-              id.includes('prismjs') ||
               id.includes('react-markdown') ||
               id.includes('remark-gfm') ||
               id.includes('micromark') ||
