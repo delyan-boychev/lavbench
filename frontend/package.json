@@ -1,7 +1,15 @@
 {
-  "name": "frontend",
+  "name": "lavbench-frontend",
   "private": true,
   "version": "0.0.0-beta",
+  "description": "Sandboxed code evaluation platform — frontend",
+  "author": "Bulgarian AI Olympiad Committee",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/delyan-boychev/lavbench",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/delyan-boychev/lavbench.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

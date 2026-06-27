@@ -2,7 +2,23 @@
 name = "lavbench"
 version = "0.0.0b0"
 description = "Sandboxed code evaluation platform — created by the Bulgarian AI Olympiad Committee"
+readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Bulgarian AI Olympiad Committee" },
+]
+keywords = ["ai", "evaluation", "sandbox", "education", "leaderboard"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/delyan-boychev/lavbench"
+Repository = "https://github.com/delyan-boychev/lavbench"
 
 [build-system]
 requires = ["setuptools>=82.0.1"]

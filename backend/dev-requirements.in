@@ -1,7 +1,12 @@
+# ── Pin production deps so dev-install matches prod ────────────────
 -c requirements.txt
+
+# ── Testing ────────────────────────────────────────────────────────
 pytest>=7.4.0
-pytest-cov>=6.0.0
+pytest-cov>=7.0.0
 pytest-timeout>=2.0.0
 pytest-mock>=3.14.0
-Faker>=20.0.0
 pytest-xdist>=3.5.0
+
+# ── Test data ──────────────────────────────────────────────────────
+Faker>=20.0.0
