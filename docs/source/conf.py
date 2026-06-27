@@ -11,7 +11,7 @@ os.environ.setdefault("ENCRYPTION_KEY", "M0uOruyloVEFHy1NgSleQ4dEvt7JZaJyZS8aOP3
 project = "LavBench"
 copyright = "2026, Delyan Boychev & Bulgarian AI Olympiad Committee"
 author = "Delyan Boychev & Bulgarian AI Olympiad Committee"
-release = os.environ.get("READTHEDOCS_VERSION", "0.0.0b0")
+release = "0.0.1b0"
 
 extensions = [
     "myst_parser",

@@ -28,7 +28,7 @@ jobs:
         id: git-cliff
         with:
           config: cliff.toml
-          args: --bump --unreleased --tag ${{ inputs.bump }}
+          args: --bump ${{ inputs.bump }} --unreleased
         env:
           OUTPUT: CHANGELOG.md
 
