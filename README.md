@@ -19,8 +19,6 @@ It is a secure, sandboxed machine learning competition platform. Participants su
 
 Created by the Bulgarian AI Olympiad Committee for IOAI selection and national competitions. Other countries AI olympiad committees, teams and IOAI board and others are welcome to use and contribute.
 
----
-
 ## Features
 
 - **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
@@ -40,23 +38,20 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 ## Quick Start
 
 ```bash
-# 1. Configure
-cp .env.example .env
-# Edit .env — set SECRET_KEY, ENCRYPTION_KEY, and any other necessary values
-# Generate ENCRYPTION_KEY: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# 1. One-command setup (creates env, generates keys, installs deps)
+make setup
 
-# Also run setup-admin.py after first deploy to create an admin user
-python backend/setup-admin.py
-
-# 2. Launch
-./scripts/deploy-debug.sh
+# 2. Launch locally
+make dev
 
 # 3. Open
 # Frontend -> http://localhost:5173
 # API      -> http://localhost:5001/api
 ```
 
-Press `Ctrl+C` in your terminal to gracefully stop all services.
+Press `Ctrl+C` to stop all services.
+
+See the [Admin Guide](guides/en/admin_guide.md) for setup prerequisites, TLS/HTTPS, Docker deployment, remote workers, and configuration editing.
 
 ---
 
@@ -65,34 +60,30 @@ Press `Ctrl+C` in your terminal to gracefully stop all services.
 ```mermaid
 flowchart TD
     %% Client & Gateway
-    Client([Browser<br>React]) <-->|HTTP / SSE| Nginx[Nginx<br>Port 80]
+    Client([Browser<br>React]) <-->|HTTPS / SSE| Nginx[Nginx<br>Port 443]
     Nginx <-->|Reverse Proxy| API[Flask API<br>Port 5001]
 
     %% Core Data & Message Broker
-    subgraph Core [Backend Infrastructure]
+    subgraph Core [Backend Infrastructure — Docker Compose]
         direction TB
         API -->|Read/Write| DB[(PostgreSQL<br>Primary DB)]
         API <-->|Queue / PubSub| Redis[(Redis<br>Broker & Cache)]
         Beat([Celery Beat<br>Scheduler]) -->|Triggers| Redis
+        Internal([Internal Celery Worker<br>System tasks only]) -->|Pulls Tasks| Redis
     end
 
-    %% Worker Nodes
-    subgraph Workers [Worker Pool]
+    %% Remote Worker Nodes
+    subgraph Remote [Remote Worker Machines]
         direction TB
-        Redis -->|Pulls Tasks| GPU[GPU Worker<br>scripts/start-worker.sh 0]
-        Redis -->|Pulls Tasks| CPU1[CPU Worker<br>scripts/start-worker.sh]
-        Redis -->|Pulls Tasks| CPU2[CPU Worker<br>scripts/start-worker.sh]
+        W1[Worker Container<br>lavbench-worker] -->|Sibling Containers| S1{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
+        W2[Worker Local<br>micromamba + start-worker.sh] -->|Sibling Containers| S2{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
     end
 
-    %% Execution Sandbox
-    subgraph Execution [Sandboxed Environment]
-        GPU --> Sandbox
-        CPU1 --> Sandbox
-        CPU2 --> Sandbox
-        Sandbox{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
-    end
+    %% Connections from Redis to Workers
+    Redis -.-|SSL/TLS| W1
+    Redis -.-|SSL/TLS| W2
 
-    %% Styling (Optional but keeps it clean)
+    %% Styling
     classDef default fill:#1e293b,stroke:#cbd5e1,stroke-width:1px,color:#f8fafc;
     classDef database fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
     class DB,Redis database;
@@ -100,14 +91,15 @@ flowchart TD
 
 ### Components
 
-| Service           | Role                                                                                             | Port   |
-| ----------------- | ------------------------------------------------------------------------------------------------ | ------ |
-| **PostgreSQL**    | Primary database for users, challenges, tasks, and submissions                                   | `5432` |
-| **Redis**         | Celery message broker, SSE pub/sub, caching, and rate limiting                                   | `6379` |
-| **Flask API**     | REST API and SSE streaming endpoints                                                             | `5001` |
-| **Celery Worker** | Runs on the host via `scripts/start-worker.sh` to build Docker sandboxes and execute submissions | —      |
-| **Celery Beat**   | Handles periodic tasks like the submission watchdog and automated backups                        | —      |
-| **Nginx/React**   | Static file serving and API reverse proxy                                                        | `80`   |
+| Service                  | Role                                                                                             | Port   |
+| ------------------------ | ------------------------------------------------------------------------------------------------ | ------ |
+| **PostgreSQL**           | Primary database for users, challenges, tasks, and submissions                                   | `5432` |
+| **Redis**                | Celery message broker, SSE pub/sub, caching, and rate limiting                                   | `6379` |
+| **Flask API**            | REST API and SSE streaming endpoints                                                             | `5001` |
+| **Celery Beat**          | Handles periodic tasks like the submission watchdog and automated backups                        | —      |
+| **Celery Worker (int.)** | Built-in system task worker (backups, watchdog, leaderboard recalc) — runs inside Docker Compose  | —      |
+| **Celery Worker (ext.)** | Evaluation worker — runs in Docker container or directly on remote machines, sibling containers  | —      |
+| **Nginx/React**          | Static file serving and API reverse proxy (HTTPS)                                                | `443`  |
 
 ---
 
@@ -126,7 +118,8 @@ lavbench/
 │   ├── sse_utils.py             # SSE pub/sub helpers
 │   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
 │   ├── tasks.py                 # Celery task definitions + beat schedule
-│   ├── Dockerfile               # Backend container
+│   ├── Dockerfile               # Backend container (Flask + Celery)
+│   ├── Dockerfile.worker        # Minimal worker-only container (~100 MB)
 │   ├── setup-admin.py            # Creates admin user account + admin_credentials.txt
 │   ├── scripts/                 # Lint/CI scripts (check_error_codes.py)
 │   ├── utils/                  # Utility modules (access, audit, cache, dates, files, etc.)
@@ -149,9 +142,15 @@ lavbench/
 │   └── nginx.conf               # Nginx configuration
 ├── guides/                      # User documentation (student, jury, admin, API)
 ├── docs/                        # Project documentation (Sphinx, architecture)
-├── scripts/                     # Deployment and worker launcher scripts
+├── scripts/
+│   ├── setup.sh                 # First-time server setup (prereqs, micromamba, keys)
+│   ├── generate-keys.sh         # Interactive key/cert generator (.env + worker.env)
+│   ├── edit-config.sh           # Menu-based config editor (server + worker)
+│   ├── start-worker.sh          # Worker launcher (docker + local, interactive first-run)
+│   ├── deploy-docker.sh         # Docker Compose deployment
+│   └── deploy-debug.sh          # Local debug mode (micromamba + Flask + Celery)
 ├── docker-compose.yml           # Docker Compose (db, redis, backend, beat, frontend)
-├── Makefile                     # Top-level targets (deploy-docker, deploy-debug, start-worker, docs)
+├── Makefile                     # Top-level targets (setup, worker, edit, deploy-docker, docs)
 ├── .env.example                 # Environment template
 ├── LICENSE                      # AGPL v3
 └── NOTICE                       # Copyright notice
@@ -186,12 +185,22 @@ cp .env.example .env
 | `WORKER_PUBLIC_KEY`            | Ed25519 public key for worker auth       | **Required for workers** — base64 encoded                                                        |
 | `WORKER_PRIVATE_KEY`           | Ed25519 private key for worker auth      | **Required for workers** — base64 encoded                                                        |
 | `REDIS_PASSWORD`               | Redis auth password                      | `your_redis_password`                                                                            |
-| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path            | `/path/to/ca.crt`                                                                                |
-| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/path/to/client.crt`                                                                            |
-| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/path/to/client.key`                                                                            |
+| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path (container)| `/etc/ssl/certs/redis/redis-ca.crt`                                                              |
+| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/etc/ssl/certs/redis/redis-client.crt`                                                          |
+| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/etc/ssl/certs/redis/redis-client.key`                                                          |
 | `REDIS_SSL_CERT_REQS`          | Redis SSL certificate verification level | `required`                                                                                       |
 | `INTERNAL_ONLY_WORKER`         | Restrict worker to system tasks only     | `false`                                                                                          |
 | `EVALUATION_ONLY_WORKER`       | Restrict worker to evaluation tasks only | `false`                                                                                          |
+| `WORKER_MODE`                  | Worker run mode (worker.env)             | `docker` / `local` — set by first-run setup                                                      |
+| `WORKER_TYPE`                  | Worker task role (worker.env)            | `eval` / `internal` / `both` — set by first-run setup                                            |
+| `GPU_CORES_PER_TASK`           | CPU cores per GPU evaluation container   | `4` — set by first-run setup                                                                     |
+| `CPU_CORES_PER_TASK`           | CPU cores per CPU evaluation container   | `2` — set by first-run setup                                                                     |
+| `GPU_RAM_PER_TASK_GB`          | RAM per GPU evaluation container         | `8` GB — set by first-run setup                                                                  |
+| `CPU_RAM_PER_TASK_GB`          | RAM per CPU evaluation container         | `4` GB — set by first-run setup                                                                  |
+| `RESERVED_RAM_GB`              | RAM reserved for OS/Docker/overhead      | `4` GB (hardcoded)                                                                               |
+| `RESERVED_CPU_CORES`           | CPU cores reserved for system            | `1` (hardcoded)                                                                                  |
+| `RAM_CLAMP_FACTOR`             | Max overshoot ratio before rejecting task | `1.05` (5% tolerance)                                                                            |
+| `CELERY_WORKER_CONCURRENCY`    | Max concurrent worker processes          | Auto-calculated from GPU/CPU/RAM allocation                                                      |
 
 ---
 
@@ -238,51 +247,6 @@ cd docs && make html
 
 ---
 
-## Deployment
-
-### Docker Compose
-
-```bash
-./scripts/deploy-docker.sh
-```
-
-Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
-
-### Remote Workers
-
-Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No direct database access is needed.
-
-#### Launching Workers via `scripts/start-worker.sh`
-
-You can invoke the launcher script directly to customize worker execution:
-
-```bash
-scripts/start-worker.sh <REDIS_URL> [options]
-```
-
-**Options**:
-
-- `-g, --gpu <GPU_ID>`: Configure worker for specific GPU device(s) (e.g., `0` or a list like `0,1`).
-- `-c, --concurrency <N>`: Set the number of concurrent worker processes manually. If omitted, concurrency is safely auto-calculated.
-- `-i, --internal`: Run the worker for system/internal tasks only (e.g., database backups, leaderboards), unregistering all evaluation tasks.
-
-**Examples**:
-
-```bash
-# Start a CPU-only evaluation worker with 4 concurrency slots
-scripts/start-worker.sh redis://:password@server:6379/0 -c 4
-
-# Start a GPU worker on GPU device 0 with 2 concurrency slots
-scripts/start-worker.sh redis://:password@server:6379/0 -g 0 -c 2
-
-# Start a local internal task worker
-scripts/start-worker.sh redis://:password@server:6379/0 -i -c 2
-```
-
-_(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... [GPU_ID=0]` is still fully supported.)_
-
----
-
 ## Security Highlights
 
 | Layer                | Mechanism                                                                                                                                                                                                  |
@@ -292,7 +256,7 @@ _(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... 
 | **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens.                                                                                                                                    |
 | **Rate Limiting**    | Lua atomic counters per-user and per-endpoint; fails open if Redis is down.                                                                                                                                |
 | **PII Encryption**   | Fernet symmetric encryption secures competitor demographics at rest.                                                                                                                                       |
-| **Sandbox**          | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. |
+| **Sandbox**          | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus <CPU_CORES_PER_TASK or GPU_CORES_PER_TASK>`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. Cores per task are configured per-worker via `CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`. |
 | **Ground Truth**     | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox.                                                                                                   |
 | **IP Trust**         | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted.                                                                                                                   |
 | **HF API Keys**      | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis.                                                                                                              |
@@ -305,7 +269,7 @@ _(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... 
 | ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------- |
 | [Student Guide](guides/en/student_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
-| [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Challenge/task management, backups, worker health monitoring, user administration. |
+| [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Full setup, TLS/HTTPS, worker deployment, challenge/task management, backups.      |
 | [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
 | [Error Code Linter](backend/scripts/check_error_codes.py) | Developers      | Validates `err()` usage and `api.ERR_*` translation parity across EN/BG.           |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |

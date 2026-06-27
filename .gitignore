@@ -75,6 +75,13 @@ docker-compose.*.local.yml
 
 # LavBench Specific Ignores
 admin_credentials.txt
+worker.env
+certs/
+.hf_token
+backend/backups/
+backend/backend/task_images/
+
+docs/source/_static/demo/
 
 # Auto-generated Sphinx files (regenerated at build time)
 docs/source/api/spec_*.json

@@ -11,6 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Exposed locally for native dev (make dev) — Docker services use internal network
     ports:
       - "127.0.0.1:5432:5432"
     deploy:
@@ -48,8 +49,12 @@ services:
         fi
       '
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    # Exposed on all interfaces for remote workers — protected by REDIS_PASSWORD
+    # Override bind with: REDIS_BIND=127.0.0.1 in .env for local-only access
+    ports:
+      - "${REDIS_BIND:-0.0.0.0}:6379:6379"
     deploy:
       resources:
         limits:
@@ -94,6 +99,7 @@ services:
       - hf_cache:/app/hf_cache
       - uploads_data:/app/uploads
       - backups_data:/backups
+      - ./certs:/etc/ssl/certs/redis:ro
     deploy:
       resources:
         limits:
@@ -135,6 +141,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+      - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
       options:
@@ -177,6 +184,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/backups
+      - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
       options:

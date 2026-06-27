@@ -1,0 +1,20 @@
+backend:
+  - backend/**/*
+
+frontend:
+  - frontend/**/*
+
+ci:
+  - .github/**/*
+
+docker:
+  - **/Dockerfile
+  - docker-compose.yml
+
+docs:
+  - docs/**/*
+  - README.md
+  - CONTRIBUTING.md
+
+scripts:
+  - scripts/**/*

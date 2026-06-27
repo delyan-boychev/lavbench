@@ -88,4 +88,4 @@ docker build -t lavbench-frontend .
 docker run -p 80:80 lavbench-frontend
 ```
 
-The multi-stage build compiles the React app with `node:20-alpine`, then serves static assets via Nginx with API proxying to the backend.
+The multi-stage build compiles the React app with `node:26-alpine`, then serves static assets via Nginx with API proxying to the backend.

@@ -624,6 +624,32 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         elif challenge and challenge.ram_limit_mb is not None:
             ram_limit = challenge.ram_limit_mb
 
+        # ── RAM budget clamping ──────────────────────────────────────
+        budget_gb = int(
+            os.environ.get("GPU_RAM_PER_TASK_GB" if gpu_required else "CPU_RAM_PER_TASK_GB", 8)
+        )
+        budget_mb = budget_gb * 1024
+        clamp_factor = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
+
+        if ram_limit <= budget_mb:
+            pass
+        elif ram_limit <= int(budget_mb * clamp_factor):
+            logger.warning(
+                "Clamping ram_limit from %d MB to %d MB (task needs %d, budget is %d, factor=%.2f)",
+                ram_limit,
+                budget_mb,
+                ram_limit,
+                budget_mb,
+                clamp_factor,
+            )
+            ram_limit = budget_mb
+        else:
+            raise RuntimeError(
+                f"Task requires {ram_limit} MB RAM, "
+                f"worker budget is {budget_mb} MB per task "
+                f"(clamp factor {clamp_factor})"
+            )
+
         environment = {
             "HOME": "/tmp",  # noqa: S108
             "HF_HOME": "/hf_cache",
@@ -975,6 +1001,11 @@ def register_worker_specs(sender, **kwargs):
             "gpu_type": gpu_type,
             "ram_gb": ram_gb,
             "vram_gb": vram_gb,
+            "gpu_ram_per_task_gb": int(os.environ.get("GPU_RAM_PER_TASK_GB", 8)),
+            "cpu_ram_per_task_gb": int(os.environ.get("CPU_RAM_PER_TASK_GB", 4)),
+            "reserved_ram_gb": int(os.environ.get("RESERVED_RAM_GB", 4)),
+            "reserved_cpu_cores": int(os.environ.get("RESERVED_CPU_CORES", 1)),
+            "ram_clamp_factor": float(os.environ.get("RAM_CLAMP_FACTOR", 1.05)),
             "last_seen": time.time(),
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)

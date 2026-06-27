@@ -3,26 +3,25 @@
 ## System Overview
 
 ```
-Browser (React) → Nginx (port 80) → Flask API (port 5001)
+Browser (React) → Nginx (port 443, HTTPS) → Flask API (port 5001)
                                         ├── PostgreSQL (users, challenges, tasks, submissions)
-                                        ├── Redis (Celery broker, SSE pub/sub, cache, rate limits)
-                                        └── Celery Beat (watchdog, backup scheduler)
-
-Celery Workers (host, not Docker):
-  scripts/start-worker.sh → Redis broker → Docker Sandbox execution → API callback
+                                        ├── Redis (Celery broker, SSE pub/sub, cache, rate limits, optional TLS)
+                                        ├── Celery Beat (watchdog, backup scheduler)
+                                        ├── Internal Celery Worker (system tasks only, inside Docker Compose)
+                                        └── Remote Evaluation Workers (Docker container or host, sibling sandbox containers)
 ```
 
 ## Components
 
-| Component        | Technology                        | Role                                                                            |
-| ---------------- | --------------------------------- | ------------------------------------------------------------------------------- |
-| **Frontend**     | React 19 + Vite + Tailwind 4      | SPA with SSE live updates, i18n (en/bg), JSDoc type annotations, tsc validation |
-| **API Server**   | Flask + Gunicorn + gevent         | REST endpoints, SSE streaming, JWT auth                                         |
-| **Database**     | PostgreSQL 15                     | Users, challenges, tasks, submissions, audit logs                               |
-| **Cache/Broker** | Redis                             | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation    |
-| **Task Queue**   | Celery                            | Async job dispatch (evaluation, backups)                                        |
-| **Scheduler**    | Celery Beat                       | Watchdog (stuck submissions), automated backups                                 |
-| **Worker**       | `scripts/start-worker.sh` on host | Docker-in-Docker sandbox execution                                              |
+| Component        | Technology                        | Role                                                                                |
+| ---------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| **Frontend**     | React 19 + Vite + Tailwind 4      | SPA with SSE live updates, i18n (en/bg), JSDoc type annotations, tsc validation     |
+| **API Server**   | Flask + Gunicorn + gevent         | REST endpoints, SSE streaming, JWT auth                                             |
+| **Database**     | PostgreSQL 15                     | Users, challenges, tasks, submissions, audit logs                                   |
+| **Cache/Broker** | Redis                             | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation        |
+| **Task Queue**   | Celery                            | Async job dispatch (evaluation, backups)                                            |
+| **Scheduler**    | Celery Beat                       | Watchdog (stuck submissions), automated backups                                     |
+| **Worker**       | `start-worker.sh --docker` (container) or `start-worker.sh` on host | Sibling Docker sandbox execution (not Docker-in-Docker)                          |
 
 ## Authentication Flow
 
@@ -130,6 +129,105 @@ The script `backend/scripts/check_error_codes.py` enforces all three rules in CI
 
 Contents: `pg_dump` + `uploads/` directory in `.tar.gz`.
 
+## Worker Resource Management
+
+### Overview
+
+Each evaluation worker independently manages its resources (CPU cores and RAM) to avoid overcommitting the host. During the interactive first-run setup (`make worker`), the worker detects its hardware and guides the admin through resource allocation.
+
+### Detection
+
+- **CPU cores**: detected via `nproc` / `sysctl hw.ncpu`
+- **Total RAM**: parsed from `/proc/meminfo` (Linux) or `sysctl hw.memsize` (macOS), fallback 8 GB
+- **GPUs**: discovered via `nvidia-smi --query-gpu=index,name`; grouped by model with compact index ranges (e.g., `2 × RTX 3090  [indices: 0-1]`)
+
+### Reserved Resources
+
+The following are never available to evaluation tasks (hardcoded, not user-configurable):
+
+| Resource | Reserved | Purpose |
+|---|---|---|
+| RAM | 4 GB | OS, Docker daemon, Celery process, networking |
+| CPU cores | 1 core | OS scheduler, Docker daemon, Celery main process |
+
+### Interactive Per-Task Budgets
+
+During `make worker`, the admin is prompted to set per-task budgets. Each value is capped by both CPU cores and RAM:
+
+```
+CORES_AVAILABLE = TOTAL_CORES - 1 (reserved)
+RAM_AVAILABLE   = TOTAL_RAM_GB - 4 (reserved)
+
+GPU_COUNT = min(NUM_GPUS,                # selected GPUs
+                CORES_AVAILABLE / GPU_CORES_PER_TASK,
+                RAM_AVAILABLE   / GPU_RAM_PER_TASK_GB)
+
+RAM_REMAINING  = RAM_AVAILABLE   - GPU_COUNT * GPU_RAM_PER_TASK_GB
+CORES_REMAINING = CORES_AVAILABLE - GPU_COUNT * GPU_CORES_PER_TASK
+
+CPU_COUNT = min(RAM_REMAINING  / CPU_RAM_PER_TASK_GB,
+                CORES_REMAINING / CPU_CORES_PER_TASK)
+
+CONCURRENCY = GPU_COUNT + CPU_COUNT
+```
+
+If remaining resources are insufficient for a single CPU task (< 2 cores or < 4 GB), CPU_COUNT is set to 0 (only GPU tasks run).
+
+### Env Vars (saved to `worker.env`)
+
+| Variable | Default | Prompted | Description |
+|---|---|---|---|
+| `GPU_RAM_PER_TASK_GB` | 8 | Yes | RAM budget per GPU sandbox container |
+| `CPU_RAM_PER_TASK_GB` | 4 | Yes | RAM budget per CPU sandbox container |
+| `RESERVED_RAM_GB` | 4 | No | System reserve |
+| `RESERVED_CPU_CORES` | 1 | No | System reserve |
+| `RAM_CLAMP_FACTOR` | 1.05 | No (editable via `make edit-worker`) | Max task_ram / budget ratio before rejection |
+
+### Runtime Clamping
+
+When a task arrives from the Celery queue, its `ram_limit_mb` (set per-challenge or per-task in the database) is compared to the worker's budget:
+
+```
+budget_mb = GPU_RAM_PER_TASK_GB if gpu_required else CPU_RAM_PER_TASK_GB
+budget_mb *= 1024
+
+if task_ram <= budget_mb:
+    # Within budget — use the task's value as-is
+    pass
+elif task_ram <= budget_mb * RAM_CLAMP_FACTOR (1.05):
+    # Slightly over (≤5%) — clamp to budget, log a warning
+    container gets budget_mb
+else:
+    # Exceeds budget by more than 5% — task is rejected
+    Celery retries → dead letter queue
+```
+
+The sandbox container always receives `--memory=<clamped_value> --memory-swap=<clamped_value>`, which disables swap and guarantees an immediate OOM kill if the process exceeds the limit.
+
+### Worker Spec Registration
+
+On startup, each worker registers its hardware specs in Redis (`worker_spec:<hostname>`, 24h TTL) via the `register_worker_specs` Celytask signal. The spec includes:
+
+```python
+{
+  "name": worker_name,
+  "concurrency": N,
+  "ram_gb": total_host_ram,
+  "gpu_ram_per_task_gb": 8,
+  "cpu_ram_per_task_gb": 4,
+  "reserved_ram_gb": 4,
+  "reserved_cpu_cores": 1,
+  "ram_clamp_factor": 1.05,
+  ...
+}
+```
+
+These fields are served by the cluster status API (`/api/admin/workers/stats`, `/api/worker-status`) and visible in the admin panel.
+
+### Internal Workers
+
+Internal workers (system tasks: backups, watchdog, leaderboard recalculation) are configured separately — they do not create Docker sandboxes and have no RAM/core budgeting. Their Celery concurrency is simply `max(1, TOTAL_CORES / 2)`.
+
 ## Security Layers
 
 | Layer                | Implementation                                                                                                                    |
@@ -139,6 +237,6 @@ Contents: `pg_dump` + `uploads/` directory in `.tar.gz`.
 | **Rate limiting**    | Per-user per-endpoint Lua atomic counters                                                                                         |
 | **Token revocation** | jti in Redis blacklist with TTL                                                                                                   |
 | **PII encryption**   | Fernet symmetric (optional ENCRYPTION_KEY for rotation)                                                                           |
-| **Sandbox**          | Docker --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, --cpus 2, --pids-limit 64, RAM/swap limits, tmpfs |
+| **Sandbox**          | Docker --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, --cpus <CPU_CORES_PER_TASK or GPU_CORES_PER_TASK>, --pids-limit 64, RAM/swap limits, tmpfs |
 | **IP trust**         | ProxyFix middleware (trusts X-Forwarded-For from Nginx only)                                                                      |
 | **HF keys**          | Fetched on-demand via authenticated API, never in Redis                                                                           |

@@ -1,40 +1,49 @@
-Flask>=2.3.0
+# ── App framework ──────────────────────────────────────────────────
+Flask>=3.0.0
 flasgger>=0.9.7
-Flask-SQLAlchemy>=2.5.1
+Flask-SQLAlchemy>=3.0.0
 Flask-CORS>=4.0.0
-celery>=5.3.0
-redis>=8.0.1
-datasets>=5.0.0
-scikit-learn>=1.7.2
 gunicorn>=26.0.0
-cryptography>=41.0.0
-pyjwt>=2.8.0
-psycopg2-binary>=2.9.0
-python-dotenv>=1.2.2
-requests>=2.34.2
-urllib3>=2.7.0
 gevent>=23.9.0
 jinja2>=3.1.0
 
-# Data stack (used in evaluation_engine.py, models.py)
+# ── Database & caching ────────────────────────────────────────────
+psycopg2-binary>=2.9.0
+redis>=8.0.1
+
+# ── Task processing ────────────────────────────────────────────────
+celery>=5.3.0
+
+# ── Security ──────────────────────────────────────────────────────
+cryptography>=41.0.0
+pyjwt>=2.8.0
+
+# ── Data science / ML ─────────────────────────────────────────────
 numpy>=1.24.0
 pandas>=2.0.0
 pyarrow>=12.0.0
 scipy>=1.10.0
+scikit-learn>=1.7.2
+datasets>=5.0.0
 
-# Image processing (evaluation_engine.py: PSNR, SSIM)
+# ── Image processing (evaluation_engine.py: PSNR, SSIM) ────────────
 Pillow>=10.0.0
 scikit-image>=0.21.0
 
-# NLP metrics (evaluation_engine.py)
+# ── NLP metrics (evaluation_engine.py) ─────────────────────────────
 nltk>=3.8.0
 rouge-score>=0.1.2
 
-# HuggingFace model preloading (submission_runner.py)
+# ── HuggingFace model preloading (submission_runner.py) ────────────
 huggingface_hub>=0.19.0
 
-# System resource monitoring (task_modules/system.py)
+# ── System monitoring (task_modules/system.py) ─────────────────────
 psutil>=5.9.0
 
-# Docker SDK (replaces subprocess calls to docker CLI)
-docker>=7.0.0
+# ── Docker SDK (replaces subprocess calls to docker CLI) ───────────
+docker>=7.1.0
+
+# ── Utilities ──────────────────────────────────────────────────────
+python-dotenv>=1.2.2
+requests>=2.34.2
+urllib3>=2.7.0
