@@ -37,22 +37,6 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ## Quick Start
 
-### Prerequisites
-
-- `micromamba` (or conda) — Python environment management
-- `Docker` with Compose v2 plugin — required for `make deploy-docker` and evaluation sandbox execution
-- `Node.js 22+` — for frontend dev server and builds
-- `nvidia-container-toolkit` — optional, only needed for GPU worker nodes
-
-#### TLS / HTTPS Setup
-
-The server supports both plain HTTP and HTTPS with optional Redis TLS.
-
-- **Self-signed certificates** (for development / LAN): `make setup` can generate a self-signed CA + certs for both Nginx (HTTPS) and Redis (TLS). Generated files go in `certs/`.
-- **Custom CA / public certificates**: provide your own files and paths during `make setup` — it accepts any path to existing certs.
-- Redis TLS is independent from Nginx HTTPS — you can mix (e.g., HTTP frontend + Redis TLS, or HTTPS frontend + plain Redis). Both options are prompted during `make setup`.
-- Certificate paths in `.env` and `worker.env` use the container mount point `/etc/ssl/certs/redis/` — the actual files reside in `certs/` on the host, bind-mounted by `docker-compose.yml` and `start-worker.sh --docker`.
-
 ```bash
 # 1. One-command setup (creates env, generates keys, installs deps)
 make setup
@@ -67,46 +51,7 @@ make dev
 
 Press `Ctrl+C` to stop all services.
 
-### Deploy with Docker
-
-```bash
-make deploy-docker
-# http://localhost — full stack in containers
-```
-
-### Remote Workers
-
-```bash
-# After make setup, worker.env is ready — copy it to the worker:
-scp worker.env user@worker-machine:~/
-
-# On the worker machine (Docker only, no repo needed):
-make worker          # interactive first-run setup, then start
-
-# Or skip the interactive prompts:
-make worker-docker   # starts directly from saved worker.env
-```
-
-On first `make worker` you'll be guided through:
-
-- Docker or local (micromamba) mode
-- Worker type: evaluation, internal, or both
-- GPU selection (with automatic detection via `nvidia-smi`)
-- CPU cores per task (GPU and CPU)
-- Auto-calculated Celery concurrency
-
-Saved to `worker.env` — subsequent runs skip the setup.
-
-### Editing Configuration
-
-```bash
-make edit          # Menu-based editor for server .env (address, HTTPS, Redis TLS, CORS)
-make edit-worker   # Menu-based editor for worker.env (type, GPUs, cores, concurrency)
-```
-
-Both editors protect auto-generated keys — only safe properties are modifiable.
-
-See the [Admin Guide](guides/en/admin_guide.md) for production deployment.
+See the [Admin Guide](guides/en/admin_guide.md) for setup prerequisites, TLS/HTTPS, Docker deployment, remote workers, and configuration editing.
 
 ---
 
@@ -250,7 +195,12 @@ cp .env.example .env
 | `WORKER_TYPE`                  | Worker task role (worker.env)            | `eval` / `internal` / `both` — set by first-run setup                                            |
 | `GPU_CORES_PER_TASK`           | CPU cores per GPU evaluation container   | `4` — set by first-run setup                                                                     |
 | `CPU_CORES_PER_TASK`           | CPU cores per CPU evaluation container   | `2` — set by first-run setup                                                                     |
-| `CELERY_WORKER_CONCURRENCY`    | Max concurrent worker processes          | Auto-calculated from GPU/CPU core allocation                                                     |
+| `GPU_RAM_PER_TASK_GB`          | RAM per GPU evaluation container         | `8` GB — set by first-run setup                                                                  |
+| `CPU_RAM_PER_TASK_GB`          | RAM per CPU evaluation container         | `4` GB — set by first-run setup                                                                  |
+| `RESERVED_RAM_GB`              | RAM reserved for OS/Docker/overhead      | `4` GB (hardcoded)                                                                               |
+| `RESERVED_CPU_CORES`           | CPU cores reserved for system            | `1` (hardcoded)                                                                                  |
+| `RAM_CLAMP_FACTOR`             | Max overshoot ratio before rejecting task | `1.05` (5% tolerance)                                                                            |
+| `CELERY_WORKER_CONCURRENCY`    | Max concurrent worker processes          | Auto-calculated from GPU/CPU/RAM allocation                                                      |
 
 ---
 
@@ -297,66 +247,6 @@ cd docs && make html
 
 ---
 
-## Deployment
-
-### Docker Compose
-
-```bash
-./scripts/deploy-docker.sh
-```
-
-Starts PostgreSQL, Redis, Flask API, Celery Beat, and Nginx/React frontend. Workers run separately on host machines.
-
-### Remote Workers
-
-Workers require Docker and the NVIDIA Container Toolkit (for GPU tasks). No direct database access is needed.
-
-#### Quick Start (Interactive)
-
-```bash
-# Copy the worker.env from the server (generated by make setup):
-scp worker.env user@worker-machine:~/
-
-# On the worker machine:
-make worker   # interactive first-run — asks mode, type, GPUs, cores
-              # subsequent runs skip the prompts
-```
-
-The first-run setup detects available CPUs and GPUs (via `nvidia-smi`), then guides you through:
-
-1. **Run mode** — Docker container (recommended) or local micromamba
-2. **Worker type** — evaluation, internal, or both
-3. **GPU selection** — which GPU devices to use (if detected)
-4. **CPU cores per task** — allocated per GPU evaluation container and per CPU evaluation container
-5. **Concurrency** — auto-calculated from your selections
-
-#### Building the Worker Image
-
-```bash
-# Build the minimal worker image locally (Celery + tasks only, ~100 MB):
-make build-worker
-
-# Or pull the version tagged in your release:
-WORKER_IMAGE=lavbench-worker:latest make worker
-```
-
-#### Direct Invocation
-
-```bash
-scripts/start-worker.sh --docker                    # interactive if no worker.env
-scripts/start-worker.sh --docker redis://:pass@...   # non-interactive
-
-# Local mode (micromamba):
-make start-worker REDIS_URL=redis://:password@server:6379/0
-```
-
-**Options**:
-- `-g, --gpu <GPU_ID>`: Override GPU device(s) from worker.env
-- `-c, --concurrency <N>`: Override worker concurrency
-- `-i, --internal`: Force internal-only mode
-
----
-
 ## Security Highlights
 
 | Layer                | Mechanism                                                                                                                                                                                                  |
@@ -379,7 +269,7 @@ make start-worker REDIS_URL=redis://:password@server:6379/0
 | ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------- |
 | [Student Guide](guides/en/student_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
-| [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Challenge/task management, backups, worker health monitoring, user administration. |
+| [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Full setup, TLS/HTTPS, worker deployment, challenge/task management, backups.      |
 | [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
 | [Error Code Linter](backend/scripts/check_error_codes.py) | Developers      | Validates `err()` usage and `api.ERR_*` translation parity across EN/BG.           |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |

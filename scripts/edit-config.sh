@@ -59,7 +59,7 @@ edit_server() {
     echo "    6) HF cache directory      [$(get_val "$ENV_FILE" "HF_CACHE_DIR")]"
     echo "    7) Regenerate self-signed HTTPS certs"
     echo "    8) Open in \$EDITOR"
-    echo "    0) Exit"
+    echo "    0) Save and exit"
     echo ""
     read -p "  Choose: " CHOICE
 
@@ -143,7 +143,21 @@ edit_server() {
         ${EDITOR:-vi} "$ENV_FILE"
         echo "  ✔ Saved"
         ;;
-      0) break ;;
+      0)
+        local addr="${SERVER_ADDRESS:-localhost}"
+        echo ""
+        echo "  ──────────────────────────────────────────────"
+        echo "    Server address:     ${addr}"
+        echo "    HTTPS:              ${https_status}"
+        echo "    Redis TLS:          ${tls_status}"
+        echo "  ──────────────────────────────────────────────"
+        read -p "  Save and exit? [Y/n]: " EXIT_CONFIRM
+        case "${EXIT_CONFIRM:-Y}" in
+          n|N) echo "  Returning to menu..." ;;
+          *) break ;;
+        esac
+        ;;
+      *) echo "  Invalid option" ;;
     esac
   done
 }
@@ -163,6 +177,12 @@ edit_worker() {
     local conc="${CELERY_WORKER_CONCURRENCY:-}"
     local mode="${WORKER_MODE:-docker}"
 
+    local gpu_ram="${GPU_RAM_PER_TASK_GB:-8}"
+    local cpu_ram="${CPU_RAM_PER_TASK_GB:-4}"
+    local res_ram="${RESERVED_RAM_GB:-4}"
+    local res_cores="${RESERVED_CPU_CORES:-1}"
+    local clamp="${RAM_CLAMP_FACTOR:-1.05}"
+
     echo ""
     echo "  ── Edit Worker Config (worker.env) ──"
     echo "    1) Run mode              [${mode:-local}]"
@@ -171,8 +191,13 @@ edit_worker() {
     echo "    4) CPU cores per GPU task [${gpu_cores:-not set}]"
     echo "    5) CPU cores per CPU task [${cpu_cores:-not set}]"
     echo "    6) Worker concurrency    [${conc:-auto}]"
-    echo "    7) Open in \$EDITOR"
-    echo "    0) Exit"
+    echo "    7) GPU RAM per task       [${gpu_ram} GB]"
+    echo "    8) CPU RAM per task       [${cpu_ram} GB]"
+    echo "    9) Reserved RAM (system)  [${res_ram} GB]"
+    echo "   10) Reserved CPU cores     [${res_cores}]"
+    echo "   11) Clamp factor           [${clamp}]"
+    echo "   12) Open in \$EDITOR"
+    echo "    0) Save and exit"
     echo ""
     read -p "  Choose: " CHOICE
 
@@ -233,10 +258,70 @@ edit_worker() {
         fi
         ;;
       7)
+        read -p "  GPU RAM (GB) per task [${gpu_ram}]: " NEW_VAL
+        if [ -n "$NEW_VAL" ]; then
+          set_val "$WORKER_FILE" "GPU_RAM_PER_TASK_GB" "$NEW_VAL"
+          echo "  ✔ Updated"
+        fi
+        ;;
+      8)
+        read -p "  CPU RAM (GB) per task [${cpu_ram}]: " NEW_VAL
+        if [ -n "$NEW_VAL" ]; then
+          set_val "$WORKER_FILE" "CPU_RAM_PER_TASK_GB" "$NEW_VAL"
+          echo "  ✔ Updated"
+        fi
+        ;;
+      9)
+        read -p "  Reserved RAM (GB) for system [${res_ram}]: " NEW_VAL
+        if [ -n "$NEW_VAL" ]; then
+          set_val "$WORKER_FILE" "RESERVED_RAM_GB" "$NEW_VAL"
+          echo "  ✔ Updated"
+        fi
+        ;;
+      10)
+        read -p "  Reserved CPU cores for system [${res_cores}]: " NEW_VAL
+        if [ -n "$NEW_VAL" ]; then
+          set_val "$WORKER_FILE" "RESERVED_CPU_CORES" "$NEW_VAL"
+          echo "  ✔ Updated"
+        fi
+        ;;
+      11)
+        read -p "  Clamp factor (1.0 < x ≤ 1.10) [${clamp}]: " NEW_VAL
+        if [ -n "$NEW_VAL" ]; then
+          if (( $(echo "$NEW_VAL > 1.10" | bc -l) )) || (( $(echo "$NEW_VAL <= 1.0" | bc -l) )); then
+            echo "  [ERROR] Clamp factor must be between 1.0 and 1.10"
+          else
+            set_val "$WORKER_FILE" "RAM_CLAMP_FACTOR" "$NEW_VAL"
+            echo "  ✔ Updated"
+          fi
+        fi
+        ;;
+      12)
         ${EDITOR:-vi} "$WORKER_FILE"
         echo "  ✔ Saved"
         ;;
-      0) break ;;
+      0)
+        echo ""
+        echo "  ──────────────────────────────────────────────"
+        echo "    Mode:              ${mode:-local}"
+        echo "    Type:              ${wtype:-not set}"
+        echo "    GPU IDs:           ${gpu:-none}"
+        echo "    GPU cores/task:    ${gpu_cores:-not set}"
+        echo "    GPU RAM/task:      ${gpu_ram} GB"
+        echo "    CPU cores/task:    ${cpu_cores:-not set}"
+        echo "    CPU RAM/task:      ${cpu_ram} GB"
+        echo "    Reserved RAM:      ${res_ram} GB"
+        echo "    Reserved cores:    ${res_cores}"
+        echo "    Clamp factor:      ${clamp}"
+        echo "    Concurrency:       ${conc:-auto}"
+        echo "  ──────────────────────────────────────────────"
+        read -p "  Save and exit? [Y/n]: " EXIT_CONFIRM
+        case "${EXIT_CONFIRM:-Y}" in
+          n|N) echo "  Returning to menu..." ;;
+          *) break ;;
+        esac
+        ;;
+      *) echo "  Invalid option" ;;
     esac
   done
 }
@@ -255,7 +340,7 @@ case "$MODE" in
   menu)
     echo "  Which config to edit?"
     echo "    1) Server (.env)       — address, HTTPS, Redis TLS, CORS"
-    echo "    2) Worker (worker.env)  — mode, type, GPU, cores"
+    echo "    2) Worker (worker.env)  — mode, type, GPU, cores, RAM"
     echo "    0) Exit"
     read -p "  Choose: " MODE_CHOICE
     case "$MODE_CHOICE" in
