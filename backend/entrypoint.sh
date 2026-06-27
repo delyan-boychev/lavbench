@@ -10,4 +10,4 @@ for dir in /app/uploads /app/hf_cache /app/backups /backups /app/run; do
 done
 
 # Drop privileges to nobody (UID 65534) and exec the command
-exec setpriv --reuid=65534 --regid=65534 --clear-groups "$@"
+exec setpriv --reuid=65534 --regid=65534 --clear-groups -- "$@"
