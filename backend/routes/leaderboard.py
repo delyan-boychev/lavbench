@@ -532,8 +532,6 @@ def save_manual_points(challenge_id):
             )
 
         # Check if the task is in a finalized stage with revealed results
-        from models import Task
-
         task = db.session.get(Task, task_id)
         if task and task.stage_id:
             stage = db.session.get(Stage, task.stage_id)

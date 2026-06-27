@@ -1301,8 +1301,6 @@ def submit_task(task_id):
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
-    from utils.metadata import build_submission_metadata
-
     task_files_list = safe_json_loads(task.files, [])
 
     metadata = build_submission_metadata(
