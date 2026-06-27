@@ -527,6 +527,33 @@ export default function SubmissionsView() {
 
   const [bestSubs, setBestSubs] = useState({});
 
+  // Admin: fetch all submissions for a specific task for the selected competitor
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
+  const fetchAdminTaskSubmissions = useCallback(
+    async (taskId, pageNum = 1) => {
+      if (!selectedCompetitor) return;
+      setAdminLoading(true);
+      try {
+        const res = await api.fetch(
+          `/api/tasks/${taskId}/submissions?page=${pageNum}&per_page=10&user_id=${selectedCompetitor.id}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setAdminSubmissions(data.items || []);
+            setAdminSubPages(data.pages || 1);
+            setAdminSubTotal(data.total || 0);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch admin task submissions:', err);
+      } finally {
+        setAdminLoading(false);
+      }
+    },
+    [selectedCompetitor],
+  );
+
   useEffect(() => {
     if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) {
       setBestSubs({});
@@ -559,33 +586,8 @@ export default function SubmissionsView() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompetitor, selectedChallenge, isAdminOrJury, fetchAllCompetitorSubmissions]);
-
-  // Admin: fetch all submissions for a specific task for the selected competitor
-  const fetchAdminTaskSubmissions = useCallback(
-    async (taskId, pageNum = 1) => {
-      if (!selectedCompetitor) return;
-      setAdminLoading(true);
-      try {
-        const res = await api.fetch(
-          `/api/tasks/${taskId}/submissions?page=${pageNum}&per_page=10&user_id=${selectedCompetitor.id}`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data) {
-            setAdminSubmissions(data.items || []);
-            setAdminSubPages(data.pages || 1);
-            setAdminSubTotal(data.total || 0);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch admin task submissions:', err);
-      } finally {
-        setAdminLoading(false);
-      }
-    },
-    [selectedCompetitor],
-  );
 
   const handleAdminViewSubmission = async (sub) => {
     if (!sub) {
