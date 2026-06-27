@@ -81,9 +81,15 @@ if [ "$PREREQ_OK" = false ]; then
 fi
 echo ""
 
-# ── Micromamba environment (server mode) ────────────────────────────
+# ── Generate config ─────────────────────────────────────────────────
 if [ "$MODE" = "server" ]; then
-  echo "  [2/5] Creating Python environment..."
+  echo "  [2/5] Generating configuration..."
+  bash scripts/generate-keys.sh
+  echo "    ✔ Configuration generated"
+  echo ""
+
+  # ── Micromamba environment ──────────────────────────────────────────
+  echo "  [3/5] Creating Python environment..."
 
   eval "$(micromamba shell hook --shell bash 2>/dev/null)"
 
@@ -98,12 +104,6 @@ if [ "$MODE" = "server" ]; then
   echo "    → Installing pip dependencies..."
   pip install -q -r backend/requirements.txt -r backend/dev-requirements.txt
   echo "    ✔ pip dependencies installed"
-  echo ""
-
-  # ── Generate config ─────────────────────────────────────────────────
-  echo "  [3/5] Generating configuration..."
-  bash scripts/generate-keys.sh
-  echo "    ✔ Configuration generated"
   echo ""
 
   # ── Frontend ────────────────────────────────────────────────────────
