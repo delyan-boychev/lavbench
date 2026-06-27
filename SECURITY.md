@@ -5,7 +5,7 @@
 If you discover a security vulnerability, please report it privately:
 
 - **GitHub Advisory**: https://github.com/delyan-boychev/lavbench/security/advisories/new
-- **Email**: [delyan.boychev05@gmail.com](mailto:delyan.boychev05@example.com)
+- **Email**: [delyan.boychev05@gmail.com](mailto:delyan.boychev05@gmail.com)
 
 Please do **not** open a public issue for security vulnerabilities.
 
