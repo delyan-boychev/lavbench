@@ -20,14 +20,14 @@ echo ""
 
 # ── Preflight: .env ────────────────────────────────────────────────
 if [ ! -f ".env" ]; then
-  echo "  [ERROR] .env not found. Run 'make setup' first." >&2
+  echo "  [ERROR] .env not found. Run 'make server' first." >&2
   exit 1
 fi
 REQUIRED_VARS=("SECRET_KEY" "POSTGRES_PASSWORD" "REDIS_PASSWORD" "DATABASE_URL" "CELERY_BROKER_URL")
 for var in "${REQUIRED_VARS[@]}"; do
   val=$(grep "^${var}=" .env 2>/dev/null | tail -1 | cut -d= -f2-)
   if [ -z "$val" ]; then
-    echo "  [ERROR] ${var} is not set in .env. Run 'make setup' first." >&2
+    echo "  [ERROR] ${var} is not set in .env. Run 'make server' first." >&2
     exit 1
   fi
 done

@@ -2,7 +2,7 @@
 set -e
 
 # Ensure runtime directories exist and are writable by nobody (65534)
-for dir in /app/uploads /app/hf_cache /app/backups /backups /app/run; do
+for dir in /app/uploads /app/hf_cache /app/backups /backups /app/run /app/.gunicorn; do
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
   fi
