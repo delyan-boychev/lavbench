@@ -1,25 +1,27 @@
-.PHONY: help server dev deploy deploy-debug deploy-deploy-fast \
-        worker build-worker \
-        docs check-error-codes lint setup-admin
+.PHONY: help setup-server setup-worker deploy-server deploy-worker dev \
+        build-worker generate-keys setup-admin docs check-error-codes lint
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?# "}; {printf "  \033[1;34m%-20s\033[0m %s\n", $$1, $$2}'
 
-server:         # Server: first-time setup (prereqs, micromamba, keys, deps)
+setup-server:   # Server: first-time setup (prereqs, micromamba, keys, deps)
 	@scripts/setup.sh server
 
-deploy:         # Deploy with Docker Compose (build + start)
+setup-worker:   # Worker: first-run interactive setup (micromamba or Docker) + start
+	@scripts/setup.sh worker && scripts/start-worker.sh
+
+deploy-server:  # Deploy server with Docker Compose (build + start)
 	@scripts/deploy-docker.sh
 
-deploy-fast:    # Deploy with Docker Compose (skip rebuild)
+deploy-server-fast:  # Deploy server, skip rebuild
 	@scripts/deploy-docker.sh --skip-build
+
+deploy-worker:  # Start worker from saved config (no prompts)
+	@scripts/start-worker.sh
 
 dev:            # Local debug mode (micromamba + Flask + Celery + frontend)
 	@scripts/deploy-debug.sh
-
-worker:         # Worker: first-run interactive setup + build + start
-	@scripts/setup.sh worker && scripts/start-worker.sh
 
 build-worker:   # Build the minimal worker Docker image
 	docker build -t lavbench-worker -f backend/Dockerfile.worker backend/

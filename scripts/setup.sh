@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/setup.sh — First-time setup for LavBench.
-# Called by: make server | make worker
+# Called by: make setup-server | make setup-worker
 set -euo pipefail
 
 echo ""
@@ -120,12 +120,12 @@ if [ "$MODE" = "server" ]; then
   echo "  ──────────────────────────────────────────────────────────────"
   echo "    Next (server):"
   echo "      make dev                  Start all services locally"
-  echo "      make deploy        Full Docker Compose deployment"
-  echo "      python backend/setup-admin.py   Create admin user"
-  echo ""
-  echo "    Workers:"
-  echo "      scp worker.env user@your-server:~/"
-  echo "      On worker: make worker   (prereq check + interactive setup + start)"
+      echo "      make deploy-server   Full Docker Compose deployment"
+      echo "      make setup-admin     Create admin user"
+      echo ""
+      echo "    Workers:"
+      echo "      scp worker.env user@your-server:~/"
+      echo "      On worker: make setup-worker   (prereq check + interactive setup + start)"
   echo "  ──────────────────────────────────────────────────────────────"
 fi
 

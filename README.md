@@ -39,7 +39,7 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ```bash
 # 1. One-command server setup (creates env, generates keys, installs deps)
-make server
+make setup-server
 
 # 2. Launch locally
 make dev
