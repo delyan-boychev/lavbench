@@ -50,6 +50,8 @@ set_env() {
 echo ""
 echo "  Auto-generating security keys..."
 
+GENERATE_HTTPS_CERTS=false
+
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 set_if_missing "SECRET_KEY" "$SECRET_KEY"
 
