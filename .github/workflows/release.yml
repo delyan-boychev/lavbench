@@ -46,25 +46,20 @@ jobs:
           sed -i 's/"version": ".*"/"version": "'"$VERSION_SEMVER"'"/' frontend/package.json
           sed -i 's/^release = .*/release = "'"$VERSION_PEP440"'"/' docs/source/conf.py
 
-      - name: Create Release PR
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Ensure release label exists
         run: |
-          VERSION="${{ steps.git-cliff.outputs.version }}"
-          TAG="${VERSION#v}"
-          BRANCH="release/v${TAG}"
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git checkout -b "$BRANCH"
-          git add CHANGELOG.md backend/pyproject.toml frontend/package.json docs/source/conf.py
-          git commit -m "chore: release ${VERSION}"
-          git push origin "$BRANCH"
-
           gh label create release --color 5319e7 --description "Release PR" 2>/dev/null || true
-          gh pr create \
-            --title "chore: release ${VERSION}" \
-            --body "Automated release PR for ${VERSION}." \
-            --base main \
-            --head "$BRANCH" \
-            --label release
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Create Release PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GH_PAT }}
+          commit-message: "chore: release ${{ steps.git-cliff.outputs.version }}"
+          title: "chore: release ${{ steps.git-cliff.outputs.version }}"
+          body: "Automated release PR for ${{ steps.git-cliff.outputs.version }}."
+          branch: "release/${{ steps.git-cliff.outputs.version }}"
+          base: main
+          labels: release
+          delete-branch: true
