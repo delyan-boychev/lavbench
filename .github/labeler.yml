@@ -1,20 +1,18 @@
 backend:
-  - backend/**/*
+  - any: ['backend/**/*']
 
 frontend:
-  - frontend/**/*
+  - any: ['frontend/**/*']
 
 ci:
-  - .github/**/*
+  - any: ['.github/**/*']
 
 docker:
-  - "**/Dockerfile"
-  - docker-compose.yml
+  - any: ['**/Dockerfile', 'docker-compose.yml']
 
 docs:
-  - docs/**/*
-  - README.md
-  - CONTRIBUTING.md
+  - any: ['docs/**/*', 'README.md', 'CONTRIBUTING.md']
 
 scripts:
-  - scripts/**/*
+  - any: ['scripts/**/*']
+
