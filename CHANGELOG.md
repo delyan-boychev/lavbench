@@ -1,0 +1,322 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.1.0] - 2026-06-27
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Use GH_PAT + create-pull-request action for release PR (#29) by @delyan-boychev
+- Keep beta pre-release suffix in version bump (#26) by @delyan-boychev
+- Release workflow for protected main branch (#24) by @delyan-boychev
+
+### <!-- 10 -->💼 Other
+
+- Use GH_PAT + create-pull-request action for release PR (#29) by @delyan-boychev
+- Use GH_PAT + create-pull-request action for release PR (#29) by @delyan-boychev
+- Use GH_PAT + create-pull-request action for release PR (#29) by @delyan-boychev
+- Release workflow for protected main branch (#24) by @delyan-boychev
+- Release workflow for protected main branch (#24) by @delyan-boychev
+- Migrate to Python 3.12, bump redis/scikit-learn/actions/nginx, add grouped dependabot config by @delyan-boychev
+- - Python 3.10 → 3.12: Dockerfile, CI, readthedocs, micromamba scripts, ruff target by @delyan-boychev
+- - Regenerated requirements.txt with Python 3.12 via pip-compile by @delyan-boychev
+- - Bumped redis to 8.0.1, scikit-learn to 1.9.0 in requirements.in by @delyan-boychev
+- - Updated GitHub Actions: checkout@v7, setup-python@v6, setup-node@v6, upload-artifact@v7 by @delyan-boychev
+- - Updated frontend nginx: 1.25-alpine → 1.31-alpine by @delyan-boychev
+- - Added grouped dependabot.yml (patch+minor grouped, major PRs separate) by @delyan-boychev
+- - Closed 11 individual Dependabot PRs (superseded by this commit) by @delyan-boychev
+- Updated readme and docs, added smooth effect on leaderboard updates by @delyan-boychev
+- Added more lint checkers to optimize performance, stability in prod by @delyan-boychev
+- Clean redundant by @delyan-boychev
+- Cleaned local imports by @delyan-boychev
+- Refactored reduced local importss, boilerplate and readabilty by @delyan-boychev
+- Fixed frotend lint error by @delyan-boychev
+- Added error message control and translations by @delyan-boychev
+- Full support working submission, baseline viewer by @delyan-boychev
+- Cleaned file by @delyan-boychev
+- Fixed big hf dir by @delyan-boychev
+- Fixed bugs workers by @delyan-boychev
+- Added docker-py by @delyan-boychev
+- Fixed formating, updated readme by @delyan-boychev
+- Fixed testing bug by @delyan-boychev
+- Fixed ci bug by @delyan-boychev
+- Fixed ruff and priteier errors by @delyan-boychev
+- Fixed setup testing by @delyan-boychev
+- Fixed tests bugs by @delyan-boychev
+- Fixed precommit by @delyan-boychev
+- Fixed formatting error by @delyan-boychev
+- Migrated to ruff, full security tests, increase coverage by @delyan-boychev
+- Fixed bug CI by @delyan-boychev
+- Fixed faster testing, upgraded submissions ui by @delyan-boychev
+- Fixed ui badges bug and leaderboard sorting by @delyan-boychev
+- Fixed security issues, added bulk download, and bulk reset, fixed security, reduced risk of collision by @delyan-boychev
+- Fixed annonimization, fixed username and alias generation by @delyan-boychev
+- Fixed formating by @delyan-boychev
+- Fixed formating by @delyan-boychev
+- Add audit logs, update celery workers, refine backups, and update docs by @delyan-boychev
+- Fixed caching and logs preview by @delyan-boychev
+- Fixed formatting and invalidation added on task success by @delyan-boychev
+- Fixed bug image builder by @delyan-boychev
+- Added redis tls, fixed bugs, improve at scale performance, migrated to uuid by @delyan-boychev
+- Fixed bugs tests by @delyan-boychev
+- Fixed docs, last updates by @delyan-boychev
+- Added high coverage tests, fixed vulnerabiliries and bugs by @delyan-boychev
+- Refactored repo, fixed bugs, visualizations by @delyan-boychev
+- Fixed bug permissions by @delyan-boychev
+- Fixed bugs eval by @delyan-boychev
+- Fixed cells visualization by @delyan-boychev
+- Fixed permissions file saving by @delyan-boychev
+- Fixed image builder hf cache by @delyan-boychev
+- Fixed hf cache to be writable by @delyan-boychev
+- Fixed bug submission runner hf lock by @delyan-boychev
+- Fixed bug submission runner logs by @delyan-boychev
+- Fixed bug image builder by @delyan-boychev
+- Added better logging image builder by @delyan-boychev
+- Fixed bug main server url by @delyan-boychev
+- Fixed bug code cells added image builder by @delyan-boychev
+- Added stale cache check by @delyan-boychev
+- Fixed backups, permissions on execution by @delyan-boychev
+- Fixed bug backup checks by @delyan-boychev
+- Fixed bug signing for hf key by @delyan-boychev
+- Fixed bug hf key by @delyan-boychev
+- Fixed bugs fallbacks by @delyan-boychev
+- Fixed bugs worker keys by @delyan-boychev
+- Fixed bugs token auth by @delyan-boychev
+- Fixed bug worker by @delyan-boychev
+- Fixed bugs hf by @delyan-boychev
+- Fixed python path by @delyan-boychev
+- Fixed bugs ui, added countdown till start by @delyan-boychev
+- Fixed tests black version by @delyan-boychev
+- Fixed bug formating checks config by @delyan-boychev
+- Fixed security checks, removed examples by @delyan-boychev
+- Added formatting checks and formatting by @delyan-boychev
+- Fixed CI, removed pendatic changes by @delyan-boychev
+- Added higher level of security by @delyan-boychev
+- Merge branch 'main' of https://github.com/delyan-boychev/nai-webplatform by @delyan-boychev
+- Merge pull request #10 from delyan-boychev/dependabot/pip/backend/datasets-5.0.0 by @delyan-boychev
+- Bump datasets from 4.5.0 to 5.0.0 in /backend by @delyan-boychev
+- Bump datasets from 4.5.0 to 5.0.0 in /backend by @dependabot[bot]
+- Bumps [datasets](https://github.com/huggingface/datasets) from 4.5.0 to 5.0.0. by @dependabot[bot]
+- - [Release notes](https://github.com/huggingface/datasets/releases) by @dependabot[bot]
+- - [Commits](https://github.com/huggingface/datasets/compare/4.5.0...5.0.0) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: datasets by @dependabot[bot]
+-   dependency-version: 5.0.0 by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+-   update-type: version-update:semver-major by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #7 from delyan-boychev/dependabot/pip/backend/requests-2.34.2 by @delyan-boychev
+- Bump requests from 2.32.5 to 2.34.2 in /backend by @delyan-boychev
+- Bump requests from 2.32.5 to 2.34.2 in /backend by @dependabot[bot]
+- Bumps [requests](https://github.com/psf/requests) from 2.32.5 to 2.34.2. by @dependabot[bot]
+- - [Release notes](https://github.com/psf/requests/releases) by @dependabot[bot]
+- - [Changelog](https://github.com/psf/requests/blob/main/HISTORY.md) by @dependabot[bot]
+- - [Commits](https://github.com/psf/requests/compare/v2.32.5...v2.34.2) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: requests by @dependabot[bot]
+-   dependency-version: 2.34.2 by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+-   update-type: version-update:semver-minor by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #12 from delyan-boychev/dependabot/pip/backend/gunicorn-26.0.0 by @delyan-boychev
+- Bump gunicorn from 23.0.0 to 26.0.0 in /backend by @delyan-boychev
+- Merge branch 'main' into dependabot/pip/backend/gunicorn-26.0.0 by @delyan-boychev
+- Bump gunicorn from 23.0.0 to 26.0.0 in /backend by @dependabot[bot]
+- Bumps [gunicorn](https://github.com/benoitc/gunicorn) from 23.0.0 to 26.0.0. by @dependabot[bot]
+- - [Release notes](https://github.com/benoitc/gunicorn/releases) by @dependabot[bot]
+- - [Commits](https://github.com/benoitc/gunicorn/compare/23.0.0...26.0.0) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: gunicorn by @dependabot[bot]
+-   dependency-version: 26.0.0 by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+-   update-type: version-update:semver-major by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #11 from delyan-boychev/dependabot/pip/backend/setuptools-gte-82.0.1 by @delyan-boychev
+- Update setuptools requirement from >=64 to >=82.0.1 in /backend by @delyan-boychev
+- Update setuptools requirement from >=64 to >=82.0.1 in /backend by @dependabot[bot]
+- Updates the requirements on [setuptools](https://github.com/pypa/setuptools) to permit the latest version. by @dependabot[bot]
+- - [Release notes](https://github.com/pypa/setuptools/releases) by @dependabot[bot]
+- - [Changelog](https://github.com/pypa/setuptools/blob/main/NEWS.rst) by @dependabot[bot]
+- - [Commits](https://github.com/pypa/setuptools/compare/v64.0.0...v82.0.1) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: setuptools by @dependabot[bot]
+-   dependency-version: 82.0.1 by @dependabot[bot]
+-   dependency-type: direct:development by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #1 from delyan-boychev/dependabot/docker/frontend/node-26-alpine by @delyan-boychev
+- Bump node from 20-alpine to 26-alpine in /frontend by @delyan-boychev
+- Bump node from 20-alpine to 26-alpine in /frontend by @dependabot[bot]
+- Bumps node from 20-alpine to 26-alpine. by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: node by @dependabot[bot]
+-   dependency-version: 26-alpine by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #13 from delyan-boychev/dependabot/pip/backend/python-dotenv-1.2.2 by @delyan-boychev
+- Bump python-dotenv from 1.2.1 to 1.2.2 in /backend by @delyan-boychev
+- Bump python-dotenv from 1.2.1 to 1.2.2 in /backend by @dependabot[bot]
+- Bumps [python-dotenv](https://github.com/theskumar/python-dotenv) from 1.2.1 to 1.2.2. by @dependabot[bot]
+- - [Release notes](https://github.com/theskumar/python-dotenv/releases) by @dependabot[bot]
+- - [Changelog](https://github.com/theskumar/python-dotenv/blob/main/CHANGELOG.md) by @dependabot[bot]
+- - [Commits](https://github.com/theskumar/python-dotenv/compare/v1.2.1...v1.2.2) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: python-dotenv by @dependabot[bot]
+-   dependency-version: 1.2.2 by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+-   update-type: version-update:semver-patch by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Merge pull request #14 from delyan-boychev/dependabot/pip/backend/urllib3-2.7.0 by @delyan-boychev
+- Bump urllib3 from 2.6.3 to 2.7.0 in /backend by @delyan-boychev
+- Bump urllib3 from 2.6.3 to 2.7.0 in /backend by @dependabot[bot]
+- Bumps [urllib3](https://github.com/urllib3/urllib3) from 2.6.3 to 2.7.0. by @dependabot[bot]
+- - [Release notes](https://github.com/urllib3/urllib3/releases) by @dependabot[bot]
+- - [Changelog](https://github.com/urllib3/urllib3/blob/main/CHANGES.rst) by @dependabot[bot]
+- - [Commits](https://github.com/urllib3/urllib3/compare/2.6.3...2.7.0) by @dependabot[bot]
+- --- by @dependabot[bot]
+- Updated-dependencies: by @dependabot[bot]
+- - dependency-name: urllib3 by @dependabot[bot]
+-   dependency-version: 2.7.0 by @dependabot[bot]
+-   dependency-type: direct:production by @dependabot[bot]
+-   update-type: version-update:semver-minor by @dependabot[bot]
+- ... by @dependabot[bot]
+- Dependabot[bot] <support@github.com> by @dependabot[bot]
+- Added higher security, fixed sections by @delyan-boychev
+- Fixed frontend docker by @delyan-boychev
+- Fixed ci bugs by @delyan-boychev
+- Added ci by @delyan-boychev
+- Add full fix, good coverage and more tests by @delyan-boychev
+- Fixed logo rendering issues by @delyan-boychev
+- Added almost full coverage tests by @delyan-boychev
+- Added high coverage tests by @delyan-boychev
+- Added info about initial setup by @delyan-boychev
+- Cleaned root directory by @delyan-boychev
+- Fixed readme and instructions by @delyan-boychev
+- Fixed author by @delyan-boychev
+- Added svg embedded logo with embeded fonts, fixed badge icon active by @delyan-boychev
+- Fixed logo, fixed readme by @delyan-boychev
+- Fixed sphinx added logo branded by @delyan-boychev
+- Full sphinx docs, updated CI by @delyan-boychev
+- Fixed bugs, ready for CI tests by @delyan-boychev
+- Fixed bugs for Github CI integration by @delyan-boychev
+- Added tests for submission runner, fixed password hashing and other secuirt flaws by @delyan-boychev
+- Updated readme by @delyan-boychev
+- Added icon by @delyan-boychev
+- Added full typing with ts in the frontend matching the backend, updated guides and translations by @delyan-boychev
+- Updated docs full api by @delyan-boychev
+- Updated readme by @delyan-boychev
+- Updated readme and other old names cleared by @delyan-boychev
+- Create NOTICE by @delyan-boychev
+- Update LICENSE with new program details and permissions by @delyan-boychev
+- 3 Code reviews done on backend, everything clear by @delyan-boychev
+- Improved bugs for hanging submissions and also fixed safety for hf tokens by @delyan-boychev
+- Improved stability of backend by @delyan-boychev
+- Fixed optimization bugs frontend and backend by @delyan-boychev
+- Fixed bugs improved design by @delyan-boychev
+- Added new icons, fixed logo renamed app by @delyan-boychev
+- Fixed file uploader visualization on edit by @delyan-boychev
+- Added file edits by @delyan-boychev
+- Added reeval on save by @delyan-boychev
+- Fixed hf preloading by @delyan-boychev
+- Added addional model fix by @delyan-boychev
+- Added baseline visualization by @delyan-boychev
+- Added submission invalidation by @delyan-boychev
+- Added auto scroll logs by @delyan-boychev
+- Fixed bug submission eval by @delyan-boychev
+- Fixed submission bug hf token by @delyan-boychev
+- Fixed bugs hf preloading by @delyan-boychev
+- Fixed all bugs, reworked ui by @delyan-boychev
+- Fixed worker logs bug by @delyan-boychev
+- Fixed bug logs by @delyan-boychev
+- Removed requirements initial by @delyan-boychev
+- Fixed bug celery clocks by @delyan-boychev
+- Fixed bugs finalization by @delyan-boychev
+- Fixed bugs improved metrics by @delyan-boychev
+- Fixed start worker by @delyan-boychev
+- Fixed live logs bugs by @delyan-boychev
+- Fixed url dataset fetching by @delyan-boychev
+- Added preloading by @delyan-boychev
+- Fixed tasks by @delyan-boychev
+- Fixed caching by @delyan-boychev
+- Fixed bug starting tasks by @delyan-boychev
+- Fixed bugs eval by @delyan-boychev
+- Added live logs execution by @delyan-boychev
+- Fixed eval bugs by @delyan-boychev
+- Fixed bugs by @delyan-boychev
+- Fixed scrolling bug markdown by @delyan-boychev
+- Fixed translation, added guides translation by @delyan-boychev
+- Added better translations fixed components by @delyan-boychev
+- Added multi-language support, fixed light theme by @delyan-boychev
+- Added more features, fixed gevent, removed vulnerabilities, advanced testing by @delyan-boychev
+- Fixed submission view by @delyan-boychev
+- Added features, fixed leaderboard, annonymization added by @delyan-boychev
+- Fixed zip logic by @delyan-boychev
+- Refined evaluator and submission logic by @delyan-boychev
+- Added tests fixed ui by @delyan-boychev
+- Added cluster info caching, fixed ui issues by @delyan-boychev
+- Fixed caching by @delyan-boychev
+- Updated nginx profile by @delyan-boychev
+- Added full profiling support of workers by @delyan-boychev
+- Added full set of tests by @delyan-boychev
+- Added working baseline by @delyan-boychev
+- Initial commit by @delyan-boychev
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+
+### <!-- 8 -->🛡️ Security
+
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+- Repo governance, worker setup, interactive scripts, RAM-aware concurrency (#23) by @delyan-boychev
+
+
