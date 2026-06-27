@@ -93,7 +93,16 @@ function BestSubmissionCard({ sub, task, onView, onDownload, showPrivate, challe
   );
 }
 
-function StageGroup({ stage, tasks, challenge, bestSubs, onView, onDownload, showPrivate }) {
+function StageGroup({
+  stage,
+  tasks,
+  challenge,
+  bestSubs,
+  onView,
+  onDownload,
+  showPrivate,
+  onTaskClick,
+}) {
   if (!tasks || tasks.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -120,17 +129,41 @@ function StageGroup({ stage, tasks, challenge, bestSubs, onView, onDownload, sho
       <div className="flex flex-col gap-1.5">
         {tasks.map((task) => {
           const sub = bestSubs[task.id];
-          if (!sub) return null;
+          if (sub) {
+            return (
+              <BestSubmissionCard
+                key={task.id}
+                sub={sub}
+                task={task}
+                onView={onView}
+                onDownload={onDownload}
+                showPrivate={showPrivate}
+                challenge={challenge}
+              />
+            );
+          }
           return (
-            <BestSubmissionCard
+            <button
               key={task.id}
-              sub={sub}
-              task={task}
-              onView={onView}
-              onDownload={onDownload}
-              showPrivate={showPrivate}
-              challenge={challenge}
-            />
+              onClick={() => onTaskClick && onTaskClick(task.id)}
+              className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 text-left w-full opacity-50 hover:opacity-80 hover:bg-slate-800/60 hover:border-slate-700 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-sm font-bold text-slate-400 truncate">{task.title}</span>
+                  <div className="flex items-center gap-3 text-xs text-slate-600">
+                    <span className="font-mono">—</span>
+                    <span>—</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="text-right">
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">Score</div>
+                  <div className="font-mono text-xs text-slate-600">—</div>
+                </div>
+              </div>
+            </button>
           );
         })}
       </div>
@@ -173,6 +206,10 @@ export default function SubmissionsView() {
   const [adminSubPages, setAdminSubPages] = useState(1);
   const [adminSubTotal, setAdminSubTotal] = useState(0);
   const [adminLoading, setAdminLoading] = useState(false);
+
+  const [baselineExpanded, setBaselineExpanded] = useState(false);
+  const [baselineSubmissions, setBaselineSubmissions] = useState([]);
+  const [baselineLoading, setBaselineLoading] = useState(false);
 
   useEffect(() => {
     taskIdRef.current = selectedTask?.id;
@@ -428,6 +465,7 @@ export default function SubmissionsView() {
 
   const handleSelectCompetitor = (competitor) => {
     setSelectedCompetitor(competitor);
+    setBaselineExpanded(false);
     setAdminActiveTask(null);
     setAdminSubmissions([]);
     setSelectedSubmission(null);
@@ -499,21 +537,15 @@ export default function SubmissionsView() {
       if (cancelled) return;
       setBestSubs(result);
       const activeId = adminActiveTask;
-      if (activeId && result[activeId]) {
-        const sub = result[activeId];
-        setSelectedSubmission(sub);
-        TaskService.getSubmissionDetail(sub.id).then((res) => {
-          if (res.ok && !cancelled)
-            setSelectedSubmission((prev) =>
-              prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
-            );
-        });
-      } else if (!activeId) {
-        const firstTaskId = Object.keys(result)[0];
-        if (firstTaskId) {
-          setAdminActiveTask(firstTaskId);
+      const resolvedTaskId = activeId && result[activeId] ? activeId : Object.keys(result)[0];
+      if (resolvedTaskId) {
+        if (resolvedTaskId !== activeId) {
+          setAdminActiveTask(resolvedTaskId);
           setAdminSubPage(1);
-          const sub = result[firstTaskId];
+          fetchAdminTaskSubmissions(resolvedTaskId, 1);
+        }
+        const sub = result[resolvedTaskId];
+        if (sub) {
           setSelectedSubmission(sub);
           TaskService.getSubmissionDetail(sub.id).then((res) => {
             if (res.ok && !cancelled)
@@ -521,19 +553,6 @@ export default function SubmissionsView() {
                 prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
               );
           });
-          (async () => {
-            const res = await api.fetch(
-              `/api/tasks/${firstTaskId}/submissions?page=1&per_page=10&user_id=${selectedCompetitor.id}`,
-            );
-            if (res.ok) {
-              const data = await res.json();
-              if (!cancelled) {
-                setAdminSubmissions(data.items || []);
-                setAdminSubPages(data.pages || 1);
-                setAdminSubTotal(data.total || 0);
-              }
-            }
-          })();
         }
       }
     });
@@ -574,6 +593,14 @@ export default function SubmissionsView() {
       return;
     }
     setSelectedSubmission(sub);
+    if (sub.task_id) {
+      const taskChanged = sub.task_id !== adminActiveTask;
+      setAdminActiveTask(sub.task_id);
+      if (taskChanged) {
+        setAdminSubPage(1);
+        fetchAdminTaskSubmissions(sub.task_id, 1);
+      }
+    }
     try {
       const res = await TaskService.getSubmissionDetail(sub.id);
       if (res.ok)
@@ -584,6 +611,50 @@ export default function SubmissionsView() {
       console.error(err);
     }
   };
+
+  // Admin: fetch baselines for all tasks
+  const fetchAllBaselines = useCallback(async () => {
+    const tasks = selectedChallenge?.tasks;
+    if (!tasks?.length) {
+      setBaselineSubmissions([]);
+      return;
+    }
+    setBaselineLoading(true);
+    try {
+      const results = await Promise.all(
+        tasks.map(async (task) => {
+          try {
+            const res = await api.fetch(
+              `/api/tasks/${task.id}/submissions?baseline=true&page=1&per_page=100`,
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const items = data?.items || data || [];
+              return items.length > 0 ? { task, submission: items[0] } : null;
+            }
+          } catch {
+            // ignore per-task errors
+          }
+          return null;
+        }),
+      );
+      setBaselineSubmissions(results.filter(Boolean));
+    } catch (err) {
+      console.error('Failed to fetch baselines:', err);
+      setBaselineSubmissions([]);
+    } finally {
+      setBaselineLoading(false);
+    }
+  }, [selectedChallenge]);
+
+  useEffect(() => {
+    if (baselineExpanded) {
+      fetchAllBaselines();
+    } else {
+      setBaselineSubmissions([]);
+      setSelectedSubmission(null);
+    }
+  }, [baselineExpanded, fetchAllBaselines]);
 
   const handleDownloadSubmission = async (taskId, userId) => {
     if (!selectedChallenge) return;
@@ -822,74 +893,173 @@ export default function SubmissionsView() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
       {/* Competitor Search */}
       {!selectedCompetitor ? (
-        <div className="surface" style={{ padding: '20px' }}>
-          <div className="text-sm font-bold text-slate-200 mb-3">
-            {t('submissions.select_competitor', 'Select Competitor')}
-          </div>
-          <div className="relative mb-3">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              value={competitorSearch}
-              onChange={(e) => {
-                setCompetitorSearch(e.target.value);
-                handleSearchCompetitors(e.target.value, 1);
-              }}
-              placeholder={t(
-                'submissions.search_competitor_placeholder',
-                'Search by alias, name, or school...',
+        <>
+          {/* Baseline Submissions */}
+          {(selectedChallenge?.tasks?.length ?? 0) > 0 && (
+            <div className="surface" style={{ padding: '16px 20px' }}>
+              <button
+                onClick={() => {
+                  if (baselineExpanded) {
+                    setBaselineSubmissions([]);
+                    setSelectedSubmission(null);
+                  } else {
+                    setBaselineLoading(true);
+                  }
+                  setBaselineExpanded(!baselineExpanded);
+                }}
+                className="flex items-center justify-between w-full text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-200">
+                    {t('submissions.baseline_submissions', 'Baseline Solutions')}
+                  </span>
+                  {!baselineExpanded && baselineSubmissions.length > 0 && (
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      {baselineSubmissions.length} {t('submissions.task_count', 'tasks')}
+                    </span>
+                  )}
+                </div>
+                <ChevronRight
+                  size={14}
+                  className={`transition-transform ${baselineExpanded ? 'rotate-90' : ''} text-slate-400`}
+                />
+              </button>
+              {baselineExpanded && (
+                <div className="mt-4 flex flex-col gap-1.5">
+                  {baselineLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <div className="animate-spin w-5 h-5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
+                    </div>
+                  ) : baselineSubmissions.length === 0 ? (
+                    <div className="text-xs text-slate-500 text-center py-4">
+                      {t('submissions.no_baselines', 'No baseline submissions available')}
+                    </div>
+                  ) : (
+                    baselineSubmissions.map(({ task, submission: sub }) => {
+                      const isSel = selectedSubmission?.id === sub.id;
+                      return (
+                        <button
+                          key={task.id}
+                          onClick={() => handleAdminViewSubmission(sub)}
+                          className={`flex flex-col gap-1.5 p-3 rounded-lg text-left w-full transition-all duration-150 border cursor-pointer ${
+                            isSel
+                              ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100'
+                              : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="text-sm font-semibold text-slate-200 truncate">
+                              {task.title}
+                            </span>
+                            <Badge status={sub.status} />
+                          </div>
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="font-mono text-xs text-slate-500">
+                              #{sub.id}
+                              {sub.created_at && (
+                                <span className="ml-2 text-slate-400 font-sans">
+                                  {formatLocalizedDate(sub.created_at, {
+                                    timeZone: selectedChallenge?.timezone || 'UTC',
+                                  })}
+                                </span>
+                              )}
+                            </span>
+                            {sub.public_score != null && (
+                              <span className="font-mono text-xs font-bold text-indigo-400">
+                                {Number(sub.public_score).toFixed(4)}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               )}
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg text-sm text-slate-200"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {searching ? (
-              <EmptyState minHeight={100} message={t('common.searching')} />
-            ) : competitorResults.length === 0 ? (
-              <div className="text-xs text-slate-500 text-center py-6">
-                {t('submissions.no_competitors_found', 'No competitors found')}
-              </div>
-            ) : (
-              competitorResults.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => handleSelectCompetitor(u)}
-                  className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 hover:bg-slate-800/60 hover:border-indigo-500/30 transition-all cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
-                      {(u.alias_id || '?')[0]}
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-slate-200">
-                        {u.alias_id || u.username}
-                      </div>
-                      {u.name && (
-                        <div className="text-xs text-slate-400">
-                          {u.name} {u.surname}
-                        </div>
-                      )}
-                      {u.school && <div className="text-[10px] text-slate-500">{u.school}</div>}
-                    </div>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-500" />
-                </button>
-              ))
-            )}
-          </div>
-          {competitorPages > 1 && (
-            <div className="mt-3">
-              <Pagination
-                page={competitorPage}
-                pages={competitorPages}
-                total={competitorTotal}
-                perPage={10}
-                onPageChange={(p) => handleSearchCompetitors(competitorSearch, p)}
-                itemName={t('submissions.pagination_item_name')}
-              />
             </div>
           )}
-        </div>
+
+          {/* SubmissionViewer for selected baseline */}
+          {selectedSubmission && !selectedCompetitor && (
+            <SubmissionViewer
+              submission={selectedSubmission}
+              currentUser={currentUser}
+              onSelectFinal={() => {}}
+            />
+          )}
+
+          <div className="surface" style={{ padding: '20px' }}>
+            <div className="text-sm font-bold text-slate-200 mb-3">
+              {t('submissions.select_competitor', 'Select Competitor')}
+            </div>
+            <div className="relative mb-3">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+              />
+              <input
+                type="text"
+                value={competitorSearch}
+                onChange={(e) => {
+                  setCompetitorSearch(e.target.value);
+                  handleSearchCompetitors(e.target.value, 1);
+                }}
+                placeholder={t(
+                  'submissions.search_competitor_placeholder',
+                  'Search by alias, name, or school...',
+                )}
+                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded-lg text-sm text-slate-200"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {searching ? (
+                <EmptyState minHeight={100} message={t('common.searching')} />
+              ) : competitorResults.length === 0 ? (
+                <div className="text-xs text-slate-500 text-center py-6">
+                  {t('submissions.no_competitors_found', 'No competitors found')}
+                </div>
+              ) : (
+                competitorResults.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => handleSelectCompetitor(u)}
+                    className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 hover:bg-slate-800/60 hover:border-indigo-500/30 transition-all cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
+                        {(u.alias_id || '?')[0]}
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-200">
+                          {u.alias_id || u.username}
+                        </div>
+                        {u.name && (
+                          <div className="text-xs text-slate-400">
+                            {u.name} {u.surname}
+                          </div>
+                        )}
+                        {u.school && <div className="text-[10px] text-slate-500">{u.school}</div>}
+                      </div>
+                    </div>
+                    <ChevronRight size={14} className="text-slate-500" />
+                  </button>
+                ))
+              )}
+            </div>
+            {competitorPages > 1 && (
+              <div className="mt-3">
+                <Pagination
+                  page={competitorPage}
+                  pages={competitorPages}
+                  total={competitorTotal}
+                  perPage={10}
+                  onPageChange={(p) => handleSearchCompetitors(competitorSearch, p)}
+                  itemName={t('submissions.pagination_item_name')}
+                />
+              </div>
+            )}
+          </div>
+        </>
       ) : (
         <>
           {/* Selected Competitor Header */}
@@ -937,27 +1107,29 @@ export default function SubmissionsView() {
 
           {/* Stage-grouped task cards */}
           <div className="flex flex-col gap-4">
-            {groupedByStage.map(({ stage, tasks }) => {
-              const hasSubs = tasks.some((t) => bestSubs[t.id]);
-              if (!hasSubs) return null;
-              return (
-                <StageGroup
-                  key={stage?.id || 'no-stage'}
-                  stage={stage}
-                  tasks={tasks}
-                  challenge={selectedChallenge}
-                  bestSubs={bestSubs}
-                  onView={handleAdminViewSubmission}
-                  onDownload={(sub) =>
-                    handleDownloadSubmission(
-                      adminActiveTask || sub.task_id,
-                      sub.user?.id || selectedCompetitor.id,
-                    )
-                  }
-                  showPrivate={true}
-                />
-              );
-            })}
+            {groupedByStage.map(({ stage, tasks }) => (
+              <StageGroup
+                key={stage?.id || 'no-stage'}
+                stage={stage}
+                tasks={tasks}
+                challenge={selectedChallenge}
+                bestSubs={bestSubs}
+                onView={handleAdminViewSubmission}
+                onDownload={(sub) =>
+                  handleDownloadSubmission(
+                    adminActiveTask || sub.task_id,
+                    sub.user?.id || selectedCompetitor.id,
+                  )
+                }
+                showPrivate={true}
+                onTaskClick={(taskId) => {
+                  setAdminActiveTask(taskId);
+                  setSelectedSubmission(null);
+                  setAdminSubPage(1);
+                  fetchAdminTaskSubmissions(taskId, 1);
+                }}
+              />
+            ))}
           </div>
 
           {/* All submissions for the active task */}

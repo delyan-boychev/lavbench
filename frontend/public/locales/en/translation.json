@@ -141,6 +141,8 @@
     "alias": "Alias: {{alias}}",
     "pagination_item_name": "submissions",
     "select_to_view": "Select a submission to view details.",
+    "baseline_submissions": "Baseline Solutions",
+    "no_baselines": "No baseline submissions available",
     "submission_id": "Submission #{{id}}",
     "final_selection_star": "FINAL SELECTION",
     "public_score": "Public Score",
@@ -178,7 +180,8 @@
     "no_competitors_found": "No competitors found",
     "search_competitor_placeholder": "Search by alias, name, or school...",
     "all_submissions_for": "All Submissions",
-    "switch_competitor": "Switch Competitor"
+    "switch_competitor": "Switch Competitor",
+    "baseline_label": "Baseline"
   },
   "challenge": {
     "judge_session_active": "Judge / Admin Session Active",

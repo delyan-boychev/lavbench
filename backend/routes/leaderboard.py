@@ -186,7 +186,13 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     return -1 if a["has_submitted"] else 1
                 score_a = a["public_score"]
                 score_b = b["public_score"]
-                if score_a is not None and score_b is not None and score_a != score_b:
+                if score_a is None and score_b is None:
+                    pass
+                elif score_a is None:
+                    return 1
+                elif score_b is None:
+                    return -1
+                elif score_a != score_b:
                     return -1 if score_a > score_b else 1
             name_a = (a["user"].get("alias_id") or "").lower()
             name_b = (b["user"].get("alias_id") or "").lower()
@@ -445,12 +451,12 @@ def stream_challenge_leaderboard(challenge_id):
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
 @login_required
-@role_required(["admin", "jury"])
+@role_required(["jury"])
 @jury_access_required
 def save_manual_points(challenge_id):
     """
     Save manual points for a user in a challenge.
-    Admins and Jury members only.
+    Jury members only.
     ---
     tags:
       - Leaderboard

@@ -583,7 +583,7 @@ def get_submissions(challenge_id):
             .filter(or_(Task.stage_id.is_(None), Task.stage_id.in_(active_stage_ids)))
         )
     else:
-        query = Submission.query.filter_by(challenge_id=challenge_id).options(
+        query = Submission.query.filter_by(challenge_id=challenge_id, is_baseline=False).options(
             joinedload(Submission.challenge),
             joinedload(Submission.user),
             joinedload(Submission.task),

@@ -1183,7 +1183,9 @@ describe('SubmissionsView Page', () => {
       });
 
       await waitFor(() => {
-        expect(screen.queryByText('Stage 1')).not.toBeInTheDocument();
+        expect(screen.getByText('Stage 1')).toBeInTheDocument();
+        expect(screen.getByText('Task 1')).toBeInTheDocument();
+        expect(screen.getByText('Task 2')).toBeInTheDocument();
         expect(screen.getByText('No submissions found for this task.')).toBeInTheDocument();
       });
     });
@@ -1276,6 +1278,323 @@ describe('SubmissionsView Page', () => {
 
       render(<SubmissionsView />);
       expect(screen.getByText('No competition selected.')).toBeInTheDocument();
+    });
+
+    describe('Baseline submissions', () => {
+      it('renders baseline section collapsed by default and does not fetch', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
+        });
+        expect(screen.queryByText('No baseline submissions available')).not.toBeInTheDocument();
+
+        const baselineCalls = api.fetch.mock.calls.filter(([url]) => url.includes('baseline=true'));
+        expect(baselineCalls.length).toBe(0);
+      });
+
+      it('shows no baselines message when expanded and no baselines exist', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('No baseline submissions available')).toBeInTheDocument();
+        });
+      });
+
+      it('fetches and displays baseline cards when expanded', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        const baselineTask1 = {
+          id: 300,
+          task_id: 10,
+          status: 'completed',
+          created_at: '2026-06-13T11:00:00Z',
+          public_score: 0.99,
+        };
+        const baselineTask2 = {
+          id: 301,
+          task_id: 11,
+          status: 'completed',
+          created_at: '2026-06-13T11:05:00Z',
+          public_score: 0.97,
+        };
+
+        api.fetch.mockReset();
+        api.fetch.mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [baselineTask1], total: 1, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [baselineTask2], total: 1, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Task 1')).toBeInTheDocument();
+          expect(screen.getByText('Task 2')).toBeInTheDocument();
+          expect(screen.getByText('0.9900')).toBeInTheDocument();
+          expect(screen.getByText('0.9700')).toBeInTheDocument();
+        });
+      });
+
+      it('clicking a baseline card opens SubmissionViewer', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        TaskService.getSubmissionDetail.mockResolvedValue({
+          ok: true,
+          data: {
+            id: 300,
+            task_id: 10,
+            status: 'completed',
+            public_score: 0.99,
+            code_cells: ['print("hello")'],
+            logs: 'test log',
+          },
+        });
+
+        const baselineTask1 = {
+          id: 300,
+          task_id: 10,
+          status: 'completed',
+          created_at: '2026-06-13T11:00:00Z',
+          public_score: 0.99,
+        };
+
+        api.fetch.mockReset();
+        api.fetch.mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [baselineTask1], total: 1, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Task 1')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Task 1'));
+        });
+
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 20));
+        });
+
+        await waitFor(() => {
+          expect(TaskService.getSubmissionDetail).toHaveBeenCalledWith(300);
+          expect(screen.getByText(/Submission #300/i)).toBeInTheDocument();
+        });
+      });
+
+      it('hides SubmissionViewer when baseline section is collapsed', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        TaskService.getSubmissionDetail.mockResolvedValue({
+          ok: true,
+          data: {
+            id: 300,
+            task_id: 10,
+            status: 'completed',
+            public_score: 0.99,
+            code_cells: ['print("hello")'],
+          },
+        });
+
+        const baselineTask1 = {
+          id: 300,
+          task_id: 10,
+          status: 'completed',
+          created_at: '2026-06-13T11:00:00Z',
+          public_score: 0.99,
+        };
+
+        api.fetch.mockReset();
+        api.fetch.mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [baselineTask1], total: 1, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+        api.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+        await waitFor(() => {
+          expect(screen.getByText('Task 1')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Task 1'));
+        });
+        await waitFor(() => {
+          expect(screen.getByText(/Submission #/i)).toBeInTheDocument();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+        await waitFor(() => {
+          expect(screen.queryByText(/Submission #/i)).not.toBeInTheDocument();
+        });
+      });
+
+      it('collapses baseline section when a competitor is selected', async () => {
+        api.get.mockResolvedValue({
+          ok: true,
+          data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+        });
+
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: { items: [], total: 0, pages: 1 },
+        });
+        api.fetch.mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+          blob: () => Promise.resolve(new Blob(['test'])),
+        });
+
+        useApp.mockReturnValue({
+          selectedChallenge: mockChallenge,
+          selectedTask: null,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+
+        render(<SubmissionsView />);
+
+        await act(async () => {
+          fireEvent.click(screen.getByText('Baseline Solutions'));
+        });
+        await waitFor(() => {
+          expect(screen.getByText('No baseline submissions available')).toBeInTheDocument();
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('C1')).toBeInTheDocument();
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByText('C1').closest('button'));
+        });
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 20));
+        });
+
+        await waitFor(() => {
+          expect(screen.queryByText('Baseline Solutions')).not.toBeInTheDocument();
+        });
+      });
     });
   });
 });

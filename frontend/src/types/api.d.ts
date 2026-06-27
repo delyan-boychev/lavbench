@@ -1340,7 +1340,7 @@ export interface paths {
         put?: never;
         /**
          * Save manual points for a user in a challenge.
-         * @description Admins and Jury members only.<br/>
+         * @description Jury members only.<br/>
          */
         post: {
             parameters: {

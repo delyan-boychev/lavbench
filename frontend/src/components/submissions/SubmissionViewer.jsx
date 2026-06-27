@@ -114,6 +114,11 @@ export default function SubmissionViewer({
               {submission.detailed_status && submission.detailed_status !== submission.status && (
                 <Badge status={submission.detailed_status} />
               )}
+              {submission.is_baseline && (
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
+                  {t('submissions.baseline_label')}
+                </span>
+              )}
               {submission.is_final_selection && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
                   <Star className="w-3 h-3" />

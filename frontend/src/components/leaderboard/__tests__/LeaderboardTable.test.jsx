@@ -161,7 +161,9 @@ describe('LeaderboardTable Component', () => {
         public_score: 0.9999,
         is_baseline_entry: true,
         user: { id: 99, username: 'baseline', alias_id: 'BL-001' },
-        task_scores: {},
+        task_scores: {
+          10: { submission_id: 999, public_score: 0.9999, private_score: 0.95 },
+        },
       },
     ];
 

@@ -493,6 +493,16 @@ class TestManualPointsEndpoint:
         db_session.add(self.task)
         db_session.commit()
 
+        from models import JuryChallenge
+
+        if (
+            not db_session.query(JuryChallenge)
+            .filter_by(jury_id=self.jury.id, challenge_id=self.challenge.id)
+            .first()
+        ):
+            db_session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
+            db_session.commit()
+
         self.admin_token = generate_token(self.admin.id, self.admin.role)
         self.jury_token = generate_token(self.jury.id, self.jury.role)
         self.competitor_token = generate_token(self.competitor.id, self.competitor.role)
@@ -515,7 +525,7 @@ class TestManualPointsEndpoint:
         db_session.flush()
         return sub_id
 
-    def test_admin_saves_manual_points(self, client, db_session):
+    def test_jury_saves_manual_points_with_details(self, client, db_session):
         self._seed_completed_submission(db_session)
         payload = {
             "user_id": self.competitor.id,
@@ -524,7 +534,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -560,7 +570,7 @@ class TestManualPointsEndpoint:
         payload = {"points": {str(self.task.id): 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -570,7 +580,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -589,7 +599,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": 99999, "points": {str(self.task.id): 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 404
@@ -602,7 +612,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -612,7 +622,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {"invalid": 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -631,7 +641,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {str(other_task.id): 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -641,7 +651,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50.5}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -650,7 +660,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 150}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -664,7 +674,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 400
@@ -688,7 +698,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -704,7 +714,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -721,7 +731,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -730,7 +740,7 @@ class TestManualPointsEndpoint:
         payload["reason"] = "Second"
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -745,7 +755,7 @@ class TestManualPointsEndpoint:
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 200
@@ -756,7 +766,7 @@ class TestManualPointsEndpoint:
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
             "/api/challenges/99999/manual-points",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 404

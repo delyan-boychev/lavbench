@@ -240,56 +240,65 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             }
             leaderboard_entries.append(entry_dict)
 
-        # Add baseline entries with per-task scores to the general leaderboard
-        baseline_subs = [s for s in all_completed if s.is_baseline]
-        if baseline_subs:
-            bl_task_scores = {}
-            has_any = False
+        # Add baseline entries (one per task that has a baseline submission)
+        baseline_by_task = {}
+        for s in all_completed:
+            if s.is_baseline:
+                existing = baseline_by_task.get(s.task_id)
+                if existing is None:
+                    baseline_by_task[s.task_id] = s
+                else:
+                    chosen = get_best_submission(
+                        s.task,
+                        [existing, s],
+                        challenge,
+                        is_lower_better=task_metrics.get(s.task.id, False),
+                    )
+                    baseline_by_task[s.task_id] = chosen
+
+        competitor_ids = {c.id for c in competitors}
+        for task_id, baseline_sub in baseline_by_task.items():
+            task = next((t for t in tasks if t.id == task_id), None)
+            if not task or baseline_sub.user is None:
+                continue
+            # Skip if the baseline submitter is already a competitor entry
+            if baseline_sub.user_id in competitor_ids:
+                continue
+            bt_scores = {}
             for t in tasks:
-                task_bl = [s for s in baseline_subs if s.task_id == t.id]
-                if task_bl:
-                    best_bl = get_best_submission(t, task_bl, challenge)
-                    if best_bl:
-                        bl_task_scores[str(t.id)] = {
-                            "submission_id": best_bl.id,
-                            "public_score": best_bl.public_score,
-                            "private_score": best_bl.private_score,
-                            "execution_time_ms": best_bl.execution_time_ms or 0,
-                            "created_at": (
-                                best_bl.created_at.isoformat() + "Z" if best_bl.created_at else None
-                            ),
-                        }
-                        has_any = True
-            if has_any:
-                bl_pub = sum(
-                    v["public_score"]
-                    for v in bl_task_scores.values()
-                    if v["public_score"] is not None
-                )
-                bl_priv = sum(
-                    v["private_score"]
-                    for v in bl_task_scores.values()
-                    if v["private_score"] is not None
-                )
-                baseline_entry = {
-                    "user": {
-                        "id": -1,
-                        "username": "baseline",
-                        "alias_id": "Baseline",
-                        "role": "baseline",
-                    },
-                    "public_score": bl_pub if bl_task_scores else None,
-                    "private_score": bl_priv if bl_task_scores else None,
-                    "total_points": 0,
-                    "has_submitted": True,
-                    "total_execution_time_ms": sum(
-                        v["execution_time_ms"] for v in bl_task_scores.values()
-                    ),
-                    "earliest_submission_time": None,
-                    "task_scores": bl_task_scores,
-                    "is_baseline_entry": True,
-                }
-                leaderboard_entries.append(baseline_entry)
+                if t.id == task_id:
+                    bt_scores[str(t.id)] = {
+                        "public_score": baseline_sub.public_score,
+                        "private_score": baseline_sub.private_score,
+                        "submission_id": baseline_sub.id,
+                        "execution_time_ms": baseline_sub.execution_time_ms or 0,
+                        "created_at": baseline_sub.created_at,
+                    }
+                else:
+                    bt_scores[str(t.id)] = {
+                        "public_score": None,
+                        "private_score": None,
+                        "submission_id": None,
+                        "execution_time_ms": 0,
+                        "created_at": None,
+                    }
+            baseline_entry = {
+                "user": baseline_sub.user.to_dict(
+                    view_role="admin",
+                    scores_finalized=False,
+                    current_user_id=None,
+                    challenge_cache=challenge_cache,
+                ),
+                "task_scores": bt_scores,
+                "public_score": baseline_sub.public_score,
+                "private_score": baseline_sub.private_score,
+                "total_points": 0,
+                "has_submitted": True,
+                "total_execution_time_ms": baseline_sub.execution_time_ms or 0,
+                "earliest_submission_time": baseline_sub.created_at,
+                "is_baseline_entry": True,
+            }
+            leaderboard_entries.append(baseline_entry)
 
         def compare_entries(a, b):
             if challenge_finalized:
@@ -314,10 +323,14 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
 
                 score_a = a["public_score"]
                 score_b = b["public_score"]
-                if score_a is not None and score_b is not None and score_a != score_b:
-                    return (
-                        -1 if score_a > score_b else 1
-                    )  # all scores normalized to higher-is-better
+                if score_a is None and score_b is None:
+                    pass
+                elif score_a is None:
+                    return 1
+                elif score_b is None:
+                    return -1
+                elif score_a != score_b:
+                    return -1 if score_a > score_b else 1
 
             eta = a.get("total_execution_time_ms", 0)
             etb = b.get("total_execution_time_ms", 0)
@@ -352,8 +365,11 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                 entry_dict["rank"] = current_rank
                 cached_entries.append(entry_dict)
         else:
-            for rank, entry_dict in enumerate(sorted_entries, 1):
-                entry_dict["rank"] = rank
+            current_rank = 1
+            for i, entry_dict in enumerate(sorted_entries):
+                if i > 0 and entry_dict["public_score"] != sorted_entries[i - 1]["public_score"]:
+                    current_rank = i + 1
+                entry_dict["rank"] = current_rank
                 cached_entries.append(entry_dict)
 
         # Convert datetime objects to string for JSON serialization
@@ -507,7 +523,13 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
         score_a = a["public_score"]
         score_b = b["public_score"]
 
-        if score_a != score_b:
+        if score_a is None and score_b is None:
+            pass
+        elif score_a is None:
+            return 1
+        elif score_b is None:
+            return -1
+        elif score_a != score_b:
             if is_lower_better:
                 return -1 if score_a < score_b else 1
             else:
@@ -527,8 +549,21 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
     sorted_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
 
     leaderboard = []
-    for rank, entry_dict in enumerate(sorted_entries, 1):
-        entry_dict["rank"] = rank
+    tie_rank = 0
+    prev_comp_key = None
+    for entry_dict in sorted_entries:
+        if entry_dict.get("is_baseline_entry") or not entry_dict.get("has_submitted"):
+            entry_dict["rank"] = None
+            leaderboard.append(entry_dict)
+            continue
+        comp_key = (
+            entry_dict.get("public_score"),
+            entry_dict.get("private_score"),
+        )
+        if prev_comp_key != comp_key:
+            tie_rank = len([e for e in leaderboard if not e.get("is_baseline_entry")]) + 1
+        prev_comp_key = comp_key
+        entry_dict["rank"] = tie_rank
         leaderboard.append(entry_dict)
 
     metric_name = "Score"

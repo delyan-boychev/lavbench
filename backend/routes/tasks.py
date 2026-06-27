@@ -886,19 +886,40 @@ def update_task(task_id):
     if "submission_period_hours" in request.form:
         task.submission_period_hours = to_int(request.form.get("submission_period_hours"))
     if "stage_id" in request.form:
+        from models import Stage
+
         stage_id_val = request.form.get("stage_id")
         if stage_id_val == "":
             stage_id_val = None
-        if stage_id_val:
-            from models import Stage
 
+        # Block moving from a finalized or ended stage
+        old_stage = db.session.get(Stage, task.stage_id) if task.stage_id else None
+        if stage_id_val is not None and old_stage:
+            if old_stage.is_finalized:
+                return jsonify({"error": "Cannot move task — source stage is finalized"}), 400
+            if old_stage.end_time and old_stage.end_time <= datetime.utcnow():
+                return jsonify({"error": "Cannot move task — source stage has ended"}), 400
+
+        # Block moving if any submission has manual points
+        if (
+            stage_id_val is not None
+            and stage_id_val != task.stage_id
+            and Submission.query.filter(
+                Submission.task_id == task.id,
+                Submission.manual_points.isnot(None),
+                Submission.manual_points != "{}",
+            ).first()
+        ):
+            return jsonify(
+                {"error": "Cannot move task — submissions have manual points assigned"}
+            ), 400
+
+        if stage_id_val:
             st = Stage.query.filter_by(id=stage_id_val, challenge_id=task.challenge_id).first()
             if not st:
                 return jsonify({"error": "Invalid stage_id for this challenge."}), 400
             task.stage_id = stage_id_val
         else:
-            from models import Stage
-
             regular_stage_count = Stage.query.filter_by(
                 challenge_id=task.challenge_id, is_test=False
             ).count()
@@ -1522,7 +1543,7 @@ def submit_task(task_id):
 
 
 def _get_task_submissions_data(
-    task_id, user_role, user_id, page=None, per_page=10, filter_user_id=None
+    task_id, user_role, user_id, page=None, per_page=10, filter_user_id=None, baseline=False
 ):
     task = db.session.get(Task, task_id)
     if not task:
@@ -1536,9 +1557,12 @@ def _get_task_submissions_data(
             return {"error": "Access denied. Submissions are hidden for finalized competitions."}
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
-        query = Submission.query.filter_by(task_id=task_id)
+        if baseline:
+            query = Submission.query.filter_by(task_id=task_id, is_baseline=True)
+        else:
+            query = Submission.query.filter_by(task_id=task_id, is_baseline=False)
 
-    if filter_user_id and user_role in ("admin", "jury"):
+    if filter_user_id and user_role in ("admin", "jury") and not baseline:
         query = query.filter_by(user_id=filter_user_id)
 
     from sqlalchemy.orm import joinedload
@@ -1597,8 +1621,11 @@ def get_task_submissions(task_id):
     page = request.args.get("page", type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
     filter_user_id = request.args.get("user_id")
+    baseline = request.args.get("baseline", type=str, default="").lower() in ("true", "1")
 
-    data = _get_task_submissions_data(task_id, user_role, user_id, page, per_page, filter_user_id)
+    data = _get_task_submissions_data(
+        task_id, user_role, user_id, page, per_page, filter_user_id, baseline=baseline
+    )
     if isinstance(data, dict) and "error" in data:
         return jsonify(data), 403
     return jsonify(data)

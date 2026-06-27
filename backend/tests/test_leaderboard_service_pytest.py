@@ -148,17 +148,25 @@ class TestBuildAndCacheLeaderboard:
         assert result[0]["user"]["username"] == "alice"
         assert result[0]["total_points"] > result[1]["total_points"]
 
-    def test_baseline_entry_included(self):
+    def test_baseline_included_in_leaderboard(self):
         comp = self._create_competitor("alice")
         self._create_submission(comp.id, self.task.id, 0.8, 0.7)
-        baseline = self._create_submission(0, self.task.id, 0.9, 0.85)
+        baseline_user = User(
+            username="baseline_bot",
+            password_hash="pbkdf2:sha256:...",
+            role="admin",
+        )
+        db.session.add(baseline_user)
+        db.session.commit()
+        baseline = self._create_submission(baseline_user.id, self.task.id, 0.9, 0.85)
         baseline.is_baseline = True
-        baseline.user_id = 0
         db.session.commit()
 
         result = build_and_cache_leaderboard(self.challenge.id)
-        usernames = [e["user"]["username"] for e in result]
-        assert "baseline" in usernames
+        baseline_entries = [e for e in result if e.get("is_baseline_entry")]
+        assert len(baseline_entries) == 1
+        assert baseline_entries[0]["is_baseline_entry"] is True
+        assert len(result) == 2
 
     def test_cache_hit_returns_cached(self):
         comp = self._create_competitor("alice")

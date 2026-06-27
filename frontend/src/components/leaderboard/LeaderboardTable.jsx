@@ -227,7 +227,7 @@ function Row({
   const renderManualPointsBadge = (task, pts) => {
     if (isBaseline) return '—';
     const blocked = isTaskEditingBlocked(task);
-    const canEdit = isJuryOrAdmin && !blocked;
+    const canEdit = isJury && !blocked;
 
     if (canEdit) {
       return (
@@ -371,9 +371,9 @@ function Row({
             {/* Summed Jury/Manual Points */}
             {showPointsCols && (
               <td
-                className={`px-4 py-3 text-right font-mono font-bold text-sm transition-all duration-300 ${flashPoints ? 'animate-pulse-highlight' : ''}`}
+                className={`px-4 py-3 text-right font-mono font-bold text-xs transition-all duration-300 ${flashPoints ? 'animate-pulse-highlight' : ''}`}
               >
-                <span className="text-amber-500">
+                <span className="text-amber-400">
                   {isBaseline ? '—' : t('leaderboard.points_short', { count: displayPoints })}
                 </span>
               </td>
@@ -751,15 +751,14 @@ export default function LeaderboardTable({
   // 1. Sort and rank display data dynamically based on active tab
   let displayData = [...data];
 
-  // Baseline entries never appear in the general tab
-  if (activeTab === 'general') {
+  // Baseline entries never appear in general or stage tabs (only per-task)
+  if (activeTab === 'general' || isStageTab) {
     displayData = displayData.filter((e) => !e.is_baseline_entry);
-  }
-  // In per-task or stage tabs, baselines are hidden only after finalization
-  if (isStageTab || activeTab !== 'general') {
-    if (isFinalized) {
-      displayData = displayData.filter((e) => !e.is_baseline_entry);
-    }
+  } else if (activeTab !== 'general') {
+    displayData = displayData.filter((e) => {
+      if (!e.is_baseline_entry) return true;
+      return e.task_scores?.[activeTab.toString()]?.submission_id != null;
+    });
   }
 
   // After filtering baselines, recompute ranks for remaining entries
@@ -770,7 +769,7 @@ export default function LeaderboardTable({
     if (hasScore) {
       currentRank += 1;
     }
-    entryCopy.rank = currentRank;
+    entryCopy.rank = hasScore ? currentRank : null;
     return entryCopy;
   });
 
@@ -835,8 +834,8 @@ export default function LeaderboardTable({
     let currentRank = 0;
     displayData = displayData.map((entry, index) => {
       const entryCopy = { ...entry };
+      let userHasSubmitted = false;
       if (!entry.is_baseline_entry) {
-        let userHasSubmitted = false;
         stageTasks.forEach((t) => {
           if (entry.task_scores?.[t.id.toString()]?.submission_id != null) {
             userHasSubmitted = true;
@@ -847,45 +846,54 @@ export default function LeaderboardTable({
           currentRank += 1;
         }
 
-        let prevIdx = index - 1;
-        let prevNonBaseline = null;
-        while (prevIdx >= 0) {
-          const candidate = displayData[prevIdx];
-          if (!candidate.is_baseline_entry) {
-            prevNonBaseline = candidate;
-            break;
-          }
-          prevIdx--;
-        }
-
-        if (prevNonBaseline) {
-          let prevPub = 0;
-          let prevPts = 0;
-          stageTasks.forEach((t) => {
-            prevPub += prevNonBaseline.task_scores?.[t.id.toString()]?.public_score ?? 0;
-            prevPts += prevNonBaseline.user?.manual_points?.[t.id.toString()] ?? 0;
-          });
-
-          let currPub = 0;
-          let currPts = 0;
-          stageTasks.forEach((t) => {
-            currPub += entry.task_scores?.[t.id.toString()]?.public_score ?? 0;
-            currPts += entry.user?.manual_points?.[t.id.toString()] ?? 0;
-          });
-
-          let isTie;
-          if ((isFinalized && (isJuryOrAdmin || revealResults)) || stageRevealed) {
-            isTie = currPts === prevPts;
-          } else {
-            isTie = currPub === prevPub;
+        // Tie detection only for submitters
+        if (userHasSubmitted) {
+          let prevIdx = index - 1;
+          let prevNonBaseline = null;
+          while (prevIdx >= 0) {
+            const candidate = displayData[prevIdx];
+            if (!candidate.is_baseline_entry && candidate.task_scores) {
+              const candidateSubmitted = stageTasks.some(
+                (t) => candidate.task_scores?.[t.id.toString()]?.submission_id != null,
+              );
+              if (candidateSubmitted) {
+                prevNonBaseline = candidate;
+                break;
+              }
+            }
+            prevIdx--;
           }
 
-          if (isTie) {
-            currentRank = prevNonBaseline.rank;
+          if (prevNonBaseline) {
+            let prevPub = 0;
+            let prevPts = 0;
+            stageTasks.forEach((t) => {
+              prevPub += prevNonBaseline.task_scores?.[t.id.toString()]?.public_score ?? 0;
+              prevPts += prevNonBaseline.user?.manual_points?.[t.id.toString()] ?? 0;
+            });
+
+            let currPub = 0;
+            let currPts = 0;
+            stageTasks.forEach((t) => {
+              currPub += entry.task_scores?.[t.id.toString()]?.public_score ?? 0;
+              currPts += entry.user?.manual_points?.[t.id.toString()] ?? 0;
+            });
+
+            let isTie;
+            if ((isFinalized && (isJuryOrAdmin || revealResults)) || stageRevealed) {
+              isTie = currPts === prevPts;
+            } else {
+              isTie = currPub === prevPub;
+            }
+
+            if (isTie) {
+              currentRank = prevNonBaseline.rank;
+            }
           }
         }
       }
-      entryCopy.rank = currentRank;
+      entryCopy.rank = userHasSubmitted ? currentRank : null;
+      entryCopy.has_submitted = userHasSubmitted;
       return entryCopy;
     });
   } else if (activeTab !== 'general') {
@@ -927,41 +935,48 @@ export default function LeaderboardTable({
     let currentRank = 0;
     displayData = displayData.map((entry, index) => {
       const entryCopy = { ...entry };
+      const hasScore =
+        !entry.is_baseline_entry && entry.task_scores?.[activeTaskIdStr]?.submission_id != null;
       if (!entry.is_baseline_entry) {
         // Only rank entries that have submitted
-        const hasScore = entry.has_submitted;
         if (hasScore) {
           // eslint-disable-next-line react-hooks/immutability
           currentRank += 1;
         }
-        // Find previous non-baseline entry for tie comparison
-        let prevIdx = index - 1;
-        let prevNonBaseline = null;
-        while (prevIdx >= 0) {
-          const candidate = displayData[prevIdx];
-          if (!candidate.is_baseline_entry) {
-            prevNonBaseline = candidate;
-            break;
+        // Tie comparison only for submitters
+        if (hasScore) {
+          let prevIdx = index - 1;
+          let prevNonBaseline = null;
+          while (prevIdx >= 0) {
+            const candidate = displayData[prevIdx];
+            if (
+              !candidate.is_baseline_entry &&
+              candidate.task_scores?.[activeTaskIdStr]?.submission_id != null
+            ) {
+              prevNonBaseline = candidate;
+              break;
+            }
+            prevIdx--;
           }
-          prevIdx--;
-        }
-        if (prevNonBaseline) {
-          let isTie;
-          if (isFinalized && (isJuryOrAdmin || revealResults)) {
-            const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
-            const ptsB = Number(prevNonBaseline.user?.manual_points?.[activeTaskIdStr] ?? 0);
-            isTie = ptsA === ptsB;
-          } else {
-            const scoreA = entry.task_scores?.[activeTaskIdStr]?.public_score;
-            const scoreB = prevNonBaseline.task_scores?.[activeTaskIdStr]?.public_score;
-            isTie = scoreA != null && scoreB != null && scoreA === scoreB;
-          }
-          if (isTie) {
-            currentRank = prevNonBaseline.rank;
+          if (prevNonBaseline) {
+            let isTie;
+            if (isFinalized && (isJuryOrAdmin || revealResults)) {
+              const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
+              const ptsB = Number(prevNonBaseline.user?.manual_points?.[activeTaskIdStr] ?? 0);
+              isTie = ptsA === ptsB;
+            } else {
+              const scoreA = entry.task_scores?.[activeTaskIdStr]?.public_score;
+              const scoreB = prevNonBaseline.task_scores?.[activeTaskIdStr]?.public_score;
+              isTie = scoreA != null && scoreB != null && scoreA === scoreB;
+            }
+            if (isTie) {
+              currentRank = prevNonBaseline.rank;
+            }
           }
         }
       }
-      entryCopy.rank = currentRank;
+      entryCopy.rank = hasScore ? currentRank : null;
+      entryCopy.has_submitted = hasScore;
       return entryCopy;
     });
   }

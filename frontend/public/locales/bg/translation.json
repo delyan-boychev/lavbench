@@ -141,6 +141,8 @@
     "alias": "Псевдоним: {{alias}}",
     "pagination_item_name": "решения",
     "select_to_view": "Изберете решение, за да видите детайлите.",
+    "baseline_submissions": "Базови решения",
+    "no_baselines": "Няма налични базови решения",
     "submission_id": "Решение #{{id}}",
     "final_selection_star": "ОКОНЧАТЕЛЕН ИЗБОР",
     "public_score": "Публичен резултат",
@@ -178,7 +180,8 @@
     "no_competitors_found": "Няма намерени участници",
     "search_competitor_placeholder": "Търсене по псевдоним, име или училище...",
     "all_submissions_for": "Всички решения",
-    "switch_competitor": "Смени участник"
+    "switch_competitor": "Смени участник",
+    "baseline_label": "Базово решение"
   },
   "challenge": {
     "judge_session_active": "Активна сесия за жури / администратор",
@@ -314,7 +317,7 @@
     "refresh": "Обнови",
     "normalized": "(нормализирано)",
     "normalized_hint": "Суровата метрика е инвертирана (по-ниската стойност е по-добра → по-високата стойност е по-добра). Резултат = 1/(1 + сурова_стойност).",
-    "baseline_label": "Базова линия",
+    "baseline_label": "Базово решение",
     "metric": "Метрика:",
     "participants": "участници",
     "participants_one": "{{count}} участник",
@@ -752,7 +755,7 @@
       "files_uploaded_upon_save": "Избраните файлове ще бъдат качени при запазване.",
       "baseline_code": "Базов код (Baseline)",
       "current_baseline": "Текущ базов notebook:",
-      "baseline_replaced_desc": "Изборът на нов файл ще замени текущата базова линия.",
+      "baseline_replaced_desc": "Изборът на нов файл ще замени текущато Базово решение.",
       "baseline_code_desc": "Качете Jupyter Notebook (`.ipynb`) със стартов код или базово решение за състезателите.",
       "maximum_metric_limit": "Достигнат е максималният брой метрики.",
       "add_eval_metric": "Добави метрика...",

@@ -66,6 +66,27 @@ class TestRouteLevelLogic:
         self.admin_token = generate_token(self.admin.id, self.admin.role)
         self.competitor_token = generate_token(self.competitor.id, self.competitor.role)
 
+        self.jury = User(
+            username="test_jury",
+            password_hash="pbkdf2:sha256:...",
+            role="jury",
+            alias_id="Jury-Test",
+        )
+        db.session.add(self.jury)
+        db.session.commit()
+
+        from models import JuryChallenge
+
+        if (
+            not db.session.query(JuryChallenge)
+            .filter_by(jury_id=self.jury.id, challenge_id=self.challenge.id)
+            .first()
+        ):
+            db.session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
+            db.session.commit()
+
+        self.jury_token = generate_token(self.jury.id, self.jury.role)
+
     def get_auth_header(self, token):
         return {"Authorization": f"Bearer {token}"}
 
@@ -1236,7 +1257,7 @@ class TestRouteLevelLogic:
             f"/api/challenges/{self.challenge.id}/manual-points",
             data=json.dumps(payload),
             content_type="application/json",
-            headers=self.get_auth_header(self.admin_token),
+            headers=self.get_auth_header(self.jury_token),
         )
         assert res.status_code == 200
         assert res.get_json()["manual_points"][str(self.task.id)] == 85
@@ -1272,7 +1293,7 @@ class TestRouteLevelLogic:
             f"/api/challenges/{self.challenge.id}/manual-points",
             data=json.dumps(payload2),
             content_type="application/json",
-            headers=self.get_auth_header(self.admin_token),
+            headers=self.get_auth_header(self.jury_token),
         )
         assert res.status_code == 200
 
@@ -1652,7 +1673,7 @@ class TestRouteLevelLogic:
             f"/api/challenges/{self.challenge.id}/manual-points",
             data=json.dumps(payload_no_reason),
             content_type="application/json",
-            headers=self.get_auth_header(self.admin_token),
+            headers=self.get_auth_header(self.jury_token),
         )
         assert res.status_code == 400
         assert "justification reason is mandatory" in res.get_json()["error"]
@@ -1666,7 +1687,7 @@ class TestRouteLevelLogic:
             f"/api/challenges/{self.challenge.id}/manual-points",
             data=json.dumps(payload_with_reason),
             content_type="application/json",
-            headers=self.get_auth_header(self.admin_token),
+            headers=self.get_auth_header(self.jury_token),
         )
         assert res.status_code == 200
 

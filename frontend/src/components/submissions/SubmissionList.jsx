@@ -84,6 +84,11 @@ export default function SubmissionList({
               <div className="flex justify-between items-center gap-2 w-full">
                 <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
                   #{sub.id}
+                  {sub.is_baseline && (
+                    <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                      {t('submissions.baseline_label')}
+                    </span>
+                  )}
                   {sub.is_final_selection && (
                     <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
                       <Star className="w-3 h-3" />

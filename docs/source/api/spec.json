@@ -1462,7 +1462,7 @@
     },
     "/api/challenges/{challenge_id}/manual-points": {
       "post": {
-        "description": "Admins and Jury members only.<br/>",
+        "description": "Jury members only.<br/>",
         "parameters": [
           {
             "description": "ID of the challenge",
