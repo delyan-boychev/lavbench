@@ -115,9 +115,7 @@ class TestSelectFinalSubmission:
             f"/api/submissions/{self.submission.id}/select-final",
             headers=self._auth(self.other_token),
         )
-        assert resp.status_code == 403
-        data = resp.get_json()
-        assert data.get("code") == "ERR_NOT_OWNER"
+        assert resp.status_code == 404
 
     def test_returns_404_for_missing_submission(self):
         resp = self.client.post(
@@ -947,8 +945,8 @@ class TestGetSubmissionDetail:
             f"/api/submissions/{self.submission.id}",
             headers=self._auth(self.other_token),
         )
-        assert resp.status_code == 403
-        assert resp.get_json()["code"] == "ERR_NOT_OWNER"
+        assert resp.status_code == 404
+        assert resp.get_json()["code"] == "ERR_NOT_FOUND"
 
     def test_returns_404_for_missing_submission(self):
         resp = self.client.get("/api/submissions/99999", headers=self._auth(self.admin_token))

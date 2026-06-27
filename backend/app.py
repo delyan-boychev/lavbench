@@ -10,6 +10,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 logger = logging.getLogger(__name__)
 
 from config import Config  # noqa: E402
+from error_utils import err  # noqa: E402
 from flasgger import Swagger  # noqa: E402
 from flask import Flask, jsonify  # noqa: E402
 from flask_cors import CORS  # noqa: E402
@@ -298,7 +299,7 @@ def create_app():
 
     @app.errorhandler(500)
     def handle_internal_error(e):
-        return jsonify({"error": "Internal server error.", "code": "ERR_INTERNAL"}), 500
+        return err("ERR_INTERNAL", 500)
 
     return app
 

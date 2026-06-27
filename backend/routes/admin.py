@@ -11,6 +11,7 @@ import zipfile
 from datetime import datetime
 
 from auth_utils import jury_access_required, role_required
+from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
 from flask import (
     Blueprint,
@@ -160,24 +161,15 @@ def register_competitor():
     challenge_id = data.get("challenge_id")
 
     if not challenge_id:
-        return jsonify({"error": "challenge_id is required for competitor registration."}), 400
+        return err("ERR_CHALLENGE_ID_REQUIRED", 400)
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
-        return jsonify({"error": "Invalid challenge_id."}), 400
+        return err("ERR_INVALID_CHALLENGE_ID", 400)
 
     # Check if the competition has started
     if challenge.is_started and request.user["role"] != "admin":
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Jury members cannot register competitors once the competition has started."
-                    )
-                }
-            ),
-            403,
-        )
+        return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
     if (
         not name
@@ -188,17 +180,7 @@ def register_competitor():
         or not school
         or not city
     ):
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Name, Surname, Middle Name, Birth "
-                        "Date, Grade, School and City are required."
-                    )
-                }
-            ),
-            400,
-        )
+        return err("ERR_MISSING_DEMOGRAPHICS", 400)
 
     # Check if a competitor with the same demographics is already registered for this competition
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
@@ -224,17 +206,11 @@ def register_competitor():
             and norm(decrypt_field(c.school)) == target_school
             and norm(decrypt_field(c.city)) == target_city
         ):
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "A competitor with these demographic "
-                            "details is already registered for this competition."
-                        ),
-                        "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
-                    }
-                ),
+            return err(
+                "ERR_COMPETITOR_ALREADY_REGISTERED",
                 400,
+                message="A competitor with these demographic "
+                "details is already registered for this competition.",
             )
 
     username = generate_unique_username(name, surname)
@@ -433,11 +409,11 @@ def delete_user(user_id):
               type: object
     """
     if str(request.user["user_id"]) == str(user_id):
-        return jsonify({"error": "You cannot delete your own admin account."}), 400
+        return err("ERR_CANNOT_DELETE_SELF", 400)
 
     user = db.session.get(User, user_id)
     if not user:
-        return jsonify({"error": "User not found."}), 404
+        return err("ERR_USER_NOT_FOUND", 404)
 
     from services.audit_service import log_action
 
@@ -499,46 +475,31 @@ def register_user():
     challenge_id = data.get("challenge_id")
 
     if not role or role not in ["competitor", "jury", "admin"]:
-        return jsonify({"error": "Valid role is required."}), 400
+        return err("ERR_VALID_ROLE_REQUIRED", 400)
 
     if request.user["role"] == "jury" and role != "competitor":
-        return jsonify({"error": "Jury members can only register competitor accounts."}), 403
+        return err("ERR_JURY_ONLY_COMPETITOR", 403)
 
     # STRICT CONSTRAINT: Only server-side CLI can register an Administrator (admin)
     if role == "admin":
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Administrator accounts can only be "
-                        "generated directly on the server command line (CLI)."
-                    )
-                }
-            ),
-            403,
-        )
+        return err("ERR_ADMIN_CLI_ONLY", 403)
 
     if not name or not surname:
-        return jsonify({"error": "Name and Surname are required."}), 400
+        return err("ERR_MISSING_DEMOGRAPHICS", 400, message="Name and Surname are required.")
 
     if role == "competitor":
         if not middle_name or not birth_date or not grade or not school or not city:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Middle Name, Birth Date, Grade, School "
-                            "and City are required for competitor accounts."
-                        )
-                    }
-                ),
+            return err(
+                "ERR_MISSING_DEMOGRAPHICS",
                 400,
+                message="Middle Name, Birth Date, Grade, School and City are "
+                "required for competitor accounts.",
             )
         if not challenge_id:
-            return jsonify({"error": "challenge_id is required for competitor registration."}), 400
+            return err("ERR_CHALLENGE_ID_REQUIRED", 400)
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge:
-            return jsonify({"error": "Invalid challenge_id."}), 400
+            return err("ERR_INVALID_CHALLENGE_ID", 400)
 
         # Check if a competitor with the same
         # demographics is already registered for this competition
@@ -566,31 +527,15 @@ def register_user():
                 and norm(decrypt_field(c.school)) == target_school
                 and norm(decrypt_field(c.city)) == target_city
             ):
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "A competitor with these demographic "
-                                "details is already registered for this competition."
-                            ),
-                            "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
-                        }
-                    ),
+                return err(
+                    "ERR_COMPETITOR_ALREADY_REGISTERED",
                     400,
+                    message="A competitor with these demographic "
+                    "details is already registered for this competition.",
                 )
         # Check if the competition has started
         if challenge.is_started and request.user["role"] != "admin":
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Jury members cannot register "
-                            "competitors once the competition has started."
-                        )
-                    }
-                ),
-                403,
-            )
+            return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
     if not password:
         password = generate_random_password(12)
@@ -600,10 +545,10 @@ def register_user():
         username = generate_unique_username(name, surname, role=role)
 
     if not username:
-        return jsonify({"error": "Username is required."}), 400
+        return err("ERR_USERNAME_REQUIRED", 400)
 
     if User.query.filter_by(username=username).first():
-        return jsonify({"error": "User with this username already exists."}), 400
+        return err("ERR_USERNAME_TAKEN", 400)
 
     is_anon = bool(data.get("is_anonymous", False))
 
@@ -686,42 +631,41 @@ def import_competitors_csv():
     """
     challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
     if not challenge_id:
-        return jsonify({"error": "challenge_id is required for importing competitors."}), 400
+        return err(
+            "ERR_CHALLENGE_ID_REQUIRED",
+            400,
+            message="challenge_id is required for importing competitors.",
+        )
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
-        return jsonify({"error": "Invalid challenge_id."}), 400
+        return err("ERR_INVALID_CHALLENGE_ID", 400)
 
     # Check if the competition has started
     if challenge.is_started and request.user["role"] != "admin":
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Jury members cannot import competitors once the competition has started."
-                    )
-                }
-            ),
+        return err(
+            "ERR_JURY_REGISTRATION_STARTED",
             403,
+            message="Jury members cannot import competitors once the competition has started.",
         )
 
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded."}), 400
+        return err("ERR_FILE_REQUIRED", 400)
     file = request.files["file"]
 
     from services.file_validation import validate_csv_content, validate_extension
 
     valid_ext, ext_err = validate_extension(file.filename, {".csv"})
     if not valid_ext:
-        return jsonify({"error": ext_err}), 400
+        return err("ERR_FILE_INVALID", 400, message=ext_err)
 
     try:
         raw = file.read()
     except Exception:
-        return jsonify({"error": "Failed to read uploaded file."}), 400
+        return err("ERR_FILE_INVALID", 400)
     valid_content, content_err, _ = validate_csv_content(raw)
     if not valid_content:
-        return jsonify({"error": content_err}), 400
+        return err("ERR_CSV_PARSE_FAILED", 400, message=content_err)
 
     try:
         stream = io.StringIO(raw.decode("UTF8"), newline=None)
@@ -758,7 +702,11 @@ def import_competitors_csv():
         for r in required:
             if r not in normalized_headers:
                 readable_name = r.replace("_", " ")
-                return jsonify({"error": f"CSV missing required column: '{readable_name}'"}), 400
+                return err(
+                    "ERR_CSV_MISSING_COLUMN",
+                    400,
+                    message=f"CSV missing required column: '{readable_name}'",
+                )
 
         # Fetch existing competitors in this challenge to prevent duplicate rows
         existing_competitors = User.query.filter_by(
@@ -900,7 +848,7 @@ def import_competitors_csv():
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"Failed to parse CSV file: {str(e)}"}), 400
+        return err("ERR_CSV_PARSE_FAILED", 400, message=f"Failed to parse CSV file: {str(e)}")
 
 
 BACKUPS_DIR = os.environ.get("BACKUPS_DIR", "/backups")
@@ -1073,9 +1021,9 @@ def download_backup_file(filename):
     """
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
-        return jsonify({"error": "Invalid path"}), 403
+        return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
-        return jsonify({"error": "Not found"}), 404
+        return err("ERR_NOT_FOUND", 404, message="Not found")
     return send_file(safe_path, as_attachment=True, download_name=filename)
 
 
@@ -1104,12 +1052,12 @@ def delete_backup_file(filename):
               type: object
     """
     if filename.startswith("auto_"):
-        return jsonify({"error": "Auto-backups cannot be deleted manually."}), 403
+        return err("ERR_NO_AUTO_BACKUP_DELETE", 403)
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
-        return jsonify({"error": "Invalid path"}), 403
+        return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
-        return jsonify({"error": "Not found"}), 404
+        return err("ERR_NOT_FOUND", 404, message="Not found")
     os.remove(safe_path)
     from services.audit_service import log_action
 
@@ -1237,23 +1185,13 @@ def update_user(user_id):
     if current_role == "jury":
         # Jury cannot edit admin or other jury members
         if user.role in ("admin", "jury"):
-            return (
-                jsonify(
-                    {"error": "Jury members cannot edit administrator or other jury accounts."}
-                ),
-                403,
-            )
+            return err("ERR_JURY_CANNOT_EDIT_ADMIN", 403)
 
         # Check current assigned challenge
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
             if challenge and challenge.is_started:
-                return (
-                    jsonify(
-                        {"error": "Cannot edit user: The assigned competition has already started."}
-                    ),
-                    403,
-                )
+                return err("ERR_CANNOT_EDIT_STARTED", 403)
 
     data = request.json or {}
     name = data.get("name")
@@ -1276,7 +1214,7 @@ def update_user(user_id):
 
     if role is not None and role in ["competitor", "jury", "admin"]:
         if role == "admin" and user.role != "admin":
-            return jsonify({"error": "Cannot change user role to Administrator."}), 403
+            return err("ERR_CANNOT_CHANGE_ROLE_ADMIN", 403)
         user.role = role
 
     if jury_challenges is not None:
@@ -1298,23 +1236,14 @@ def update_user(user_id):
                 jury_id=request.user["user_id"], challenge_id=target_challenge_id
             ).first()
             if not assigned:
-                return (
-                    jsonify(
-                        {
-                            "error": "Access denied. You are not assigned to this competition.",
-                            "code": "ERR_ACCESS_DENIED",
-                        }
-                    ),
+                return err(
+                    "ERR_ACCESS_DENIED",
                     403,
+                    message="Access denied. You are not assigned to this competition.",
                 )
             challenge = db.session.get(Challenge, target_challenge_id)
             if challenge and challenge.is_started:
-                return (
-                    jsonify(
-                        {"error": "Cannot assign user to a competition that has already started."}
-                    ),
-                    403,
-                )
+                return err("ERR_CANNOT_ASSIGN_STARTED", 403)
         user.challenge_id = target_challenge_id
     elif challenge_id == "":
         user.challenge_id = None
@@ -1358,16 +1287,11 @@ def update_user(user_id):
             or not new_school
             or not new_city
         ):
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Name, Surname, Middle Name, Birth Date, Grade, "
-                            "School and City are required for competitor accounts."
-                        )
-                    }
-                ),
+            return err(
+                "ERR_MISSING_DEMOGRAPHICS",
                 400,
+                message="Name, Surname, Middle Name, Birth Date, Grade, School "
+                "and City are required for competitor accounts.",
             )
 
         # Check if a competitor with the same demographics is already
@@ -1398,17 +1322,11 @@ def update_user(user_id):
                 and norm(decrypt_field(c.school)) == target_school
                 and norm(decrypt_field(c.city)) == target_city
             ):
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "A competitor with these demographic "
-                                "details is already registered for this competition."
-                            ),
-                            "code": "ERR_COMPETITOR_ALREADY_REGISTERED",
-                        }
-                    ),
+                return err(
+                    "ERR_COMPETITOR_ALREADY_REGISTERED",
                     400,
+                    message="A competitor with these demographic "
+                    "details is already registered for this competition.",
                 )
 
     user.set_demographics(
@@ -1427,7 +1345,7 @@ def update_user(user_id):
     if username is not None and username != user.username:
         existing = User.query.filter_by(username=username).first()
         if existing:
-            return jsonify({"error": "Username is already taken."}), 400
+            return err("ERR_USERNAME_TAKEN", 400, message="Username is already taken.")
         user.username = username
 
     if password:
@@ -1489,16 +1407,7 @@ def reset_user_password(user_id):
     if request.user["role"] == "jury" and user.challenge_id:
         challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_started:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Cannot reset password: The assigned competition has already started."
-                        )
-                    }
-                ),
-                403,
-            )
+            return err("ERR_CANNOT_RESET_STARTED", 403)
 
     new_password = generate_random_password(12)
     user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
@@ -1551,10 +1460,7 @@ def reset_all_challenge_passwords(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == "jury" and challenge.is_started:
-        return (
-            jsonify({"error": "Cannot reset passwords: The competition has already started."}),
-            403,
-        )
+        return err("ERR_CANNOT_RESET_BULK_STARTED", 403)
 
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
@@ -1632,7 +1538,7 @@ def download_scores_csv(challenge_id):
 
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
-        return jsonify({"error": "Scores must be finalized before downloading."}), 400
+        return err("ERR_SCORES_NOT_FINALIZED", 400)
 
     csv_data = generate_scores_csv(challenge)
 
@@ -1666,7 +1572,7 @@ def download_submissions_zip(challenge_id):
 
         stage = db.get_or_404(Stage, stage_id)
         if str(stage.challenge_id) != str(challenge.id):
-            return jsonify({"error": "Stage does not belong to this challenge."}), 400
+            return err("ERR_STAGE_MISMATCH", 400)
         tasks = [t for t in challenge.tasks if t.stage_id == stage.id]
     else:
         tasks = challenge.tasks
@@ -1687,23 +1593,9 @@ def download_submissions_zip(challenge_id):
 
     if not is_allowed:
         if stage:
-            return (
-                jsonify(
-                    {"error": "Submissions cannot be downloaded until this stage has finished."}
-                ),
-                400,
-            )
+            return err("ERR_STAGE_NOT_FINISHED", 400)
         else:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Submissions cannot be downloaded until the competition has finished."
-                        )
-                    }
-                ),
-                400,
-            )
+            return err("ERR_COMPETITION_NOT_FINISHED", 400)
 
     # 3. Determine if anonymized
     # Anonymized unless challenge/competition is finalized (scores_finalized = True)

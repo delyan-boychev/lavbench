@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, role_required
+from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard
@@ -156,6 +157,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 show_details = False
 
             if not show_details:
+                entry_copy["has_submitted"] = False
                 entry_copy["user"] = {
                     "id": comp_user_id,
                     "alias_id": comp_user.get("alias_id"),
@@ -251,6 +253,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 show_details = False
 
             if not show_details:
+                entry_copy["has_submitted"] = False
                 entry_copy["user"] = {
                     "id": comp_user_id,
                     "alias_id": comp_user.get("alias_id"),
@@ -328,15 +331,7 @@ def get_leaderboard(challenge_id):
         from auth_utils import check_competitor_access
 
         if not user or not check_competitor_access(user, challenge_id):
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_NOT_REGISTERED", 403)
 
     payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
     response = jsonify(payload)
@@ -379,13 +374,13 @@ def stream_challenge_leaderboard(challenge_id):
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
-        return jsonify({"error": "Challenge not found.", "code": "ERR_NOT_FOUND"}), 404
+        return err("ERR_NOT_FOUND", 404)
 
     # Competitor check: can only view if it's their challenge
     if user_role == "competitor":
         u = db.session.get(User, user_id)
         if not u or str(u.challenge_id) != str(challenge_id):
-            return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+            return err("ERR_ACCESS_DENIED", 403)
 
     def event_generator():
         r = get_redis_client()
@@ -508,17 +503,11 @@ def save_manual_points(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
 
     if challenge.scores_finalized and challenge.reveal_results:
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Cannot modify manual points once the "
-                        "competition results are finalized and revealed."
-                    ),
-                    "code": "ERR_EDITING_BLOCKED",
-                }
-            ),
+        return err(
+            "ERR_EDITING_BLOCKED",
             400,
+            message="Cannot modify manual points once the "
+            "competition results are finalized and revealed.",
         )
 
     data = request.get_json() or {}
@@ -527,40 +516,18 @@ def save_manual_points(challenge_id):
     reason = data.get("reason")
 
     if not user_id or not isinstance(points_dict, dict):
-        return (
-            jsonify(
-                {
-                    "error": "Missing user_id or points dictionary.",
-                    "code": "ERR_MISSING_FIELDS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_MISSING_FIELDS", 400)
 
     user = User.query.filter_by(id=user_id, challenge_id=challenge_id).first()
     if not user:
-        return (
-            jsonify(
-                {
-                    "error": "User not found or not registered in this challenge.",
-                    "code": "ERR_USER_NOT_FOUND",
-                }
-            ),
-            404,
-        )
+        return err("ERR_USER_NOT_FOUND", 404)
 
     if challenge.scores_finalized and not reason:
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "A justification reason is mandatory to modify "
-                        "manual points after the competition is finalized."
-                    ),
-                    "code": "ERR_REASON_REQUIRED",
-                }
-            ),
+        return err(
+            "ERR_REASON_REQUIRED",
             400,
+            message="A justification reason is mandatory to modify "
+            "manual points after the competition is finalized.",
         )
 
     # Validate points (0-100 integers) and completed submissions count
@@ -569,27 +536,19 @@ def save_manual_points(challenge_id):
     for k, v in points_dict.items():
         task_id = str(k)
         if task_id not in tasks:
-            return (
-                jsonify(
-                    {
-                        "error": f"Task ID {task_id} does not belong to this challenge.",
-                        "code": "ERR_TASK_NOT_IN_CHALLENGE",
-                    }
-                ),
+            return err(
+                "ERR_TASK_NOT_IN_CHALLENGE",
                 400,
+                message=f"Task ID {task_id} does not belong to this challenge.",
             )
 
         try:
             pts = int(v)
         except (ValueError, TypeError):
-            return (
-                jsonify(
-                    {
-                        "error": f"Points for task {task_id} must be an integer.",
-                        "code": "ERR_POINTS_MUST_BE_INT",
-                    }
-                ),
+            return err(
+                "ERR_POINTS_MUST_BE_INT",
                 400,
+                message=f"Points for task {task_id} must be an integer.",
             )
 
         # Check if the task is in a finalized stage with revealed results
@@ -599,44 +558,28 @@ def save_manual_points(challenge_id):
         if task and task.stage_id:
             stage = db.session.get(Stage, task.stage_id)
             if stage and stage.is_finalized and stage.reveal_results:
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                f"Cannot modify manual points for task {task.title} "
-                                f"because the stage is finalized and revealed."
-                            ),
-                            "code": "ERR_EDITING_BLOCKED",
-                        }
-                    ),
+                return err(
+                    "ERR_EDITING_BLOCKED",
                     400,
+                    message=f"Cannot modify manual points for task {task.title} "
+                    f"because the stage is finalized and revealed.",
                 )
 
         if not (0 <= pts <= 100):
-            return (
-                jsonify(
-                    {
-                        "error": f"Points for task {task_id} must be between 0 and 100.",
-                        "code": "ERR_POINTS_OUT_OF_BOUNDS",
-                    }
-                ),
+            return err(
+                "ERR_POINTS_OUT_OF_BOUNDS",
                 400,
+                message=f"Points for task {task_id} must be between 0 and 100.",
             )
 
         # Check if the user has any submissions at all for this task
         total_count = Submission.query.filter_by(user_id=user_id, task_id=task_id).count()
         if total_count == 0:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Only students with submissions can be assigned manual "
-                            "points. Students without submissions automatically receive 0 points."
-                        ),
-                        "code": "ERR_NO_SUBMISSIONS",
-                    }
-                ),
+            return err(
+                "ERR_NO_SUBMISSIONS",
                 400,
+                message="Only students with submissions can be assigned manual "
+                "points. Students without submissions automatically receive 0 points.",
             )
 
         validated_points[str(task_id)] = pts

@@ -233,7 +233,7 @@ class TestBackendExceptionAndErrorCases:
             f"/api/challenges/{archived_challenge.id}/submit", json={}, headers=headers
         )
         assert res.status_code == 400
-        assert "This challenge has been archived" in res.json["error"]
+        assert "This competition has been archived" in res.json["error"]
 
     def test_submit_code_timeline_violations(self):
         headers = self._auth(self.competitor)
@@ -306,8 +306,7 @@ class TestBackendExceptionAndErrorCases:
         db.session.commit()
 
         res = self.client.post(f"/api/submissions/{sub.id}/select-final", headers=headers)
-        assert res.status_code == 403
-        assert "Access denied. You do not own this submission" in res.json["error"]
+        assert res.status_code == 404
 
     def test_get_leaderboard_denied_access_competitor(self):
         headers = self._auth(self.competitor)

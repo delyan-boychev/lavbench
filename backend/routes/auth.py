@@ -2,6 +2,7 @@ import logging
 import time
 
 from auth_utils import clear_auth_cookie, login_required, set_auth_cookie
+from error_utils import err
 from flask import Blueprint, jsonify, make_response, request
 from models import User, db
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -152,28 +153,12 @@ def login():
     password = data.get("password")
 
     if not username or not password:
-        return (
-            jsonify(
-                {
-                    "error": "Missing username or password.",
-                    "code": "ERR_MISSING_CREDENTIALS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_MISSING_CREDENTIALS", 400)
 
     ip = get_client_ip()
 
     if _login_rate_limit_exceeded(username, ip):
-        return (
-            jsonify(
-                {
-                    "error": "Too many failed login attempts. Please try again later.",
-                    "code": "ERR_RATE_LIMIT_EXCEEDED",
-                }
-            ),
-            429,
-        )
+        return err("ERR_RATE_LIMIT_EXCEEDED", 429)
 
     user = User.query.filter(User.username == username).first()
 
@@ -184,10 +169,7 @@ def login():
         legacy_hash = hashlib.sha256(password.encode()).hexdigest()
         if not user or not check_password_hash(user.password_hash, legacy_hash):
             _record_login_failure(username, ip)
-            return (
-                jsonify({"error": "Invalid credentials.", "code": "ERR_INVALID_CREDENTIALS"}),
-                401,
-            )
+            return err("ERR_INVALID_CREDENTIALS", 401)
             # Migrate to new format
             user.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
         db.session.commit()
@@ -199,17 +181,11 @@ def login():
 
         challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_archived:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "This competition has been archived. "
-                            "Registered students are not allowed to log in."
-                        ),
-                        "code": "ERR_COMPETITION_ARCHIVED",
-                    }
-                ),
+            return err(
+                "ERR_COMPETITION_ARCHIVED",
                 403,
+                message="This competition has been archived. "
+                "Registered students are not allowed to log in.",
             )
 
     user_data = user.to_dict(current_user_id=user.id)
@@ -303,5 +279,5 @@ def me():
     """
     user = db.session.get(User, request.user["user_id"])
     if not user:
-        return jsonify({"error": "User not found.", "code": "ERR_USER_NOT_FOUND"}), 404
+        return err("ERR_USER_NOT_FOUND", 404)
     return jsonify({"user": user.to_dict(current_user_id=user.id)})

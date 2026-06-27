@@ -121,16 +121,18 @@ lavbench/
 │   ├── models.py                # SQLAlchemy models
 │   ├── auth_utils.py            # JWT auth, rate limiting, token revocation
 │   ├── cache_utils.py           # Redis caching, connection pool, locks
+│   ├── error_utils.py           # err() helper + DEFAULT_ERROR_MESSAGES (128 error codes)
 │   ├── evaluation_engine.py     # Parquet-based evaluation with 70+ metrics across 12 categories
 │   ├── sse_utils.py             # SSE pub/sub helpers
 │   ├── worker_utils.py          # Worker runtime (Docker commands, status reporting)
 │   ├── tasks.py                 # Celery task definitions + beat schedule
 │   ├── Dockerfile               # Backend container
 │   ├── setup-admin.py            # Creates admin user account + admin_credentials.txt
+│   ├── scripts/                 # Lint/CI scripts (check_error_codes.py)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, templates, system tasks
-│   └── tests/                   # Backend tests (pytest, 941 tests, 75% coverage)
+│   └── tests/                   # Backend tests (pytest, 946 tests, 75% coverage)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # Reusable components (admin, challenge, ui, layout)
@@ -190,7 +192,7 @@ cd backend
 micromamba run -n lavbench_backend python -m pytest -n auto tests/ -v
 ```
 
-Includes 941 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
+Includes 946 tests covering routes, auth, evaluation (all 70+ metric paths), caching, rate limiting, models, submission runner, and evaluation engine edge cases.
 
 ### Sphinx Documentation
 
@@ -214,11 +216,8 @@ npm run test
 # Type checking (JSDoc annotations + component props)
 npm run check-types
 
-# Translation integrity (finds missing keys, symmetry, orphaned keys)
-python3 scripts/check_translations.py
-
-# Regenerate API types after backend spec changes
-python3 scripts/_annotate_types.py
+# Error code & translation parity check
+python ../backend/scripts/check_error_codes.py
 
 # Build Sphinx documentation
 pip install -r docs/requirements.txt
@@ -296,7 +295,7 @@ _(Note: The backward-compatible helper `make start-worker REDIS_URL=redis://... 
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
 | [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Challenge/task management, backups, worker health monitoring, user administration. |
 | [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 68 backend endpoints.                         |
-| [Translation Check](frontend/scripts/check_translations.py) | Developers      | Validates i18n keys across EN/BG, highlighting missing or orphaned entries.        |
+| [Error Code Linter](backend/scripts/check_error_codes.py) | Developers      | Validates `err()` usage and `api.ERR_*` translation parity across EN/BG.           |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |
 
 ---

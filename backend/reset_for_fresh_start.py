@@ -1,4 +1,3 @@
-import hashlib
 import os
 import secrets
 import sys
@@ -28,8 +27,7 @@ def reset_and_create_admin():
 
         admin_username = f"admin_{secrets.token_hex(4)}"
         raw_key = f"admin_key_{secrets.token_hex(24)}"
-        client_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-        hashed_key = generate_password_hash(client_hash, method="pbkdf2:sha256")
+        hashed_key = generate_password_hash(raw_key, method="pbkdf2:sha256")
 
         admin = User(
             username=admin_username,

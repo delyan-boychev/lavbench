@@ -1583,12 +1583,11 @@ class TestRouteLevelLogic:
         self.challenge.is_archived = True
         db.session.commit()
 
-        import hashlib
-
         from werkzeug.security import generate_password_hash
 
-        client_hash = hashlib.sha256(b"my-competitor-password").hexdigest()
-        self.competitor.password_hash = generate_password_hash(client_hash, method="pbkdf2:sha256")
+        self.competitor.password_hash = generate_password_hash(
+            "my-competitor-password", method="pbkdf2:sha256"
+        )
         db.session.commit()
 
         login_res = self.client.post(

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 import jwt
+from error_utils import err
 from flask import jsonify, request
 
 logger = logging.getLogger(__name__)
@@ -170,21 +171,10 @@ def login_required(f):
         token = _extract_token()
         user_data = verify_token(token)
         if not user_data:
-            return (
-                jsonify({"error": "Unauthorized access. Token is missing, expired, or invalid."}),
-                401,
-            )
+            return err("ERR_TOKEN_INVALID", 401)
         request.user = user_data
         if not verify_csrf_token():
-            return (
-                jsonify(
-                    {
-                        "error": "CSRF token missing or invalid.",
-                        "code": "ERR_CSRF_FAILED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_CSRF_FAILED", 403)
         return f(*args, **kwargs)
 
     return decorated
@@ -199,18 +189,14 @@ def role_required(allowed_roles):
             token = _extract_token()
             user_data = verify_token(token)
             if not user_data or user_data["role"] not in allowed_roles:
-                return jsonify({"error": f"Unauthorized. Requires role: {allowed_roles}"}), 403
+                return err(
+                    "ERR_ROLE_REQUIRED",
+                    403,
+                    message=f"Unauthorized. Requires role: {allowed_roles}",
+                )
             request.user = user_data
             if not verify_csrf_token():
-                return (
-                    jsonify(
-                        {
-                            "error": "CSRF token missing or invalid.",
-                            "code": "ERR_CSRF_FAILED",
-                        }
-                    ),
-                    403,
-                )
+                return err("ERR_CSRF_FAILED", 403)
             return f(*args, **kwargs)
 
         return decorated
@@ -246,15 +232,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                 """
                 current = r.eval(lua_script, 1, key, window_seconds)
                 if current > max_requests:
-                    return (
-                        jsonify(
-                            {
-                                "error": "Too many requests. Please slow down.",
-                                "code": "ERR_RATE_LIMITED",
-                            }
-                        ),
-                        429,
-                    )
+                    return err("ERR_RATE_LIMITED", 429)
             except Exception as e:
                 logger.debug("Rate limit Redis error (allowing request): %s", e)
                 # Redis down — allow request through
@@ -304,15 +282,7 @@ def csrf_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not verify_csrf_token():
-            return (
-                jsonify(
-                    {
-                        "error": "CSRF token missing or invalid.",
-                        "code": "ERR_CSRF_FAILED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_CSRF_FAILED", 403)
         return f(*args, **kwargs)
 
     return decorated
@@ -384,12 +354,7 @@ def jury_access_required(f):
             token = _extract_token()
             user_data = verify_token(token)
             if not user_data:
-                return (
-                    jsonify(
-                        {"error": "Unauthorized access. Token is missing, expired, or invalid."}
-                    ),
-                    401,
-                )
+                return err("ERR_TOKEN_INVALID", 401)
             request.user = user_data
 
         user_role = request.user.get("role")
@@ -424,15 +389,7 @@ def jury_access_required(f):
                 )
 
             if not challenge_id:
-                return (
-                    jsonify(
-                        {
-                            "error": "Access denied. Challenge context not found.",
-                            "code": "ERR_ACCESS_DENIED",
-                        }
-                    ),
-                    403,
-                )
+                return err("ERR_ACCESS_DENIED", 403)
 
             assigned = (
                 db.session.query(JuryChallenge)
@@ -441,15 +398,7 @@ def jury_access_required(f):
             )
 
             if not assigned:
-                return (
-                    jsonify(
-                        {
-                            "error": "Access denied. You are not assigned to this competition.",
-                            "code": "ERR_ACCESS_DENIED",
-                        }
-                    ),
-                    403,
-                )
+                return err("ERR_ACCESS_DENIED", 403)
 
         return f(*args, **kwargs)
 

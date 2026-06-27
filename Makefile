@@ -21,3 +21,10 @@ docs:           # Build Sphinx documentation
 	@$(MAKE) -C docs html
 
 dev: deploy-debug # Alias for deploy-debug
+
+check-error-codes:  # Check that all error responses include a machine-readable 'code' field
+	@python backend/scripts/check_error_codes.py
+
+lint: check-error-codes  # Run all lint checks
+	@cd backend && ruff format --check . && ruff check .
+	@cd frontend && npx tsc --noEmit

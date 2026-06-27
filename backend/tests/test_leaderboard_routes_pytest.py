@@ -435,7 +435,7 @@ class TestChallengeLeaderboardGetEndpoint:
         leaderboard = data["leaderboard"]
         assert leaderboard[0]["user"]["alias_id"] == "Bob"
         assert leaderboard[0]["rank"] == 1
-        assert leaderboard[0]["has_submitted"] is True
+        assert leaderboard[0]["has_submitted"] is False  # hidden in double-blind
         assert leaderboard[1]["user"]["alias_id"] == "Alice"
         assert leaderboard[1]["has_submitted"] is False
         assert leaderboard[2]["user"]["alias_id"] == "Charlie"

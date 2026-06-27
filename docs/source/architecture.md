@@ -91,6 +91,24 @@ Backend route docstrings (flasgger YAML, OpenAPI 3.0)
 
 Response types use `content: application/json: schema:` format. The `components.schemas` (User, Challenge, Task, Submission, Cell, Error) are defined in `app.py`'s Swagger template and referenced via `$ref: '#/components/schemas/...'`.
 
+## Error Response Standardization
+
+All API error responses use the `err()` helper from `error_utils.py`:
+
+```python
+err("ERR_INVALID_CREDENTIALS", 401)                           # uses default message
+err("ERR_FILE_TOO_LARGE", 400, message="Custom message here") # custom override
+```
+
+Response shape: `{"error": "<message>", "code": "<ERR_*>"}` (no `key` field). The frontend looks up translations by code via `t(\`api.\${data.code}\`, data.error)`.
+
+Every `ERR_*` code must be:
+1. Defined in `DEFAULT_ERROR_MESSAGES` dict in `backend/error_utils.py`
+2. Used by at least one `err()` call in the codebase
+3. Translated in both `en/translation.json` and `bg/translation.json` under the `api.ERR_*` namespace
+
+The script `backend/scripts/check_error_codes.py` enforces all three rules in CI.
+
 ## SSE Streaming
 
 7 endpoints use Server-Sent Events for real-time updates:

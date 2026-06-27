@@ -318,6 +318,7 @@ class User(db.Model):
         scores_finalized=False,
         current_user_id=None,
         challenge_cache=None,
+        jury_challenge_map=None,
     ):
         """
         Locks decrypted demographics for blind jury reviews.
@@ -390,11 +391,14 @@ class User(db.Model):
 
         jury_ch_ids = []
         if self.role == "jury":
-            with contextlib.suppress(Exception):
-                jury_ch_ids = [
-                    str(jc.challenge_id)
-                    for jc in JuryChallenge.query.filter_by(jury_id=self.id).all()
-                ]
+            if jury_challenge_map is not None:
+                jury_ch_ids = jury_challenge_map.get(self.id, [])
+            else:
+                with contextlib.suppress(Exception):
+                    jury_ch_ids = [
+                        str(jc.challenge_id)
+                        for jc in JuryChallenge.query.filter_by(jury_id=self.id).all()
+                    ]
 
         if not show_details:
             res = {

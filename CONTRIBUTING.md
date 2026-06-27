@@ -17,7 +17,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 2. **Run all tests**:
 
    ```bash
-   # Backend (pytest — 941 tests, requires micromamba env)
+   # Backend (pytest — 946 tests, requires micromamba env)
    cd backend && micromamba run -n lavbench_backend python -m pytest tests/ -v
 
    # Frontend (vitest — 363 tests)
@@ -30,7 +30,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    ruff format backend/ --config backend/pyproject.toml
    ruff check --fix backend/ --config backend/pyproject.toml
    cd frontend && npm run format
-
+   python backend/scripts/check_error_codes.py
    ```
 
 4. **Verify formatting and linting** — Run format checks before pushing:
@@ -38,28 +38,30 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    ruff format --check backend/ --config backend/pyproject.toml
    ruff check backend/ --config backend/pyproject.toml
    cd frontend && npm run format:check
+   python backend/scripts/check_error_codes.py
    ```
 5. **Verify type integrity** — `npm run check-types` must pass with 0 errors.
    ```bash
    cd frontend && npm run check-types
    ```
-6. **Check translations** — English and Bulgarian locale keys must be in sync:
-   ```bash
-   python3 frontend/scripts/check_translations.py
-   ```
-7. **Regenerate API types** if backend endpoints are modified:
+6. **Regenerate API types** if backend endpoints are modified:
    ```bash
    # Start the backend on port 5001, then run:
    cd frontend && npm run generate-api-types
-   python3 frontend/scripts/_annotate_types.py
    ```
-8. **Adhere to project patterns** — Use `@type` JSDoc annotations for API responses, maintain component prop defaults, and rely on `tsc --noEmit` for validation.
+7. **Check translation parity** — Every `ERR_*` code in the backend must have a matching `api.ERR_*` key in both locales. Run the error code linter (already covered in step 3/4):
+   ```bash
+   python backend/scripts/check_error_codes.py
+   ```
+8. **Adhere to project patterns** — Use the `err()` helper for error responses (never `jsonify({"error": ...})`), add `api.ERR_*` translation keys for new codes, and rely on `tsc --noEmit` for frontend validation.
 
 ## Code Conventions
 
 ### Backend (Python)
 
 - Formatted and linted with **Ruff** (configuration in `backend/pyproject.toml`, line‑length 100, rules matching the project’s standards)
+- Error responses must use the `err(code, status, message=...)` helper from `error_utils.py` — never `jsonify({"error": ...})` directly
+- Every `ERR_*` code must be defined in `DEFAULT_ERROR_MESSAGES` in `backend/error_utils.py` and referenced by at least one `err()` call
 - Tests in `backend/tests/`, one file per route module or service
 - Dev dependencies (pytest, pytest-mock, Faker, etc.) are in `dev-requirements.in` — compile with `pip-compile dev-requirements.in`
 - Use pytest fixtures from `backend/conftest.py` for common setups
@@ -80,6 +82,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 - Translation keys use dot-notation (e.g., `section.subsection.key`)
 - Keys map directly to the JSON structure in `public/locales/{en,bg}/translation.json`
 - Both English and Bulgarian locale files must always have matching keys
+- Backend error code translations live under `api.ERR_*` (not the legacy `error.ERR_*` namespace). When adding a new `ERR_*` code, add an `api.ERR_*` key to both locale files — the linter (`check_error_codes.py`) enforces parity
 
 ## Pre-commit Hooks
 
@@ -92,7 +95,7 @@ pre-commit install
 
 After that, `git commit` will run **Ruff format** and **Ruff check** (with safe fixes) for Python, and **Prettier** for JS/CSS/JSON automatically. If formatting or linting fails, the commit is blocked — run the format and fix commands (see step 3 above), stage the changes, and commit again.
 
-The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` jobs) on every push and PR.
+The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` jobs) on every push and PR. The error code linter (`check_error_codes.py`) runs as part of `backend-lint`.
 
 ## Frontend Type System
 

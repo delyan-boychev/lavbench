@@ -5,6 +5,7 @@ import zoneinfo
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, role_required
+from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, User, db, decrypt_field
 
@@ -269,22 +270,15 @@ def get_challenge(challenge_id):
         from auth_utils import check_competitor_access
 
         if not user or not check_competitor_access(user, challenge_id):
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
+            return err(
+                "ERR_NOT_REGISTERED",
                 403,
+                message="Access denied. You are not registered for this competition.",
             )
 
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge or challenge.is_archived:
-            return (
-                jsonify({"error": "Challenge not found.", "code": "ERR_CHALLENGE_NOT_FOUND"}),
-                404,
-            )
+            return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
 
     from cache_utils import get_cached, set_cached
 
@@ -296,15 +290,7 @@ def get_challenge(challenge_id):
         else:
             challenge = db.session.get(Challenge, challenge_id)
             if not challenge or challenge.is_archived:
-                return (
-                    jsonify(
-                        {
-                            "error": "Challenge not found.",
-                            "code": "ERR_CHALLENGE_NOT_FOUND",
-                        }
-                    ),
-                    404,
-                )
+                return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
             challenge_dict = challenge.to_dict()
             challenge_dict = filter_challenge_for_competitor(challenge_dict)
             set_cached(cache_key, challenge_dict, timeout=600)
@@ -383,70 +369,26 @@ def create_challenge():
         end_time = _to_utc(end_time, timezone)
 
     if not title:
-        return (
-            jsonify(
-                {
-                    "error": "Competition title is required.",
-                    "code": "ERR_TITLE_REQUIRED",
-                }
-            ),
-            400,
-        )
+        return err("ERR_TITLE_REQUIRED", 400, message="Competition title is required.")
 
     if not start_time or not end_time:
-        return (
-            jsonify(
-                {
-                    "error": "Competition start time and end time are required.",
-                    "code": "ERR_DATETIME_REQUIRED",
-                }
-            ),
+        return err(
+            "ERR_DATETIME_REQUIRED",
             400,
+            message="Competition start time and end time are required.",
         )
 
     if max_eval_requests is not None and max_eval_requests < 1:
-        return (
-            jsonify(
-                {
-                    "error": "Daily submissions limit must be at least 1.",
-                    "code": "ERR_INVALID_LIMITS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_LIMITS", 400, message="Daily submissions limit must be at least 1.")
 
     if ram_limit_mb is not None and ram_limit_mb < 128:
-        return (
-            jsonify(
-                {
-                    "error": "RAM limit must be at least 128 MB.",
-                    "code": "ERR_INVALID_LIMITS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_LIMITS", 400, message="RAM limit must be at least 128 MB.")
 
     if time_limit_sec is not None and time_limit_sec < 1:
-        return (
-            jsonify(
-                {
-                    "error": "Time limit must be at least 1 second.",
-                    "code": "ERR_INVALID_LIMITS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_LIMITS", 400, message="Time limit must be at least 1 second.")
 
     if end_time <= start_time:
-        return (
-            jsonify(
-                {
-                    "error": "End time must be after start time.",
-                    "code": "ERR_INVALID_DATES",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_DATES", 400, message="End time must be after start time.")
 
     challenge = Challenge(
         title=title,
@@ -641,41 +583,19 @@ def update_challenge(challenge_id):
     if max_eval_requests is not None:
         val = int(max_eval_requests)
         if val < 1:
-            return (
-                jsonify(
-                    {
-                        "error": "Daily submissions limit must be at least 1.",
-                        "code": "ERR_INVALID_LIMITS",
-                    }
-                ),
-                400,
+            return err(
+                "ERR_INVALID_LIMITS", 400, message="Daily submissions limit must be at least 1."
             )
         challenge.max_eval_requests = val
     if ram_limit_mb is not None:
         val = int(ram_limit_mb)
         if val < 128:
-            return (
-                jsonify(
-                    {
-                        "error": "RAM limit must be at least 128 MB.",
-                        "code": "ERR_INVALID_LIMITS",
-                    }
-                ),
-                400,
-            )
+            return err("ERR_INVALID_LIMITS", 400, message="RAM limit must be at least 128 MB.")
         challenge.ram_limit_mb = val
     if time_limit_sec is not None:
         val = int(time_limit_sec)
         if val < 1:
-            return (
-                jsonify(
-                    {
-                        "error": "Time limit must be at least 1 second.",
-                        "code": "ERR_INVALID_LIMITS",
-                    }
-                ),
-                400,
-            )
+            return err("ERR_INVALID_LIMITS", 400, message="Time limit must be at least 1 second.")
         challenge.time_limit_sec = val
     if gpu_required is not None:
         challenge.gpu_required = bool(gpu_required)
@@ -684,32 +604,16 @@ def update_challenge(challenge_id):
     if "start_time" in data:
         st = parse_datetime(data.get("start_time"))
         if not st:
-            return (
-                jsonify(
-                    {
-                        "error": "Start time is required.",
-                        "code": "ERR_DATETIME_REQUIRED",
-                    }
-                ),
-                400,
-            )
+            return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
         challenge.start_time = _to_utc(st, timezone)
     if "end_time" in data:
         et = parse_datetime(data.get("end_time"))
         if not et:
-            return jsonify({"error": "End time is required.", "code": "ERR_DATETIME_REQUIRED"}), 400
+            return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
         challenge.end_time = _to_utc(et, timezone)
 
     if challenge.end_time <= challenge.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "End time must be after start time.",
-                    "code": "ERR_INVALID_DATES",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_DATES", 400, message="End time must be after start time.")
 
     if "is_frozen" in data:
         challenge.is_frozen = bool(data.get("is_frozen"))
@@ -846,38 +750,20 @@ def finalize_challenge(challenge_id):
     """
     challenge = db.get_or_404(Challenge, challenge_id)
     if challenge.scores_finalized:
-        return (
-            jsonify(
-                {
-                    "error": "Competition is already finalized.",
-                    "code": "ERR_ALREADY_FINALIZED",
-                }
-            ),
-            400,
-        )
+        return err("ERR_ALREADY_FINALIZED", 400, message="Competition is already finalized.")
 
     if not challenge.is_ended:
-        return (
-            jsonify(
-                {
-                    "error": "Cannot finalize the competition before its end time.",
-                    "code": "ERR_COMPETITION_NOT_ENDED",
-                }
-            ),
+        return err(
+            "ERR_COMPETITION_NOT_ENDED",
             400,
+            message="Cannot finalize the competition before its end time.",
         )
 
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
     if not competitors:
-        return (
-            jsonify(
-                {
-                    "error": "Cannot finalize a competition with no competitors.",
-                    "code": "ERR_NO_COMPETITORS",
-                }
-            ),
-            400,
+        return err(
+            "ERR_NO_COMPETITORS", 400, message="Cannot finalize a competition with no competitors."
         )
     tasks = challenge.tasks
 
@@ -900,19 +786,15 @@ def finalize_challenge(challenge_id):
             if total_subs > 0:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
-                    return (
-                        jsonify(
-                            {
-                                "error": (
-                                    f"Cannot finalize. Competitor '{comp.username}'"
-                                    f" (ID: {comp.id}) is "
-                                    f"missing manual points for"
-                                    f" task '{task.title}' (ID: {task.id})."
-                                ),
-                                "code": "ERR_MISSING_MANUAL_POINTS",
-                            }
-                        ),
+                    return err(
+                        "ERR_MISSING_MANUAL_POINTS",
                         400,
+                        message=(
+                            f"Cannot finalize. Competitor '{comp.username}'"
+                            f" (ID: {comp.id}) is "
+                            f"missing manual points for"
+                            f" task '{task.title}' (ID: {task.id})."
+                        ),
                     )
 
     data = request.get_json() or {}
@@ -953,7 +835,11 @@ def toggle_reveal_results(challenge_id):
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
-        return jsonify({"error": "Must finalize scores before revealing results."}), 400
+        return err(
+            "ERR_SCORES_NOT_FINALIZED",
+            400,
+            message="Must finalize scores before revealing results.",
+        )
     data = request.get_json() or {}
     challenge.reveal_results = bool(data.get("reveal_results", True))
     db.session.commit()
@@ -1050,56 +936,36 @@ def create_stage(challenge_id):
     end_time_str = data.get("end_time")
 
     if not title or not start_time_str or not end_time_str:
-        return (
-            jsonify(
-                {
-                    "error": "Missing title, start_time or end_time.",
-                    "code": "ERR_MISSING_STAGE_FIELDS",
-                }
-            ),
-            400,
+        return err(
+            "ERR_MISSING_STAGE_FIELDS", 400, message="Missing title, start_time or end_time."
         )
 
     start_time = parse_datetime(start_time_str)
     end_time = parse_datetime(end_time_str)
 
     if not start_time or not end_time:
-        return jsonify({"error": "Invalid date format.", "code": "ERR_INVALID_DATE_FORMAT"}), 400
+        return err("ERR_INVALID_DATE_FORMAT", 400, message="Invalid date format.")
 
     start_time = _to_utc(start_time, challenge.timezone or "UTC")
     end_time = _to_utc(end_time, challenge.timezone or "UTC")
 
     if end_time <= start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage end time must be after start time.",
-                    "code": "ERR_INVALID_STAGE_DATES",
-                }
-            ),
-            400,
+        return err(
+            "ERR_INVALID_STAGE_DATES", 400, message="Stage end time must be after start time."
         )
 
     if challenge.start_time and start_time < challenge.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage start time must be within the competition timeframe.",
-                    "code": "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-                }
-            ),
+        return err(
+            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
+            message="Stage start time must be within the competition timeframe.",
         )
 
     if challenge.end_time and end_time > challenge.end_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage end time must be within the competition timeframe.",
-                    "code": "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-                }
-            ),
+        return err(
+            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
+            message="Stage end time must be within the competition timeframe.",
         )
 
     if not stage_number:
@@ -1198,36 +1064,22 @@ def update_stage(challenge_id, stage_id):
         stage.is_finalized = bool(data["is_finalized"])
 
     if stage.end_time <= stage.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage end time must be after start time.",
-                    "code": "ERR_INVALID_STAGE_DATES",
-                }
-            ),
-            400,
+        return err(
+            "ERR_INVALID_STAGE_DATES", 400, message="Stage end time must be after start time."
         )
 
     if challenge.start_time and stage.start_time < challenge.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage start time must be within the competition timeframe.",
-                    "code": "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-                }
-            ),
+        return err(
+            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
+            message="Stage start time must be within the competition timeframe.",
         )
 
     if challenge.end_time and stage.end_time > challenge.end_time:
-        return (
-            jsonify(
-                {
-                    "error": "Stage end time must be within the competition timeframe.",
-                    "code": "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-                }
-            ),
+        return err(
+            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
+            message="Stage end time must be within the competition timeframe.",
         )
 
     db.session.commit()
@@ -1261,14 +1113,8 @@ def toggle_stage_reveal_results(challenge_id, stage_id):
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if not stage.is_finalized:
-        return (
-            jsonify(
-                {
-                    "error": "Stage must be finalized before toggling reveal.",
-                    "code": "ERR_NOT_FINALIZED",
-                }
-            ),
-            400,
+        return err(
+            "ERR_NOT_FINALIZED", 400, message="Stage must be finalized before toggling reveal."
         )
     data = request.get_json() or {}
     stage.reveal_results = bool(data.get("reveal_results", not stage.reveal_results))
@@ -1379,40 +1225,20 @@ def finalize_stage(challenge_id, stage_id):
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if stage.is_finalized:
-        return (
-            jsonify(
-                {
-                    "error": "Stage is already finalized.",
-                    "code": "ERR_ALREADY_FINALIZED",
-                }
-            ),
-            400,
-        )
+        return err("ERR_ALREADY_FINALIZED", 400, message="Stage is already finalized.")
 
     now_local = challenge._now_local()
     if now_local < stage.end_time:
-        return (
-            jsonify(
-                {
-                    "error": "Cannot finalize the stage before its end time.",
-                    "code": "ERR_STAGE_NOT_ENDED",
-                }
-            ),
-            400,
+        return err(
+            "ERR_STAGE_NOT_ENDED", 400, message="Cannot finalize the stage before its end time."
         )
     data = request.json or {}
 
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
     if not competitors:
-        return (
-            jsonify(
-                {
-                    "error": "Cannot finalize a stage with no competitors.",
-                    "code": "ERR_NO_COMPETITORS",
-                }
-            ),
-            400,
+        return err(
+            "ERR_NO_COMPETITORS", 400, message="Cannot finalize a stage with no competitors."
         )
     from models import Task
 
@@ -1445,17 +1271,13 @@ def finalize_stage(challenge_id, stage_id):
                             logger.warning(
                                 ("Failed to decrypt competitor name for user %s: %s"), comp.id, e
                             )
-                    return (
-                        jsonify(
-                            {
-                                "error": (
-                                    f"Cannot finalize. Competitor '{name_str}' is "
-                                    f"missing manual points for task '{task.title}'."
-                                ),
-                                "code": "ERR_MISSING_MANUAL_POINTS",
-                            }
-                        ),
+                    return err(
+                        "ERR_MISSING_MANUAL_POINTS",
                         400,
+                        message=(
+                            f"Cannot finalize. Competitor '{name_str}' is "
+                            f"missing manual points for task '{task.title}'."
+                        ),
                     )
 
     stage.is_finalized = True
@@ -1528,15 +1350,7 @@ def create_test_stage(challenge_id):
     end_time = parse_datetime(data.get("end_time"))
 
     if not start_time or not end_time:
-        return (
-            jsonify(
-                {
-                    "error": "start_time and end_time are required.",
-                    "code": "ERR_MISSING_DATES",
-                }
-            ),
-            400,
-        )
+        return err("ERR_MISSING_DATES", 400, message="start_time and end_time are required.")
 
     if start_time.tzinfo is not None:
         start_time = start_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
@@ -1546,53 +1360,35 @@ def create_test_stage(challenge_id):
     now = datetime.utcnow()
 
     if now >= challenge.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Cannot create a test stage after the competition has started.",
-                    "code": "ERR_COMPETITION_STARTED",
-                }
-            ),
+        return err(
+            "ERR_COMPETITION_STARTED",
             400,
+            message="Cannot create a test stage after the competition has started.",
         )
 
     if end_time > challenge.start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Test stage must end before the competition starts.",
-                    "code": "ERR_TEST_STAGE_AFTER_COMP_START",
-                }
-            ),
+        return err(
+            "ERR_TEST_STAGE_AFTER_COMP_START",
             400,
+            message="Test stage must end before the competition starts.",
         )
 
     if end_time <= start_time:
-        return (
-            jsonify(
-                {
-                    "error": "Test stage end time must be after start time.",
-                    "code": "ERR_INVALID_STAGE_DATES",
-                }
-            ),
-            400,
+        return err(
+            "ERR_INVALID_STAGE_DATES", 400, message="Test stage end time must be after start time."
         )
 
     if any(s.is_test for s in challenge.stages):
-        return (
-            jsonify(
-                {
-                    "error": "A test stage already exists for this competition.",
-                    "code": "ERR_TEST_STAGE_EXISTS",
-                }
-            ),
+        return err(
+            "ERR_TEST_STAGE_EXISTS",
             400,
+            message="A test stage already exists for this competition.",
         )
 
     try:
         stage = _create_test_stage_for_challenge(challenge, start_time, end_time)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return err("ERR_INVALID_DATE", 400, message=str(e))
 
     from cache_utils import invalidate_challenge_cache
 
@@ -1739,22 +1535,19 @@ def import_challenge():
     from services.file_validation import validate_extension
 
     if not request.content_type or "multipart/form-data" not in request.content_type:
-        return (
-            jsonify({"error": "Only ZIP files uploaded as multipart/form-data are supported."}),
-            400,
-        )
+        return err("ERR_INVALID_UPLOAD_FORMAT", 400)
 
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded."}), 400
+        return err("ERR_FILE_REQUIRED", 400)
 
     f = request.files["file"]
     valid_ext, ext_err = validate_extension(f.filename, {".zip"})
     if not valid_ext:
-        return jsonify({"error": ext_err}), 400
+        return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
     raw = f.read()
     if not raw:
-        return jsonify({"error": "No data provided."}), 400
+        return err("ERR_NO_DATA_PROVIDED", 400)
 
     import_data = None
     zip_ref = None
@@ -1769,23 +1562,31 @@ def import_challenge():
             try:
                 zip_ref = zipfile.ZipFile(zip_buffer, "r")
                 if "challenge.json" not in zip_ref.namelist():
-                    return jsonify({"error": "challenge.json not found in the ZIP archive."}), 400
+                    return err(
+                        "ERR_INVALID_ARCHIVE",
+                        400,
+                        message="challenge.json not found in the ZIP archive.",
+                    )
                 challenge_json_content = zip_ref.read("challenge.json").decode("utf-8")
                 import_data = json.loads(challenge_json_content)
             except Exception as e:
-                return jsonify({"error": f"Invalid or corrupt ZIP archive: {str(e)}"}), 400
+                return err(
+                    "ERR_INVALID_ARCHIVE", 400, message=f"Invalid or corrupt ZIP archive: {str(e)}"
+                )
         else:
-            return jsonify({"error": "Uploaded file is not a valid ZIP archive."}), 400
+            return err(
+                "ERR_INVALID_ARCHIVE", 400, message="Uploaded file is not a valid ZIP archive."
+            )
 
         if not isinstance(import_data, dict):
-            return jsonify({"error": "Import data must be a JSON object."}), 400
+            return err("ERR_INVALID_IMPORT_DATA", 400)
 
         from services.challenge_service import import_challenge_from_dict
 
         try:
             challenge = import_challenge_from_dict(import_data, zip_ref=zip_ref)
         except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+            return err("ERR_INVALID_DATE", 400, message=str(e))
 
     finally:
         if zip_ref:

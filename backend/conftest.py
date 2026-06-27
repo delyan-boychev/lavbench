@@ -4,7 +4,6 @@ Sets required environment variables before any application code is imported so
 that config.py and models.py do not crash at module load time.
 """
 
-import hashlib
 import os
 import sys
 import uuid
@@ -171,8 +170,7 @@ def create_user(db_session):
     ):
         if alias_id is None:
             alias_id = f"{role}-{username}-{uuid.uuid4().hex[:6]}"
-        client_hash = hashlib.sha256(password.encode()).hexdigest()
-        pw_hash = generate_password_hash(client_hash, method="pbkdf2:sha256")
+        pw_hash = generate_password_hash(password, method="pbkdf2:sha256")
         user = User(
             username=username,
             password_hash=pw_hash,

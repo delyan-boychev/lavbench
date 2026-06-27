@@ -1,4 +1,3 @@
-import hashlib
 from datetime import datetime, timedelta
 
 import pytest
@@ -55,8 +54,7 @@ class TestAuthLogin:
         db.session.commit()
 
     def _create_user(self, username, password, role="competitor", alias_id=None, challenge_id=None):
-        client_hash = hashlib.sha256(password.encode()).hexdigest()
-        pw_hash = generate_password_hash(client_hash, method="pbkdf2:sha256")
+        pw_hash = generate_password_hash(password, method="pbkdf2:sha256")
         user = User(
             username=username,
             password_hash=pw_hash,

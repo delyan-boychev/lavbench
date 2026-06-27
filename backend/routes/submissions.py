@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
+from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from sqlalchemy.orm import joinedload
@@ -64,51 +65,27 @@ def parse_notebook(challenge_id):
         from auth_utils import check_competitor_access
 
         if not user or not check_competitor_access(user, challenge_id):
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_NOT_REGISTERED", 403)
 
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded.", "code": "ERR_NO_FILE_UPLOADED"}), 400
+        return err("ERR_NO_FILE_UPLOADED", 400)
     file = request.files["file"]
 
     from services.file_validation import validate_extension, validate_notebook_content
 
     valid_ext, ext_err = validate_extension(file.filename, {".ipynb"})
     if not valid_ext:
-        return jsonify({"error": ext_err, "code": "ERR_INVALID_FILE_TYPE"}), 400
+        return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
     # Enforce strict 5MB file size limit to prevent memory exhaustion
     limit = 5 * 1024 * 1024
     content = file.read(limit + 1)
     if len(content) > limit:
-        return (
-            jsonify(
-                {
-                    "error": "File size exceeds the 5MB limit.",
-                    "code": "ERR_FILE_TOO_LARGE",
-                }
-            ),
-            413,
-        )
+        return err("ERR_FILE_TOO_LARGE", 413)
 
     valid_content, content_err, notebook = validate_notebook_content(content)
     if not valid_content:
-        return (
-            jsonify(
-                {
-                    "error": f"Invalid notebook file: {content_err}",
-                    "code": "ERR_PARSING_FAILED",
-                }
-            ),
-            400,
-        )
+        return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {content_err}")
 
     cells = []
     for idx, cell in enumerate(notebook.get("cells", [])):
@@ -187,61 +164,19 @@ def submit_code(challenge_id):
         from auth_utils import check_competitor_access
 
         if not user or not check_competitor_access(user, challenge_id):
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_NOT_REGISTERED", 403)
 
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.is_active:
-        return (
-            jsonify(
-                {
-                    "error": "This challenge is currently inactive.",
-                    "code": "ERR_CHALLENGE_INACTIVE",
-                }
-            ),
-            400,
-        )
+        return err("ERR_CHALLENGE_INACTIVE", 400)
     if challenge.is_archived:
-        return (
-            jsonify(
-                {
-                    "error": "This challenge has been archived and no longer accepts submissions.",
-                    "code": "ERR_CHALLENGE_ARCHIVED",
-                }
-            ),
-            400,
-        )
+        return err("ERR_CHALLENGE_ARCHIVED", 400)
 
     if challenge.is_frozen:
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "This competition is currently frozen. Submissions are temporarily blocked."
-                    ),
-                    "code": "ERR_COMPETITION_FROZEN",
-                }
-            ),
-            403,
-        )
+        return err("ERR_COMPETITION_FROZEN", 403)
 
     if challenge.scores_finalized:
-        return (
-            jsonify(
-                {
-                    "error": "Submissions are disabled for finalized competitions.",
-                    "code": "ERR_COMPETITION_FINALIZED",
-                }
-            ),
-            403,
-        )
+        return err("ERR_COMPETITION_FINALIZED", 403)
 
     data = request.json or {}
     task_id = data.get("task_id")
@@ -266,80 +201,38 @@ def submit_code(challenge_id):
             stage = db.session.get(Stage, task.stage_id)
             if stage:
                 if now < stage.start_time:
-                    return (
-                        jsonify(
-                            {
-                                "error": f"The stage '{stage.title}' has not started yet.",
-                                "code": "ERR_STAGE_NOT_STARTED",
-                            }
-                        ),
+                    return err(
+                        "ERR_STAGE_NOT_STARTED",
                         400,
+                        message=f"The stage '{stage.title}' has not started yet.",
                     )
                 if stage.end_time and now > (stage.end_time + timedelta(seconds=grace_seconds)):
-                    return (
-                        jsonify(
-                            {
-                                "error": f"The deadline for the stage '{stage.title}' has passed.",
-                                "code": "ERR_STAGE_DEADLINE_PASSED",
-                            }
-                        ),
+                    return err(
+                        "ERR_STAGE_DEADLINE_PASSED",
                         400,
+                        message=f"The deadline for the stage '{stage.title}' has passed.",
                     )
         else:
             if challenge.start_time and now < challenge.start_time:
-                return (
-                    jsonify(
-                        {
-                            "error": "This competition has not started yet.",
-                            "code": "ERR_COMPETITION_NOT_STARTED",
-                        }
-                    ),
-                    400,
-                )
+                return err("ERR_COMPETITION_NOT_STARTED", 400)
             if challenge.end_time and now > (challenge.end_time + timedelta(seconds=grace_seconds)):
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "This competition has ended and no longer accepts submissions."
-                            ),
-                            "code": "ERR_COMPETITION_ENDED",
-                        }
-                    ),
-                    400,
-                )
+                return err("ERR_COMPETITION_ENDED", 400)
 
     if not selected_cells or not isinstance(selected_cells, list):
-        return (
-            jsonify(
-                {
-                    "error": "selected_cells list is required.",
-                    "code": "ERR_MISSING_SELECTED_CELLS",
-                }
-            ),
-            400,
-        )
+        return err("ERR_MISSING_SELECTED_CELLS", 400)
 
     if not task_id:
-        return jsonify({"error": "task_id is required.", "code": "ERR_MISSING_TASK_ID"}), 400
+        return err("ERR_MISSING_TASK_ID", 400)
 
     if not task or str(task.challenge_id) != str(challenge_id):
-        return (
-            jsonify(
-                {
-                    "error": "Invalid task_id for this challenge.",
-                    "code": "ERR_INVALID_TASK_ID",
-                }
-            ),
-            400,
-        )
+        return err("ERR_INVALID_TASK_ID", 400)
 
     # AST and general rule validation
     from services.submission_service import check_execution_rules
 
     passed, err_msg = check_execution_rules(task, selected_cells)
     if not passed:
-        return jsonify({"error": err_msg, "code": "ERR_AST_RULE_FAILED"}), 400
+        return err("ERR_AST_RULE_FAILED", 400, message=err_msg)
 
     # Atomic rate-limited submission creation via Redis lock
     from cache_utils import cache_lock
@@ -348,15 +241,7 @@ def submit_code(challenge_id):
 
     with cache_lock(lock_key, ttl=10) as acquired:
         if not acquired:
-            return (
-                jsonify(
-                    {
-                        "error": "Another submission is being processed. Please wait.",
-                        "code": "ERR_SUBMIT_LOCKED",
-                    }
-                ),
-                429,
-            )
+            return err("ERR_SUBMIT_LOCKED", 429)
 
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
@@ -366,17 +251,12 @@ def submit_code(challenge_id):
         ).count()
 
         if submission_count >= challenge.max_eval_requests:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            f"Daily limit reached. You can only make "
-                            f"{challenge.max_eval_requests} submissions per day."
-                        ),
-                        "code": "ERR_DAILY_LIMIT_REACHED",
-                    }
-                ),
+            return err(
+                "ERR_DAILY_LIMIT_REACHED",
                 429,
+                message=(
+                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
+                ),
             )
 
         # Create submission
@@ -464,15 +344,7 @@ def submit_code(challenge_id):
         submission.detailed_status = "failed"
         submission.logs = f"Submission queue unavailable: {e}"
         db.session.commit()
-        return (
-            jsonify(
-                {
-                    "error": "Submission queue is temporarily unavailable. Please try again.",
-                    "submission_id": submission.id,
-                }
-            ),
-            503,
-        )
+        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
 
     return (
         jsonify(
@@ -540,29 +412,10 @@ def get_submissions(challenge_id):
         from auth_utils import check_competitor_access
 
         if not user or not check_competitor_access(user, challenge_id):
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You are not registered for this competition.",
-                        "code": "ERR_NOT_REGISTERED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_NOT_REGISTERED", 403)
 
         if challenge.end_time and datetime.utcnow() >= challenge.end_time:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Access denied. Submissions are "
-                            "locked because the competition has ended."
-                        ),
-                        "code": "ERR_SUBMISSIONS_LOCKED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         # Check ended stages
 
@@ -652,30 +505,11 @@ def get_submission_detail(submission_id):
 
     if user_role == "competitor":
         if submission.user_id != user_id:
-            return (
-                jsonify(
-                    {
-                        "error": "Access denied. You can only view your own submissions.",
-                        "code": "ERR_NOT_OWNER",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_NOT_FOUND", 404)
 
         challenge = db.session.get(Challenge, submission.challenge_id)
         if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Access denied. Submissions are "
-                            "locked because the competition has ended."
-                        ),
-                        "code": "ERR_SUBMISSIONS_LOCKED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         if submission.task_id:
             task = db.session.get(Task, submission.task_id)
@@ -684,18 +518,7 @@ def get_submission_detail(submission_id):
 
                 stage = db.session.get(Stage, task.stage_id)
                 if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
-                    return (
-                        jsonify(
-                            {
-                                "error": (
-                                    "Access denied. Submissions are "
-                                    "locked because the stage has ended."
-                                ),
-                                "code": "ERR_SUBMISSIONS_LOCKED",
-                            }
-                        ),
-                        403,
-                    )
+                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     return jsonify(submission.to_dict(view_role=user_role, current_user_id=user_id))
 
@@ -754,29 +577,13 @@ def select_final_submission(submission_id):
 
     # Only competitor owner or admin/jury can set it
     if user_role == "competitor" and submission.user_id != user_id:
-        return (
-            jsonify(
-                {
-                    "error": "Access denied. You do not own this submission.",
-                    "code": "ERR_NOT_OWNER",
-                }
-            ),
-            403,
-        )
+        return err("ERR_NOT_FOUND", 404)
 
     # Enforce stage select window for competitors
     if user_role == "competitor":
         challenge = db.session.get(Challenge, submission.challenge_id)
         if challenge and challenge.scores_finalized:
-            return (
-                jsonify(
-                    {
-                        "error": "Cannot change final selection for a finalized competition.",
-                        "code": "ERR_COMPETITION_FINALIZED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_COMPETITION_FINALIZED", 403)
 
         task = db.session.get(Task, submission.task_id)
         if task and task.stage_id:
@@ -786,17 +593,7 @@ def select_final_submission(submission_id):
             if stage:
                 now = datetime.utcnow()
                 if submission.created_at > stage.end_time:
-                    return (
-                        jsonify(
-                            {
-                                "error": (
-                                    "Cannot select a submission created after the stage deadline."
-                                ),
-                                "code": "ERR_SUBMISSION_LATE",
-                            }
-                        ),
-                        400,
-                    )
+                    return err("ERR_SUBMISSION_LATE", 400)
 
                 from datetime import timedelta
 
@@ -817,15 +614,7 @@ def select_final_submission(submission_id):
                             t_final_select = t_select
 
                 if now > t_final_select:
-                    return (
-                        jsonify(
-                            {
-                                "error": "The final selection window for this stage has closed.",
-                                "code": "ERR_SELECTION_WINDOW_CLOSED",
-                            }
-                        ),
-                        400,
-                    )
+                    return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
     # Atomically set final selection: lock all submissions for this user+task
     locked_subs = (
@@ -867,26 +656,15 @@ def stream_submission_logs(submission_id):
 
     submission = db.session.get(Submission, submission_id)
     if not submission:
-        return jsonify({"error": "Submission not found.", "code": "ERR_NOT_FOUND"}), 404
+        return err("ERR_NOT_FOUND", 404)
 
     if user_role == "competitor":
         if submission.user_id != user_id:
-            return jsonify({"error": "Access denied.", "code": "ERR_ACCESS_DENIED"}), 403
+            return err("ERR_ACCESS_DENIED", 403)
 
         challenge = db.session.get(Challenge, submission.challenge_id)
         if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "Access denied. Submissions are "
-                            "locked because the competition has ended."
-                        ),
-                        "code": "ERR_SUBMISSIONS_LOCKED",
-                    }
-                ),
-                403,
-            )
+            return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         if submission.task_id:
             task = db.session.get(Task, submission.task_id)
@@ -895,18 +673,7 @@ def stream_submission_logs(submission_id):
 
                 stage = db.session.get(Stage, task.stage_id)
                 if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
-                    return (
-                        jsonify(
-                            {
-                                "error": (
-                                    "Access denied. Submissions are "
-                                    "locked because the stage has ended."
-                                ),
-                                "code": "ERR_SUBMISSIONS_LOCKED",
-                            }
-                        ),
-                        403,
-                    )
+                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     def event_generator():
         from cache_utils import get_redis_client
@@ -1072,7 +839,7 @@ def download_competitor_submission(challenge_id, task_id, user_id):
             best_sub = subs_sorted[0]
 
     if not best_sub:
-        return jsonify({"error": "No completed submissions found for this user/task."}), 404
+        return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
 
     try:
         cells_data = (

@@ -1,4 +1,3 @@
-import hashlib
 import os
 import secrets
 
@@ -28,11 +27,8 @@ def generate_master_key():
         # Generate cryptographically secure random master key
         raw_key = f"admin_key_{secrets.token_hex(24)}"
 
-        # Compute client-side SHA-256 hash representation
-        client_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
-        # Compute backend salted hash of client-side hash
-        hashed_key = generate_password_hash(client_hash, method="pbkdf2:sha256")
+        # Compute direct PBKDF2 hash of the raw key
+        hashed_key = generate_password_hash(raw_key, method="pbkdf2:sha256")
 
         # Remove any previous admin profiles to avoid credential residue
         User.query.filter_by(role="admin").delete()
