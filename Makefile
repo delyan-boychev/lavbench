@@ -1,40 +1,27 @@
-.PHONY: help setup setup-worker dev deploy-docker deploy-docker-fast deploy-debug \
-        start-worker worker worker-docker build-worker edit edit-worker \
-        docs check-error-codes lint setup-admin
+.PHONY: help setup-server setup-worker deploy-server deploy-worker dev \
+        build-worker generate-keys setup-admin docs check-error-codes lint
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?# "}; {printf "  \033[1;34m%-20s\033[0m %s\n", $$1, $$2}'
 
-setup:          # First-time setup: prereqs, micromamba env, keys, deps
+setup-server:   # Server: first-time setup (prereqs, micromamba, keys, deps)
 	@scripts/setup.sh server
 
-setup-worker:   # Worker setup: check prereqs (Docker only)
-	@scripts/setup.sh worker
+setup-worker:   # Worker: first-run interactive setup (micromamba or Docker) + start
+	@scripts/setup.sh worker && scripts/start-worker.sh
 
-dev: deploy-debug # Alias for deploy-debug
-
-deploy-docker:  # Full Docker Compose deployment (build + start)
+deploy-server:  # Deploy server with Docker Compose (build + start)
 	@scripts/deploy-docker.sh
 
-deploy-docker-fast:  # Docker Compose deployment (skip rebuild)
+deploy-server-fast:  # Deploy server, skip rebuild
 	@scripts/deploy-docker.sh --skip-build
 
-deploy-debug:   # Local debug mode (micromamba + Flask + Celery + frontend)
-	@scripts/deploy-debug.sh
-
-start-worker:   # Start a worker via micromamba (must pass REDIS_URL)
-	@if [ -z "$(REDIS_URL)" ]; then \
-		echo "Usage: make start-worker REDIS_URL=redis://... [GPU_ID=0]"; \
-		exit 1; \
-	fi
-	@scripts/start-worker.sh "$(REDIS_URL)" "$(GPU_ID)"
-
-worker:         # Start a worker (interactive first-run, then uses saved config)
+deploy-worker:  # Start worker from saved config (no prompts)
 	@scripts/start-worker.sh
 
-worker-docker:  # Start a remote Celery worker via Docker (reads worker.env)
-	@scripts/start-worker.sh --docker
+dev:            # Local debug mode (micromamba + Flask + Celery + frontend)
+	@scripts/deploy-debug.sh
 
 build-worker:   # Build the minimal worker Docker image
 	docker build -t lavbench-worker -f backend/Dockerfile.worker backend/
@@ -42,8 +29,13 @@ build-worker:   # Build the minimal worker Docker image
 generate-keys:  # Re-generate missing security keys
 	@scripts/generate-keys.sh
 
-setup-admin:    # Create an admin user
-	python backend/setup-admin.py
+setup-admin:    # Create an admin user (works with and without Docker)
+	@if docker compose ps backend 2>/dev/null | grep -q "Up"; then \
+		docker compose exec backend python3 /app/setup-admin.py; \
+		docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt 2>/dev/null || true; \
+	else \
+		python backend/setup-admin.py; \
+	fi
 
 docs:           # Build Sphinx documentation
 	@$(MAKE) -C docs html

@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
 FROM python:3.12-slim
@@ -22,13 +22,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /usr/local /usr/local
 
 COPY --chown=nobody:nogroup . .
 
-USER nobody
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV HOME=/app
 
 EXPOSE 5001
 
-CMD ["gunicorn", "-k", "gevent", "--worker-connections", "1000", "-w", "4", "--timeout", "300", "--graceful-timeout", "30", "-b", "0.0.0.0:5001", "app:app"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "-k", "gevent", "--worker-connections", "1000", "-w", "4", "--timeout", "300", "--graceful-timeout", "30", "--pid", "/app/run/gunicorn.pid", "-b", "0.0.0.0:5001", "app:app"]

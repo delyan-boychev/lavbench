@@ -1,4 +1,3 @@
-import os
 import secrets
 
 from app import create_app
@@ -45,10 +44,7 @@ def generate_master_key():
         db.session.commit()
 
         # Save credentials to a persistent text file in the workspace
-        creds_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "admin_credentials.txt",
-        )
+        creds_path = "/app/admin_credentials.txt"
         try:
             with open(creds_path, "w") as f:
                 f.write("==================================================\n")

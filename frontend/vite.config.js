@@ -9,7 +9,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
+          if (id.includes('node_modules') && !id.includes('prismjs')) {
             if (
               id.includes('react-dom') ||
               id.includes('react-router-dom') ||
@@ -20,7 +20,6 @@ export default defineConfig({
               return 'vendor-react';
             }
             if (
-              id.includes('prismjs') ||
               id.includes('react-markdown') ||
               id.includes('remark-gfm') ||
               id.includes('micromark') ||

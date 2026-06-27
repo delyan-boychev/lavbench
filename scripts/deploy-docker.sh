@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# scripts/deploy-docker.sh — Deploy LavBench with Docker Compose.
+# scripts/deploy-docker.sh — Deploy LavBench server with Docker Compose.
+# Called by: make deploy-server
 set -euo pipefail
 
 SKIP_BUILD=false
@@ -33,29 +34,29 @@ echo "  ✔ Docker daemon running"
 
 # ── Preflight: .env exists with required vars ──────────────────────
 if [ ! -f ".env" ]; then
-  echo "  [ERROR] .env not found. Run 'make setup' first." >&2
+  echo "  [ERROR] .env not found. Run 'make server' first." >&2
   exit 1
 fi
 REQUIRED_VARS=("SECRET_KEY" "POSTGRES_PASSWORD" "REDIS_PASSWORD" "WORKER_PUBLIC_KEY")
 for var in "${REQUIRED_VARS[@]}"; do
   val=$(grep "^${var}=" .env 2>/dev/null | tail -1 | cut -d= -f2-)
   if [ -z "$val" ]; then
-    echo "  [ERROR] ${var} is not set in .env. Run 'make setup' first." >&2
+    echo "  [ERROR] ${var} is not set in .env. Run 'make server' first." >&2
     exit 1
   fi
 done
 echo "  ✔ .env configured (all required keys present)"
 echo ""
 
-# ── Unset localhost URLs so docker-compose defaults kick in ────────
-# docker-compose.yml uses service names (redis, db) when .env vars are absent
-unset CELERY_BROKER_URL
-unset CELERY_RESULT_BACKEND
-unset DATABASE_URL
+# ── Create Docker-specific .env (strips localhost URLs) ─────────────
+# docker-compose.yml uses service names (redis, db) via its own defaults.
+# We strip the localhost-pinned vars from .env so Compose defaults kick in.
+grep -v -E '^(CELERY_BROKER_URL|CELERY_RESULT_BACKEND|DATABASE_URL)=' .env > .env.docker
+DOCKER_ENV="--env-file .env.docker"
 
 # ── Stop existing containers ───────────────────────────────────────
-echo "  → Stopping existing containers..."
-docker compose down 2>/dev/null || true
+  echo "  → Stopping existing containers..."
+  docker compose $DOCKER_ENV down 2>/dev/null || true
 echo ""
 
 # ── Build images ───────────────────────────────────────────────────
@@ -63,13 +64,13 @@ if [ "$SKIP_BUILD" = true ]; then
   echo "  → Skipping build (--skip-build)"
 else
   echo "  → Building Docker images..."
-  docker compose build
+  docker compose $DOCKER_ENV build
 fi
 echo ""
 
 # ── Start database and cache ───────────────────────────────────────
 echo "  → Starting database and cache..."
-docker compose up -d db redis
+docker compose $DOCKER_ENV up -d db redis
 echo "    Waiting for PostgreSQL..."
 RETRIES=15
 until docker compose exec -T db pg_isready -U lavbench_user -d lavbench_db &>/dev/null || [ $RETRIES -eq 0 ]; do
@@ -87,18 +88,18 @@ echo ""
 
 # ── Start all services ─────────────────────────────────────────────
 echo "  → Starting all services..."
-docker compose up -d
+docker compose $DOCKER_ENV up -d
 echo ""
 
 # ── Initialize database ────────────────────────────────────────────
 echo "  → Initializing database schema..."
 docker compose exec -T backend python -c "
-from app import app, db, seed_database
+from app import app, db
 with app.app_context():
     db.create_all()
-    seed_database()
 "
-echo "    ✔ Database schema created and seeded"
+echo "    ✔ Database schema created"
+rm -f .env.docker
 echo ""
 
 # ── Done ───────────────────────────────────────────────────────────

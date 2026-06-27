@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # No host port — PostgreSQL is only accessible inside the Docker network
+    # No host port — accessible via Docker network (db:5432)
     deploy:
       resources:
         limits:
@@ -120,7 +120,7 @@ services:
     build: ./backend
     container_name: lavbench_beat
     restart: always
-    command: celery -A tasks.celery beat --loglevel=info
+    command: celery -A tasks.celery beat --loglevel=info -s /app/run/celerybeat-schedule.db
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}

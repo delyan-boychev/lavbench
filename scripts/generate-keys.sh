@@ -207,9 +207,12 @@ MAIN_SERVER_URL=${SERVER_URL}
 
 # Worker authentication (auto-generated Ed25519 private key)
 WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
+
+# Server secret key — needed by models.py for field encryption
+SECRET_KEY=${SECRET_KEY}
 ${CERTS_SECTION}
 # Optional overrides (uncomment to set):
-# Worker role: eval, internal, or both — set during first make worker-docker
+# Worker role: eval, internal, or both — set during first make setup-worker
 # WORKER_TYPE=eval
 # WORKER_GPU_ID=0
 # CELERY_WORKER_CONCURRENCY=4

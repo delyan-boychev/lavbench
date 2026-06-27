@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/setup.sh — First-time setup for LavBench.
-# Called by: make setup
+# Called by: make setup-server | make setup-worker
 set -euo pipefail
 
 echo ""
@@ -76,7 +76,7 @@ fi
 
 if [ "$PREREQ_OK" = false ]; then
   echo ""
-  echo "  [ERROR] Install missing prerequisites and re-run: make setup"
+  echo "  [ERROR] Install missing prerequisites and re-run: make server"
   exit 1
 fi
 echo ""
@@ -120,24 +120,18 @@ if [ "$MODE" = "server" ]; then
   echo "  ──────────────────────────────────────────────────────────────"
   echo "    Next (server):"
   echo "      make dev                  Start all services locally"
-  echo "      make deploy-docker        Full Docker Compose deployment"
-  echo "      python backend/setup-admin.py   Create admin user"
-  echo ""
-  echo "    Workers:"
-  echo "      scp worker.env user@your-server:~/"
-  echo "      On worker: make worker   (interactive first-run setup)"
+      echo "      make deploy-server   Full Docker Compose deployment"
+      echo "      make setup-admin     Create admin user"
+      echo ""
+      echo "    Workers:"
+      echo "      scp worker.env user@your-server:~/"
+      echo "      On worker: make setup-worker   (prereq check + interactive setup + start)"
   echo "  ──────────────────────────────────────────────────────────────"
 fi
 
 # ── Worker mode ─────────────────────────────────────────────────────
 if [ "$MODE" = "worker" ]; then
-  echo "  [2/2] Worker setup complete"
+  echo "  ✔ Prerequisites OK"
   echo ""
-  echo "  ──────────────────────────────────────────────────────────────"
-  echo "    Worker ready!"
-  echo "      make worker           First-run setup, then start"
-  echo "      make worker-docker    Start Docker worker directly"
-  echo "      make build-worker     Build worker image locally"
-  echo "  ──────────────────────────────────────────────────────────────"
 fi
 echo ""
