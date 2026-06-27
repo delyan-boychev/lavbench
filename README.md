@@ -21,13 +21,24 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 
 ---
 
-## Demo
+## Prerequisites
 
-Interact with a live simulation of the real-time leaderboard at [`/demo/leaderboard`](http://localhost:5173/demo/leaderboard) (start the frontend with `npm run dev`, no backend required).
+- **micromamba** (or conda) — Python environment management
+- **Docker** with Compose v2 plugin — required for `make deploy-docker` and evaluation sandbox execution
+- **Node.js 22+** — for frontend dev server and builds
+- **NVIDIA Container Toolkit** — optional, only needed for GPU worker nodes
 
-Scores auto-shuffle every 4 seconds to demonstrate the SSE-like rank changes, medal styling, and expandable per-task score breakdown. Toggle streaming on/off or click **Shuffle Now** to trigger manual updates.
+### TLS / HTTPS Setup
 
-![Live leaderboard updating scores in real-time](docs/source/_static/demo/leaderboard-live.gif)
+The server supports both plain HTTP and HTTPS with optional Redis TLS.
+
+**Self-signed certificates** (for development / LAN): `make setup` can generate self-signed CA + certs for both Nginx (HTTPS) and Redis (TLS). Generated files go in `certs/`.
+
+**Custom CA / public certificates**: provide your own files and paths during `make setup` — it accepts any path to existing certs.
+
+Redis TLS is independent from Nginx HTTPS — you can mix (e.g., HTTP frontend + Redis TLS, or HTTPS frontend + plain Redis). Both options are prompted during `make setup`.
+
+Certificate paths in `.env` and `worker.env` use the container mount point `/etc/ssl/certs/redis/` — the actual files reside in `certs/` on the host, bind-mounted by `docker-compose.yml` and `start-worker.sh --docker`.
 
 ---
 
@@ -111,34 +122,30 @@ See the [Admin Guide](guides/en/admin_guide.md) for production deployment.
 ```mermaid
 flowchart TD
     %% Client & Gateway
-    Client([Browser<br>React]) <-->|HTTP / SSE| Nginx[Nginx<br>Port 80]
+    Client([Browser<br>React]) <-->|HTTPS / SSE| Nginx[Nginx<br>Port 443]
     Nginx <-->|Reverse Proxy| API[Flask API<br>Port 5001]
 
     %% Core Data & Message Broker
-    subgraph Core [Backend Infrastructure]
+    subgraph Core [Backend Infrastructure — Docker Compose]
         direction TB
         API -->|Read/Write| DB[(PostgreSQL<br>Primary DB)]
         API <-->|Queue / PubSub| Redis[(Redis<br>Broker & Cache)]
         Beat([Celery Beat<br>Scheduler]) -->|Triggers| Redis
+        Internal([Internal Celery Worker<br>System tasks only]) -->|Pulls Tasks| Redis
     end
 
-    %% Worker Nodes
-    subgraph Workers [Worker Pool]
+    %% Remote Worker Nodes
+    subgraph Remote [Remote Worker Machines]
         direction TB
-        Redis -->|Pulls Tasks| GPU[GPU Worker<br>scripts/start-worker.sh 0]
-        Redis -->|Pulls Tasks| CPU1[CPU Worker<br>scripts/start-worker.sh]
-        Redis -->|Pulls Tasks| CPU2[CPU Worker<br>scripts/start-worker.sh]
+        W1[Worker Container<br>lavbench-worker] -->|Sibling Containers| S1{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
+        W2[Worker Local<br>micromamba + start-worker.sh] -->|Sibling Containers| S2{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
     end
 
-    %% Execution Sandbox
-    subgraph Execution [Sandboxed Environment]
-        GPU --> Sandbox
-        CPU1 --> Sandbox
-        CPU2 --> Sandbox
-        Sandbox{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
-    end
+    %% Connections from Redis to Workers
+    Redis -.-|SSL/TLS| W1
+    Redis -.-|SSL/TLS| W2
 
-    %% Styling (Optional but keeps it clean)
+    %% Styling
     classDef default fill:#1e293b,stroke:#cbd5e1,stroke-width:1px,color:#f8fafc;
     classDef database fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
     class DB,Redis database;
@@ -146,14 +153,15 @@ flowchart TD
 
 ### Components
 
-| Service           | Role                                                                                             | Port   |
-| ----------------- | ------------------------------------------------------------------------------------------------ | ------ |
-| **PostgreSQL**    | Primary database for users, challenges, tasks, and submissions                                   | `5432` |
-| **Redis**         | Celery message broker, SSE pub/sub, caching, and rate limiting                                   | `6379` |
-| **Flask API**     | REST API and SSE streaming endpoints                                                             | `5001` |
-| **Celery Worker** | Runs on the host via `scripts/start-worker.sh` to build Docker sandboxes and execute submissions | —      |
-| **Celery Beat**   | Handles periodic tasks like the submission watchdog and automated backups                        | —      |
-| **Nginx/React**   | Static file serving and API reverse proxy                                                        | `80`   |
+| Service                  | Role                                                                                             | Port   |
+| ------------------------ | ------------------------------------------------------------------------------------------------ | ------ |
+| **PostgreSQL**           | Primary database for users, challenges, tasks, and submissions                                   | `5432` |
+| **Redis**                | Celery message broker, SSE pub/sub, caching, and rate limiting                                   | `6379` |
+| **Flask API**            | REST API and SSE streaming endpoints                                                             | `5001` |
+| **Celery Beat**          | Handles periodic tasks like the submission watchdog and automated backups                        | —      |
+| **Celery Worker (int.)** | Built-in system task worker (backups, watchdog, leaderboard recalc) — runs inside Docker Compose  | —      |
+| **Celery Worker (ext.)** | Evaluation worker — runs in Docker container or directly on remote machines, sibling containers  | —      |
+| **Nginx/React**          | Static file serving and API reverse proxy (HTTPS)                                                | `443`  |
 
 ---
 
@@ -365,7 +373,7 @@ make start-worker REDIS_URL=redis://:password@server:6379/0
 | **Token Revocation** | Redis blacklist using `jti` — logging out instantly invalidates tokens.                                                                                                                                    |
 | **Rate Limiting**    | Lua atomic counters per-user and per-endpoint; fails open if Redis is down.                                                                                                                                |
 | **PII Encryption**   | Fernet symmetric encryption secures competitor demographics at rest.                                                                                                                                       |
-| **Sandbox**          | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus 2`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. |
+| **Sandbox**          | Hardened container: `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, `--cpus <CPU_CORES_PER_TASK or GPU_CORES_PER_TASK>`, `--pids-limit 64`, `--tmpfs /tmp`, `--memory-swap` disabled, and RAM limits. Cores per task are configured per-worker via `CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`. |
 | **Ground Truth**     | `labels.parquet` is strictly evaluated server-side and never mounted into the user's evaluation sandbox.                                                                                                   |
 | **IP Trust**         | `ProxyFix` middleware ensures only the `X-Forwarded-For` headers from Nginx are trusted.                                                                                                                   |
 | **HF API Keys**      | Fetched dynamically on-demand by workers via authenticated API routes, never stored in Redis.                                                                                                              |

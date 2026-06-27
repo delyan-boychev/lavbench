@@ -3,26 +3,25 @@
 ## System Overview
 
 ```
-Browser (React) → Nginx (port 80) → Flask API (port 5001)
+Browser (React) → Nginx (port 443, HTTPS) → Flask API (port 5001)
                                         ├── PostgreSQL (users, challenges, tasks, submissions)
-                                        ├── Redis (Celery broker, SSE pub/sub, cache, rate limits)
-                                        └── Celery Beat (watchdog, backup scheduler)
-
-Celery Workers (host, not Docker):
-  scripts/start-worker.sh → Redis broker → Docker Sandbox execution → API callback
+                                        ├── Redis (Celery broker, SSE pub/sub, cache, rate limits, optional TLS)
+                                        ├── Celery Beat (watchdog, backup scheduler)
+                                        ├── Internal Celery Worker (system tasks only, inside Docker Compose)
+                                        └── Remote Evaluation Workers (Docker container or host, sibling sandbox containers)
 ```
 
 ## Components
 
-| Component        | Technology                        | Role                                                                            |
-| ---------------- | --------------------------------- | ------------------------------------------------------------------------------- |
-| **Frontend**     | React 19 + Vite + Tailwind 4      | SPA with SSE live updates, i18n (en/bg), JSDoc type annotations, tsc validation |
-| **API Server**   | Flask + Gunicorn + gevent         | REST endpoints, SSE streaming, JWT auth                                         |
-| **Database**     | PostgreSQL 15                     | Users, challenges, tasks, submissions, audit logs                               |
-| **Cache/Broker** | Redis                             | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation    |
-| **Task Queue**   | Celery                            | Async job dispatch (evaluation, backups)                                        |
-| **Scheduler**    | Celery Beat                       | Watchdog (stuck submissions), automated backups                                 |
-| **Worker**       | `scripts/start-worker.sh` on host | Docker-in-Docker sandbox execution                                              |
+| Component        | Technology                        | Role                                                                                |
+| ---------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| **Frontend**     | React 19 + Vite + Tailwind 4      | SPA with SSE live updates, i18n (en/bg), JSDoc type annotations, tsc validation     |
+| **API Server**   | Flask + Gunicorn + gevent         | REST endpoints, SSE streaming, JWT auth                                             |
+| **Database**     | PostgreSQL 15                     | Users, challenges, tasks, submissions, audit logs                                   |
+| **Cache/Broker** | Redis                             | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation        |
+| **Task Queue**   | Celery                            | Async job dispatch (evaluation, backups)                                            |
+| **Scheduler**    | Celery Beat                       | Watchdog (stuck submissions), automated backups                                     |
+| **Worker**       | `start-worker.sh --docker` (container) or `start-worker.sh` on host | Sibling Docker sandbox execution (not Docker-in-Docker)                          |
 
 ## Authentication Flow
 
@@ -139,6 +138,6 @@ Contents: `pg_dump` + `uploads/` directory in `.tar.gz`.
 | **Rate limiting**    | Per-user per-endpoint Lua atomic counters                                                                                         |
 | **Token revocation** | jti in Redis blacklist with TTL                                                                                                   |
 | **PII encryption**   | Fernet symmetric (optional ENCRYPTION_KEY for rotation)                                                                           |
-| **Sandbox**          | Docker --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, --cpus 2, --pids-limit 64, RAM/swap limits, tmpfs |
+| **Sandbox**          | Docker --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, --cpus <CPU_CORES_PER_TASK or GPU_CORES_PER_TASK>, --pids-limit 64, RAM/swap limits, tmpfs |
 | **IP trust**         | ProxyFix middleware (trusts X-Forwarded-For from Nginx only)                                                                      |
 | **HF keys**          | Fetched on-demand via authenticated API, never in Redis                                                                           |
