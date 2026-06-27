@@ -19,29 +19,6 @@ It is a secure, sandboxed machine learning competition platform. Participants su
 
 Created by the Bulgarian AI Olympiad Committee for IOAI selection and national competitions. Other countries AI olympiad committees, teams and IOAI board and others are welcome to use and contribute.
 
----
-
-## Prerequisites
-
-- **micromamba** (or conda) — Python environment management
-- **Docker** with Compose v2 plugin — required for `make deploy-docker` and evaluation sandbox execution
-- **Node.js 22+** — for frontend dev server and builds
-- **NVIDIA Container Toolkit** — optional, only needed for GPU worker nodes
-
-### TLS / HTTPS Setup
-
-The server supports both plain HTTP and HTTPS with optional Redis TLS.
-
-**Self-signed certificates** (for development / LAN): `make setup` can generate self-signed CA + certs for both Nginx (HTTPS) and Redis (TLS). Generated files go in `certs/`.
-
-**Custom CA / public certificates**: provide your own files and paths during `make setup` — it accepts any path to existing certs.
-
-Redis TLS is independent from Nginx HTTPS — you can mix (e.g., HTTP frontend + Redis TLS, or HTTPS frontend + plain Redis). Both options are prompted during `make setup`.
-
-Certificate paths in `.env` and `worker.env` use the container mount point `/etc/ssl/certs/redis/` — the actual files reside in `certs/` on the host, bind-mounted by `docker-compose.yml` and `start-worker.sh --docker`.
-
----
-
 ## Features
 
 - **Sandboxed Execution:** User code runs in hardened Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `tmpfs` mounts.
@@ -59,6 +36,22 @@ Certificate paths in `.env` and `worker.env` use the container mount point `/etc
 ---
 
 ## Quick Start
+
+### Prerequisites
+
+- `micromamba` (or conda) — Python environment management
+- `Docker` with Compose v2 plugin — required for `make deploy-docker` and evaluation sandbox execution
+- `Node.js 22+` — for frontend dev server and builds
+- `nvidia-container-toolkit` — optional, only needed for GPU worker nodes
+
+#### TLS / HTTPS Setup
+
+The server supports both plain HTTP and HTTPS with optional Redis TLS.
+
+- **Self-signed certificates** (for development / LAN): `make setup` can generate a self-signed CA + certs for both Nginx (HTTPS) and Redis (TLS). Generated files go in `certs/`.
+- **Custom CA / public certificates**: provide your own files and paths during `make setup` — it accepts any path to existing certs.
+- Redis TLS is independent from Nginx HTTPS — you can mix (e.g., HTTP frontend + Redis TLS, or HTTPS frontend + plain Redis). Both options are prompted during `make setup`.
+- Certificate paths in `.env` and `worker.env` use the container mount point `/etc/ssl/certs/redis/` — the actual files reside in `certs/` on the host, bind-mounted by `docker-compose.yml` and `start-worker.sh --docker`.
 
 ```bash
 # 1. One-command setup (creates env, generates keys, installs deps)
