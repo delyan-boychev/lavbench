@@ -1,3 +1,9 @@
+[project]
+name = "lavbench"
+version = "0.0.1"
+description = "Sandboxed code evaluation platform — created by the Bulgarian AI Olympiad Committee"
+requires-python = ">=3.12"
+
 [build-system]
 requires = ["setuptools>=82.0.1"]
 build-backend = "setuptools.backends._legacy:_Backend"

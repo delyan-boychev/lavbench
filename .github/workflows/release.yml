@@ -32,12 +32,23 @@ jobs:
         env:
           OUTPUT: CHANGELOG.md
 
-      - name: Commit changelog
+      - name: Bump version in project files
+        run: |
+          VERSION="${{ steps.git-cliff.outputs.version }}"
+          VERSION="${VERSION#v}"
+
+          # Update backend/pyproject.toml
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' backend/pyproject.toml
+
+          # Update frontend/package.json
+          sed -i 's/"version": ".*"/"version": "'"$VERSION"'"/' frontend/package.json
+
+      - name: Commit changelog + version bump
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add CHANGELOG.md
-          git commit -m "chore: update changelog for ${{ steps.git-cliff.outputs.version }}"
+          git add CHANGELOG.md backend/pyproject.toml frontend/package.json
+          git commit -m "chore: release ${{ steps.git-cliff.outputs.version }}"
           git tag ${{ steps.git-cliff.outputs.version }}
           git push --follow-tags
 
