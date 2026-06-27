@@ -1,6 +1,6 @@
 [project]
 name = "lavbench"
-version = "0.0.1b0"
+version = "0.1.0"
 description = "Sandboxed code evaluation platform — created by the Bulgarian AI Olympiad Committee"
 readme = "README.md"
 requires-python = ">=3.12"
