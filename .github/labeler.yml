@@ -8,7 +8,7 @@ ci:
   - .github/**/*
 
 docker:
-  - **/Dockerfile
+  - "**/Dockerfile"
   - docker-compose.yml
 
 docs:
