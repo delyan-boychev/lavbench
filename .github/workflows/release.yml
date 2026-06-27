@@ -43,11 +43,14 @@ jobs:
           # Update frontend/package.json
           sed -i 's/"version": ".*"/"version": "'"$VERSION"'"/' frontend/package.json
 
+          # Update docs/source/conf.py
+          sed -i 's/^release = .*/release = "'"$VERSION"'"/' docs/source/conf.py
+
       - name: Commit changelog + version bump
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add CHANGELOG.md backend/pyproject.toml frontend/package.json
+          git add CHANGELOG.md backend/pyproject.toml frontend/package.json docs/source/conf.py
           git commit -m "chore: release ${{ steps.git-cliff.outputs.version }}"
           git tag ${{ steps.git-cliff.outputs.version }}
           git push --follow-tags
