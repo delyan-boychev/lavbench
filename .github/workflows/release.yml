@@ -38,13 +38,9 @@ jobs:
           VERSION="${{ steps.git-cliff.outputs.version }}"
           VERSION="${VERSION#v}"
 
-          # Keep beta pre-release suffix
-          VERSION_PEP440="${VERSION}b0"
-          VERSION_SEMVER="${VERSION}-beta.0"
-
-          sed -i 's/^version = ".*"/version = "'"$VERSION_PEP440"'"/' backend/pyproject.toml
-          sed -i 's/"version": ".*"/"version": "'"$VERSION_SEMVER"'"/' frontend/package.json
-          sed -i 's/^release = .*/release = "'"$VERSION_PEP440"'"/' docs/source/conf.py
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' backend/pyproject.toml
+          sed -i 's/"version": ".*"/"version": "'"$VERSION"'"/' frontend/package.json
+          sed -i 's/^release = .*/release = "'"$VERSION"'"/' docs/source/conf.py
 
       - name: Ensure release label exists
         run: |
