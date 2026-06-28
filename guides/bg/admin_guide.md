@@ -242,8 +242,8 @@ JSON конфигурация определя как се усредняват 
 # Копирайте worker.env от сървъра (генериран от make setup-server):
 scp user@server:~/lavbench/worker.env .
 
-# Интерактивен първи старт (пита за режим, тип, GPU, ядра):
-make worker
+# Интерактивна конфигурация (режим, тип, GPU, ядра):
+make setup-worker
 ```
 
 При първи старт скриптът открива наличните CPU и GPU ресурси и ви превежда през:
@@ -253,11 +253,10 @@ make worker
 4. **CPU ядра на задача** — разпределение за GPU и за CPU evaluation контейнери
 5. **Concurrency** — автоматично изчислена (брой GPU + останали CPU слотове)
 
-Алтернативно, извикайте скрипта директно:
+След това стартирайте от записаната конфигурация:
 
 ```bash
-scripts/start-worker.sh --docker                # интерактивен, ако няма worker.env
-scripts/start-worker.sh --docker redis://:password@server:6379/0 -c 4
+make deploy-worker
 ```
 
 За редактиране на запазената конфигурация:

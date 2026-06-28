@@ -101,13 +101,12 @@ echo ""
 
 # 2. HTTP or HTTPS
 echo "  Does the server use HTTPS?"
-echo "    1) HTTP   (http://${SERVER_ADDR}:5001)"
+echo "    1) HTTP   (http://${SERVER_ADDR})"
 echo "    2) HTTPS  (https://${SERVER_ADDR})"
 read -p "  Choose [1]: " HTTP_CHOICE
 HTTP_CHOICE="${HTTP_CHOICE:-1}"
 if [ "$HTTP_CHOICE" = "2" ]; then
   PROTOCOL="https"
-  API_PORT=""  # default HTTPS port 443
   SERVER_URL="https://${SERVER_ADDR}"
   GENERATE_HTTPS_CERTS=false
   echo ""
@@ -119,8 +118,7 @@ if [ "$HTTP_CHOICE" = "2" ]; then
   fi
 else
   PROTOCOL="http"
-  API_PORT=":5001"
-  SERVER_URL="http://${SERVER_ADDR}:5001"
+  SERVER_URL="http://${SERVER_ADDR}"
 fi
 echo ""
 
@@ -211,8 +209,7 @@ WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 # Server secret key — needed by models.py for field encryption
 SECRET_KEY=${SECRET_KEY}
 ${CERTS_SECTION}
-# Optional overrides (uncomment to set):
-# Worker role: eval, internal, or both — set during first make setup-worker
+# Worker role and resources — set by 'make setup-worker' on the worker machine
 # WORKER_TYPE=eval
 # WORKER_GPU_ID=0
 # CELERY_WORKER_CONCURRENCY=4
@@ -301,7 +298,7 @@ echo ""
 echo "    Next:"
 if [ "$SERVER_ADDR" != "localhost" ] || [ "$HTTP_CHOICE" = "2" ] || [ "$REDIS_TLS_CHOICE" = "2" ]; then
   echo "      scp worker.env user@${SERVER_ADDR}:~/"
-  echo "      On worker: make worker-docker"
+  echo "      On worker: make setup-worker && make deploy-worker"
 fi
 echo "  ──────────────────────────────────────────────────────────"
 echo ""

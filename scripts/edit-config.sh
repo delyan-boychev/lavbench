@@ -69,10 +69,8 @@ edit_server() {
         if [ -n "$NEW_ADDR" ]; then
           local proto="$(get_val "$ENV_FILE" "MAIN_SERVER_URL" | sed 's|://.*||')"
           proto="${proto:-http}"
-          local port=""
-          [ "$proto" = "http" ] && port=":5001"
           set_val "$ENV_FILE" "SERVER_ADDRESS" "$NEW_ADDR"
-          set_val "$ENV_FILE" "MAIN_SERVER_URL" "${proto}://${NEW_ADDR}${port}"
+          set_val "$ENV_FILE" "MAIN_SERVER_URL" "${proto}://${NEW_ADDR}"
           echo "  ✔ Server address updated"
         fi
         ;;
@@ -80,7 +78,7 @@ edit_server() {
         local current_proto="$(get_val "$ENV_FILE" "MAIN_SERVER_URL" | sed 's|://.*||')"
         local addr="$(get_val "$ENV_FILE" "SERVER_ADDRESS")"
         if [ "$current_proto" = "https" ]; then
-          set_val "$ENV_FILE" "MAIN_SERVER_URL" "http://${addr}:5001"
+          set_val "$ENV_FILE" "MAIN_SERVER_URL" "http://${addr}"
           echo "  ✔ HTTPS → OFF"
         else
           set_val "$ENV_FILE" "MAIN_SERVER_URL" "https://${addr}"

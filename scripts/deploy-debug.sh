@@ -137,7 +137,7 @@ echo ""
 # ── Done ───────────────────────────────────────────────────────────
 echo "  ──────────────────────────────────────────────────────────────"
 echo "    All services launching!"
-echo "    API:       http://localhost:5001"
+echo "    API:       http://localhost/api"
 echo "    Frontend:  http://localhost:5173"
 echo "    Ctrl+C to stop all services"
 echo "  ──────────────────────────────────────────────────────────────"
