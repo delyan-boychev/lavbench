@@ -92,9 +92,21 @@ deploy_docker() {
 
   # ── Cache-aware build ──────────────────────────────────────────
   echo "  → Checking image..."
-  SOURCE_HASH=$(
-    find backend/ -type f \( -name '*.py' -o -name 'Dockerfile.worker' -o -name 'requirements.txt' \) \
-      -exec md5 -r {} + 2>/dev/null | md5 -r | cut -d' ' -f1
+  SOURCE_HASH=$(python3 <<'PYEOF'
+import hashlib, os, subprocess
+result = subprocess.run(
+    ["find", "backend/", "-type", "f",
+     "(", "-name", "*.py", "-o", "-name", "Dockerfile.worker",
+     "-o", "-name", "requirements.txt", ")"],
+    capture_output=True, text=True, check=False
+)
+h = hashlib.md5()
+for f in sorted(result.stdout.strip().splitlines()):
+    if f and os.path.isfile(f):
+        with open(f, "rb") as fp:
+            h.update(fp.read())
+print(h.hexdigest())
+PYEOF
   )
   IMAGE_HASH=$(docker image inspect "$WORKER_IMAGE" \
     --format '{{.Config.Labels.source_hash}}' 2>/dev/null || echo "")
