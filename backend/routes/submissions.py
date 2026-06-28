@@ -307,7 +307,8 @@ def submit_code(challenge_id):
             countdown=1,
             task_id=f"submission_{submission.id}",
         )
-        submission.celery_task_id = result.id
+        if result is not None:
+            submission.celery_task_id = str(result.id)
         db.session.commit()
     except Exception as e:
         submission.status = "failed"

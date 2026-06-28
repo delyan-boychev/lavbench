@@ -166,7 +166,8 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     result = evaluate_submission.apply_async(
         args=[submission.id, metadata], priority=priority, queue=queue_name
     )
-    submission.celery_task_id = result.id
+    if result is not None:
+        submission.celery_task_id = str(result.id)
     db.session.commit()
 
 
@@ -1336,7 +1337,8 @@ def submit_task(task_id):
             countdown=1,
             task_id=f"submission_{submission.id}",
         )
-        submission.celery_task_id = result.id
+        if result is not None:
+            submission.celery_task_id = str(result.id)
         db.session.commit()
     except Exception as e:
         submission.status = "failed"
