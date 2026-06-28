@@ -62,13 +62,13 @@ describe('CompetitionBar Component', () => {
     );
 
     expect(screen.getByTestId('mock-custom-select')).toBeInTheDocument();
-    expect(screen.queryByTestId('student-competition-label')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('competitor-competition-label')).not.toBeInTheDocument();
     expect(screen.getByText('Challenge Alpha')).toBeInTheDocument();
   });
 
-  it('renders stylized badge instead of selectbox for competitor (student) role', () => {
+  it('renders stylized badge instead of selectbox for competitor role', () => {
     useAuth.mockReturnValue({
-      currentUser: { id: 2, username: 'student_user', role: 'competitor' },
+      currentUser: { id: 2, username: 'competitor_user', role: 'competitor' },
     });
 
     useApp.mockReturnValue({
@@ -85,15 +85,15 @@ describe('CompetitionBar Component', () => {
 
     expect(screen.queryByTestId('mock-custom-select')).not.toBeInTheDocument();
 
-    const badge = screen.getByTestId('student-competition-label');
+    const badge = screen.getByTestId('competitor-competition-label');
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent('Challenge Alpha');
     expect(screen.getByTitle('Your assigned competition')).toBeInTheDocument();
   });
 
-  it('displays fallback text when student has no challenge selected', () => {
+  it('displays fallback text when competitor has no challenge selected', () => {
     useAuth.mockReturnValue({
-      currentUser: { id: 2, username: 'student_user', role: 'competitor' },
+      currentUser: { id: 2, username: 'competitor_user', role: 'competitor' },
     });
 
     useApp.mockReturnValue({
@@ -108,7 +108,7 @@ describe('CompetitionBar Component', () => {
       </BrowserRouter>,
     );
 
-    const badge = screen.getByTestId('student-competition-label');
+    const badge = screen.getByTestId('competitor-competition-label');
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent('No Competition Assigned');
   });

@@ -738,7 +738,7 @@ export default function SubmissionsView() {
   if (!selectedChallenge)
     return <EmptyState message={t('submissions.no_competition_selected')} minHeight={200} />;
 
-  // Student view
+  // Competitor view
   if (isCompetitor) {
     const tasks = selectedChallenge.tasks || [];
     return (

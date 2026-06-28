@@ -678,7 +678,7 @@ class TestManualPointsEndpoint:
             json=payload,
         )
         assert res.status_code == 400
-        assert "only students with submissions" in res.get_json()["error"].lower()
+        assert "only competitors with submissions" in res.get_json()["error"].lower()
 
     def test_failed_submissions_allowed(self, client, db_session):
         sub = Submission(

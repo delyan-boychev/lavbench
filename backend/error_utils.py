@@ -13,7 +13,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_MISSING_CREDENTIALS": "Missing username or password.",
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again later.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
-    "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered students are not allowed to log in.",
+    "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered competitors are not allowed to log in.",
     "ERR_USER_NOT_FOUND": "User not found.",
     # admin.py — competitor registration
     "ERR_CHALLENGE_ID_REQUIRED": "challenge_id is required for competitor registration.",
@@ -83,7 +83,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_TASK_NOT_IN_CHALLENGE": "Task does not belong to this challenge.",
     "ERR_POINTS_MUST_BE_INT": "Points must be an integer.",
     "ERR_POINTS_OUT_OF_BOUNDS": "Points must be between 0 and 100.",
-    "ERR_NO_SUBMISSIONS": "Only students with submissions can be assigned manual points.",
+    "ERR_NO_SUBMISSIONS": "Only competitors with submissions can be assigned manual points.",
     # submissions.py
     "ERR_NO_FILE_UPLOADED": "No file uploaded.",
     "ERR_INVALID_FILE_TYPE": "Invalid file type.",

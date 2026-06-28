@@ -7,7 +7,7 @@ LavBench Documentation
 
    introduction
    architecture
-   student_guide
+   competitor_guide
    jury_guide
    admin_guide
    api_reference

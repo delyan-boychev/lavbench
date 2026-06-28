@@ -61,7 +61,7 @@ export default function Navbar() {
   const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
-  const [activeDocTab, setActiveDocTab] = React.useState('student');
+  const [activeDocTab, setActiveDocTab] = React.useState('competitor');
   const [docContent, setDocContent] = React.useState('');
   const [docLoading, setDocLoading] = React.useState(false);
   const [docError, setDocError] = React.useState(null);
@@ -73,7 +73,7 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const docTabs = React.useMemo(() => {
-    const tabs = [{ id: 'student', label: t('nav.doc_student_guide') }];
+    const tabs = [{ id: 'competitor', label: t('nav.doc_competitor_guide') }];
     if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
       tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
     }

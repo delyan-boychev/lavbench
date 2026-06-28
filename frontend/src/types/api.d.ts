@@ -1597,8 +1597,8 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    page?: string;
-                    per_page?: string;
+                    page?: number;
+                    per_page?: number;
                 };
                 header?: never;
                 path: {
@@ -1826,14 +1826,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/docs/jury": {
+    "/api/docs/competitor": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get the jury documentation guide. */
+        /** Get the competitor documentation guide. */
         get: {
             parameters: {
                 query?: {
@@ -1865,14 +1865,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/docs/student": {
+    "/api/docs/jury": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get the student documentation guide. */
+        /** Get the jury documentation guide. */
         get: {
             parameters: {
                 query?: {

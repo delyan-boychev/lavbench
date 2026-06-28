@@ -22,7 +22,7 @@ Welcome to the LavBench Platform Jury Portal. As a jury member, you can monitor 
 
 ### Double-Blind Privacy
 
-During an active competition, **you can see competitor identities** (names, schools, demographics) while students see only pseudonyms. Identities are de-anonymized for everyone only after the competition is finalized.
+During an active competition, **you can see competitor identities** (names, schools, demographics) while other competitors see only pseudonyms. Identities are de-anonymized for everyone only after the competition is finalized.
 
 ### Access Restrictions
 
@@ -125,7 +125,7 @@ A CSV file containing the rankings, aliases (pseudonyms), real names, task score
 ### Submissions ZIP
 
 Admin Panel → Competition Management → select challenge → "Download Submissions ZIP"
-A ZIP archive of all successfully completed student notebooks as `.ipynb` files.
+A ZIP archive of all successfully completed competitor notebooks as `.ipynb` files.
 
 ### Competition Backups
 

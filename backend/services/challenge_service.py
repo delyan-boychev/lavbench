@@ -242,7 +242,7 @@ def generate_exported_results_csv(challenge, view_role="admin"):
         [
             "Timestamp (UTC)",
             "Admin",
-            "Target Student",
+            "Target Competitor",
             "Task",
             "Old Score",
             "New Score",

@@ -52,11 +52,11 @@ def read_doc_file(filename, lang="en"):
     return "Documentation file not found."
 
 
-@docs_bp.route("/student", methods=["GET"])
+@docs_bp.route("/competitor", methods=["GET"])
 @role_required(["competitor", "jury", "admin"])
-def get_student_doc():
+def get_competitor_doc():
     """
-    Get the student documentation guide.
+    Get the competitor documentation guide.
     ---
     tags:
       - Docs
@@ -78,8 +78,10 @@ def get_student_doc():
               type: object
     """
     lang = get_request_lang()
-    content = read_doc_file("student_guide.md", lang)
-    title = {"bg": "Ръководство за ученика", "en": "Student Guide"}.get(lang, "Student Guide")
+    content = read_doc_file("competitor_guide.md", lang)
+    title = {"bg": "Ръководство за състезателя", "en": "Competitor Guide"}.get(
+        lang, "Competitor Guide"
+    )
     return jsonify({"title": title, "content": content})
 
 

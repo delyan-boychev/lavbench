@@ -59,7 +59,7 @@ Every submission executes in a hardened Docker container with enforced isolation
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `--network none`                       | Blocks all network access — no data exfiltration or downloads                                   |
 | `--cap-drop ALL`                       | Removes all Linux capabilities — no raw sockets, `mount()`, `ptrace()`, or privilege escalation |
-| `--read-only`                          | Root filesystem is read-only — student code cannot modify system binaries                       |
+| `--read-only`                          | Root filesystem is read-only — competitor code cannot modify system binaries                       |
 | `--no-new-privileges`                  | Prevents suid binary escalation                                                                 |
 | `--tmpfs /tmp:noexec,nosuid,size=128m` | In-memory, size-capped temp — cannot fill host disk                                             |
 | `--memory-swap` = RAM limit            | Disables swap — no memory pressure bypass                                                       |
@@ -156,7 +156,7 @@ Efficiently onboard entire classrooms or competition cohorts via the `/admin` po
 3. Format requirements:
    ```text
    username,email,password,name,surname,class_number,school,city,challenge_id
-   student_a,studA@ai.edu,TempPass1,Alice,Smith,12,Tech High,Sofia,1
+   competitor_a,compA@ai.edu,TempPass1,Alice,Smith,12,Tech High,Sofia,1
    ```
 
 ---
@@ -231,7 +231,7 @@ The **Cluster** badge in the navbar shows worker node status in real-time via SS
 Workers are split into two categories to isolate system tasks from heavy evaluation workloads:
 
 1. **Internal Task Worker**: Runs inside the main web server's Docker Compose setup (`celery_worker` service). It executes system tasks (like database backups, watchdog checks, and leaderboard recalculations). By default, its concurrency is capped at `2` (using `CELERY_WORKER_CONCURRENCY`) to preserve host resources for Flask, PostgreSQL, Redis, and SSE.
-2. **Evaluation Workers**: Run directly on host/remote machines (with CPU or GPU resources) to build and run student submission Docker sandboxes.
+2. **Evaluation Workers**: Run directly on host/remote machines (with CPU or GPU resources) to build and run competitor submission Docker sandboxes.
 
 #### Launching Evaluation Workers
 

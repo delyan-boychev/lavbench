@@ -120,7 +120,7 @@ paths['/api/endpoint']['method']['responses']['200']['content']['application/jso
 
 ## Security
 
-The platform evaluates untrusted student code in hardened Docker containers. When modifying the execution pipeline (`backend/task_modules/submission_runner.py`), ensure that:
+The platform evaluates untrusted competitor code in hardened Docker containers. When modifying the execution pipeline (`backend/task_modules/submission_runner.py`), ensure that:
 
 - No new network access is introduced
 - No new Linux capabilities are granted

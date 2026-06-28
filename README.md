@@ -140,7 +140,7 @@ lavbench/
 │   ├── public/locales/          # i18n (en, bg)
 │   ├── tsconfig.json            # TypeScript config for JSDoc type checking
 │   └── nginx.conf               # Nginx configuration
-├── guides/                      # User documentation (student, jury, admin, API)
+├── guides/                      # User documentation (competitor, jury, admin, API)
 ├── docs/                        # Project documentation (Sphinx, architecture)
 ├── scripts/
 │   ├── setup.sh                 # Server setup (prereqs, micromamba, npm, keys)
@@ -268,7 +268,7 @@ cd docs && make html
 
 | Guide                                                       | Target Audience | Focus Areas                                                                        |
 | ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------- |
-| [Student Guide](guides/en/student_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
+| [Competitor Guide](guides/en/competitor_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
 | [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Full setup, TLS/HTTPS, worker deployment, challenge/task management, backups.      |
 | [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
