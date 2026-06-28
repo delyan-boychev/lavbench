@@ -118,6 +118,8 @@ deploy_docker() {
     -e WORKER_PRIVATE_KEY \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_TYPE \
+    -e INTERNAL_ONLY_WORKER="$([ "$INTERNAL" = "true" ] && echo true || echo false)" \
+    -e EVALUATION_ONLY_WORKER="$([ "$INTERNAL" != "true" ] && echo true || echo false)" \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
     -e GPU_CORES_PER_TASK \
