@@ -214,6 +214,19 @@ export default function SubmissionViewer({
           </div>
         )}
 
+        {/* Execution time — visible to all */}
+        {submission.execution_time_ms != null && (
+          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              {t('submissions.execution_time_heading') || 'Execution'}
+            </div>
+            <div className="text-xs text-slate-300">
+              <strong>{t('submissions.execution_time')}</strong>{' '}
+              {`${submission.execution_time_ms} ms`}
+            </div>
+          </div>
+        )}
+
         {/* Integrity View for Jury/Admin */}
         {isAdminOrJury && (
           <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
@@ -226,10 +239,6 @@ export default function SubmissionViewer({
                 <span className="font-mono text-[11px] text-slate-400">
                   {submission.celery_task_id || t('common.none')}
                 </span>
-              </div>
-              <div>
-                <strong>{t('submissions.execution_time')}</strong>{' '}
-                {submission.execution_time_ms ? `${submission.execution_time_ms} ms` : '—'}
               </div>
             </div>
           </div>

@@ -163,9 +163,11 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     # Dispatch the submission via Celery
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
-    evaluate_submission.apply_async(
+    result = evaluate_submission.apply_async(
         args=[submission.id, metadata], priority=priority, queue=queue_name
     )
+    submission.celery_task_id = result.id
+    db.session.commit()
 
 
 def _maybe_queue_baseline(task, challenge, admin_id):
@@ -1327,13 +1329,15 @@ def submit_task(task_id):
             return err("ERR_EVALUATOR_LOAD_FAILED", 500, submission_id=submission.id)
 
     try:
-        evaluate_submission.apply_async(
+        result = evaluate_submission.apply_async(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
             countdown=1,
             task_id=f"submission_{submission.id}",
         )
+        submission.celery_task_id = result.id
+        db.session.commit()
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = "failed"
