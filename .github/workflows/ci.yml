@@ -172,12 +172,93 @@ jobs:
         working-directory: frontend
 
   docker-build:
-    name: Docker build
+    name: Docker build + full stack smoke test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # --- Build images ---
       - run: docker build -t lavbench-backend backend/
       - run: docker build -t lavbench-frontend frontend/
+
+      # --- Report image sizes to catch bloat ---
+      - run: docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep lavbench
+
+      # --- Start full stack ---
+      - name: Start services
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+          REDIS_PASSWORD: ci-redis-pass
+          SECRET_KEY: ci-secret-key-0000000000000000000000
+          WORKER_PUBLIC_KEY: unused-in-ci-worker-public-key-placeholder
+          SERVER_ADDRESS: localhost
+          MAIN_SERVER_URL: http://localhost:5001
+        run: |
+          mkdir -p certs
+          docker compose -f docker-compose.yml up -d
+
+      - name: Wait for all services healthy
+        run: |
+          for svc in lavbench_db lavbench_redis lavbench_backend lavbench_frontend; do
+            echo "Waiting for $svc..."
+            for i in $(seq 1 45); do
+              sleep 2
+              status=$(docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null)
+              [ "$status" = "healthy" ] && break
+            done
+            if [ "$status" != "healthy" ]; then
+              echo "FAILED: $svc is $status (expected healthy)"
+              docker logs "$svc" --tail 30
+              exit 1
+            fi
+            echo "$svc is healthy"
+          done
+
+      # --- Verify all containers are still running (no crashes) ---
+      - name: Check all containers up
+        run: |
+          RUNNING=$(docker ps --format '{{.Names}} {{.Status}}')
+          echo "Running containers:"
+          echo "$RUNNING"
+          EXPECTED="lavbench_db lavbench_redis lavbench_backend lavbench_beat lavbench_worker lavbench_frontend"
+          for name in $EXPECTED; do
+            echo "$RUNNING" | grep -q "^$name " || {
+              echo "FAILED: $name is not running";
+              docker logs "$name" --tail 20 2>/dev/null;
+              exit 1;
+            }
+          done
+
+      # --- Verify backend health endpoint ---
+      - name: Health endpoint
+        run: |
+          echo "=== /api/health ==="
+          curl -sS http://localhost:80/api/health | python3 -c "
+          import json, sys
+          body = json.load(sys.stdin)
+          assert body.get('status') == 'ok', 'status is ' + str(body.get('status'))
+          checks = body.get('checks', {})
+          for name in ('database', 'redis', 'disk'):
+              assert 'error' not in str(checks.get(name, '')), f'{name} check failed: {checks[name]}'
+          print(json.dumps(body, indent=2))
+          print('All health checks passed')
+          "
+
+      # --- Verify frontend serves the SPA ---
+      - name: Frontend check
+        run: |
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:80/)
+          [ "$STATUS" = "200" ] || { echo "Frontend returned $STATUS"; exit 1; }
+          curl -sS http://localhost:80/ | grep -q '<div id="root"' || {
+            echo 'Frontend HTML missing <div id="root">';
+            exit 1;
+          }
+          echo "Frontend is serving the SPA (HTTP 200)"
+
+      # --- Clean up ---
+      - name: Clean up
+        if: always()
+        run: docker compose -f docker-compose.yml down --volumes
 
   docs-build:
     name: Build Sphinx documentation
