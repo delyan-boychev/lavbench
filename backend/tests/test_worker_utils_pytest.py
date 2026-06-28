@@ -1,3 +1,4 @@
+import base64
 import os
 import tempfile
 from unittest.mock import patch
@@ -6,6 +7,7 @@ import pytest
 from worker_utils import (
     MockModel,
     StreamingLogList,
+    _sign_worker_token,
     download_labels_parquet_to_dir,
     download_task_files_to_dir,
     report_status_to_server,
@@ -157,6 +159,65 @@ class TestMockModel:
     def test_default_works(self):
         m = MockModel(x=1)
         assert m.x == 1
+
+
+class TestSignWorkerToken:
+    """Tests for the _sign_worker_token function."""
+
+    def test_missing_key_returns_empty(self, monkeypatch):
+        monkeypatch.delenv("WORKER_PRIVATE_KEY", raising=False)
+        assert _sign_worker_token(1) == ""
+
+    def test_invalid_key_returns_empty(self, monkeypatch):
+        monkeypatch.setenv("WORKER_PRIVATE_KEY", "not-valid-base64")
+        assert _sign_worker_token(1) == ""
+
+    def test_valid_key_returns_token(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        priv = Ed25519PrivateKey.generate()
+        priv_b64 = base64.b64encode(priv.private_bytes_raw()).decode()
+        monkeypatch.setenv("WORKER_PRIVATE_KEY", priv_b64)
+
+        token = _sign_worker_token(42)
+        assert "." in token
+
+        nonce, b64_sig = token.split(".", 1)
+        assert nonce.startswith("42:")
+
+        signature = base64.b64decode(b64_sig)
+        pub = priv.public_key()
+        pub.verify(signature, nonce.encode())
+
+    def test_token_format(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        priv = Ed25519PrivateKey.generate()
+        monkeypatch.setenv(
+            "WORKER_PRIVATE_KEY",
+            base64.b64encode(priv.private_bytes_raw()).decode(),
+        )
+        token = _sign_worker_token(99)
+        assert token.count(".") == 1
+
+        nonce, _ = token.split(".")
+        parts = nonce.split(":")
+        assert len(parts) == 2
+        assert parts[0] == "99"
+
+    def test_different_submissions_different_tokens(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        priv = Ed25519PrivateKey.generate()
+        monkeypatch.setenv(
+            "WORKER_PRIVATE_KEY",
+            base64.b64encode(priv.private_bytes_raw()).decode(),
+        )
+        t1 = _sign_worker_token(1)
+        t2 = _sign_worker_token(2)
+        # Different submission_id → different nonce → different token
+        assert t1.split(".")[0].split(":")[0] == "1"
+        assert t2.split(".")[0].split(":")[0] == "2"
 
 
 class TestReportStatusToServer:
