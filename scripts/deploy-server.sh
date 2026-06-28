@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/deploy-docker.sh — Deploy LavBench server with Docker Compose.
+# scripts/deploy-server.sh — Deploy LavBench server with Docker Compose.
 # Called by: make deploy-server
 set -euo pipefail
 

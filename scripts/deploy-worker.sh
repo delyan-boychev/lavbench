@@ -128,6 +128,7 @@ deploy_docker() {
     -e RESERVED_CPU_CORES \
     -e RAM_CLAMP_FACTOR \
     -e RUNNING_AS_WORKER=true \
+    -e PYTHONPATH=/app \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
