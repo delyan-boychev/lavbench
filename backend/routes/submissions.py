@@ -300,13 +300,16 @@ def submit_code(challenge_id):
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     try:
-        evaluate_submission.apply_async(
+        result = evaluate_submission.apply_async(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
             countdown=1,
             task_id=f"submission_{submission.id}",
         )
+        if result is not None:
+            submission.celery_task_id = str(result.id)
+        db.session.commit()
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = "failed"
