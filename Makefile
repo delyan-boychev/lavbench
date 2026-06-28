@@ -14,7 +14,7 @@ setup-worker:   # Worker: prerequisites, local env setup (if needed), interactiv
 deploy-server:  # Deploy server with Docker Compose (build + up -d)
 	@scripts/deploy-docker.sh
 
-deploy-worker:  # Build (if needed) and deploy worker from saved config
+deploy-worker:  # Build and deploy worker from saved config
 	@scripts/deploy-worker.sh
 
 dev:            # Local debug mode (micromamba + Flask + Celery + frontend)
