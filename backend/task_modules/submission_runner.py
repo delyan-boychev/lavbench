@@ -454,7 +454,8 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
 
         # Write user code to temporary file / directory
-        temp_dir = tempfile.mkdtemp()
+        workspace_root = os.environ.get("LAVBENCH_WORKSPACE_DIR")
+        temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
         os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
 
         # Create logs holder
@@ -914,6 +915,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         if "gpu_lock_file" in locals() and gpu_lock_file:
             with contextlib.suppress(Exception):
                 gpu_lock_file.close()
+        if "temp_dir" in locals() and temp_dir:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     return f"Submission {submission_id} evaluated with status {status}"
 

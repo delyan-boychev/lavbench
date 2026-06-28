@@ -77,6 +77,7 @@ docker-compose.*.local.yml
 admin_credentials.txt
 worker.env
 certs/
+.lavbench_workspace/
 .hf_token
 backend/backups/
 backend/backend/task_images/

@@ -21,7 +21,7 @@ Browser (React) → Nginx (port 443, HTTPS) → Flask API (port 5001)
 | **Cache/Broker** | Redis                             | Celery message broker, SSE pub/sub, caching, rate limiting, token revocation        |
 | **Task Queue**   | Celery                            | Async job dispatch (evaluation, backups)                                            |
 | **Scheduler**    | Celery Beat                       | Watchdog (stuck submissions), automated backups                                     |
-| **Worker**       | `start-worker.sh --docker` (container) or `start-worker.sh` on host | Sibling Docker sandbox execution (not Docker-in-Docker)                          |
+| **Worker**       | `deploy-worker.sh` — Docker container or local micromamba (from `worker.env`) | Sibling Docker sandbox execution (not Docker-in-Docker)                          |
 
 ## Authentication Flow
 

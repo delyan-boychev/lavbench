@@ -76,7 +76,7 @@ flowchart TD
     subgraph Remote [Remote Worker Machines]
         direction TB
         W1[Worker Container<br>lavbench-worker] -->|Sibling Containers| S1{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
-        W2[Worker Local<br>micromamba + start-worker.sh] -->|Sibling Containers| S2{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
+        W2[Worker Local<br>micromamba + deploy-worker.sh] -->|Sibling Containers| S2{{Docker Sandbox<br>--network none<br>CPU/RAM/PIDs limit}}
     end
 
     %% Connections from Redis to Workers
@@ -143,11 +143,12 @@ lavbench/
 ├── guides/                      # User documentation (student, jury, admin, API)
 ├── docs/                        # Project documentation (Sphinx, architecture)
 ├── scripts/
-│   ├── setup.sh                 # First-time server setup (prereqs, micromamba, keys)
+│   ├── setup.sh                 # Server setup (prereqs, micromamba, npm, keys)
+│   ├── setup-worker.sh          # Worker setup (prereqs, env, interactive config)
 │   ├── generate-keys.sh         # Interactive key/cert generator (.env + worker.env)
 │   ├── edit-config.sh           # Menu-based config editor (server + worker)
-│   ├── start-worker.sh          # Worker launcher (docker + local, interactive first-run)
 │   ├── deploy-docker.sh         # Docker Compose deployment
+│   ├── deploy-worker.sh         # Worker deploy (build + start from saved config)
 │   └── deploy-debug.sh          # Local debug mode (micromamba + Flask + Celery)
 ├── docker-compose.yml           # Docker Compose (db, redis, backend, beat, frontend)
 ├── Makefile                     # Top-level targets (setup, worker, edit, deploy-docker, docs)
