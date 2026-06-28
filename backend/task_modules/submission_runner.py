@@ -1,4 +1,4 @@
-"""Celery task for executing student submissions in Docker sandboxes."""
+"""Celery task for executing competitor submissions in Docker sandboxes."""
 
 import contextlib
 import fcntl
@@ -559,11 +559,11 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
             env["HF_HOME"] = hf_cache_dir
             env["HF_DATASETS_CACHE"] = hf_cache_dir
 
-        # Generate secret results key and write student actual code
+        # Generate secret results key and write competitor actual code
         import secrets
 
         results_key = secrets.token_hex(16)
-        with open(os.path.join(temp_dir, "student_actual.py"), "w") as f:
+        with open(os.path.join(temp_dir, "competitor_actual.py"), "w") as f:
             f.write(user_code)
             os.fchmod(f.fileno(), 0o644)
 
@@ -614,7 +614,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         # Update status: Running Inference
         update_status("running", "running_inference", logs_list=logs)
 
-        exec_file = "student_actual.py"
+        exec_file = "competitor_actual.py"
         start_wall_time = time.time()
         stdout, stderr = "", ""
         process_timeout = False

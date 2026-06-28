@@ -361,7 +361,7 @@ class User(db.Model):
             show_details = True
 
         # BUT if the user is anonymous:
-        # Other students (competitors) are NEVER allowed to see their details.
+        # Other competitors are NEVER allowed to see their details.
         # So if the viewer is a competitor (and not self), we set show_details to False.
         if (
             self.is_anonymous
@@ -746,7 +746,7 @@ class Task(db.Model):
 
 
 class Submission(db.Model):
-    """A student's notebook/code submission with status, scores, logs, and execution metadata."""
+    """A competitor's notebook/code submission with status, scores, logs, and execution metadata."""
 
     __tablename__ = "submissions"
 

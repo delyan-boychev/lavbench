@@ -40,8 +40,8 @@ Browser (React) → Nginx (port 443, HTTPS) → Flask API (port 5001)
 2. User selects cells → POST /api/challenges/<id>/submit
 3. Server: AST validation → rate limit check → create Submission → dispatch Celery task
 4. Worker: pick up task → fetch HF key from server → preload datasets → Docker build
-5. Docker sandbox: --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, CPU/RAM/PIDs limits → execute student code
-6. Student code writes submission.parquet → worker compares against labels.parquet → calculate scores
+5. Docker sandbox: --network none, --cap-drop ALL, --read-only rootfs, --no-new-privileges, CPU/RAM/PIDs limits → execute competitor code
+6. Competitor code writes submission.parquet → worker compares against labels.parquet → calculate scores
 7. Worker: report scores to server → update Submission → invalidate cache → publish SSE → leaderboard update
 ```
 

@@ -136,7 +136,7 @@ export default function CompetitionBar() {
                 userSelect: 'none',
               }}
               title={t('nav.assigned_competition_tooltip')}
-              data-testid="student-competition-label"
+              data-testid="competitor-competition-label"
             >
               <svg
                 width="12"

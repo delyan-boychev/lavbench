@@ -968,11 +968,11 @@ class TestRouteLevelLogic:
         jury_header = self.get_auth_header(jury_token)
         admin_header = self.get_auth_header(self.admin_token)
 
-        res = self.client.get("/api/docs/student", headers=comp_header)
+        res = self.client.get("/api/docs/competitor", headers=comp_header)
         assert res.status_code == 200
-        res = self.client.get("/api/docs/student", headers=jury_header)
+        res = self.client.get("/api/docs/competitor", headers=jury_header)
         assert res.status_code == 200
-        res = self.client.get("/api/docs/student", headers=admin_header)
+        res = self.client.get("/api/docs/competitor", headers=admin_header)
         assert res.status_code == 200
 
         res = self.client.get("/api/docs/jury", headers=comp_header)
@@ -1191,7 +1191,7 @@ class TestRouteLevelLogic:
         invalidate_leaderboard_cache(self.challenge.id)
 
         anon_comp = User(
-            username="anon_student",
+            username="anon_competitor",
             password_hash="pbkdf2:sha256:...",
             role="competitor",
             alias_id="Ghost-Rider-777",

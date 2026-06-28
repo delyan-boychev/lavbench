@@ -230,13 +230,13 @@ describe('Navbar Component', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url) => {
-        if (url.includes('/api/docs/student')) {
+        if (url.includes('/api/docs/competitor')) {
           return Promise.resolve({
             ok: true,
             json: () =>
               Promise.resolve({
-                title: 'Student Guide',
-                content: 'Student Guide Content',
+                title: 'Competitor Guide',
+                content: 'Competitor Guide Content',
               }),
           });
         }
@@ -254,7 +254,7 @@ describe('Navbar Component', () => {
 
     expect(screen.getByText('Documentation & Guides')).toBeInTheDocument();
 
-    expect(await screen.findByText('Student Guide Content')).toBeInTheDocument();
+    expect(await screen.findByText('Competitor Guide Content')).toBeInTheDocument();
   });
 
   it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {
@@ -266,12 +266,12 @@ describe('Navbar Component', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url) => {
-        if (url.includes('/api/docs/student')) {
+        if (url.includes('/api/docs/competitor')) {
           return Promise.resolve({
             ok: true,
             json: () =>
               Promise.resolve({
-                title: 'Student Guide',
+                title: 'Competitor Guide',
                 content: '> [!NOTE]\n> This is a test note.',
               }),
           });

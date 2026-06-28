@@ -1464,7 +1464,7 @@ def download_scores_csv(challenge_id):
 @jury_access_required
 def download_submissions_zip(challenge_id):
     """
-    Download completed student submissions as a ZIP archive.
+    Download completed competitor submissions as a ZIP archive.
     Allows anonymized downloads when a stage or the competition has ended,
     and non-anonymized downloads once finalized.
     """
@@ -1567,7 +1567,7 @@ def download_submissions_zip(challenge_id):
             target_desc = f"stage: {stage.title}" if stage else f"challenge: {challenge.title}"
             zip_file.writestr(
                 "README.txt",
-                f"No completed student submissions found for {target_desc}",
+                f"No completed competitor submissions found for {target_desc}",
             )
 
     zip_buffer.seek(0)

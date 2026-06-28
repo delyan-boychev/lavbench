@@ -83,7 +83,7 @@ describe('SubmissionsView Page', () => {
   describe('Competitor view', () => {
     beforeEach(() => {
       useAuth.mockReturnValue({
-        currentUser: { id: 2, username: 'student1', role: 'competitor' },
+        currentUser: { id: 2, username: 'competitor1', role: 'competitor' },
       });
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,

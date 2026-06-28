@@ -23,7 +23,7 @@ def predict(inputs):
     with open("inputs.json", "w") as f:
         json.dump(inputs, f)
 
-    # Run the student code in a separate subprocess
+    # Run the competitor code in a separate subprocess
     env = os.environ.copy()
     env.pop("RESULTS_KEY", None)
 
@@ -35,14 +35,14 @@ import os
 os.environ.pop("RESULTS_KEY", None)
 
 try:
-    import student_actual
-    if not hasattr(student_actual, 'predict'):
-        raise AttributeError("No predict function found in student code.")
+    import competitor_actual
+    if not hasattr(competitor_actual, 'predict'):
+        raise AttributeError("No predict function found in competitor code.")
 
     with open("inputs.json", "r") as f:
         inputs = json.load(f)
 
-    preds = student_actual.predict(inputs)
+    preds = competitor_actual.predict(inputs)
 
     with open("predictions.json", "w") as f:
         json.dump(preds, f)
@@ -51,20 +51,20 @@ except Exception as e:
     with open("predictions.json", "w") as f:
         json.dump({ "error": str(e), "traceback": traceback.format_exc() }, f)
 \"\"\"
-    with open("run_student.py", "w") as f:
+    with open("run_competitor.py", "w") as f:
         f.write(runner_code)
 
-    proc = subprocess.run([sys.executable, "run_student.py"],
+    proc = subprocess.run([sys.executable, "run_competitor.py"],
         env=env, capture_output=True, text=True)
 
-    if os.path.exists("run_student.py"):
-        try: os.remove("run_student.py")
+    if os.path.exists("run_competitor.py"):
+        try: os.remove("run_competitor.py")
         except OSError: pass
     if os.path.exists("inputs.json"):
         try: os.remove("inputs.json")
         except OSError: pass
 
-    # Clean up any potential eval_results spoofing attempt by the student code
+    # Clean up any potential eval_results spoofing attempt by the competitor code
     results_key = os.environ.get("RESULTS_KEY", "")
     for f_name in ["eval_results.json", f"eval_results_{results_key}.json"]:
         if os.path.exists(f_name):
@@ -72,14 +72,14 @@ except Exception as e:
             except OSError: pass
 
     if not os.path.exists("predictions.json"):
-        raise RuntimeError(f"Student code subprocess failed to run. Stderr: {proc.stderr}")
+        raise RuntimeError(f"Competitor code subprocess failed to run. Stderr: {proc.stderr}")
 
     with open("predictions.json", "r") as f:
         preds_data = json.load(f)
 
     if isinstance(preds_data, dict) and "error" in preds_data:
         raise RuntimeError(
-            f"Error in student predict:"
+            f"Error in competitor predict:"
             f" {preds_data['error']}\\n{preds_data.get('traceback', '')}"
         )
 
@@ -235,7 +235,7 @@ def predict(inputs):
     with open("inputs.json", "w") as f:
         json.dump(inputs, f)
 
-    # Run the student code in a separate subprocess
+    # Run the competitor code in a separate subprocess
     env = os.environ.copy()
     env.pop("RESULTS_KEY", None)
 
@@ -247,14 +247,14 @@ import os
 os.environ.pop("RESULTS_KEY", None)
 
 try:
-    import student_actual
-    if not hasattr(student_actual, 'predict'):
-        raise AttributeError("No predict function found in student code.")
+    import competitor_actual
+    if not hasattr(competitor_actual, 'predict'):
+        raise AttributeError("No predict function found in competitor code.")
 
     with open("inputs.json", "r") as f:
         inputs = json.load(f)
 
-    preds = student_actual.predict(inputs)
+    preds = competitor_actual.predict(inputs)
 
     with open("predictions.json", "w") as f:
         json.dump(preds, f)
@@ -263,20 +263,20 @@ except Exception as e:
     with open("predictions.json", "w") as f:
         json.dump({"error": str(e), "traceback": traceback.format_exc()}, f)
 \"\"\"
-    with open("run_student.py", "w") as f:
+    with open("run_competitor.py", "w") as f:
         f.write(runner_code)
 
-    proc = subprocess.run([sys.executable, "run_student.py"],
+    proc = subprocess.run([sys.executable, "run_competitor.py"],
         env=env, capture_output=True, text=True)
 
-    if os.path.exists("run_student.py"):
-        try: os.remove("run_student.py")
+    if os.path.exists("run_competitor.py"):
+        try: os.remove("run_competitor.py")
         except OSError: pass
     if os.path.exists("inputs.json"):
         try: os.remove("inputs.json")
         except OSError: pass
 
-    # Clean up any potential eval_results spoofing attempt by the student code
+    # Clean up any potential eval_results spoofing attempt by the competitor code
     results_key = os.environ.get("RESULTS_KEY", "")
     for f_name in ["eval_results.json", f"eval_results_{results_key}.json"]:
         if os.path.exists(f_name):
@@ -284,14 +284,14 @@ except Exception as e:
             except OSError: pass
 
     if not os.path.exists("predictions.json"):
-        raise RuntimeError(f"Student code subprocess failed to run. Stderr: {proc.stderr}")
+        raise RuntimeError(f"Competitor code subprocess failed to run. Stderr: {proc.stderr}")
 
     with open("predictions.json", "r") as f:
         preds_data = json.load(f)
 
     if isinstance(preds_data, dict) and "error" in preds_data:
         raise RuntimeError(
-            f"Error in student predict:"
+            f"Error in competitor predict:"
             f" {preds_data['error']}\\n{preds_data.get('traceback', '')}"
         )
 

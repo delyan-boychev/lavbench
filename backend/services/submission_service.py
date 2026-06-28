@@ -46,7 +46,7 @@ def extract_code_from_notebook(filepath):
 
 def check_execution_rules(task, cells_list):
     (
-        """Validate student code against task rules: """
+        """Validate competitor code against task rules: """
         """banned magic commands, banned/whitelisted imports."""
     )
     extracted_cells = extract_code_from_cells(cells_list)

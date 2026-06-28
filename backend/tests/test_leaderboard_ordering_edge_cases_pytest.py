@@ -71,30 +71,30 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
 
         # Set up competitor accounts with password hashes
         self.comp_no_sub = User(
-            username="student_no_sub",
+            username="competitor_no_sub",
             role="competitor",
-            alias_id="NoSubStudent",
+            alias_id="NoSubCompetitor",
             password_hash="pbkdf2:sha256:...",
             challenge_id=self.challenge.id,
         )
         self.comp_failed_sub = User(
-            username="student_failed_sub",
+            username="competitor_failed_sub",
             role="competitor",
-            alias_id="FailedSubStudent",
+            alias_id="FailedSubCompetitor",
             password_hash="pbkdf2:sha256:...",
             challenge_id=self.challenge.id,
         )
         self.comp_successful_sub_high = User(
-            username="student_high_score",
+            username="competitor_high_score",
             role="competitor",
-            alias_id="HighScoreStudent",
+            alias_id="HighScoreCompetitor",
             password_hash="pbkdf2:sha256:...",
             challenge_id=self.challenge.id,
         )
         self.comp_successful_sub_low = User(
-            username="student_low_score",
+            username="competitor_low_score",
             role="competitor",
-            alias_id="LowScoreStudent",
+            alias_id="LowScoreCompetitor",
             password_hash="pbkdf2:sha256:...",
             challenge_id=self.challenge.id,
         )
@@ -140,10 +140,10 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             json={"user_id": self.comp_no_sub.id, "points": {str(self.task1.id): 10}},
         )
         assert res.status_code == 400
-        assert "only students with submissions" in res.get_json()["error"].lower()
+        assert "only competitors with submissions" in res.get_json()["error"].lower()
 
     def test_failed_submissions_require_jury_points(self, db_session):
-        # Student failed sub has 1 failed submission
+        # Competitor failed sub has 1 failed submission
         sub = Submission(
             challenge_id=self.challenge.id,
             task_id=self.task1.id,
@@ -206,7 +206,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             private_score=50.0,
             execution_time_ms=200,
         )
-        # Create a failed submission for failed_sub student
+        # Create a failed submission for failed_sub competitor
         sub_failed = Submission(
             challenge_id=self.challenge.id,
             task_id=self.task1.id,
@@ -217,9 +217,9 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         db_session.commit()
 
         # Before finalization, check sorting:
-        # High score student (public_score = 90.0) should be 1st
-        # Low score student (public_score = 40.0) should be 2nd
-        # Failed/No sub students should be ranked below active ones (or based on has_submitted)
+        # High score competitor (public_score = 90.0) should be 1st
+        # Low score competitor (public_score = 40.0) should be 2nd
+        # Failed/No sub competitors should be ranked below active ones (or based on has_submitted)
         res = self.client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self._auth(self.jury_token),
@@ -228,13 +228,13 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         data = res.get_json()
         leaderboard = data["leaderboard"]
 
-        # High score student is first
-        assert leaderboard[0]["user"]["username"] == "student_high_score"
-        # Low score student is second
-        assert leaderboard[1]["user"]["username"] == "student_low_score"
+        # High score competitor is first
+        assert leaderboard[0]["user"]["username"] == "competitor_high_score"
+        # Low score competitor is second
+        assert leaderboard[1]["user"]["username"] == "competitor_low_score"
 
         # Now, try to finalize. Will fail because points are missing for task1 & task2
-        # (For High, Low, and FailedSub students since they have submissions)
+        # (For High, Low, and FailedSub competitors since they have submissions)
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
             headers=self._auth(self.jury_token),
@@ -243,9 +243,9 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         assert res.status_code == 400
 
         # Save manual points:
-        # Give High Score student -> 5 points
-        # Give Low Score student -> 95 points (so they will rank 1st after finalization!)
-        # Give Failed Sub student -> 0 points
+        # Give High Score competitor -> 5 points
+        # Give Low Score competitor -> 95 points (so they will rank 1st after finalization!)
+        # Give Failed Sub competitor -> 0 points
         res1 = self.client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.jury_token),
@@ -285,10 +285,10 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
 
         # Fetch leaderboard again.
         # Now, it must sort based on manual points (total_points):
-        # 1. Low score student: 95 points
-        # 2. High score student: 5 points
-        # 3. Failed sub student: 0 points
-        # 4. No sub student: 0 points (rank 3 or 4)
+        # 1. Low score competitor: 95 points
+        # 2. High score competitor: 5 points
+        # 3. Failed sub competitor: 0 points
+        # 4. No sub competitor: 0 points (rank 3 or 4)
         res = self.client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self._auth(self.jury_token),
@@ -298,11 +298,11 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         leaderboard = data["leaderboard"]
         print("LEADERBOARD:", json.dumps(leaderboard, indent=2))
 
-        assert leaderboard[0]["user"]["username"] == "student_low_score"
+        assert leaderboard[0]["user"]["username"] == "competitor_low_score"
         assert leaderboard[0]["total_points"] == 95
         assert leaderboard[0]["rank"] == 1
 
-        assert leaderboard[1]["user"]["username"] == "student_high_score"
+        assert leaderboard[1]["user"]["username"] == "competitor_high_score"
         assert leaderboard[1]["total_points"] == 5
         assert leaderboard[1]["rank"] == 2
 

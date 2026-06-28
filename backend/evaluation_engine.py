@@ -1,4 +1,4 @@
-"""Parquet-based evaluation engine for comparing student submissions against labels."""
+"""Parquet-based evaluation engine for comparing competitor submissions against labels."""
 
 import contextlib
 import logging

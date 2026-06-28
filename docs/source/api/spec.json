@@ -1470,7 +1470,7 @@
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           },
           {
@@ -1485,7 +1485,7 @@
                       "type": "string"
                     },
                     "user_id": {
-                      "type": "integer"
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -1549,7 +1549,7 @@
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           },
           {
@@ -1773,7 +1773,7 @@
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           },
           {
@@ -1834,7 +1834,7 @@
             "name": "challenge_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           },
           {
@@ -1849,7 +1849,7 @@
                       "type": "array"
                     },
                     "task_id": {
-                      "type": "integer"
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -2043,6 +2043,42 @@
         ]
       }
     },
+    "/api/docs/competitor": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Language code (e.g. 'en', 'bg')",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Returns the rendered guide"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get the competitor documentation guide.",
+        "tags": [
+          "Docs"
+        ]
+      }
+    },
     "/api/docs/jury": {
       "get": {
         "parameters": [
@@ -2074,42 +2110,6 @@
           }
         ],
         "summary": "Get the jury documentation guide.",
-        "tags": [
-          "Docs"
-        ]
-      }
-    },
-    "/api/docs/student": {
-      "get": {
-        "parameters": [
-          {
-            "description": "Language code (e.g. 'en', 'bg')",
-            "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Returns the rendered guide"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Get the student documentation guide.",
         "tags": [
           "Docs"
         ]
@@ -2154,7 +2154,7 @@
             "name": "submission_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -2209,7 +2209,7 @@
             "name": "submission_id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
