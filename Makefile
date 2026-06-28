@@ -12,7 +12,7 @@ setup-worker:   # Worker: prerequisites, local env setup (if needed), interactiv
 	@scripts/setup-worker.sh
 
 deploy-server:  # Deploy server with Docker Compose (build + up -d)
-	@scripts/deploy-docker.sh
+	@scripts/deploy-server.sh
 
 deploy-worker:  # Build and deploy worker from saved config
 	@scripts/deploy-worker.sh

@@ -1,6 +1,11 @@
 import math
 
 import pytest
+from evaluation_engine import (
+    AVAILABLE_METRICS,
+    evaluate_predictions,
+    validate_parquet_schema,
+)
 from task_modules.submission_runner import calculate_weighted_score
 
 
@@ -745,3 +750,16 @@ class TestCodeCellsParseError:
             challenge_cls=None,
         )
         assert result is None
+
+
+class TestEvaluationEngineImport:
+    def test_import_evaluate_predictions_exists(self):
+        assert callable(evaluate_predictions)
+
+    def test_import_validate_parquet_schema_exists(self):
+        assert callable(validate_parquet_schema)
+
+    def test_available_metrics_has_expected_keys(self):
+        assert "accuracy" in AVAILABLE_METRICS
+        assert "f1" in AVAILABLE_METRICS
+        assert "rmse" in AVAILABLE_METRICS

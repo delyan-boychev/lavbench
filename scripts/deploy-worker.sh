@@ -96,10 +96,13 @@ deploy_docker() {
   echo "  ✔ Build complete"
 
   # ── Remove old worker containers ───────────────────────────────
-  for cid in $(docker ps -a --filter "name=lavbench-worker" --format '{{.ID}}'); do
-    echo "  → Removing old worker container: $(docker inspect --format '{{.Name}}' "$cid" | sed 's|/||')"
-    docker rm -f "$cid" >/dev/null 2>&1 || true
-  done
+  EXISTING=$(docker ps -a --filter "name=lavbench-worker" --format '{{.ID}}')
+  if [ -n "$EXISTING" ]; then
+    for cid in $EXISTING; do
+      echo "  → Removing old worker container: $(docker inspect --format '{{.Name}}' "$cid" | sed 's|/||')"
+      docker rm -f "$cid" >/dev/null 2>&1 || true
+    done
+  fi
 
   # ── Prepare volumes ────────────────────────────────────────────
   mkdir -p "${HF_CACHE_DIR}"
@@ -128,6 +131,9 @@ deploy_docker() {
     -e RESERVED_CPU_CORES \
     -e RAM_CLAMP_FACTOR \
     -e RUNNING_AS_WORKER=true \
+    -e PYTHONPATH=/app \
+    -e INTERNAL_ONLY_WORKER=$([ "$INTERNAL" = "true" ] && echo "true" || echo "false") \
+    -e EVALUATION_ONLY_WORKER=$([ "$INTERNAL" = "true" ] && echo "false" || echo "true") \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
