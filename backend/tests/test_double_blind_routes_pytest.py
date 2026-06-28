@@ -251,12 +251,12 @@ class TestDoubleBlindAndLeaderboardRules:
         assert comp_row[email_idx] == "N/A"
         assert comp_row[school_idx] == "N/A"
 
-        # Check audit log target student
+        # Check audit log target competitor
         audit_idx = rows.index(["--- SCORE CORRECTION AUDIT LOG ---"])
         audit_header = rows[audit_idx + 1]
-        target_student_idx = audit_header.index("Target Student")
+        target_competitor_idx = audit_header.index("Target Competitor")
         audit_row = rows[audit_idx + 2]
-        assert audit_row[target_student_idx] == "Comp-Alpha"
+        assert audit_row[target_competitor_idx] == "Comp-Alpha"
 
         # 2. Admin export -> Full unblinded data
         res_admin = client.get(
@@ -273,4 +273,4 @@ class TestDoubleBlindAndLeaderboardRules:
         assert comp_row_admin[school_idx] == "Test School"
 
         audit_row_admin = rows_admin[audit_idx + 2]
-        assert audit_row_admin[target_student_idx] == "db_comp1"
+        assert audit_row_admin[target_competitor_idx] == "db_comp1"

@@ -185,7 +185,7 @@ def login():
                 "ERR_COMPETITION_ARCHIVED",
                 403,
                 message="This competition has been archived. "
-                "Registered students are not allowed to log in.",
+                "Registered competitors are not allowed to log in.",
             )
 
     user_data = user.to_dict(current_user_id=user.id)

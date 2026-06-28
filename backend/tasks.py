@@ -99,7 +99,7 @@ celery.conf.update(
     retry_jitter=True,
 )
 def evaluate_submission(self, submission_id, metadata=None):
-    """Celery task: run a student submission through the evaluation pipeline in Docker."""
+    """Celery task: run a competitor submission through the evaluation pipeline in Docker."""
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except Exception as e:

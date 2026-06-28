@@ -440,7 +440,7 @@ def save_manual_points(challenge_id):
     parameters:
       - in: path
         name: challenge_id
-        type: integer
+        type: string
         required: true
         description: ID of the challenge
       - in: body
@@ -452,7 +452,7 @@ def save_manual_points(challenge_id):
               type: object
               properties:
                 user_id:
-                  type: integer
+                  type: string
                 points:
                   type: object
                 reason:
@@ -556,8 +556,8 @@ def save_manual_points(challenge_id):
             return err(
                 "ERR_NO_SUBMISSIONS",
                 400,
-                message="Only students with submissions can be assigned manual "
-                "points. Students without submissions automatically receive 0 points.",
+                message="Only competitors with submissions can be assigned manual "
+                "points. Competitors without submissions automatically receive 0 points.",
             )
 
         validated_points[str(task_id)] = pts

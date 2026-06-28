@@ -1,4 +1,4 @@
-# Student Guide
+# Competitor Guide
 
 Welcome to the LavBench Platform! This guide walks you through everything you need to compete — from logging in to submitting your final notebook.
 

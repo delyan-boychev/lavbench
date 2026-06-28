@@ -1,0 +1,1 @@
+../../guides/en/competitor_guide.md

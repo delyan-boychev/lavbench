@@ -38,7 +38,7 @@ def parse_notebook(challenge_id):
     parameters:
       - in: path
         name: challenge_id
-        type: integer
+        type: string
         required: true
       - in: formData
         name: file
@@ -116,7 +116,7 @@ def submit_code(challenge_id):
     parameters:
       - in: path
         name: challenge_id
-        type: integer
+        type: string
         required: true
       - in: body
         name: body
@@ -126,7 +126,7 @@ def submit_code(challenge_id):
             schema:
               type: object
               properties:
-                task_id: {type: integer}
+                task_id: {type: string}
                 selected_cells: {type: array, items: {type: object}}
     responses:
       202:
@@ -343,7 +343,7 @@ def get_submissions(challenge_id):
     parameters:
       - in: path
         name: challenge_id
-        type: integer
+        type: string
         required: true
       - in: query
         name: page
@@ -442,7 +442,7 @@ def get_submission_detail(submission_id):
     parameters:
       - in: path
         name: submission_id
-        type: integer
+        type: string
         required: true
     responses:
       200:
@@ -507,7 +507,7 @@ def select_final_submission(submission_id):
     parameters:
       - in: path
         name: submission_id
-        type: integer
+        type: string
         required: true
     responses:
       200:
@@ -778,7 +778,7 @@ def stream_submission_logs(submission_id):
 @jury_access_required
 def download_competitor_submission(challenge_id, task_id, user_id):
     """
-    Download a student's submission resolving to the final selection or the highest public score.
+    Download a competitor's submission resolving to the final selection or the highest public score.
     """
     subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
 
