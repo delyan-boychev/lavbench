@@ -552,6 +552,7 @@ if [ "$MODE" = "docker" ]; then
 
   docker run -d --name "lavbench-worker-$$" \
     --restart unless-stopped \
+    --network host \
     -e CELERY_BROKER_URL \
     -e CELERY_RESULT_BACKEND \
     -e SECRET_KEY \
