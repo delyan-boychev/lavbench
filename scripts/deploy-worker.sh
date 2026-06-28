@@ -90,31 +90,16 @@ deploy_docker() {
     exit 1
   fi
 
-  # ── Cache-aware build ──────────────────────────────────────────
-  echo "  → Checking image..."
-  SOURCE_HASH=$(
-    find backend/ -type f \( -name '*.py' -o -name 'Dockerfile.worker' -o -name 'requirements.txt' \) \
-      -exec md5 -r {} + 2>/dev/null | md5 -r | cut -d' ' -f1
-  )
-  IMAGE_HASH=$(docker image inspect "$WORKER_IMAGE" \
-    --format '{{.Config.Labels.source_hash}}' 2>/dev/null || echo "")
+  # ── Build (Docker layer cache avoids unnecessary work) ──────────
+  echo "  → Building $WORKER_IMAGE..."
+  docker build -t "$WORKER_IMAGE" -f backend/Dockerfile.worker backend/
+  echo "  ✔ Build complete"
 
-  if [ -z "$IMAGE_HASH" ] || [ "$SOURCE_HASH" != "$IMAGE_HASH" ]; then
-    echo "  → Building $WORKER_IMAGE..."
-    docker build \
-      -t "$WORKER_IMAGE" \
-      --label "source_hash=$SOURCE_HASH" \
-      -f backend/Dockerfile.worker backend/
-    echo "  ✔ Build complete"
-  else
-    echo "  → Image up-to-date, skipping build"
-  fi
-
-  # ── Remove old container ───────────────────────────────────────
-  if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
-    echo "  → Removing existing container..."
-    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  fi
+  # ── Remove old worker containers ───────────────────────────────
+  for cid in $(docker ps -a --filter "name=lavbench-worker" --format '{{.ID}}'); do
+    echo "  → Removing old worker container: $(docker inspect --format '{{.Name}}' "$cid" | sed 's|/||')"
+    docker rm -f "$cid" >/dev/null 2>&1 || true
+  done
 
   # ── Prepare volumes ────────────────────────────────────────────
   mkdir -p "${HF_CACHE_DIR}"

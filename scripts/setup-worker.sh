@@ -140,9 +140,11 @@ RESERVED_RAM=4
 
 # ── Interactive configuration ─────────────────────────────────────
 if [ -f "worker.env" ]; then
-  echo "  worker.env already exists. Re-run to reconfigure."
-  echo "  Delete it first: rm worker.env"
-  exit 0
+  read -p "  worker.env exists. Overwrite? [y/N]: " OVERWRITE
+  case "${OVERWRITE:-N}" in
+    y|Y) rm -f worker.env ;;
+    *) echo "  Exiting. Keep existing worker.env."; exit 0 ;;
+  esac
 fi
 
 CONFIG_OK=false
