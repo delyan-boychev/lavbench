@@ -24,7 +24,7 @@ def create_app():
     app.config.from_object(Config)
 
     # Enable CORS - restrict origins in production
-    cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:80").split(",")
+    cors_origins = Config.CORS_ORIGINS.split(",")
     CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
     db.init_app(app)
@@ -310,5 +310,5 @@ app = create_app()
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
     app.run(host="0.0.0.0", port=5001, debug=debug_mode)  # noqa: S104

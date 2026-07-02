@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 os.environ.setdefault(
     "SECRET_KEY", "conftest-test-secret-key-2024-abcdefgh"
 )  # 32+ chars for HMAC-SHA256
+os.environ.setdefault("ENCRYPTION_KEY", "tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis=")
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"  # force isolation — never touch the dev DB
 
 _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))

@@ -8,12 +8,14 @@ import re
 import secrets
 import shutil
 import string
+import tempfile
 import time
 import zipfile
 from datetime import datetime
 
-from auth_utils import jury_access_required, role_required
+from auth_utils import jury_access_required, rate_limit, role_required
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from config import Config
 from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
 from flask import (
@@ -37,6 +39,7 @@ from models import (
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
 from sqlalchemy import or_
+from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
@@ -144,6 +147,7 @@ def generate_random_password(length=12):
 @admin_bp.route("/register-competitor", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=20, window_seconds=60)
 def register_competitor():
     """
     Register a new competitor with auto-generated credentials.
@@ -324,10 +328,10 @@ def get_users():
         | (User.alias_id.ilike(f"%{search_term}%"))
         | (User.email.ilike(f"%{search_term}%"))
     )
-    candidates = filtered_query.all()
+    candidates = filtered_query.limit(Config.USER_SEARCH_LIMIT).all()
     # If no matches in searchable fields, fall back to full scan for encrypted field matches
     if not candidates:
-        candidates = query.all()
+        candidates = query.limit(Config.USER_SEARCH_LIMIT).all()
 
     filtered_items = []
     for u in candidates:
@@ -429,6 +433,7 @@ def delete_user(user_id):
 @admin_bp.route("/register-user", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=20, window_seconds=60)
 def register_user():
     """
     Register a new user account with specified role and demographics.
@@ -578,6 +583,7 @@ def register_user():
 
 @admin_bp.route("/import-competitors-csv", methods=["POST"])
 @role_required(["admin", "jury"])
+@rate_limit(max_requests=10, window_seconds=60)
 def import_competitors_csv():
     """
     Bulk import competitors from a CSV file.
@@ -623,10 +629,12 @@ def import_competitors_csv():
     if not valid_ext:
         return err("ERR_FILE_INVALID", 400, message=ext_err)
 
-    try:
-        raw = file.read()
-    except Exception:
-        return err("ERR_FILE_INVALID", 400)
+    if file.content_length and file.content_length > 50 * 1024 * 1024:
+        return err("ERR_FILE_TOO_LARGE", 400, message="CSV file exceeds 50MB limit")
+
+    raw = file.read()
+    if len(raw) > 50 * 1024 * 1024:
+        return err("ERR_FILE_TOO_LARGE", 400, message="CSV file exceeds 50MB limit")
     valid_content, content_err, _ = validate_csv_content(raw)
     if not valid_content:
         return err("ERR_CSV_PARSE_FAILED", 400, message=content_err)
@@ -800,7 +808,7 @@ def import_competitors_csv():
         return err("ERR_CSV_PARSE_FAILED", 400, message=f"Failed to parse CSV file: {e!s}")
 
 
-BACKUPS_DIR = os.environ.get("BACKUPS_DIR", "/backups")
+BACKUPS_DIR = Config.BACKUPS_DIR
 
 
 def _list_backup_files(directory):
@@ -857,6 +865,7 @@ def list_backups():
 
 @admin_bp.route("/backups/force", methods=["POST"])
 @role_required(["admin"])
+@rate_limit(max_requests=5, window_seconds=60)
 def force_backup():
     """
     Trigger an immediate manual backup of the database and uploaded files.
@@ -902,38 +911,47 @@ def stream_backup_status():
     """
 
     def event_generator():
-        with current_app.app_context():
-            yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
+        user_id = request.user["user_id"]
+        with sse_connection_limit(user_id=user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        r = get_redis_client()
-        pubsub = r.pubsub()
-        pubsub.subscribe("backup_status")
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
-                if message:
-                    with current_app.app_context():
-                        data = {
-                            "backups": _list_backup_files(BACKUPS_DIR),
-                            "event": json.loads(message["data"]),
-                        }
-                        yield f"data: {json.dumps(data)}\n\n"
-                else:
-                    yield ": keep-alive\n\n"
-        except GeneratorExit:
-            pass
-        finally:
+            with current_app.app_context():
+                yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
+
+            r = get_redis_client()
+            pubsub = r.pubsub()
+            pubsub.subscribe("backup_status")
+            start_time = time.time()
             try:
-                pubsub.unsubscribe()
-                pubsub.close()
+                while True:
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                    if message:
+                        with current_app.app_context():
+                            data = {
+                                "backups": _list_backup_files(BACKUPS_DIR),
+                                "event": json.loads(message["data"]),
+                            }
+                            yield f"data: {json.dumps(data)}\n\n"
+                    else:
+                        yield ": keep-alive\n\n"
             except GeneratorExit:
-                logger.debug("Backup SSE client disconnected")
+                pass
+            finally:
+                with contextlib.suppress(Exception):
+                    pubsub.unsubscribe()
+                    pubsub.close()
 
     return sse_response(event_generator)
 
 
 @admin_bp.route("/backups/<path:filename>/download", methods=["GET"])
 @role_required(["admin"])
+@rate_limit(max_requests=10, window_seconds=60)
 def download_backup_file(filename):
     """
     Download a specific backup archive file.
@@ -1295,6 +1313,7 @@ def update_user(user_id):
 @admin_bp.route("/users/<uuid:user_id>/reset-password", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=10, window_seconds=60)
 def reset_user_password(user_id):
     """
     Generate a new random password for a specific user.
@@ -1348,6 +1367,7 @@ def reset_user_password(user_id):
 @admin_bp.route("/challenges/<uuid:challenge_id>/reset-all-passwords", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=3, window_seconds=300)
 def reset_all_challenge_passwords(challenge_id):
     """
     Generate new passwords for all competitors in a challenge.
@@ -1422,6 +1442,7 @@ def reset_all_challenge_passwords(challenge_id):
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=10, window_seconds=60)
 def download_scores_csv(challenge_id):
     """
     Generate and download a CSV of all competitor scores for a challenge.
@@ -1462,6 +1483,7 @@ def download_scores_csv(challenge_id):
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-submissions-zip", methods=["GET"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@rate_limit(max_requests=5, window_seconds=120)
 def download_submissions_zip(challenge_id):
     """
     Download completed competitor submissions as a ZIP archive.
@@ -1504,15 +1526,33 @@ def download_submissions_zip(challenge_id):
             return err("ERR_COMPETITION_NOT_FINISHED", 400)
 
     # 3. Determine if anonymized
-    # Anonymized unless challenge/competition is finalized (scores_finalized = True)
     is_anonymized = not challenge.scores_finalized
 
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+    # Batch-load all completed submissions for the challenge to avoid N+1 queries
+    comp_ids = [c.id for c in competitors]
+    task_ids = [t.id for t in tasks]
+    all_subs = Submission.query.filter(
+        Submission.task_id.in_(task_ids),
+        Submission.user_id.in_(comp_ids),
+        Submission.status == "completed",
+    ).all()
+    subs_by_key = {}
+    for s in all_subs:
+        subs_by_key.setdefault((s.user_id, s.task_id), []).append(s)
+
+    # Preload stages for stage name lookup
+    stage_ids = {t.stage_id for t in tasks if t.stage_id}
+    stages = (
+        {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()} if stage_ids else {}
+    )
+
+    with (
+        tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as zip_tmp,
+        zipfile.ZipFile(zip_tmp, "w", zipfile.ZIP_DEFLATED) as zip_file,
+    ):
         for comp in competitors:
-            # 4. Folder name according to anonymization state
             if is_anonymized:
                 comp_name = comp.alias_id
             else:
@@ -1523,9 +1563,7 @@ def download_submissions_zip(challenge_id):
             comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
 
             for task in tasks:
-                subs = Submission.query.filter_by(
-                    task_id=task.id, user_id=comp.id, status="completed"
-                ).all()
+                subs = subs_by_key.get((comp.id, task.id), [])
                 if not subs:
                     continue
 
@@ -1538,11 +1576,8 @@ def download_submissions_zip(challenge_id):
                         c for c in task.title if c.isalnum() or c in (" ", "_", "-")
                     ).strip()
 
-                    # 5. Group by stage name if there are multiple stages in the challenge
                     if not stage_id and task.stage_id:
-                        from models import Stage
-
-                        task_stage = db.session.get(Stage, task.stage_id)
+                        task_stage = stages.get(task.stage_id)
                         stage_title = (
                             "".join(
                                 c for c in task_stage.title if c.isalnum() or c in (" ", "_", "-")
@@ -1562,15 +1597,12 @@ def download_submissions_zip(challenge_id):
                     notebook_str = cells_to_ipynb_json(cells_data)
                     zip_file.writestr(filename, notebook_str)
 
-        # Check if the zip file has no entries, write a readme to prevent empty/corrupted archives
         if not zip_file.namelist():
             target_desc = f"stage: {stage.title}" if stage else f"challenge: {challenge.title}"
             zip_file.writestr(
                 "README.txt",
                 f"No completed competitor submissions found for {target_desc}",
             )
-
-    zip_buffer.seek(0)
     zip_filename = f"submissions_challenge_{challenge_id}"
     if stage_id:
         zip_filename += f"_stage_{stage_id}"
@@ -1578,10 +1610,19 @@ def download_submissions_zip(challenge_id):
         zip_filename += "_anonymized"
     zip_filename += ".zip"
 
-    return Response(
-        zip_buffer.getvalue(),
+    from flask import after_this_request
+
+    @after_this_request
+    def cleanup(response):
+        with contextlib.suppress(OSError):
+            os.unlink(zip_tmp.name)
+        return response
+
+    return send_file(
+        zip_tmp.name,
         mimetype="application/zip",
-        headers={"Content-disposition": f"attachment; filename={zip_filename}"},
+        as_attachment=True,
+        download_name=zip_filename,
     )
 
 
@@ -1628,40 +1669,43 @@ def stream_worker_stats():
     """
 
     def event_generator():
-        with current_app.app_context():
-            # Send initial data immediately
-            res_data = _get_worker_stats_response()
-            yield f"data: {json.dumps(res_data)}\n\n"
+        user_id = request.user["user_id"]
+        with sse_connection_limit(user_id=user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        r = get_redis_client()
-        pubsub = r.pubsub()
-        pubsub.subscribe("worker_stats_update")
+            with current_app.app_context():
+                res_data = _get_worker_stats_response()
+                yield f"data: {json.dumps(res_data)}\n\n"
 
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                if message:
-                    with current_app.app_context():
-                        res_data = _get_worker_stats_response()
-                        yield f"data: {json.dumps(res_data)}\n\n"
-                else:
-                    # Push periodic updates every 5s even if no pubsub event
-                    with current_app.app_context():
-                        res_data = _get_worker_stats_response()
-                        yield f"data: {json.dumps(res_data)}\n\n"
-        except GeneratorExit:
+            r = get_redis_client()
+            pubsub = r.pubsub()
+            pubsub.subscribe("worker_stats_update")
+            start_time = time.time()
+
             try:
-                pubsub.unsubscribe()
-                pubsub.close()
+                while True:
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                    if message:
+                        with current_app.app_context():
+                            res_data = _get_worker_stats_response()
+                            yield f"data: {json.dumps(res_data)}\n\n"
+                    else:
+                        with current_app.app_context():
+                            res_data = _get_worker_stats_response()
+                            yield f"data: {json.dumps(res_data)}\n\n"
+            except GeneratorExit:
+                pass
             except Exception as e:
-                logger.warning("Error during backup SSE cleanup: %s", e)
-        except Exception as e:
-            logger.error("Worker stats SSE error: %s", e)
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception as e:
-                logger.warning("Error during worker stats SSE cleanup (GeneratorExit): %s", e)
+                logger.error("Worker stats SSE error: %s", e)
+            finally:
+                with contextlib.suppress(Exception):
+                    pubsub.unsubscribe()
+                    pubsub.close()
 
     return sse_response(event_generator)
 

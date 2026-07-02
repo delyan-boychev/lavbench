@@ -5,18 +5,22 @@ import glob
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import urllib.parse
 from datetime import datetime
 
 import requests
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 
 def run_register_worker_specs(celery_app):
-    gpu_id = os.environ.get("WORKER_GPU_ID", None)
+    from config import Config
+
+    gpu_id = Config.WORKER_GPU_ID or None
     machine_id = os.environ.get("HOSTNAME", "local-worker")
     if gpu_id is not None:
         machine_id = f"gpu-worker-device-{gpu_id}"
@@ -28,7 +32,7 @@ def run_register_worker_specs(celery_app):
     except ImportError:
         ram_gb = 16.0
 
-    api_base = os.environ.get("API_BASE", "http://localhost:5001/api")
+    api_base = Config.API_BASE
 
     gpu_count = 0
     if gpu_id:
@@ -59,11 +63,23 @@ def run_backup(app, auto=True, db_only=False):
     prefix = "auto" if auto else "manual"
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
-    backup_dir = os.environ.get("BACKUPS_DIR", "/backups")
+    backup_dir = Config.BACKUPS_DIR
     os.makedirs(backup_dir, exist_ok=True)
 
     filename = f"{prefix}_{ts}.tar.gz"
     target = os.path.join(backup_dir, filename)
+
+    # Pre-flight disk space check
+    try:
+        disk_usage = shutil.disk_usage(backup_dir)
+        free_gb = disk_usage.free / (1024**3)
+        if free_gb < 1.0:
+            raise RuntimeError(
+                f"Insufficient disk space for backup: {free_gb:.1f}GB free "
+                f"in {backup_dir} (min 1GB required)"
+            )
+    except FileNotFoundError:
+        os.makedirs(backup_dir, exist_ok=True)
 
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
     parsed = urllib.parse.urlparse(db_uri)
@@ -106,6 +122,7 @@ def run_backup(app, auto=True, db_only=False):
             env=env,
             capture_output=True,
             text=True,
+            timeout=600,
         )
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
@@ -115,11 +132,13 @@ def run_backup(app, auto=True, db_only=False):
         try:
             from models import AuditLog
 
-            with app.app_context():
-                logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-
-                def serialize_audit(log):
-                    return {
+            with app.app_context(), open(audit_logs_path, "w") as f:
+                f.write("[")
+                first = True
+                for log in AuditLog.query.order_by(AuditLog.timestamp.desc()).yield_per(500):
+                    if not first:
+                        f.write(",\n")
+                    serialized = {
                         "id": str(log.id),
                         "admin_id": str(log.admin_id) if log.admin_id else None,
                         "action_type": log.action_type,
@@ -134,10 +153,9 @@ def run_backup(app, auto=True, db_only=False):
                         "reason": log.reason,
                         "timestamp": log.timestamp.isoformat() + "Z" if log.timestamp else None,
                     }
-
-                serialized_logs = [serialize_audit(log) for log in logs]
-            with open(audit_logs_path, "w") as f:
-                json.dump(serialized_logs, f, indent=2)
+                    f.write(json.dumps(serialized, indent=2))
+                    first = False
+                f.write("\n]")
         except Exception as e:
             logger.error("Failed to dump audit logs during backup: %s", str(e))
             raise RuntimeError(f"Failed to dump audit logs: {e!s}") from e
@@ -160,7 +178,7 @@ def run_backup(app, auto=True, db_only=False):
         if auto:
             tar_args = ["nice", "-n", "19", *tar_args]
 
-        result = subprocess.run(tar_args, env=env, capture_output=True, text=True)  # noqa: S603 — args from trusted config
+        result = subprocess.run(tar_args, env=env, capture_output=True, text=True, timeout=600)  # noqa: S603 — args from trusted config
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")
 

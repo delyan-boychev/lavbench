@@ -15,6 +15,7 @@ from datetime import datetime
 import requests
 from cache_utils import get_redis_client
 from celery.signals import worker_ready
+from config import Config
 from worker_utils import (
     MockModel,
     StreamingLogList,
@@ -454,7 +455,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
 
         # Write user code to temporary file / directory
-        workspace_root = os.environ.get("LAVBENCH_WORKSPACE_DIR")
+        workspace_root = Config.LAVBENCH_WORKSPACE_DIR
         temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
         os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
 
@@ -471,11 +472,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                 try:
                     files_meta = json.loads(task.files)
                     task_files_dir = os.path.join(
-                        (
-                            app.config["UPLOAD_FOLDER"]
-                            if app
-                            else os.environ.get("UPLOAD_FOLDER", "uploads")
-                        ),
+                        (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
                         f"task_{task.id}",
                     )
                     if os.path.exists(task_files_dir):
@@ -500,7 +497,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
 
         # Setup environment variables
         env = os.environ.copy()
-        gpu_id = os.environ.get("WORKER_GPU_ID", None)
+        gpu_id = Config.WORKER_GPU_ID or None
         gpu_lock_file = None
 
         if gpu_required and gpu_id:
@@ -535,7 +532,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
             submission.gpu_node = env.get("HOSTNAME", "local-worker")
             gpu_id = None
 
-        hf_cache_dir = os.environ.get("HF_CACHE_DIR")
+        hf_cache_dir = Config.HF_CACHE_DIR
         if not hf_cache_dir and not running_as_worker:
             hf_cache_dir = app.config.get("HF_CACHE_DIR")
 
@@ -626,11 +623,9 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
             ram_limit = challenge.ram_limit_mb
 
         # ── RAM budget clamping ──────────────────────────────────────
-        budget_gb = int(
-            os.environ.get("GPU_RAM_PER_TASK_GB" if gpu_required else "CPU_RAM_PER_TASK_GB", 8)
-        )
+        budget_gb = int(Config.GPU_RAM_PER_TASK_GB if gpu_required else Config.CPU_RAM_PER_TASK_GB)
         budget_mb = budget_gb * 1024
-        clamp_factor = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
+        clamp_factor = Config.RAM_CLAMP_FACTOR
 
         if ram_limit <= budget_mb:
             pass
@@ -727,11 +722,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                         try:
                             files_meta = json.loads(task.files)
                             task_files_dir = os.path.join(
-                                (
-                                    app.config["UPLOAD_FOLDER"]
-                                    if app
-                                    else os.environ.get("UPLOAD_FOLDER", "uploads")
-                                ),
+                                (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
                                 f"task_{task.id}",
                             )
                             for f in files_meta:
@@ -950,7 +941,7 @@ def register_worker_specs(sender, **kwargs):
         except Exception as e:
             logger.warning("Failed to detect system RAM, using default 8.0 GB: %s", e)
 
-        gpu_id = os.environ.get("WORKER_GPU_ID", None)
+        gpu_id = Config.WORKER_GPU_ID or None
         has_gpu = gpu_id is not None or "gpu" in worker_name.lower()
         gpu_type = "N/A"
         vram_gb = "N/A"
@@ -1006,11 +997,11 @@ def register_worker_specs(sender, **kwargs):
             "gpu_type": gpu_type,
             "ram_gb": ram_gb,
             "vram_gb": vram_gb,
-            "gpu_ram_per_task_gb": int(os.environ.get("GPU_RAM_PER_TASK_GB", 8)),
-            "cpu_ram_per_task_gb": int(os.environ.get("CPU_RAM_PER_TASK_GB", 4)),
-            "reserved_ram_gb": int(os.environ.get("RESERVED_RAM_GB", 4)),
-            "reserved_cpu_cores": int(os.environ.get("RESERVED_CPU_CORES", 1)),
-            "ram_clamp_factor": float(os.environ.get("RAM_CLAMP_FACTOR", 1.05)),
+            "gpu_ram_per_task_gb": Config.GPU_RAM_PER_TASK_GB,
+            "cpu_ram_per_task_gb": Config.CPU_RAM_PER_TASK_GB,
+            "reserved_ram_gb": Config.RESERVED_RAM_GB,
+            "reserved_cpu_cores": Config.RESERVED_CPU_CORES,
+            "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "last_seen": time.time(),
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
@@ -1023,7 +1014,7 @@ def register_worker_specs(sender, **kwargs):
                 start_rebuild_listener,
             )
 
-            main_server_url = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
+            main_server_url = Config.MAIN_SERVER_URL
             worker_token = _sign_worker_token("worker")
             build_all_active_tasks(main_server_url, worker_token)
             start_rebuild_listener(main_server_url, worker_token)

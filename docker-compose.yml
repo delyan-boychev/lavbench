@@ -80,6 +80,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
       - WORKER_PUBLIC_KEY=${WORKER_PUBLIC_KEY:?WORKER_PUBLIC_KEY must be set in .env}
@@ -126,6 +127,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
@@ -167,6 +169,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}

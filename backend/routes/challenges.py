@@ -8,8 +8,9 @@ import zipfile
 import zoneinfo
 from datetime import datetime
 
-from auth_utils import jury_access_required, login_required, role_required
+from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
+from config import Config
 from error_utils import err
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
@@ -1342,6 +1343,7 @@ def export_challenge(challenge_id):
 
 @challenges_bp.route("/import", methods=["POST"])
 @role_required(["admin"])
+@rate_limit(max_requests=5, window_seconds=120)
 def import_challenge():
     """
     Import a challenge configuration from a ZIP archive.
@@ -1380,7 +1382,12 @@ def import_challenge():
     if not valid_ext:
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
+    if f.content_length and f.content_length > 200 * 1024 * 1024:
+        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds 200MB limit")
+
     raw = f.read()
+    if len(raw) > 200 * 1024 * 1024:
+        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds 200MB limit")
     if not raw:
         return err("ERR_NO_DATA_PROVIDED", 400)
 
@@ -1441,20 +1448,25 @@ def import_challenge():
 
 @challenges_bp.route("/<uuid:challenge_id>/audit-logs/download", methods=["GET"])
 @role_required(["admin"])
+@rate_limit(max_requests=5, window_seconds=60)
 def download_audit_logs(challenge_id):
     """
     Download challenge audit logs dynamically as a JSON stream.
     """
-    import io
     import json
+    import tempfile
 
     challenge = db.get_or_404(Challenge, challenge_id)
 
     stage_ids = [s.id for s in challenge.stages]
     task_ids = [t.id for t in challenge.tasks]
-    competitor_ids = [
-        u.id for u in User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
-    ]
+
+    # Use subquery to avoid loading all competitor IDs into memory
+    competitor_subq = (
+        db.session.query(User.id)
+        .filter(User.role == "competitor", User.challenge_id == challenge.id)
+        .subquery()
+    )
 
     conditions = [(AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id)]
     if stage_ids:
@@ -1462,13 +1474,8 @@ def download_audit_logs(challenge_id):
     if task_ids:
         conditions.append((AuditLog.target_type == "task") & (AuditLog.target_id.in_(task_ids)))
         conditions.append(AuditLog.task_id.in_(task_ids))
-    if competitor_ids:
-        conditions.append(
-            (AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitor_ids))
-        )
-        conditions.append(AuditLog.target_user_id.in_(competitor_ids))
-
-    audit_logs = AuditLog.query.filter(or_(*conditions)).order_by(AuditLog.timestamp.desc()).all()
+    conditions.append((AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitor_subq)))
+    conditions.append(AuditLog.target_user_id.in_(competitor_subq))
 
     def audit_to_dict(log):
         return {
@@ -1487,11 +1494,23 @@ def download_audit_logs(challenge_id):
             "timestamp": log.timestamp.isoformat() + "Z" if log.timestamp else None,
         }
 
-    logs_data = json.dumps([audit_to_dict(log) for log in audit_logs], indent=2)
-    mem_file = io.BytesIO(logs_data.encode("utf-8"))
+    # Stream audit logs to a temp file in batches
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w") as tmp:
+        tmp.write("[")
+        first = True
+        for log in (
+            AuditLog.query.filter(or_(*conditions))
+            .order_by(AuditLog.timestamp.desc())
+            .yield_per(Config.AUDIT_LOG_YIELD_PER)
+        ):
+            if not first:
+                tmp.write(",\n")
+            tmp.write(json.dumps(audit_to_dict(log), indent=2))
+            first = False
+        tmp.write("\n]")
 
     return send_file(
-        mem_file,
+        tmp.name,
         mimetype="application/json",
         as_attachment=True,
         download_name=f"audit_logs_{challenge_id}.json",

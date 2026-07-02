@@ -6,6 +6,7 @@ import threading
 import time
 
 import requests
+from config import Config
 from docker.types import DeviceRequest, Ulimit
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ def _sign_worker_token(submission_id):
     """
     import base64 as _b64
 
-    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY")
+    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY", "")
     if not priv_key_b64:
         logger.critical(
             "WORKER_PRIVATE_KEY is not set — worker cannot authenticate to the main server"
@@ -149,7 +150,7 @@ def run_command_streaming(
     return exit_code, stdout_str, stderr_str, process_timeout
 
 
-MAX_LOG_LINES = 10000
+MAX_LOG_LINES = Config.WORKER_MAX_LOG_LINES
 
 
 class StreamingLogList(list):
@@ -190,7 +191,7 @@ def report_status_to_server(
     metrics_payload_pub=None,
     metrics_payload_priv=None,
     gpu_node=None,
-    max_retries=3,
+    max_retries=Config.WORKER_REPORT_MAX_RETRIES,
     backoff_factor=2,
 ):
     """POST submission status/scores back to the main server with exponential backoff retry."""
@@ -233,7 +234,9 @@ def report_status_to_server(
 
     for attempt in range(max_retries):
         try:
-            res = requests.post(url, json=payload, headers=headers, timeout=10)
+            res = requests.post(
+                url, json=payload, headers=headers, timeout=Config.WORKER_REPORT_TIMEOUT
+            )
             if res.status_code == 200:
                 return True
             if res.status_code == 404:
@@ -284,7 +287,7 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
         url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
         try:
             logs.append(f"Downloading task file '{filename}' from server...")
-            res = requests.get(url, headers=headers, timeout=30)
+            res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
             if res.status_code == 200:
                 dest_file = os.path.join(temp_dir, filename)
                 with open(dest_file, "wb") as df:
@@ -318,7 +321,7 @@ def download_labels_parquet_to_dir(metadata, labels_dir, logs):
             url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
             try:
                 logs.append("Downloading labels.parquet securely from server...")
-                res = requests.get(url, headers=headers, timeout=30)
+                res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
                 if res.status_code == 200:
                     dest_file = os.path.join(labels_dir, filename)
                     with open(dest_file, "wb") as df:

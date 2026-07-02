@@ -1,13 +1,16 @@
+import contextlib
 import json
 import logging
+import time
 from datetime import datetime
 
-from auth_utils import jury_access_required, login_required, role_required
+from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from services.leaderboard_service import build_and_cache_leaderboard
+from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
 from utils.json_utils import safe_json_loads
@@ -45,13 +48,21 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
         now = datetime.utcnow()
         from models import Stage
 
+        # Preload all stages in a single query to avoid N+1 lookups
+        stage_ids = {t.stage_id for t in tasks if t.stage_id}
+        stages = (
+            {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()}
+            if stage_ids
+            else {}
+        )
+
         # 1. Filter tasks
         visible_tasks = []
         for t in tasks:
             if not t.stage_id:
                 visible_tasks.append(t)
             else:
-                stage = db.session.get(Stage, t.stage_id)
+                stage = stages.get(t.stage_id)
                 if stage and now >= stage.start_time:
                     visible_tasks.append(t)
 
@@ -90,7 +101,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 )
 
                 s_copy = dict(sc_dict)
-                stage = db.session.get(Stage, t.stage_id) if t.stage_id else None
+                stage = stages.get(t.stage_id) if t.stage_id else None
 
                 # Determine score visibility for this task
                 reveal_task_pub = False
@@ -372,54 +383,60 @@ def stream_challenge_leaderboard(challenge_id):
             return err("ERR_ACCESS_DENIED", 403)
 
     def event_generator():
-        r = get_redis_client()
+        with sse_connection_limit(user_id=user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        # Yield initial connection confirmation
-        yield f"data: {json.dumps({'info': 'connected'})}\n\n"
+            r = get_redis_client()
 
-        # Helper to fetch current processed leaderboard and yield it
-        def get_and_yield_leaderboard():
-            with current_app.app_context():
-                c = db.session.get(Challenge, challenge_id)
-                if not c:
-                    return
-                payload = _get_leaderboard_payload(c, user_role, user_id)
-                yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
+            yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
-        # Yield initial leaderboard state
-        for msg in get_and_yield_leaderboard():
-            yield msg
+            def get_and_yield_leaderboard():
+                with current_app.app_context():
+                    c = db.session.get(Challenge, challenge_id)
+                    if not c:
+                        return
+                    payload = _get_leaderboard_payload(c, user_role, user_id)
+                    yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
 
-        if r:
-            pubsub = r.pubsub()
-            channel_name = f"challenge_{challenge_id}_leaderboard"
-            try:
-                pubsub.subscribe(channel_name)
-            except Exception as e:
-                logger.warning("Failed to subscribe to Redis channel %s: %s", channel_name, e)
-                r = None  # Fallback to standard polling
+            for msg in get_and_yield_leaderboard():
+                yield msg
 
-        if r:
-            try:
+            if r:
+                pubsub = r.pubsub()
+                channel_name = f"challenge_{challenge_id}_leaderboard"
+                try:
+                    pubsub.subscribe(channel_name)
+                except Exception as e:
+                    logger.warning("Failed to subscribe to Redis channel %s: %s", channel_name, e)
+                    r = None
+
+            start_time = time.time()
+
+            if r:
+                try:
+                    while True:
+                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                            break
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                        if message:
+                            for msg in get_and_yield_leaderboard():
+                                yield msg
+                        else:
+                            yield ": keep-alive\n\n"
+                except Exception as e:
+                    logger.warning("Leaderboard SSE stream error: %s", e)
+                finally:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
+            else:
                 while True:
-                    # Listen for message on the channel
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                    if message:
-                        # Message received means leaderboard recalculation completed!
-                        for msg in get_and_yield_leaderboard():
-                            yield msg
-                    else:
-                        yield ": keep-alive\n\n"
-            except Exception as e:
-                logger.warning("Leaderboard SSE stream error: %s", e)
-        else:
-            # Fallback to polling every 10 seconds if Redis is down
-            import time
-
-            while True:
-                time.sleep(10.0)
-                for msg in get_and_yield_leaderboard():
-                    yield msg
+                    time.sleep(10.0)
+                    for msg in get_and_yield_leaderboard():
+                        yield msg
 
     return sse_response(event_generator)
 
@@ -428,6 +445,7 @@ def stream_challenge_leaderboard(challenge_id):
 @login_required
 @role_required(["jury"])
 @jury_access_required
+@rate_limit(max_requests=20, window_seconds=60)
 def save_manual_points(challenge_id):
     """
     Save manual points for a user in a challenge.
@@ -498,7 +516,7 @@ def save_manual_points(challenge_id):
     if not user_id or not isinstance(points_dict, dict):
         return err("ERR_MISSING_FIELDS", 400)
 
-    user = User.query.filter_by(id=user_id, challenge_id=challenge_id).first()
+    user = User.query.filter_by(id=user_id, challenge_id=challenge_id).with_for_update().first()
     if not user:
         return err("ERR_USER_NOT_FOUND", 404)
 

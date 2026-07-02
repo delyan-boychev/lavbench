@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 import jwt
+from config import Config
 from error_utils import err
 from flask import jsonify, request
 
@@ -88,7 +89,7 @@ def clear_auth_cookie(response):
 
 
 # JWT Settings
-SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
+SECRET_KEY = Config.SECRET_KEY
 
 
 def generate_token(user_id, role):
@@ -306,7 +307,7 @@ def check_worker_auth(token):
     import base64
     import time
 
-    pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY")
+    pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY", "")
     if not pub_key_b64:
         logger.critical("WORKER_PUBLIC_KEY not set — all worker requests will be rejected")
         return False
