@@ -13,7 +13,7 @@ concurrency:
 env:
   FLASK_ENV: testing
   SECRET_KEY: "ci-test-key-which-is-at-least-32-characters-long"
-  ENCRYPTION_KEY: "ci-test-encryption-key-AAAAAAAAAAAAAAAAAAAAAA=="
+  ENCRYPTION_KEY: "tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis="
   DATABASE_URL: "sqlite:///:memory:"
   REDIS_URL: "redis://localhost:6379/0"
 
