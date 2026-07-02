@@ -13,9 +13,9 @@ concurrency:
 env:
   FLASK_ENV: testing
   SECRET_KEY: "ci-test-key-which-is-at-least-32-characters-long"
+  ENCRYPTION_KEY: "ci-test-encryption-key-AAAAAAAAAAAAAAAAAAAAAA=="
   DATABASE_URL: "sqlite:///:memory:"
   REDIS_URL: "redis://localhost:6379/0"
-  WORKER_SECRET_KEY: ci-worker-secret
 
 jobs:
   backend-tests:
