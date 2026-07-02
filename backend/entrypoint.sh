@@ -9,5 +9,13 @@ for dir in /app/uploads /app/hf_cache /app/backups /backups /app/run /app/.gunic
   chown -R 65534:65534 "$dir"
 done
 
+# Raise file descriptor limit for high concurrency
+ulimit -n "${GUNICORN_ULIMIT_NOFILE:-65536}"
+
+# Build extra gunicorn args from env vars (appended to Dockerfile CMD)
+set -- "$@" \
+  --max-requests "${GUNICORN_MAX_REQUESTS:-10000}" \
+  --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}"
+
 # Drop privileges to nobody (UID 65534) and exec the command
 exec setpriv --reuid=65534 --regid=65534 --clear-groups -- "$@"

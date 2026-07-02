@@ -273,6 +273,14 @@ cp .env.example .env
 | `MIN_BUILD_DISK_GB` | Minimum free disk space for image builds (GB) | `5` |
 | `BUILD_LOCK_EXPIRY` | Build lock expiry (seconds) | `3600` |
 
+### Gunicorn (Server)
+
+| Variable | Description | Default |
+|---|---|---|
+| `GUNICORN_MAX_REQUESTS` | Max requests per worker before restart (prevents memory leaks) | `10000` |
+| `GUNICORN_MAX_REQUESTS_JITTER` | Random jitter added to max_requests (prevents thundering herd) | `2000` |
+| `GUNICORN_ULIMIT_NOFILE` | File descriptor limit for high concurrency (300+ users) | `65536` |
+
 ### Application Defaults
 
 | Variable | Description | Default |

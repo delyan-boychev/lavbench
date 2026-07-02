@@ -3,6 +3,19 @@
 import logging
 import os
 
+# Attempt to raise file descriptor limit for high concurrency (fallback when
+# entrypoint.sh ulimit or docker-compose ulimits are not in effect, e.g. in
+# dev/debug mode). Safe to call even if already raised by the parent process.
+try:
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    target = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
+    if soft < target:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+except (ImportError, ValueError, OSError):
+    pass
+
 # Load .env before any module that reads environment variables
 from dotenv import load_dotenv
 

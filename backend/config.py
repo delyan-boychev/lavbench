@@ -147,6 +147,11 @@ class Config:
     RESERVED_CPU_CORES = int(os.environ.get("RESERVED_CPU_CORES", 1))
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
+    # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
+    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 10000))
+    GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
+    GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
+
     # Redis SSL settings
     REDIS_SSL_CA_CERTS = os.environ.get("REDIS_SSL_CA_CERTS", "")
     REDIS_SSL_CERTFILE = os.environ.get("REDIS_SSL_CERTFILE", "")

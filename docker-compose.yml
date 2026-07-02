@@ -89,6 +89,10 @@ services:
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
       - BACKUPS_DIR=/backups
+    ulimits:
+      nofile:
+        soft: ${GUNICORN_ULIMIT_NOFILE:-65536}
+        hard: ${GUNICORN_ULIMIT_NOFILE:-65536}
     depends_on:
       db:
         condition: service_healthy
