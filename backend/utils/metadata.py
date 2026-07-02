@@ -1,6 +1,8 @@
 import json
 import os
 
+from config import Config
+
 
 def _hf_value(value):
     if isinstance(value, str):
@@ -22,8 +24,10 @@ def build_submission_metadata(
         "task_id": task.id,
         "challenge_id": challenge.id,
         "user_code": user_code,
-        "time_limit": task.time_limit_sec or challenge.time_limit_sec or 300,
-        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or 8192,
+        "time_limit": (
+            task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
+        ),
+        "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or Config.DEFAULT_RAM_LIMIT_MB,
         "gpu_required": gpu_required,
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -36,11 +40,11 @@ def build_submission_metadata(
         "hf_datasets": _hf_value(task.hf_datasets),
         "hf_models": _hf_value(task.hf_models),
         "public_eval_percentage": (
-            task.public_eval_percentage if task.public_eval_percentage is not None else 30
+            task.public_eval_percentage
+            if task.public_eval_percentage is not None
+            else Config.DEFAULT_PUBLIC_EVAL_PERCENTAGE
         ),
         "task_files": task_files_list,
-        "main_server_url": (
-            main_server_url or os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-        ),
-        "celery_broker_url": os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+        "main_server_url": (main_server_url or Config.MAIN_SERVER_URL),
+        "celery_broker_url": Config.CELERY_BROKER_URL,
     }

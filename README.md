@@ -109,7 +109,7 @@ flowchart TD
 lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
-│   ├── config.py                # Configuration from .env
+│   ├── config.py                # Config class reads all env vars
 │   ├── models.py                # SQLAlchemy models
 │   ├── auth_utils.py            # JWT auth, rate limiting, token revocation
 │   ├── cache_utils.py           # Redis caching, connection pool, locks
@@ -167,41 +167,143 @@ Copy and edit the environment file:
 cp .env.example .env
 ```
 
-| Variable                        | Description                             | Example / Requirement                                                                            |
-| ------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `SECRET_KEY`                    | Flask secret for JWT signing            | **Required** — generate a random 64+ char string                                                 |
-| `DATABASE_URL`                  | PostgreSQL connection string            | `postgresql://user:pass@localhost:5432/dbname`                                                   |
-| `CELERY_BROKER_URL`             | Redis broker for Celery                 | `redis://localhost:6379/0`                                                                       |
-| `CELERY_RESULT_BACKEND`         | Redis result backend                    | `redis://localhost:6379/0`                                                                       |
-| `WORKER_SECRET_KEY`             | Shared secret for worker to server auth | **Required for workers**                                                                         |
-| `ENCRYPTION_KEY`                | Fernet key for PII encryption           | Run: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-| `HF_CACHE_DIR`                  | HuggingFace dataset cache directory     | `./backend/hf_cache`                                                                             |
-| `CORS_ORIGINS`                  | Allowed CORS origins                    | `http://localhost:80`                                                                            |
-| `MAIN_SERVER_URL`               | Server URL for worker callbacks         | `http://localhost:5001`                                                                          |
-| `FLASK_DEBUG`                   | Enable Flask debug mode                 | `false`                                                                                          |
-| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after a deadline           | `60`                                                                                             |
-| `UPLOAD_FOLDER`                | Upload storage path                      | `./backend/uploads`                                                                              |
-| `BACKUPS_DIR`                  | Backup file storage path                 | `./backend/backups`                                                                              |
-| `WORKER_GPU_ID`                | GPU device(s) for GPU workers            | `0` (comma-separated for multiple)                                                               |
-| `WORKER_PUBLIC_KEY`            | Ed25519 public key for worker auth       | **Required for workers** — base64 encoded                                                        |
-| `WORKER_PRIVATE_KEY`           | Ed25519 private key for worker auth      | **Required for workers** — base64 encoded                                                        |
-| `REDIS_PASSWORD`               | Redis auth password                      | `your_redis_password`                                                                            |
-| `REDIS_SSL_CA_CERTS`           | Redis SSL CA certificate path (container)| `/etc/ssl/certs/redis/redis-ca.crt`                                                              |
-| `REDIS_SSL_CERTFILE`           | Redis SSL client certificate path        | `/etc/ssl/certs/redis/redis-client.crt`                                                          |
-| `REDIS_SSL_KEYFILE`            | Redis SSL client key path                | `/etc/ssl/certs/redis/redis-client.key`                                                          |
-| `REDIS_SSL_CERT_REQS`          | Redis SSL certificate verification level | `required`                                                                                       |
-| `INTERNAL_ONLY_WORKER`         | Restrict worker to system tasks only     | `false`                                                                                          |
-| `EVALUATION_ONLY_WORKER`       | Restrict worker to evaluation tasks only | `false`                                                                                          |
-| `WORKER_MODE`                  | Worker run mode (worker.env)             | `docker` / `local` — set by first-run setup                                                      |
-| `WORKER_TYPE`                  | Worker task role (worker.env)            | `eval` / `internal` / `both` — set by first-run setup                                            |
-| `GPU_CORES_PER_TASK`           | CPU cores per GPU evaluation container   | `4` — set by first-run setup                                                                     |
-| `CPU_CORES_PER_TASK`           | CPU cores per CPU evaluation container   | `2` — set by first-run setup                                                                     |
-| `GPU_RAM_PER_TASK_GB`          | RAM per GPU evaluation container         | `8` GB — set by first-run setup                                                                  |
-| `CPU_RAM_PER_TASK_GB`          | RAM per CPU evaluation container         | `4` GB — set by first-run setup                                                                  |
-| `RESERVED_RAM_GB`              | RAM reserved for OS/Docker/overhead      | `4` GB (hardcoded)                                                                               |
-| `RESERVED_CPU_CORES`           | CPU cores reserved for system            | `1` (hardcoded)                                                                                  |
-| `RAM_CLAMP_FACTOR`             | Max overshoot ratio before rejecting task | `1.05` (5% tolerance)                                                                            |
-| `CELERY_WORKER_CONCURRENCY`    | Max concurrent worker processes          | Auto-calculated from GPU/CPU/RAM allocation                                                      |
+### Required
+
+| Variable | Description | Default |
+|---|---|---|
+| `SECRET_KEY` | Flask secret for JWT signing | **Required** |
+| `DATABASE_URL` | PostgreSQL connection string | **Required** |
+| `ENCRYPTION_KEY` | Fernet key for PII encryption at rest | **Required** |
+
+### Celery / Redis Broker
+
+| Variable | Description | Default |
+|---|---|---|
+| `CELERY_BROKER_URL` | Redis broker URL for Celery | `redis://localhost:6379/0` |
+| `CELERY_RESULT_BACKEND` | Redis result backend URL | `redis://localhost:6379/0` |
+| `CELERY_RESULT_EXPIRES` | Task result TTL (seconds) | `3600` |
+| `CELERY_BROKER_SOCKET_TIMEOUT` | Broker socket timeout (seconds) | `10` |
+| `CELERY_BROKER_SOCKET_CONNECT_TIMEOUT` | Broker connect timeout (seconds) | `3` |
+| `CELERY_WORKER_CONCURRENCY` | Max concurrent worker processes | `2` |
+
+### Redis Client
+
+| Variable | Description | Default |
+|---|---|---|
+| `REDIS_SOCKET_CONNECT_TIMEOUT` | Client connect timeout (seconds) | `5` |
+| `REDIS_SOCKET_TIMEOUT` | Client socket timeout (seconds) | `5` |
+
+### Redis SSL/TLS
+
+| Variable | Description | Default |
+|---|---|---|
+| `REDIS_SSL_CA_CERTS` | CA certificate path (container path) | — |
+| `REDIS_SSL_CERTFILE` | Client certificate path | — |
+| `REDIS_SSL_KEYFILE` | Client key path | — |
+| `REDIS_SSL_CERT_REQS` | Certificate verification level | `required` |
+
+### Server Addresses
+
+| Variable | Description | Default |
+|---|---|---|
+| `MAIN_SERVER_URL` | Server URL for worker callbacks | `http://localhost:5001` |
+| `API_BASE` | API base URL | `http://localhost:5001/api` |
+| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` |
+
+### Worker Identity & Mode
+
+| Variable | Description | Default |
+|---|---|---|
+| `WORKER_PUBLIC_KEY` | Ed25519 public key (server-side) | **Required for workers** |
+| `WORKER_PRIVATE_KEY` | Ed25519 private key (worker-side) | **Required for workers** |
+| `WORKER_GPU_ID` | GPU device(s) for GPU workers | `""` (all) |
+| `RUNNING_AS_WORKER` | Whether process is a Celery worker | `false` |
+| `INTERNAL_ONLY_WORKER` | Restrict to system tasks only | `false` |
+| `EVALUATION_ONLY_WORKER` | Restrict to evaluation tasks only | `false` |
+
+### Worker Sandbox Resources
+
+| Variable | Description | Default |
+|---|---|---|
+| `GPU_RAM_PER_TASK_GB` | RAM per GPU evaluation container (GB) | `8` |
+| `CPU_RAM_PER_TASK_GB` | RAM per CPU evaluation container (GB) | `8` |
+| `RESERVED_RAM_GB` | RAM reserved for OS/Docker overhead (GB) | `4` |
+| `RESERVED_CPU_CORES` | CPU cores reserved for system | `1` |
+| `RAM_CLAMP_FACTOR` | Max overshoot ratio before rejecting task | `1.05` (5%) |
+
+### Worker HTTP Client
+
+| Variable | Description | Default |
+|---|---|---|
+| `WORKER_MAX_LOG_LINES` | Max log lines in status reports | `10000` |
+| `WORKER_REPORT_MAX_RETRIES` | Max retries for status reports | `3` |
+| `WORKER_REPORT_TIMEOUT` | Status report timeout (seconds) | `10` |
+| `WORKER_DOWNLOAD_TIMEOUT` | Submission download timeout (seconds) | `30` |
+
+### Server-Sent Events (SSE)
+
+| Variable | Description | Default |
+|---|---|---|
+| `SSE_MAX_PER_USER` | Max concurrent SSE connections per user | `5` |
+| `SSE_MAX_GLOBAL` | Max total SSE connections | `50` |
+| `SSE_IDLE_TIMEOUT` | SSE idle timeout (seconds) | `1800` (30 min) |
+| `SSE_LOG_TTL` | Log entry TTL (seconds) | `86400` (24 h) |
+| `SSE_LOG_MAX_LINES` | Max log lines kept per submission | `10000` |
+
+### Admin Tools
+
+| Variable | Description | Default |
+|---|---|---|
+| `USER_SEARCH_LIMIT` | Max user search results | `500` |
+| `AUDIT_LOG_YIELD_PER` | Batch size for audit log streaming | `500` |
+
+### Backup
+
+| Variable | Description | Default |
+|---|---|---|
+| `BACKUPS_DIR` | Backup file storage directory | `/backups` |
+| `MIN_BACKUP_DISK_GB` | Minimum free disk space for backup (GB) | `1` |
+| `BACKUP_TIMEOUT` | Backup subprocess timeout (seconds) | `600` |
+
+### Image Builder (Docker)
+
+| Variable | Description | Default |
+|---|---|---|
+| `TASK_IMAGES_DIR` | Task base-image storage directory | `./backend/task_images` |
+| `MIN_BUILD_DISK_GB` | Minimum free disk space for image builds (GB) | `5` |
+| `BUILD_LOCK_EXPIRY` | Build lock expiry (seconds) | `3600` |
+
+### Application Defaults
+
+| Variable | Description | Default |
+|---|---|---|
+| `UPLOAD_FOLDER` | Upload storage path | `./backend/uploads` |
+| `HF_CACHE_DIR` | HuggingFace dataset cache directory | `./backend/hf_cache` |
+| `LAVBENCH_WORKSPACE_DIR` | Workspace root for evaluation sandboxes | `./backend/workspace` |
+| `FLASK_DEBUG` | Enable Flask debug mode | `false` |
+| `DEADLINE_GRACE_PERIOD_SECONDS` | Grace period after challenge deadline (seconds) | `60` |
+| `DEFAULT_PER_PAGE` | Default items per page (pagination) | `10` |
+| `MAX_PER_PAGE` | Max items per page | `100` |
+| `CACHE_TIMEOUT` | Redis cache TTL (seconds) | `300` |
+| `DEFAULT_TIME_LIMIT_SEC` | Default task time limit (seconds) | `300` |
+| `DEFAULT_RAM_LIMIT_MB` | Default task RAM limit (MB) | `8192` |
+| `DEFAULT_PUBLIC_EVAL_PERCENTAGE` | Default public evaluation split (%) | `30` |
+
+### Infrastructure (scripts / docker-compose only)
+
+These are consumed by deployment scripts and `docker-compose.yml`, not by the Python `Config` class directly.
+
+| Variable | Description | Default / Source |
+|---|---|---|
+| `POSTGRES_PASSWORD` | PostgreSQL password | Set by `make setup` |
+| `REDIS_PASSWORD` | Redis auth password | Set by `make setup` |
+| `REDIS_PROTO` | Redis protocol (`redis` / `rediss`) | Set by `make setup` |
+| `REDIS_BIND` | Redis bind address | `0.0.0.0` |
+| `SERVER_ADDRESS` | Server hostname for URL templates | Set by `make setup` |
+| `WORKER_MODE` | Worker run mode (`docker` / `local`) | In `worker.env` |
+| `WORKER_TYPE` | Worker role (`eval` / `internal` / `both`) | In `worker.env` |
+| `GPU_CORES_PER_TASK` | CPU cores per GPU evaluation container | In `worker.env` |
+| `CPU_CORES_PER_TASK` | CPU cores per CPU evaluation container | In `worker.env` |
 
 ---
 

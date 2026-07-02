@@ -2,6 +2,7 @@ import contextlib
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 
 from auth_utils import (
@@ -30,8 +31,10 @@ from services.submission_service import (
     extract_code_from_notebook,
 )
 from sse_utils import (
+    SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
     publish_submissions_update,
+    sse_connection_limit,
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
@@ -1072,6 +1075,7 @@ def delete_task(task_id):
 @tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
 @jury_access_required
+@rate_limit(max_requests=20, window_seconds=60)
 def download_task_file(task_id, filename):
     """
     Download a resource file attached to a task.
@@ -1523,36 +1527,38 @@ def stream_task_leaderboard(task_id):
             return err("ERR_NOT_AVAILABLE", 403)
 
     def event_generator():
-        # Clean up: Removed "with current_app.app_context():" block from the initial yield
-        data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+        with sse_connection_limit(user_id=current_user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        r = get_redis_client()
-        pubsub = r.pubsub()
-        pubsub.subscribe(f"task_{task_id}_leaderboard")
+            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
+            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
 
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                if message:
-                    # Clean up: Removed "with current_app.app_context():" block from the loop
-                    data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                    yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-                else:
-                    yield ": keep-alive\n\n"
-        except GeneratorExit:
+            r = get_redis_client()
+            pubsub = r.pubsub()
+            pubsub.subscribe(f"task_{task_id}_leaderboard")
+            start_time = time.time()
+
             try:
-                pubsub.unsubscribe()
-                pubsub.close()
+                while True:
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                    if message:
+                        data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
+                        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+                    else:
+                        yield ": keep-alive\n\n"
+            except GeneratorExit:
+                pass
             except Exception as e:
-                logger.debug("Error during leaderboard SSE cleanup: %s", e)
-        except Exception as e:
-            logger.error("Leaderboard SSE error: %s", e)
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception as cleanup_e:
-                logger.debug("Error during leaderboard SSE cleanup after error: %s", cleanup_e)
+                logger.error("Leaderboard SSE error: %s", e)
+            finally:
+                with contextlib.suppress(Exception):
+                    pubsub.unsubscribe()
+                    pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1598,48 +1604,48 @@ def stream_task_submissions(task_id):
             )
 
     def event_generator():
-        # Clean up: Removed "with current_app.app_context():" block from the initial yield
-        data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
-        yield f"data: {json.dumps(data)}\n\n"
+        with sse_connection_limit(user_id=current_user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        r = get_redis_client()
-        pubsub = r.pubsub()
+            data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
+            yield f"data: {json.dumps(data)}\n\n"
 
-        if user_role in ["admin", "jury"]:
-            pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
-        else:
-            pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+            r = get_redis_client()
+            pubsub = r.pubsub()
 
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                if message:
-                    # Clean up: Removed "with current_app.app_context():" block from the loop
-                    data = _get_task_submissions_data(
-                        task_id, user_role, current_user_id, page, per_page
-                    )
-                    yield f"data: {json.dumps(data)}\n\n"
-                else:
-                    yield ": keep-alive\n\n"
-        except GeneratorExit:
+            if user_role in ["admin", "jury"]:
+                pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
+            else:
+                pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+
+            start_time = time.time()
+
             try:
-                if user_role in ["admin", "jury"]:
-                    pubsub.punsubscribe()
-                else:
-                    pubsub.unsubscribe()
-                pubsub.close()
+                while True:
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                    if message:
+                        data = _get_task_submissions_data(
+                            task_id, user_role, current_user_id, page, per_page
+                        )
+                        yield f"data: {json.dumps(data)}\n\n"
+                    else:
+                        yield ": keep-alive\n\n"
+            except GeneratorExit:
+                pass
             except Exception as e:
-                logger.debug("Error during submissions SSE cleanup: %s", e)
-        except Exception as e:
-            logger.error("Submissions SSE error: %s", e)
-            try:
-                if user_role in ["admin", "jury"]:
-                    pubsub.punsubscribe()
-                else:
-                    pubsub.unsubscribe()
-                pubsub.close()
-            except Exception as cleanup_e:
-                logger.debug("Error during submissions SSE cleanup after error: %s", cleanup_e)
+                logger.error("Submissions SSE error: %s", e)
+            finally:
+                with contextlib.suppress(Exception):
+                    if user_role in ["admin", "jury"]:
+                        pubsub.punsubscribe()
+                    else:
+                        pubsub.unsubscribe()
+                    pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1687,34 +1693,40 @@ def stream_worker_status():
     """
 
     def event_generator():
-        # Clean up: Removed "with current_app.app_context():" block from the initial yield
-        res_data = _get_worker_status_data()
-        yield f"data: {json.dumps(res_data)}\n\n"
+        user_id = request.user["user_id"]
+        with sse_connection_limit(user_id=user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
 
-        r = get_redis_client()
-        pubsub = r.pubsub()
-        pubsub.subscribe("worker_status_live")
+            res_data = _get_worker_status_data()
+            yield f"data: {json.dumps(res_data)}\n\n"
 
-        last_sent = datetime.utcnow()
-        try:
-            while True:
-                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                now = datetime.utcnow()
-                if message or (now - last_sent).total_seconds() >= 10:
-                    # Clean up: Removed "with current_app.app_context():" block
-                    res_data = _get_worker_status_data()
-                    yield f"data: {json.dumps(res_data)}\n\n"
-                    last_sent = now
-                else:
-                    yield ": keep-alive\n\n"
-        except GeneratorExit:
-            pass
-        finally:
+            r = get_redis_client()
+            pubsub = r.pubsub()
+            pubsub.subscribe("worker_status_live")
+
+            last_sent = time.time()
+            start_time = time.time()
             try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception as e:
-                logger.debug("Error during worker status SSE cleanup: %s", e)
+                while True:
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                    now = time.time()
+                    if message or (now - last_sent) >= 10:
+                        res_data = _get_worker_status_data()
+                        yield f"data: {json.dumps(res_data)}\n\n"
+                        last_sent = now
+                    else:
+                        yield ": keep-alive\n\n"
+            except GeneratorExit:
+                pass
+            finally:
+                with contextlib.suppress(Exception):
+                    pubsub.unsubscribe()
+                    pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1781,6 +1793,7 @@ def _get_worker_status_data():
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
+@rate_limit(max_requests=120, window_seconds=60, per_user=False)
 def report_worker_progress(submission_id):
     """
     Worker callback to report submission status and scores.
@@ -1811,7 +1824,9 @@ def report_worker_progress(submission_id):
     if not request.is_json:
         return err("ERR_INVALID_REQUEST_BODY", 400)
     data = request.get_json()
-    submission = db.get_or_404(Submission, submission_id)
+    submission = Submission.query.filter_by(id=submission_id).with_for_update().first()
+    if not submission:
+        return err("ERR_NOT_FOUND", 404)
 
     if "status" in data:
         status_val = data["status"]

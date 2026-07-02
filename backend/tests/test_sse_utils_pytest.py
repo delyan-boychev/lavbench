@@ -76,7 +76,7 @@ class TestPublishSubmissionLog:
 
         mock_redis.rpush.assert_called_once()
         mock_redis.ltrim.assert_called_once()
-        mock_redis.expire.assert_called_once_with("submission:99:logs", 3600)
+        mock_redis.expire.assert_called_once_with("submission:99:logs", 86400)
         mock_redis.publish.assert_called_once()
 
         rpush_args = mock_redis.rpush.call_args[0]

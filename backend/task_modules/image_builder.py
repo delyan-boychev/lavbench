@@ -9,24 +9,26 @@ Datasets are downloaded ONCE per task, not per submission.  The image
 owns the cache — no volume mounts, no cross-user lock file issues.
 """
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import shlex
+import shutil
 import time
 
 from cache_utils import get_redis_client
+from config import Config
 
 from task_modules.docker_utils import _get_client
 from task_modules.docker_utils import image_exists as _image_exists
 
+MIN_BUILD_DISK_GB = 5
+
 logger = logging.getLogger(__name__)
 
-TASK_IMAGES_DIR = os.environ.get(
-    "TASK_IMAGES_DIR",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "task_images")),
-)
+TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
 
 def _config_hash(base_image, pip_packages, hf_datasets, hf_models):
@@ -61,6 +63,29 @@ def _download_model(model_name, task_id, hf_cache_dir, hf_api_key):
         logger.warning("Failed to download model '%s' for task %s: %s", model_name, task_id, e)
 
 
+def _build_lock_key(task_id):
+    return f"docker_build:lock:{task_id}"
+
+
+def _check_build_disk_space():
+    task_images_dir = TASK_IMAGES_DIR
+    try:
+        os.makedirs(task_images_dir, exist_ok=True)
+        usage = shutil.disk_usage(task_images_dir)
+        free_gb = usage.free / (1024**3)
+        if free_gb < MIN_BUILD_DISK_GB:
+            logger.error(
+                "Insufficient disk space for Docker build: %.1fGB free in %s (min %dGB required)",
+                free_gb,
+                task_images_dir,
+                MIN_BUILD_DISK_GB,
+            )
+            return False
+    except OSError as e:
+        logger.warning("Disk space check failed: %s", e)
+    return True
+
+
 def build_task_image(metadata):
     """Build (or skip) a Docker image for a single task.
 
@@ -79,6 +104,27 @@ def build_task_image(metadata):
         logger.warning("build_task_image: no task_id in metadata")
         return False
 
+    # Acquire Redis lock to prevent concurrent builds for the same task
+    r = get_redis_client()
+    lock_key = _build_lock_key(task_id)
+    lock_acquired = False
+    if r:
+        with contextlib.suppress(Exception):
+            lock_acquired = r.set(lock_key, "1", nx=True, ex=3600)
+
+    if not lock_acquired:
+        logger.info("Build already in progress for task %s, skipping", task_id)
+        return False
+
+    try:
+        return _do_build(metadata)
+    finally:
+        with contextlib.suppress(Exception):
+            r.delete(lock_key)
+
+
+def _do_build(metadata):
+    task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
     base_image = metadata.get("base_docker_image", "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime")
@@ -87,7 +133,6 @@ def build_task_image(metadata):
     hf_models_raw = metadata.get("hf_models", "[]")
     hf_api_key = metadata.get("hf_api_key", "") or ""
 
-    # Normalize hf_datasets to a list
     if isinstance(hf_datasets_raw, str):
         try:
             hf_datasets_raw = json.loads(hf_datasets_raw)
@@ -95,7 +140,6 @@ def build_task_image(metadata):
             hf_datasets_raw = []
     hf_datasets_list = hf_datasets_raw if isinstance(hf_datasets_raw, list) else []
 
-    # Normalize hf_models to a list
     if isinstance(hf_models_raw, str):
         try:
             hf_models_raw = json.loads(hf_models_raw)
@@ -103,10 +147,10 @@ def build_task_image(metadata):
             hf_models_raw = []
     hf_models_list = hf_models_raw if isinstance(hf_models_raw, list) else []
 
-    # Check if image is already current
     config_hash = _config_hash(base_image, pip_packages, hf_datasets_list, hf_models_list)
     task_dir = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}")
     meta_path = os.path.join(task_dir, "hf_meta.json")
+    hf_cache_dir = os.path.join(task_dir, "hf_cache")
 
     existing_hash = ""
     if os.path.isfile(meta_path):
@@ -122,44 +166,36 @@ def build_task_image(metadata):
 
     logger.info("Building image for task %s (hash %s → %s)", task_id, existing_hash, config_hash)
 
-    # ── Prepare task directory ──
-    hf_cache_dir = os.path.join(task_dir, "hf_cache")
+    # Pre-build disk space check
+    if not _check_build_disk_space():
+        return False
+
+    os.makedirs(task_dir, exist_ok=True)
+
     # Clear previous datasets so we download fresh
     if os.path.isdir(hf_cache_dir):
-        import shutil
-
         shutil.rmtree(hf_cache_dir, ignore_errors=True)
     os.makedirs(hf_cache_dir, exist_ok=True)
 
-    # ── Download HF datasets ──
     for ds_name in hf_datasets_list:
         _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key)
-
-    # ── Download HF models ──
     for model_name in hf_models_list:
         _download_model(model_name, task_id, hf_cache_dir, hf_api_key)
 
-    # ── Write requirements.txt ──
     req_path = os.path.join(task_dir, "requirements.txt")
     with open(req_path, "w") as f:
         f.write(pip_packages.strip() or "# no extra packages")
     os.chmod(req_path, 0o644)
 
-    # ── Write Dockerfile ──
     dockerfile_lines = [f"FROM {shlex.quote(base_image)}"]
-
     if pip_packages.strip():
         dockerfile_lines.extend(
             [
                 "COPY requirements.txt /tmp/requirements.txt",
-                (
-                    "RUN pip install --no-cache-dir -r "
-                    "/tmp/requirements.txt && rm /tmp/requirements.txt"
-                ),
+                "RUN pip install --no-cache-dir -r /tmp/requirements.txt"
+                " && rm /tmp/requirements.txt",
             ]
         )
-
-    # Bake the hf_cache INTO the image — no volume mount needed
     dockerfile_lines.append("COPY hf_cache /hf_cache")
 
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
@@ -167,21 +203,15 @@ def build_task_image(metadata):
         f.write("\n".join(dockerfile_lines) + "\n")
     os.chmod(dockerfile_path, 0o644)
 
-    # ── Docker build ──
     logs = []
     start = time.time()
     try:
         retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
         elapsed = time.time() - start
         if retcode == 0:
-            # Save metadata AFTER successful build
             with open(meta_path, "w") as f:
                 json.dump(
-                    {
-                        "hash": config_hash,
-                        "datasets": hf_datasets_list,
-                        "models": hf_models_list,
-                    },
+                    {"hash": config_hash, "datasets": hf_datasets_list, "models": hf_models_list},
                     f,
                 )
             logger.info(

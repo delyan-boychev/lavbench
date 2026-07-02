@@ -8,6 +8,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 
 import redis as redis_lib
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +21,15 @@ def get_redis_client():
     global _pool, _pool_pid
     current_pid = os.getpid()
     if _pool is None or _pool_pid != current_pid:
-        broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        broker_url = Config.CELERY_BROKER_URL
         ssl_kwargs = {}
         if broker_url.startswith("rediss://"):
             import ssl
 
-            ssl_ca_certs = os.environ.get("REDIS_SSL_CA_CERTS")
-            ssl_certfile = os.environ.get("REDIS_SSL_CERTFILE")
-            ssl_keyfile = os.environ.get("REDIS_SSL_KEYFILE")
-            ssl_cert_reqs_str = os.environ.get("REDIS_SSL_CERT_REQS", "required")
+            ssl_ca_certs = Config.REDIS_SSL_CA_CERTS or None
+            ssl_certfile = Config.REDIS_SSL_CERTFILE or None
+            ssl_keyfile = Config.REDIS_SSL_KEYFILE or None
+            ssl_cert_reqs_str = Config.REDIS_SSL_CERT_REQS
 
             ssl_cert_reqs = ssl.CERT_REQUIRED
             if ssl_cert_reqs_str == "none":
@@ -44,8 +45,19 @@ def get_redis_client():
             if ssl_keyfile:
                 ssl_kwargs["ssl_keyfile"] = ssl_keyfile
 
-        _pool = redis_lib.ConnectionPool.from_url(broker_url, max_connections=100, **ssl_kwargs)
-        _pool_pid = current_pid
+        try:
+            _pool = redis_lib.ConnectionPool.from_url(
+                broker_url,
+                max_connections=100,
+                socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
+                socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
+                retry_on_timeout=True,
+                **ssl_kwargs,
+            )
+            _pool_pid = current_pid
+        except Exception:
+            logger.exception("Failed to create Redis connection pool")
+            return None
     return redis_lib.Redis(connection_pool=_pool)
 
 

@@ -128,7 +128,7 @@ class TestRunBackup:
             "/custom_backups/auto_7.tar.gz": 7,
             "/custom_backups/auto_8.tar.gz": 8,
         }.get(path, 0)
-        with patch.dict(os.environ, {"BACKUPS_DIR": "/custom_backups"}), self._ctx():
+        with patch("task_modules.system.Config.BACKUPS_DIR", "/custom_backups"), self._ctx():
             run_backup(self.app, auto=True)
         mock_glob.assert_called_with("/custom_backups/auto_*.tar.gz")
         assert mock_remove.call_count == 5

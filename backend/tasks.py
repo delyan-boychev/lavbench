@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 
 from celery import Celery
+from config import Config
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 from task_modules.submission_runner import run_eval_submission
 from task_modules.system import (
@@ -25,13 +26,13 @@ os.environ["TZ"] = "UTC"
 time.tzset()
 
 # Check if running as remote worker to bypass Flask/SQLAlchemy database connection setup
-RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER") == "true"
+RUNNING_AS_WORKER = Config.RUNNING_AS_WORKER
 
 if RUNNING_AS_WORKER:
     celery = Celery(
         "tasks",
-        broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-        backend=os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
+        broker=Config.CELERY_BROKER_URL,
+        backend=Config.CELERY_RESULT_BACKEND,
     )
     app = None
     db = None
@@ -55,10 +56,10 @@ def configure_celery_ssl(celery_app):
     if broker_url.startswith("rediss://") or result_backend.startswith("rediss://"):
         import ssl
 
-        ssl_ca_certs = os.environ.get("REDIS_SSL_CA_CERTS")
-        ssl_certfile = os.environ.get("REDIS_SSL_CERTFILE")
-        ssl_keyfile = os.environ.get("REDIS_SSL_KEYFILE")
-        ssl_cert_reqs_str = os.environ.get("REDIS_SSL_CERT_REQS", "required")
+        ssl_ca_certs = Config.REDIS_SSL_CA_CERTS or None
+        ssl_certfile = Config.REDIS_SSL_CERTFILE or None
+        ssl_keyfile = Config.REDIS_SSL_KEYFILE or None
+        ssl_cert_reqs_str = Config.REDIS_SSL_CERT_REQS
 
         ssl_cert_reqs = ssl.CERT_REQUIRED
         if ssl_cert_reqs_str == "none":
@@ -82,7 +83,12 @@ configure_celery_ssl(celery)
 # Recycle worker child processes after 50 tasks to reclaim memory from ML model execution
 celery.conf.update(
     worker_max_tasks_per_child=50,
-    worker_concurrency=1,
+    worker_concurrency=Config.CELERY_WORKER_CONCURRENCY,
+    result_expires=Config.CELERY_RESULT_EXPIRES,
+    broker_transport_options={
+        "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
+        "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
+    },
 )
 
 
@@ -426,8 +432,8 @@ celery.conf.beat_schedule = {
 }
 
 # Unregister tasks conditionally based on environment variables
-INTERNAL_ONLY_WORKER = os.environ.get("INTERNAL_ONLY_WORKER") == "true"
-EVALUATION_ONLY_WORKER = os.environ.get("EVALUATION_ONLY_WORKER") == "true"
+INTERNAL_ONLY_WORKER = Config.INTERNAL_ONLY_WORKER
+EVALUATION_ONLY_WORKER = Config.EVALUATION_ONLY_WORKER
 
 if INTERNAL_ONLY_WORKER or EVALUATION_ONLY_WORKER:
     all_task_names = [

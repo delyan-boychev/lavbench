@@ -1,6 +1,8 @@
+import contextlib
 import io
 import json
 import logging
+import time
 from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -11,7 +13,12 @@ from models import Challenge, Submission, Task, User, db, decrypt_field
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import check_execution_rules
 from sqlalchemy.orm import joinedload
-from sse_utils import publish_leaderboard_update, publish_submissions_update
+from sse_utils import (
+    SSE_IDLE_TIMEOUT,
+    publish_leaderboard_update,
+    publish_submissions_update,
+    sse_connection_limit,
+)
 from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
@@ -643,129 +650,130 @@ def stream_submission_logs(submission_id):
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     def event_generator():
-
-        r = get_redis_client()
-
-        # Yield an initial message to flush headers immediately and establish connection
-        yield f"data: {json.dumps({'info': 'connected'})}\n\n"
-
-        if r:
-            try:
-                log_key = f"submission:{submission_id}:logs"
-                existing_logs = r.lrange(log_key, 0, -1)
-                if existing_logs:
-                    for log_bin in existing_logs:
-                        log_line = log_bin.decode("utf-8")
-                        yield f"data: {json.dumps({'log': log_line})}\n\n"
-                else:
-                    with current_app.app_context():
-                        sub = db.session.get(Submission, submission_id)
-                        if sub and sub.logs:
-                            for line in sub.logs.splitlines():
-                                yield f"data: {json.dumps({'log': line})}\n\n"
-            except Exception as e:
-                logger.warning(
-                    ("Failed to retrieve existing logs for submission %s: %s"), submission_id, e
-                )
-        else:
-            with current_app.app_context():
-                sub = db.session.get(Submission, submission_id)
-                if sub and sub.logs:
-                    for line in sub.logs.splitlines():
-                        yield f"data: {json.dumps({'log': line})}\n\n"
-
-        with current_app.app_context():
-            sub = db.session.get(Submission, submission_id)
-            if sub and sub.status in ("completed", "failed"):
-                yield f"data: {json.dumps({'status': sub.status})}\n\n"
+        user_id = request.user["user_id"]
+        with sse_connection_limit(user_id=user_id) as allowed:
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
 
-        if r:
-            try:
-                pubsub = r.pubsub()
-                pubsub.subscribe(f"submission_{submission_id}_logs")
-            except Exception:
-                r = None
+            r = get_redis_client()
 
-        if r:
-            import time
+            yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
-            last_db_check = time.time()
-            try:
-                while True:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    if message:
-                        data_str = message["data"].decode("utf-8")
-                        yield f"data: {data_str}\n\n"
-                        try:
-                            parsed = json.loads(data_str)
-                            if isinstance(parsed, dict) and parsed.get("status") in (
-                                "completed",
-                                "failed",
-                            ):
-                                break
-                        except Exception as e:
-                            logger.debug("Failed to parse SSE message: %s", e)
+            if r:
+                try:
+                    log_key = f"submission:{submission_id}:logs"
+                    existing_logs = r.lrange(log_key, 0, -1)
+                    if existing_logs:
+                        for log_bin in existing_logs:
+                            log_line = log_bin.decode("utf-8")
+                            yield f"data: {json.dumps({'log': log_line})}\n\n"
                     else:
-                        yield ": keep-alive\n\n"
+                        with current_app.app_context():
+                            sub = db.session.get(Submission, submission_id)
+                            if sub and sub.logs:
+                                for line in sub.logs.splitlines():
+                                    yield f"data: {json.dumps({'log': line})}\n\n"
+                except Exception as e:
+                    logger.warning(
+                        ("Failed to retrieve existing logs for submission %s: %s"), submission_id, e
+                    )
+            else:
+                with current_app.app_context():
+                    sub = db.session.get(Submission, submission_id)
+                    if sub and sub.logs:
+                        for line in sub.logs.splitlines():
+                            yield f"data: {json.dumps({'log': line})}\n\n"
 
-                    # Database fallback query check at most once every 10 seconds
-                    now = time.time()
-                    if now - last_db_check >= 10.0:
-                        last_db_check = now
+            with current_app.app_context():
+                sub = db.session.get(Submission, submission_id)
+                if sub and sub.status in ("completed", "failed"):
+                    yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                    return
+
+            if r:
+                try:
+                    pubsub = r.pubsub()
+                    pubsub.subscribe(f"submission_{submission_id}_logs")
+                except Exception:
+                    r = None
+
+            start_time = time.time()
+
+            if r:
+                last_db_check = time.time()
+                try:
+                    while True:
+                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                            break
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                        if message:
+                            data_str = message["data"].decode("utf-8")
+                            yield f"data: {data_str}\n\n"
+                            try:
+                                parsed = json.loads(data_str)
+                                if isinstance(parsed, dict) and parsed.get("status") in (
+                                    "completed",
+                                    "failed",
+                                ):
+                                    break
+                            except Exception as e:
+                                logger.debug("Failed to parse SSE message: %s", e)
+                        else:
+                            yield ": keep-alive\n\n"
+
+                        now = time.time()
+                        if now - last_db_check >= 10.0:
+                            last_db_check = now
+                            with current_app.app_context():
+                                db.session.expire_all()
+                                sub = db.session.get(Submission, submission_id)
+                                if sub and sub.status in ("completed", "failed"):
+                                    yield f"data: {json.dumps({'status': sub.status})}\n\n"
+                                    break
+                except GeneratorExit:
+                    pass
+                except Exception as e:
+                    logger.error("SSE logs streaming error: %s", e)
+                finally:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
+            else:
+                last_yielded_len = 0
+                with current_app.app_context():
+                    sub = db.session.get(Submission, submission_id)
+                    if sub and sub.logs:
+                        last_yielded_len = len(sub.logs.splitlines())
+
+                try:
+                    while True:
+                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                            break
                         with current_app.app_context():
                             db.session.expire_all()
                             sub = db.session.get(Submission, submission_id)
-                            if sub and sub.status in ("completed", "failed"):
+                            if not sub:
+                                break
+
+                            logs_str = sub.logs or ""
+                            lines = logs_str.splitlines()
+                            if len(lines) > last_yielded_len:
+                                for line in lines[last_yielded_len:]:
+                                    yield f"data: {json.dumps({'log': line})}\n\n"
+                                last_yielded_len = len(lines)
+
+                            if sub.status in ("completed", "failed"):
                                 yield f"data: {json.dumps({'status': sub.status})}\n\n"
                                 break
-            except GeneratorExit:
-                try:
-                    pubsub.unsubscribe()
-                    pubsub.close()
+
+                        time.sleep(2.0)
+                except GeneratorExit:
+                    pass
                 except Exception as e:
-                    logger.debug("Error during pubsub cleanup on GeneratorExit: %s", e)
-            except Exception as e:
-                logger.error("SSE logs streaming error: %s", e)
-                try:
-                    pubsub.unsubscribe()
-                    pubsub.close()
-                except Exception as cleanup_e:
-                    logger.debug("Error during pubsub cleanup after SSE error: %s", cleanup_e)
-        else:
-            # Fallback to database/file logs and simple polling
-            last_yielded_len = 0
-            with current_app.app_context():
-                sub = db.session.get(Submission, submission_id)
-                if sub and sub.logs:
-                    last_yielded_len = len(sub.logs.splitlines())
-
-            import time
-
-            try:
-                while True:
-                    with current_app.app_context():
-                        db.session.expire_all()
-                        sub = db.session.get(Submission, submission_id)
-                        if not sub:
-                            break
-
-                        logs_str = sub.logs or ""
-                        lines = logs_str.splitlines()
-                        if len(lines) > last_yielded_len:
-                            for line in lines[last_yielded_len:]:
-                                yield f"data: {json.dumps({'log': line})}\n\n"
-                            last_yielded_len = len(lines)
-
-                        if sub.status in ("completed", "failed"):
-                            yield f"data: {json.dumps({'status': sub.status})}\n\n"
-                            break
-
-                    time.sleep(2.0)
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Polling logs fallback error: %s", e)
+                    logger.error("Polling logs fallback error: %s", e)
 
     return sse_response(event_generator)
 

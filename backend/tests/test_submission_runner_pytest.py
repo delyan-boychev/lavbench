@@ -1,6 +1,8 @@
 import math
+from unittest.mock import patch
 
 import pytest
+from config import Config
 from evaluation_engine import (
     AVAILABLE_METRICS,
     evaluate_predictions,
@@ -177,10 +179,10 @@ class TestSubmissionRunnerDocker:
 
         assert captured_run_kwargs.get("mem_limit") == "2048m"
 
-    def test_gpu_routing_all(self, monkeypatch):
+    def test_gpu_routing_all(self):
         from task_modules.submission_runner import run_eval_submission
 
-        monkeypatch.delenv("WORKER_GPU_ID", raising=False)
+        # Config.WORKER_GPU_ID defaults to "" (falsy), so gpu_id = None
 
         metadata = {
             "task_id": 456,
@@ -218,10 +220,8 @@ class TestSubmissionRunnerDocker:
         assert captured_run_kwargs.get("gpu_id") is None
         assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
-    def test_gpu_routing_specific_device(self, monkeypatch):
+    def test_gpu_routing_specific_device(self):
         from task_modules.submission_runner import run_eval_submission
-
-        monkeypatch.setenv("WORKER_GPU_ID", "2")
 
         metadata = {
             "task_id": 456,
@@ -244,7 +244,7 @@ class TestSubmissionRunnerDocker:
             "main_server_url": "http://localhost:5000",
         }
 
-        with pytest.raises(CommandInterruptedError):
+        with patch.object(Config, "WORKER_GPU_ID", "2"), pytest.raises(CommandInterruptedError):
             run_eval_submission(
                 self_task=None,
                 submission_id="sub_123",
@@ -259,10 +259,8 @@ class TestSubmissionRunnerDocker:
         assert captured_run_kwargs.get("gpu_id") == "2"
         assert captured_run_kwargs["environment"].get("CUDA_VISIBLE_DEVICES") == "0"
 
-    def test_gpu_routing_none(self, monkeypatch):
+    def test_gpu_routing_none(self):
         from task_modules.submission_runner import run_eval_submission
-
-        monkeypatch.delenv("WORKER_GPU_ID", raising=False)
 
         metadata = {
             "task_id": 456,
