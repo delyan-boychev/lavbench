@@ -178,6 +178,7 @@ jobs:
       POSTGRES_PASSWORD: ci-test-password
       REDIS_PASSWORD: ci-redis-pass
       SECRET_KEY: ci-secret-key-0000000000000000000000
+      ENCRYPTION_KEY: tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis=
       WORKER_PUBLIC_KEY: unused-in-ci-worker-public-key-placeholder
       SERVER_ADDRESS: localhost
       MAIN_SERVER_URL: http://localhost:5001
