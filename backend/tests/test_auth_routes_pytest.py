@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from auth_utils import generate_token
 from models import Challenge, User, db
+from utils.dates import utcnow
 from werkzeug.security import generate_password_hash
 
 
@@ -15,8 +16,8 @@ class TestAuthLogin:
             title="Active Challenge",
             description="An active competition",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_archived=False,
         )
         db.session.add(self.challenge)
@@ -26,8 +27,8 @@ class TestAuthLogin:
             title="Archived Challenge",
             description="An archived competition",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(days=10),
-            end_time=datetime.utcnow() - timedelta(days=5),
+            start_time=utcnow() - timedelta(days=10),
+            end_time=utcnow() - timedelta(days=5),
             is_archived=True,
         )
         db.session.add(self.archived)

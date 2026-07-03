@@ -1,6 +1,6 @@
 """AuditLog model."""
 
-from datetime import datetime
+from utils.dates import utcnow
 
 from models.base import GUID, db, uuid7
 
@@ -23,7 +23,7 @@ class AuditLog(db.Model):
     new_score = db.Column(db.Integer, nullable=True)
     reason = db.Column(db.Text, nullable=True)
 
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
 
     admin = db.relationship("User", foreign_keys=[admin_id])
     target_user = db.relationship("User", foreign_keys=[target_user_id])

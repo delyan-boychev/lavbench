@@ -1,10 +1,11 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -34,8 +35,8 @@ class TestRouteLevelLogic:
             title="IMDB Sentiment Classification",
             description="Predict sentiment of reviews.",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -103,7 +104,7 @@ class TestRouteLevelLogic:
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_competition_schedule_boundaries(self, mock_celery):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
+        self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
 
         payload = {"selected_cells": ["# SUBMIT\nprint('code')"]}
@@ -115,8 +116,8 @@ class TestRouteLevelLogic:
         assert res.status_code == 400
         assert "has not started yet" in res.get_json()["error"]
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=2)
-        self.challenge.end_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge.start_time = utcnow() - timedelta(hours=2)
+        self.challenge.end_time = utcnow() - timedelta(hours=1)
         db.session.commit()
 
         res = self.client.post(
@@ -127,7 +128,7 @@ class TestRouteLevelLogic:
         assert res.status_code == 400
         assert "has ended" in res.get_json()["error"]
 
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
+        self.challenge.end_time = utcnow() + timedelta(hours=2)
         db.session.commit()
 
         res = self.client.post(
@@ -437,7 +438,7 @@ class TestRouteLevelLogic:
         db.session.add(target_user)
         db.session.commit()
 
-        self.challenge.start_time = datetime.utcnow() + timedelta(days=1)
+        self.challenge.start_time = utcnow() + timedelta(days=1)
         db.session.commit()
 
         res = self.client.put(
@@ -455,7 +456,7 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(days=1)
+        self.challenge.start_time = utcnow() - timedelta(days=1)
         db.session.commit()
 
         res = self.client.put(
@@ -543,7 +544,7 @@ class TestRouteLevelLogic:
         assert b"data: " in first_chunk
 
     def test_blind_review_during_ongoing_competition(self):
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge.start_time = utcnow() - timedelta(hours=1)
         self.challenge.scores_finalized = False
         db.session.commit()
 
@@ -686,7 +687,7 @@ class TestRouteLevelLogic:
         assert data["workers"][0]["active_tasks_count"] == 1
 
     def test_leaderboard_late_processed_submission_override(self):
-        self.challenge.end_time = datetime.utcnow() - timedelta(minutes=15)
+        self.challenge.end_time = utcnow() - timedelta(minutes=15)
         self.challenge.scores_finalized = False
         db.session.commit()
 
@@ -1057,7 +1058,7 @@ class TestRouteLevelLogic:
         data = json.loads(res.data)
         assert "password" in data
 
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
+        self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
         res = self.client.post(
             f"/api/admin/users/{self.competitor.id}/reset-password",
@@ -1065,7 +1066,7 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()
         res = self.client.post(
             f"/api/admin/users/{self.competitor.id}/reset-password",
@@ -1096,7 +1097,7 @@ class TestRouteLevelLogic:
         assert "middle_name" in account
         assert "birth_date" in account
 
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=1)
+        self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
         res = self.client.post(
             f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
@@ -1104,7 +1105,7 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()
         res = self.client.post(
             f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
@@ -1123,7 +1124,7 @@ class TestRouteLevelLogic:
         db.session.commit()
         jury_token = generate_token(jury_user.id, jury_user.role)
 
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=2)
+        self.challenge.start_time = utcnow() + timedelta(hours=2)
         db.session.commit()
 
         res = self.client.get(
@@ -1150,7 +1151,7 @@ class TestRouteLevelLogic:
         data = json.loads(res.data)
         assert any(u["id"] == self.competitor.id for u in data["items"])
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=2)
+        self.challenge.start_time = utcnow() - timedelta(hours=2)
         db.session.commit()
 
         res = self.client.get(
@@ -1342,7 +1343,7 @@ class TestRouteLevelLogic:
 
     def test_finalize_constraints_and_permissions(self):
         self.challenge.scores_finalized = False
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=2)
+        self.challenge.end_time = utcnow() + timedelta(hours=2)
         # Create a submission so competitor is required to have manual points
         sub = Submission(
             challenge_id=self.challenge.id,
@@ -1375,7 +1376,7 @@ class TestRouteLevelLogic:
         assert res_before.status_code == 400
         assert "before its end time" in res_before.get_json()["error"].lower()
 
-        self.challenge.end_time = datetime.utcnow() - timedelta(minutes=1)
+        self.challenge.end_time = utcnow() - timedelta(minutes=1)
         db.session.commit()
 
         res = self.client.post(
@@ -1419,15 +1420,15 @@ class TestRouteLevelLogic:
 
         jury_token = generate_token(jury.id, "jury")
 
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=5)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=24)
+        self.challenge.start_time = utcnow() - timedelta(hours=5)
+        self.challenge.end_time = utcnow() + timedelta(hours=24)
         db.session.commit()
 
         payload = {
             "title": "Stage 1",
             "stage_number": 1,
-            "start_time": (datetime.utcnow() - timedelta(hours=1)).isoformat(),
-            "end_time": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
+            "start_time": (utcnow() - timedelta(hours=1)).isoformat(),
+            "end_time": (utcnow() + timedelta(hours=1)).isoformat(),
         }
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages",
@@ -1454,8 +1455,8 @@ class TestRouteLevelLogic:
         future_payload = {
             "title": "Future Stage",
             "stage_number": 2,
-            "start_time": (datetime.utcnow() + timedelta(hours=10)).isoformat(),
-            "end_time": (datetime.utcnow() + timedelta(hours=11)).isoformat(),
+            "start_time": (utcnow() + timedelta(hours=10)).isoformat(),
+            "end_time": (utcnow() + timedelta(hours=11)).isoformat(),
         }
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/stages",
@@ -1509,8 +1510,8 @@ class TestRouteLevelLogic:
         from models import Stage
 
         stage2 = db.session.get(Stage, future_stage_id)
-        stage2.start_time = datetime.utcnow() - timedelta(hours=2)
-        stage2.end_time = datetime.utcnow() - timedelta(hours=1)
+        stage2.start_time = utcnow() - timedelta(hours=2)
+        stage2.end_time = utcnow() - timedelta(hours=1)
         db.session.commit()
         from cache_utils import invalidate_challenge_cache
 

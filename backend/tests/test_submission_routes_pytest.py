@@ -2,10 +2,11 @@ import io
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -26,8 +27,8 @@ class TestSelectFinalSubmission:
             title="Final Sel Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
         )
@@ -71,8 +72,8 @@ class TestSelectFinalSubmission:
             title="Stage 1",
             challenge_id=self.challenge.id,
             stage_number=1,
-            start_time=datetime.utcnow() - timedelta(hours=24),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() - timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=24),
         )
         db.session.add(self.stage)
         db.session.commit()
@@ -86,8 +87,8 @@ class TestSelectFinalSubmission:
             task_id=self.task.id,
             status="completed",
             code_cells="[]",
-            created_at=datetime.utcnow() - timedelta(hours=12),
-            executed_at=datetime.utcnow() - timedelta(hours=11),
+            created_at=utcnow() - timedelta(hours=12),
+            executed_at=utcnow() - timedelta(hours=11),
         )
         db.session.add(self.submission)
         db.session.commit()
@@ -138,7 +139,7 @@ class TestSelectFinalSubmission:
             task_id=self.task.id,
             status="completed",
             code_cells="[]",
-            created_at=datetime.utcnow() - timedelta(hours=10),
+            created_at=utcnow() - timedelta(hours=10),
             is_final_selection=True,
         )
         db.session.add(sub2)
@@ -186,8 +187,8 @@ class TestSelectFinalSubmission:
             title="Closed",
             challenge_id=self.challenge.id,
             stage_number=2,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() - timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() - timedelta(hours=2),
         )
         db.session.add(closed_stage)
         db.session.commit()
@@ -217,8 +218,8 @@ class TestSelectFinalSubmission:
             title="Recent",
             challenge_id=self.challenge.id,
             stage_number=2,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() - timedelta(minutes=2),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() - timedelta(minutes=2),
         )
         db.session.add(recent_stage)
         db.session.commit()
@@ -237,8 +238,8 @@ class TestSelectFinalSubmission:
             title="Slide",
             challenge_id=self.challenge.id,
             stage_number=2,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() - timedelta(minutes=5),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() - timedelta(minutes=5),
         )
         db.session.add(slide_stage)
         db.session.commit()
@@ -250,7 +251,7 @@ class TestSelectFinalSubmission:
             status="completed",
             code_cells="[]",
             created_at=slide_stage.end_time - timedelta(seconds=10),
-            executed_at=datetime.utcnow() - timedelta(seconds=60),
+            executed_at=utcnow() - timedelta(seconds=60),
         )
         db.session.add(late_exec)
         self.submission.created_at = slide_stage.end_time - timedelta(hours=1)
@@ -276,8 +277,8 @@ class TestParseNotebook:
             title="Parse Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -413,8 +414,8 @@ class TestSubmitCode:
             title="Submit Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -532,8 +533,8 @@ class TestSubmitCode:
             title="Future",
             challenge_id=self.challenge.id,
             stage_number=1,
-            start_time=datetime.utcnow() + timedelta(hours=24),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() + timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=48),
         )
         db.session.add(stage)
         db.session.commit()
@@ -552,8 +553,8 @@ class TestSubmitCode:
             title="Past",
             challenge_id=self.challenge.id,
             stage_number=2,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() - timedelta(hours=24),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() - timedelta(hours=24),
         )
         db.session.add(stage)
         db.session.commit()
@@ -568,7 +569,7 @@ class TestSubmitCode:
         assert resp.get_json()["code"] == "ERR_STAGE_DEADLINE_PASSED"
 
     def test_competition_not_started(self):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
@@ -579,7 +580,7 @@ class TestSubmitCode:
         assert resp.get_json()["code"] == "ERR_COMPETITION_NOT_STARTED"
 
     def test_competition_ended(self):
-        self.challenge.end_time = datetime.utcnow() - timedelta(hours=24)
+        self.challenge.end_time = utcnow() - timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
@@ -621,8 +622,8 @@ class TestSubmitCode:
             title="Other",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -666,7 +667,7 @@ class TestSubmitCode:
     @patch("tasks.evaluate_submission.apply_async")
     def test_admin_submit_skips_time_checks(self, mock_apply):
         mock_apply.return_value = None
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
@@ -700,8 +701,8 @@ class TestGetSubmissions:
             title="Get Subs Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -834,8 +835,8 @@ class TestGetSubmissions:
             title="Empty",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -865,8 +866,8 @@ class TestGetSubmissionDetail:
             title="Detail Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,
@@ -979,8 +980,8 @@ class TestStreamSubmissionLogs:
             title="Logs Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=48),
             is_frozen=False,
             scores_finalized=False,
             is_active=True,

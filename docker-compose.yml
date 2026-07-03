@@ -4,13 +4,21 @@ services:
     image: postgres:15-alpine
     container_name: lavbench_db
     restart: always
-    command: postgres -c max_connections=500
+    entrypoint: >
+      sh -c '
+        mkdir -p /app/logs && chmod 1777 /app/logs &&
+        /usr/local/bin/docker-entrypoint.sh "$$@" 2>&1 | tee /app/logs/postgresql.log
+      ' --
+    command: >
+      postgres
+      -c max_connections=500
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lavbench_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - logs_data:/app/logs
     # No host port — accessible via Docker network (db:5432)
     deploy:
       resources:
@@ -38,14 +46,16 @@ services:
     image: redis:alpine
     container_name: lavbench_redis
     restart: always
-    command: >
+    entrypoint: >
       sh -c '
-        if [ -n "$$REDIS_PASSWORD" ]; then
-          exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru
-        else
-          exec redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
-        fi
-      '
+        mkdir -p /app/logs && chmod 1777 /app/logs &&
+        /usr/local/bin/docker-entrypoint.sh "$$@" 2>&1 | tee /app/logs/redis.log
+      ' --
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
@@ -53,6 +63,8 @@ services:
     # Override bind with: REDIS_BIND=127.0.0.1 in .env for local-only access
     ports:
       - "${REDIS_BIND:-0.0.0.0}:6379:6379"
+    volumes:
+      - logs_data:/app/logs
     deploy:
       resources:
         limits:
@@ -102,6 +114,7 @@ services:
       - hf_cache:/app/hf_cache
       - uploads_data:/app/uploads
       - backups_data:/backups
+      - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
     deploy:
       resources:
@@ -145,6 +158,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+      - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
@@ -189,6 +203,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/backups
+      - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
@@ -216,6 +231,13 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    command: >
+      sh -c '
+        mkdir -p /app/logs && chmod 1777 /app/logs &&
+        exec nginx -g "daemon off;"
+      '
+    volumes:
+      - logs_data:/app/logs
     deploy:
       resources:
         limits:
@@ -238,3 +260,4 @@ volumes:
   hf_cache:
   uploads_data:
   backups_data:
+  logs_data:

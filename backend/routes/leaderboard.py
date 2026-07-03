@@ -2,7 +2,6 @@ import contextlib
 import json
 import logging
 import time
-from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
@@ -13,6 +12,7 @@ from services.leaderboard_service import build_and_cache_leaderboard
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
+from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.sse import sse_response
 
@@ -45,7 +45,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
     )
 
     if user_role == "competitor":
-        now = datetime.utcnow()
+        now = utcnow()
         from models import Stage
 
         # Preload all stages in a single query to avoid N+1 lookups
@@ -233,7 +233,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
         post_processed_leaderboard = sorted_competitor
         tasks_list = [t.to_dict() for t in visible_tasks]
     else:
-        now = datetime.utcnow()
+        now = utcnow()
         has_started = challenge.start_time is not None and now >= challenge.start_time
 
         post_processed_leaderboard = []

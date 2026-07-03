@@ -4,9 +4,10 @@ Delete tests already exist in test_challenges_routes.py (TestDeleteStage).
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+from utils.dates import utcnow
 
 
 def _iso(dt):
@@ -14,17 +15,17 @@ def _iso(dt):
 
 
 def _past():
-    return datetime.utcnow() - timedelta(days=1)
+    return utcnow() - timedelta(days=1)
 
 
 def _future():
-    return datetime.utcnow() + timedelta(days=1)
+    return utcnow() + timedelta(days=1)
 
 
 @pytest.fixture(autouse=True)
 def widen_challenge_bounds(db_session, sample_challenge):
-    sample_challenge.start_time = datetime.utcnow() - timedelta(days=5)
-    sample_challenge.end_time = datetime.utcnow() + timedelta(days=5)
+    sample_challenge.start_time = utcnow() - timedelta(days=5)
+    sample_challenge.end_time = utcnow() + timedelta(days=5)
     db_session.commit()
 
 
@@ -239,8 +240,8 @@ class TestUpdateStage:
         tokens,
         csrf_headers,
     ):
-        new_start = _iso(datetime.utcnow() - timedelta(days=2))
-        new_end = _iso(datetime.utcnow() + timedelta(days=2))
+        new_start = _iso(utcnow() - timedelta(days=2))
+        new_end = _iso(utcnow() + timedelta(days=2))
         payload = {"start_time": new_start, "end_time": new_end}
         res = client.put(
             f"/api/challenges/{sample_challenge.id}/stages/{sample_stage.id}",

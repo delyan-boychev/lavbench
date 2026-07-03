@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from celery import Celery
 from config import Config
+from log_config import RemoteShipHandler, setup_logging
 from task_modules.leaderboard import run_recalculate_all_leaderboards
 from task_modules.submission_runner import run_eval_submission
 from task_modules.system import (
@@ -17,6 +18,7 @@ from task_modules.system import (
     run_docker_prune,
     run_register_worker_specs,
 )
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,19 @@ logger = logging.getLogger(__name__)
 os.environ["TZ"] = "UTC"
 time.tzset()
 
+setup_logging("celery")
+
 # Check if running as remote worker to bypass Flask/SQLAlchemy database connection setup
 RUNNING_AS_WORKER = Config.RUNNING_AS_WORKER
+
+if RUNNING_AS_WORKER and Config.WORKER_LOG_SHIP_URL:
+    ship_url = Config.WORKER_LOG_SHIP_URL
+    from worker_utils import _sign_worker_token
+
+    token = _sign_worker_token("worker")
+    if token:
+        root = logging.getLogger()
+        root.addHandler(RemoteShipHandler(ship_url, token))
 
 if RUNNING_AS_WORKER:
     celery = Celery(
@@ -181,7 +194,7 @@ def check_and_backup():
     with app.app_context():
         from config import Config
 
-        now = datetime.utcnow()
+        now = utcnow()
         timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
         timedelta(minutes=20)
 
@@ -306,7 +319,7 @@ def watchdog_stuck_submissions():
             Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
             Submission.executed_at.isnot(None),
         ).all()
-        now = datetime.utcnow()
+        now = utcnow()
         timeout_count = 0
         for sub in timed_out_candidates + running_candidates:
             task_time_limit = 300

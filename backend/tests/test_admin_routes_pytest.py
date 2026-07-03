@@ -1,8 +1,9 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -51,8 +52,8 @@ class TestRegisterUser:
             title="Reg Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() + timedelta(hours=24),
-            end_time=datetime.utcnow() + timedelta(hours=72),
+            start_time=utcnow() + timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=72),
             is_frozen=False,
         )
         db_session.add(self.challenge)
@@ -60,8 +61,8 @@ class TestRegisterUser:
             title="Started",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=24),
             is_frozen=False,
         )
         db_session.add(self.started_challenge)
@@ -351,7 +352,9 @@ class TestRegisterUser:
         assert resp2.get_json().get("code") == "ERR_COMPETITOR_ALREADY_REGISTERED"
 
         challenge2 = Challenge(
-            title="AI Challenge 2", start_time=datetime.utcnow(), end_time=datetime.utcnow()
+            title="AI Challenge 2",
+            start_time=utcnow(),
+            end_time=utcnow(),
         )
         db_session.add(challenge2)
         db_session.commit()

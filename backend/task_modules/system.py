@@ -9,10 +9,11 @@ import shutil
 import subprocess
 import tempfile
 import urllib.parse
-from datetime import datetime
+from pathlib import Path
 
 import requests
 from config import Config
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def run_backup(app, auto=True, db_only=False):
     - db_only → if True, only backs up the database (no uploads folder)
     """
     prefix = "auto" if auto else "manual"
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = utcnow().strftime("%Y%m%d_%H%M%S")
 
     backup_dir = Config.BACKUPS_DIR
     os.makedirs(backup_dir, exist_ok=True)
@@ -160,6 +161,18 @@ def run_backup(app, auto=True, db_only=False):
             logger.error("Failed to dump audit logs during backup: %s", str(e))
             raise RuntimeError(f"Failed to dump audit logs: {e!s}") from e
 
+        # Copy application logs into the backup snapshot
+        log_dir = Config.LOG_DIR
+        logs_dest = os.path.join(tmp, "logs")
+        if os.path.isdir(log_dir):
+            Path(logs_dest).mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                log_dir,
+                logs_dest,
+                ignore=shutil.ignore_patterns("*.gz"),
+                dirs_exist_ok=True,
+            )
+
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
         tar_args = [
             "tar",
@@ -172,6 +185,8 @@ def run_backup(app, auto=True, db_only=False):
             "db_dump.sql",
             "audit_logs.json",
         ]
+        if os.path.isdir(logs_dest):
+            tar_args.extend(["-C", tmp, "logs"])
         if not db_only and uploads_path and os.path.isdir(uploads_path):
             tar_args.extend(["-C", os.path.dirname(uploads_path), os.path.basename(uploads_path)])
 
@@ -194,7 +209,7 @@ def run_backup(app, auto=True, db_only=False):
         try:
             from models import Challenge
 
-            now = datetime.utcnow()
+            now = utcnow()
             active_comp = Challenge.query.filter(
                 Challenge.is_active,
                 not Challenge.is_archived,
@@ -225,7 +240,7 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
             payload = {
                 "filename": filename,
                 "size_bytes": size_bytes,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": utcnow().isoformat(),
                 "challenge_id": challenge_id,
                 "state": state,
             }

@@ -16,12 +16,12 @@ from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
-from utils.dates import parse_datetime
+from utils.dates import parse_datetime, utcnow
 from utils.dates import to_utc as _to_utc
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
@@ -49,7 +49,7 @@ def _check_and_add_active_stage(stage, now, active_stage_ids):
 
 def filter_challenge_for_competitor(challenge_dict):
     challenge_dict = dict(challenge_dict)
-    now = datetime.utcnow()
+    now = utcnow()
 
     comp_start = None
     if challenge_dict.get("start_time"):
@@ -1209,7 +1209,7 @@ def create_test_stage(challenge_id):
     if end_time.tzinfo is not None:
         end_time = end_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
 
-    now = datetime.utcnow()
+    now = utcnow()
 
     if now >= challenge.start_time:
         return err(
@@ -1463,9 +1463,9 @@ def download_audit_logs(challenge_id):
 
     # Use subquery to avoid loading all competitor IDs into memory
     competitor_subq = (
-        db.session.query(User.id)
-        .filter(User.role == "competitor", User.challenge_id == challenge.id)
-        .subquery()
+        select(User.id)
+        .where(User.role == "competitor", User.challenge_id == challenge.id)
+        .scalar_subquery()
     )
 
     conditions = [(AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id)]

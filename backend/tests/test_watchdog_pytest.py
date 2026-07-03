@@ -1,9 +1,10 @@
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from models import Challenge, Submission, Task, User, db
 from tasks import watchdog_stuck_submissions
+from utils.dates import utcnow
 
 
 class TestWatchdogStuckSubmissions:
@@ -19,8 +20,8 @@ class TestWatchdogStuckSubmissions:
             title="Watchdog Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -69,14 +70,14 @@ class TestWatchdogStuckSubmissions:
 
     def test_no_stuck_submissions(self):
         sub = self._create_submission("completed")
-        sub.executed_at = datetime.utcnow()
+        sub.executed_at = utcnow()
         db.session.commit()
 
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) == 0
 
     def test_times_out_stuck_queued_submission(self):
-        self._create_submission("queued", created_at=datetime.utcnow() - timedelta(minutes=15))
+        self._create_submission("queued", created_at=utcnow() - timedelta(minutes=15))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
         sub = Submission.query.first()
@@ -84,17 +85,17 @@ class TestWatchdogStuckSubmissions:
         assert "WATCHDOG" in sub.logs
 
     def test_does_not_time_out_recent_queued_submission(self):
-        self._create_submission("queued", created_at=datetime.utcnow())
+        self._create_submission("queued", created_at=utcnow())
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) == 0
 
     def test_times_out_running_submission_exceeded_time_limit(self):
-        self._create_submission("running", executed_at=datetime.utcnow() - timedelta(seconds=1000))
+        self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
     def test_does_not_time_out_running_within_limit(self):
-        self._create_submission("running", executed_at=datetime.utcnow() - timedelta(seconds=10))
+        self._create_submission("running", executed_at=utcnow() - timedelta(seconds=10))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) == 0
 
@@ -140,27 +141,30 @@ class TestWatchdogStuckSubmissions:
 
     def test_times_out_building_env_status(self):
         self._create_submission(
-            "building_env", executed_at=datetime.utcnow() - timedelta(seconds=1000)
+            "building_env",
+            executed_at=utcnow() - timedelta(seconds=1000),
         )
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
     def test_times_out_running_inference_status(self):
         self._create_submission(
-            "running_inference", executed_at=datetime.utcnow() - timedelta(seconds=600)
+            "running_inference",
+            executed_at=utcnow() - timedelta(seconds=600),
         )
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
     def test_times_out_evaluating_status(self):
         self._create_submission(
-            "evaluating", executed_at=datetime.utcnow() - timedelta(seconds=600)
+            "evaluating",
+            executed_at=utcnow() - timedelta(seconds=600),
         )
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
     def test_multiple_stuck_submissions(self):
-        self._create_submission("queued", created_at=datetime.utcnow() - timedelta(minutes=15))
-        self._create_submission("running", executed_at=datetime.utcnow() - timedelta(seconds=600))
+        self._create_submission("queued", created_at=utcnow() - timedelta(minutes=15))
+        self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 2

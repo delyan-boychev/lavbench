@@ -27,11 +27,13 @@ from error_utils import err  # noqa: E402
 from flasgger import Swagger  # noqa: E402
 from flask import Flask, jsonify  # noqa: E402
 from flask_cors import CORS  # noqa: E402
+from log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 
 def create_app():
+    setup_logging("backend")
     app = Flask(__name__)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.config.from_object(Config)

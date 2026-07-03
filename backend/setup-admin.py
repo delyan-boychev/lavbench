@@ -2,6 +2,7 @@ import secrets
 
 from app import create_app
 from models import User, db
+from utils.dates import utcnow
 from werkzeug.security import generate_password_hash
 
 
@@ -50,7 +51,8 @@ def generate_master_key():
                 f.write("==================================================\n")
                 f.write("      LAVBENCH ADMIN CREDENTIALS\n")
                 f.write("==================================================\n")
-                f.write(f"Generated On   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+                generated_on = utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                f.write(f"Generated On   : {generated_on}\n")
                 f.write(f"Admin Username : {admin_username}\n")
                 f.write(f"Master Key     : {raw_key}\n\n")
                 f.write("Keep this file secure. Enter these credentials on the\n")
@@ -74,6 +76,4 @@ def generate_master_key():
 
 
 if __name__ == "__main__":
-    from datetime import datetime
-
     generate_master_key()

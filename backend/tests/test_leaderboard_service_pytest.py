@@ -1,9 +1,10 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -23,8 +24,8 @@ class TestBuildAndCacheLeaderboard:
             title="Leaderboard Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             scores_finalized=False,
         )
@@ -85,7 +86,7 @@ class TestBuildAndCacheLeaderboard:
             private_score=private_score,
             execution_time_ms=execution_time_ms,
             code_cells="[]",
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         db.session.add(sub)
         db.session.commit()
@@ -187,8 +188,8 @@ class TestGetTaskLeaderboardData:
             title="Task LB Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             scores_finalized=False,
         )
@@ -212,8 +213,8 @@ class TestGetTaskLeaderboardData:
         assert "error" in result
 
     def test_competitor_access_denied_not_started(self, db_session):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
+        self.challenge.end_time = utcnow() + timedelta(hours=48)
         db_session.commit()
         comp = User(
             username="test_comp",
@@ -242,7 +243,7 @@ class TestGetTaskLeaderboardData:
             public_score=0.95,
             private_score=0.90,
             code_cells="[]",
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         db.session.add(baseline)
         db.session.commit()

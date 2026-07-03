@@ -3,6 +3,7 @@ import sys
 import tempfile
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -170,7 +171,7 @@ class TestUserDemographicsAndFields:
         assert res_other["alias_id"] == self.user.alias_id
 
         # Jury viewer after challenge has started: should hide demographics
-        self.challenge.start_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()
         res_jury = self.user.to_dict(view_role="jury", current_user_id=999)
         assert "name" not in res_jury
@@ -192,8 +193,8 @@ class TestChallengeStatusAndTiming:
         challenge = Challenge(
             title="Timing Challenge",
             timezone="UTC",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=5),
+            start_time=utcnow(),
+            end_time=utcnow() + timedelta(hours=5),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -254,8 +255,8 @@ class TestStageConstraints:
             challenge_id=challenge.id,
             stage_number=1,
             title="Qualification",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow(),
+            end_time=utcnow() + timedelta(hours=1),
         )
         db.session.add(stage1)
         db.session.commit()
@@ -265,8 +266,8 @@ class TestStageConstraints:
             challenge_id=challenge.id,
             stage_number=1,
             title="Duplicate",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow(),
+            end_time=utcnow() + timedelta(hours=1),
         )
         db.session.add(stage2)
         with pytest.raises(IntegrityError):

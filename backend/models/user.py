@@ -3,7 +3,8 @@
 import contextlib
 import json
 import logging
-from datetime import datetime
+
+from utils.dates import utcnow
 
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
 from models.naming import generate_pseudonym
@@ -73,7 +74,7 @@ class User(db.Model):
                 double_blind = challenge.double_blind
                 challenge_reveal_results = challenge.reveal_results
                 if challenge.start_time:
-                    has_started = datetime.utcnow() >= challenge.start_time
+                    has_started = utcnow() >= challenge.start_time
                 if challenge.scores_finalized:
                     challenge_finalized = True
 

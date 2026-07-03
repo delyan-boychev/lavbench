@@ -32,8 +32,6 @@ def _get_str_keys(dict_node):
             continue
         if isinstance(k, ast.Constant) and isinstance(k.value, str):
             keys.add(k.value)
-        elif isinstance(k, ast.Str):
-            keys.add(k.s)
     return keys
 
 
@@ -41,8 +39,6 @@ def _get_str_value(node):
     """Return the string value of an AST node if it's a string constant."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    if isinstance(node, ast.Str):
-        return node.s
     return None
 
 

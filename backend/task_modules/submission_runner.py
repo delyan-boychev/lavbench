@@ -10,12 +10,12 @@ import subprocess
 import tempfile
 import time
 import traceback
-from datetime import datetime
 
 import requests
 from cache_utils import get_redis_client
 from celery.signals import worker_ready
 from config import Config
+from utils.dates import utcnow
 from worker_utils import (
     MockModel,
     StreamingLogList,
@@ -335,10 +335,10 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                             "metrics_payload_pub": m_pub,
                             "metrics_payload_priv": m_priv,
                         }
-                        r.setex(
+                        r.set(
                             f"submission:{submission_id}:fallback",
-                            7200,
                             json.dumps(fallback, default=str),
+                            ex=7200,
                         )
                         logs_list.append(
                             "[WARNING] Could not reach main server. Result saved "
@@ -461,7 +461,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
-        logs.append(f"--- Starting execution sandbox at {datetime.utcnow()} ---")
+        logs.append(f"--- Starting execution sandbox at {utcnow()} ---")
         logs.append(f"Time limit: {time_limit} seconds.")
 
         # Retrieve task files

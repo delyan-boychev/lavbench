@@ -32,11 +32,8 @@ addopts = [
     "--tb=short",
 ]
 filterwarnings = [
-    "ignore::sqlalchemy.exc.SADeprecationWarning",
     "ignore::sqlalchemy.exc.SAWarning",
-    "ignore::DeprecationWarning",
     "ignore::ResourceWarning",
-    "ignore:Received multiple replies from node name",
 ]
 
 [tool.coverage.run]
