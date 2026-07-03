@@ -345,6 +345,7 @@ class TestBackupIncludesLogs:
         mock_audit.return_value.order_by.return_value.yield_per.return_value = []
 
         log_dir = tempfile.mkdtemp()
+        backups_dir = tempfile.mkdtemp()
         with open(os.path.join(log_dir, "backend.log"), "w") as f:
             f.write("test log")
 
@@ -353,6 +354,7 @@ class TestBackupIncludesLogs:
         with (
             self.app.app_context(),
             patch("task_modules.system.Config.LOG_DIR", log_dir),
+            patch("task_modules.system.Config.BACKUPS_DIR", backups_dir),
             patch("task_modules.system.shutil.copytree") as mock_copytree,
         ):
             run_backup(self.app, auto=True)
@@ -370,11 +372,13 @@ class TestBackupIncludesLogs:
         mock_getsize.return_value = 1024
         mock_audit.return_value.order_by.return_value.yield_per.return_value = []
 
+        backups_dir = tempfile.mkdtemp()
         from task_modules.system import run_backup
 
         with (
             self.app.app_context(),
             patch("task_modules.system.Config.LOG_DIR", "/tmp/nonexistent-test-log-dir-12345"),
+            patch("task_modules.system.Config.BACKUPS_DIR", backups_dir),
             patch("task_modules.system.shutil.copytree") as mock_copytree,
         ):
             run_backup(self.app, auto=True)
