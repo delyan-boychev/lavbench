@@ -156,6 +156,7 @@
     "ERR_FILE_TOO_LARGE_25MB": "File exceeds the maximum allowed size of 25MB.",
     "ERR_FORBIDDEN": "Only administrators are allowed to configure custom environments.",
     "ERR_INTERNAL": "Internal server error.",
+    "ERR_INTERNAL_SERVER_ERROR": "An internal server error occurred. Please try again later.",
     "ERR_INVALID_APT_PACKAGE": "Invalid APT package name.",
     "ERR_INVALID_ARCHIVE": "Invalid or corrupt ZIP archive.",
     "ERR_INVALID_CHALLENGE_ID": "Invalid challenge_id.",

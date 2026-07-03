@@ -149,6 +149,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",
     # app.py
     "ERR_INTERNAL": "Internal server error.",
+    "ERR_INTERNAL_SERVER_ERROR": "An internal server error occurred. Please try again later.",
 }
 
 
