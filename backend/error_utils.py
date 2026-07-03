@@ -8,11 +8,13 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_CSRF_FAILED": "CSRF token missing or invalid.",
     "ERR_RATE_LIMITED": "Too many requests. Please slow down.",
     "ERR_ACCESS_DENIED": "Access denied.",
+    # TODO: planned feature — not yet wired
     "ERR_ROLE_REQUIRED": "Unauthorized. Requires role: {roles}",
     # auth.py
     "ERR_MISSING_CREDENTIALS": "Missing username or password.",
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again later.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
+    # TODO: planned feature — not yet wired
     "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered competitors are not allowed to log in.",
     "ERR_USER_NOT_FOUND": "User not found.",
     # admin.py — competitor registration
@@ -20,6 +22,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_CHALLENGE_ID": "Invalid challenge_id.",
     "ERR_JURY_REGISTRATION_STARTED": "Jury members cannot register competitors once the competition has started.",
     "ERR_MISSING_DEMOGRAPHICS": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required.",
+    # TODO: planned feature — not yet wired
     "ERR_COMPETITOR_ALREADY_REGISTERED": "A competitor with these demographic details is already registered for this competition.",
     # admin.py — user CRUD
     "ERR_CANNOT_DELETE_SELF": "You cannot delete your own admin account.",
@@ -30,6 +33,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_FILE_REQUIRED": "No file uploaded.",
     "ERR_FILE_INVALID": "Failed to read uploaded file.",
     "ERR_CSV_PARSE_FAILED": "Failed to parse CSV file.",
+    # TODO: planned feature — not yet wired
     "ERR_CSV_MISSING_COLUMN": "CSV missing required column: {column}",
     # admin.py — backups
     "ERR_INVALID_PATH": "Invalid path",
@@ -56,33 +60,51 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_DATETIME_REQUIRED": "Competition start time and end time are required.",
     "ERR_INVALID_DATES": "End time must be after start time.",
     "ERR_ALREADY_FINALIZED": "Competition is already finalized.",
+    # TODO: planned feature — not yet wired
     "ERR_COMPETITION_NOT_ENDED": "Cannot finalize the competition before its end time.",
+    # TODO: planned feature — not yet wired
     "ERR_NO_COMPETITORS": "Cannot finalize a competition with no competitors.",
     # challenges.py — stages
+    # TODO: planned feature — not yet wired
     "ERR_NOT_FINALIZED": "Stage must be finalized before toggling reveal.",
+    # TODO: planned feature — not yet wired
     "ERR_STAGE_NOT_ENDED": "Cannot finalize the stage before its end time.",
+    # TODO: planned feature — not yet wired
     "ERR_MISSING_STAGE_FIELDS": "Missing title, start_time or end_time.",
     "ERR_INVALID_DATE_FORMAT": "Invalid date format.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_STAGE_DATES": "Stage end time must be after start time.",
     "ERR_INVALID_DATE": "Invalid date.",
+    # TODO: planned feature — not yet wired
     "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS": "Stage time must be within the competition timeframe.",
+    # TODO: planned feature — not yet wired
     "ERR_COMPETITION_STARTED": "Cannot create a test stage after the competition has started.",
+    # TODO: planned feature — not yet wired
     "ERR_TEST_STAGE_AFTER_COMP_START": "Test stage must end before the competition starts.",
+    # TODO: planned feature — not yet wired
     "ERR_TEST_STAGE_EXISTS": "A test stage already exists for this competition.",
     "ERR_MISSING_DATES": "start_time and end_time are required.",
     # challenges.py — import/upload
     "ERR_INVALID_UPLOAD_FORMAT": "Only ZIP files uploaded as multipart/form-data are supported.",
     "ERR_NO_DATA_PROVIDED": "No data provided.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_ARCHIVE": "Invalid or corrupt ZIP archive.",
     "ERR_INVALID_IMPORT_DATA": "Import data must be a JSON object.",
     # challenges.py — manual points (shared with leaderboard.py)
+    # TODO: planned feature — not yet wired
     "ERR_MISSING_MANUAL_POINTS": "Missing manual points.",
+    # TODO: planned feature — not yet wired
     "ERR_EDITING_BLOCKED": "Cannot modify manual points.",
     "ERR_MISSING_FIELDS": "Missing required fields.",
+    # TODO: planned feature — not yet wired
     "ERR_REASON_REQUIRED": "A justification reason is mandatory.",
+    # TODO: planned feature — not yet wired
     "ERR_TASK_NOT_IN_CHALLENGE": "Task does not belong to this challenge.",
+    # TODO: planned feature — not yet wired
     "ERR_POINTS_MUST_BE_INT": "Points must be an integer.",
+    # TODO: planned feature — not yet wired
     "ERR_POINTS_OUT_OF_BOUNDS": "Points must be between 0 and 100.",
+    # TODO: planned feature — not yet wired
     "ERR_NO_SUBMISSIONS": "Only competitors with submissions can be assigned manual points.",
     # submissions.py
     "ERR_NO_FILE_UPLOADED": "No file uploaded.",
@@ -93,7 +115,9 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_CHALLENGE_ARCHIVED": "This competition has been archived and no longer accepts submissions.",
     "ERR_COMPETITION_FROZEN": "This competition is currently frozen. Submissions are temporarily blocked.",
     "ERR_COMPETITION_FINALIZED": "Submissions are disabled for finalized competitions.",
+    # TODO: planned feature — not yet wired
     "ERR_STAGE_NOT_STARTED": "The stage has not started yet.",
+    # TODO: planned feature — not yet wired
     "ERR_STAGE_DEADLINE_PASSED": "The deadline for the stage has passed.",
     "ERR_COMPETITION_NOT_STARTED": "This competition has not started yet.",
     "ERR_COMPETITION_ENDED": "This competition has ended and no longer accepts submissions.",
@@ -103,6 +127,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_TASK_ID": "Invalid task_id for this challenge.",
     "ERR_AST_RULE_FAILED": "Notebook execution rules violated.",
     "ERR_SUBMIT_LOCKED": "Another submission is being processed. Please wait.",
+    # TODO: planned feature — not yet wired
     "ERR_DAILY_LIMIT_REACHED": "Daily limit reached.",
     "ERR_QUEUE_UNAVAILABLE": "Submission queue is temporarily unavailable. Please try again.",
     "ERR_SUBMISSIONS_LOCKED": "Access denied. Submissions are locked.",
@@ -113,20 +138,30 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_BASELINE_REQUIRED": "Baseline notebook is required.",
     "ERR_INVALID_RAM_LIMIT": "RAM limit must be a positive integer and cannot exceed 16384 MB (16 GB).",
     "ERR_INVALID_DOCKER_IMAGE": "Invalid base Docker image name format.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_APT_PACKAGE": "Invalid APT package name.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_PIP_REQUIREMENT": "Invalid pip requirement line format.",
     "ERR_INVALID_HF_DATASETS": "Invalid Hugging Face datasets configuration.",
     "ERR_INVALID_HF_MODELS": "Invalid Hugging Face models configuration.",
     "ERR_INVALID_METRICS_CONFIG": "metrics_config must be valid JSON.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_METRIC_NAME": "Invalid metric name.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_METRIC_CONFIG": "Metric configuration must include a 'weight'.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_METRIC_WEIGHT": "Weight must be numeric.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_METRIC_OPTIONS": "Options must be a dictionary.",
     "ERR_INVALID_STAGE_ID": "Invalid stage_id for this challenge.",
+    # TODO: planned feature — not yet wired
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_TOO_MANY_FILES": "You can upload a maximum of 5 files per task.",
+    # TODO: planned feature — not yet wired
     "ERR_FILE_TOO_LARGE_25MB": "File exceeds the maximum allowed size of 25MB.",
+    # TODO: planned feature — not yet wired
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
+    # TODO: planned feature — not yet wired
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     # tasks.py — move
     "ERR_CANNOT_MOVE_FINALIZED": "Cannot move task -- source stage is finalized",
@@ -143,9 +178,11 @@ DEFAULT_ERROR_MESSAGES = {
     # tasks.py — misc
     "ERR_FILE_NOT_FOUND": "File not found in task metadata.",
     "ERR_NOT_AVAILABLE": "Access denied or task not available yet.",
+    # TODO: planned feature — not yet wired
     "ERR_FORBIDDEN": "Only administrators are allowed to configure custom environments.",
     "ERR_TASK_NOT_FOUND": "Task not found.",
     "ERR_INVALID_LIMITS": "Invalid limit value.",
+    # TODO: planned feature — not yet wired
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",
     # app.py
     "ERR_INTERNAL": "Internal server error.",
