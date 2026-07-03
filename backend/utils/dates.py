@@ -1,6 +1,6 @@
 import logging
 import zoneinfo
-from datetime import datetime
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,14 @@ def to_utc(dt, timezone_str="UTC"):
     return dt.replace(tzinfo=tz).astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
 
 
+def utcnow():
+    """Return a naive datetime representing the current UTC time."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def now_local_for_timezone(timezone_str):
     try:
         tz = zoneinfo.ZoneInfo(timezone_str or "UTC")
         return datetime.now(tz).replace(tzinfo=None)
     except Exception:
-        return datetime.utcnow()
+        return utcnow()

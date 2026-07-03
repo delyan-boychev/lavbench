@@ -1,9 +1,10 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -28,8 +29,8 @@ class TestChallengeLeaderboardGetEndpoint:
             title="LB Challenge",
             description="Test challenge for leaderboard",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             double_blind=True,
             reveal_results=True,
@@ -96,8 +97,8 @@ class TestChallengeLeaderboardGetEndpoint:
             title="Other Challenge",
             description="Unrelated",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
         )
         db_session.add(other_challenge)
         db_session.commit()
@@ -465,8 +466,8 @@ class TestManualPointsEndpoint:
             title="MP Challenge",
             description="Manual points challenge",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             scores_finalized=False,
         )
         db_session.add(self.challenge)
@@ -590,8 +591,8 @@ class TestManualPointsEndpoint:
             title="Other MP Challenge",
             description="Unrelated",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
         )
         db_session.add(other_challenge)
         db_session.commit()

@@ -1,9 +1,10 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -41,8 +42,8 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             title="Ordering Edge Cases Challenge",
             description="Test challenge",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(hours=5),
-            end_time=datetime.utcnow() - timedelta(minutes=10),
+            start_time=utcnow() - timedelta(hours=5),
+            end_time=utcnow() - timedelta(minutes=10),
             is_frozen=False,
             double_blind=False,
             reveal_results=True,

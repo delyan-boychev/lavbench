@@ -5,10 +5,10 @@ import logging
 import os
 import uuid
 from contextlib import contextmanager, suppress
-from datetime import datetime
 
 import redis as redis_lib
 from config import Config
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def log_dead_letter(submission_id, task_id=None, challenge_id=None, error=None):
             "submission_id": submission_id,
             "task_id": task_id,
             "challenge_id": challenge_id,
-            "failed_at": datetime.utcnow().isoformat(),
+            "failed_at": utcnow().isoformat(),
             "error": str(error)[:1000] if error else None,
         }
         r.lpush("dead_letter_queue", json.dumps(entry))

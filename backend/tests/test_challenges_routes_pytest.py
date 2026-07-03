@@ -1,9 +1,10 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -43,8 +44,8 @@ class TestCreateChallenge:
         return {
             "title": "Test Challenge",
             "description": "A test challenge",
-            "start_time": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-            "end_time": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            "start_time": (utcnow() + timedelta(hours=1)).isoformat(),
+            "end_time": (utcnow() + timedelta(hours=24)).isoformat(),
             "max_eval_requests": 10,
             "ram_limit_mb": 4096,
             "time_limit_sec": 300,
@@ -99,8 +100,8 @@ class TestCreateChallenge:
 
     def test_create_challenge_end_before_start(self, client):
         payload = self._valid_payload()
-        payload["start_time"] = (datetime.utcnow() + timedelta(hours=24)).isoformat()
-        payload["end_time"] = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        payload["start_time"] = (utcnow() + timedelta(hours=24)).isoformat()
+        payload["end_time"] = (utcnow() + timedelta(hours=1)).isoformat()
         res = client.post(
             "/api/challenges",
             data=json.dumps(payload),
@@ -172,8 +173,8 @@ class TestUpdateChallenge:
             ram_limit_mb=4096,
             time_limit_sec=300,
             gpu_required=True,
-            start_time=datetime.utcnow() + timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
             double_blind=True,
             timezone="UTC",
         )
@@ -261,8 +262,8 @@ class TestUpdateChallenge:
             f"/api/challenges/{self.challenge.id}",
             data=json.dumps(
                 {
-                    "start_time": (datetime.utcnow() + timedelta(hours=10)).isoformat(),
-                    "end_time": (datetime.utcnow() + timedelta(hours=5)).isoformat(),
+                    "start_time": (utcnow() + timedelta(hours=10)).isoformat(),
+                    "end_time": (utcnow() + timedelta(hours=5)).isoformat(),
                 }
             ),
             content_type="application/json",
@@ -325,8 +326,8 @@ class TestArchiveChallenge:
             title="Archivable Challenge",
             description="To be archived",
             is_archived=False,
-            start_time=datetime.utcnow() + timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -394,8 +395,8 @@ class TestDeleteStage:
         self.challenge = Challenge(
             title="Stage Delete Challenge",
             description="Has stages",
-            start_time=datetime.utcnow() + timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
         )
         db_session.add(self.challenge)
         db_session.commit()
@@ -404,8 +405,8 @@ class TestDeleteStage:
             challenge_id=self.challenge.id,
             stage_number=1,
             title="Stage To Delete",
-            start_time=datetime.utcnow() + timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=20),
+            start_time=utcnow() + timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=20),
         )
         db_session.add(self.stage)
         db_session.commit()
@@ -470,16 +471,16 @@ class TestListChallenges:
         self.challenge1 = Challenge(
             title="Challenge Alpha",
             description="First challenge",
-            start_time=datetime.utcnow() + timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
         )
         db_session.add(self.challenge1)
 
         self.challenge2 = Challenge(
             title="Challenge Beta",
             description="Second challenge",
-            start_time=datetime.utcnow() + timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() + timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=48),
         )
         db_session.add(self.challenge2)
         db_session.commit()
@@ -532,8 +533,8 @@ class TestStageBoundariesValidation:
         self.challenge = Challenge(
             title="Boundary Challenge",
             description="Challenge timeframe bounds",
-            start_time=datetime.utcnow() + timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=24),
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
             timezone="UTC",
         )
         db_session.add(self.challenge)
@@ -547,8 +548,8 @@ class TestStageBoundariesValidation:
         # Stage starts before challenge start time
         payload = {
             "title": "Early Stage",
-            "start_time": (datetime.utcnow()).isoformat() + "Z",
-            "end_time": (datetime.utcnow() + timedelta(hours=5)).isoformat() + "Z",
+            "start_time": (utcnow()).isoformat() + "Z",
+            "end_time": (utcnow() + timedelta(hours=5)).isoformat() + "Z",
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/stages",
@@ -562,8 +563,8 @@ class TestStageBoundariesValidation:
         # Stage ends after challenge end time
         payload = {
             "title": "Late Stage",
-            "start_time": (datetime.utcnow() + timedelta(hours=2)).isoformat() + "Z",
-            "end_time": (datetime.utcnow() + timedelta(hours=26)).isoformat() + "Z",
+            "start_time": (utcnow() + timedelta(hours=2)).isoformat() + "Z",
+            "end_time": (utcnow() + timedelta(hours=26)).isoformat() + "Z",
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/stages",
@@ -577,8 +578,8 @@ class TestStageBoundariesValidation:
     def test_create_stage_end_before_start(self, client):
         payload = {
             "title": "Backward Stage",
-            "start_time": (datetime.utcnow() + timedelta(hours=5)).isoformat() + "Z",
-            "end_time": (datetime.utcnow() + timedelta(hours=4)).isoformat() + "Z",
+            "start_time": (utcnow() + timedelta(hours=5)).isoformat() + "Z",
+            "end_time": (utcnow() + timedelta(hours=4)).isoformat() + "Z",
         }
         res = client.post(
             f"/api/challenges/{self.challenge.id}/stages",

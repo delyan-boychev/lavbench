@@ -3,7 +3,6 @@ import io
 import json
 import logging
 import time
-from datetime import datetime
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
@@ -19,6 +18,7 @@ from sse_utils import (
     publish_submissions_update,
     sse_connection_limit,
 )
+from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
@@ -197,9 +197,9 @@ def submit_code(challenge_id):
         task = db.session.get(Task, task_id)
 
     if user_role == "competitor":
-        now = datetime.utcnow()
         from datetime import timedelta
 
+        now = utcnow()
         from config import Config
 
         grace_seconds = Config.DEADLINE_GRACE_PERIOD_SECONDS
@@ -250,7 +250,7 @@ def submit_code(challenge_id):
         if not acquired:
             return err("ERR_SUBMIT_LOCKED", 429)
 
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge_id,
@@ -389,12 +389,12 @@ def get_submissions(challenge_id):
         if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
-        if challenge.end_time and datetime.utcnow() >= challenge.end_time:
+        if challenge.end_time and utcnow() >= challenge.end_time:
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         # Check ended stages
 
-        now = datetime.utcnow()
+        now = utcnow()
         active_stages = [s for s in challenge.stages if s.end_time and now < s.end_time]
         active_stage_ids = [s.id for s in active_stages]
 
@@ -484,7 +484,7 @@ def get_submission_detail(submission_id):
             return err("ERR_NOT_FOUND", 404)
 
         challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
+        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         if submission.task_id:
@@ -493,7 +493,7 @@ def get_submission_detail(submission_id):
                 from models import Stage
 
                 stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
+                if stage and stage.end_time and utcnow() >= stage.end_time:
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     return jsonify(submission.to_dict(view_role=user_role, current_user_id=user_id))
@@ -567,11 +567,11 @@ def select_final_submission(submission_id):
 
             stage = db.session.get(Stage, task.stage_id)
             if stage:
-                now = datetime.utcnow()
+                from datetime import timedelta
+
+                now = utcnow()
                 if submission.created_at > stage.end_time:
                     return err("ERR_SUBMISSION_LATE", 400)
-
-                from datetime import timedelta
 
                 t_base_select = stage.end_time + timedelta(seconds=300)
 
@@ -637,7 +637,7 @@ def stream_submission_logs(submission_id):
             return err("ERR_ACCESS_DENIED", 403)
 
         challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and datetime.utcnow() >= challenge.end_time:
+        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
         if submission.task_id:
@@ -646,7 +646,7 @@ def stream_submission_logs(submission_id):
                 from models import Stage
 
                 stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and datetime.utcnow() >= stage.end_time:
+                if stage and stage.end_time and utcnow() >= stage.end_time:
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     def event_generator():

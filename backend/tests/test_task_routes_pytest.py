@@ -2,10 +2,11 @@ import json
 import os
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -20,8 +21,8 @@ class TestCheckCompetitorAccess:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -59,8 +60,8 @@ class TestCheckTaskStarted:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             timezone="UTC",
         )
@@ -103,8 +104,8 @@ class TestCheckTaskStarted:
     def test_competitor_challenge_not_started(self):
         from routes.tasks import check_task_started
 
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
+        self.challenge.end_time = utcnow() + timedelta(hours=48)
         db.session.commit()
         assert check_task_started(self.task, "competitor", self.user.id) is False
 
@@ -114,8 +115,8 @@ class TestCheckTaskStarted:
         stage = Stage(
             title="Future Stage",
             challenge_id=self.challenge.id,
-            start_time=datetime.utcnow() + timedelta(hours=24),
-            end_time=datetime.utcnow() + timedelta(hours=48),
+            start_time=utcnow() + timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=48),
         )
         db.session.add(stage)
         db.session.commit()
@@ -131,8 +132,8 @@ class TestQueueSystemSubmission:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -310,8 +311,8 @@ class TestMaybeQueueBaseline:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -394,8 +395,8 @@ class TestGetTask:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             timezone="UTC",
         )
@@ -438,8 +439,8 @@ class TestGetTask:
         assert data["title"] == "Task 1"
 
     def test_competitor_blocked_when_task_not_started(self):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
+        self.challenge.end_time = utcnow() + timedelta(hours=48)
         db.session.commit()
         resp = self.client.get(f"/api/tasks/{self.task.id}", headers=self._auth(self.comp_token))
         assert resp.status_code == 403
@@ -462,8 +463,8 @@ class TestDeleteTask:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -537,8 +538,8 @@ class TestDownloadTaskFile:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -583,8 +584,8 @@ class TestDownloadTaskFile:
         assert resp.status_code == 403
 
     def test_competitor_blocked_when_task_not_started(self):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
+        self.challenge.end_time = utcnow() + timedelta(hours=48)
         db.session.commit()
         resp = self.client.get(
             f"/api/tasks/{self.task.id}/download/test.txt",
@@ -618,8 +619,8 @@ class TestGetTaskSubmissions:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -687,8 +688,8 @@ class TestGetTaskSubmissions:
             assert s["user"]["id"] == self.comp.id
 
     def test_competitor_blocked_when_task_not_started(self):
-        self.challenge.start_time = datetime.utcnow() + timedelta(hours=24)
-        self.challenge.end_time = datetime.utcnow() + timedelta(hours=48)
+        self.challenge.start_time = utcnow() + timedelta(hours=24)
+        self.challenge.end_time = utcnow() + timedelta(hours=48)
         db.session.commit()
         resp = self.client.get(
             f"/api/tasks/{self.task.id}/submissions",
@@ -748,8 +749,8 @@ class TestGetTaskLeaderboard:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -804,8 +805,8 @@ class TestWorkerDownloadTaskFile:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -865,8 +866,8 @@ class TestGetActiveDatasets:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             is_archived=False,
         )
@@ -918,8 +919,8 @@ class TestGetTaskHfKey:
             title="Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)

@@ -4,13 +4,14 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from functools import wraps
 
 import jwt
 from config import Config
 from error_utils import err
 from flask import jsonify, request
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,8 @@ def generate_token(user_id, role):
         "sub": str(user_id),
         "role": role,
         "jti": uuid.uuid4().hex,
-        "exp": datetime.utcnow() + timedelta(days=1),  # Token valid for 24 hours
-        "iat": datetime.utcnow(),
+        "exp": utcnow() + timedelta(days=1),  # Token valid for 24 hours
+        "iat": utcnow(),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
@@ -116,9 +117,9 @@ def revoke_token(token):
         if jti and exp:
             r = _redis_client()
             if r:
-                ttl = max(1, int(exp - datetime.utcnow().timestamp()))
+                ttl = max(1, int(exp - utcnow().timestamp()))
                 try:
-                    r.setex(f"revoked:{jti}", ttl, "1")
+                    r.set(f"revoked:{jti}", "1", ex=ttl)
                 except Exception:
                     logger.warning(
                         "Failed to write revocation for jti=%s to Redis",

@@ -3,6 +3,8 @@
 import zoneinfo
 from datetime import datetime
 
+from utils.dates import utcnow
+
 from models.base import GUID, db, uuid7
 
 
@@ -44,7 +46,7 @@ class Challenge(db.Model):
             tz = zoneinfo.ZoneInfo(self.timezone or "UTC")
             return datetime.now(tz).replace(tzinfo=None)
         except Exception:
-            return datetime.utcnow()
+            return utcnow()
 
     @property
     def is_started(self):

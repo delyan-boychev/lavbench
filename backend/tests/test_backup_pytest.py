@@ -1,9 +1,10 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -197,8 +198,8 @@ class TestCheckAndBackup:
             title="Backup Test",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=48),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=48),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -213,7 +214,7 @@ class TestCheckAndBackup:
         assert "active_competitions" in result
 
     def test_check_and_backup_expired_challenge(self):
-        self.challenge.end_time = datetime.utcnow() - timedelta(hours=24)
+        self.challenge.end_time = utcnow() - timedelta(hours=24)
         db.session.commit()
         result = check_and_backup()
         assert "active_competitions" in result

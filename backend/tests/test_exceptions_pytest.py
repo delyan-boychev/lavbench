@@ -1,10 +1,11 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -30,15 +31,15 @@ class TestBackendExceptionAndErrorCases:
             title="Challenge Alpha",
             description="Competitor challenge A",
             max_eval_requests=3,
-            start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow() - timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=1),
         )
         self.challenge_b = Challenge(
             title="Challenge Beta",
             description="Competitor challenge B",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow() - timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=1),
         )
         db.session.add(self.admin)
         db.session.add(self.challenge_a)
@@ -200,8 +201,8 @@ class TestBackendExceptionAndErrorCases:
             title="Inactive",
             is_active=False,
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow() - timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=1),
         )
         db.session.add(inactive_challenge)
         db.session.commit()
@@ -220,8 +221,8 @@ class TestBackendExceptionAndErrorCases:
             is_active=True,
             is_archived=True,
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=1),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=utcnow() - timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=1),
         )
         db.session.add(archived_challenge)
         db.session.commit()
@@ -240,8 +241,8 @@ class TestBackendExceptionAndErrorCases:
         self.competitor.challenge_id = self.challenge_a.id
         db.session.commit()
 
-        self.challenge_a.start_time = datetime.utcnow() + timedelta(hours=1)
-        self.challenge_a.end_time = datetime.utcnow() + timedelta(hours=2)
+        self.challenge_a.start_time = utcnow() + timedelta(hours=1)
+        self.challenge_a.end_time = utcnow() + timedelta(hours=2)
         db.session.commit()
 
         res = self.client.post(
@@ -250,8 +251,8 @@ class TestBackendExceptionAndErrorCases:
         assert res.status_code == 400
         assert "This competition has not started yet" in res.json["error"]
 
-        self.challenge_a.start_time = datetime.utcnow() - timedelta(hours=2)
-        self.challenge_a.end_time = datetime.utcnow() - timedelta(hours=1)
+        self.challenge_a.start_time = utcnow() - timedelta(hours=2)
+        self.challenge_a.end_time = utcnow() - timedelta(hours=1)
         db.session.commit()
 
         res = self.client.post(
@@ -264,8 +265,8 @@ class TestBackendExceptionAndErrorCases:
     def test_submit_code_missing_cells_and_rate_limits(self, mock_celery):
         headers = self._auth(self.competitor)
 
-        self.challenge_a.start_time = datetime.utcnow() - timedelta(hours=1)
-        self.challenge_a.end_time = datetime.utcnow() + timedelta(hours=1)
+        self.challenge_a.start_time = utcnow() - timedelta(hours=1)
+        self.challenge_a.end_time = utcnow() + timedelta(hours=1)
         db.session.commit()
 
         res = self.client.post(
@@ -281,7 +282,7 @@ class TestBackendExceptionAndErrorCases:
                 task_id=self.task_a.id,
                 status="completed",
                 code_cells="[]",
-                created_at=datetime.utcnow(),
+                created_at=utcnow(),
             )
             db.session.add(sub)
         db.session.commit()

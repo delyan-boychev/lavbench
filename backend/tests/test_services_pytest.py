@@ -2,10 +2,10 @@ import os
 import sys
 
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from datetime import datetime
 
 from models import Task, db
 from services.submission_service import (
@@ -85,8 +85,8 @@ class TestServiceSandboxAndPriority:
 
         challenge = Challenge(
             title="Test Challenge",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow(),
+            start_time=utcnow(),
+            end_time=utcnow(),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -117,8 +117,8 @@ class TestServiceSandboxAndPriority:
 
         challenge = Challenge(
             title="Test Challenge",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow(),
+            start_time=utcnow(),
+            end_time=utcnow(),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -157,8 +157,8 @@ class TestServiceSandboxAndPriority:
         challenge = Challenge(
             title="Test Challenge",
             scores_finalized=True,
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow(),
+            start_time=utcnow(),
+            end_time=utcnow(),
         )
         db.session.add(challenge)
         db.session.commit()

@@ -5,7 +5,8 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+
+from utils.dates import utcnow
 
 from models.base import GUID, db, uuid7
 
@@ -47,7 +48,7 @@ class Submission(db.Model):
     gpu_node = db.Column(db.String(255), nullable=True)
     execution_time_ms = db.Column(db.Integer, nullable=True)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
     executed_at = db.Column(db.DateTime, nullable=True)
 
     metrics_payload_public = db.Column(db.JSON, nullable=True)

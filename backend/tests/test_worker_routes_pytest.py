@@ -2,12 +2,13 @@ import base64
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from auth_utils import generate_token
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from models import Challenge, Submission, Task, User, db
+from utils.dates import utcnow
 
 
 class TestWorkerEndpoints:
@@ -33,8 +34,8 @@ class TestWorkerEndpoints:
             title="Test Challenge",
             description="Test",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)

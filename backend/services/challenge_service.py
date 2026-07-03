@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from utils.dates import utcnow
 
 from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
@@ -137,7 +138,7 @@ def generate_exported_results_csv(challenge, view_role="admin"):
     leaderboard = build_and_cache_leaderboard(challenge.id) or []
     tasks = challenge.tasks
 
-    now = datetime.utcnow()
+    now = utcnow()
     has_started = challenge.start_time is not None and now >= challenge.start_time
     challenge_finalized = challenge.scores_finalized
 
@@ -309,8 +310,8 @@ def import_challenge_from_dict(data, zip_ref=None):
         is_active=bool(data.get("is_active", True)),
         is_archived=False,
         scores_finalized=False,
-        start_time=_parse_dt(data.get("start_time")) or datetime.utcnow(),
-        end_time=_parse_dt(data.get("end_time")) or datetime.utcnow(),
+        start_time=_parse_dt(data.get("start_time")) or utcnow(),
+        end_time=_parse_dt(data.get("end_time")) or utcnow(),
         is_frozen=bool(data.get("is_frozen", False)),
         double_blind=bool(data.get("double_blind", True)),
         reveal_results=bool(data.get("reveal_results", True)),
@@ -326,8 +327,8 @@ def import_challenge_from_dict(data, zip_ref=None):
             challenge_id=challenge.id,
             stage_number=int(s_data.get("stage_number", 1)),
             title=s_data.get("title", "Stage"),
-            start_time=_parse_dt(s_data.get("start_time")) or datetime.utcnow(),
-            end_time=_parse_dt(s_data.get("end_time")) or datetime.utcnow(),
+            start_time=_parse_dt(s_data.get("start_time")) or utcnow(),
+            end_time=_parse_dt(s_data.get("end_time")) or utcnow(),
             is_finalized=False,
             reveal_results=bool(s_data.get("reveal_results", False)),
         )

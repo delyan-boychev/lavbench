@@ -41,6 +41,7 @@ from utils.access import ensure_registered
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute_unless_testing
+from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
@@ -93,7 +94,7 @@ def check_task_started(task, user_role, user_id):
                     tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
                     now_local = datetime.now(tz).replace(tzinfo=None)
                 except Exception:
-                    now_local = datetime.utcnow()
+                    now_local = utcnow()
                 if now_local < stage.start_time:
                     return False
     return True
@@ -813,7 +814,7 @@ def update_task(task_id):
         if stage_id_val is not None and old_stage:
             if old_stage.is_finalized:
                 return err("ERR_CANNOT_MOVE_FINALIZED", 400)
-            if old_stage.end_time and old_stage.end_time <= datetime.utcnow():
+            if old_stage.end_time and old_stage.end_time <= utcnow():
                 return err("ERR_CANNOT_MOVE_ENDED", 400)
 
         # Block moving if any submission has manual points
@@ -1194,7 +1195,7 @@ def submit_task(task_id):
                     tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
                     now_local = datetime.now(tz).replace(tzinfo=None)
                 except Exception:
-                    now_local = datetime.utcnow()
+                    now_local = utcnow()
                 if now_local < stage.start_time:
                     return err(
                         "ERR_STAGE_NOT_STARTED",
@@ -1220,7 +1221,7 @@ def submit_task(task_id):
         return err("ERR_INVALID_SELECTED_CELLS", 400)
 
     if True:
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge.id,
@@ -1237,7 +1238,7 @@ def submit_task(task_id):
             )
 
         if task.max_submissions_per_period and task.submission_period_hours:
-            period_start = datetime.utcnow() - timedelta(hours=task.submission_period_hours)
+            period_start = utcnow() - timedelta(hours=task.submission_period_hours)
             sub_count = Submission.query.filter(
                 Submission.user_id == user_id,
                 Submission.task_id == task.id,
@@ -1831,7 +1832,7 @@ def report_worker_progress(submission_id):
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
         submission.status = status_val
     if submission.executed_at is None:
-        submission.executed_at = datetime.utcnow()
+        submission.executed_at = utcnow()
     if "detailed_status" in data:
         submission.detailed_status = data["detailed_status"]
     if "logs" in data:

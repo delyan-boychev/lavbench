@@ -2,10 +2,11 @@ import csv
 import io
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
@@ -41,8 +42,8 @@ class TestDoubleBlindAndLeaderboardRules:
             title="Double Blind Competition",
             description="Active double-blind challenge",
             max_eval_requests=10,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             double_blind=True,
             reveal_results=False,  # hidden initially

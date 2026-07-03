@@ -41,11 +41,11 @@ class TestAuthUtils:
     def test_verify_token_returns_none_for_expired_token(self):
         with (
             patch("auth_utils.SECRET_KEY", SECRET_KEY),
-            patch("auth_utils.datetime") as mock_dt,
+            patch("auth_utils.utcnow") as mock_utcnow,
         ):
-            mock_dt.utcnow.return_value = datetime(2020, 1, 1, 12, 0, 0)
+            mock_utcnow.return_value = datetime(2020, 1, 1, 12, 0, 0)
             token = generate_token(1, "competitor")
-            mock_dt.utcnow.return_value = datetime(2020, 1, 3, 12, 0, 0)
+            mock_utcnow.return_value = datetime(2020, 1, 3, 12, 0, 0)
             result = verify_token(token)
             assert result is None
 

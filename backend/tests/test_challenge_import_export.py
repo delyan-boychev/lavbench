@@ -9,10 +9,11 @@ Covers:
 
 import io
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from models import Challenge, Stage, Task, User
+from utils.dates import utcnow
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -26,15 +27,15 @@ def challenge_with_stages_and_tasks(db_session, sample_challenge):
         challenge_id=ch.id,
         stage_number=1,
         title="Stage 1",
-        start_time=datetime.utcnow() - timedelta(days=1),
-        end_time=datetime.utcnow() + timedelta(days=1),
+        start_time=utcnow() - timedelta(days=1),
+        end_time=utcnow() + timedelta(days=1),
     )
     stage2 = Stage(
         challenge_id=ch.id,
         stage_number=2,
         title="Stage 2",
-        start_time=datetime.utcnow() + timedelta(days=2),
-        end_time=datetime.utcnow() + timedelta(days=5),
+        start_time=utcnow() + timedelta(days=2),
+        end_time=utcnow() + timedelta(days=5),
     )
     db_session.add_all([stage1, stage2])
     db_session.flush()
@@ -159,15 +160,15 @@ class TestImportChallenge:
         "gpu_required": False,
         "double_blind": True,
         "timezone": "UTC",
-        "start_time": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-        "end_time": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+        "start_time": (utcnow() + timedelta(hours=1)).isoformat(),
+        "end_time": (utcnow() + timedelta(hours=24)).isoformat(),
         "stages": [
             {
                 "id": 100,
                 "stage_number": 1,
                 "title": "Preliminary",
-                "start_time": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
-                "end_time": (datetime.utcnow() + timedelta(hours=12)).isoformat(),
+                "start_time": (utcnow() + timedelta(hours=1)).isoformat(),
+                "end_time": (utcnow() + timedelta(hours=12)).isoformat(),
             }
         ],
         "tasks": [

@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from utils.dates import utcnow
 
 
 class TestAuditService:
@@ -142,7 +143,6 @@ class TestAuditLogsRoute:
 
     def test_get_audit_logs_admin_allowed(self):
         # Create an audit log entry
-        from datetime import datetime
 
         from models import AuditLog
 
@@ -150,7 +150,7 @@ class TestAuditLogsRoute:
             admin_id=self.admin.id,
             action_type="create",
             target_type="challenge",
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
         )
         from models import db
 
@@ -179,7 +179,7 @@ class TestAuditLogsRoute:
 
     def test_get_audit_logs_filter_by_challenge(self):
         # Create a challenge, tasks, stages, users
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         from models import AuditLog, Challenge, db
 
@@ -187,8 +187,8 @@ class TestAuditLogsRoute:
             title="Audit Test Challenge",
             description="Test Description",
             max_eval_requests=3,
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow(),
+            end_time=utcnow() + timedelta(hours=2),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -199,7 +199,7 @@ class TestAuditLogsRoute:
             action_type="create",
             target_type="challenge",
             target_id=challenge.id,
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
         )
         # Audit log unrelated
         log2 = AuditLog(
@@ -207,7 +207,7 @@ class TestAuditLogsRoute:
             action_type="create",
             target_type="user",
             target_id=self.competitor.id,
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow(),
         )
         db.session.add_all([log1, log2])
         db.session.commit()
@@ -220,7 +220,7 @@ class TestAuditLogsRoute:
         assert data["logs"][0]["target_id"] == str(challenge.id)
 
     def test_download_challenge_audit_logs_forbidden_for_jury(self):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         from models import Challenge, db
 
@@ -228,8 +228,8 @@ class TestAuditLogsRoute:
             title="Download Test Challenge",
             description="Test Description",
             max_eval_requests=3,
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow(),
+            end_time=utcnow() + timedelta(hours=2),
         )
         db.session.add(challenge)
         db.session.commit()

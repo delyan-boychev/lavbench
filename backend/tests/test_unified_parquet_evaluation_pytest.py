@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -42,8 +43,8 @@ class TestUnifiedParquetEvaluation:
             title="IMDB Sentiment Classification",
             description="Predict sentiment of reviews.",
             max_eval_requests=5,
-            start_time=datetime.utcnow() - timedelta(hours=2),
-            end_time=datetime.utcnow() + timedelta(hours=2),
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
         )
         db.session.add(self.challenge)
@@ -156,7 +157,8 @@ class TestUnifiedParquetEvaluation:
             print("LOGS:", sub_reloaded.logs, "\n\n")
             assert "evaluated with status completed" in res
 
-        db.session.refresh(sub)
+        db.session.expire(sub)
+        sub = db.session.get(Submission, sub.id)
         assert sub.status == "completed"
         assert sub.public_score == pytest.approx(1.0)
         assert sub.private_score == pytest.approx(0.5)
@@ -919,7 +921,7 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
 
         local_now = _now_local_for_timezone("Europe/Sofia")
         assert local_now.tzinfo is None
-        utc_now_naive = datetime.utcnow()
+        utc_now_naive = utcnow()
         diff = abs((local_now.replace(tzinfo=None) - utc_now_naive).total_seconds())
         assert diff < 3600 * 5
 

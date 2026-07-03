@@ -9,11 +9,11 @@ import shutil
 import subprocess
 import tempfile
 import urllib.parse
-from datetime import datetime
 from pathlib import Path
 
 import requests
 from config import Config
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def run_backup(app, auto=True, db_only=False):
     - db_only → if True, only backs up the database (no uploads folder)
     """
     prefix = "auto" if auto else "manual"
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = utcnow().strftime("%Y%m%d_%H%M%S")
 
     backup_dir = Config.BACKUPS_DIR
     os.makedirs(backup_dir, exist_ok=True)
@@ -209,7 +209,7 @@ def run_backup(app, auto=True, db_only=False):
         try:
             from models import Challenge
 
-            now = datetime.utcnow()
+            now = utcnow()
             active_comp = Challenge.query.filter(
                 Challenge.is_active,
                 not Challenge.is_archived,
@@ -240,7 +240,7 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
             payload = {
                 "filename": filename,
                 "size_bytes": size_bytes,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": utcnow().isoformat(),
                 "challenge_id": challenge_id,
                 "state": state,
             }

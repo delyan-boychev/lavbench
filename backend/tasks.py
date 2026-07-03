@@ -18,6 +18,7 @@ from task_modules.system import (
     run_docker_prune,
     run_register_worker_specs,
 )
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,7 @@ def check_and_backup():
     with app.app_context():
         from config import Config
 
-        now = datetime.utcnow()
+        now = utcnow()
         timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
         timedelta(minutes=20)
 
@@ -318,7 +319,7 @@ def watchdog_stuck_submissions():
             Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
             Submission.executed_at.isnot(None),
         ).all()
-        now = datetime.utcnow()
+        now = utcnow()
         timeout_count = 0
         for sub in timed_out_candidates + running_candidates:
             task_time_limit = 300

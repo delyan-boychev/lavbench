@@ -2,9 +2,9 @@
 
 import ast
 import json
-from datetime import datetime
 
 from models import Submission
+from utils.dates import utcnow
 
 
 def extract_code_from_cells(cells_list):
@@ -110,8 +110,6 @@ def check_execution_rules(task, cells_list):
                 and node.value in banned_constants
             ):
                 return False, get_violation_message(node.value)
-            elif isinstance(node, ast.Str) and node.s in banned_constants:
-                return False, get_violation_message(node.s)
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     root_import = alias.name.split(".")[0]
@@ -221,7 +219,7 @@ def calculate_submission_priority(user_id, role):
     )
     if role in ["admin", "jury"]:
         return 9
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     submission_count = Submission.query.filter(
         Submission.user_id == user_id, Submission.created_at >= today_start
     ).count()

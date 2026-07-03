@@ -7,7 +7,9 @@ that config.py and models.py do not crash at module load time.
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from utils.dates import utcnow
 
 # ── Critical: set these BEFORE any app/model imports ──────────────────────
 os.environ.setdefault(
@@ -200,8 +202,8 @@ def sample_challenge(db_session):
         title="Sample Challenge",
         description="A sample challenge for testing",
         max_eval_requests=10,
-        start_time=datetime.utcnow() - timedelta(hours=2),
-        end_time=datetime.utcnow() + timedelta(hours=2),
+        start_time=utcnow() - timedelta(hours=2),
+        end_time=utcnow() + timedelta(hours=2),
         is_archived=False,
         double_blind=True,
         timezone="UTC",
@@ -218,8 +220,8 @@ def sample_future_challenge(db_session):
         title="Future Challenge",
         description="A challenge that starts in the future",
         max_eval_requests=10,
-        start_time=datetime.utcnow() + timedelta(days=1),
-        end_time=datetime.utcnow() + timedelta(days=8),
+        start_time=utcnow() + timedelta(days=1),
+        end_time=utcnow() + timedelta(days=8),
         is_archived=False,
         double_blind=True,
         timezone="UTC",
@@ -236,8 +238,8 @@ def archived_challenge(db_session):
         title="Archived Challenge",
         description="An archived competition",
         max_eval_requests=10,
-        start_time=datetime.utcnow() - timedelta(days=10),
-        end_time=datetime.utcnow() - timedelta(days=5),
+        start_time=utcnow() - timedelta(days=10),
+        end_time=utcnow() - timedelta(days=5),
         is_archived=True,
         double_blind=True,
         timezone="UTC",
@@ -270,8 +272,8 @@ def sample_stage(db_session, sample_challenge):
         title="Sample Stage",
         challenge_id=sample_challenge.id,
         stage_number=1,
-        start_time=datetime.utcnow() - timedelta(hours=24),
-        end_time=datetime.utcnow() + timedelta(hours=24),
+        start_time=utcnow() - timedelta(hours=24),
+        end_time=utcnow() + timedelta(hours=24),
     )
     db_session.add(stage)
     db_session.flush()

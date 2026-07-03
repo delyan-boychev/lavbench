@@ -43,6 +43,7 @@ from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
+from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
@@ -1493,7 +1494,7 @@ def download_submissions_zip(challenge_id):
     challenge = db.get_or_404(Challenge, challenge_id)
     stage_id = request.args.get("stage_id")
 
-    now = datetime.utcnow()
+    now = utcnow()
 
     # 1. Determine target stage and tasks
     stage = None

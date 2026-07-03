@@ -6,6 +6,7 @@ Uses fixture-based patterns from conftest.py.
 import json
 
 import pytest
+from utils.dates import utcnow
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Finalize endpoint:  POST /challenges/<id>/finalize
@@ -18,9 +19,9 @@ class TestFinalizeChallenge:
 
     @pytest.fixture(autouse=True)
     def make_challenge_ended(self, db_session, sample_challenge):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
-        sample_challenge.end_time = datetime.utcnow() - timedelta(minutes=1)
+        sample_challenge.end_time = utcnow() - timedelta(minutes=1)
         db_session.commit()
 
     def test_finalize_as_jury_success(
@@ -238,10 +239,10 @@ class TestFinalizeChallenge:
         sample_task,
         create_user,
     ):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         # Override end_time to be in the future
-        sample_challenge.end_time = datetime.utcnow() + timedelta(hours=2)
+        sample_challenge.end_time = utcnow() + timedelta(hours=2)
         sample_competitor.manual_points = {str(sample_task.id): 90}
         db_session.commit()
 
@@ -271,9 +272,9 @@ class TestCreateTestStage:
     """Tests for POST /challenges/<id>/test-stage."""
 
     def _make_payload(self, start_offset_hours=1, end_offset_hours=2):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
-        now = datetime.utcnow()
+        now = utcnow()
         return {
             "title": "Test Stage",
             "start_time": (now + timedelta(hours=start_offset_hours)).isoformat() + "Z",
@@ -542,9 +543,9 @@ class TestTestStageViaCompetitionCreate:
     """Test stage created via POST /challenges with test_stage_* fields."""
 
     def test_create_challenge_with_test_stage(self, client, db_session, tokens):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
-        now = datetime.utcnow()
+        now = utcnow()
         start = now + timedelta(days=1)
         test_start = now + timedelta(hours=1)
         test_end = now + timedelta(hours=2)
@@ -648,11 +649,11 @@ class TestTestStageScoring:
     def test_test_stage_submission_excluded_from_leaderboard(
         self, client, db_session, sample_future_challenge, sample_competitor, tokens
     ):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         from models import Stage, Submission, Task
 
-        now = datetime.utcnow()
+        now = utcnow()
         comp_start = sample_future_challenge.start_time
 
         test_stage = Stage(
@@ -824,11 +825,11 @@ class TestTaskStageAssignment:
     def test_task_without_stage_id_allowed_when_only_test_stage(
         self, client, db_session, sample_future_challenge, tokens
     ):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         from models import Stage
 
-        now = datetime.utcnow()
+        now = utcnow()
         test_stage = Stage(
             challenge_id=sample_future_challenge.id,
             stage_number=0,
