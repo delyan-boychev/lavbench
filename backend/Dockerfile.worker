@@ -16,6 +16,7 @@ COPY tasks.py \
      evaluation_engine.py \
      models.py \
      config.py \
+     log_config.py \
      ./
 
 COPY task_modules/ task_modules/

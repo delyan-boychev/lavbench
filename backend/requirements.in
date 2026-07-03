@@ -43,6 +43,9 @@ psutil>=5.9.0
 # ── Docker SDK (replaces subprocess calls to docker CLI) ───────────
 docker>=7.1.0
 
+# ── Logging (cross-process safe rotating file handler) ────────────
+concurrent-log-handler>=0.9
+
 # ── Utilities ──────────────────────────────────────────────────────
 python-dotenv>=1.2.2
 requests>=2.34.2

@@ -15,6 +15,7 @@ os.environ.setdefault(
 )  # 32+ chars for HMAC-SHA256
 os.environ.setdefault("ENCRYPTION_KEY", "tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis=")
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"  # force isolation — never touch the dev DB
+os.environ["LOG_DIR"] = "/tmp/nai-test-logs"
 
 _backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 if _backend_dir not in sys.path:

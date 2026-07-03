@@ -1,4 +1,5 @@
 import contextlib
+import gzip
 import json
 import logging
 import os
@@ -157,11 +158,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
             with open(task.evaluator_script_path) as ef:
                 metadata["custom_eval_code"] = ef.read()
         except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception(
-                "Failed to read evaluator script for task %s", task.id
-            )
+            logger.exception("Failed to read evaluator script for task %s", task.id)
 
     # Dispatch the submission via Celery
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
@@ -2106,3 +2103,31 @@ def get_task_hf_key(task_id):
     if not hf_key:
         logger.warning("No HF API key configured for task %s", task_id)
     return jsonify({"hf_key": hf_key}), 200
+
+
+@tasks_bp.route("/workers/logs", methods=["POST"])
+@rate_limit(max_requests=12, window_seconds=60, per_user=False)
+def receive_worker_logs():
+    token = request.headers.get("X-Worker-Token")
+    if not check_worker_auth(token):
+        return err("ERR_UNAUTHORIZED", 401)
+
+    body = request.get_data()
+    if not body:
+        return err("ERR_INVALID_REQUEST_BODY", 400)
+
+    try:
+        lines = gzip.decompress(body).decode()
+    except Exception:
+        return err("ERR_INVALID_REQUEST_BODY", 400)
+
+    log_dir = os.environ.get("LOG_DIR", "/app/logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "worker_remote.log")
+    try:
+        with open(log_path, "a") as f:
+            f.write(lines if lines.endswith("\n") else lines + "\n")
+    except OSError as e:
+        logger.error("Failed to write worker logs: %s", e)
+        return err("ERR_INTERNAL_SERVER_ERROR", 500)
+    return jsonify({"status": "ok"}), 200

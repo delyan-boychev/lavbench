@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 def _require_env(key):
     val = os.environ.get(key)
     if not val:
-        logger.error(f"FATAL: Required environment variable '{key}' is not set.", file=sys.stderr)
+        msg = f"FATAL: Required environment variable '{key}' is not set."
+        sys.stderr.write(msg + "\n")
         sys.exit(1)
     return val
 

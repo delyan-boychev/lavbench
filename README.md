@@ -273,6 +273,13 @@ cp .env.example .env
 | `MIN_BUILD_DISK_GB` | Minimum free disk space for image builds (GB) | `5` |
 | `BUILD_LOCK_EXPIRY` | Build lock expiry (seconds) | `3600` |
 
+### Logging
+
+| Variable | Description | Default |
+|---|---|---|
+| `LOG_DIR` | Directory for application logs (rotated daily, kept 6 days) | `/app/logs` |
+| `WORKER_LOG_SHIP_URL` | URL for remote workers to POST gzipped log batches | — (disabled) |
+
 ### Gunicorn (Server)
 
 | Variable | Description | Default |
@@ -280,6 +287,8 @@ cp .env.example .env
 | `GUNICORN_MAX_REQUESTS` | Max requests per worker before restart (prevents memory leaks) | `10000` |
 | `GUNICORN_MAX_REQUESTS_JITTER` | Random jitter added to max_requests (prevents thundering herd) | `2000` |
 | `GUNICORN_ULIMIT_NOFILE` | File descriptor limit for high concurrency (300+ users) | `65536` |
+| `GUNICORN_ACCESS_LOGFILE` | Gunicorn access log path | `/app/logs/gunicorn_access.log` |
+| `GUNICORN_ERROR_LOGFILE` | Gunicorn error log path | `/app/logs/gunicorn_error.log` |
 
 ### Application Defaults
 

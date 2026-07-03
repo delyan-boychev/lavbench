@@ -53,6 +53,8 @@ click-plugins==1.1.1.2
     # via celery
 click-repl==0.3.0
     # via celery
+concurrent-log-handler==0.9.29
+    # via -r backend/requirements.in
 cryptography==49.0.0
     # via -r backend/requirements.in
 datasets==5.0.0
@@ -187,6 +189,8 @@ pillow==12.2.0
     #   -r backend/requirements.in
     #   imageio
     #   scikit-image
+portalocker==3.2.0
+    # via concurrent-log-handler
 prompt-toolkit==3.0.52
     # via click-repl
 propcache==0.4.1
