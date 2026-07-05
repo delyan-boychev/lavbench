@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 import requests
-from celery.signals import worker_ready
+from celery.signals import task_prerun, worker_ready
 
 from cache_utils import get_redis_client
 from config import Config
@@ -1045,7 +1045,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "last_seen": time.time(),
         }
-        r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=86400)
+        r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
         logger.info("Worker specs registered: %s", spec)
 
         # Build Docker images for all active tasks + start rebuild listener
@@ -1063,3 +1063,27 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             logger.warning("Failed to build active task images on startup: %s", e)
     except Exception as e:
         logger.error("Failed to register specs: %s", e)
+
+
+@task_prerun.connect
+def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
+    """Refresh the worker spec TTL each time a task runs, preventing 24h expiry."""
+    try:
+        task_request = kwargs.get("task")
+        if not task_request or not hasattr(task_request, "hostname"):
+            return
+        worker_name = task_request.hostname
+        if not worker_name:
+            return
+        r = get_redis_client()
+        if not r:
+            return
+        key = f"worker_spec:{worker_name}"
+        if r.exists(key):
+            spec_data = r.get(key)
+            if spec_data:
+                spec = json.loads(spec_data)
+                spec["last_seen"] = time.time()
+                r.set(key, json.dumps(spec), ex=604800)
+    except Exception as e:
+        logger.debug("Failed to refresh worker spec heartbeat: %s", e)

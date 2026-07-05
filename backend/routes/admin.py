@@ -772,30 +772,35 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
                 yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
 
             r = get_redis_client()
-            pubsub = r.pubsub()
-            pubsub.subscribe("backup_status")
+            pubsub = r.pubsub() if r else None
+            if pubsub:
+                pubsub.subscribe("backup_status")
             start_time = time.time()
             try:
                 while True:
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
-                    if message:
-                        with current_app.app_context():
-                            data = {
-                                "backups": _list_backup_files(BACKUPS_DIR),
-                                "event": json.loads(message["data"]),
-                            }
-                            yield f"data: {json.dumps(data)}\n\n"
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                        if message:
+                            with current_app.app_context():
+                                data = {
+                                    "backups": _list_backup_files(BACKUPS_DIR),
+                                    "event": json.loads(message["data"]),
+                                }
+                                yield f"data: {json.dumps(data)}\n\n"
+                                continue
                     else:
-                        yield ": keep-alive\n\n"
+                        time.sleep(10.0)
+                    yield ": keep-alive\n\n"
             except GeneratorExit:
                 pass
             finally:
-                with contextlib.suppress(Exception):
-                    pubsub.unsubscribe()
-                    pubsub.close()
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1380,8 +1385,9 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
                 yield f"data: {json.dumps(res_data)}\n\n"
 
             r = get_redis_client()
-            pubsub = r.pubsub()
-            pubsub.subscribe("worker_stats_update")
+            pubsub = r.pubsub() if r else None
+            if pubsub:
+                pubsub.subscribe("worker_stats_update")
             start_time = time.time()
 
             try:
@@ -1389,23 +1395,27 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    if message:
-                        with current_app.app_context():
-                            res_data = _get_worker_stats_response()
-                            yield f"data: {json.dumps(res_data)}\n\n"
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                        if message:
+                            with current_app.app_context():
+                                res_data = _get_worker_stats_response()
+                                yield f"data: {json.dumps(res_data)}\n\n"
+                                continue
                     else:
-                        with current_app.app_context():
-                            res_data = _get_worker_stats_response()
-                            yield f"data: {json.dumps(res_data)}\n\n"
+                        time.sleep(2.0)
+                    with current_app.app_context():
+                        res_data = _get_worker_stats_response()
+                        yield f"data: {json.dumps(res_data)}\n\n"
             except GeneratorExit:
                 pass
             except Exception as e:
                 logger.error("Worker stats SSE error: %s", e)
             finally:
-                with contextlib.suppress(Exception):
-                    pubsub.unsubscribe()
-                    pubsub.close()
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
 
     return sse_response(event_generator)
 
