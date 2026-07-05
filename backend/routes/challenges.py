@@ -532,14 +532,41 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     if os.path.isdir(backup_dir):
         shutil.rmtree(backup_dir, ignore_errors=True)
 
+    # Find all jury assignments for this challenge to check later
+    from models import JuryChallenge, Stage, Submission, Task, User
+
+    assigned_juries = JuryChallenge.query.filter_by(challenge_id=challenge_id).all()
+    jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
+
+    # Delete submissions first (child of users/tasks/challenge)
+    Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete tasks (child of challenge)
+    Task.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete stages (child of challenge)
+    Stage.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete competitors (child of challenge)
     User.query.filter_by(challenge_id=challenge_id, role="competitor").delete(
         synchronize_session=False
     )
+
+    # Nullify challenge_id for non-competitors
     User.query.filter_by(challenge_id=challenge_id).filter(User.role != "competitor").update(
         {User.challenge_id: None}, synchronize_session=False
     )
 
     db.session.delete(challenge)
+    db.session.commit()
+
+    # Clean up juries who have no other assigned challenges
+    for j_id in jury_ids_to_check:
+        other_assignments_count = JuryChallenge.query.filter_by(jury_id=j_id).count()
+        if other_assignments_count == 0:
+            jury_user = db.session.get(User, j_id)
+            if jury_user and jury_user.role == "jury":
+                db.session.delete(jury_user)
     db.session.commit()
 
     log_audit(

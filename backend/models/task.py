@@ -16,8 +16,12 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "tasks"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
-    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=False, index=True)
-    stage_id = db.Column(GUID, db.ForeignKey("stages.id"), nullable=True, index=True)
+    challenge_id = db.Column(
+        GUID, db.ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    stage_id = db.Column(
+        GUID, db.ForeignKey("stages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
 

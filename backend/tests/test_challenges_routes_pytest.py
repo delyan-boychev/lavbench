@@ -590,3 +590,137 @@ class TestStageBoundariesValidation:
         )
         assert res.status_code == 422
         assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
+
+
+class TestDeleteChallenge:
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session, tokens):
+        self.db = db_session
+        self.admin_token = tokens.admin
+
+        from datetime import datetime, timedelta
+
+        from auth_utils import generate_token
+        from models import Challenge, User
+
+        jury = User(
+            username="jury_tok_del",
+            email="jury_tok_del@example.com",
+            password_hash="hash",
+            role="jury",
+        )
+        self.db.add(jury)
+        self.db.flush()
+        self.jury_token = generate_token(jury.id, "jury")
+
+        self.challenge = Challenge(
+            title="Challenge To Delete",
+            description="Test deleting challenge cascade",
+            start_time=datetime.utcnow() - timedelta(days=1),
+            end_time=datetime.utcnow() + timedelta(days=1),
+        )
+        self.db.add(self.challenge)
+        self.db.flush()
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_delete_challenge_success(self, client):
+        from models import Challenge, JuryChallenge, Stage, Submission, Task, User
+
+        # Create a stage, task, competitor, jury, and submission
+        stage = Stage(
+            challenge_id=self.challenge.id,
+            stage_number=1,
+            title="Stage 1",
+            start_time=self.challenge.start_time,
+            end_time=self.challenge.end_time,
+        )
+        self.db.add(stage)
+        self.db.flush()
+
+        task = Task(
+            challenge_id=self.challenge.id,
+            title="Task 1",
+            stage_id=stage.id,
+        )
+        self.db.add(task)
+        self.db.flush()
+
+        competitor = User(
+            username="competitor_del",
+            email="competitor_del@example.com",
+            password_hash="hash",
+            role="competitor",
+            challenge_id=self.challenge.id,
+        )
+        self.db.add(competitor)
+        self.db.flush()
+
+        submission = Submission(
+            user_id=competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=task.id,
+            status="completed",
+        )
+        self.db.add(submission)
+        self.db.flush()
+
+        # Create two jury users: one only assigned to this challenge, one assigned to another too
+        other_challenge = Challenge(
+            title="Other Challenge",
+            start_time=self.challenge.start_time,
+            end_time=self.challenge.end_time,
+        )
+        self.db.add(other_challenge)
+        self.db.flush()
+
+        jury_only = User(
+            username="jury_only",
+            email="jury_only@example.com",
+            password_hash="hash",
+            role="jury",
+        )
+        jury_shared = User(
+            username="jury_shared",
+            email="jury_shared@example.com",
+            password_hash="hash",
+            role="jury",
+        )
+        self.db.add_all([jury_only, jury_shared])
+        self.db.flush()
+
+        self.db.commit()
+
+        # Delete the auto-assigned links of jury_only to any challenge other than self.challenge
+        JuryChallenge.query.filter(
+            JuryChallenge.jury_id == jury_only.id, JuryChallenge.challenge_id != self.challenge.id
+        ).delete()
+        self.db.commit()
+
+        # Store IDs before deletion
+        challenge_id = self.challenge.id
+        stage_id = stage.id
+        task_id = task.id
+        submission_id = submission.id
+        competitor_id = competitor.id
+        jury_only_id = jury_only.id
+        jury_shared_id = jury_shared.id
+
+        # Call delete endpoint
+        url = f"/api/challenges/{challenge_id}"
+        res = client.delete(url, headers=self._auth(self.admin_token))
+        assert res.status_code == 200
+
+        # Verify challenge is deleted
+        assert self.db.get(Challenge, challenge_id) is None
+
+        # Verify cascade deletes
+        assert self.db.get(Stage, stage_id) is None
+        assert self.db.get(Task, task_id) is None
+        assert self.db.get(Submission, submission_id) is None
+        assert self.db.get(User, competitor_id) is None
+
+        # Verify jury users cleanup
+        assert self.db.get(User, jury_only_id) is None  # Deleted because no other assignments
+        assert self.db.get(User, jury_shared_id) is not None  # Kept because has other assignment
