@@ -12,12 +12,14 @@ done
 # Raise file descriptor limit for high concurrency
 ulimit -n "${GUNICORN_ULIMIT_NOFILE:-65536}"
 
-# Build extra gunicorn args from env vars (appended to Dockerfile CMD)
-set -- "$@" \
-  --max-requests "${GUNICORN_MAX_REQUESTS:-10000}" \
-  --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}" \
-  --access-logfile "${GUNICORN_ACCESS_LOGFILE:-/app/logs/gunicorn_access.log}" \
-  --error-logfile "${GUNICORN_ERROR_LOGFILE:-/app/logs/gunicorn_error.log}"
+# Build extra gunicorn args from env vars (only for gunicorn commands)
+if echo "$*" | grep -qE 'gunicorn'; then
+  set -- "$@" \
+    --max-requests "${GUNICORN_MAX_REQUESTS:-10000}" \
+    --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}" \
+    --access-logfile "${GUNICORN_ACCESS_LOGFILE:-/app/logs/gunicorn_access.log}" \
+    --error-logfile "${GUNICORN_ERROR_LOGFILE:-/app/logs/gunicorn_error.log}"
+fi
 
 # Drop privileges to nobody (UID 65534) and exec the command
 exec setpriv --reuid=65534 --regid=65534 --clear-groups -- "$@"
