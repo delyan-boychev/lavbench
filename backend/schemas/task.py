@@ -72,6 +72,9 @@ def _validate_metrics_config_json(v: Any) -> dict[str, Any] | None:
             raise SchemaError(
                 "ERR_INVALID_METRIC_CONFIG", "Each metric key must be a non-empty string."
             )
+        if metric_name == "_columns":
+            continue
+
         if not isinstance(cfg, dict) or "weight" not in cfg:
             raise SchemaError(
                 "ERR_INVALID_METRIC_CONFIG",
