@@ -198,14 +198,14 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
                 .paginate(page=page_arg, per_page=per_page, error_out=False)
             )
             return paginated_response(
-                items=[c.to_dict() for c in pagination.items],
+                items=[c.to_dict(view_role=user_role) for c in pagination.items],
                 total=pagination.total,
                 page=pagination.page,
                 pages=pagination.pages,
             )
 
         items = [
-            c.to_dict()
+            c.to_dict(view_role=user_role)
             for c in Challenge.query.filter(Challenge.id.in_(assigned_ids))
             .options(joinedload(Challenge.tasks), joinedload(Challenge.stages))
             .all()
@@ -219,14 +219,14 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
         ).paginate(page=page_arg, per_page=per_page, error_out=False)
         return paginated_response(
-            items=[c.to_dict() for c in pagination.items],
+            items=[c.to_dict(view_role=user_role) for c in pagination.items],
             total=pagination.total,
             page=pagination.page,
             pages=pagination.pages,
         )
 
     items = [
-        c.to_dict()
+        c.to_dict(view_role=user_role)
         for c in Challenge.query.options(
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
         ).all()
@@ -269,7 +269,9 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
     else:
         cache_key = f"challenge:{challenge_id}"
         challenge_dict = cached_or_compute(
-            cache_key, lambda: db.get_or_404(Challenge, challenge_id).to_dict(), timeout=600
+            cache_key,
+            lambda: db.get_or_404(Challenge, challenge_id).to_dict(view_role=user_role),
+            timeout=600,
         )
 
     return challenge_dict
@@ -1050,7 +1052,8 @@ def export_challenge(
     """Export a challenge configuration as ZIP, including tasks, stages, and uploaded files."""
 
     challenge = db.get_or_404(Challenge, challenge_id)
-    data = challenge.to_dict()
+    user_role = request.user["role"]
+    data = challenge.to_dict(view_role=user_role)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
