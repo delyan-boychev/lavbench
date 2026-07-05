@@ -496,9 +496,9 @@ class TestListChallenges:
         res = client.get("/api/challenges", headers=self._auth(self.admin_token))
         assert res.status_code == 200
         data = res.get_json()
-        assert isinstance(data, list)
-        assert len(data) >= 2
-        titles = [c["title"] for c in data]
+        assert "items" in data
+        assert len(data["items"]) >= 2
+        titles = [c["title"] for c in data["items"]]
         assert "Challenge Alpha" in titles
         assert "Challenge Beta" in titles
 
@@ -517,7 +517,7 @@ class TestListChallenges:
     def test_list_challenges_competitor_not_registered(self, client):
         res = client.get("/api/challenges", headers=self._auth(self.competitor_token))
         assert res.status_code == 200
-        assert res.get_json() == []
+        assert res.get_json() == {"items": [], "total": 0, "page": 1, "pages": 0}
 
 
 class TestStageBoundariesValidation:

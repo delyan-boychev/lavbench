@@ -1,52 +1,19 @@
-from functools import wraps
-
-from flask import request
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from error_utils import err
 from schemas.exceptions import SchemaError
 
 
-def validate_json(schema_cls: type[BaseModel]):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            body = request.get_json(silent=True)
-            if body is None:
-                return err("ERR_VALIDATION", 422, message="Request body must be valid JSON.")
-            try:
-                validated = schema_cls(**body)
-                kwargs["data"] = validated
-            except ValidationError as e:
-                return _validation_error(e)
-            return f(*args, **kwargs)
+def _format_validation_error_for_response(resp, e: ValidationError):
+    """Modify a Flask Response in-place to reformat validation errors.
 
-        return wrapper
-
-    return decorator
-
-
-def validate_form(schema_cls: type[BaseModel]):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            try:
-                validated = schema_cls(**request.form.to_dict())
-                kwargs["form_data"] = validated
-            except ValidationError as e:
-                return _validation_error(e)
-            return f(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def _validation_error(e: ValidationError):
+    Used by the spectree ``before`` handler to replace the default pydantic
+    error list with the project convention: ``{"error": "<msg>", "code": "ERR_*"}``.
+    """
     details = []
     specific_code = None
     for err_item in e.errors():
-        field = " \u2192 ".join(str(loc) for loc in err_item["loc"])
+        field = " → ".join(str(loc) for loc in err_item["loc"])
         ctx = err_item.get("ctx", {})
         error_obj = ctx.get("error")
         if isinstance(error_obj, SchemaError):
@@ -56,5 +23,15 @@ def _validation_error(e: ValidationError):
         else:
             details.append(f"{field}: {err_item['msg']}")
     if specific_code:
-        return err(specific_code, 422, message="; ".join(details))
-    return err("ERR_VALIDATION", 422, message="; ".join(details))
+        code = specific_code
+        message = "; ".join(details)
+        new_resp, _ = err(code, 422, message=message)
+    else:
+        message = "; ".join(details) if details else None
+        new_resp, _ = err("ERR_VALIDATION", 422, message=message)
+    resp.data = new_resp.data
+    resp.content_type = new_resp.content_type
+    resp.status_code = 422
+    resp.headers.clear()
+    for key, value in new_resp.headers:
+        resp.headers[key] = value

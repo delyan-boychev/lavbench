@@ -374,13 +374,14 @@ class TestBackendExceptionAndErrorCases:
         assert not success
         assert mock_post.call_count == 3
 
+    @patch("time.sleep")
     @patch("requests.post")
     @patch("worker_utils.download_task_files_to_dir")
     @patch("task_modules.submission_runner.run_command_streaming")
     @patch("task_modules.submission_runner._get_client")
     @patch("task_modules.submission_runner.check_docker_available")
     def test_evaluate_submission_callback_failure_raises_runtime_error(
-        self, mock_post, mock_dl, mock_stream, mock_get_client, mock_docker_check
+        self, mock_post, mock_dl, mock_stream, mock_get_client, mock_docker_check, mock_sleep
     ):
         mock_docker_check.return_value = True
         mock_get_client.return_value = MagicMock()

@@ -4,17 +4,26 @@ import json
 import logging
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from models import Challenge, Submission, Task, User, db, decrypt_field
-from schemas import validate_json
+from schemas.responses import (
+    ErrorResponse,
+    ParseNotebookResponse,
+    SelectFinalResponse,
+    SubmissionResponse,
+    SubmissionsListResponse,
+    SubmitResponse,
+)
 from schemas.submission import SubmitCodeSchema
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import check_execution_rules
+from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
@@ -38,40 +47,11 @@ submissions_bp = Blueprint("submissions", __name__)
 @login_required
 @jury_access_required
 @rate_limit(max_requests=30, window_seconds=60)
+@api.validate(
+    tags=["Submissions"], resp=Response(HTTP_200=ParseNotebookResponse, HTTP_422=ErrorResponse)
+)
 def parse_notebook(challenge_id):
-    """
-    Upload and parse a Jupyter Notebook (.ipynb) to preview cells.
-    5MB file limit. Returns a list of cell objects with type and source.
-    ---
-    tags:
-      - Submissions
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-      - in: formData
-        name: file
-        type: file
-        required: true
-        description: Jupyter Notebook .ipynb file (max 5MB)
-    responses:
-      200:
-        description: Notebook parsed successfully
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                filename: {type: string}
-                cells: {type: array, items: {$ref: '#/components/schemas/Cell'}}
-      400:
-        description: Invalid file type, file too large, or parse error
-        schema: {$ref: '#/components/schemas/Error'}
-      403:
-        description: Not registered for this challenge
-        schema: {$ref: '#/components/schemas/Error'}
-    """
+    """Upload and parse a Jupyter Notebook (.ipynb) to preview cells."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -108,67 +88,23 @@ def parse_notebook(challenge_id):
 
         cells.append({"id": idx, "type": cell_type, "source": source})
 
-    return jsonify({"filename": file.filename, "cells": cells})
+    return ParseNotebookResponse(filename=file.filename, cells=cells)
 
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submit", methods=["POST"])
 @login_required
 @jury_access_required
 @rate_limit(max_requests=30, window_seconds=60)
-@validate_json(SubmitCodeSchema)
-def submit_code(challenge_id, data):
-    """
-    Submit parsed code cells for a task.
-    ---
-    tags:
-      - Submissions
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-      - in: body
-        name: body
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                task_id: {type: string}
-                selected_cells: {type: array, items: {type: object}}
-    responses:
-      202:
-        description: Submission received and queued
+@api.validate(
+    json=SubmitCodeSchema,
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_202=SubmitResponse, HTTP_422=ErrorResponse),
+)
+def submit_code(challenge_id, json: SubmitCodeSchema):
+    """Submit parsed code cells for a task."""
+    import json as jsonlib
 
-        content:
-          application/json:
-            schema:
-              type: object
-      400:
-        description: Validation error
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied or challenge frozen
-
-        content:
-          application/json:
-            schema:
-              type: object
-      429:
-        description: Rate limit exceeded
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -190,8 +126,8 @@ def submit_code(challenge_id, data):
     if challenge.scores_finalized:
         return err("ERR_COMPETITION_FINALIZED", 403)
 
-    task_id = data.task_id
-    selected_cells = data.selected_cells
+    task_id = json.task_id
+    selected_cells = json.selected_cells
 
     task = db.session.get(Task, task_id)
 
@@ -265,7 +201,7 @@ def submit_code(challenge_id, data):
             challenge_id=challenge_id,
             task_id=task.id,
             status="queued",
-            code_cells=json.dumps(selected_cells),
+            code_cells=jsonlib.dumps(selected_cells),
         )
         db.session.add(submission)
         db.session.commit()
@@ -317,58 +253,23 @@ def submit_code(challenge_id, data):
         db.session.commit()
         return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
 
-    return (
-        jsonify(
-            {
-                "message": "Submission received and queued for execution.",
-                "submission_id": submission.id,
-                "status": submission.status,
-            }
-        ),
-        202,
-    )
+    return SubmitResponse(
+        message="Submission received and queued for execution.",
+        submission_id=submission.id,
+        status=submission.status,
+    ), 202
 
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
 @login_required
 @jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=SubmissionsListResponse, HTTP_403=ErrorResponse),
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+)
 def get_submissions(challenge_id):
-    """
-    Get paginated submissions for a challenge.
-    ---
-    tags:
-      - Submissions
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-      - in: query
-        name: page
-        type: integer
-        required: false
-      - in: query
-        name: per_page
-        type: integer
-        required: false
-    responses:
-      200:
-        description: List of submissions
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+    """Get paginated submissions for a challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -413,60 +314,28 @@ def get_submissions(challenge_id):
     pagination = query.order_by(Submission.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
-    return jsonify(
-        {
-            "submissions": [
-                s.to_dict_light(view_role=user_role, current_user_id=user_id)
-                for s in pagination.items
-            ],
-            "per_page": pagination.per_page,
-            "challenge": challenge.to_dict(),
-            "total": pagination.total,
-            "page": pagination.page,
-            "pages": pagination.pages,
-        }
-    )
+    return {
+        "submissions": [
+            s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items
+        ],
+        "per_page": pagination.per_page,
+        "challenge": challenge.to_dict(),
+        "total": pagination.total,
+        "page": pagination.page,
+        "pages": pagination.pages,
+    }
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>", methods=["GET"])
 @login_required
 @jury_access_required
+@api.validate(
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=SubmissionResponse, HTTP_422=ErrorResponse),
+)
 def get_submission_detail(submission_id):
-    """
-    Get details of a specific submission.
-    ---
-    tags:
-      - Submissions
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: submission_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Submission details
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied
-
-        content:
-          application/json:
-            schema:
-              type: object
-      404:
-        description: Submission not found
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+    """Get details of a specific submission."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -489,56 +358,20 @@ def get_submission_detail(submission_id):
                 if stage and stage.end_time and utcnow() >= stage.end_time:
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
-    return jsonify(submission.to_dict(view_role=user_role, current_user_id=user_id))
+    return SubmissionResponse(**submission.to_dict(view_role=user_role, current_user_id=user_id))
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/select-final", methods=["POST"])
 @login_required
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
+@api.validate(
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=SelectFinalResponse, HTTP_422=ErrorResponse),
+)
 def select_final_submission(submission_id):
-    """
-    Select a submission as the final one for scoring.
-    ---
-    tags:
-      - Submissions
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: submission_id
-        type: string
-        required: true
-    responses:
-      200:
-        description: Submission selected as final
-
-        content:
-          application/json:
-            schema:
-              type: object
-      400:
-        description: Selection window closed
-
-        content:
-          application/json:
-            schema:
-              type: object
-      403:
-        description: Access denied
-
-        content:
-          application/json:
-            schema:
-              type: object
-      404:
-        description: Submission not found
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+    """Select a submission as the final one for scoring."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -601,21 +434,24 @@ def select_final_submission(submission_id):
     publish_submissions_update(submission.task_id, submission.user_id)
     publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
-    return jsonify(
-        {
-            "message": "Submission selected as final.",
-            "submission": submission.to_dict(view_role=user_role, current_user_id=user_id),
-        }
+    return SelectFinalResponse(
+        message="Submission selected as final.",
+        submission=SubmissionResponse(
+            **submission.to_dict(view_role=user_role, current_user_id=user_id)
+        ),
     )
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
 @login_required
 @jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+)
 def stream_submission_logs(submission_id):
-    """
-    Stream live logs for a submission using Server-Sent Events (SSE).
-    """
+    """Stream live logs for a submission using Server-Sent Events (SSE)."""
     from flask import current_app
 
     user_id = request.user["user_id"]
@@ -777,10 +613,13 @@ def stream_submission_logs(submission_id):
 )
 @role_required(["admin", "jury"])
 @jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_404=ErrorResponse),
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+)
 def download_competitor_submission(challenge_id, task_id, user_id):
-    """
-    Download a competitor's submission resolving to the final selection or the highest public score.
-    """
+    """Download a competitor's final selection or highest-scoring submission."""
     subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
 
     best_sub = next((s for s in subs if s.is_final_selection), None)
@@ -819,11 +658,11 @@ def download_competitor_submission(challenge_id, task_id, user_id):
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
-    from flask import send_file
-
-    return send_file(
-        mem_file,
-        mimetype="application/x-ipynb+json",
-        as_attachment=True,
-        download_name=filename,
+    return (
+        mem_file.read(),
+        200,
+        {
+            "Content-Type": "application/x-ipynb+json",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )

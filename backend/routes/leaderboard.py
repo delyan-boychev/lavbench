@@ -3,15 +3,17 @@ import json
 import logging
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+from spectree import Response
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
-from schemas import validate_json
 from schemas.leaderboard import ManualPointsSchema
+from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
+from spec import api
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
@@ -306,29 +308,13 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard", methods=["GET"])
 @login_required
 @jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=LeaderboardResponse, HTTP_403=ErrorResponse),
+    tags=["Leaderboard"],
+    security=[{"cookieAuth": []}],
+)
 def get_leaderboard(challenge_id):
-    """
-    Get the leaderboard for a specific challenge.
-    Competitors only see their own challenge, and frozen/finalized rules apply.
-    ---
-    tags:
-      - Leaderboard
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-        description: ID of the challenge
-    responses:
-      200:
-        description: Success
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+    """Get the leaderboard for a specific challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -338,38 +324,28 @@ def get_leaderboard(challenge_id):
         return err("ERR_NOT_REGISTERED", 403)
 
     payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
-    response = jsonify(payload)
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+    payload["challenge_id"] = str(challenge_id)
+    return (
+        payload,
+        200,
+        {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/leaderboard/live", methods=["GET"])
 @login_required
 @jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["SSE Streaming"],
+    security=[{"cookieAuth": []}],
+)
 def stream_challenge_leaderboard(challenge_id):
-    """
-    Stream live updates to the challenge leaderboard using Server-Sent Events (SSE).
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-        description: ID of the challenge
-    responses:
-      200:
-        description: Success
-        content:
-          text/event-stream:
-            schema:
-              type: string
-    """
+    """Stream live updates to the challenge leaderboard using Server-Sent Events (SSE)."""
     from flask import current_app
 
     user_id = request.user["user_id"]
@@ -449,59 +425,14 @@ def stream_challenge_leaderboard(challenge_id):
 @role_required(["jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-@validate_json(ManualPointsSchema)
-def save_manual_points(challenge_id, data):
-    """
-    Save manual points for a user in a challenge.
-    Jury members only.
-    ---
-    tags:
-      - Leaderboard
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        type: string
-        required: true
-        description: ID of the challenge
-      - in: body
-        name: body
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                user_id:
-                  type: string
-                points:
-                  type: object
-                reason:
-                  type: string
-    responses:
-      200:
-        description: Manual points saved successfully
-
-        content:
-          application/json:
-            schema:
-              type: object
-      400:
-        description: Validation error
-
-        content:
-          application/json:
-            schema:
-              type: object
-      404:
-        description: User or Challenge not found
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=ManualPointsSchema,
+    tags=["Leaderboard"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=ManualPointsResponse, HTTP_422=ErrorResponse),
+)
+def save_manual_points(challenge_id, json: ManualPointsSchema):
+    """Save manual points for a user in a challenge. Jury members only."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     if challenge.scores_finalized and challenge.reveal_results:
@@ -512,9 +443,9 @@ def save_manual_points(challenge_id, data):
             "competition results are finalized and revealed.",
         )
 
-    user_id = data.user_id
-    points_dict = data.points
-    reason = data.reason
+    user_id = json.user_id
+    points_dict = json.points
+    reason = json.reason
 
     user = User.query.filter_by(id=user_id, challenge_id=challenge_id).with_for_update().first()
     if not user:
@@ -590,10 +521,8 @@ def save_manual_points(challenge_id, data):
 
     invalidate_leaderboard_cache(challenge_id)
 
-    return jsonify(
-        {
-            "message": "Manual points saved successfully.",
-            "user_id": user.id,
-            "manual_points": user.manual_points,
-        }
+    return ManualPointsResponse(
+        message="Manual points saved successfully.",
+        user_id=user.id,
+        manual_points=user.manual_points,
     )

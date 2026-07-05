@@ -48,8 +48,9 @@ lavbench/
 │   ├── tasks.py                       # Celery tasks + beat schedule
 │   ├── models/                        # SQLAlchemy models (challenge, task, submission, user, stage...)
 │   ├── schemas/                       # Pydantic v2 validation schemas
-│   │   ├── __init__.py                # validate_json / validate_form decorators
+│   │   ├── __init__.py                # _format_validation_error_for_response (spectree before-handler)
 │   │   ├── exceptions.py              # SchemaError(code, message)
+│   │   ├── responses/                 # Pydantic response models (10 domain files)
 │   │   ├── common.py                  # Shared validators (_parse_datetime_strict, PaginationParams)
 │   │   └── admin.py, auth.py, challenge.py, task.py, submission.py, leaderboard.py, stage.py
 │   ├── routes/                        # Flask blueprints
@@ -119,18 +120,25 @@ The pre-commit hook (`ruff check --fix --config backend/pyproject.toml`) fails o
 
 ## Pydantic Schema Validation
 
-### Two Decorators
+### Request Validation — spectree `@api.validate`
 ```python
-from schemas import validate_json, validate_form
+from spec import api
+from schemas.challenge import CreateChallengeSchema
+from schemas.responses.challenge import ChallengeResponse
 
-@validate_json(SomeSchema)       # JSON body → kwargs["data"] (model object)
-@validate_form(SomeFormSchema)   # multipart/form-data → kwargs["form_data"] (model object)
+@api.validate(json=CreateChallengeSchema, resp=Response(HTTP_201=ChallengeResponse))
+def create_challenge(json: CreateChallengeSchema):
+    ...
 ```
 
+### Response Validation (always on)
+spectree 2.0.1 **always validates responses** when `resp=` is specified — no opt-out flag exists. Every route with `resp=Response(...)` validates at runtime.
+
 ### Key Rules
-- Validated **model object** is injected (not `model_dump()` dict) — access via `data.field`
+- Request body → `json: SomeSchema` parameter (validated model object, access fields directly)
+- Query params → `query: QueryModel` parameter
 - Validation failure returns `422` with specific error code (e.g. `ERR_INVALID_DOCKER_IMAGE`)
-- `_validation_error` in `schemas/__init__.py` extracts `SchemaError` from Pydantic's `ctx["error"]`; falls back to `ERR_VALIDATION`
+- `_format_validation_error_for_response` in `schemas/__init__.py` extracts `SchemaError` from Pydantic's `ctx["error"]`; falls back to `ERR_VALIDATION`
 - `SchemaError(code, message)` base class is `ValueError` — raise in `@field_validator` and `@model_validator`
 
 ### SchemaError
@@ -172,27 +180,28 @@ def _coerce_int(cls, v):
 ```python
 @challenges_bp.route("", methods=["POST"])
 @role_required(["admin"])
-@validate_json(CreateChallengeSchema)
-def create_challenge(data):
-    challenge = Challenge(title=data.title, description=data.description)
+@api.validate(json=CreateChallengeSchema, resp=Response(HTTP_201=ChallengeResponse))
+def create_challenge(json: CreateChallengeSchema):
+    challenge = Challenge(title=json.title, description=json.description)
     db.session.add(challenge)
     db.session.commit()
-    return jsonify(challenge.to_dict()), 201
+    return challenge.to_dict(), 201
 ```
 
 ### PATCH (use `model_fields_set`)
 ```python
 @challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
-@validate_json(UpdateChallengeSchema)
-def update_challenge(challenge_id, data):
+@role_required(["admin"])
+@api.validate(json=UpdateChallengeSchema, resp=Response(HTTP_200=ChallengeResponse))
+def update_challenge(challenge_id, json: UpdateChallengeSchema):
     challenge = db.get_or_404(Challenge, challenge_id)
-    fields = data.model_fields_set
+    fields = json.model_fields_set
     if "title" in fields:
-        challenge.title = data.title
+        challenge.title = json.title
     if "description" in fields:
-        challenge.description = data.description
+        challenge.description = json.description
     db.session.commit()
-    return jsonify(challenge.to_dict())
+    return challenge.to_dict()
 ```
 
 ### Auth Decorator Order
@@ -200,8 +209,8 @@ def update_challenge(challenge_id, data):
 @login_required                            # JWT cookie required
 @role_required(["admin", "jury"])          # Role check
 @rate_limit(max_requests=10, window_seconds=60)
-@validate_json(SomeSchema)
-def handler(data): ...
+@api.validate(json=SomeSchema, resp=Response(HTTP_200=SomeResponse))
+def handler(json: SomeSchema): ...
 ```
 
 ---
@@ -300,7 +309,7 @@ npm run lint            # ESLint
 
 ### Add a New Route
 1. Create Pydantic schema in `backend/schemas/` (if validation needed)
-2. Add route to appropriate `backend/routes/*.py`, decorate with `@validate_json`/`@validate_form`
+2. Add route to appropriate `backend/routes/*.py`, decorate with `@role_required` + `@api.validate`
 3. Register blueprint in `backend/app.py` (if new file)
 4. Add `err()` code to `DEFAULT_ERROR_MESSAGES` in `error_utils.py` (or raise `SchemaError` in validators)
 5. Add `api.ERR_*` translation keys to both locale files
@@ -353,7 +362,7 @@ def test_something(client, db_session, admin_token, challenge_a):
 - **`selected_cells` must be `list[dict]`** — tests send `[{"source": "..."}]`, not `["..."]`
 - **`model_fields_set`** for PATCH — not `"key" in data`
 - **Form data arrives as strings** — use `mode="before"` validators with `_coerce_bool`/`_coerce_int`
-- **`validate_json` does NOT support `exclude_unset`** — use `model_fields_set` in PATCH handlers
+- **spectree `@api.validate` shadows `json` stdlib** — use `import json as jsonlib` in route bodies
 - **NEVER `jsonify({"error": ...})`** — use `err()` or raise `SchemaError`
 - **Removing error codes** requires cleanup in 3 places: `error_utils.py`, `en/translation.json`, `bg/translation.json`
 - **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores

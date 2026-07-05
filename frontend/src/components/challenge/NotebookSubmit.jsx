@@ -150,10 +150,11 @@ export default function NotebookSubmit({ task, challenge }) {
         setSelectedCellIds([]);
         setFileName('');
       } else {
-        const errCode = res.data?.code;
+        const errData = /** @type {any} */ (res.data);
+        const errCode = errData?.code;
         const errMsg = errCode
-          ? t(`api.${errCode}`, res.data?.error || t('challenge.submission_failed'))
-          : res.data?.error || t('challenge.submission_failed');
+          ? t(`api.${errCode}`, errData?.error || t('challenge.submission_failed'))
+          : errData?.error || t('challenge.submission_failed');
         showToast(errMsg, 'error');
       }
     } catch {

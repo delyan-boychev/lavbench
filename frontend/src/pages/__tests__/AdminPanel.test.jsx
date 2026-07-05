@@ -222,7 +222,9 @@ const mockSystemStats = {
 
 vi.mock('../../services/ApiService', () => ({
   default: {
-    fetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })),
+    fetch: vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ items: [], total: 0, pages: 1 }) }),
+    ),
     postForm: vi.fn(() => Promise.resolve({ ok: true })),
   },
 }));

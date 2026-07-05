@@ -54,9 +54,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff==0.15.19
-      - run: ruff check . --config pyproject.toml
+      - run: ruff check .
         working-directory: backend
-      - run: ruff format --check . --config pyproject.toml
+      - run: ruff format --check .
         working-directory: backend
       - name: Error code checker
         run: python backend/scripts/check_error_codes.py

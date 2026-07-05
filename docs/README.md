@@ -4,7 +4,7 @@
 
 | Resource                         | URL                                  | Who                     |
 | -------------------------------- | ------------------------------------ | ----------------------- |
-| **Swagger UI** (REST + SSE docs) | `http://localhost:5001/apidocs`      | Backend & Frontend devs |
+| **Swagger UI** (REST + SSE docs) | `http://localhost:5001/apidoc/swagger/` | Backend & Frontend devs |
 | **Health check**                 | `http://localhost:5001/api/health`   | DevOps, monitoring      |
 | **Architecture overview**        | [`ARCHITECTURE.md`](ARCHITECTURE.md) | New contributors        |
 
@@ -50,95 +50,48 @@ if (ok) {
 
 ### Adding a new endpoint
 
-1. Create a Pydantic v2 schema in `backend/schemas/` (e.g., `schemas/admin.py`) with `BaseModel` and `Field()` definitions
-2. Define the route in the appropriate `routes/*.py` file, decorating with `@validate_json(MySchema)` or `@validate_form(MyFormSchema)` for request validation
-3. Add a flasgger YAML docstring with request/response schemas
-4. The Swagger UI at `/apidocs` auto-updates on next server restart
-5. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
-6. Run `npm run check-types` to verify 0 errors
+1. Create Pydantic v2 schemas in `backend/schemas/` for request validation (e.g., `schemas/admin.py`) and response serialization (e.g., `schemas/responses.py`)
+2. Define the route in the appropriate `routes/*.py` file, decorating with `@api.validate(json=MyRequestSchema, resp=Response(HTTP_200=MyResponseSchema))`
+3. Register the blueprint in `backend/app.py` (if new file)
+4. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
+5. Run `npm run check-types` to verify 0 errors
 
-For PATCH routes, use `data.model_fields_set` to detect which fields were explicitly sent by the client (not `None` defaults). For form-data endpoints, use `@validate_form` which coerces form strings to bools/ints before validation.
+For PATCH routes, use `json.model_fields_set` to detect which fields were explicitly sent by the client (not `None` defaults). For form-data endpoints, use `@api.validate(form=MyFormSchema, ...)`.
 
-### flasgger docstring template (OpenAPI 3.0)
+### Route template (spectree + Pydantic)
 
 ```python
+from spectree import Response
+
 @some_bp.route('/path/<uuid:id>', methods=['POST'])
 @login_required
-def some_action(id):
-    """
-    Brief description of what this endpoint does.
-    ---
-    tags:
-      - Category
-    parameters:
-      - in: path
-        name: id
-        type: string
-        required: true
-        description: Resource UUID
-      - in: body
-        name: body
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [field1]
-              properties:
-                field1:
-                  type: string
-                  example: "value"
-    responses:
-      200:
-        description: Success
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                result:
-                  type: string
-      401:
-        description: Unauthorized
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Error'
-    """
+@api.validate(
+    json=MyRequestSchema,
+    resp=Response(HTTP_200=MyResponseSchema, HTTP_401=ErrorResponse),
+    tags=["Category"],
+    security=[{"cookieAuth": []}],
+)
+def some_action(id, json: MyRequestSchema):
+    """Brief description of what this endpoint does."""
+    # json is the validated MyRequestSchema instance
+    ...
+    return MyResponseSchema(...)
 ```
-
-**Key difference**: Use OpenAPI 3.0 `content: application/json: schema:` (not Swagger 2.0 bare `schema:`). The `$ref` path is `#/components/schemas/Error` (not `#/definitions/Error`). This ensures `openapi-typescript` generates proper response body types instead of `content?: never`.
 
 ### SSE endpoint template
 
 ````python
-"""
-Brief description of the live stream.
----
-tags:
-  - SSE Streaming
-parameters:
-  - in: path
-    name: id
-    type: string
-    required: true
-produces:
-  - text/event-stream
-responses:
-  200:
-    description: |
-      ## SSE Event Stream
-      **Protocol:** Server-Sent Events, automatic browser reconnection
-      **Event data format (JSON):**
-      ```json
-      {"key": "value"}
-      ```
-    content:
-      text/event-stream:
-        schema:
-          type: string
-          format: binary
-  401:
-    description: Unauthorized
-"""
+@some_bp.route('/path/<uuid:id>/live', methods=['GET'])
+@login_required
+@api.validate(
+    tags=["SSE Streaming"],
+    security=[{"cookieAuth": []}],
+    skip_validation=True,  # SSE responses bypass validation
+)
+def stream_some_event(id):
+    """Brief description of the live stream."""
+    def event_generator():
+        ...
+        yield f"data: {json.dumps(data)}\n\n"
+    return sse_response(event_generator)
 ````

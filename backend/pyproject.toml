@@ -11,7 +11,7 @@ authors = [
 keywords = ["ai", "evaluation", "sandbox", "education", "leaderboard"]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "License :: OSI Approved :: Apache Software License",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
 ]
@@ -22,7 +22,7 @@ Repository = "https://github.com/delyan-boychev/lavbench"
 
 [build-system]
 requires = ["setuptools>=82.0.1"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta:__legacy__"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

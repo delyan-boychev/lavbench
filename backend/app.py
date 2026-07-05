@@ -22,21 +22,39 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 logger = logging.getLogger(__name__)
 
-from flasgger import Swagger  # noqa: E402
-from flask import Flask, jsonify  # noqa: E402
+from flask import Flask  # noqa: E402
+from flask.json.provider import DefaultJSONProvider  # noqa: E402
 from flask_cors import CORS  # noqa: E402
+from spectree import Response  # noqa: E402
+from werkzeug.datastructures import FileStorage  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 from config import Config  # noqa: E402
 from error_utils import err  # noqa: E402
 from log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
+from schemas.responses import HealthResponse  # noqa: E402
+from spec import api  # noqa: E402
 from version import __version__  # noqa: E402
+
+
+class _LavBenchJSONProvider(DefaultJSONProvider):
+    """Handles FileStorage in Pydantic validation errors for file-upload forms."""
+
+    def default(self, obj):
+        if isinstance(obj, FileStorage):
+            return {
+                "filename": obj.filename,
+                "mimetype": obj.content_type,
+                "size": obj.content_length,
+            }
+        return super().default(obj)
 
 
 def create_app():
     setup_logging("backend")
     app = Flask(__name__)
+    app.json = _LavBenchJSONProvider(app)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.config.from_object(Config)
 
@@ -63,204 +81,22 @@ def create_app():
     app.register_blueprint(tasks_bp, url_prefix="/api")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")
 
-    app.config["SWAGGER"] = {"openapi": "3.0.0", "uiversion": 3}
-
-    Swagger(
-        app,
-        template={
-            "info": {
-                "title": "LavBench API",
-                "description": "Machine Learning Competition Platform — REST + SSE Endpoints",
-                "version": "1.0",
-            },
-            "tags": [
-                {"name": "Auth", "description": "Login, logout, session management"},
-                {
-                    "name": "Challenges",
-                    "description": "Competition CRUD, stages, finalize, archive, export",
-                },
-                {
-                    "name": "Submissions",
-                    "description": "Notebook parsing, submit, select final, logs",
-                },
-                {
-                    "name": "Tasks",
-                    "description": "Task CRUD, file uploads, evaluation configuration",
-                },
-                {
-                    "name": "Leaderboard",
-                    "description": "Rankings, manual points, score corrections",
-                },
-                {
-                    "name": "Admin",
-                    "description": "User management, backups, workers, dead letters",
-                },
-                {
-                    "name": "SSE Streaming",
-                    "description": "Real-time Server-Sent Event streams",
-                },
-                {"name": "Docs", "description": "In-app guide endpoints"},
-            ],
-            "components": {
-                "securitySchemes": {
-                    "cookieAuth": {
-                        "type": "apiKey",
-                        "name": "auth_token",
-                        "in": "cookie",
-                        "description": "Session cookie required for most endpoints.",
-                    }
-                },
-                "schemas": {
-                    "Error": {
-                        "type": "object",
-                        "required": ["error", "code"],
-                        "properties": {
-                            "error": {
-                                "type": "string",
-                                "description": "Human-readable error message",
-                            },
-                            "code": {
-                                "type": "string",
-                                "description": "Machine-readable error code",
-                                "example": "ERR_INVALID_CREDENTIALS",
-                            },
-                        },
-                    },
-                    "User": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "username": {"type": "string"},
-                            "email": {"type": "string"},
-                            "role": {
-                                "type": "string",
-                                "enum": ["competitor", "jury", "admin"],
-                            },
-                            "alias_id": {
-                                "type": "string",
-                                "description": "Pseudonym for leaderboard display",
-                            },
-                            "name": {"type": "string"},
-                            "surname": {"type": "string"},
-                            "grade": {"type": "string"},
-                            "school": {"type": "string"},
-                            "city": {"type": "string"},
-                            "challenge_id": {"type": "string", "format": "uuid"},
-                            "is_anonymous": {"type": "boolean"},
-                            "manual_points": {"type": "object"},
-                        },
-                    },
-                    "Challenge": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "max_eval_requests": {"type": "integer"},
-                            "ram_limit_mb": {"type": "integer"},
-                            "time_limit_sec": {"type": "integer"},
-                            "gpu_required": {"type": "boolean"},
-                            "is_active": {"type": "boolean"},
-                            "is_archived": {"type": "boolean"},
-                            "scores_finalized": {"type": "boolean"},
-                            "is_frozen": {"type": "boolean"},
-                            "double_blind": {"type": "boolean"},
-                            "start_time": {"type": "string", "format": "date-time"},
-                            "end_time": {"type": "string", "format": "date-time"},
-                            "timezone": {"type": "string"},
-                            "status": {"type": "string"},
-                        },
-                    },
-                    "Task": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "challenge_id": {"type": "string", "format": "uuid"},
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "files": {"type": "array", "items": {"type": "object"}},
-                            "ram_limit_mb": {"type": "integer"},
-                            "time_limit_sec": {"type": "integer"},
-                            "gpu_required": {"type": "boolean"},
-                            "base_docker_image": {"type": "string"},
-                            "apt_packages": {"type": "string"},
-                            "pip_requirements": {"type": "string"},
-                            "ban_magic_commands": {"type": "boolean"},
-                            "banned_imports": {"type": "string"},
-                            "whitelisted_imports": {"type": "string"},
-                            "metrics_config": {"type": "object"},
-                            "stage_id": {"type": "string", "format": "uuid"},
-                            "max_submissions_per_period": {"type": "integer"},
-                            "submission_period_hours": {"type": "integer"},
-                        },
-                    },
-                    "Submission": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "challenge_id": {"type": "string", "format": "uuid"},
-                            "task_id": {"type": "string", "format": "uuid"},
-                            "task_title": {"type": "string"},
-                            "status": {"type": "string"},
-                            "detailed_status": {"type": "string"},
-                            "public_score": {"type": "number"},
-                            "private_score": {"type": "number"},
-                            "execution_time_ms": {"type": "integer"},
-                            "created_at": {"type": "string", "format": "date-time"},
-                            "executed_at": {"type": "string", "format": "date-time"},
-                            "is_final_selection": {"type": "boolean"},
-                            "is_baseline": {"type": "boolean"},
-                            "user": {"$ref": "#/components/schemas/User"},
-                        },
-                    },
-                    "Cell": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "type": {"type": "string", "enum": ["code", "markdown"]},
-                            "source": {"type": "string"},
-                        },
-                    },
-                },
-            },
-        },
-    )
-
     @app.route("/api/health", methods=["GET"])
+    @api.validate(resp=Response(HTTP_200=HealthResponse, HTTP_503=HealthResponse), tags=["Health"])
     def health_check():
-        """
-        Health check for Docker and load balancer monitoring.
-        ---
-        tags:
-          - Admin
-        responses:
-          200:
-            description: Service healthy
-            content:
-              application/json:
-                schema:
-                  type: object
-          503:
-            description: Service degraded
-            content:
-              application/json:
-                schema:
-                  type: object
-        """
+        """Health check for Docker and load balancer monitoring."""
         db_ok = True
         try:
             db.session.execute(db.text("SELECT 1"))
         except Exception:
             db_ok = False
-        return (
-            jsonify(
-                {
-                    "status": "ok" if db_ok else "degraded",
-                    "version": __version__,
-                }
-            ),
-            200 if db_ok else 503,
-        )
+        return HealthResponse(
+            status="ok" if db_ok else "degraded",
+            version=__version__,
+        ), 200 if db_ok else 503
+
+    # ── spectree / OpenAPI setup ─────────────────────────────────────
+    api.register(app)
 
     @app.errorhandler(500)
     def handle_internal_error(e):

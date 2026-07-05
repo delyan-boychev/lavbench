@@ -1631,7 +1631,7 @@ class TestRouteLevelLogic:
             "/api/challenges", headers=self.get_auth_header(self.competitor_token)
         )
         assert res_list.status_code == 200
-        assert len(res_list.get_json()) == 0
+        assert len(res_list.get_json()["items"]) == 0
 
         res_detail = self.client.get(
             f"/api/challenges/{self.challenge.id}",

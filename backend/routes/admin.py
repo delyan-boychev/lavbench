@@ -13,14 +13,9 @@ import time
 import zipfile
 from datetime import datetime
 
-from flask import (
-    Blueprint,
-    Response,
-    current_app,
-    jsonify,
-    request,
-    send_file,
-)
+from flask import Blueprint, current_app, request
+from flask import Response as FlaskResponse
+from spectree import Response
 from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
@@ -39,10 +34,27 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
-from schemas import validate_json
 from schemas.admin import CreateUserSchema, RegisterCompetitorSchema, UpdateUserSchema
+from schemas.responses import (
+    AuditLinkListResponse,
+    AvailableMetricsResponse,
+    BackupListResponse,
+    BackupStartResponse,
+    BulkResetPasswordResponse,
+    DeadLetterListResponse,
+    ErrorResponse,
+    ImportCompetitorsResponse,
+    MessageResponse,
+    PaginatedResponse,
+    RegisterUserResponse,
+    ResetPasswordResponse,
+    UpdateUserResponse,
+    UserResponse,
+    WorkerStatsResponse,
+)
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
+from spec import api
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
@@ -59,24 +71,11 @@ admin_bp = Blueprint("admin", __name__)
 
 @admin_bp.route("/metrics", methods=["GET"])
 @role_required(["admin", "jury"])
+@api.validate(
+    tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=AvailableMetricsResponse)
+)
 def get_available_metrics():
-    """
-    List all built-in evaluation metrics available for task configuration.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    return jsonify(AVAILABLE_METRICS), 200
+    return AvailableMetricsResponse(root=AVAILABLE_METRICS)
 
 
 def transliterate_bulgarian(text):
@@ -152,27 +151,16 @@ def generate_random_password(length=12):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-@validate_json(RegisterCompetitorSchema)
-def register_competitor(data):
-    """
-    Register a new competitor with auto-generated credentials.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    name, surname, middle_name = data.name, data.surname, data.middle_name
-    birth_date, grade, school, city = data.birth_date, data.grade, data.school, data.city
-    challenge_id = data.challenge_id
+@api.validate(
+    json=RegisterCompetitorSchema,
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_201=RegisterUserResponse, HTTP_422=ErrorResponse),
+)
+def register_competitor(json: RegisterCompetitorSchema):
+    name, surname, middle_name = json.name, json.surname, json.middle_name
+    birth_date, grade, school, city = json.birth_date, json.grade, json.school, json.city
+    challenge_id = json.challenge_id
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
@@ -202,7 +190,7 @@ def register_competitor(data):
         role="competitor",
         alias_id=generate_pseudonym(),
         challenge_id=challenge_id,
-        email=data.email,
+        email=json.email,
     )
     user.set_demographics(
         name,
@@ -230,38 +218,22 @@ def register_competitor(data):
 
     invalidate_leaderboard_cache(challenge_id)
 
-    return (
-        jsonify(
-            {
-                "message": "Competitor registered successfully.",
-                "generated_username": username,
-                "generated_password": password,
-                "user": user.to_dict(view_role=request.user["role"]),
-            }
-        ),
-        201,
-    )
+    return RegisterUserResponse(
+        message="Competitor registered successfully.",
+        generated_username=username,
+        generated_password=password,
+        user=user.to_dict(view_role=request.user["role"]),
+    ), 201
 
 
 @admin_bp.route("/users", methods=["GET"])
 @role_required(["admin", "jury"])
+@api.validate(
+    resp=Response(HTTP_200=PaginatedResponse[UserResponse], HTTP_422=ErrorResponse),
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+)
 def get_users():
-    """
-    List and search users with pagination. Supports filtering by role and challenge.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     page, per_page = extract_pagination(request, default_per_page=10, max_per_page=100)
     role_filter = request.args.get("role")
     challenge_id_filter = request.args.get("challenge_id")
@@ -294,13 +266,11 @@ def get_users():
 
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        return jsonify(
-            paginated_response(
-                [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
-                pagination.total,
-                pagination.page,
-                pagination.pages,
-            )
+        return paginated_response(
+            [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
+            pagination.total,
+            pagination.page,
+            pagination.pages,
         )
 
     # Reduce result set via DB query before decrypting
@@ -350,40 +320,22 @@ def get_users():
     end = start + per_page
     paginated_items = filtered_items[start:end]
 
-    return jsonify(
-        paginated_response(
-            [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
-            total,
-            page,
-            (total + per_page - 1) // per_page if total > 0 else 1,
-        )
+    return paginated_response(
+        [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
+        total,
+        page,
+        (total + per_page - 1) // per_page if total > 0 else 1,
     )
 
 
 @admin_bp.route("/users/<uuid:user_id>", methods=["DELETE"])
 @role_required(["admin"])
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=MessageResponse, HTTP_422=ErrorResponse),
+)
 def delete_user(user_id):
-    """
-    Permanently delete a user and all their submissions.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: user_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     if str(request.user["user_id"]) == str(user_id):
         return err("ERR_CANNOT_DELETE_SELF", 400)
 
@@ -411,35 +363,24 @@ def delete_user(user_id):
 
         invalidate_leaderboard_cache(user.challenge_id)
 
-    return jsonify({"message": f"User {user.username} has been deleted successfully."})
+    return MessageResponse(message=f"User {user.username} has been deleted successfully.")
 
 
 @admin_bp.route("/register-user", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-@validate_json(CreateUserSchema)
-def register_user(data):
-    """
-    Register a new user account with specified role and demographics.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    username, email, password = data.username, data.email, data.password
-    name, surname, middle_name = data.name, data.surname, data.middle_name
-    birth_date, grade, school, city = data.birth_date, data.grade, data.school, data.city
-    role, challenge_id = data.role, data.challenge_id
+@api.validate(
+    json=CreateUserSchema,
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_201=RegisterUserResponse, HTTP_422=ErrorResponse),
+)
+def register_user(json: CreateUserSchema):
+    username, email, password = json.username, json.email, json.password
+    name, surname, middle_name = json.name, json.surname, json.middle_name
+    birth_date, grade, school, city = json.birth_date, json.grade, json.school, json.city
+    role, challenge_id = json.role, json.challenge_id
 
     if request.user["role"] == "jury" and role != "competitor":
         return err("ERR_JURY_ONLY_COMPETITOR", 403)
@@ -487,7 +428,7 @@ def register_user(data):
     if User.query.filter_by(username=username).first():
         return err("ERR_USERNAME_TAKEN", 400)
 
-    is_anon = data.is_anonymous
+    is_anon = json.is_anonymous
 
     user = User(
         username=username,
@@ -510,7 +451,7 @@ def register_user(data):
     db.session.add(user)
     db.session.commit()
 
-    jury_challenges = data.jury_challenges
+    jury_challenges = json.jury_challenges
     if role == "jury" and jury_challenges:
         from models import JuryChallenge
 
@@ -532,39 +473,23 @@ def register_user(data):
         },
     )
 
-    return (
-        jsonify(
-            {
-                "message": f"{role.capitalize()} registered successfully.",
-                "generated_username": username,
-                "generated_password": password,
-                "user": user.to_dict(view_role=request.user["role"]),
-            }
-        ),
-        201,
-    )
+    return RegisterUserResponse(
+        message=f"{role.capitalize()} registered successfully.",
+        generated_username=username,
+        generated_password=password,
+        user=user.to_dict(view_role=request.user["role"]),
+    ), 201
 
 
 @admin_bp.route("/import-competitors-csv", methods=["POST"])
 @role_required(["admin", "jury"])
 @rate_limit(max_requests=10, window_seconds=60)
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_201=ImportCompetitorsResponse, HTTP_422=ErrorResponse),
+)
 def import_competitors_csv():
-    """
-    Bulk import competitors from a CSV file.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
     if not challenge_id:
         return err(
@@ -740,6 +665,7 @@ def import_competitors_csv():
                     "grade": grade,
                     "school": school,
                     "city": city,
+                    "role": "competitor",
                     "is_anonymous": is_anon,
                     "generated_username": username,
                     "generated_password": password,
@@ -757,15 +683,10 @@ def import_competitors_csv():
         )
 
         invalidate_leaderboard_cache(challenge_id)
-        return (
-            jsonify(
-                {
-                    "message": f"Successfully imported {len(imported)} competitors.",
-                    "competitors": imported,
-                }
-            ),
-            201,
-        )
+        return ImportCompetitorsResponse(
+            message=f"Successfully imported {len(imported)} competitors.",
+            competitors=imported,
+        ), 201
 
     except Exception as e:
         db.session.rollback()
@@ -807,72 +728,31 @@ def _list_backup_files(directory):
 
 @admin_bp.route("/backups", methods=["GET"])
 @role_required(["admin"])
+@api.validate(
+    tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=BackupListResponse)
+)
 def list_backups():
-    """
-    List all system backups with filenames, sizes, and timestamps.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    return jsonify({"backups": _list_backup_files(BACKUPS_DIR)})
+    return BackupListResponse(backups=_list_backup_files(BACKUPS_DIR))
 
 
 @admin_bp.route("/backups/force", methods=["POST"])
 @role_required(["admin"])
 @rate_limit(max_requests=5, window_seconds=60)
+@api.validate(
+    tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_202=BackupStartResponse)
+)
 def force_backup():
-    """
-    Trigger an immediate manual backup of the database and uploaded files.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     log_audit(request.user["user_id"], "create", "backup", details={"auto": False})
     from tasks import run_backup
 
     task = run_backup.delay(auto=False)
-    return jsonify({"task_id": task.id, "status": "started"}), 202
+    return BackupStartResponse(task_id=task.id, status="started"), 202
 
 
 @admin_bp.route("/backups/live", methods=["GET"])
 @role_required(["admin"])
+@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
 def stream_backup_status():
-    """
-    Stream backup events in real-time via Server-Sent Events.
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -916,60 +796,37 @@ def stream_backup_status():
 @admin_bp.route("/backups/<path:filename>/download", methods=["GET"])
 @role_required(["admin"])
 @rate_limit(max_requests=10, window_seconds=60)
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+)
 def download_backup_file(filename):
-    """
-    Download a specific backup archive file.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: filename
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
         return err("ERR_NOT_FOUND", 404, message="Not found")
-    return send_file(safe_path, as_attachment=True, download_name=filename)
+    with open(safe_path, "rb") as fh:
+        file_data = fh.read()
+    return (
+        file_data,
+        200,
+        {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @admin_bp.route("/backups/<path:filename>", methods=["DELETE"])
 @role_required(["admin"])
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=MessageResponse, HTTP_422=ErrorResponse),
+)
 def delete_backup_file(filename):
-    """
-    Delete a manual backup file. Auto-backups cannot be deleted.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: filename
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     if filename.startswith("auto_"):
         return err("ERR_NO_AUTO_BACKUP_DELETE", 403)
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
@@ -979,41 +836,17 @@ def delete_backup_file(filename):
         return err("ERR_NOT_FOUND", 404, message="Not found")
     os.remove(safe_path)
     log_audit(request.user["user_id"], "delete", "backup", details={"filename": filename})
-    return jsonify({"message": "Deleted."})
+    return MessageResponse(message="Deleted.")
 
 
 @admin_bp.route("/audit-logs", methods=["GET"])
 @role_required(["admin"])
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=AuditLinkListResponse, HTTP_422=ErrorResponse),
+)
 def get_audit_logs():
-    """
-    Get paginated audit logs, optionally filtered by challenge_id and action_type.
-    Only available to admins.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - name: page
-        in: query
-        schema:
-          type: integer
-      - name: per_page
-        in: query
-        schema:
-          type: integer
-      - name: challenge_id
-        in: query
-        schema:
-          type: string
-      - name: action_type
-        in: query
-        schema:
-          type: string
-    responses:
-      200:
-        description: Success
-    """
     page, per_page = extract_pagination(request, default_per_page=15, max_per_page=100)
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
@@ -1050,46 +883,25 @@ def get_audit_logs():
         page=page, per_page=per_page, error_out=False
     )
 
-    return (
-        jsonify(
-            {
-                "logs": [log.to_dict() for log in paginated.items],
-                "total": paginated.total,
-                "pages": paginated.pages,
-                "page": paginated.page,
-                "per_page": paginated.per_page,
-            }
-        ),
-        200,
+    return AuditLinkListResponse(
+        logs=[log.to_dict() for log in paginated.items],
+        total=paginated.total,
+        pages=paginated.pages,
+        page=paginated.page,
+        per_page=paginated.per_page,
     )
 
 
 @admin_bp.route("/users/<uuid:user_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(UpdateUserSchema)
-def update_user(user_id, data):
-    """
-    Update user profile fields. Jury members have restricted edit access.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: user_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=UpdateUserSchema,
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=UpdateUserResponse, HTTP_422=ErrorResponse),
+)
+def update_user(user_id, json: UpdateUserSchema):
     user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
     old_challenge_id = user.challenge_id
@@ -1103,20 +915,20 @@ def update_user(user_id, data):
             if challenge and challenge.is_started:
                 return err("ERR_CANNOT_EDIT_STARTED", 403)
 
-    name = data.name
-    surname = data.surname
-    middle_name = data.middle_name
-    birth_date = data.birth_date
-    grade = data.grade
-    school = data.school
-    city = data.city
-    email = data.email
-    username = data.username
-    challenge_id = data.challenge_id
-    password = data.password
-    is_anonymous = data.is_anonymous
-    role = data.role
-    jury_challenges = data.jury_challenges
+    name = json.name
+    surname = json.surname
+    middle_name = json.middle_name
+    birth_date = json.birth_date
+    grade = json.grade
+    school = json.school
+    city = json.city
+    email = json.email
+    username = json.username
+    challenge_id = json.challenge_id
+    password = json.password
+    is_anonymous = json.is_anonymous
+    role = json.role
+    jury_challenges = json.jury_challenges
 
     if is_anonymous is not None:
         user.is_anonymous = is_anonymous
@@ -1173,7 +985,7 @@ def update_user(user_id, data):
     new_city = city if city is not None else dec_city
 
     demo_fields = {"name", "surname", "middle_name", "birth_date", "grade", "school", "city"}
-    changed_demographics = data.model_fields_set & demo_fields
+    changed_demographics = json.model_fields_set & demo_fields
     if user.role == "competitor" and (changed_demographics or role == "competitor"):
         if (
             not new_name
@@ -1248,11 +1060,9 @@ def update_user(user_id, data):
         target_id=user.id,
         details={"username": user.username},
     )
-    return jsonify(
-        {
-            "message": "User updated successfully.",
-            "user": user.to_dict(view_role=request.user["role"]),
-        }
+    return UpdateUserResponse(
+        message="User updated successfully.",
+        user=user.to_dict(view_role=request.user["role"]),
     )
 
 
@@ -1260,28 +1070,12 @@ def update_user(user_id, data):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=10, window_seconds=60)
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=ResetPasswordResponse, HTTP_422=ErrorResponse),
+)
 def reset_user_password(user_id):
-    """
-    Generate a new random password for a specific user.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: user_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == "jury" and user.challenge_id:
@@ -1301,12 +1095,10 @@ def reset_user_password(user_id):
         details={"username": user.username},
     )
 
-    return jsonify(
-        {
-            "message": f"Password reset successfully for {user.username}.",
-            "username": user.username,
-            "password": new_password,
-        }
+    return ResetPasswordResponse(
+        message=f"Password reset successfully for {user.username}.",
+        username=user.username,
+        password=new_password,
     )
 
 
@@ -1314,28 +1106,12 @@ def reset_user_password(user_id):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=3, window_seconds=300)
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=BulkResetPasswordResponse, HTTP_422=ErrorResponse),
+)
 def reset_all_challenge_passwords(challenge_id):
-    """
-    Generate new passwords for all competitors in a challenge.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == "jury" and challenge.is_started:
@@ -1377,11 +1153,9 @@ def reset_all_challenge_passwords(challenge_id):
         "user",
         details={"challenge_id": challenge_id, "count": len(competitors)},
     )
-    return jsonify(
-        {
-            "message": f"Reset passwords for {len(competitors)} competitors.",
-            "reset_accounts": results,
-        }
+    return BulkResetPasswordResponse(
+        message=f"Reset passwords for {len(competitors)} competitors.",
+        reset_accounts=results,
     )
 
 
@@ -1389,35 +1163,19 @@ def reset_all_challenge_passwords(challenge_id):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=10, window_seconds=60)
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_400=ErrorResponse),
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+)
 def download_scores_csv(challenge_id):
-    """
-    Generate and download a CSV of all competitor scores for a challenge.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return err("ERR_SCORES_NOT_FINALIZED", 400)
 
     csv_data = generate_scores_csv(challenge)
 
-    return Response(
+    return FlaskResponse(
         csv_data,
         mimetype="text/csv",
         headers={
@@ -1430,6 +1188,11 @@ def download_scores_csv(challenge_id):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=5, window_seconds=120)
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_400=ErrorResponse),
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+)
 def download_submissions_zip(challenge_id):
     """
     Download completed competitor submissions as a ZIP archive.
@@ -1564,55 +1327,31 @@ def download_submissions_zip(challenge_id):
             os.unlink(zip_tmp.name)
         return response
 
-    return send_file(
-        zip_tmp.name,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=zip_filename,
+    with open(zip_tmp.name, "rb") as fh:
+        zip_bytes = fh.read()
+    return (
+        zip_bytes,
+        200,
+        {
+            "Content-Type": "application/zip",
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
+        },
     )
 
 
 @admin_bp.route("/workers/stats", methods=["GET"])
 @role_required(["admin", "jury"])
+@api.validate(
+    resp=Response(HTTP_200=WorkerStatsResponse), tags=["Admin"], security=[{"cookieAuth": []}]
+)
 def get_detailed_worker_stats():
-    """
-    Get detailed worker cluster statistics including CPU, RAM, GPU specs.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    return jsonify(_get_worker_stats_response())
+    return _get_worker_stats_response()
 
 
 @admin_bp.route("/workers/stats/live", methods=["GET"])
 @role_required(["admin", "jury"])
+@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
 def stream_worker_stats():
-    """
-    Stream real-time worker cluster statistics via Server-Sent Events.
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -1837,34 +1576,21 @@ def _get_worker_stats_response():
     try:
         return cached_or_compute_unless_testing("worker:status:detailed", _compute, timeout=10)
     except Exception as e:
-        return {"error": str(e)}
+        return err("ERR_INTERNAL", 500, message=str(e))
 
 
 @admin_bp.route("/dead-letters", methods=["GET"])
 @role_required(["admin"])
+@api.validate(
+    tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=DeadLetterListResponse)
+)
 def get_dead_letters():
-    """
-    Inspect the dead letter queue of permanently failed submission evaluations.
-    ---
-    tags:
-      - Admin
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     r = get_redis_client()
     if not r:
-        return jsonify({"items": []}), 200
+        return DeadLetterListResponse(items=[]), 200
     try:
         entries = r.lrange("dead_letter_queue", 0, -1)
         items = [json.loads(e) for e in entries]
-        return jsonify({"items": items}), 200
+        return DeadLetterListResponse(items=items), 200
     except Exception:
-        return jsonify({"items": []}), 200
+        return DeadLetterListResponse(items=[]), 200
