@@ -732,3 +732,58 @@ class TestDeleteTaskCRUD:
         db_session.flush()
         resp = client.delete(f"/api/tasks/{task.id}")
         assert resp.status_code == 403
+
+    def test_delete_task_success(self, client, db_session, sample_challenge, tokens, auth_headers):
+        from models import Task, Submission, User
+        import os
+        import tempfile
+        import shutil
+
+        # Create task
+        task = Task(
+            title="Delete Me Success",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        competitor = db_session.query(User).filter_by(role="competitor").first()
+        # Create submission for the task
+        sub = Submission(
+            user_id=competitor.id,
+            challenge_id=sample_challenge.id,
+            task_id=task.id,
+            status="completed",
+        )
+        db_session.add(sub)
+        db_session.flush()
+
+        # Mock UPLOAD_FOLDER
+        temp_upload_dir = tempfile.mkdtemp()
+        task_dir = os.path.join(temp_upload_dir, f"task_{task.id}")
+        os.makedirs(task_dir, exist_ok=True)
+        # Create a mock file inside task_dir
+        with open(os.path.join(task_dir, "mock_file.txt"), "w") as f:
+            f.write("hello")
+
+        task_id = task.id
+        sub_id = sub.id
+
+        with patch.dict(client.application.config, {"UPLOAD_FOLDER": temp_upload_dir}):
+            url = f"/api/tasks/{task_id}"
+            headers = auth_headers(tokens.admin)
+            resp = client.delete(url, headers=headers)
+            assert resp.status_code == 200
+
+        # Assert task is deleted
+        assert db_session.get(Task, task_id) is None
+        # Assert submissions are deleted
+        assert db_session.get(Submission, sub_id) is None
+        # Assert upload directory is deleted
+        assert not os.path.exists(task_dir)
+
+        shutil.rmtree(temp_upload_dir, ignore_errors=True)
