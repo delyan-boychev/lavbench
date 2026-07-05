@@ -1,10 +1,16 @@
 """Shared spectree SpecTree instance for route decorators + OpenAPI generation."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from spectree import SpecTree
 from spectree.models import InType, SecureType, SecurityScheme, SecuritySchemeData
 
 
-def _validation_before_handler(req, resp, req_validation_error, instance):
+def _validation_before_handler(
+    req: Any, resp: Any, req_validation_error: Any, instance: Any
+) -> None:
     """Reformat validation errors to project convention."""
     if req_validation_error is not None and resp is not None:
         from schemas import _format_validation_error_for_response

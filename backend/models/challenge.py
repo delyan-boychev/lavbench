@@ -2,12 +2,13 @@
 
 import zoneinfo
 from datetime import datetime
+from typing import Any
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
 
 
-class Challenge(db.Model):
+class Challenge(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "challenges"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
@@ -40,7 +41,7 @@ class Challenge(db.Model):
         order_by="Stage.stage_number",
     )
 
-    def _now_local(self):
+    def _now_local(self) -> datetime:
         try:
             tz = zoneinfo.ZoneInfo(self.timezone or "UTC")
             return datetime.now(tz).replace(tzinfo=None)
@@ -48,19 +49,19 @@ class Challenge(db.Model):
             return utcnow()
 
     @property
-    def is_started(self):
+    def is_started(self) -> bool:
         if not self.start_time:
             return False
-        return self._now_local() >= self.start_time
+        return bool(self._now_local() >= self.start_time)
 
     @property
-    def is_ended(self):
+    def is_ended(self) -> bool:
         if not self.end_time:
             return False
-        return self._now_local() > self.end_time
+        return bool(self._now_local() > self.end_time)
 
     @property
-    def computed_status(self):
+    def computed_status(self) -> str:
         if self.is_archived:
             return "archived"
         if self.scores_finalized:
@@ -73,7 +74,7 @@ class Challenge(db.Model):
             return "ended"
         return "active"
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         try:
             from flask import current_app
 
@@ -99,8 +100,8 @@ class Challenge(db.Model):
             "double_blind": self.double_blind,
             "timezone": self.timezone,
             "status": self.computed_status,
-            "tasks": [t.to_dict() for t in self.tasks],
-            "stages": [s.to_dict() for s in self.stages],
+            "tasks": [t.to_dict() for t in self.tasks],  # type: ignore[attr-defined]
+            "stages": [s.to_dict() for s in self.stages],  # type: ignore[attr-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,
         }

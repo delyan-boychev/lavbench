@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import json
+from typing import Any
 
 
-def cells_to_ipynb_json(cells_data, indent=2):
+def cells_to_ipynb_json(cells_data: list[Any], indent: int = 2) -> str:
     ipynb_cells = []
     for c in cells_data:
         if isinstance(c, dict):

@@ -1,7 +1,10 @@
 """Flask application factory and Swagger/OpenAPI configuration."""
 
+from __future__ import annotations
+
 import logging
 import os
+from typing import Any
 
 # Attempt to raise file descriptor limit for high concurrency (fallback when
 # entrypoint.sh ulimit or docker-compose ulimits are not in effect, e.g. in
@@ -23,6 +26,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 logger = logging.getLogger(__name__)
 
 from flask import Flask  # noqa: E402
+from flask import Response as FlaskResponse  # noqa: E402
 from flask.json.provider import DefaultJSONProvider  # noqa: E402
 from flask_cors import CORS  # noqa: E402
 from spectree import Response  # noqa: E402
@@ -41,7 +45,7 @@ from version import __version__  # noqa: E402
 class _LavBenchJSONProvider(DefaultJSONProvider):
     """Handles FileStorage in Pydantic validation errors for file-upload forms."""
 
-    def default(self, obj):
+    def default(self, obj: object) -> Any:
         if isinstance(obj, FileStorage):
             return {
                 "filename": obj.filename,
@@ -51,11 +55,11 @@ class _LavBenchJSONProvider(DefaultJSONProvider):
         return super().default(obj)
 
 
-def create_app():
+def create_app() -> Flask:
     setup_logging("backend")
     app = Flask(__name__)
     app.json = _LavBenchJSONProvider(app)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[method-assign]
     app.config.from_object(Config)
 
     # Enable CORS - restrict origins in production
@@ -83,7 +87,7 @@ def create_app():
 
     @app.route("/api/health", methods=["GET"])
     @api.validate(resp=Response(HTTP_200=HealthResponse, HTTP_503=HealthResponse), tags=["Health"])
-    def health_check():
+    def health_check() -> tuple[HealthResponse, int]:
         """Health check for Docker and load balancer monitoring."""
         db_ok = True
         try:
@@ -99,7 +103,7 @@ def create_app():
     api.register(app)
 
     @app.errorhandler(500)
-    def handle_internal_error(e):
+    def handle_internal_error(e: Exception) -> tuple[FlaskResponse, int]:
         return err("ERR_INTERNAL", 500)
 
     return app

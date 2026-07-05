@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 import logging
 import time
 
 from flask import Blueprint, make_response, request
+from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.security import check_password_hash
 
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
 
-def _login_rate_limit_exceeded(username, ip):
+def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
     """
     Two-tier sliding window rate limiting:
     - Per-username: max 5 failures per 60s
@@ -54,7 +57,7 @@ def _login_rate_limit_exceeded(username, ip):
         return False
 
 
-def _record_login_failure(username, ip):
+def _record_login_failure(username: str, ip: str) -> None:
     """Record a failed login attempt in sliding window."""
     try:
         from cache_utils import get_redis_client
@@ -71,7 +74,7 @@ def _record_login_failure(username, ip):
         logger.warning("Failed to record login failure for user %s: %s", username, e)
 
 
-def _clear_login_failures(username, ip):
+def _clear_login_failures(username: str, ip: str) -> None:
     """Clear failure records on successful login."""
     try:
         from cache_utils import get_redis_client
@@ -85,7 +88,7 @@ def _clear_login_failures(username, ip):
         logger.warning("Failed to clear login failures for user %s: %s", username, e)
 
 
-def get_client_ip():
+def get_client_ip() -> str:
     if request.headers.getlist("X-Forwarded-For"):
         return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
@@ -97,7 +100,7 @@ def get_client_ip():
     resp=Response(HTTP_200=LoginResponse, HTTP_401=ErrorResponse),
     tags=["Auth"],
 )
-def login(json: LoginSchema):
+def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
     """
     Authenticate a user and receive a session cookie.
     Password must be sent as plaintext; the server hashes it.
@@ -151,7 +154,7 @@ def login(json: LoginSchema):
     resp=Response(HTTP_200=CsrfTokenResponse),
     tags=["Auth"],
 )
-def get_csrf_token():
+def get_csrf_token() -> FlaskResponse | tuple[FlaskResponse, int]:
     """Get a CSRF token for state-changing requests."""
     return generate_csrf_token()
 
@@ -161,7 +164,7 @@ def get_csrf_token():
     resp=Response(HTTP_200=LogoutResponse),
     tags=["Auth"],
 )
-def logout():
+def logout() -> FlaskResponse:
     """Log out the current user. Clears the httpOnly cookie and revokes the JWT token."""
     resp = make_response(json.dumps({"message": "Logged out successfully."}))
     resp.headers["Content-Type"] = "application/json"
@@ -176,7 +179,7 @@ def logout():
     tags=["Auth"],
     security=[{"cookieAuth": []}],
 )
-def me():
+def me() -> CurrentUserResponse | tuple[FlaskResponse, int]:
     """Get the current authenticated user's profile."""
     user = db.session.get(User, request.user["user_id"])
     if not user:

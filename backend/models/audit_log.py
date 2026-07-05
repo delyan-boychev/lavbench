@@ -1,10 +1,12 @@
 """AuditLog model."""
 
+from typing import Any
+
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
 
 
-class AuditLog(db.Model):
+class AuditLog(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "audit_logs"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
@@ -28,7 +30,7 @@ class AuditLog(db.Model):
     target_user = db.relationship("User", foreign_keys=[target_user_id])
     task = db.relationship("Task")
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         result = {
             "id": self.id,
             "admin_id": self.admin_id,

@@ -90,6 +90,7 @@ cd backend
 ruff check .
 ruff format --check .
 python scripts/check_error_codes.py
+mypy . --no-incremental
 micromamba run -n lavbench_backend pytest tests -n auto -q
 
 # Frontend
@@ -106,6 +107,7 @@ python scripts/check_translations.py
 |---|---|
 | `backend-tests` | `pytest -n auto --timeout=120 --cov` (≥70%) |
 | `backend-lint` | `ruff check`, `ruff format --check`, `check_error_codes.py` |
+| `backend-types` | `mypy backend/ --no-incremental` |
 | `frontend-lint` | `npm run lint` |
 | `frontend-format` | `npm run format:check` |
 | `frontend-tests` | `npm run test:coverage` |
@@ -354,6 +356,38 @@ def test_something(client, db_session, admin_token, challenge_a):
 | Sandbox | `--network none --cap-drop ALL --read-only --security-opt no-new-privileges --pids-limit 64`, no swap, tmpfs /tmp |
 | Ground truth | labels.parquet evaluated server-side, never in sandbox |
 | HF keys | Fetched on-demand via API, never stored in Redis |
+
+---
+
+## Type Annotations & Mypy
+
+### Conventions
+- All source files (non-test, non-script) must pass `mypy --strict` with 0 errors
+- Use `from __future__ import annotations` at the top of every file (except SQLAlchemy model files in `models/` — PEP 563 breaks `Annotated Declarative Table`)
+- Use modern Python 3.12+ syntax: `list[X]` not `List[X]`, `dict[str, X]` not `Dict[str, X]`, `X | None` not `Optional[X]`
+- Import from `collections.abc` instead of `typing` for `Callable`, `Generator`, `Iterator` (UP035 rule)
+
+### Pattern-specific types
+| Pattern | Type |
+|---|---|
+| Flask route handler (spectree) | `tuple[Response, int]` |
+| Cookie route (auth) | `tuple[FlaskResponse, int]` |
+| SSE streaming route | `tuple[FlaskResponse \| Response, int, dict[str, str]]` |
+| `err()` calls | `-> tuple[Response, int]` |
+| `send_file` / bytes response | `tuple[bytes, int, dict[str, str]]` |
+| Pydantic validator (mode="before") | `def _validate(cls, v: Any) -> Any` |
+| Pydantic validator (mode="after") | `def _validate(cls, v: SomeType) -> SomeType` |
+| Decorators (login_required, etc.) | `Callable[..., Any]` (simplified wrapper type) |
+| SQLAlchemy model internal attrs | Use `ClassVar[X]` + `# type: ignore[misc]` on instance assignments |
+| Dynamic dicts | `dict[str, Any]` (not bare `dict`) |
+
+### Route annotation guidelines
+Routes have `disallow_untyped_defs = false` and `disallow_untyped_calls = false`, so helper functions can skip annotations. But **route handlers** (those with `@*.route()` or `@api.validate`) should always have full return type annotations.
+
+### Running locally
+```
+cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
+```
 
 ---
 

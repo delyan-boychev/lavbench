@@ -1,8 +1,16 @@
-def norm(s):
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+
+def norm(s: str | None) -> str:
     return s.strip().lower() if s else ""
 
 
-def demographics_tuple(user_or_dict, decrypt_field=None):
+def demographics_tuple(
+    user_or_dict: Any, decrypt_field: Callable[[str], str] | None = None
+) -> tuple[str, ...]:
     """Build a normalized 7-field demographics tuple from a User or dict with decrypt support."""
     if hasattr(user_or_dict, "name"):
         fields = ["name", "middle_name", "surname", "birth_date", "grade", "school", "city"]
@@ -20,17 +28,17 @@ def demographics_tuple(user_or_dict, decrypt_field=None):
 
 
 def check_duplicate_demographics(
-    existing_users,
-    name,
-    middle_name,
-    surname,
-    birth_date,
-    grade,
-    school,
-    city,
-    decrypt_field_fn=None,
-    exclude_id=None,
-):
+    existing_users: list[Any],
+    name: str,
+    middle_name: str,
+    surname: str,
+    birth_date: str,
+    grade: str,
+    school: str,
+    city: str,
+    decrypt_field_fn: Callable[[str], str] | None = None,
+    exclude_id: str | None = None,
+) -> bool:
     target = demographics_tuple(
         {
             "name": name,

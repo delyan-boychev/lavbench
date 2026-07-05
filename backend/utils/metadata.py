@@ -1,24 +1,27 @@
+from __future__ import annotations
+
 import json
 import os
+from typing import Any
 
 from config import Config
 
 
-def _hf_value(value):
+def _hf_value(value: Any) -> str | None:
     if isinstance(value, str):
         return value
     return json.dumps(value) if value else None
 
 
 def build_submission_metadata(
-    task,
-    challenge,
-    submission,
-    user_code,
-    task_files_list,
-    gpu_required,
-    main_server_url=None,
-):
+    task: Any,
+    challenge: Any,
+    submission: Any,
+    user_code: str,
+    task_files_list: list[dict[str, Any]],
+    gpu_required: bool,
+    main_server_url: str | None = None,
+) -> dict[str, Any]:
     return {
         "submission_id": submission.id,
         "task_id": task.id,

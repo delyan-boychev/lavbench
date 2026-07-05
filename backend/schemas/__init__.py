@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import ValidationError
 
 from error_utils import err
 from schemas.exceptions import SchemaError
 
 
-def _format_validation_error_for_response(resp, e: ValidationError):
+def _format_validation_error_for_response(resp: Any, e: ValidationError) -> None:
     """Modify a Flask Response in-place to reformat validation errors.
 
     Used by the spectree ``before`` handler to replace the default pydantic
@@ -24,7 +28,7 @@ def _format_validation_error_for_response(resp, e: ValidationError):
             details.append(f"{field}: {err_item['msg']}")
     if specific_code:
         code = specific_code
-        message = "; ".join(details)
+        message: str | None = "; ".join(details)
         new_resp, _ = err(code, 422, message=message)
     else:
         message = "; ".join(details) if details else None

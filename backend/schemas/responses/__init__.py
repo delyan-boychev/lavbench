@@ -1,5 +1,7 @@
 """Response model re-exports."""
 
+from __future__ import annotations
+
 from schemas.responses.admin import (
     AuditLinkListResponse,
     AuditLogResponse,

@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import contextlib
 import json
 import logging
 import time
+from typing import Any
 
 from flask import Blueprint, request
+from flask import Response as FlaskResponse
 from spectree import Response
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -26,7 +30,7 @@ leaderboard_bp = Blueprint("leaderboard", __name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         import uuid
 
         if isinstance(obj, uuid.UUID):
@@ -34,7 +38,9 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def _get_leaderboard_payload(challenge, user_role, current_user_id):
+def _get_leaderboard_payload(
+    challenge: Any, user_role: str, current_user_id: int | None
+) -> dict[str, Any]:
     challenge_id = challenge.id
     tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
     challenge_finalized = challenge.scores_finalized
@@ -313,7 +319,9 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
     tags=["Leaderboard"],
     security=[{"cookieAuth": []}],
 )
-def get_leaderboard(challenge_id):
+def get_leaderboard(
+    challenge_id: Any,
+) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Get the leaderboard for a specific challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
@@ -344,7 +352,9 @@ def get_leaderboard(challenge_id):
     tags=["SSE Streaming"],
     security=[{"cookieAuth": []}],
 )
-def stream_challenge_leaderboard(challenge_id):
+def stream_challenge_leaderboard(
+    challenge_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Stream live updates to the challenge leaderboard using Server-Sent Events (SSE)."""
     from flask import current_app
 
@@ -431,7 +441,9 @@ def stream_challenge_leaderboard(challenge_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=ManualPointsResponse, HTTP_422=ErrorResponse),
 )
-def save_manual_points(challenge_id, json: ManualPointsSchema):
+def save_manual_points(
+    challenge_id: Any, json: ManualPointsSchema
+) -> ManualPointsResponse | tuple[FlaskResponse, int]:
     """Save manual points for a user in a challenge. Jury members only."""
     challenge = db.get_or_404(Challenge, challenge_id)
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 from flask import Blueprint, request
@@ -10,7 +12,7 @@ from spec import api
 docs_bp = Blueprint("docs", __name__)
 
 
-def get_request_lang():
+def get_request_lang() -> str:
     # 1. Query parameter
     lang = request.args.get("lang")
 
@@ -32,7 +34,7 @@ def get_request_lang():
     return lang
 
 
-def read_doc_file(filename, lang="en"):
+def read_doc_file(filename: str, lang: str = "en") -> str:
     # We will try the requested language first, then fallback to 'en'
     langs_to_try = [lang]
     if lang != "en":
@@ -63,7 +65,7 @@ def read_doc_file(filename, lang="en"):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
 )
-def get_competitor_doc():
+def get_competitor_doc() -> DocContentResponse:
     """Get the competitor documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("competitor_guide.md", lang)
@@ -80,7 +82,7 @@ def get_competitor_doc():
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
 )
-def get_jury_doc():
+def get_jury_doc() -> DocContentResponse:
     """Get the jury documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("jury_guide.md", lang)
@@ -95,7 +97,7 @@ def get_jury_doc():
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
 )
-def get_admin_doc():
+def get_admin_doc() -> DocContentResponse:
     """Get the admin documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("admin_guide.md", lang)

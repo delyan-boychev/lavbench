@@ -168,7 +168,14 @@ def main():
         files.extend(sorted(services_dir.glob("*.py")))
         utils_dir = root / "utils"
         files.extend(sorted(utils_dir.glob("*.py")))
-        for extra in ["auth_utils.py", "app.py", "error_utils.py", "sse_utils.py", "worker_utils.py", "cache_utils.py"]:
+        for extra in [
+            "auth_utils.py",
+            "app.py",
+            "error_utils.py",
+            "sse_utils.py",
+            "worker_utils.py",
+            "cache_utils.py",
+        ]:
             p = root / extra
             if p.exists():
                 files.append(p)

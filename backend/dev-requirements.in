@@ -8,5 +8,11 @@ pytest-timeout>=2.0.0
 pytest-mock>=3.14.0
 pytest-xdist>=3.5.0
 
+# ── Type checking ──────────────────────────────────────────────────
+mypy>=1.0
+types-requests
+types-redis
+types-PyYAML
+
 # ── Test data ──────────────────────────────────────────────────────
 Faker>=20.0.0

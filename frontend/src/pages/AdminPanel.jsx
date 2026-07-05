@@ -416,11 +416,11 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(newChallenge),
       });
-        /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['201']['content']['application/json']} */
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competition_created'));
-          setNewChallenge({
+      /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['201']['content']['application/json']} */
+      const data = await res.json();
+      if (res.ok) {
+        showToast(t('admin.notifications.competition_created'));
+        setNewChallenge({
           title: '',
           description: '',
           max_eval_requests: 10,

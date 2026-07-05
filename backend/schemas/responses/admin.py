@@ -1,5 +1,7 @@
 """Admin / User response models."""
 
+from __future__ import annotations
+
 from typing import Any
 from uuid import UUID
 
@@ -163,7 +165,7 @@ class BackupStartResponse(BaseModel):
 # ── Metrics ────────────────────────────────────────────────────────────
 
 
-class AvailableMetricsResponse(RootModel):
+class AvailableMetricsResponse(RootModel[dict[str, dict[str, list[str] | str]]]):
     """Available metrics with their configurable parameters."""
 
     root: dict[str, dict[str, list[str] | str]]

@@ -1,5 +1,7 @@
 """Docs endpoint response models."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 from schemas.responses._base import RESPONSE_CONFIG

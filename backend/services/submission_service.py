@@ -1,13 +1,17 @@
 """Service-layer functions for submission creation, validation, and status management."""
 
+from __future__ import annotations
+
 import ast
 import json
+import uuid
+from typing import Any
 
-from models import Submission
+from models import Challenge, Submission, Task
 from utils.dates import utcnow
 
 
-def extract_code_from_cells(cells_list):
+def extract_code_from_cells(cells_list: list[Any]) -> list[str]:
     """Extract source code strings from a list of cell dicts (from notebook JSON)."""
     if not cells_list:
         return []
@@ -26,7 +30,7 @@ def extract_code_from_cells(cells_list):
     return extracted
 
 
-def extract_code_from_notebook(filepath):
+def extract_code_from_notebook(filepath: str) -> list[str]:
     """Open a .ipynb file and return all code cell sources as a list of strings."""
     try:
         with open(filepath) as f:
@@ -44,7 +48,7 @@ def extract_code_from_notebook(filepath):
         return []
 
 
-def check_execution_rules(task, cells_list):
+def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple[bool, str | None]:
     (
         """Validate competitor code against task rules: """
         """banned magic commands, banned/whitelisted imports."""
@@ -84,7 +88,7 @@ def check_execution_rules(task, cells_list):
         "__code__",
     }
 
-    def get_violation_message(name):
+    def get_violation_message(name: str) -> str:
         if name == "__import__":
             return "Rule Violation: Dynamic imports via __import__() are not allowed."
         if name == "exec":
@@ -160,12 +164,12 @@ def check_execution_rules(task, cells_list):
                 tree = ast.parse(combined_code)
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):
-                        for name in node.names:
-                            root_import = name.name.split(".")[0].lower()
+                        for imp in node.names:
+                            root_import = imp.name.split(".")[0].lower()
                             if root_import in banned:
                                 return (
                                     False,
-                                    f"Rule Violation: Import of library '{name.name}' is banned.",
+                                    f"Rule Violation: Import of library '{imp.name}' is banned.",
                                 )
                     elif isinstance(node, ast.ImportFrom) and node.module:
                         root_import = node.module.split(".")[0].lower()
@@ -190,14 +194,14 @@ def check_execution_rules(task, cells_list):
                 tree = ast.parse(combined_code)
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):
-                        for name in node.names:
-                            root_import = name.name.split(".")[0].lower()
+                        for imp in node.names:
+                            root_import = imp.name.split(".")[0].lower()
                             if root_import not in whitelisted:
                                 return (
                                     False,
                                     (
                                         f"Rule Violation: Import of library "
-                                        f"'{name.name}' is not allowed by whitelist."
+                                        f"'{imp.name}' is not allowed by whitelist."
                                     ),
                                 )
                     elif isinstance(node, ast.ImportFrom) and node.module:
@@ -220,7 +224,7 @@ def check_execution_rules(task, cells_list):
     return True, None
 
 
-def calculate_submission_priority(user_id, role):
+def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
     (
         """Return a priority integer: 9 for admin/jury, """
         """decaying from 6 for competitors per daily count."""
@@ -234,10 +238,15 @@ def calculate_submission_priority(user_id, role):
     if submission_count == 0:
         return 6
     priority = max(1, 6 - submission_count)
-    return priority
+    return priority  # type: ignore[no-any-return]
 
 
-def get_best_submission(task, user_subs, challenge, is_lower_better=None):
+def get_best_submission(
+    task: Task,
+    user_subs: list[Submission],
+    challenge: Challenge,
+    is_lower_better: bool | None = None,
+) -> Submission | None:
     """
     Given a task, a list of completed submissions for a single user, and the challenge,
     resolves the best submission according to final selection, deadline, metrics, and tie-breakers.

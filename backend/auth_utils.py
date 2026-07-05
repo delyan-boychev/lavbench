@@ -1,14 +1,18 @@
 """Authentication, token verification, rate limiting, and authorization utilities."""
 
+from __future__ import annotations
+
 import logging
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from datetime import timedelta
 from functools import wraps
+from typing import Any
 
 import jwt
-from flask import jsonify, request
+from flask import Response, jsonify, request
 
 from config import Config
 from error_utils import err
@@ -17,7 +21,7 @@ from utils.dates import utcnow
 logger = logging.getLogger(__name__)
 
 
-def _require_env(key):
+def _require_env(key: str) -> str:
     val = os.environ.get(key)
     if not val:
         msg = f"FATAL: Required environment variable '{key}' is not set."
@@ -26,7 +30,7 @@ def _require_env(key):
     return val
 
 
-def _redis_client():
+def _redis_client() -> Any:
     try:
         from cache_utils import get_redis_client
 
@@ -35,7 +39,7 @@ def _redis_client():
         return None
 
 
-def _redis_exists(key):
+def _redis_exists(key: str) -> bool:
     try:
         r = _redis_client()
         if r is not None:
@@ -50,7 +54,7 @@ AUTH_COOKIE_NAME = "auth_token"
 AUTH_COOKIE_MAX_AGE = 86400  # 24 hours
 
 
-def _extract_token():
+def _extract_token() -> str | None:
     # 1. httpOnly cookie (primary method — browser auto-attaches, immune to XSS)
     token = request.cookies.get(AUTH_COOKIE_NAME)
     if token:
@@ -62,7 +66,7 @@ def _extract_token():
     return token
 
 
-def set_auth_cookie(response, user_id, role):
+def set_auth_cookie(response: Response, user_id: str, role: str) -> str:
     token = generate_token(user_id, role)
     response.set_cookie(
         AUTH_COOKIE_NAME,
@@ -76,7 +80,7 @@ def set_auth_cookie(response, user_id, role):
     return token
 
 
-def clear_auth_cookie(response):
+def clear_auth_cookie(response: Response) -> None:
     token = _extract_token()
     if token:
         revoke_token(token)
@@ -95,7 +99,7 @@ def clear_auth_cookie(response):
 SECRET_KEY = Config.SECRET_KEY
 
 
-def generate_token(user_id, role):
+def generate_token(user_id: str, role: str) -> str:
     """Create a signed JWT with user id, role, and unique jti for revocation."""
     payload = {
         "sub": str(user_id),
@@ -107,7 +111,7 @@ def generate_token(user_id, role):
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
-def revoke_token(token):
+def revoke_token(token: str) -> None:
     """Add the token's jti to the Redis revocation blacklist for its remaining lifetime."""
     try:
         if token.startswith("Bearer "):
@@ -131,20 +135,20 @@ def revoke_token(token):
         logger.warning("Revocation token parsing failed: %s", e)
 
 
-def _fetch_current_role(user_id):
+def _fetch_current_role(user_id: str) -> str | None:
     try:
         from models import User, db
 
         if db and db.session:
             user = db.session.get(User, user_id)
             if user:
-                return user.role
+                return user.role  # type: ignore[no-any-return]
     except Exception:
         logger.warning("Failed to fetch current role for user_id=%s", user_id, exc_info=True)
     return None
 
 
-def verify_token(token):
+def verify_token(token: str | None) -> dict[str, Any] | None:
     """Decode and verify a JWT. Checks revocation blacklist and DB role (live role sync)."""
     if not token:
         return None
@@ -167,16 +171,16 @@ def verify_token(token):
         return None
 
 
-def login_required(f):
+def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: requires a valid JWT (cookie/header). Injects request.user."""
 
     @wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         token = _extract_token()
         user_data = verify_token(token)
         if not user_data:
             return err("ERR_TOKEN_INVALID", 401)
-        request.user = user_data
+        request.user = user_data  # type: ignore[attr-defined]
         if not verify_csrf_token():
             return err("ERR_CSRF_FAILED", 403)
         return f(*args, **kwargs)
@@ -184,12 +188,12 @@ def login_required(f):
     return decorated
 
 
-def role_required(allowed_roles):
+def role_required(allowed_roles: list[str]) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator: requires JWT + role membership in allowed_roles (list of strings)."""
 
-    def decorator(f):
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(f)
-        def decorated(*args, **kwargs):
+        def decorated(*args: Any, **kwargs: Any) -> Any:
             token = _extract_token()
             user_data = verify_token(token)
             if not user_data or user_data["role"] not in allowed_roles:
@@ -198,7 +202,7 @@ def role_required(allowed_roles):
                     403,
                     message=f"Unauthorized. Requires role: {allowed_roles}",
                 )
-            request.user = user_data
+            request.user = user_data  # type: ignore[attr-defined]
             if not verify_csrf_token():
                 return err("ERR_CSRF_FAILED", 403)
             return f(*args, **kwargs)
@@ -211,12 +215,14 @@ def role_required(allowed_roles):
 # --- Rate limiting ---
 
 
-def rate_limit(max_requests=60, window_seconds=60, per_user=True):
+def rate_limit(
+    max_requests: int = 60, window_seconds: int = 60, per_user: bool = True
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters."""
 
-    def decorator(f):
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(f)
-        def decorated(*args, **kwargs):
+        def decorated(*args: Any, **kwargs: Any) -> Any:
             r = _redis_client()
             if not r:
                 return f(*args, **kwargs)
@@ -250,7 +256,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
 CSRF_COOKIE_NAME = "csrf_token"
 
 
-def generate_csrf_token():
+def generate_csrf_token() -> Response:
     """Generate a CSRF token and set it as a non-httpOnly cookie."""
     token = uuid.uuid4().hex
     response = jsonify({"csrf_token": token})
@@ -266,7 +272,7 @@ def generate_csrf_token():
     return response
 
 
-def verify_csrf_token():
+def verify_csrf_token() -> bool:
     """Verify the X-CSRF-Token header matches the csrf_token cookie."""
     if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
         return True
@@ -280,11 +286,11 @@ def verify_csrf_token():
     return not (not header_token or not cookie_token or header_token != cookie_token)
 
 
-def csrf_required(f):
+def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: requires valid CSRF token for non-GET requests."""
 
     @wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         if not verify_csrf_token():
             return err("ERR_CSRF_FAILED", 403)
         return f(*args, **kwargs)
@@ -292,7 +298,7 @@ def csrf_required(f):
     return decorated
 
 
-def check_worker_auth(token):
+def check_worker_auth(token: str) -> bool:
     """Verify a worker request using Ed25519 asymmetric signature verification.
 
     The worker signs a nonce with its private key.  The server verifies the
@@ -345,7 +351,7 @@ def check_worker_auth(token):
     return True
 
 
-def jury_access_required(f):
+def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: restricts jury members to only
     access endpoints of challenges they are assigned to.
 
@@ -353,16 +359,16 @@ def jury_access_required(f):
     """
 
     @wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         if not hasattr(request, "user") or not request.user:
             token = _extract_token()
             user_data = verify_token(token)
             if not user_data:
                 return err("ERR_TOKEN_INVALID", 401)
-            request.user = user_data
+            request.user = user_data  # type: ignore[attr-defined]
 
-        user_role = request.user.get("role")
-        user_id = request.user.get("user_id")
+        user_role = request.user["role"]  # type: ignore[attr-defined]
+        user_id = request.user["user_id"]  # type: ignore[attr-defined]
 
         if user_role == "jury":
             challenge_id = kwargs.get("challenge_id")
@@ -409,7 +415,7 @@ def jury_access_required(f):
     return decorated
 
 
-def check_competitor_access(user, challenge_id):
+def check_competitor_access(user: Any, challenge_id: Any) -> bool:
     """Check if a competitor user is assigned to the given challenge."""
     if not user or user.challenge_id is None or challenge_id is None:
         return False

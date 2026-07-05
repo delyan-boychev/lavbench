@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import json
 import logging
 import time
+from typing import Any
 
 from flask import Blueprint, request
+from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
@@ -50,7 +54,7 @@ submissions_bp = Blueprint("submissions", __name__)
 @api.validate(
     tags=["Submissions"], resp=Response(HTTP_200=ParseNotebookResponse, HTTP_422=ErrorResponse)
 )
-def parse_notebook(challenge_id):
+def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResponse, int]:
     """Upload and parse a Jupyter Notebook (.ipynb) to preview cells."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -101,7 +105,9 @@ def parse_notebook(challenge_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_202=SubmitResponse, HTTP_422=ErrorResponse),
 )
-def submit_code(challenge_id, json: SubmitCodeSchema):
+def submit_code(
+    challenge_id: Any, json: SubmitCodeSchema
+) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
     """Submit parsed code cells for a task."""
     import json as jsonlib
 
@@ -268,7 +274,7 @@ def submit_code(challenge_id, json: SubmitCodeSchema):
     tags=["Submissions"],
     security=[{"cookieAuth": []}],
 )
-def get_submissions(challenge_id):
+def get_submissions(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Get paginated submissions for a challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
@@ -334,7 +340,7 @@ def get_submissions(challenge_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=SubmissionResponse, HTTP_422=ErrorResponse),
 )
-def get_submission_detail(submission_id):
+def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[FlaskResponse, int]:
     """Get details of a specific submission."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -370,7 +376,7 @@ def get_submission_detail(submission_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=SelectFinalResponse, HTTP_422=ErrorResponse),
 )
-def select_final_submission(submission_id):
+def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[FlaskResponse, int]:
     """Select a submission as the final one for scoring."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -450,7 +456,9 @@ def select_final_submission(submission_id):
     tags=["Submissions"],
     security=[{"cookieAuth": []}],
 )
-def stream_submission_logs(submission_id):
+def stream_submission_logs(
+    submission_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Stream live logs for a submission using Server-Sent Events (SSE)."""
     from flask import current_app
 
@@ -618,7 +626,9 @@ def stream_submission_logs(submission_id):
     tags=["Submissions"],
     security=[{"cookieAuth": []}],
 )
-def download_competitor_submission(challenge_id, task_id, user_id):
+def download_competitor_submission(
+    challenge_id: Any, task_id: Any, user_id: Any
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Download a competitor's final selection or highest-scoring submission."""
     subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
 

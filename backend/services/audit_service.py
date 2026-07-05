@@ -1,7 +1,10 @@
 """Service-layer audit logging for admin actions."""
 
+from __future__ import annotations
+
 import logging
 import uuid
+from typing import Any
 
 from flask import request
 
@@ -10,13 +13,13 @@ from models import AuditLog, db
 logger = logging.getLogger(__name__)
 
 
-def get_client_ip():
+def get_client_ip() -> str:
     if request.headers.getlist("X-Forwarded-For"):
         return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
     return request.remote_addr or "127.0.0.1"
 
 
-def _clean_details(val):
+def _clean_details(val: Any) -> Any:
     if isinstance(val, dict):
         return {k: _clean_details(v) for k, v in val.items()}
     elif isinstance(val, list):
@@ -27,17 +30,17 @@ def _clean_details(val):
 
 
 def log_action(
-    admin_id,
-    action_type,
-    target_type,
-    target_id=None,
-    details=None,
-    target_user_id=None,
-    task_id=None,
-    old_score=None,
-    new_score=None,
-    reason=None,
-):
+    admin_id: uuid.UUID,
+    action_type: str,
+    target_type: str,
+    target_id: uuid.UUID | str | None = None,
+    details: dict[str, Any] | None = None,
+    target_user_id: uuid.UUID | str | None = None,
+    task_id: uuid.UUID | str | None = None,
+    old_score: float | None = None,
+    new_score: float | None = None,
+    reason: str | None = None,
+) -> None:
     """Log an admin action to the audit_logs table.
 
     Args:

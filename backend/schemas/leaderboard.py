@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 from schemas.exceptions import SchemaError
@@ -5,12 +9,12 @@ from schemas.exceptions import SchemaError
 
 class ManualPointsSchema(BaseModel):
     user_id: str = Field(..., min_length=1)
-    points: dict = Field(..., min_length=1)
+    points: dict[str, Any] = Field(..., min_length=1)
     reason: str | None = Field(default=None)
 
     @field_validator("points")
     @classmethod
-    def validate_point_values(cls, v):
+    def validate_point_values(cls, v: dict[str, int]) -> dict[str, int]:
         for task_id, val in v.items():
             if not isinstance(val, int):
                 raise SchemaError(

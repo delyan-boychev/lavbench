@@ -4,17 +4,20 @@ Provides a lazily-initialized client and helper functions so all callers
 use the same ``docker.from_env()`` instance.
 """
 
+from __future__ import annotations
+
 import logging
 
-import docker
-from docker.errors import DockerException, ImageNotFound
+import docker  # type: ignore[import-untyped]
+from docker import DockerClient
+from docker.errors import DockerException, ImageNotFound  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
-_client = None
+_client: DockerClient | None = None
 
 
-def _get_client():
+def _get_client() -> DockerClient:
     global _client
     if _client is None:
         try:
@@ -25,15 +28,16 @@ def _get_client():
     return _client
 
 
-def check_docker_available():
+def check_docker_available() -> bool:
     """Return ``True`` if the Docker daemon is reachable."""
     try:
-        return _get_client().ping()
+        result: bool = _get_client().ping()
+        return result
     except Exception:
         return False
 
 
-def image_exists(tag):
+def image_exists(tag: str) -> bool:
     """Return ``True`` if a Docker image with *tag* exists locally."""
     try:
         _get_client().images.get(tag)
@@ -44,7 +48,7 @@ def image_exists(tag):
         return False
 
 
-def prune_images():
+def prune_images() -> dict[str, str]:
     """Prune unused Docker images and return a status dict."""
     try:
         result = _get_client().images.prune()

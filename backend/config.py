@@ -1,8 +1,10 @@
 """Application configuration loaded from environment variables."""
 
+from __future__ import annotations
+
 import os
 import sys
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from dotenv import load_dotenv
 
@@ -10,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 
-def _require_env(key, message=None):
+def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
         msg = message or f"Required environment variable '{key}' is not set."
@@ -30,7 +32,7 @@ class Config:
     CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     CELERY_RESULT_EXPIRES = int(os.environ.get("CELERY_RESULT_EXPIRES", 3600))
-    CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict] = {
+    CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
     }
@@ -71,7 +73,7 @@ class Config:
     )
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
-    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = {}
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
         SQLALCHEMY_ENGINE_OPTIONS = {
             "pool_size": 50,

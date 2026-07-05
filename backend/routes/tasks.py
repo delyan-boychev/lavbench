@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import gzip
 import json
@@ -5,8 +7,10 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+from typing import Any
 
 from flask import Blueprint, current_app, request, send_from_directory
+from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.utils import secure_filename
 
@@ -64,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         import uuid
 
         if isinstance(obj, uuid.UUID):
@@ -78,12 +82,11 @@ VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
 
 
-def check_competitor_access(user_id, challenge_id):
-
+def check_competitor_access(user_id: Any, challenge_id: Any) -> bool:
     return ensure_registered(user_id, challenge_id) is not None
 
 
-def check_task_started(task, user_role, user_id):
+def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
     if user_role == "competitor":
         if not check_competitor_access(user_id, task.challenge_id):
             return False
@@ -107,7 +110,7 @@ def check_task_started(task, user_role, user_id):
     return True
 
 
-def to_bool(val):
+def to_bool(val: Any) -> bool | None:
     if val is None:
         return None
     if isinstance(val, str):
@@ -115,7 +118,7 @@ def to_bool(val):
     return bool(val)
 
 
-def to_int(val):
+def to_int(val: Any) -> int | None:
     if val is None or str(val).strip() == "":
         return None
     try:
@@ -124,7 +127,9 @@ def to_int(val):
         return None
 
 
-def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
+def queue_system_submission(
+    task: Any, challenge: Any, code_cells: list[dict[str, Any]], admin_id: Any, priority: int = 8
+) -> None:
     submission = Submission(
         user_id=admin_id,
         challenge_id=challenge.id,
@@ -179,7 +184,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     db.session.commit()
 
 
-def _maybe_queue_baseline(task, challenge, admin_id):
+def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
     """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
     # Remove old baseline submissions for this task and their physical files
     import os
@@ -218,7 +223,7 @@ def _maybe_queue_baseline(task, challenge, admin_id):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def get_task(task_id):
+def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """API endpoint."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -239,7 +244,9 @@ def get_task(task_id):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def create_task(challenge_id, form: CreateTaskMetaSchema):
+def create_task(
+    challenge_id: Any, form: CreateTaskMetaSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Create a new evaluation task with resource limits, metrics, and test data files."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -499,7 +506,9 @@ def create_task(challenge_id, form: CreateTaskMetaSchema):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def update_task(task_id, form: UpdateTaskMetaSchema):
+def update_task(
+    task_id: Any, form: UpdateTaskMetaSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Update an existing task configuration including files and evaluator scripts."""
     task = db.get_or_404(Task, task_id)
     fields = form.model_fields_set
@@ -662,7 +671,7 @@ def update_task(task_id, form: UpdateTaskMetaSchema):
     if len(current_files) + len(new_files_keys) > 5:
         return err("ERR_TOO_MANY_FILES", 400)
 
-    newly_saved_paths = []
+    newly_saved_paths: list[str] = []
 
     for key in new_files_keys:
         uploaded_file = request.files[key]
@@ -771,7 +780,7 @@ def update_task(task_id, form: UpdateTaskMetaSchema):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def delete_task(task_id):
+def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a task and all its submissions from a challenge."""
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
@@ -824,7 +833,9 @@ def delete_task(task_id):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def download_task_file(task_id, filename):
+def download_task_file(
+    task_id: Any, filename: str
+) -> FlaskResponse | tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Download a resource file attached to a task."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -889,7 +900,9 @@ def download_task_file(task_id, filename):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def submit_task(task_id, json: SelectedCellsSchema):
+def submit_task(
+    task_id: Any, json: SelectedCellsSchema
+) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
     """Submit code cells for execution under a specific task."""
     import json as jsonlib
 
@@ -996,7 +1009,7 @@ def submit_task(task_id, json: SelectedCellsSchema):
             200,
             message=err_msg,
             submission_id=submission.id,
-            status=submission.status,
+            submission_status=submission.status,
         )
 
     priority = calculate_submission_priority(user_id, user_role)
@@ -1078,8 +1091,14 @@ def submit_task(task_id, json: SelectedCellsSchema):
 
 
 def _get_task_submissions_data(
-    task_id, user_role, user_id, page=1, per_page=10, filter_user_id=None, baseline=False
-):
+    task_id: Any,
+    user_role: str,
+    user_id: Any,
+    page: int = 1,
+    per_page: int = 10,
+    filter_user_id: Any | None = None,
+    baseline: bool = False,
+) -> dict[str, Any]:
     task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
@@ -1129,7 +1148,7 @@ def _get_task_submissions_data(
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def get_task_submissions(task_id):
+def get_task_submissions(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """List submissions for a specific task with pagination."""
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -1146,8 +1165,9 @@ def get_task_submissions(task_id):
     return data
 
 
-def _get_task_leaderboard_data(task_id, user_role, current_user_id):
-
+def _get_task_leaderboard_data(
+    task_id: Any, user_role: str, current_user_id: Any
+) -> dict[str, Any]:
     return get_task_leaderboard_data(task_id, user_role, current_user_id)
 
 
@@ -1159,7 +1179,9 @@ def _get_task_leaderboard_data(task_id, user_role, current_user_id):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def get_task_leaderboard(task_id):
+def get_task_leaderboard(
+    task_id: Any,
+) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Get cached leaderboard data for a specific task."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1185,7 +1207,9 @@ def get_task_leaderboard(task_id):
     tags=["SSE Streaming"],
     security=[{"cookieAuth": []}],
 )
-def stream_task_leaderboard(task_id):
+def stream_task_leaderboard(
+    task_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Stream live task leaderboard updates via SSE."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1239,7 +1263,9 @@ def stream_task_leaderboard(task_id):
     tags=["SSE Streaming"],
     security=[{"cookieAuth": []}],
 )
-def stream_task_submissions(task_id):
+def stream_task_submissions(
+    task_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Stream live task submission updates via SSE."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
@@ -1310,7 +1336,7 @@ def stream_task_submissions(task_id):
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
-def get_worker_status():
+def get_worker_status() -> dict[str, Any]:
     """Get current worker cluster health status with specs."""
     return _get_worker_status_data()
 
@@ -1318,7 +1344,7 @@ def get_worker_status():
 @tasks_bp.route("/worker-status/live", methods=["GET"])
 @login_required
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_worker_status():
+def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
     """Stream worker cluster health status via SSE."""
 
     def event_generator():
@@ -1360,7 +1386,7 @@ def stream_worker_status():
     return sse_response(event_generator)
 
 
-def _get_worker_status_data():
+def _get_worker_status_data() -> dict[str, Any]:
 
     def _compute():
         import json as json_lib
@@ -1432,7 +1458,9 @@ def _get_worker_status_data():
     ),
     tags=["Tasks"],
 )
-def report_worker_progress(submission_id):
+def report_worker_progress(
+    submission_id: Any,
+) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     """Worker callback to report submission status and scores."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1506,7 +1534,9 @@ def report_worker_progress(submission_id):
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
-def worker_download_task_file(task_id, filename):
+def worker_download_task_file(
+    task_id: Any, filename: str
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Worker endpoint to securely download task resource files."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1550,7 +1580,7 @@ def worker_download_task_file(task_id, filename):
     resp=Response(HTTP_200=WorkerActiveTasksResponse, HTTP_401=ErrorResponse),
     tags=["Tasks"],
 )
-def get_active_tasks():
+def get_active_tasks() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """List all active task configurations for worker image pre-building."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1563,7 +1593,7 @@ def get_active_tasks():
 
     for challenge in active_challenges:
         for task in challenge.tasks:
-            hf_datasets_list = []
+            hf_datasets_list: list[str] = []
             if task.hf_datasets:
                 with contextlib.suppress(Exception):
                     hf_datasets_list = (
@@ -1571,7 +1601,7 @@ def get_active_tasks():
                         if isinstance(task.hf_datasets, str)
                         else (task.hf_datasets or [])
                     )
-            hf_models_list = []
+            hf_models_list: list[str] = []
             if task.hf_models:
                 with contextlib.suppress(Exception):
                     hf_models_list = (
@@ -1599,7 +1629,7 @@ def get_active_tasks():
     resp=Response(HTTP_200=WorkerActiveDatasetsResponse, HTTP_401=ErrorResponse),
     tags=["Tasks"],
 )
-def get_active_datasets():
+def get_active_datasets() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """List all HuggingFace datasets used by active challenges for worker preloading."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1662,7 +1692,7 @@ def get_active_datasets():
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
 @api.validate(tags=["Tasks"])
-def get_task_hf_key(task_id):
+def get_task_hf_key(task_id: Any) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1679,7 +1709,7 @@ def get_task_hf_key(task_id):
 @tasks_bp.route("/workers/logs", methods=["POST"])
 @rate_limit(max_requests=12, window_seconds=60, per_user=False)
 @api.validate(tags=["Tasks"])
-def receive_worker_logs():
+def receive_worker_logs() -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)

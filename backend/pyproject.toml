@@ -24,6 +24,52 @@ Repository = "https://github.com/delyan-boychev/lavbench"
 requires = ["setuptools>=82.0.1"]
 build-backend = "setuptools.build_meta:__legacy__"
 
+[tool.mypy]
+strict = true
+python_version = "3.12"
+show_error_codes = true
+exclude = [
+    "tests/",
+    "scripts/",
+    "examples/",
+    "reset_for_fresh_start.py",
+    "setup-admin.py",
+    "conftest.py",
+]
+plugins = ["pydantic.mypy"]
+enable_error_code = ["ignore-without-code"]
+
+[[tool.mypy.overrides]]
+module = "routes/*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+# Flask sets request.user at runtime via middleware; SQLAlchemy relationship iteration
+# is a known stub limitation; form data arrives as str|None, etc.
+disable_error_code = ["attr-defined", "arg-type", "return-value", "union-attr", "no-any-return", "import-untyped"]
+
+[[tool.mypy.overrides]]
+module = "models/*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "tasks"
+disallow_untyped_defs = false
+disallow_untyped_decorators = false
+disable_error_code = ["attr-defined", "assignment", "arg-type", "import-untyped"]
+
+[[tool.mypy.overrides]]
+module = "evaluation_engine"
+disallow_untyped_defs = false
+disable_error_code = ["import-untyped", "no-untyped-call", "no-any-return", "assignment"]
+
+[[tool.mypy.overrides]]
+module = "utils.sse"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "task_modules.submission_runner"
+disable_error_code = ["attr-defined", "return-value", "union-attr", "no-redef", "assignment", "untyped-decorator", "no-any-return", "import-untyped"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

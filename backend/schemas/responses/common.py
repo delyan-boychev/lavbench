@@ -1,5 +1,7 @@
 """Shared response models — error, pagination, small reusable shapes."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from schemas.responses._base import RESPONSE_CONFIG

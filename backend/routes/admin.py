@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import csv
 import io
@@ -12,6 +14,7 @@ import tempfile
 import time
 import zipfile
 from datetime import datetime
+from typing import Any
 
 from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
@@ -74,11 +77,11 @@ admin_bp = Blueprint("admin", __name__)
 @api.validate(
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=AvailableMetricsResponse)
 )
-def get_available_metrics():
+def get_available_metrics() -> AvailableMetricsResponse:
     return AvailableMetricsResponse(root=AVAILABLE_METRICS)
 
 
-def transliterate_bulgarian(text):
+def transliterate_bulgarian(text: str) -> str:
     if not text:
         return ""
     mapping = {
@@ -116,7 +119,7 @@ def transliterate_bulgarian(text):
     return "".join(mapping.get(c, c) for c in text.lower())
 
 
-def generate_unique_username(name, surname, role="competitor"):
+def generate_unique_username(name: str, surname: str, role: str = "competitor") -> str:
     trans_name = transliterate_bulgarian(name)
     trans_surname = transliterate_bulgarian(surname)
     norm_name = re.sub(r"[^a-zA-Z0-9]", "", trans_name)
@@ -139,7 +142,7 @@ def generate_unique_username(name, surname, role="competitor"):
     return f"{base}_{suffix}"
 
 
-def generate_random_password(length=12):
+def generate_random_password(length: int = 12) -> str:
     chars = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(chars) for _ in range(length))
 
@@ -157,7 +160,9 @@ def generate_random_password(length=12):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_201=RegisterUserResponse, HTTP_422=ErrorResponse),
 )
-def register_competitor(json: RegisterCompetitorSchema):
+def register_competitor(
+    json: RegisterCompetitorSchema,
+) -> tuple[RegisterUserResponse, int] | tuple[FlaskResponse, int]:
     name, surname, middle_name = json.name, json.surname, json.middle_name
     birth_date, grade, school, city = json.birth_date, json.grade, json.school, json.city
     challenge_id = json.challenge_id
@@ -233,7 +238,7 @@ def register_competitor(json: RegisterCompetitorSchema):
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
-def get_users():
+def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     page, per_page = extract_pagination(request, default_per_page=10, max_per_page=100)
     role_filter = request.args.get("role")
     challenge_id_filter = request.args.get("challenge_id")
@@ -335,7 +340,7 @@ def get_users():
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=MessageResponse, HTTP_422=ErrorResponse),
 )
-def delete_user(user_id):
+def delete_user(user_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     if str(request.user["user_id"]) == str(user_id):
         return err("ERR_CANNOT_DELETE_SELF", 400)
 
@@ -376,7 +381,9 @@ def delete_user(user_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_201=RegisterUserResponse, HTTP_422=ErrorResponse),
 )
-def register_user(json: CreateUserSchema):
+def register_user(
+    json: CreateUserSchema,
+) -> tuple[RegisterUserResponse, int] | tuple[FlaskResponse, int]:
     username, email, password = json.username, json.email, json.password
     name, surname, middle_name = json.name, json.surname, json.middle_name
     birth_date, grade, school, city = json.birth_date, json.grade, json.school, json.city
@@ -489,7 +496,7 @@ def register_user(json: CreateUserSchema):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_201=ImportCompetitorsResponse, HTTP_422=ErrorResponse),
 )
-def import_competitors_csv():
+def import_competitors_csv() -> tuple[ImportCompetitorsResponse, int] | tuple[FlaskResponse, int]:
     challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
     if not challenge_id:
         return err(
@@ -696,7 +703,7 @@ def import_competitors_csv():
 BACKUPS_DIR = Config.BACKUPS_DIR
 
 
-def _list_backup_files(directory):
+def _list_backup_files(directory: str) -> list[dict[str, Any]]:
     if not os.path.isdir(directory):
         return []
     files = []
@@ -731,7 +738,7 @@ def _list_backup_files(directory):
 @api.validate(
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=BackupListResponse)
 )
-def list_backups():
+def list_backups() -> BackupListResponse:
     return BackupListResponse(backups=_list_backup_files(BACKUPS_DIR))
 
 
@@ -741,7 +748,7 @@ def list_backups():
 @api.validate(
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_202=BackupStartResponse)
 )
-def force_backup():
+def force_backup() -> BackupStartResponse | tuple[BackupStartResponse, int]:
     log_audit(request.user["user_id"], "create", "backup", details={"auto": False})
     from tasks import run_backup
 
@@ -752,7 +759,7 @@ def force_backup():
 @admin_bp.route("/backups/live", methods=["GET"])
 @role_required(["admin"])
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_backup_status():
+def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -801,7 +808,9 @@ def stream_backup_status():
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
-def download_backup_file(filename):
+def download_backup_file(
+    filename: str,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
         return err("ERR_INVALID_PATH", 403)
@@ -826,7 +835,7 @@ def download_backup_file(filename):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=MessageResponse, HTTP_422=ErrorResponse),
 )
-def delete_backup_file(filename):
+def delete_backup_file(filename: str) -> MessageResponse | tuple[FlaskResponse, int]:
     if filename.startswith("auto_"):
         return err("ERR_NO_AUTO_BACKUP_DELETE", 403)
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
@@ -846,7 +855,7 @@ def delete_backup_file(filename):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=AuditLinkListResponse, HTTP_422=ErrorResponse),
 )
-def get_audit_logs():
+def get_audit_logs() -> AuditLinkListResponse | tuple[FlaskResponse, int]:
     page, per_page = extract_pagination(request, default_per_page=15, max_per_page=100)
     challenge_id = request.args.get("challenge_id")
     action_type = request.args.get("action_type")
@@ -901,7 +910,9 @@ def get_audit_logs():
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=UpdateUserResponse, HTTP_422=ErrorResponse),
 )
-def update_user(user_id, json: UpdateUserSchema):
+def update_user(
+    user_id: Any, json: UpdateUserSchema
+) -> UpdateUserResponse | tuple[FlaskResponse, int]:
     user = db.get_or_404(User, user_id)
     current_role = request.user["role"]
     old_challenge_id = user.challenge_id
@@ -1075,7 +1086,7 @@ def update_user(user_id, json: UpdateUserSchema):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=ResetPasswordResponse, HTTP_422=ErrorResponse),
 )
-def reset_user_password(user_id):
+def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResponse, int]:
     user = db.get_or_404(User, user_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == "jury" and user.challenge_id:
@@ -1111,7 +1122,9 @@ def reset_user_password(user_id):
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_200=BulkResetPasswordResponse, HTTP_422=ErrorResponse),
 )
-def reset_all_challenge_passwords(challenge_id):
+def reset_all_challenge_passwords(
+    challenge_id: Any,
+) -> BulkResetPasswordResponse | tuple[FlaskResponse, int]:
     challenge = db.get_or_404(Challenge, challenge_id)
     # Check if competition has started and requester is jury
     if request.user["role"] == "jury" and challenge.is_started:
@@ -1168,7 +1181,7 @@ def reset_all_challenge_passwords(challenge_id):
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
-def download_scores_csv(challenge_id):
+def download_scores_csv(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
         return err("ERR_SCORES_NOT_FINALIZED", 400)
@@ -1193,7 +1206,9 @@ def download_scores_csv(challenge_id):
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
-def download_submissions_zip(challenge_id):
+def download_submissions_zip(
+    challenge_id: Any,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """
     Download completed competitor submissions as a ZIP archive.
     Allows anonymized downloads when a stage or the competition has ended,
@@ -1214,7 +1229,7 @@ def download_submissions_zip(challenge_id):
             return err("ERR_STAGE_MISMATCH", 400)
         tasks = [t for t in challenge.tasks if t.stage_id == stage.id]
     else:
-        tasks = challenge.tasks
+        tasks = list(challenge.tasks)
 
     # 2. Check if download is allowed
     # Allowed if finalized OR (if stage_id provided,
@@ -1247,7 +1262,7 @@ def download_submissions_zip(challenge_id):
         Submission.user_id.in_(comp_ids),
         Submission.status == "completed",
     ).all()
-    subs_by_key = {}
+    subs_by_key: dict[tuple[int, int], list[Submission]] = {}
     for s in all_subs:
         subs_by_key.setdefault((s.user_id, s.task_id), []).append(s)
 
@@ -1344,14 +1359,14 @@ def download_submissions_zip(challenge_id):
 @api.validate(
     resp=Response(HTTP_200=WorkerStatsResponse), tags=["Admin"], security=[{"cookieAuth": []}]
 )
-def get_detailed_worker_stats():
+def get_detailed_worker_stats() -> dict[str, Any]:
     return _get_worker_stats_response()
 
 
 @admin_bp.route("/workers/stats/live", methods=["GET"])
 @role_required(["admin", "jury"])
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_worker_stats():
+def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -1395,7 +1410,7 @@ def stream_worker_stats():
     return sse_response(event_generator)
 
 
-def _get_worker_stats_response():
+def _get_worker_stats_response() -> dict[str, Any]:
 
     def _compute():
         import platform
@@ -1584,7 +1599,7 @@ def _get_worker_stats_response():
 @api.validate(
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=DeadLetterListResponse)
 )
-def get_dead_letters():
+def get_dead_letters() -> tuple[DeadLetterListResponse, int]:
     r = get_redis_client()
     if not r:
         return DeadLetterListResponse(items=[]), 200

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+from typing import Any
 
 EXTENSION_MAP = {
     ".ipynb": "notebook",
@@ -57,7 +60,7 @@ KNOWN_DANGEROUS_MAGIC = [
 ]
 
 
-def validate_extension(filename, allowed_extensions):
+def validate_extension(filename: str, allowed_extensions: set[str]) -> tuple[bool, str | None]:
     """Case-insensitive extension check. Returns (is_valid, error_msg)."""
     if not filename or "." not in filename:
         return False, "Filename has no extension."
@@ -71,7 +74,7 @@ def validate_extension(filename, allowed_extensions):
     return True, None
 
 
-def validate_mime_type(mimetype, allowed_mime_types):
+def validate_mime_type(mimetype: str, allowed_mime_types: set[str]) -> tuple[bool, str | None]:
     """Validate MIME type from request.files[].mimetype."""
     if not mimetype or mimetype == "application/octet-stream":
         return True, None
@@ -80,7 +83,9 @@ def validate_mime_type(mimetype, allowed_mime_types):
     return True, None
 
 
-def validate_notebook_content(content_bytes):
+def validate_notebook_content(
+    content_bytes: bytes,
+) -> tuple[bool, str | None, dict[str, Any] | None]:
     """Validate that content is a valid Jupyter Notebook JSON structure.
     Returns (is_valid, error_msg, parsed_notebook)."""
     try:
@@ -110,7 +115,7 @@ def validate_notebook_content(content_bytes):
     return True, None, notebook
 
 
-def validate_csv_content(content_bytes):
+def validate_csv_content(content_bytes: bytes) -> tuple[bool, str | None, str | None]:
     """Validate that content is valid CSV with text content."""
     try:
         text = content_bytes.decode("utf-8")
@@ -121,7 +126,7 @@ def validate_csv_content(content_bytes):
     return True, None, text
 
 
-def check_dangerous_magic(content_bytes):
+def check_dangerous_magic(content_bytes: bytes) -> tuple[bool, str | None]:
     """Check file header bytes for known dangerous signatures.
     Returns (is_dangerous, description) or (False, None) if safe."""
     header = content_bytes[:8]
@@ -131,7 +136,7 @@ def check_dangerous_magic(content_bytes):
     return False, None
 
 
-def check_dangerous_extension(filename):
+def check_dangerous_extension(filename: str) -> bool:
     """Check if the filename has a known dangerous extension."""
     ext = "." + filename.rsplit(".", 1)[1].lower() if "." in filename else ""
     return ext in KNOWN_DANGEROUS_EXTENSIONS

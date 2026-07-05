@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 import json
 import re
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from schemas.exceptions import SchemaError
 
 
-def _coerce_bool(v):
+def _coerce_bool(v: Any) -> bool:
     if isinstance(v, str):
         return v.lower() in ("true", "1", "yes", "on")
     return bool(v) if v is not None else False
 
 
-def _coerce_int(v, default=None):
+def _coerce_int(v: Any, default: int | None = None) -> int | None:
     if v is None or str(v).strip() == "":
         return default
     return int(v)
@@ -28,7 +31,9 @@ DOCKER_IMAGE_RE = re.compile(
 )
 
 
-def _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_DATASETS"):
+def _validate_hf_json_list(
+    v: Any, max_items: int = 5, err_code: str = "ERR_INVALID_HF_DATASETS"
+) -> list[str] | None:
     if v is None or str(v).strip() == "":
         return None
     if isinstance(v, str):
@@ -48,7 +53,7 @@ def _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_DATASETS"):
     return parsed
 
 
-def _validate_metrics_config_json(v):
+def _validate_metrics_config_json(v: Any) -> dict[str, Any] | None:
     if v is None or str(v).strip() == "":
         return None
     if isinstance(v, str):
@@ -93,14 +98,14 @@ def _validate_metrics_config_json(v):
 class _TaskMetaValidators:
     @field_validator("gpu_required", "ban_magic_commands", mode="before")
     @classmethod
-    def _coerce_bools(cls, v):
+    def _coerce_bools(cls, v: Any) -> bool | None:
         if v is None:
             return None
         return _coerce_bool(v)
 
     @field_validator("public_eval_percentage", mode="before")
     @classmethod
-    def _coerce_pct(cls, v):
+    def _coerce_pct(cls, v: Any) -> int | None:
         if v is None or str(v).strip() == "":
             return None
         return _coerce_int(v)
@@ -113,25 +118,29 @@ class _TaskMetaValidators:
         mode="before",
     )
     @classmethod
-    def _coerce_ints(cls, v):
+    def _coerce_ints(cls, v: Any) -> int | None:
         if v is None or str(v).strip() == "":
             return None
         return _coerce_int(v)
 
     @field_validator("base_docker_image", mode="before")
     @classmethod
-    def _validate_docker_image(cls, v):
+    def _validate_docker_image(cls, v: Any) -> str | None:
         if v is None or str(v).strip() == "":
             return None
+        if not isinstance(v, str):
+            raise SchemaError("ERR_INVALID_DOCKER_IMAGE", "Docker image must be a string.")
         if not DOCKER_IMAGE_RE.match(v):
             raise SchemaError("ERR_INVALID_DOCKER_IMAGE", f"Invalid Docker image format: '{v}'.")
         return v
 
     @field_validator("apt_packages", mode="before")
     @classmethod
-    def _validate_apt_packages(cls, v):
+    def _validate_apt_packages(cls, v: Any) -> str | None:
         if v is None or str(v).strip() == "":
             return None
+        if not isinstance(v, str):
+            raise SchemaError("ERR_INVALID_APT_PACKAGE", "APT packages must be a string.")
         for pkg in v.replace(",", " ").split():
             pkg = pkg.strip()
             if pkg and not APT_PACKAGE_RE.match(pkg):
@@ -140,9 +149,11 @@ class _TaskMetaValidators:
 
     @field_validator("pip_requirements", mode="before")
     @classmethod
-    def _validate_pip_requirements(cls, v):
+    def _validate_pip_requirements(cls, v: Any) -> str | None:
         if v is None or str(v).strip() == "":
             return None
+        if not isinstance(v, str):
+            raise SchemaError("ERR_INVALID_PIP_REQUIREMENT", "Pip requirements must be a string.")
         for line in v.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -155,24 +166,24 @@ class _TaskMetaValidators:
 
     @field_validator("hf_datasets", mode="before")
     @classmethod
-    def _validate_hf_datasets(cls, v):
+    def _validate_hf_datasets(cls, v: Any) -> list[str] | None:
         return _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_DATASETS")
 
     @field_validator("hf_models", mode="before")
     @classmethod
-    def _validate_hf_models(cls, v):
+    def _validate_hf_models(cls, v: Any) -> list[str] | None:
         return _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_MODELS")
 
     @field_validator("metrics_config", mode="before")
     @classmethod
-    def _validate_metrics_config(cls, v):
+    def _validate_metrics_config(cls, v: Any) -> dict[str, Any] | None:
         return _validate_metrics_config_json(v)
 
 
 class _TaskMetaDeleteValidators:
     @field_validator("delete_evaluator", "delete_baseline", mode="before")
     @classmethod
-    def _coerce_delete_bools(cls, v):
+    def _coerce_delete_bools(cls, v: Any) -> bool | None:
         if v is None:
             return None
         return _coerce_bool(v)
@@ -192,7 +203,7 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     whitelisted_imports: str | None = Field(default=None)
     hf_datasets: list[str] | None = Field(default=None)
     hf_models: list[str] | None = Field(default=None)
-    metrics_config: dict | None = Field(default=None)
+    metrics_config: dict[str, Any] | None = Field(default=None)
     public_eval_percentage: int | None = Field(default=None, ge=0, le=100)
     max_submissions_per_period: int | None = Field(default=None, ge=1)
     submission_period_hours: int | None = Field(default=None, ge=1)
@@ -213,7 +224,7 @@ class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel)
     whitelisted_imports: str | None = Field(default=None)
     hf_datasets: list[str] | None = Field(default=None)
     hf_models: list[str] | None = Field(default=None)
-    metrics_config: dict | None = Field(default=None)
+    metrics_config: dict[str, Any] | None = Field(default=None)
     public_eval_percentage: int | None = Field(default=None, ge=0, le=100)
     max_submissions_per_period: int | None = Field(default=None, ge=1)
     submission_period_hours: int | None = Field(default=None, ge=1)

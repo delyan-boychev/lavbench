@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import json
@@ -7,6 +9,7 @@ import shutil
 import zipfile
 import zoneinfo
 from datetime import datetime
+from typing import Any
 
 from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
@@ -52,7 +55,9 @@ logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
 
 
-def _check_and_add_active_stage(stage, now, active_stage_ids):
+def _check_and_add_active_stage(
+    stage: dict[str, Any], now: datetime, active_stage_ids: list[str]
+) -> None:
     st_start_str = stage.get("start_time")
     st_start = None
     try:
@@ -68,7 +73,7 @@ def _check_and_add_active_stage(stage, now, active_stage_ids):
         logger.warning("Failed to parse regular stage dates: %s", e)
 
 
-def filter_challenge_for_competitor(challenge_dict):
+def filter_challenge_for_competitor(challenge_dict: dict[str, Any]) -> dict[str, Any]:
     challenge_dict = dict(challenge_dict)
     now = utcnow()
 
@@ -123,7 +128,7 @@ def filter_challenge_for_competitor(challenge_dict):
 
     regular_stages = [s for s in challenge_dict.get("stages", []) if not s.get("is_test")]
     has_stages = len(regular_stages) > 0
-    active_stage_ids = []
+    active_stage_ids: list[str] = []
     if has_stages:
         for s in regular_stages:
             _check_and_add_active_stage(s, now, active_stage_ids)
@@ -151,7 +156,7 @@ def filter_challenge_for_competitor(challenge_dict):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def get_challenges():
+def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
     """List all available challenges with their tasks and stages."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -237,7 +242,7 @@ def get_challenges():
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def get_challenge(challenge_id):
+def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Get detailed information about a specific challenge."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
@@ -278,7 +283,7 @@ def get_challenge(challenge_id):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def create_challenge(json: CreateChallengeSchema):
+def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Create a new competition with start/end times, resource limits, and privacy settings."""
     title, description = json.title, json.description
     max_eval_requests, ram_limit_mb, time_limit_sec = (
@@ -334,7 +339,7 @@ def create_challenge(json: CreateChallengeSchema):
     return challenge.to_dict(), 201
 
 
-def _create_test_stage_for_challenge(challenge, start_time, end_time):
+def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: Any) -> Any:
     """Create a test stage with warm-up task for the given challenge."""
     tz = challenge.timezone or "UTC"
     start_time = _to_utc(start_time, tz)
@@ -445,7 +450,9 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def update_challenge(challenge_id, json: UpdateChallengeSchema):
+def update_challenge(
+    challenge_id: Any, json: UpdateChallengeSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Update the configuration of an existing challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -514,7 +521,7 @@ def update_challenge(challenge_id, json: UpdateChallengeSchema):
 @api.validate(
     resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
 )
-def delete_challenge(challenge_id):
+def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Permanently delete a challenge and all its tasks, submissions, and backups."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -560,7 +567,9 @@ def delete_challenge(challenge_id):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def finalize_challenge(challenge_id, json: RevealResultsSchema):
+def finalize_challenge(
+    challenge_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Finalize the competition scores. Locks rankings and reveals competitor identities."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if challenge.scores_finalized:
@@ -633,7 +642,9 @@ def finalize_challenge(challenge_id, json: RevealResultsSchema):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def toggle_reveal_results(challenge_id, json: RevealResultsSchema):
+def toggle_reveal_results(
+    challenge_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
@@ -655,7 +666,7 @@ def toggle_reveal_results(challenge_id, json: RevealResultsSchema):
 @api.validate(
     resp=Response(HTTP_200=ArchiveResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
 )
-def archive_challenge(challenge_id):
+def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle archive state. Archived challenges are hidden from competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
@@ -687,7 +698,9 @@ def archive_challenge(challenge_id):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def create_stage(challenge_id, json: CreateStageSchema):
+def create_stage(
+    challenge_id: Any, json: CreateStageSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Add a new stage to a challenge with its own deadline and score visibility rules."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -754,7 +767,9 @@ def create_stage(challenge_id, json: CreateStageSchema):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def update_stage(challenge_id, stage_id, json: UpdateStageSchema):
+def update_stage(
+    challenge_id: Any, stage_id: Any, json: UpdateStageSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Update an existing stage configuration."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -813,7 +828,9 @@ def update_stage(challenge_id, stage_id, json: UpdateStageSchema):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def toggle_stage_reveal_results(challenge_id, stage_id, json: RevealResultsSchema):
+def toggle_stage_reveal_results(
+    challenge_id: Any, stage_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle reveal_results on a finalized stage."""
     db.get_or_404(Challenge, challenge_id)
 
@@ -837,7 +854,7 @@ def toggle_stage_reveal_results(challenge_id, stage_id, json: RevealResultsSchem
 @api.validate(
     resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
 )
-def delete_stage(challenge_id, stage_id):
+def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a stage from a challenge."""
     db.get_or_404(Challenge, challenge_id)
 
@@ -873,7 +890,9 @@ def delete_stage(challenge_id, stage_id):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def finalize_stage(challenge_id, stage_id, json: RevealResultsSchema):
+def finalize_stage(
+    challenge_id: Any, stage_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Finalize a specific stage. Locks stage scores."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -951,7 +970,9 @@ def finalize_stage(challenge_id, stage_id, json: RevealResultsSchema):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def create_test_stage(challenge_id, json: CreateTestStageSchema):
+def create_test_stage(
+    challenge_id: Any, json: CreateTestStageSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Create a test stage before the competition starts for testing purposes."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
@@ -1004,7 +1025,7 @@ def create_test_stage(challenge_id, json: CreateTestStageSchema):
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
-def export_results(challenge_id):
+def export_results(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
     """Export comprehensive competition results as CSV with ranks, scores, and audit log."""
     challenge = db.get_or_404(Challenge, challenge_id)
     csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
@@ -1023,7 +1044,9 @@ def export_results(challenge_id):
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
-def export_challenge(challenge_id):
+def export_challenge(
+    challenge_id: Any,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Export a challenge configuration as ZIP, including tasks, stages, and uploaded files."""
 
     challenge = db.get_or_404(Challenge, challenge_id)
@@ -1065,7 +1088,7 @@ def export_challenge(challenge_id):
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def import_challenge():
+def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Import a challenge configuration from a ZIP archive."""
     if not request.content_type or "multipart/form-data" not in request.content_type:
         return err("ERR_INVALID_UPLOAD_FORMAT", 400)
@@ -1150,7 +1173,9 @@ def import_challenge():
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def download_audit_logs(challenge_id):
+def download_audit_logs(
+    challenge_id: Any,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Download challenge audit logs dynamically as a JSON stream."""
     import json
     import tempfile

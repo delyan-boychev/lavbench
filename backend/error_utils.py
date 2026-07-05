@@ -1,4 +1,8 @@
-from flask import jsonify
+from __future__ import annotations
+
+from typing import Any
+
+from flask import Response, jsonify
 
 # ruff: noqa: E501
 
@@ -167,9 +171,11 @@ DEFAULT_ERROR_MESSAGES = {
 }
 
 
-def err(code, status=400, message=None, **extra):
+def err(
+    code: str, status: int = 400, message: str | None = None, **extra: Any
+) -> tuple[Response, int]:
     if message is None:
         message = DEFAULT_ERROR_MESSAGES.get(code, "An error occurred.")
-    response = {"error": message, "code": code}
+    response: dict[str, Any] = {"error": message, "code": code}
     response.update(extra)
     return jsonify(response), status
