@@ -1051,6 +1051,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "last_seen": time.time(),
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
+        r.delete("worker:status:detailed", "worker:status:summary")
         global _cached_worker_spec, _cached_worker_name
         _cached_worker_spec = spec
         _cached_worker_name = worker_name
@@ -1093,12 +1094,14 @@ def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
                 spec = json.loads(spec_data)
                 spec["last_seen"] = time.time()
                 r.set(key, json.dumps(spec), ex=604800)
+                r.delete("worker:status:detailed", "worker:status:summary")
         else:
             # Redis was restarted or key expired — recreate from in-memory cache
             global _cached_worker_spec, _cached_worker_name
             if _cached_worker_spec and _cached_worker_name == worker_name:
                 _cached_worker_spec["last_seen"] = time.time()
                 r.set(key, json.dumps(_cached_worker_spec), ex=604800)
+                r.delete("worker:status:detailed", "worker:status:summary")
                 logger.info("Recreated worker spec for %s after Redis restart", worker_name)
     except Exception as e:
         logger.debug("Failed to refresh worker spec heartbeat: %s", e)
