@@ -1855,12 +1855,22 @@ export default function AdminPanel() {
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                              <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
-                                {t('admin.stages.edit')}
-                              </Button>
-                              <Button variant="secondary" onClick={() => handleArchiveToggle(c.id)}>
-                                {c.is_archived ? t('admin.restore') : t('admin.archive')}
-                              </Button>
+                              {currentUser.role === 'admin' && (
+                                <>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => setEditingChallenge(c)}
+                                  >
+                                    {t('admin.stages.edit')}
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => handleArchiveToggle(c.id)}
+                                  >
+                                    {c.is_archived ? t('admin.restore') : t('admin.archive')}
+                                  </Button>
+                                </>
+                              )}
 
                               {c.scores_finalized && (
                                 <Button
@@ -1930,12 +1940,14 @@ export default function AdminPanel() {
                               >
                                 {t('admin.export_short', 'Export')}
                               </Button>
-                              <Button
-                                variant="danger"
-                                onClick={() => handleDeleteChallenge(c.id, c.title)}
-                              >
-                                {t('admin.stages.delete')}
-                              </Button>
+                              {currentUser.role === 'admin' && (
+                                <Button
+                                  variant="danger"
+                                  onClick={() => handleDeleteChallenge(c.id, c.title)}
+                                >
+                                  {t('admin.stages.delete')}
+                                </Button>
+                              )}
                             </div>
                           </div>
 
@@ -2309,15 +2321,14 @@ export default function AdminPanel() {
           )}
 
           {/* 3. CREATE NEW COMPETITIONS */}
-          {adminSubTab === 'challenge-config' &&
-            (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-              <ChallengeConfig
-                handleCreateChallenge={handleCreateChallenge}
-                newChallenge={newChallenge}
-                setNewChallenge={setNewChallenge}
-                timezones={TIMEZONES}
-              />
-            )}
+          {adminSubTab === 'challenge-config' && currentUser.role === 'admin' && (
+            <ChallengeConfig
+              handleCreateChallenge={handleCreateChallenge}
+              newChallenge={newChallenge}
+              setNewChallenge={setNewChallenge}
+              timezones={TIMEZONES}
+            />
+          )}
 
           {/* 4. COMPETITOR REGISTRATION MODULE (JURY/ADMIN) */}
           {adminSubTab === 'competitor-reg' && (
