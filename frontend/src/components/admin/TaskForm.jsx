@@ -43,7 +43,7 @@ export default function TaskForm({
       : !editingTask?.baselineDeleted && editingTask?.baseline_notebook_path
         ? editingTask.baseline_notebook_path.split('/').pop()
         : null;
-    return arr.filter((f) => f.filename !== activeBaselineName);
+    return arr.filter((f) => f.type !== 'baseline' && f.filename !== activeBaselineName);
   }, [editingTask, baselineFile]);
 
   const newIpynbs = useMemo(() => {
