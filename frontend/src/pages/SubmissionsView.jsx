@@ -215,6 +215,23 @@ export default function SubmissionsView() {
   const [baselineSubmissions, setBaselineSubmissions] = useState([]);
   const [baselineLoading, setBaselineLoading] = useState(false);
 
+  const handleSubmissionUpdate = useCallback((updated) => {
+    setSubmissions((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+    setAdminSubmissions((prev) =>
+      prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)),
+    );
+    setBaselineSubmissions((prev) =>
+      prev.map((entry) =>
+        entry.submission?.id === updated.id
+          ? { ...entry, submission: { ...entry.submission, ...updated } }
+          : entry,
+      ),
+    );
+    setSelectedSubmission((prev) =>
+      prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
+    );
+  }, []);
+
   useEffect(() => {
     taskIdRef.current = selectedTask?.id;
   }, [selectedTask]);
@@ -886,6 +903,7 @@ export default function SubmissionsView() {
                 selectingFinal={selectingFinal}
                 isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
                 isSubmissionAfterDeadline={isSubmissionAfterDeadline}
+                onSubmissionUpdate={handleSubmissionUpdate}
               />
             </div>
           </div>
@@ -993,6 +1011,7 @@ export default function SubmissionsView() {
               submission={selectedSubmission}
               currentUser={currentUser}
               onSelectFinal={() => {}}
+              onSubmissionUpdate={handleSubmissionUpdate}
             />
           )}
 
@@ -1266,6 +1285,7 @@ export default function SubmissionsView() {
               selectingFinal={selectingFinal}
               isSelectionDisabled={isSelectionDisabled}
               isSubmissionAfterDeadline={isSubmissionAfterDeadline}
+              onSubmissionUpdate={handleSubmissionUpdate}
             />
           )}
         </>

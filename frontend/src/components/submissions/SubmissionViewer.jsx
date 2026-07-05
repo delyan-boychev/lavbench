@@ -13,6 +13,7 @@ export default function SubmissionViewer({
   selectingFinal = false,
   isSelectionDisabled = false,
   isSubmissionAfterDeadline = false,
+  onSubmissionUpdate,
 }) {
   const { t } = useTranslation();
   const [liveLogs, setLiveLogs] = useState('');
@@ -71,6 +72,7 @@ export default function SubmissionViewer({
               })
               .then((freshData) => {
                 setCompletedData(freshData);
+                onSubmissionUpdate?.(freshData);
               })
               .catch((err) => {
                 console.error('Failed to fetch completed submission:', err);
