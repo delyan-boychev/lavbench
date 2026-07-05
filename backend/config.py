@@ -105,6 +105,9 @@ class Config:
     # Encryption key for PII fields
     ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY") or _require_env("ENCRYPTION_KEY")
 
+    # Secure cookies (set True when behind HTTPS)
+    SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() in ("1", "true", "yes")
+
     # CORS origins
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 

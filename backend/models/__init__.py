@@ -1,4 +1,4 @@
-"""Models package — re-exports everything from backend/models.py for backward compatibility."""
+"""Models package — re-exports everything from the models/ package for backward compatibility."""
 
 from models.audit_log import AuditLog
 from models.base import GUID, db, decrypt_field, encrypt_field, logger, uuid7

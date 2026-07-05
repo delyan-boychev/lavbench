@@ -14,7 +14,7 @@ COPY tasks.py \
      cache_utils.py \
      sse_utils.py \
      evaluation_engine.py \
-     models.py \
+     models/ \
      config.py \
      log_config.py \
      ./
