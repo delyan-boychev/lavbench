@@ -35,6 +35,11 @@ from worker_utils import (
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache of the worker spec, used to recreate the Redis key
+# after a Redis restart without re-running nvidia-smi.
+_cached_worker_spec: dict[str, Any] | None = None
+_cached_worker_name: str | None = None
+
 
 def _fetch_hf_key_from_server(
     task_id: str | None, main_server_url: str | None, worker_token: str | None
@@ -1046,6 +1051,9 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "last_seen": time.time(),
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
+        global _cached_worker_spec, _cached_worker_name
+        _cached_worker_spec = spec
+        _cached_worker_name = worker_name
         logger.info("Worker specs registered: %s", spec)
 
         # Build Docker images for all active tasks + start rebuild listener
@@ -1085,5 +1093,12 @@ def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
                 spec = json.loads(spec_data)
                 spec["last_seen"] = time.time()
                 r.set(key, json.dumps(spec), ex=604800)
+        else:
+            # Redis was restarted or key expired — recreate from in-memory cache
+            global _cached_worker_spec, _cached_worker_name
+            if _cached_worker_spec and _cached_worker_name == worker_name:
+                _cached_worker_spec["last_seen"] = time.time()
+                r.set(key, json.dumps(_cached_worker_spec), ex=604800)
+                logger.info("Recreated worker spec for %s after Redis restart", worker_name)
     except Exception as e:
         logger.debug("Failed to refresh worker spec heartbeat: %s", e)
