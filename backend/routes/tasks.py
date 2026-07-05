@@ -235,7 +235,7 @@ def get_task(task_id):
     if not check_task_started(task, user_role, user_id):
         return err("ERR_NOT_AVAILABLE", 403)
 
-    return jsonify(task.to_dict())
+    return jsonify(task.to_dict(view_role=user_role))
 
 
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
@@ -601,7 +601,7 @@ def create_task(challenge_id):
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
-    return jsonify(task.to_dict()), 201
+    return jsonify(task.to_dict(view_role=request.user["role"])), 201
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
@@ -1000,7 +1000,7 @@ def update_task(task_id):
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
-    return jsonify(task.to_dict())
+    return jsonify(task.to_dict(view_role=request.user["role"]))
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["DELETE"])
@@ -1220,76 +1220,75 @@ def submit_task(task_id):
     if not selected_cells or not isinstance(selected_cells, list):
         return err("ERR_INVALID_SELECTED_CELLS", 400)
 
-    if True:
-        today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        submission_count = Submission.query.filter(
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    submission_count = Submission.query.filter(
+        Submission.user_id == user_id,
+        Submission.challenge_id == challenge.id,
+        Submission.created_at >= today_start,
+    ).count()
+
+    if submission_count >= challenge.max_eval_requests:
+        return err(
+            "ERR_DAILY_LIMIT_REACHED",
+            429,
+            message=(
+                f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
+            ),
+        )
+
+    if task.max_submissions_per_period and task.submission_period_hours:
+        period_start = utcnow() - timedelta(hours=task.submission_period_hours)
+        sub_count = Submission.query.filter(
             Submission.user_id == user_id,
-            Submission.challenge_id == challenge.id,
-            Submission.created_at >= today_start,
+            Submission.task_id == task.id,
+            Submission.created_at >= period_start,
         ).count()
-
-        if submission_count >= challenge.max_eval_requests:
+        if sub_count >= task.max_submissions_per_period:
             return err(
-                "ERR_DAILY_LIMIT_REACHED",
+                "ERR_TASK_LIMIT_REACHED",
                 429,
-                message=(
-                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
-                ),
+                message=f"Task limit reached. Max {task.max_submissions_per_period} "
+                f"submissions per {task.submission_period_hours} hours.",
             )
 
-        if task.max_submissions_per_period and task.submission_period_hours:
-            period_start = utcnow() - timedelta(hours=task.submission_period_hours)
-            sub_count = Submission.query.filter(
-                Submission.user_id == user_id,
-                Submission.task_id == task.id,
-                Submission.created_at >= period_start,
-            ).count()
-            if sub_count >= task.max_submissions_per_period:
-                return err(
-                    "ERR_TASK_LIMIT_REACHED",
-                    429,
-                    message=f"Task limit reached. Max {task.max_submissions_per_period} "
-                    f"submissions per {task.submission_period_hours} hours.",
-                )
-
-        passed, err_msg = check_execution_rules(task, selected_cells)
-        if not passed:
-            submission = Submission(
-                user_id=user_id,
-                challenge_id=challenge.id,
-                task_id=task.id,
-                status="failed",
-                detailed_status="failed",
-                code_cells=json.dumps(selected_cells),
-                public_score=0.0,
-                private_score=0.0,
-                logs=f"--- Rule Check Failed ---\n{err_msg}",
-                execution_time_ms=0,
-            )
-            db.session.add(submission)
-            db.session.commit()
-            publish_submissions_update(submission.task_id, submission.user_id)
-            publish_leaderboard_update(submission.task_id, submission.challenge_id)
-            return err(
-                "ERR_AST_RULE_FAILED",
-                200,
-                message=err_msg,
-                submission_id=submission.id,
-                status=submission.status,
-            )
-
-        priority = calculate_submission_priority(user_id, user_role)
-
+    passed, err_msg = check_execution_rules(task, selected_cells)
+    if not passed:
         submission = Submission(
             user_id=user_id,
             challenge_id=challenge.id,
             task_id=task.id,
-            status="queued",
-            detailed_status="queued",
+            status="failed",
+            detailed_status="failed",
             code_cells=json.dumps(selected_cells),
+            public_score=0.0,
+            private_score=0.0,
+            logs=f"--- Rule Check Failed ---\n{err_msg}",
+            execution_time_ms=0,
         )
         db.session.add(submission)
         db.session.commit()
+        publish_submissions_update(submission.task_id, submission.user_id)
+        publish_leaderboard_update(submission.task_id, submission.challenge_id)
+        return err(
+            "ERR_AST_RULE_FAILED",
+            200,
+            message=err_msg,
+            submission_id=submission.id,
+            status=submission.status,
+        )
+
+    priority = calculate_submission_priority(user_id, user_role)
+
+    submission = Submission(
+        user_id=user_id,
+        challenge_id=challenge.id,
+        task_id=task.id,
+        status="queued",
+        detailed_status="queued",
+        code_cells=json.dumps(selected_cells),
+    )
+    db.session.add(submission)
+    db.session.commit()
 
     invalidate_leaderboard_cache(submission.challenge_id)
 

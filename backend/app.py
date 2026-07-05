@@ -29,6 +29,7 @@ from flask import Flask, jsonify  # noqa: E402
 from flask_cors import CORS  # noqa: E402
 from log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
+from version import __version__  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 
@@ -228,7 +229,6 @@ def create_app():
     def health_check():
         """
         Health check for Docker and load balancer monitoring.
-        Verifies database, Redis, Celery, and disk availability.
         ---
         tags:
           - Admin
@@ -246,70 +246,19 @@ def create_app():
                 schema:
                   type: object
         """
-        import platform
-
-        checks = {}
-        all_ok = True
-
-        # Database check
+        db_ok = True
         try:
             db.session.execute(db.text("SELECT 1"))
-            checks["database"] = "connected"
-        except Exception as e:
-            checks["database"] = f"error: {e}"
-            all_ok = False
-
-        # Redis check
-        try:
-            from cache_utils import get_redis_client
-
-            r = get_redis_client()
-            if r and r.ping():
-                checks["redis"] = "connected"
-            else:
-                checks["redis"] = "error: no response"
-                all_ok = False
-        except Exception as e:
-            checks["redis"] = f"error: {e}"
-            all_ok = False
-
-        # Celery check
-        try:
-            from tasks import celery
-
-            inspect = celery.control.inspect(timeout=2.0)
-            pings = inspect.ping() or {}
-            workers_count = len(pings)
-            checks["celery"] = {"workers_online": workers_count}
-        except Exception as e:
-            checks["celery"] = f"error: {e}"
-
-        # Disk check
-        try:
-            import shutil
-
-            total, used, free = shutil.disk_usage("/")
-            checks["disk"] = {
-                "total_gb": round(total / (1024**3), 1),
-                "used_gb": round(used / (1024**3), 1),
-                "free_gb": round(free / (1024**3), 1),
-            }
-        except Exception as e:
-            checks["disk"] = f"error: {e}"
-            logger.warning("Disk usage check failed: %s", e)
-            all_ok = False  # mark as degraded if disk check fails
-
-        status_code = 200 if all_ok else 503
+        except Exception:
+            db_ok = False
         return (
             jsonify(
                 {
-                    "status": "ok" if all_ok else "degraded",
-                    "checks": checks,
-                    "version": "1.0",
-                    "python": platform.python_version(),
+                    "status": "ok" if db_ok else "degraded",
+                    "version": __version__,
                 }
             ),
-            status_code,
+            200 if db_ok else 503,
         )
 
     @app.errorhandler(500)

@@ -1,7 +1,7 @@
 """pytest configuration: app factory, DB fixtures, auth helpers, and common seed data.
 
 Sets required environment variables before any application code is imported so
-that config.py and models.py do not crash at module load time.
+that config.py and the models/ package do not crash at module load time.
 """
 
 import os

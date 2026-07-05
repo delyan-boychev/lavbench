@@ -69,7 +69,7 @@ def set_auth_cookie(response, user_id, role):
         max_age=AUTH_COOKIE_MAX_AGE,
         httponly=True,
         samesite="Strict",
-        secure=False,  # Set True when behind HTTPS
+        secure=Config.SECURE_COOKIES,
         path="/",
     )
     return token
@@ -85,7 +85,7 @@ def clear_auth_cookie(response):
         max_age=0,
         httponly=True,
         samesite="Strict",
-        secure=False,
+        secure=Config.SECURE_COOKIES,
         path="/",
     )
 
@@ -237,7 +237,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                 if current > max_requests:
                     return err("ERR_RATE_LIMITED", 429)
             except Exception as e:
-                logger.debug("Rate limit Redis error (allowing request): %s", e)
+                logger.warning("Rate limit Redis error (allowing request): %s", e)
                 # Redis down — allow request through
             return f(*args, **kwargs)
 
@@ -259,7 +259,7 @@ def generate_csrf_token():
         max_age=3600,
         httponly=False,
         samesite="Strict",
-        secure=False,
+        secure=Config.SECURE_COOKIES,
         path="/",
     )
     return response

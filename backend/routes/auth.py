@@ -5,7 +5,7 @@ from auth_utils import clear_auth_cookie, generate_csrf_token, login_required, s
 from error_utils import err
 from flask import Blueprint, jsonify, make_response, request
 from models import User, db
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
@@ -170,8 +170,6 @@ def login():
         if not user or not check_password_hash(user.password_hash, legacy_hash):
             _record_login_failure(username, ip)
             return err("ERR_INVALID_CREDENTIALS", 401)
-            # Migrate to new format
-            user.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
         db.session.commit()
 
     _clear_login_failures(username, ip)
