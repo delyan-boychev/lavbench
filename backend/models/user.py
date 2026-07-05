@@ -30,7 +30,9 @@ class User(db.Model):  # type: ignore[misc, name-defined]
 
     role = db.Column(db.String(50), default="competitor", index=True)
     alias_id = db.Column(db.String(100), unique=True, nullable=False, default=generate_pseudonym)
-    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=True, index=True)
+    challenge_id = db.Column(
+        GUID, db.ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     is_anonymous = db.Column(db.Boolean, default=False, nullable=False)
     manual_points = db.Column(db.JSON, default=dict, nullable=False)
 

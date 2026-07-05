@@ -280,6 +280,8 @@ def run_eval_submission(
                 public_eval_percentage=(
                     db_submission.task.public_eval_percentage if db_submission.task else None
                 ),
+                hf_datasets=db_submission.task.hf_datasets if db_submission.task else None,
+                hf_models=db_submission.task.hf_models if db_submission.task else None,
                 get_hf_api_key=lambda: (
                     db_submission.task.get_hf_api_key() if db_submission.task else ""
                 ),
@@ -304,6 +306,8 @@ def run_eval_submission(
                 gpu_required=(
                     db_submission.challenge.gpu_required if db_submission.challenge else None
                 ),
+                metric_name="accuracy",
+                hf_dataset_split="test",
             )
             submission = MockModel(
                 id=db_submission.id,
@@ -668,11 +672,14 @@ def run_eval_submission(
             )
             ram_limit = budget_mb
         else:
-            raise RuntimeError(
-                f"Task requires {ram_limit} MB RAM, "
-                f"worker budget is {budget_mb} MB per task "
-                f"(clamp factor {clamp_factor})"
+            logger.warning(
+                "RAM limit of %d MB exceeds allowed worker budget limit of %d MB. "
+                "Clamping ram_limit to budget limit: %d MB.",
+                ram_limit,
+                int(budget_mb * clamp_factor),
+                budget_mb,
             )
+            ram_limit = budget_mb
 
         environment = {
             "HOME": "/tmp",  # noqa: S108
@@ -687,11 +694,13 @@ def run_eval_submission(
         if gpu_required and gpu_id is not None:
             environment["CUDA_VISIBLE_DEVICES"] = "0"
 
+        total_cpus = os.cpu_count() or 1
+        cpu_limit = max(1, total_cpus - Config.RESERVED_CPU_CORES)
         docker_client = _get_client()
         logs.append(
             f"Executing sandbox: image={image_tag}, "
             f"command=python -u {exec_file}, "
-            f"ram={ram_limit}M, cpus=2"
+            f"ram={ram_limit}M, cpus={cpu_limit}"
         )
         retcode, stdout, stderr, process_timeout = run_command_streaming(
             docker_client,
@@ -700,7 +709,7 @@ def run_eval_submission(
             logs_list=logs,
             time_limit=time_limit,
             mem_limit=f"{ram_limit}m",
-            cpu_count=2,
+            cpu_count=cpu_limit,
             network_mode="none",
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],

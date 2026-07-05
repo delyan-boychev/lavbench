@@ -389,6 +389,24 @@ def create_task(
             f.save(save_path)
             task.baseline_notebook_path = save_path
 
+    if "solution_notebook" in request.files:
+        f = request.files["solution_notebook"]
+        if f and f.filename != "":
+            from services.file_validation import validate_extension
+
+            valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
+            if not valid_ext:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
+            safe_name = "solution_" + secure_filename(f.filename)
+            save_path = os.path.join(task_upload_dir, safe_name)
+            f.save(save_path)
+            task.solution_notebook_path = save_path
+
     for key in files_keys:
         uploaded_file = request.files[key]
         if uploaded_file and uploaded_file.filename != "":
@@ -532,7 +550,7 @@ def update_task(
     if "description" in fields:
         task.description = form.description
 
-    if "ram_limit_mb" in fields and form.ram_limit_mb is not None:
+    if "ram_limit_mb" in fields:
         task.ram_limit_mb = form.ram_limit_mb
 
     if "base_docker_image" in fields:
@@ -544,7 +562,7 @@ def update_task(
     if "pip_requirements" in fields:
         task.pip_requirements = form.pip_requirements
 
-    if "time_limit_sec" in fields and form.time_limit_sec is not None:
+    if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
     if "gpu_required" in fields:
         task.gpu_required = form.gpu_required
@@ -570,11 +588,11 @@ def update_task(
         hf_api_key = request.form.get("hf_api_key")
         if hf_api_key:
             task.set_hf_api_key(hf_api_key)
-    if "public_eval_percentage" in fields and form.public_eval_percentage is not None:
+    if "public_eval_percentage" in fields:
         task.public_eval_percentage = form.public_eval_percentage
-    if "max_submissions_per_period" in fields and form.max_submissions_per_period is not None:
+    if "max_submissions_per_period" in fields:
         task.max_submissions_per_period = form.max_submissions_per_period
-    if "submission_period_hours" in fields and form.submission_period_hours is not None:
+    if "submission_period_hours" in fields:
         task.submission_period_hours = form.submission_period_hours
     if "stage_id" in fields:
         from models import Stage
@@ -641,6 +659,19 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+
+    if "solution_notebook" in request.files:
+        f = request.files["solution_notebook"]
+        if f and f.filename != "":
+            from services.file_validation import validate_extension
+
+            valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
+            if not valid_ext:
+                return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
+            safe_name = "solution_" + secure_filename(f.filename)
+            save_path = os.path.join(task_upload_dir, safe_name)
+            f.save(save_path)
+            task.solution_notebook_path = save_path
 
     current_files = safe_json_loads(task.files, [])
 

@@ -195,7 +195,7 @@ class _TaskMetaDeleteValidators:
 class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     title: str = Field(..., min_length=1)
     description: str | None = Field(default=None)
-    ram_limit_mb: int | None = Field(default=None, ge=128, le=16384)
+    ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
     time_limit_sec: int | None = Field(default=None, ge=1)
     gpu_required: bool = False
     base_docker_image: str | None = Field(default=None)
@@ -216,7 +216,7 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
 class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel):
     title: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None)
-    ram_limit_mb: int | None = Field(default=None, ge=128, le=16384)
+    ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
     time_limit_sec: int | None = Field(default=None, ge=1)
     gpu_required: bool | None = Field(default=None)
     base_docker_image: str | None = Field(default=None)

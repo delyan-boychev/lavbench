@@ -46,7 +46,7 @@ export default function SidebarNav({
         </button>
       )}
 
-      {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
+      {currentUser.role === 'admin' && (
         <button
           onClick={() => {
             setAdminSubTab('challenge-config');

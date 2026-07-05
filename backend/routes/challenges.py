@@ -198,14 +198,14 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
                 .paginate(page=page_arg, per_page=per_page, error_out=False)
             )
             return paginated_response(
-                items=[c.to_dict() for c in pagination.items],
+                items=[c.to_dict(view_role=user_role) for c in pagination.items],
                 total=pagination.total,
                 page=pagination.page,
                 pages=pagination.pages,
             )
 
         items = [
-            c.to_dict()
+            c.to_dict(view_role=user_role)
             for c in Challenge.query.filter(Challenge.id.in_(assigned_ids))
             .options(joinedload(Challenge.tasks), joinedload(Challenge.stages))
             .all()
@@ -219,14 +219,14 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
         ).paginate(page=page_arg, per_page=per_page, error_out=False)
         return paginated_response(
-            items=[c.to_dict() for c in pagination.items],
+            items=[c.to_dict(view_role=user_role) for c in pagination.items],
             total=pagination.total,
             page=pagination.page,
             pages=pagination.pages,
         )
 
     items = [
-        c.to_dict()
+        c.to_dict(view_role=user_role)
         for c in Challenge.query.options(
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
         ).all()
@@ -269,14 +269,16 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
     else:
         cache_key = f"challenge:{challenge_id}"
         challenge_dict = cached_or_compute(
-            cache_key, lambda: db.get_or_404(Challenge, challenge_id).to_dict(), timeout=600
+            cache_key,
+            lambda: db.get_or_404(Challenge, challenge_id).to_dict(view_role=user_role),
+            timeout=600,
         )
 
     return challenge_dict
 
 
 @challenges_bp.route("", methods=["POST"])
-@role_required(["admin", "jury"])
+@role_required(["admin"])
 @api.validate(
     json=CreateChallengeSchema,
     resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
@@ -442,7 +444,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
-@role_required(["admin", "jury"])
+@role_required(["admin"])
 @jury_access_required
 @api.validate(
     json=UpdateChallengeSchema,
@@ -530,14 +532,41 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     if os.path.isdir(backup_dir):
         shutil.rmtree(backup_dir, ignore_errors=True)
 
+    # Find all jury assignments for this challenge to check later
+    from models import JuryChallenge, Stage, Submission, Task, User
+
+    assigned_juries = JuryChallenge.query.filter_by(challenge_id=challenge_id).all()
+    jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
+
+    # Delete submissions first (child of users/tasks/challenge)
+    Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete tasks (child of challenge)
+    Task.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete stages (child of challenge)
+    Stage.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    # Delete competitors (child of challenge)
     User.query.filter_by(challenge_id=challenge_id, role="competitor").delete(
         synchronize_session=False
     )
+
+    # Nullify challenge_id for non-competitors
     User.query.filter_by(challenge_id=challenge_id).filter(User.role != "competitor").update(
         {User.challenge_id: None}, synchronize_session=False
     )
 
     db.session.delete(challenge)
+    db.session.commit()
+
+    # Clean up juries who have no other assigned challenges
+    for j_id in jury_ids_to_check:
+        other_assignments_count = JuryChallenge.query.filter_by(jury_id=j_id).count()
+        if other_assignments_count == 0:
+            jury_user = db.session.get(User, j_id)
+            if jury_user and jury_user.role == "jury":
+                db.session.delete(jury_user)
     db.session.commit()
 
     log_audit(
@@ -1050,7 +1079,8 @@ def export_challenge(
     """Export a challenge configuration as ZIP, including tasks, stages, and uploaded files."""
 
     challenge = db.get_or_404(Challenge, challenge_id)
-    data = challenge.to_dict()
+    user_role = request.user["role"]
+    data = challenge.to_dict(view_role=user_role)
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:

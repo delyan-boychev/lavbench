@@ -86,6 +86,7 @@ class TestCreateTask:
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
+        sol_nb = _make_notebook("print('solution')")
 
         metrics = json.dumps({"accuracy": {"weight": 1.0}})
         hf_ds = json.dumps(["dataset1"])
@@ -95,6 +96,7 @@ class TestCreateTask:
             "title": "Full Task",
             "description": "All fields filled in",
             "baseline_notebook": (nb, "baseline.ipynb"),
+            "solution_notebook": (sol_nb, "solution.ipynb"),
             "ram_limit_mb": "1024",
             "time_limit_sec": "600",
             "gpu_required": "true",
@@ -120,6 +122,8 @@ class TestCreateTask:
         assert body["gpu_required"] is True
         assert body["base_docker_image"] == "python:3.11-slim"
         assert body["public_eval_percentage"] == 50
+        assert body["solution_notebook_path"] is not None
+        assert "solution_solution.ipynb" in body["solution_notebook_path"]
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
@@ -468,6 +472,45 @@ class TestUpdateTask:
         assert body["description"] == "Updated description"
         assert body["ram_limit_mb"] == 2048
         assert body["time_limit_sec"] == 900
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_clear_limits(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        from models import Task
+
+        task = Task(
+            title="Original",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        url = f"/api/tasks/{task.id}"
+        headers = auth_headers(tokens.admin)
+        data = {
+            "ram_limit_mb": "",
+            "time_limit_sec": "",
+        }
+        resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ram_limit_mb"] is None
+        assert body["time_limit_sec"] is None
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")

@@ -31,6 +31,26 @@ export default function TaskForm({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
 
+  const existingBaselineFile = useMemo(() => {
+    if (!editingTask?.files) return null;
+    const arr = Array.isArray(editingTask.files)
+      ? editingTask.files
+      : typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
+        ? JSON.parse(editingTask.files)
+        : [];
+    return arr.find((f) => f.type === 'baseline');
+  }, [editingTask]);
+
+  const existingBaselineName = useMemo(() => {
+    if (editingTask?.baseline_notebook_path) {
+      return editingTask.baseline_notebook_path.split('/').pop();
+    }
+    if (existingBaselineFile) {
+      return existingBaselineFile.filename;
+    }
+    return null;
+  }, [editingTask, existingBaselineFile]);
+
   const existingFilesList = useMemo(() => {
     if (!editingTask?.files) return [];
     const arr = Array.isArray(editingTask.files)
@@ -40,11 +60,11 @@ export default function TaskForm({
         : [];
     const activeBaselineName = baselineFile
       ? baselineFile.name
-      : !editingTask?.baselineDeleted && editingTask?.baseline_notebook_path
-        ? editingTask.baseline_notebook_path.split('/').pop()
+      : !editingTask?.baselineDeleted && existingBaselineName
+        ? existingBaselineName
         : null;
-    return arr.filter((f) => f.filename !== activeBaselineName);
-  }, [editingTask, baselineFile]);
+    return arr.filter((f) => f.type !== 'baseline' && f.filename !== activeBaselineName);
+  }, [editingTask, baselineFile, existingBaselineName]);
 
   const newIpynbs = useMemo(() => {
     return [...(baselineFile ? [baselineFile] : []), ...taskFiles].filter((f) =>
@@ -54,14 +74,13 @@ export default function TaskForm({
 
   const availableIpynbs = useMemo(() => {
     const names = newIpynbs.map((f) => f.name);
-    if (editingTask?.baseline_notebook_path) {
-      const existingName = editingTask.baseline_notebook_path.split('/').pop();
-      if (!names.includes(existingName)) {
-        names.push(existingName);
+    if (existingBaselineName) {
+      if (!names.includes(existingBaselineName)) {
+        names.push(existingBaselineName);
       }
     }
     return names;
-  }, [newIpynbs, editingTask]);
+  }, [newIpynbs, existingBaselineName]);
 
   const handleSelectActiveBaseline = (name) => {
     const matchedNewFile = newIpynbs.find((f) => f.name === name);
@@ -84,8 +103,7 @@ export default function TaskForm({
   };
 
   useEffect(() => {
-    const usingExistingBaseline =
-      editingTask?.baseline_notebook_path && !editingTask.baselineDeleted;
+    const usingExistingBaseline = existingBaselineName && !editingTask?.baselineDeleted;
     if (!baselineFile && !usingExistingBaseline) {
       const ipynbsInResources = taskFiles.filter((f) => f.name.endsWith('.ipynb'));
       if (ipynbsInResources.length > 0) {
@@ -97,7 +115,7 @@ export default function TaskForm({
   }, [
     baselineFile,
     taskFiles,
-    editingTask?.baseline_notebook_path,
+    existingBaselineName,
     editingTask?.baselineDeleted,
     setBaselineFile,
     setTaskFiles,
@@ -915,8 +933,7 @@ export default function TaskForm({
                   <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                     {t('admin.tasks.baseline_code')}
                   </h3>
-                  {!baselineFile &&
-                  (!editingTask?.baseline_notebook_path || editingTask.baselineDeleted) ? (
+                  {!baselineFile && (!existingBaselineName || editingTask.baselineDeleted) ? (
                     <span className="text-[10px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20 font-bold uppercase tracking-wider">
                       {t('admin.tasks.missing_baseline')}
                     </span>
@@ -928,7 +945,7 @@ export default function TaskForm({
                 </div>
 
                 {/* Existing Baseline */}
-                {editingTask?.baseline_notebook_path && !baselineFile && (
+                {existingBaselineName && !baselineFile && (
                   <div
                     className={`flex items-center justify-between p-3 rounded-lg text-xs transition-colors ${
                       editingTask.baselineDeleted
@@ -948,7 +965,7 @@ export default function TaskForm({
                             : 'text-indigo-300 font-semibold'
                         }`}
                       >
-                        {editingTask.baseline_notebook_path.split('/').pop()}
+                        {existingBaselineName}
                       </span>
                     </div>
                     <button
@@ -994,12 +1011,11 @@ export default function TaskForm({
                   </div>
                 )}
 
-                {!baselineFile &&
-                  (!editingTask?.baseline_notebook_path || editingTask.baselineDeleted) && (
-                    <p className="text-xs text-slate-500 italic py-2">
-                      {t('admin.tasks.baseline_required_help')}
-                    </p>
-                  )}
+                {!baselineFile && (!existingBaselineName || editingTask.baselineDeleted) && (
+                  <p className="text-xs text-slate-500 italic py-2">
+                    {t('admin.tasks.baseline_required_help')}
+                  </p>
+                )}
 
                 {availableIpynbs.length > 1 && (
                   <div className="flex flex-col gap-2 mt-2 border-t border-white/5 pt-4">
@@ -1010,9 +1026,7 @@ export default function TaskForm({
                       {availableIpynbs.map((name) => {
                         const isActive = baselineFile
                           ? baselineFile.name === name
-                          : !editingTask?.baselineDeleted &&
-                            editingTask?.baseline_notebook_path &&
-                            editingTask.baseline_notebook_path.split('/').pop() === name;
+                          : !editingTask?.baselineDeleted && existingBaselineName === name;
                         return (
                           <label
                             key={name}

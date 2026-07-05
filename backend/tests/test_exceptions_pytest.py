@@ -129,7 +129,7 @@ class TestBackendExceptionAndErrorCases:
         headers = self._auth(self.competitor)
         res = self.client.post("/api/challenges", json={"title": "Unauthorized"}, headers=headers)
         assert res.status_code == 403
-        assert "Requires role: ['admin', 'jury']" in res.json["error"]
+        assert "Requires role: ['admin']" in res.json["error"]
 
     def test_create_challenge_missing_title(self):
         headers = self._auth(self.admin)

@@ -74,7 +74,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             return "ended"
         return "active"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
         try:
             from flask import current_app
 
@@ -100,7 +100,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             "double_blind": self.double_blind,
             "timezone": self.timezone,
             "status": self.computed_status,
-            "tasks": [t.to_dict() for t in self.tasks],  # type: ignore[attr-defined]
+            "tasks": [t.to_dict(view_role=view_role) for t in self.tasks],  # type: ignore[attr-defined]
             "stages": [s.to_dict() for s in self.stages],  # type: ignore[attr-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,

@@ -32,9 +32,11 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     )
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
-    user_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=False)
-    challenge_id = db.Column(GUID, db.ForeignKey("challenges.id"), nullable=False)
-    task_id = db.Column(GUID, db.ForeignKey("tasks.id"), nullable=True)
+    user_id = db.Column(GUID, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    challenge_id = db.Column(
+        GUID, db.ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False
+    )
+    task_id = db.Column(GUID, db.ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
 
     status = db.Column(db.String(50), default="queued", index=True)
     is_baseline = db.Column(db.Boolean, default=False)
