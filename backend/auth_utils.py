@@ -237,7 +237,7 @@ def rate_limit(max_requests=60, window_seconds=60, per_user=True):
                 if current > max_requests:
                     return err("ERR_RATE_LIMITED", 429)
             except Exception as e:
-                logger.debug("Rate limit Redis error (allowing request): %s", e)
+                logger.warning("Rate limit Redis error (allowing request): %s", e)
                 # Redis down — allow request through
             return f(*args, **kwargs)
 

@@ -206,7 +206,7 @@ MAIN_SERVER_URL=${SERVER_URL}
 # Worker authentication (auto-generated Ed25519 private key)
 WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 
-# Server secret key — needed by models.py for field encryption
+# Server secret key — needed by models/ package for field encryption
 SECRET_KEY=${SECRET_KEY}
 ${CERTS_SECTION}
 # Worker role and resources — set by 'make setup-worker' on the worker machine

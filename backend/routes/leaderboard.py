@@ -231,7 +231,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                 entry_dict["rank"] = current_rank
 
         post_processed_leaderboard = sorted_competitor
-        tasks_list = [t.to_dict() for t in visible_tasks]
+        tasks_list = [t.to_dict(view_role=user_role) for t in visible_tasks]
     else:
         now = utcnow()
         has_started = challenge.start_time is not None and now >= challenge.start_time
@@ -268,7 +268,7 @@ def _get_leaderboard_payload(challenge, user_role, current_user_id):
                     "manual_points": comp_user.get("manual_points", {}),
                 }
             post_processed_leaderboard.append(entry_copy)
-        tasks_list = [t.to_dict() for t in tasks]
+        tasks_list = [t.to_dict(view_role=user_role) for t in tasks]
 
     metric_name = "Score"
     is_normalized = False

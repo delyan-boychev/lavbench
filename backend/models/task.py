@@ -8,6 +8,8 @@ from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
 
 logger = logging.getLogger(__name__)
 
+_ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
+
 
 class Task(db.Model):
     __tablename__ = "tasks"
@@ -56,7 +58,7 @@ class Task(db.Model):
     def get_hf_api_key(self):
         return decrypt_field(self.hf_api_key)
 
-    def to_dict(self):
+    def to_dict(self, view_role="competitor"):
         try:
             files_list = json.loads(self.files)
         except Exception as e:
@@ -111,6 +113,7 @@ class Task(db.Model):
                 logger.warning("Failed to parse metrics_config for task %s: %s", self.id, e)
                 metrics_cfg_val = {}
 
+        show_internal = view_role in _ADMIN_JURY_ROLES
         return {
             "id": self.id,
             "challenge_id": self.challenge_id,
@@ -127,9 +130,9 @@ class Task(db.Model):
             "banned_imports": self.banned_imports,
             "whitelisted_imports": self.whitelisted_imports,
             "metrics_config": metrics_cfg_val,
-            "evaluator_script_path": self.evaluator_script_path,
-            "baseline_notebook_path": self.baseline_notebook_path,
-            "solution_notebook_path": self.solution_notebook_path,
+            "evaluator_script_path": self.evaluator_script_path if show_internal else None,
+            "baseline_notebook_path": self.baseline_notebook_path if show_internal else None,
+            "solution_notebook_path": self.solution_notebook_path if show_internal else None,
             "hf_datasets": hf_datasets_list,
             "hf_models": hf_models_list,
             "public_eval_percentage": self.public_eval_percentage,

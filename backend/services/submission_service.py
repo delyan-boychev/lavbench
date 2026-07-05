@@ -175,7 +175,11 @@ def check_execution_rules(task, cells_list):
                                 (f"Rule Violation: Import from library '{node.module}' is banned."),
                             )
             except SyntaxError:
-                pass
+                return (
+                    False,
+                    "Rule Violation: Code contains syntax errors "
+                    "and could not be validated for banned imports.",
+                )
 
     if task.whitelisted_imports:
         whitelisted = [
@@ -207,7 +211,11 @@ def check_execution_rules(task, cells_list):
                                 ),
                             )
             except SyntaxError:
-                pass
+                return (
+                    False,
+                    "Rule Violation: Code contains syntax errors "
+                    "and could not be validated for whitelisted imports.",
+                )
 
     return True, None
 

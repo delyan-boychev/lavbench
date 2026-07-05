@@ -110,7 +110,7 @@ lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
 │   ├── config.py                # Config class reads all env vars
-│   ├── models.py                # SQLAlchemy models
+│   ├── models/                  # SQLAlchemy models
 │   ├── auth_utils.py            # JWT auth, rate limiting, token revocation
 │   ├── cache_utils.py           # Redis caching, connection pool, locks
 │   ├── error_utils.py           # err() helper + DEFAULT_ERROR_MESSAGES (128 error codes)

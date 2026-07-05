@@ -1,0 +1,55 @@
+# Git
+.git/
+.gitignore
+
+# Python
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Secrets & credentials
+.env
+.env.*
+admin_credentials.txt
+worker.env
+.hf_token
+certs/
+
+# Backend runtime files (large, not needed in build context)
+backend/venv/
+backend/backups/
+backend/hf_cache/
+backend/uploads/
+backend/task_images/
+backend/*.db
+backend/*.sqlite3
+
+# Frontend (large, not needed for backend build)
+frontend/node_modules/
+frontend/dist/
+
+# Data & backups
+backups/
+*.tgz
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# CI / docs
+.github/
+docs/_build/
+
