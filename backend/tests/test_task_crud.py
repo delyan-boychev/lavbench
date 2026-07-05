@@ -734,10 +734,11 @@ class TestDeleteTaskCRUD:
         assert resp.status_code == 403
 
     def test_delete_task_success(self, client, db_session, sample_challenge, tokens, auth_headers):
-        from models import Task, Submission, User
         import os
-        import tempfile
         import shutil
+        import tempfile
+
+        from models import Submission, Task, User
 
         # Create task
         task = Task(

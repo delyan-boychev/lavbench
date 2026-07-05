@@ -610,7 +610,10 @@
       "no_capabilities": "No capabilities registered",
       "os": "OS:",
       "python": "Python:",
-      "pid_label": "PID:"
+      "pid_label": "PID:",
+      "gpu_model": "GPU Model:",
+      "vram": "VRAM:",
+      "ram": "RAM:"
     },
     "stages": {
       "stages_in_competition": "Stages in this Competition ({{count}})",

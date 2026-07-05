@@ -610,7 +610,10 @@
       "no_capabilities": "Няма регистрирани възможности",
       "os": "ОС:",
       "python": "Python:",
-      "pid_label": "PID:"
+      "pid_label": "PID:",
+      "gpu_model": "GPU модел:",
+      "vram": "VRAM:",
+      "ram": "RAM:"
     },
     "stages": {
       "stages_in_competition": "Етапи в това състезание ({{count}})",

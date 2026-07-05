@@ -243,6 +243,15 @@ export default function WorkersStats({
                   <div className="flex items-center gap-3">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     <h4 className="font-mono text-sm font-bold text-slate-200">{worker.name}</h4>
+                    <span
+                      className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
+                        worker.type === 'GPU'
+                          ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {worker.type || 'CPU'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-mono">
                     <div className="text-slate-500">
@@ -301,6 +310,26 @@ export default function WorkersStats({
                             {worker.rusage?.stime_sec !== undefined
                               ? `${worker.rusage.stime_sec.toFixed(2)}s`
                               : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{t('admin.workers.gpu_model')}</span>
+                          <span className="font-bold text-slate-300">
+                            {worker.gpu_type || 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{t('admin.workers.vram')}</span>
+                          <span className="font-bold text-slate-300">
+                            {worker.vram_gb !== 'N/A' && worker.vram_gb != null
+                              ? `${worker.vram_gb} GB`
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{t('admin.workers.ram')}</span>
+                          <span className="font-bold text-slate-300">
+                            {worker.ram_gb != null ? `${worker.ram_gb} GB` : 'N/A'}
                           </span>
                         </div>
                       </div>

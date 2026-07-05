@@ -984,33 +984,36 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         gpu_type = "N/A"
         vram_gb = "N/A"
 
-        if has_gpu:
-            gpu_type = "NVIDIA GPU"
-            try:
-                gpu_name_out = (
-                    subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]  # noqa: S607
-                    )
-                    .decode("utf-8")
-                    .strip()
+        try:
+            gpu_name_out = (
+                subprocess.check_output(
+                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]  # noqa: S607
                 )
-                if gpu_name_out:
-                    gpu_type = gpu_name_out.split("\n")[0]
-                vram_out = (
-                    subprocess.check_output(
-                        [  # noqa: S607
-                            "nvidia-smi",
-                            "--query-gpu=memory.total",
-                            "--format=csv,noheader,nounits",
-                        ]
-                    )
-                    .decode("utf-8")
-                    .strip()
+                .decode("utf-8")
+                .strip()
+            )
+            if gpu_name_out:
+                has_gpu = True
+                gpu_type = gpu_name_out.split("\n")[0]
+            vram_out = (
+                subprocess.check_output(
+                    [  # noqa: S607
+                        "nvidia-smi",
+                        "--query-gpu=memory.total",
+                        "--format=csv,noheader,nounits",
+                    ]
                 )
-                if vram_out:
-                    vram_mb = int(vram_out.split("\n")[0])
-                    vram_gb = round(vram_mb / 1024, 1)
-            except Exception:
+                .decode("utf-8")
+                .strip()
+            )
+            if vram_out:
+                vram_mb = int(vram_out.split("\n")[0])
+                vram_gb = round(vram_mb / 1024, 1)
+        except Exception:
+            if not has_gpu:
+                gpu_type = "N/A"
+                vram_gb = "N/A"
+            else:
                 gpu_type = "NVIDIA GPU"
                 vram_gb = 8.0
 
