@@ -300,7 +300,8 @@ export default function SubmissionsView() {
             setSelectedSubmission((prev) => {
               if (!prev) return null;
               const updated = data.items.find((s) => s.id === prev.id);
-              return updated ? { ...prev, ...updated } : prev;
+              if (updated) return { ...prev, ...updated };
+              return prev;
             });
           } else {
             const arr = data || [];
@@ -310,7 +311,8 @@ export default function SubmissionsView() {
             setSelectedSubmission((prev) => {
               if (!prev) return null;
               const updated = arr.find((s) => s.id === prev.id);
-              return updated ? { ...prev, ...updated } : prev;
+              if (updated) return { ...prev, ...updated };
+              return prev;
             });
           }
         }

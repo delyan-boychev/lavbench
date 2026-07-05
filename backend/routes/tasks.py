@@ -1261,8 +1261,9 @@ def stream_task_leaderboard(
             yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
 
             r = get_redis_client()
-            pubsub = r.pubsub()
-            pubsub.subscribe(f"task_{task_id}_leaderboard")
+            pubsub = r.pubsub() if r else None
+            if pubsub:
+                pubsub.subscribe(f"task_{task_id}_leaderboard")
             start_time = time.time()
 
             try:
@@ -1270,20 +1271,24 @@ def stream_task_leaderboard(
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    if message:
-                        data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                        yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                        if message:
+                            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
+                            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
+                            continue
                     else:
-                        yield ": keep-alive\n\n"
+                        time.sleep(2.0)
+                    yield ": keep-alive\n\n"
             except GeneratorExit:
                 pass
             except Exception as e:
                 logger.error("Leaderboard SSE error: %s", e)
             finally:
-                with contextlib.suppress(Exception):
-                    pubsub.unsubscribe()
-                    pubsub.close()
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1325,12 +1330,13 @@ def stream_task_submissions(
             yield f"data: {json.dumps(data)}\n\n"
 
             r = get_redis_client()
-            pubsub = r.pubsub()
+            pubsub = r.pubsub() if r else None
 
-            if user_role in ["admin", "jury"]:
-                pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
-            else:
-                pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+            if pubsub:
+                if user_role in ["admin", "jury"]:
+                    pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
+                else:
+                    pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
 
             start_time = time.time()
 
@@ -1339,25 +1345,29 @@ def stream_task_submissions(
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    if message:
-                        data = _get_task_submissions_data(
-                            task_id, user_role, current_user_id, page, per_page
-                        )
-                        yield f"data: {json.dumps(data)}\n\n"
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                        if message:
+                            data = _get_task_submissions_data(
+                                task_id, user_role, current_user_id, page, per_page
+                            )
+                            yield f"data: {json.dumps(data)}\n\n"
+                            continue
                     else:
-                        yield ": keep-alive\n\n"
+                        time.sleep(2.0)
+                    yield ": keep-alive\n\n"
             except GeneratorExit:
                 pass
             except Exception as e:
                 logger.error("Submissions SSE error: %s", e)
             finally:
-                with contextlib.suppress(Exception):
-                    if user_role in ["admin", "jury"]:
-                        pubsub.punsubscribe()
-                    else:
-                        pubsub.unsubscribe()
-                    pubsub.close()
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        if user_role in ["admin", "jury"]:
+                            pubsub.punsubscribe()
+                        else:
+                            pubsub.unsubscribe()
+                        pubsub.close()
 
     return sse_response(event_generator)
 
@@ -1391,8 +1401,9 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             yield f"data: {json.dumps(res_data)}\n\n"
 
             r = get_redis_client()
-            pubsub = r.pubsub()
-            pubsub.subscribe("worker_status_live")
+            pubsub = r.pubsub() if r else None
+            if pubsub:
+                pubsub.subscribe("worker_status_live")
 
             last_sent = time.time()
             start_time = time.time()
@@ -1401,9 +1412,14 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                    got_message = False
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                        got_message = bool(message)
+                    else:
+                        time.sleep(5.0)
                     now = time.time()
-                    if message or (now - last_sent) >= 10:
+                    if got_message or (now - last_sent) >= 10:
                         res_data = _get_worker_status_data()
                         yield f"data: {json.dumps(res_data)}\n\n"
                         last_sent = now
@@ -1412,9 +1428,10 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             except GeneratorExit:
                 pass
             finally:
-                with contextlib.suppress(Exception):
-                    pubsub.unsubscribe()
-                    pubsub.close()
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
 
     return sse_response(event_generator)
 
