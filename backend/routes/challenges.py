@@ -278,7 +278,7 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
 
 
 @challenges_bp.route("", methods=["POST"])
-@role_required(["admin", "jury"])
+@role_required(["admin"])
 @api.validate(
     json=CreateChallengeSchema,
     resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
@@ -444,7 +444,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
-@role_required(["admin", "jury"])
+@role_required(["admin"])
 @jury_access_required
 @api.validate(
     json=UpdateChallengeSchema,
