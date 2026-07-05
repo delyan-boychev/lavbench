@@ -16,6 +16,8 @@ amqp==5.3.1
     # via kombu
 annotated-doc==0.0.4
     # via typer
+annotated-types==0.7.0
+    # via pydantic
 anyio==4.12.1
     # via httpx
 attrs==26.1.0
@@ -207,6 +209,14 @@ pyarrow==21.0.0
     #   datasets
 pycparser==2.23
     # via cffi
+pydantic==2.13.4
+    # via
+    #   -r backend/requirements.in
+    #   pydantic-extra-types
+pydantic-core==2.46.4
+    # via pydantic
+pydantic-extra-types==2.11.1
+    # via -r backend/requirements.in
 pygments==2.20.0
     # via rich
 pyjwt==2.13.0
@@ -279,8 +289,14 @@ typing-extensions==4.15.0
     #   aiosignal
     #   anyio
     #   huggingface-hub
+    #   pydantic
+    #   pydantic-core
+    #   pydantic-extra-types
     #   referencing
     #   sqlalchemy
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via pydantic
 tzdata==2026.2
     # via
     #   kombu
