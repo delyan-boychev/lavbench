@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gzip
 import logging
 import os
@@ -10,7 +12,9 @@ import requests
 from concurrent_log_handler import ConcurrentRotatingFileHandler
 
 
-def setup_logging(service_name, log_dir=None, level=logging.INFO):
+def setup_logging(
+    service_name: str, log_dir: str | None = None, level: int = logging.INFO
+) -> logging.Logger:
     log_dir = log_dir or os.environ.get("LOG_DIR", "/app/logs")
 
     root = logging.getLogger()
@@ -51,15 +55,17 @@ def setup_logging(service_name, log_dir=None, level=logging.INFO):
 class RemoteShipHandler(logging.Handler):
     """Buffers log records and ships them to the server via gzipped POST."""
 
-    def __init__(self, ship_url, token, max_lines=5000, ship_interval_days=6):
+    def __init__(
+        self, ship_url: str, token: str, max_lines: int = 5000, ship_interval_days: int = 6
+    ):
         super().__init__(level=logging.INFO)
         self.ship_url = ship_url
         self.token = token
         self.max_lines = max_lines
         self.ship_interval = ship_interval_days * 86400
-        self.queue = Queue()
-        self._buffer_count = 0
-        self._last_ship = _time.time()
+        self.queue: Queue[str] = Queue()
+        self._buffer_count: int = 0
+        self._last_ship: float = _time.time()
 
         fmt = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -67,7 +73,7 @@ class RemoteShipHandler(logging.Handler):
         )
         self.setFormatter(fmt)
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         msg = self.format(record)
         if self.queue.qsize() >= self.max_lines:
             with suppress(Exception):
@@ -78,7 +84,7 @@ class RemoteShipHandler(logging.Handler):
         if self._buffer_count >= self.max_lines or elapsed >= self.ship_interval:
             self.flush()
 
-    def flush(self):
+    def flush(self) -> None:
         if self.queue.empty():
             return
         lines = []

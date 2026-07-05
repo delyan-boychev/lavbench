@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from schemas.exceptions import SchemaError
 
 
-def _parse_datetime_strict(v):
+def _parse_datetime_strict(v: Any) -> datetime | None:
     if v is None or (isinstance(v, str) and not v.strip()):
         return None
     if isinstance(v, datetime):

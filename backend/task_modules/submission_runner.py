@@ -1,5 +1,7 @@
 """Celery task for executing competitor submissions in Docker sandboxes."""
 
+from __future__ import annotations
+
 import contextlib
 import fcntl
 import json
@@ -10,6 +12,8 @@ import subprocess
 import tempfile
 import time
 import traceback
+from collections.abc import Callable
+from typing import Any
 
 import requests
 from celery.signals import worker_ready
@@ -32,7 +36,9 @@ from worker_utils import (
 logger = logging.getLogger(__name__)
 
 
-def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
+def _fetch_hf_key_from_server(
+    task_id: str | None, main_server_url: str | None, worker_token: str | None
+) -> str:
     if not task_id or not main_server_url or not worker_token:
         logger.warning(
             "_fetch_hf_key_from_server: missing params (task=%s url=%s has_token=%s)",
@@ -55,7 +61,13 @@ def _fetch_hf_key_from_server(task_id, main_server_url, worker_token):
     return ""
 
 
-def _preload_dataset(load_fn, ds_name, hf_cache_dir, hf_token, logs):
+def _preload_dataset(
+    load_fn: Callable[..., Any],
+    ds_name: str,
+    hf_cache_dir: str,
+    hf_token: str | None,
+    logs: list[str],
+) -> None:
     try:
         load_fn(ds_name, cache_dir=hf_cache_dir, token=hf_token)
         logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache.")
@@ -63,7 +75,13 @@ def _preload_dataset(load_fn, ds_name, hf_cache_dir, hf_token, logs):
         logs.append(f"Warning: Failed to preload dataset '{ds_name}': {preload_err}")
 
 
-def _preload_model(download_fn, model_name, hf_cache_dir, hf_token, logs):
+def _preload_model(
+    download_fn: Callable[..., Any],
+    model_name: str,
+    hf_cache_dir: str,
+    hf_token: str | None,
+    logs: list[str],
+) -> None:
     try:
         download_fn(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token)
         logs.append(f"Successfully preloaded model '{model_name}' to host cache.")
@@ -71,7 +89,9 @@ def _preload_model(download_fn, model_name, hf_cache_dir, hf_token, logs):
         logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
 
 
-def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
+def preload_submission_datasets(
+    task: Any, challenge: Any, temp_dir: str, hf_cache_dir: str | None, logs: list[str]
+) -> None:
     """
     Preloads HuggingFace datasets and models on the host so they are available offline in docker.
     """
@@ -142,7 +162,7 @@ def preload_submission_datasets(task, challenge, temp_dir, hf_cache_dir, logs):
             )
 
 
-def calculate_weighted_score(metrics_payload, metrics_cfg):
+def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) -> float:
     from models import is_metric_lower_better
 
     if not metrics_cfg:
@@ -181,7 +201,15 @@ def calculate_weighted_score(metrics_payload, metrics_cfg):
     return weighted_sum / total_weight
 
 
-def run_eval_submission(self_task, submission_id, metadata, app, db, submission_cls, challenge_cls):
+def run_eval_submission(
+    self_task: Any,
+    submission_id: Any,
+    metadata: dict[str, Any] | None,
+    app: Any,
+    db: Any,
+    submission_cls: Any,
+    challenge_cls: Any,
+) -> str | None:
     running_as_worker = app is None
     # 1. Setup mock/real models
     if metadata:
@@ -291,15 +319,15 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
 
     # 2. Define status callback helper
     def update_status(
-        status_val,
-        detailed_val,
-        logs_list=None,
-        pub_score=None,
-        priv_score=None,
-        time_ms=None,
-        m_pub=None,
-        m_priv=None,
-    ):
+        status_val: str,
+        detailed_val: str,
+        logs_list: list[str] | None = None,
+        pub_score: float | None = None,
+        priv_score: float | None = None,
+        time_ms: int | None = None,
+        m_pub: dict[str, Any] | None = None,
+        m_priv: dict[str, Any] | None = None,
+    ) -> None:
         if metadata:
             # Safely join logs — filter out non-string items (can happen in test mocks)
             logs_str = None
@@ -411,13 +439,13 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                     publish_submissions_update(sub.task_id, sub.user_id)
                     publish_leaderboard_update(sub.task_id)
 
-    logs = None
-    status = "queued"
-    public_score = None
-    private_score = None
-    execution_time_ms = 0
-    metrics_payload_pub = None
-    metrics_payload_priv = None
+    logs: StreamingLogList | None = None
+    status: str = "queued"
+    public_score: float | None = None
+    private_score: float | None = None
+    execution_time_ms: int = 0
+    metrics_payload_pub: dict[str, Any] | None = None
+    metrics_payload_priv: dict[str, Any] | None = None
 
     # 3. Start evaluation execution
     try:
@@ -691,11 +719,11 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
         update_status("running", "evaluating", logs_list=logs)
 
         status = "completed"
-        public_score = None
-        private_score = None
-        execution_time_ms = 0
-        metrics_payload_pub = {}
-        metrics_payload_priv = {}
+        public_score: float | None = None
+        private_score: float | None = None
+        execution_time_ms: int = 0
+        metrics_payload_pub: dict[str, Any] = {}
+        metrics_payload_priv: dict[str, Any] = {}
 
         if process_timeout:
             status = "failed"
@@ -916,7 +944,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
 
 
 @worker_ready.connect
-def register_worker_specs(sender, **kwargs):
+def register_worker_specs(sender: Any, **kwargs: Any) -> None:
     try:
         import platform
 

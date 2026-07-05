@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import uuid
+from typing import Any, ClassVar
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
@@ -12,7 +13,7 @@ from utils.dates import utcnow
 logger = logging.getLogger(__name__)
 
 
-class Submission(db.Model):
+class Submission(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "submissions"
 
     __table_args__ = (
@@ -59,22 +60,25 @@ class Submission(db.Model):
     is_disqualified = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(255), nullable=True)
 
+    _cached_code_cells: ClassVar[str | None] = None
+    _cached_logs: ClassVar[str | None] = None
+
     @property
-    def code_cells(self):
+    def code_cells(self) -> str:
         if hasattr(self, "_cached_code_cells") and self._cached_code_cells is not None:
             return self._cached_code_cells
         if self.code_storage_path and os.path.exists(self.code_storage_path):
             try:
                 with open(self.code_storage_path, encoding="utf-8") as f:
-                    self._cached_code_cells = f.read()
+                    self._cached_code_cells = f.read()  # type: ignore[misc]
                     return self._cached_code_cells
             except Exception as e:
                 logger.warning("Failed to read code_cells file for submission %s: %s", self.id, e)
         return "[]"
 
     @code_cells.setter
-    def code_cells(self, value):
-        self._cached_code_cells = value
+    def code_cells(self, value: str) -> None:
+        self._cached_code_cells = value  # type: ignore[misc]
         try:
             from flask import current_app
 
@@ -85,7 +89,7 @@ class Submission(db.Model):
 
                 upload_folder = Config.UPLOAD_FOLDER
 
-            submissions_dir = os.path.join(upload_folder, "submissions")
+            submissions_dir = os.path.join(upload_folder, "submissions")  # type: ignore[arg-type]
             os.makedirs(submissions_dir, exist_ok=True)
             if not self.code_storage_path:
                 filename = f"submission_{uuid.uuid4().hex}.json"
@@ -96,7 +100,7 @@ class Submission(db.Model):
             logger.exception("Error saving code_cells to file")
 
     @property
-    def logs(self):
+    def logs(self) -> str:
         if self.log_storage_path and os.path.exists(self.log_storage_path):
             try:
                 with open(self.log_storage_path, encoding="utf-8") as f:
@@ -106,8 +110,8 @@ class Submission(db.Model):
         return ""
 
     @logs.setter
-    def logs(self, value):
-        self._cached_logs = value
+    def logs(self, value: str) -> None:
+        self._cached_logs = value  # type: ignore[misc]
         try:
             from flask import current_app
 
@@ -118,7 +122,7 @@ class Submission(db.Model):
 
                 upload_folder = Config.UPLOAD_FOLDER
 
-            logs_dir = os.path.join(upload_folder, "logs")
+            logs_dir = os.path.join(upload_folder, "logs")  # type: ignore[arg-type]
             os.makedirs(logs_dir, exist_ok=True)
             if not self.log_storage_path:
                 filename = f"log_{uuid.uuid4().hex}.txt"
@@ -128,7 +132,12 @@ class Submission(db.Model):
         except Exception:
             logger.exception("Error saving logs to file")
 
-    def to_dict(self, view_role="competitor", current_user_id=None, include_large_fields=True):
+    def to_dict(
+        self,
+        view_role: str = "competitor",
+        current_user_id: Any = None,
+        include_large_fields: bool = True,
+    ) -> dict[str, Any]:
         finalized = self.challenge.scores_finalized if self.challenge else False
         double_blind = self.challenge.double_blind if self.challenge else True
 
@@ -216,7 +225,9 @@ class Submission(db.Model):
             "celery_task_id": self.celery_task_id,
         }
 
-    def to_dict_light(self, view_role="competitor", current_user_id=None):
+    def to_dict_light(
+        self, view_role: str = "competitor", current_user_id: Any = None
+    ) -> dict[str, Any]:
         res = self.to_dict(
             view_role=view_role,
             current_user_id=current_user_id,
@@ -227,8 +238,8 @@ class Submission(db.Model):
         return res
 
 
-@db.event.listens_for(Submission, "after_delete")
-def _delete_submission_files(mapper, connection, target):
+@db.event.listens_for(Submission, "after_delete")  # type: ignore[untyped-decorator]
+def _delete_submission_files(mapper: Any, connection: Any, target: Submission) -> None:
     if target.code_storage_path and os.path.exists(target.code_storage_path):
         with contextlib.suppress(OSError):
             os.remove(target.code_storage_path)

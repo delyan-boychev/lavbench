@@ -1,5 +1,7 @@
 """Celery task for system maintenance — cleanup, watchdog, diagnostics."""
 
+from __future__ import annotations
+
 import contextlib
 import glob
 import json
@@ -10,8 +12,10 @@ import subprocess
 import tempfile
 import urllib.parse
 from pathlib import Path
+from typing import Any
 
 import requests
+from flask import Flask
 
 from config import Config
 from utils.dates import utcnow
@@ -19,7 +23,7 @@ from utils.dates import utcnow
 logger = logging.getLogger(__name__)
 
 
-def run_register_worker_specs(celery_app):
+def run_register_worker_specs(celery_app: Any) -> None:
     from config import Config
 
     gpu_id = Config.WORKER_GPU_ID or None
@@ -28,7 +32,7 @@ def run_register_worker_specs(celery_app):
         machine_id = f"gpu-worker-device-{gpu_id}"
 
     try:
-        import psutil
+        import psutil  # type: ignore[import-untyped]
 
         ram_gb = round(psutil.virtual_memory().total / (1024**3), 2)
     except ImportError:
@@ -55,7 +59,7 @@ def run_register_worker_specs(celery_app):
         logger.warning("Worker registration failed for ID %s: %s", machine_id, str(e))
 
 
-def run_backup(app, auto=True, db_only=False):
+def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
     """
     Unified backup: pg_dump via .pgpass + tar.gz of DB dump + uploads.
     - auto=True  → saves to /backups/auto_*.tar.gz, rotates dynamically
@@ -232,7 +236,7 @@ def run_backup(app, auto=True, db_only=False):
     return filename
 
 
-def _publish_backup_event(filename, size_bytes, challenge_id, state):
+def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, state: Any) -> None:
     try:
         from cache_utils import get_redis_client
 
@@ -250,7 +254,7 @@ def _publish_backup_event(filename, size_bytes, challenge_id, state):
         logger.warning("Failed to publish backup event: %s", e)
 
 
-def run_docker_prune():
+def run_docker_prune() -> dict[str, str]:
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
     from task_modules.docker_utils import prune_images
 

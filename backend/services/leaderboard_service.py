@@ -1,10 +1,14 @@
 """Service-layer functions for leaderboard computation and caching."""
 
+from __future__ import annotations
+
 import json
 import logging
 import time
+import uuid
 from datetime import datetime
 from functools import cmp_to_key
+from typing import Any
 
 from sqlalchemy.orm import joinedload
 
@@ -15,16 +19,18 @@ from services.submission_service import get_best_submission
 logger = logging.getLogger(__name__)
 
 
-def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=False):
+def build_and_cache_leaderboard(
+    challenge_id: uuid.UUID | str, is_frozen_view: bool = False, force_rebuild: bool = False
+) -> list[dict[str, Any]] | None:
     """Compute, cache, and return the leaderboard for a challenge. Uses a distributed lock."""
 
     cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
     lock_key = f"lock:{cache_key}"
 
     if not force_rebuild:
-        cached = get_cached(cache_key)
+        cached: Any = get_cached(cache_key)
         if cached is not None:
-            return cached
+            return cached  # type: ignore[no-any-return]
 
     with cache_lock(lock_key, ttl=30) as got_lock:
         if not got_lock:
@@ -33,7 +39,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                 if not force_rebuild:
                     cached = get_cached(cache_key)
                     if cached is not None:
-                        return cached
+                        return cached  # type: ignore[no-any-return]
 
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge:
@@ -129,7 +135,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
         )
 
         # Pre-group by (user_id, task_id)
-        sub_by_key = {}
+        sub_by_key: dict[tuple[uuid.UUID, uuid.UUID], list[Submission]] = {}
         for s in all_completed:
             key = (s.user_id, s.task_id)
             sub_by_key.setdefault(key, []).append(s)
@@ -214,7 +220,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             total_points = sum(manual_points_dict.get(str(t.id), 0) for t in tasks)
 
             total_exec_time = 0
-            sub_dates = []
+            sub_dates: list[Any] = []
             for v in task_scores.values():
                 if v.get("submission_id") is not None:
                     total_exec_time += v.get("execution_time_ms") or 0
@@ -241,7 +247,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             leaderboard_entries.append(entry_dict)
 
         # Add baseline entries (one per task that has a baseline submission)
-        baseline_by_task = {}
+        baseline_by_task: dict[uuid.UUID, Submission] = {}
         for s in all_completed:
             if s.is_baseline:
                 existing = baseline_by_task.get(s.task_id)
@@ -254,7 +260,8 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
                         challenge,
                         is_lower_better=task_metrics.get(s.task.id, False),
                     )
-                    baseline_by_task[s.task_id] = chosen
+                    if chosen is not None:
+                        baseline_by_task[s.task_id] = chosen
 
         competitor_ids = {c.id for c in competitors}
         for task_id, baseline_sub in baseline_by_task.items():
@@ -300,7 +307,7 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
             }
             leaderboard_entries.append(baseline_entry)
 
-        def compare_entries(a, b):
+        def compare_entries(a: dict[str, Any], b: dict[str, Any]) -> int:
             if challenge_finalized:
                 pa = a["total_points"]
                 pb = b["total_points"]
@@ -387,12 +394,14 @@ def build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuil
         if not force_rebuild:
             cached = get_cached(cache_key)
             if cached is not None:
-                return cached
+                return cached  # type: ignore[no-any-return]
         set_cached(cache_key, cached_entries, timeout=120)
         return cached_entries
 
 
-def get_task_leaderboard_data(task_id, user_role, current_user_id):
+def get_task_leaderboard_data(
+    task_id: uuid.UUID | str, user_role: str, current_user_id: uuid.UUID | None
+) -> dict[str, Any]:
     task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
@@ -501,7 +510,7 @@ def get_task_leaderboard_data(task_id, user_role, current_user_id):
             baseline_entry["has_submitted"] = True
             leaderboard_entries.append(baseline_entry)
 
-    def compare_entries(a, b):
+    def compare_entries(a: dict[str, Any], b: dict[str, Any]) -> int:
         if a["has_submitted"] != b["has_submitted"]:
             return -1 if a["has_submitted"] else 1
 

@@ -13,7 +13,7 @@ SOURCE_DIR = os.path.join(PROJECT_DIR, "docs", "source")
 API_DIR = os.path.join(SOURCE_DIR, "api")
 RST_PATH = os.path.join(SOURCE_DIR, "api_spec.rst")
 DEFAULT_SPEC_PATH = os.path.join(API_DIR, "spec.json")
-FETCH_URL = os.environ.get("API_SPEC_URL", "http://localhost:5001/apispec_1.json")
+FETCH_URL = os.environ.get("API_SPEC_URL", "http://localhost:5001/apidoc/openapi.json")
 
 
 def fetch_spec():

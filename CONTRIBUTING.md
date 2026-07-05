@@ -61,7 +61,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 
 - Formatted and linted with **Ruff** (configuration in `backend/pyproject.toml`, line‑length 100, rules matching the project’s standards)
 - Error responses must use the `err(code, status, message=...)` helper from `error_utils.py` or raise `SchemaError(code, message)` in Pydantic validators — never `jsonify({"error": ...})` directly
-- Schema validators go in `backend/schemas/` with Pydantic v2 `BaseModel` classes; use `@validate_json(MySchema)` or `@validate_form(MyFormSchema)` decorators on route handlers
+- Schema validators go in `backend/schemas/` with Pydantic v2 `BaseModel` classes; use `@api.validate(json=..., resp=Response(...))` decorators on route handlers
 - Every `ERR_*` code must be defined in `DEFAULT_ERROR_MESSAGES` in `backend/error_utils.py` and referenced by at least one `err()` or `SchemaError()` call
 - Tests in `backend/tests/`, one file per route module or service
 - Dev dependencies (pytest, pytest-mock, Faker, etc.) are in `dev-requirements.in` — compile with `pip-compile dev-requirements.in`
@@ -101,7 +101,7 @@ The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` j
 ## Frontend Type System
 
 ```
-Backend flasgger docstrings
+Backend Pydantic models + spectree decorators
        │
        ▼
   openapi-typescript

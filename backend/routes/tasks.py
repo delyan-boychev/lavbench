@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import gzip
 import json
@@ -5,15 +7,11 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+from typing import Any
 
-from flask import (
-    Blueprint,
-    current_app,
-    jsonify,
-    request,
-    send_file,
-    send_from_directory,
-)
+from flask import Blueprint, current_app, request, send_from_directory
+from flask import Response as FlaskResponse
+from spectree import Response
 from werkzeug.utils import secure_filename
 
 from auth_utils import (
@@ -26,7 +24,19 @@ from auth_utils import (
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
-from schemas import validate_form, validate_json
+from schemas.responses import (
+    ErrorResponse,
+    MessageResponse,
+    PaginatedResponse,
+    SubmissionLightResponse,
+    SubmitResponse,
+    TaskAdminResponse,
+    TaskLeaderboardResponse,
+    WorkerActiveDatasetsResponse,
+    WorkerActiveTasksResponse,
+    WorkerReportResponse,
+    WorkerStatusResponse,
+)
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
 from services.leaderboard_service import get_task_leaderboard_data
@@ -36,6 +46,7 @@ from services.submission_service import (
     extract_code_from_cells,
     extract_code_from_notebook,
 )
+from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
@@ -57,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 
 class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         import uuid
 
         if isinstance(obj, uuid.UUID):
@@ -71,12 +82,11 @@ VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
 
 
-def check_competitor_access(user_id, challenge_id):
-
+def check_competitor_access(user_id: Any, challenge_id: Any) -> bool:
     return ensure_registered(user_id, challenge_id) is not None
 
 
-def check_task_started(task, user_role, user_id):
+def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
     if user_role == "competitor":
         if not check_competitor_access(user_id, task.challenge_id):
             return False
@@ -100,7 +110,7 @@ def check_task_started(task, user_role, user_id):
     return True
 
 
-def to_bool(val):
+def to_bool(val: Any) -> bool | None:
     if val is None:
         return None
     if isinstance(val, str):
@@ -108,7 +118,7 @@ def to_bool(val):
     return bool(val)
 
 
-def to_int(val):
+def to_int(val: Any) -> int | None:
     if val is None or str(val).strip() == "":
         return None
     try:
@@ -117,7 +127,9 @@ def to_int(val):
         return None
 
 
-def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
+def queue_system_submission(
+    task: Any, challenge: Any, code_cells: list[dict[str, Any]], admin_id: Any, priority: int = 8
+) -> None:
     submission = Submission(
         user_id=admin_id,
         challenge_id=challenge.id,
@@ -172,7 +184,7 @@ def queue_system_submission(task, challenge, code_cells, admin_id, priority=8):
     db.session.commit()
 
 
-def _maybe_queue_baseline(task, challenge, admin_id):
+def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
     """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
     # Remove old baseline submissions for this task and their physical files
     import os
@@ -206,28 +218,13 @@ def _maybe_queue_baseline(task, challenge, admin_id):
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["GET"])
 @login_required
 @jury_access_required
-def get_task(task_id):
-    """
-    API endpoint.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=TaskAdminResponse, HTTP_403=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """API endpoint."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -235,39 +232,26 @@ def get_task(task_id):
     if not check_task_started(task, user_role, user_id):
         return err("ERR_NOT_AVAILABLE", 403)
 
-    return jsonify(task.to_dict(view_role=user_role))
+    return task.to_dict(view_role=user_role)
 
 
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_form(CreateTaskMetaSchema)
-def create_task(challenge_id, form_data):
-    """
-    Create a new evaluation task with resource limits, metrics, and test data files.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    form=CreateTaskMetaSchema,
+    resp=Response(HTTP_201=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def create_task(
+    challenge_id: Any, form: CreateTaskMetaSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """Create a new evaluation task with resource limits, metrics, and test data files."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    title = form_data.title
-    description = form_data.description
+    title = form.title
+    description = form.description
 
     if (
         "baseline_notebook" not in request.files
@@ -275,13 +259,13 @@ def create_task(challenge_id, form_data):
     ):
         return err("ERR_BASELINE_REQUIRED", 400)
 
-    ram_limit_mb = form_data.ram_limit_mb
-    time_limit_sec = form_data.time_limit_sec
-    gpu_required = form_data.gpu_required
+    ram_limit_mb = form.ram_limit_mb
+    time_limit_sec = form.time_limit_sec
+    gpu_required = form.gpu_required
 
-    base_docker_image = form_data.base_docker_image
-    apt_packages = form_data.apt_packages
-    pip_requirements = form_data.pip_requirements
+    base_docker_image = form.base_docker_image
+    apt_packages = form.apt_packages
+    pip_requirements = form.pip_requirements
 
     if request.user.get("role") != "admin" and (
         base_docker_image or apt_packages or pip_requirements
@@ -292,14 +276,14 @@ def create_task(challenge_id, form_data):
             message="Only administrators are allowed to configure custom environments.",
         )
 
-    ban_magic_commands = form_data.ban_magic_commands
-    banned_imports = form_data.banned_imports
-    whitelisted_imports = form_data.whitelisted_imports
+    ban_magic_commands = form.ban_magic_commands
+    banned_imports = form.banned_imports
+    whitelisted_imports = form.whitelisted_imports
 
-    hf_datasets = form_data.hf_datasets
-    hf_models = form_data.hf_models
+    hf_datasets = form.hf_datasets
+    hf_models = form.hf_models
 
-    metrics_config = form_data.metrics_config
+    metrics_config = form.metrics_config
     if metrics_config:
         from evaluation_engine import AVAILABLE_METRICS
 
@@ -314,10 +298,10 @@ def create_task(challenge_id, form_data):
                     message=f"Invalid metric '{metric_name}'. Allowed metrics: {allowed_metrics}",
                 )
 
-    public_eval_percentage = form_data.public_eval_percentage
-    max_submissions_per_period = form_data.max_submissions_per_period
-    submission_period_hours = form_data.submission_period_hours
-    stage_id = form_data.stage_id
+    public_eval_percentage = form.public_eval_percentage
+    max_submissions_per_period = form.max_submissions_per_period
+    submission_period_hours = form.submission_period_hours
+    stage_id = form.stage_id
     if stage_id == "":
         stage_id = None
 
@@ -510,42 +494,29 @@ def create_task(challenge_id, form_data):
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
-    return jsonify(task.to_dict(view_role=request.user["role"])), 201
+    return task.to_dict(view_role=request.user["role"]), 201
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_form(UpdateTaskMetaSchema)
-def update_task(task_id, form_data):
-    """
-    Update an existing task configuration including files and evaluator scripts.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    form=UpdateTaskMetaSchema,
+    resp=Response(HTTP_200=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def update_task(
+    task_id: Any, form: UpdateTaskMetaSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Update an existing task configuration including files and evaluator scripts."""
     task = db.get_or_404(Task, task_id)
-    fields = form_data.model_fields_set
+    fields = form.model_fields_set
 
     if request.user.get("role") != "admin":
         for field in ["base_docker_image", "apt_packages", "pip_requirements"]:
             if field in fields:
-                val = getattr(form_data, field)
+                val = getattr(form, field)
                 current_val = getattr(task, field)
                 if (val or "").strip() != (current_val or "").strip():
                     return err(
@@ -555,58 +526,58 @@ def update_task(task_id, form_data):
                     )
 
     if "title" in fields:
-        task.title = form_data.title
+        task.title = form.title
     if "description" in fields:
-        task.description = form_data.description
+        task.description = form.description
 
-    if "ram_limit_mb" in fields and form_data.ram_limit_mb is not None:
-        task.ram_limit_mb = form_data.ram_limit_mb
+    if "ram_limit_mb" in fields and form.ram_limit_mb is not None:
+        task.ram_limit_mb = form.ram_limit_mb
 
     if "base_docker_image" in fields:
-        task.base_docker_image = form_data.base_docker_image
+        task.base_docker_image = form.base_docker_image
 
     if "apt_packages" in fields:
-        task.apt_packages = form_data.apt_packages
+        task.apt_packages = form.apt_packages
 
     if "pip_requirements" in fields:
-        task.pip_requirements = form_data.pip_requirements
+        task.pip_requirements = form.pip_requirements
 
-    if "time_limit_sec" in fields and form_data.time_limit_sec is not None:
-        task.time_limit_sec = form_data.time_limit_sec
+    if "time_limit_sec" in fields and form.time_limit_sec is not None:
+        task.time_limit_sec = form.time_limit_sec
     if "gpu_required" in fields:
-        task.gpu_required = form_data.gpu_required
+        task.gpu_required = form.gpu_required
 
     if "ban_magic_commands" in fields:
-        task.ban_magic_commands = form_data.ban_magic_commands
+        task.ban_magic_commands = form.ban_magic_commands
     if "banned_imports" in fields:
-        task.banned_imports = form_data.banned_imports
+        task.banned_imports = form.banned_imports
 
     if "metrics_config" in fields:
-        task.metrics_config = form_data.metrics_config
+        task.metrics_config = form.metrics_config
 
     if "whitelisted_imports" in fields:
-        task.whitelisted_imports = form_data.whitelisted_imports
+        task.whitelisted_imports = form.whitelisted_imports
 
     if "hf_datasets" in fields:
-        task.hf_datasets = form_data.hf_datasets
+        task.hf_datasets = form.hf_datasets
 
     if "hf_models" in fields:
-        task.hf_models = form_data.hf_models
+        task.hf_models = form.hf_models
 
     if "hf_api_key" in request.form:
         hf_api_key = request.form.get("hf_api_key")
         if hf_api_key:
             task.set_hf_api_key(hf_api_key)
-    if "public_eval_percentage" in fields and form_data.public_eval_percentage is not None:
-        task.public_eval_percentage = form_data.public_eval_percentage
-    if "max_submissions_per_period" in fields and form_data.max_submissions_per_period is not None:
-        task.max_submissions_per_period = form_data.max_submissions_per_period
-    if "submission_period_hours" in fields and form_data.submission_period_hours is not None:
-        task.submission_period_hours = form_data.submission_period_hours
+    if "public_eval_percentage" in fields and form.public_eval_percentage is not None:
+        task.public_eval_percentage = form.public_eval_percentage
+    if "max_submissions_per_period" in fields and form.max_submissions_per_period is not None:
+        task.max_submissions_per_period = form.max_submissions_per_period
+    if "submission_period_hours" in fields and form.submission_period_hours is not None:
+        task.submission_period_hours = form.submission_period_hours
     if "stage_id" in fields:
         from models import Stage
 
-        stage_id_val = form_data.stage_id
+        stage_id_val = form.stage_id
         if stage_id_val == "":
             stage_id_val = None
 
@@ -671,7 +642,7 @@ def update_task(task_id, form_data):
 
     current_files = safe_json_loads(task.files, [])
 
-    deleted_files_raw = form_data.deleted_files
+    deleted_files_raw = form.deleted_files
     if deleted_files_raw:
         try:
             deleted_filenames = json.loads(deleted_files_raw)
@@ -687,11 +658,11 @@ def update_task(task_id, form_data):
         except (json.JSONDecodeError, TypeError, KeyError, OSError) as e:
             logger.warning("Failed to process deleted_files for task %s: %s", task.id, e)
 
-    if form_data.delete_evaluator and task.evaluator_script_path:
+    if form.delete_evaluator and task.evaluator_script_path:
         if os.path.exists(task.evaluator_script_path):
             os.remove(task.evaluator_script_path)
         task.evaluator_script_path = None
-    if form_data.delete_baseline and task.baseline_notebook_path:
+    if form.delete_baseline and task.baseline_notebook_path:
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
@@ -700,7 +671,7 @@ def update_task(task_id, form_data):
     if len(current_files) + len(new_files_keys) > 5:
         return err("ERR_TOO_MANY_FILES", 400)
 
-    newly_saved_paths = []
+    newly_saved_paths: list[str] = []
 
     for key in new_files_keys:
         uploaded_file = request.files[key]
@@ -798,34 +769,19 @@ def update_task(task_id, form_data):
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
-    return jsonify(task.to_dict(view_role=request.user["role"]))
+    return task.to_dict(view_role=request.user["role"])
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def delete_task(task_id):
-    """
-    Remove a task and all its submissions from a challenge.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=MessageResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
+    """Remove a task and all its submissions from a challenge."""
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
@@ -862,7 +818,7 @@ def delete_task(task_id):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify({"message": f"Task '{task.title}' has been deleted successfully."})
+    return MessageResponse(message=f"Task '{task.title}' has been deleted successfully.")
 
 
 # --- DOWNLOAD FILE ---
@@ -872,32 +828,15 @@ def delete_task(task_id):
 @login_required
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-def download_task_file(task_id, filename):
-    """
-    Download a resource file attached to a task.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-      - in: path
-        name: filename
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def download_task_file(
+    task_id: Any, filename: str
+) -> FlaskResponse | tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Download a resource file attached to a task."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
     user_id = request.user["user_id"]
@@ -928,8 +867,15 @@ def download_task_file(task_id, filename):
     if task.baseline_notebook_path:
         baseline_basename = os.path.basename(task.baseline_notebook_path)
         if filename == baseline_basename:
-            return send_file(
-                task.baseline_notebook_path, as_attachment=True, download_name=filename
+            with open(task.baseline_notebook_path, "rb") as fh:
+                baseline_bytes = fh.read()
+            return (
+                baseline_bytes,
+                200,
+                {
+                    "Content-Type": "application/octet-stream",
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                },
             )
 
     return err("ERR_FILE_NOT_FOUND", 404)
@@ -942,29 +888,24 @@ def download_task_file(task_id, filename):
 @login_required
 @jury_access_required
 @rate_limit(max_requests=10, window_seconds=60)
-@validate_json(SelectedCellsSchema)
-def submit_task(task_id, data):
-    """
-    Submit code cells for execution under a specific task.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
+@api.validate(
+    json=SelectedCellsSchema,
+    resp=Response(
+        HTTP_202=SubmitResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_500=ErrorResponse,
+        HTTP_503=ErrorResponse,
+    ),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def submit_task(
+    task_id: Any, json: SelectedCellsSchema
+) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
+    """Submit code cells for execution under a specific task."""
+    import json as jsonlib
 
-        content:
-          application/json:
-            schema:
-              type: object
-    """
     task = db.get_or_404(Task, task_id)
     challenge = task.challenge
 
@@ -975,7 +916,7 @@ def submit_task(task_id, data):
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]
-    selected_cells = data.selected_cells
+    selected_cells = json.selected_cells
 
     if user_role == "competitor":
         if not check_competitor_access(user_id, task.challenge_id):
@@ -1053,7 +994,7 @@ def submit_task(task_id, data):
             task_id=task.id,
             status="failed",
             detailed_status="failed",
-            code_cells=json.dumps(selected_cells),
+            code_cells=jsonlib.dumps(selected_cells),
             public_score=0.0,
             private_score=0.0,
             logs=f"--- Rule Check Failed ---\n{err_msg}",
@@ -1068,7 +1009,7 @@ def submit_task(task_id, data):
             200,
             message=err_msg,
             submission_id=submission.id,
-            status=submission.status,
+            submission_status=submission.status,
         )
 
     priority = calculate_submission_priority(user_id, user_role)
@@ -1079,7 +1020,7 @@ def submit_task(task_id, data):
         task_id=task.id,
         status="queued",
         detailed_status="queued",
-        code_cells=json.dumps(selected_cells),
+        code_cells=jsonlib.dumps(selected_cells),
     )
     db.session.add(submission)
     db.session.commit()
@@ -1142,21 +1083,22 @@ def submit_task(task_id, data):
         db.session.commit()
         return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
 
-    return (
-        jsonify(
-            {
-                "message": "Submission received and queued for execution.",
-                "submission_id": submission.id,
-                "status": submission.status,
-            }
-        ),
-        202,
-    )
+    return SubmitResponse(
+        message="Submission received and queued for execution.",
+        submission_id=submission.id,
+        status=submission.status,
+    ), 202
 
 
 def _get_task_submissions_data(
-    task_id, user_role, user_id, page=None, per_page=10, filter_user_id=None, baseline=False
-):
+    task_id: Any,
+    user_role: str,
+    user_id: Any,
+    page: int = 1,
+    per_page: int = 10,
+    filter_user_id: Any | None = None,
+    baseline: bool = False,
+) -> dict[str, Any]:
     task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
@@ -1185,52 +1127,32 @@ def _get_task_submissions_data(
         joinedload(Submission.task),
     )
 
-    if page is not None:
-        pagination = query.order_by(Submission.created_at.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-        return {
-            "items": [
-                s.to_dict_light(view_role=user_role, current_user_id=user_id)
-                for s in pagination.items
-            ],
-            "total": pagination.total,
-            "page": pagination.page,
-            "pages": pagination.pages,
-        }
-
-    submissions = query.order_by(Submission.created_at.desc()).all()
-    return [s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in submissions]
+    pagination = query.order_by(Submission.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return {
+        "items": [
+            s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items
+        ],
+        "total": pagination.total,
+        "page": pagination.page,
+        "pages": pagination.pages,
+    }
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions", methods=["GET"])
 @login_required
 @jury_access_required
-def get_task_submissions(task_id):
-    """
-    List submissions for a specific task with pagination.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=PaginatedResponse[SubmissionLightResponse], HTTP_403=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def get_task_submissions(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """List submissions for a specific task with pagination."""
     user_role = request.user["role"]
     user_id = request.user["user_id"]
-    page = request.args.get("page", type=int)
+    page = request.args.get("page", 1, type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
     filter_user_id = request.args.get("user_id")
     baseline = request.args.get("baseline", type=str, default="").lower() in ("true", "1")
@@ -1239,77 +1161,56 @@ def get_task_submissions(task_id):
         task_id, user_role, user_id, page, per_page, filter_user_id, baseline=baseline
     )
     if isinstance(data, dict) and "error" in data:
-        return jsonify(data), 403
-    return jsonify(data)
+        return err("ERR_ACCESS_DENIED", 403, message=data["error"])
+    return data
 
 
-def _get_task_leaderboard_data(task_id, user_role, current_user_id):
-
+def _get_task_leaderboard_data(
+    task_id: Any, user_role: str, current_user_id: Any
+) -> dict[str, Any]:
     return get_task_leaderboard_data(task_id, user_role, current_user_id)
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/leaderboard", methods=["GET"])
 @login_required
 @jury_access_required
-def get_task_leaderboard(task_id):
-    """
-    Get cached leaderboard data for a specific task.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=TaskLeaderboardResponse, HTTP_403=ErrorResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def get_task_leaderboard(
+    task_id: Any,
+) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Get cached leaderboard data for a specific task."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
     if "error" in data:
-        return jsonify(data), 403
-    response = jsonify(data)
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+        return err("ERR_ACCESS_DENIED", 403, message=data["error"])
+    return (
+        data,
+        200,
+        {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
 @login_required
 @jury_access_required
-def stream_task_leaderboard(task_id):
-    """
-    Stream live task leaderboard updates via SSE.
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
+    tags=["SSE Streaming"],
+    security=[{"cookieAuth": []}],
+)
+def stream_task_leaderboard(
+    task_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Stream live task leaderboard updates via SSE."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     if user_role == "competitor":
@@ -1357,28 +1258,15 @@ def stream_task_leaderboard(task_id):
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
 @jury_access_required
-def stream_task_submissions(task_id):
-    """
-    Stream live task submission updates via SSE.
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
+    tags=["SSE Streaming"],
+    security=[{"cookieAuth": []}],
+)
+def stream_task_submissions(
+    task_id: Any,
+) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Stream live task submission updates via SSE."""
     user_role = request.user["role"]
     current_user_id = request.user["user_id"]
     page = request.args.get("page", type=int)
@@ -1443,45 +1331,21 @@ def stream_task_submissions(task_id):
 
 @tasks_bp.route("/worker-status", methods=["GET"])
 @login_required
-def get_worker_status():
-    """
-    Get current worker cluster health status with specs.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    return jsonify(_get_worker_status_data())
+@api.validate(
+    resp=Response(HTTP_200=WorkerStatusResponse),
+    tags=["Tasks"],
+    security=[{"cookieAuth": []}],
+)
+def get_worker_status() -> dict[str, Any]:
+    """Get current worker cluster health status with specs."""
+    return _get_worker_status_data()
 
 
 @tasks_bp.route("/worker-status/live", methods=["GET"])
 @login_required
-def stream_worker_status():
-    """
-    Stream worker cluster health status via SSE.
-    ---
-    tags:
-      - SSE Streaming
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
+def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
+    """Stream worker cluster health status via SSE."""
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -1522,7 +1386,7 @@ def stream_worker_status():
     return sse_response(event_generator)
 
 
-def _get_worker_status_data():
+def _get_worker_status_data() -> dict[str, Any]:
 
     def _compute():
         import json as json_lib
@@ -1585,28 +1449,19 @@ def _get_worker_status_data():
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
 @rate_limit(max_requests=120, window_seconds=60, per_user=False)
-def report_worker_progress(submission_id):
-    """
-    Worker callback to report submission status and scores.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: submission_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(
+        HTTP_200=WorkerReportResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def report_worker_progress(
+    submission_id: Any,
+) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
+    """Worker callback to report submission status and scores."""
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1674,36 +1529,15 @@ def report_worker_progress(submission_id):
         except Exception:
             current_app.logger.exception("Failed to invalidate leaderboard cache in report route")
 
-    return jsonify({"message": "Status updated successfully"}), 200
+    return {"message": "Status updated successfully"}, 200
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
-def worker_download_task_file(task_id, filename):
-    """
-    Worker endpoint to securely download task resource files.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-      - in: path
-        name: filename
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
+def worker_download_task_file(
+    task_id: Any, filename: str
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Worker endpoint to securely download task resource files."""
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1728,22 +1562,26 @@ def worker_download_task_file(task_id, filename):
         return err("ERR_INVALID_FILENAME", 400)
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
-    return send_from_directory(task_upload_dir, saved_name)
+    file_path = os.path.join(task_upload_dir, saved_name)
+    with open(file_path, "rb") as fh:
+        file_bytes = fh.read()
+    return (
+        file_bytes,
+        200,
+        {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @tasks_bp.route("/worker/active-tasks", methods=["GET"])
-def get_active_tasks():
-    """
-    List all active task configurations for worker image pre-building.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-    """
+@api.validate(
+    resp=Response(HTTP_200=WorkerActiveTasksResponse, HTTP_401=ErrorResponse),
+    tags=["Tasks"],
+)
+def get_active_tasks() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """List all active task configurations for worker image pre-building."""
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1755,7 +1593,7 @@ def get_active_tasks():
 
     for challenge in active_challenges:
         for task in challenge.tasks:
-            hf_datasets_list = []
+            hf_datasets_list: list[str] = []
             if task.hf_datasets:
                 with contextlib.suppress(Exception):
                     hf_datasets_list = (
@@ -1763,7 +1601,7 @@ def get_active_tasks():
                         if isinstance(task.hf_datasets, str)
                         else (task.hf_datasets or [])
                     )
-            hf_models_list = []
+            hf_models_list: list[str] = []
             if task.hf_models:
                 with contextlib.suppress(Exception):
                     hf_models_list = (
@@ -1783,27 +1621,16 @@ def get_active_tasks():
                 }
             )
 
-    return jsonify({"tasks": tasks_list}), 200
+    return {"tasks": tasks_list}, 200
 
 
 @tasks_bp.route("/worker/active-datasets", methods=["GET"])
-def get_active_datasets():
-    """
-    List all HuggingFace datasets used by active challenges for worker preloading.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=WorkerActiveDatasetsResponse, HTTP_401=ErrorResponse),
+    tags=["Tasks"],
+)
+def get_active_datasets() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """List all HuggingFace datasets used by active challenges for worker preloading."""
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1860,32 +1687,12 @@ def get_active_datasets():
     resp = {"datasets": list(datasets_set)}
     if hf_api_key:
         resp["hf_api_key"] = hf_api_key
-    return jsonify(resp), 200
+    return resp, 200
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
-def get_task_hf_key(task_id):
-    """
-    Worker endpoint to fetch the HuggingFace API key for a task.
-    ---
-    tags:
-      - Tasks
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: task_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(tags=["Tasks"])
+def get_task_hf_key(task_id: Any) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1896,12 +1703,13 @@ def get_task_hf_key(task_id):
     hf_key = task.get_hf_api_key() or ""
     if not hf_key:
         logger.warning("No HF API key configured for task %s", task_id)
-    return jsonify({"hf_key": hf_key}), 200
+    return {"hf_key": hf_key}, 200
 
 
 @tasks_bp.route("/workers/logs", methods=["POST"])
 @rate_limit(max_requests=12, window_seconds=60, per_user=False)
-def receive_worker_logs():
+@api.validate(tags=["Tasks"])
+def receive_worker_logs() -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)
@@ -1924,4 +1732,4 @@ def receive_worker_logs():
     except OSError as e:
         logger.error("Failed to write worker logs: %s", e)
         return err("ERR_INTERNAL_SERVER_ERROR", 500)
-    return jsonify({"status": "ok"}), 200
+    return {"status": "ok"}, 200

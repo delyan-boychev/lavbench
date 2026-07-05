@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+from spectree import Response
 
 from auth_utils import role_required
+from schemas.responses import DocContentResponse, ErrorResponse
+from spec import api
 
 docs_bp = Blueprint("docs", __name__)
 
 
-def get_request_lang():
+def get_request_lang() -> str:
     # 1. Query parameter
     lang = request.args.get("lang")
 
@@ -29,7 +34,7 @@ def get_request_lang():
     return lang
 
 
-def read_doc_file(filename, lang="en"):
+def read_doc_file(filename: str, lang: str = "en") -> str:
     # We will try the requested language first, then fallback to 'en'
     langs_to_try = [lang]
     if lang != "en":
@@ -55,94 +60,46 @@ def read_doc_file(filename, lang="en"):
 
 @docs_bp.route("/competitor", methods=["GET"])
 @role_required(["competitor", "jury", "admin"])
-def get_competitor_doc():
-    """
-    Get the competitor documentation guide.
-    ---
-    tags:
-      - Docs
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: query
-        name: lang
-        type: string
-        required: false
-        description: Language code (e.g. 'en', 'bg')
-    responses:
-      200:
-        description: Returns the rendered guide
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    tags=["Docs"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
+)
+def get_competitor_doc() -> DocContentResponse:
+    """Get the competitor documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("competitor_guide.md", lang)
     title = {"bg": "Ръководство за състезателя", "en": "Competitor Guide"}.get(
         lang, "Competitor Guide"
     )
-    return jsonify({"title": title, "content": content})
+    return DocContentResponse(title=title, content=content)
 
 
 @docs_bp.route("/jury", methods=["GET"])
 @role_required(["jury", "admin"])
-def get_jury_doc():
-    """
-    Get the jury documentation guide.
-    ---
-    tags:
-      - Docs
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: query
-        name: lang
-        type: string
-        required: false
-        description: Language code (e.g. 'en', 'bg')
-    responses:
-      200:
-        description: Returns the rendered guide
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    tags=["Docs"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
+)
+def get_jury_doc() -> DocContentResponse:
+    """Get the jury documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("jury_guide.md", lang)
     title = {"bg": "Ръководство за журито", "en": "Jury Guide"}.get(lang, "Jury Guide")
-    return jsonify({"title": title, "content": content})
+    return DocContentResponse(title=title, content=content)
 
 
 @docs_bp.route("/admin", methods=["GET"])
 @role_required(["admin"])
-def get_admin_doc():
-    """
-    Get the admin documentation guide.
-    ---
-    tags:
-      - Docs
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: query
-        name: lang
-        type: string
-        required: false
-        description: Language code (e.g. 'en', 'bg')
-    responses:
-      200:
-        description: Returns the rendered guide
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    tags=["Docs"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=DocContentResponse, HTTP_422=ErrorResponse),
+)
+def get_admin_doc() -> DocContentResponse:
+    """Get the admin documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("admin_guide.md", lang)
     title = {"bg": "Админ ръководство", "en": "Admin Guide"}.get(lang, "Admin Guide")
-    return jsonify({"title": title, "content": content})
+    return DocContentResponse(title=title, content=content)

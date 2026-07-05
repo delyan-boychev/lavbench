@@ -9,6 +9,8 @@ Datasets are downloaded ONCE per task, not per submission.  The image
 owns the cache — no volume mounts, no cross-user lock file issues.
 """
 
+from __future__ import annotations
+
 import contextlib
 import hashlib
 import json
@@ -17,6 +19,7 @@ import os
 import shlex
 import shutil
 import time
+from typing import Any
 
 from cache_utils import get_redis_client
 from config import Config
@@ -30,7 +33,9 @@ logger = logging.getLogger(__name__)
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
 
-def _config_hash(base_image, pip_packages, hf_datasets, hf_models):
+def _config_hash(
+    base_image: str, pip_packages: str, hf_datasets: list[str], hf_models: list[str]
+) -> str:
     """Stable hash of the task configuration for cache invalidation."""
     h = hashlib.sha256()
     h.update(base_image.encode())
@@ -40,10 +45,12 @@ def _config_hash(base_image, pip_packages, hf_datasets, hf_models):
     return h.hexdigest()[:16]
 
 
-def _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key):
+def _download_dataset(
+    ds_name: str, task_id: Any, hf_cache_dir: str, hf_api_key: str | None
+) -> None:
     try:
         logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
-        from datasets import load_dataset
+        from datasets import load_dataset  # type: ignore[import-untyped]
 
         load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
         logger.info("Successfully downloaded dataset '%s' for task %s", ds_name, task_id)
@@ -51,7 +58,9 @@ def _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key):
         logger.warning("Failed to download dataset '%s' for task %s: %s", ds_name, task_id, e)
 
 
-def _download_model(model_name, task_id, hf_cache_dir, hf_api_key):
+def _download_model(
+    model_name: str, task_id: Any, hf_cache_dir: str, hf_api_key: str | None
+) -> None:
     try:
         logger.info("Downloading model '%s' for task %s...", model_name, task_id)
         from huggingface_hub import snapshot_download
@@ -62,11 +71,11 @@ def _download_model(model_name, task_id, hf_cache_dir, hf_api_key):
         logger.warning("Failed to download model '%s' for task %s: %s", model_name, task_id, e)
 
 
-def _build_lock_key(task_id):
+def _build_lock_key(task_id: int) -> str:
     return f"docker_build:lock:{task_id}"
 
 
-def _check_build_disk_space():
+def _check_build_disk_space() -> bool:
     task_images_dir = TASK_IMAGES_DIR
     try:
         os.makedirs(task_images_dir, exist_ok=True)
@@ -85,7 +94,7 @@ def _check_build_disk_space():
     return True
 
 
-def build_task_image(metadata):
+def build_task_image(metadata: dict[str, Any]) -> bool:
     """Build (or skip) a Docker image for a single task.
 
     Parameters are read from *metadata* (the same dict dispatched via
@@ -109,7 +118,9 @@ def build_task_image(metadata):
     lock_acquired = False
     if r:
         with contextlib.suppress(Exception):
-            lock_acquired = r.set(lock_key, "1", nx=True, ex=3600)
+            result = r.set(lock_key, "1", nx=True, ex=3600)
+            if result is not None:
+                lock_acquired = bool(result)
 
     if not lock_acquired:
         logger.info("Build already in progress for task %s, skipping", task_id)
@@ -118,11 +129,12 @@ def build_task_image(metadata):
     try:
         return _do_build(metadata)
     finally:
-        with contextlib.suppress(Exception):
-            r.delete(lock_key)
+        if r is not None:
+            with contextlib.suppress(Exception):
+                r.delete(lock_key)
 
 
-def _do_build(metadata):
+def _do_build(metadata: dict[str, Any]) -> bool:
     task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
@@ -202,7 +214,7 @@ def _do_build(metadata):
         f.write("\n".join(dockerfile_lines) + "\n")
     os.chmod(dockerfile_path, 0o644)
 
-    logs = []
+    logs: list[str] = []
     start = time.time()
     try:
         retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
@@ -227,7 +239,7 @@ def _do_build(metadata):
         return False
 
 
-def _run_docker_build(tag, build_dir, logs):
+def _run_docker_build(tag: str, build_dir: str, logs: list[str]) -> tuple[int, str, str, bool]:
     """Build Docker image using the SDK and capture output."""
     client = _get_client()
     try:
@@ -244,7 +256,7 @@ def _run_docker_build(tag, build_dir, logs):
         return -1, "", str(e), False
 
 
-def build_all_active_tasks(main_server_url, worker_token):
+def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
     """Fetch active tasks from the server and build images for all of them."""
     import requests
 
@@ -274,7 +286,7 @@ def build_all_active_tasks(main_server_url, worker_token):
         logger.warning("Error in build_all_active_tasks: %s", e)
 
 
-def start_rebuild_listener(main_server_url, worker_token):
+def start_rebuild_listener(main_server_url: str, worker_token: str) -> None:
     """Start a background thread that listens for Redis task-rebuild notifications."""
     import threading
 
@@ -285,7 +297,7 @@ def start_rebuild_listener(main_server_url, worker_token):
     logger.info("Rebuild listener thread started")
 
 
-def _rebuild_listener(main_server_url, worker_token):
+def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
     """Background thread: subscribe to Redis 'task_rebuild' channel."""
 
     r = get_redis_client()

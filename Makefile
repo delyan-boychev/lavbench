@@ -37,6 +37,6 @@ docs:           # Build Sphinx documentation
 check-error-codes:  # Check that all error responses include a machine-readable 'code' field
 	@python3 backend/scripts/check_error_codes.py
 
-lint: check-error-codes  # Run all lint checks
-	@cd backend && ruff format --check . && ruff check .
+lint: check-error-codes  # Run all lint + type checks
+	@cd backend && ruff format --check . && ruff check . && mypy . --no-incremental
 	@cd frontend && npx tsc --noEmit

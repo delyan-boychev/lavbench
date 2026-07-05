@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -28,11 +31,11 @@ class CreateChallengeSchema(_ChallengeLimits):
         "start_time", "end_time", "test_stage_start_time", "test_stage_end_time", mode="before"
     )
     @classmethod
-    def _parse_dt(cls, v):
+    def _parse_dt(cls, v: Any) -> datetime | None:
         return _parse_datetime_strict(v)
 
     @model_validator(mode="after")
-    def check_dates(self):
+    def check_dates(self) -> Self:
         if self.end_time and self.start_time and self.end_time <= self.start_time:
             raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
         return self
@@ -57,11 +60,11 @@ class UpdateChallengeSchema(BaseModel):
         "start_time", "end_time", "test_stage_start_time", "test_stage_end_time", mode="before"
     )
     @classmethod
-    def _parse_dt(cls, v):
+    def _parse_dt(cls, v: Any) -> datetime | None:
         return _parse_datetime_strict(v)
 
     @model_validator(mode="after")
-    def check_dates(self):
+    def check_dates(self) -> Self:
         if self.end_time and self.start_time and self.end_time <= self.start_time:
             raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
         return self

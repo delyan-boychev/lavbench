@@ -1,12 +1,16 @@
 """Celery task definitions and beat schedule for async evaluation and backups."""
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
 import time
 from datetime import datetime, timedelta
+from typing import Any
 
 from celery import Celery
+from celery import Task as CeleryTask
 
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
@@ -64,7 +68,7 @@ else:
     )
 
 
-def configure_celery_ssl(celery_app):
+def configure_celery_ssl(celery_app: Celery) -> None:
     broker_url = celery_app.conf.broker_url or ""
     result_backend = celery_app.conf.result_backend or ""
     if broker_url.startswith("rediss://") or result_backend.startswith("rediss://"):
@@ -118,7 +122,9 @@ celery.conf.update(
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def evaluate_submission(self, submission_id, metadata=None):
+def evaluate_submission(
+    self: CeleryTask, submission_id: Any, metadata: dict[str, Any] | None = None
+) -> Any:
     """Celery task: run a competitor submission through the evaluation pipeline in Docker."""
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
@@ -135,7 +141,7 @@ def evaluate_submission(self, submission_id, metadata=None):
 
 
 @celery.task
-def recalculate_all_leaderboards():
+def recalculate_all_leaderboards() -> None:
     """Celery task: rebuild leaderboard cache for all active challenges."""
     if RUNNING_AS_WORKER:
         return
@@ -143,7 +149,7 @@ def recalculate_all_leaderboards():
 
 
 @celery.task
-def recalculate_leaderboard(challenge_id):
+def recalculate_leaderboard(challenge_id: Any) -> None:
     """Celery task: rebuild leaderboard cache for a specific challenge."""
     if RUNNING_AS_WORKER:
         return
@@ -170,13 +176,13 @@ def recalculate_leaderboard(challenge_id):
 
 
 @celery.task
-def register_worker_specs():
+def register_worker_specs() -> None:
     """Celery task: register worker node specs (CPU/GPU/memory) in Redis."""
     return run_register_worker_specs(celery)
 
 
 @celery.task
-def run_backup(auto=True, db_only=False):
+def run_backup(auto: bool = True, db_only: bool = False) -> Any:
     """Celery task: create a pg_dump+uploads tarball backup."""
     if RUNNING_AS_WORKER:
         return {"skipped": "remote_worker"}
@@ -186,7 +192,7 @@ def run_backup(auto=True, db_only=False):
 
 
 @celery.task
-def check_and_backup():
+def check_and_backup() -> dict[str, Any]:
     """Celery beat task: check deadlines and trigger backups (20min active / 6h idle)."""
     if RUNNING_AS_WORKER:
         return {"skipped": "remote_worker"}
@@ -240,7 +246,7 @@ def check_and_backup():
 # Also recovers results from Redis fallback (workers that completed but couldn't reach the server).
 # Runs every 5 minutes. Only the main server process runs this (not remote workers).
 @celery.task
-def watchdog_stuck_submissions():
+def watchdog_stuck_submissions() -> dict[str, Any]:
     """Celery beat task: recover fallback results and time-out stuck submissions."""
     if RUNNING_AS_WORKER:
         return {"skipped": "running_as_remote_worker"}
@@ -363,7 +369,7 @@ def watchdog_stuck_submissions():
 
 
 @celery.task
-def recalculate_dirty_leaderboards():
+def recalculate_dirty_leaderboards() -> dict[str, Any]:
     """Celery beat task: rebuild leaderboard cache for challenges marked as dirty."""
     if RUNNING_AS_WORKER:
         return {"skipped": "running_as_remote_worker"}
@@ -421,7 +427,7 @@ def recalculate_dirty_leaderboards():
 # watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
 @celery.task
-def prune_docker_images():
+def prune_docker_images() -> dict[str, str]:
     """Celery task: prune unused Docker images/layers on worker nodes."""
     return run_docker_prune()
 

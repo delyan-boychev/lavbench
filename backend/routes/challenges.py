@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import json
@@ -7,8 +9,11 @@ import shutil
 import zipfile
 import zoneinfo
 from datetime import datetime
+from typing import Any
 
-from flask import Blueprint, Response, current_app, jsonify, request, send_file
+from flask import Blueprint, current_app, request
+from flask import Response as FlaskResponse
+from spectree import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
@@ -18,8 +23,17 @@ from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from config import Config
 from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
-from schemas import validate_json
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
+from schemas.responses import (
+    ArchiveResponse,
+    ChallengeResponse,
+    ErrorResponse,
+    FinalizeChallengeResponse,
+    MessageResponse,
+    PaginatedResponse,
+    RevealResultsResponse,
+    StageResponse,
+)
 from schemas.stage import (
     CreateStageSchema,
     CreateTestStageSchema,
@@ -28,6 +42,7 @@ from schemas.stage import (
 )
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
+from spec import api
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
@@ -40,7 +55,9 @@ logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
 
 
-def _check_and_add_active_stage(stage, now, active_stage_ids):
+def _check_and_add_active_stage(
+    stage: dict[str, Any], now: datetime, active_stage_ids: list[str]
+) -> None:
     st_start_str = stage.get("start_time")
     st_start = None
     try:
@@ -56,7 +73,7 @@ def _check_and_add_active_stage(stage, now, active_stage_ids):
         logger.warning("Failed to parse regular stage dates: %s", e)
 
 
-def filter_challenge_for_competitor(challenge_dict):
+def filter_challenge_for_competitor(challenge_dict: dict[str, Any]) -> dict[str, Any]:
     challenge_dict = dict(challenge_dict)
     now = utcnow()
 
@@ -111,7 +128,7 @@ def filter_challenge_for_competitor(challenge_dict):
 
     regular_stages = [s for s in challenge_dict.get("stages", []) if not s.get("is_test")]
     has_stages = len(regular_stages) > 0
-    active_stage_ids = []
+    active_stage_ids: list[str] = []
     if has_stages:
         for s in regular_stages:
             _check_and_add_active_stage(s, now, active_stage_ids)
@@ -134,46 +151,35 @@ def filter_challenge_for_competitor(challenge_dict):
 
 @challenges_bp.route("", methods=["GET"])
 @login_required
-def get_challenges():
-    """
-    List all available challenges with their tasks and stages.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=PaginatedResponse[ChallengeResponse]),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """List all available challenges with their tasks and stages."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
     if user_role == "competitor":
         user = db.session.get(User, user_id)
         if not user or not user.challenge_id:
-            return jsonify([])
+            return paginated_response(items=[], total=0, page=1, pages=0)
         challenge_id = user.challenge_id
 
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge or challenge.is_archived:
-            return jsonify([])
+            return paginated_response(items=[], total=0, page=1, pages=0)
 
         cache_key = f"challenge:{challenge_id}:competitor"
-        return jsonify(
-            [
-                cached_or_compute(
-                    cache_key,
-                    lambda: filter_challenge_for_competitor(challenge.to_dict()),
-                    timeout=600,
-                )
-            ]
-        )
+        items = [
+            cached_or_compute(
+                cache_key,
+                lambda: filter_challenge_for_competitor(challenge.to_dict()),
+                timeout=600,
+            )
+        ]
+        return paginated_response(items=items, total=len(items), page=1, pages=1)
 
     if user_role == "jury":
         from models import JuryChallenge
@@ -181,7 +187,7 @@ def get_challenges():
         assigned_challenges = JuryChallenge.query.filter_by(jury_id=user_id).all()
         assigned_ids = [jc.challenge_id for jc in assigned_challenges]
         if not assigned_ids:
-            return jsonify([])
+            return paginated_response(items=[], total=0, page=1, pages=0)
 
         page_arg = request.args.get("page", type=int)
         if page_arg is not None:
@@ -191,21 +197,20 @@ def get_challenges():
                 .options(joinedload(Challenge.tasks), joinedload(Challenge.stages))
                 .paginate(page=page_arg, per_page=per_page, error_out=False)
             )
-            return jsonify(
-                paginated_response(
-                    items=[c.to_dict() for c in pagination.items],
-                    total=pagination.total,
-                    page=pagination.page,
-                    pages=pagination.pages,
-                )
+            return paginated_response(
+                items=[c.to_dict() for c in pagination.items],
+                total=pagination.total,
+                page=pagination.page,
+                pages=pagination.pages,
             )
 
-        challenges = (
-            Challenge.query.filter(Challenge.id.in_(assigned_ids))
+        items = [
+            c.to_dict()
+            for c in Challenge.query.filter(Challenge.id.in_(assigned_ids))
             .options(joinedload(Challenge.tasks), joinedload(Challenge.stages))
             .all()
-        )
-        return jsonify([c.to_dict() for c in challenges])
+        ]
+        return paginated_response(items=items, total=len(items), page=1, pages=1)
 
     page_arg = request.args.get("page", type=int)
     if page_arg is not None:
@@ -213,46 +218,32 @@ def get_challenges():
         pagination = Challenge.query.options(
             joinedload(Challenge.tasks), joinedload(Challenge.stages)
         ).paginate(page=page_arg, per_page=per_page, error_out=False)
-        return jsonify(
-            paginated_response(
-                items=[c.to_dict() for c in pagination.items],
-                total=pagination.total,
-                page=pagination.page,
-                pages=pagination.pages,
-            )
+        return paginated_response(
+            items=[c.to_dict() for c in pagination.items],
+            total=pagination.total,
+            page=pagination.page,
+            pages=pagination.pages,
         )
 
-    challenges = Challenge.query.options(
-        joinedload(Challenge.tasks), joinedload(Challenge.stages)
-    ).all()
-    return jsonify([c.to_dict() for c in challenges])
+    items = [
+        c.to_dict()
+        for c in Challenge.query.options(
+            joinedload(Challenge.tasks), joinedload(Challenge.stages)
+        ).all()
+    ]
+    return paginated_response(items=items, total=len(items), page=1, pages=1)
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["GET"])
 @login_required
 @jury_access_required
-def get_challenge(challenge_id):
-    """
-    Get detailed information about a specific challenge.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=ChallengeResponse, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Get detailed information about a specific challenge."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -281,39 +272,29 @@ def get_challenge(challenge_id):
             cache_key, lambda: db.get_or_404(Challenge, challenge_id).to_dict(), timeout=600
         )
 
-    return jsonify(challenge_dict)
+    return challenge_dict
 
 
 @challenges_bp.route("", methods=["POST"])
 @role_required(["admin", "jury"])
-@validate_json(CreateChallengeSchema)
-def create_challenge(data):
-    """
-    Create a new competition with start/end times, resource limits, and privacy settings.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
-    title, description = data.title, data.description
+@api.validate(
+    json=CreateChallengeSchema,
+    resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Create a new competition with start/end times, resource limits, and privacy settings."""
+    title, description = json.title, json.description
     max_eval_requests, ram_limit_mb, time_limit_sec = (
-        data.max_eval_requests,
-        data.ram_limit_mb,
-        data.time_limit_sec,
+        json.max_eval_requests,
+        json.ram_limit_mb,
+        json.time_limit_sec,
     )
-    gpu_required, double_blind, is_frozen = data.gpu_required, data.double_blind, data.is_frozen
+    gpu_required, double_blind, is_frozen = json.gpu_required, json.double_blind, json.is_frozen
     start_time, end_time = (
-        _to_utc(data.start_time, data.timezone),
-        _to_utc(data.end_time, data.timezone),
+        _to_utc(json.start_time, json.timezone),
+        _to_utc(json.end_time, json.timezone),
     )
 
     if not start_time or not end_time:
@@ -334,7 +315,7 @@ def create_challenge(data):
         end_time=end_time,
         is_frozen=is_frozen,
         double_blind=double_blind,
-        timezone=data.timezone,
+        timezone=json.timezone,
     )
     db.session.add(challenge)
     db.session.commit()
@@ -349,16 +330,16 @@ def create_challenge(data):
 
     invalidate_challenge_cache()
 
-    test_stage_start = data.test_stage_start_time
-    test_stage_end = data.test_stage_end_time
+    test_stage_start = json.test_stage_start_time
+    test_stage_end = json.test_stage_end_time
     if test_stage_start and test_stage_end:
         _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
-        return jsonify(challenge.to_dict()), 201
+        return challenge.to_dict(), 201
 
-    return jsonify(challenge.to_dict()), 201
+    return challenge.to_dict(), 201
 
 
-def _create_test_stage_for_challenge(challenge, start_time, end_time):
+def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: Any) -> Any:
     """Create a test stage with warm-up task for the given challenge."""
     tz = challenge.timezone or "UTC"
     start_time = _to_utc(start_time, tz)
@@ -463,68 +444,55 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
 @challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(UpdateChallengeSchema)
-def update_challenge(challenge_id, data):
-    """
-    Update the configuration of an existing challenge.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=UpdateChallengeSchema,
+    resp=Response(HTTP_200=ChallengeResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def update_challenge(
+    challenge_id: Any, json: UpdateChallengeSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Update the configuration of an existing challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    fields = data.model_fields_set
+    fields = json.model_fields_set
 
     if "title" in fields:
-        challenge.title = data.title
+        challenge.title = json.title
     if "description" in fields:
-        challenge.description = data.description
-    if "max_eval_requests" in fields and data.max_eval_requests is not None:
-        challenge.max_eval_requests = data.max_eval_requests
-    if "ram_limit_mb" in fields and data.ram_limit_mb is not None:
-        challenge.ram_limit_mb = data.ram_limit_mb
-    if "time_limit_sec" in fields and data.time_limit_sec is not None:
-        challenge.time_limit_sec = data.time_limit_sec
+        challenge.description = json.description
+    if "max_eval_requests" in fields and json.max_eval_requests is not None:
+        challenge.max_eval_requests = json.max_eval_requests
+    if "ram_limit_mb" in fields and json.ram_limit_mb is not None:
+        challenge.ram_limit_mb = json.ram_limit_mb
+    if "time_limit_sec" in fields and json.time_limit_sec is not None:
+        challenge.time_limit_sec = json.time_limit_sec
     if "gpu_required" in fields:
-        challenge.gpu_required = data.gpu_required
+        challenge.gpu_required = json.gpu_required
 
-    timezone = data.timezone if "timezone" in fields else (challenge.timezone or "UTC")
+    timezone = json.timezone if "timezone" in fields else (challenge.timezone or "UTC")
     if "start_time" in fields:
-        st = data.start_time
+        st = json.start_time
         if not st:
             return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
         challenge.start_time = _to_utc(st, timezone)
     if "end_time" in fields:
-        et = data.end_time
+        et = json.end_time
         if not et:
             return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
         challenge.end_time = _to_utc(et, timezone)
 
     if "is_frozen" in fields:
-        challenge.is_frozen = data.is_frozen
+        challenge.is_frozen = json.is_frozen
     if "double_blind" in fields:
-        challenge.double_blind = data.double_blind
+        challenge.double_blind = json.double_blind
     if "timezone" in fields:
-        challenge.timezone = data.timezone
+        challenge.timezone = json.timezone
 
     if "test_stage_start_time" in fields or "test_stage_end_time" in fields:
-        test_stage_start = data.test_stage_start_time
-        test_stage_end = data.test_stage_end_time
+        test_stage_start = json.test_stage_start_time
+        test_stage_end = json.test_stage_end_time
         if test_stage_start and test_stage_end:
             _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
         else:
@@ -545,33 +513,16 @@ def update_challenge(challenge_id, data):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify(challenge.to_dict())
+    return challenge.to_dict()
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["DELETE"])
 @role_required(["admin"])
-def delete_challenge(challenge_id):
-    """
-    Permanently delete a challenge including all its tasks, submissions, and competition backups.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+)
+def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
+    """Permanently delete a challenge and all its tasks, submissions, and backups."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     # Remove competition backups
@@ -599,42 +550,27 @@ def delete_challenge(challenge_id):
 
     invalidate_entity_cache(challenge_id, leaderboard_delete_only=True)
 
-    return jsonify(
-        {
-            "message": (
-                f"Competition '{challenge.title}' and all its associated "
-                f"tasks and submissions have been deleted successfully."
-            )
-        }
+    return MessageResponse(
+        message=(
+            f"Competition '{challenge.title}' and all its associated "
+            f"tasks and submissions have been deleted successfully."
+        )
     )
 
 
 @challenges_bp.route("/<uuid:challenge_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
-@validate_json(RevealResultsSchema)
-def finalize_challenge(challenge_id, data):
-    """
-    Finalize the competition scores. Locks rankings and reveals competitor identities.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=RevealResultsSchema,
+    resp=Response(HTTP_200=FinalizeChallengeResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def finalize_challenge(
+    challenge_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Finalize the competition scores. Locks rankings and reveals competitor identities."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if challenge.scores_finalized:
         return err("ERR_ALREADY_FINALIZED", 400, message="Competition is already finalized.")
@@ -675,7 +611,7 @@ def finalize_challenge(challenge_id, data):
                     )
 
     challenge.scores_finalized = True
-    challenge.reveal_results = data.reveal_results if data.reveal_results is not None else False
+    challenge.reveal_results = json.reveal_results if json.reveal_results is not None else False
     db.session.commit()
 
     log_audit(
@@ -688,22 +624,27 @@ def finalize_challenge(challenge_id, data):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify(
-        {
-            "message": (
-                "Competition finalized! Competitor identities and "
-                "private scores are now fully revealed to everyone."
-            ),
-            "challenge": challenge.to_dict(),
-        }
-    )
+    return {
+        "message": (
+            "Competition finalized! Competitor identities and "
+            "private scores are now fully revealed to everyone."
+        ),
+        "challenge": challenge.to_dict(),
+    }
 
 
 @challenges_bp.route("/<uuid:challenge_id>/reveal-results", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(RevealResultsSchema)
-def toggle_reveal_results(challenge_id, data):
+@api.validate(
+    json=RevealResultsSchema,
+    resp=Response(HTTP_200=RevealResultsResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def toggle_reveal_results(
+    challenge_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
@@ -712,38 +653,21 @@ def toggle_reveal_results(challenge_id, data):
             400,
             message="Must finalize scores before revealing results.",
         )
-    challenge.reveal_results = data.reveal_results if data.reveal_results is not None else True
+    challenge.reveal_results = json.reveal_results if json.reveal_results is not None else True
     db.session.commit()
 
     invalidate_leaderboard_cache(challenge_id)
-    return jsonify({"reveal_results": challenge.reveal_results, "challenge": challenge.to_dict()})
+    return {"reveal_results": challenge.reveal_results, "challenge": challenge.to_dict()}
 
 
 @challenges_bp.route("/<uuid:challenge_id>/archive", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def archive_challenge(challenge_id):
-    """
-    Toggle archive state. Archived challenges are hidden from competitors.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=ArchiveResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+)
+def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Toggle archive state. Archived challenges are hidden from competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     challenge.is_archived = not challenge.is_archived
     db.session.commit()
@@ -759,44 +683,29 @@ def archive_challenge(challenge_id):
     invalidate_challenge_cache(challenge_id)
 
     action = "archived" if challenge.is_archived else "restored"
-    return jsonify(
-        {
-            "message": f"Competition has been successfully {action}!",
-            "challenge": challenge.to_dict(),
-        }
-    )
+    return {
+        "message": f"Competition has been successfully {action}!",
+        "challenge": challenge.to_dict(),
+    }
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(CreateStageSchema)
-def create_stage(challenge_id, data):
-    """
-    Add a new stage to a challenge with its own deadline and score visibility rules.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=CreateStageSchema,
+    resp=Response(HTTP_201=StageResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def create_stage(
+    challenge_id: Any, json: CreateStageSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """Add a new stage to a challenge with its own deadline and score visibility rules."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    start_time = _to_utc(data.start_time, challenge.timezone or "UTC")
-    end_time = _to_utc(data.end_time, challenge.timezone or "UTC")
+    start_time = _to_utc(json.start_time, challenge.timezone or "UTC")
+    end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
 
     if not start_time or not end_time:
         return err("ERR_INVALID_DATE_FORMAT", 400, message="Invalid date format.")
@@ -815,7 +724,7 @@ def create_stage(challenge_id, data):
             message="Stage end time must be within the competition timeframe.",
         )
 
-    stage_number = data.stage_number
+    stage_number = json.stage_number
     if not stage_number:
         max_num = (
             db.session.query(db.func.max(Stage.stage_number))
@@ -828,7 +737,7 @@ def create_stage(challenge_id, data):
     stage = Stage(
         challenge_id=challenge_id,
         stage_number=stage_number,
-        title=data.title,
+        title=json.title,
         start_time=start_time,
         end_time=end_time,
     )
@@ -846,56 +755,39 @@ def create_stage(challenge_id, data):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify(stage.to_dict()), 201
+    return stage.to_dict(), 201
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(UpdateStageSchema)
-def update_stage(challenge_id, stage_id, data):
-    """
-    Update an existing stage configuration.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-      - in: path
-        name: stage_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=UpdateStageSchema,
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def update_stage(
+    challenge_id: Any, stage_id: Any, json: UpdateStageSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Update an existing stage configuration."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
-    fields = data.model_fields_set
+    fields = json.model_fields_set
 
     if "title" in fields:
-        stage.title = data.title
+        stage.title = json.title
     if "stage_number" in fields:
-        stage.stage_number = data.stage_number
-    if "start_time" in fields and data.start_time:
-        stage.start_time = _to_utc(data.start_time, challenge.timezone or "UTC")
-    if "end_time" in fields and data.end_time:
-        stage.end_time = _to_utc(data.end_time, challenge.timezone or "UTC")
+        stage.stage_number = json.stage_number
+    if "start_time" in fields and json.start_time:
+        stage.start_time = _to_utc(json.start_time, challenge.timezone or "UTC")
+    if "end_time" in fields and json.end_time:
+        stage.end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
     if "reveal_results" in fields:
-        stage.reveal_results = data.reveal_results
+        stage.reveal_results = json.reveal_results
     if "is_finalized" in fields:
-        stage.is_finalized = data.is_finalized
+        stage.is_finalized = json.is_finalized
 
     if challenge.start_time and stage.start_time < challenge.start_time:
         return err(
@@ -923,15 +815,22 @@ def update_stage(challenge_id, stage_id, data):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify(stage.to_dict())
+    return stage.to_dict()
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/reveal-results", methods=["PUT"])
 @login_required
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(RevealResultsSchema)
-def toggle_stage_reveal_results(challenge_id, stage_id, data):
+@api.validate(
+    json=RevealResultsSchema,
+    resp=Response(HTTP_200=RevealResultsResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def toggle_stage_reveal_results(
+    challenge_id: Any, stage_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle reveal_results on a finalized stage."""
     db.get_or_404(Challenge, challenge_id)
 
@@ -941,43 +840,22 @@ def toggle_stage_reveal_results(challenge_id, stage_id, data):
             "ERR_NOT_FINALIZED", 400, message="Stage must be finalized before toggling reveal."
         )
     stage.reveal_results = (
-        data.reveal_results if data.reveal_results is not None else not stage.reveal_results
+        json.reveal_results if json.reveal_results is not None else not stage.reveal_results
     )
     db.session.commit()
 
     invalidate_entity_cache(challenge_id)
-    return jsonify(stage.to_dict())
+    return stage.to_dict()
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["DELETE"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def delete_stage(challenge_id, stage_id):
-    """
-    Remove a stage from a challenge.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-      - in: path
-        name: stage_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+)
+def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
+    """Remove a stage from a challenge."""
     db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -1000,39 +878,22 @@ def delete_stage(challenge_id, stage_id):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify({"message": f"Stage '{stage.title}' has been deleted."})
+    return MessageResponse(message=f"Stage '{stage.title}' has been deleted.")
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
-@validate_json(RevealResultsSchema)
-def finalize_stage(challenge_id, stage_id, data):
-    """
-    Finalize a specific stage. Locks stage scores.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-      - in: path
-        name: stage_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=RevealResultsSchema,
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def finalize_stage(
+    challenge_id: Any, stage_id: Any, json: RevealResultsSchema
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Finalize a specific stage. Locks stage scores."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
@@ -1082,7 +943,7 @@ def finalize_stage(challenge_id, stage_id, data):
                     )
 
     stage.is_finalized = True
-    stage.reveal_results = data.reveal_results if data.reveal_results is not None else False
+    stage.reveal_results = json.reveal_results if json.reveal_results is not None else False
 
     db.session.commit()
 
@@ -1096,54 +957,27 @@ def finalize_stage(challenge_id, stage_id, data):
 
     invalidate_entity_cache(challenge_id)
 
-    return jsonify(stage.to_dict())
+    return stage.to_dict()
 
 
 @challenges_bp.route("/<uuid:challenge_id>/test-stage", methods=["POST"])
 @login_required
 @role_required(["admin", "jury"])
 @jury_access_required
-@validate_json(CreateTestStageSchema)
-def create_test_stage(challenge_id, data):
-    """
-    Create a test stage before the competition starts for testing purposes.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              title:
-                type: string
-              start_time:
-                type: string
-                format: date-time
-              end_time:
-                type: string
-                format: date-time
-    responses:
-      201:
-        description: Test stage created
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    json=CreateTestStageSchema,
+    resp=Response(HTTP_201=StageResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def create_test_stage(
+    challenge_id: Any, json: CreateTestStageSchema
+) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """Create a test stage before the competition starts for testing purposes."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    start_time = data.start_time
-    end_time = data.end_time
+    start_time = json.start_time
+    end_time = json.end_time
 
     if not start_time or not end_time:
         return err("ERR_MISSING_DATES", 400, message="start_time and end_time are required.")
@@ -1183,39 +1017,20 @@ def create_test_stage(challenge_id, data):
 
     invalidate_challenge_cache(challenge_id)
 
-    return jsonify(stage.to_dict()), 201
+    return stage.to_dict(), 201
 
 
 @challenges_bp.route("/<uuid:challenge_id>/export-results", methods=["GET"])
 @login_required
 @role_required(["admin", "jury"])
 @jury_access_required
-def export_results(challenge_id):
-    """
-    Export comprehensive competition results as CSV with ranks, scores, and audit log.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Success
-
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
+def export_results(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
+    """Export comprehensive competition results as CSV with ranks, scores, and audit log."""
     challenge = db.get_or_404(Challenge, challenge_id)
     csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
 
-    response = Response(
+    response = FlaskResponse(
         csv_data,
         mimetype="text/csv",
         headers={
@@ -1228,28 +1043,11 @@ def export_results(challenge_id):
 @challenges_bp.route("/<uuid:challenge_id>/export", methods=["GET"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def export_challenge(challenge_id):
-    """
-    Export a challenge configuration as ZIP, including tasks, stages, and uploaded files.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    parameters:
-      - in: path
-        name: challenge_id
-        required: true
-        type: string
-    responses:
-      200:
-        description: Challenge export ZIP file
-        content:
-          application/zip:
-            schema:
-              type: string
-              format: binary
-    """
+@api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
+def export_challenge(
+    challenge_id: Any,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Export a challenge configuration as ZIP, including tasks, stages, and uploaded files."""
 
     challenge = db.get_or_404(Challenge, challenge_id)
     data = challenge.to_dict()
@@ -1272,44 +1070,26 @@ def export_challenge(challenge_id):
     safe_title = secure_filename(challenge.title) or "challenge"
     download_name = f"challenge_{safe_title}.zip"
 
-    return send_file(
-        zip_buffer,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=download_name,
+    return (
+        zip_buffer.read(),
+        200,
+        {
+            "Content-Type": "application/zip",
+            "Content-Disposition": f'attachment; filename="{download_name}"',
+        },
     )
 
 
 @challenges_bp.route("/import", methods=["POST"])
 @role_required(["admin"])
 @rate_limit(max_requests=5, window_seconds=120)
-def import_challenge():
-    """
-    Import a challenge configuration from a ZIP archive.
-    Creates challenge, stages, and tasks, and restores files.
-    ---
-    tags:
-      - Challenges
-    security:
-      - cookieAuth: []
-    requestBody:
-      required: true
-      content:
-        multipart/form-data:
-          schema:
-            type: object
-            properties:
-              file:
-                type: string
-                format: binary
-    responses:
-      201:
-        description: Challenge created
-        content:
-          application/json:
-            schema:
-              type: object
-    """
+@api.validate(
+    resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+    """Import a challenge configuration from a ZIP archive."""
     if not request.content_type or "multipart/form-data" not in request.content_type:
         return err("ERR_INVALID_UPLOAD_FORMAT", 400)
 
@@ -1382,16 +1162,21 @@ def import_challenge():
         details={"title": challenge.title},
     )
 
-    return jsonify(challenge.to_dict()), 201
+    return challenge.to_dict(), 201
 
 
 @challenges_bp.route("/<uuid:challenge_id>/audit-logs/download", methods=["GET"])
 @role_required(["admin"])
 @rate_limit(max_requests=5, window_seconds=60)
-def download_audit_logs(challenge_id):
-    """
-    Download challenge audit logs dynamically as a JSON stream.
-    """
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_404=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def download_audit_logs(
+    challenge_id: Any,
+) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Download challenge audit logs dynamically as a JSON stream."""
     import json
     import tempfile
 
@@ -1448,9 +1233,14 @@ def download_audit_logs(challenge_id):
             first = False
         tmp.write("\n]")
 
-    return send_file(
-        tmp.name,
-        mimetype="application/json",
-        as_attachment=True,
-        download_name=f"audit_logs_{challenge_id}.json",
+    with open(tmp.name, "rb") as fh:
+        json_bytes = fh.read()
+    os.unlink(tmp.name)
+    return (
+        json_bytes,
+        200,
+        {
+            "Content-Type": "application/json",
+            "Content-Disposition": f'attachment; filename="audit_logs_{challenge_id}.json"',
+        },
     )

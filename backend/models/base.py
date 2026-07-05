@@ -6,19 +6,20 @@ import logging
 import os
 import sys
 import uuid
+from typing import Any
 
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.types import CHAR, TypeDecorator
+from sqlalchemy.types import CHAR, TypeDecorator, TypeEngine
 
 from config import Config
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 
-def uuid7():
+def uuid7() -> uuid.UUID:
     import os
     import time
 
@@ -34,7 +35,7 @@ def uuid7():
     return uuid.UUID(bytes=b_ts + b_vr + b_var_rand)
 
 
-class GUID(TypeDecorator):
+class GUID(TypeDecorator[Any]):
     """Platform-independent GUID type.
     Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing as standard UUID strings.
     """
@@ -42,13 +43,13 @@ class GUID(TypeDecorator):
     impl = CHAR
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
+    def load_dialect_impl(self, dialect: Any) -> TypeEngine[Any]:
         if dialect.name == "postgresql":
-            return dialect.type_descriptor(UUID(as_uuid=True))
+            return dialect.type_descriptor(UUID(as_uuid=True))  # type: ignore[no-any-return]
         else:
-            return dialect.type_descriptor(CHAR(36))
+            return dialect.type_descriptor(CHAR(36))  # type: ignore[no-any-return]
 
-    def process_bind_param(self, value, dialect):
+    def process_bind_param(self, value: Any, dialect: Any) -> str | uuid.UUID | None:
         if value is None:
             return value
         try:
@@ -73,7 +74,7 @@ class GUID(TypeDecorator):
         else:
             return str(u)
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(self, value: Any, dialect: Any) -> str | None:
         if value is None:
             return value
         if isinstance(value, uuid.UUID):
@@ -101,7 +102,7 @@ else:
     cipher_suite = Fernet(DERIVED_KEY)
 
 
-def encrypt_field(text):
+def encrypt_field(text: str | None) -> str | None:
     """Encrypt a plaintext string using Fernet symmetric encryption."""
     if not text:
         return None
@@ -112,7 +113,7 @@ def encrypt_field(text):
         return None
 
 
-def decrypt_field(cipher_text):
+def decrypt_field(cipher_text: str | None) -> str | None:
     """Decrypt a Fernet-encrypted ciphertext back to plaintext."""
     if not cipher_text:
         return None

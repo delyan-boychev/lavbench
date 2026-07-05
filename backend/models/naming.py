@@ -103,13 +103,13 @@ METRIC_LOWER_IS_BETTER = {
 }
 
 
-def is_metric_lower_better(metric_name):
+def is_metric_lower_better(metric_name: str) -> bool:
     if not metric_name:
         return False
     return METRIC_LOWER_IS_BETTER.get(metric_name.lower().strip(), False)
 
 
-def to_base36(num):
+def to_base36(num: int) -> str:
     chars = "0123456789abcdefghijklmnopqrstuvwxyz"
     result = ""
     while num > 0:
@@ -118,7 +118,7 @@ def to_base36(num):
     return result or "0"
 
 
-def generate_pseudonym():
+def generate_pseudonym() -> str:
     adj = secrets.choice(ADJECTIVES)
     noun = secrets.choice(NOUNS)
     ts_ms = int(time.time() * 1000)

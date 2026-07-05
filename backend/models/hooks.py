@@ -2,6 +2,7 @@
 
 import contextlib
 import os
+from typing import Any
 
 from sqlalchemy import event, text
 
@@ -10,7 +11,7 @@ from models.user import User
 
 
 @event.listens_for(User, "after_insert")
-def auto_assign_jury_in_tests(mapper, connection, target):
+def auto_assign_jury_in_tests(mapper: Any, connection: Any, target: User) -> None:
     if target.role == "jury" and os.environ.get("PYTEST_CURRENT_TEST"):
         cursor = connection.execute(text("SELECT id FROM challenges"))
         challenge_ids = [row[0] for row in cursor.fetchall()]
@@ -26,7 +27,7 @@ def auto_assign_jury_in_tests(mapper, connection, target):
 
 
 @event.listens_for(Challenge, "after_insert")
-def auto_assign_challenge_to_jury_in_tests(mapper, connection, target):
+def auto_assign_challenge_to_jury_in_tests(mapper: Any, connection: Any, target: Challenge) -> None:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         cursor = connection.execute(text("SELECT id FROM users WHERE role = 'jury'"))
         jury_ids = [row[0] for row in cursor.fetchall()]

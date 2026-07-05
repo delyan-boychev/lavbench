@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from typing import Any
 
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 _ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
 
 
-class Task(db.Model):
+class Task(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "tasks"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
@@ -52,13 +53,13 @@ class Task(db.Model):
         "Submission", backref="task", lazy=True, cascade="all, delete-orphan"
     )
 
-    def set_hf_api_key(self, api_key):
+    def set_hf_api_key(self, api_key: str) -> None:
         self.hf_api_key = encrypt_field(api_key)
 
-    def get_hf_api_key(self):
+    def get_hf_api_key(self) -> str | None:
         return decrypt_field(self.hf_api_key)
 
-    def to_dict(self, view_role="competitor"):
+    def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
         try:
             files_list = json.loads(self.files)
         except Exception as e:
@@ -77,7 +78,7 @@ class Task(db.Model):
                     }
                 )
 
-        hf_datasets_list = []
+        hf_datasets_list: list[Any] = []
         if self.hf_datasets:
             try:
                 hf_datasets_list = (
@@ -89,7 +90,7 @@ class Task(db.Model):
                 logger.warning("Failed to parse hf_datasets for task %s: %s", self.id, e)
                 hf_datasets_list = []
 
-        hf_models_list = []
+        hf_models_list: list[Any] = []
         if self.hf_models:
             try:
                 hf_models_list = (

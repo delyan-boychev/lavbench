@@ -21,7 +21,7 @@
     "check-types": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{js,jsx,css,json,md}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,css,json,md}\"",
-    "generate-api-types": "openapi-typescript http://localhost:5001/apispec_1.json -o src/types/api.d.ts"
+    "generate-api-types": "openapi-typescript http://localhost:5001/apidoc/openapi.json -o src/types/api.d.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.1",

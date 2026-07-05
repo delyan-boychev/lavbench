@@ -157,11 +157,12 @@ export const AppProvider = ({ children }) => {
     try {
       const { ok, data } = await api.get('/challenges');
       if (ok) {
-        setChallenges(data);
-        if (data.length > 0) {
+        const items = data.items || data;
+        setChallenges(items);
+        if (items.length > 0) {
           setSelectedChallengeState((prev) => {
-            const keep = prev ? data.find((c) => c.id === prev.id) : null;
-            return keep || data[0];
+            const keep = prev ? items.find((c) => c.id === prev.id) : null;
+            return keep || items[0];
           });
         } else {
           setSelectedChallengeState(null);
@@ -181,11 +182,12 @@ export const AppProvider = ({ children }) => {
         try {
           const { ok, data } = await api.get('/challenges');
           if (ok) {
-            setChallenges(data);
-            if (data.length > 0) {
+            const items = data.items || data;
+            setChallenges(items);
+            if (items.length > 0) {
               setSelectedChallengeState((prev) => {
-                const keep = prev ? data.find((c) => c.id === prev.id) : null;
-                return keep || data[0];
+                const keep = prev ? items.find((c) => c.id === prev.id) : null;
+                return keep || items[0];
               });
             } else {
               setSelectedChallengeState(null);

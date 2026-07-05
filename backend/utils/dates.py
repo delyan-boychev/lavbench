@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import zoneinfo
 from datetime import UTC, datetime
@@ -5,7 +7,7 @@ from datetime import UTC, datetime
 logger = logging.getLogger(__name__)
 
 
-def parse_datetime(val):
+def parse_datetime(val: str | datetime | None) -> datetime | None:
     if not val:
         return None
     if isinstance(val, datetime):
@@ -24,19 +26,19 @@ def parse_datetime(val):
     return None
 
 
-def to_utc(dt, timezone_str="UTC"):
+def to_utc(dt: datetime, timezone_str: str = "UTC") -> datetime:
     if dt.tzinfo is not None:
         return dt.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
     tz = zoneinfo.ZoneInfo(timezone_str)
     return dt.replace(tzinfo=tz).astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def utcnow():
+def utcnow() -> datetime:
     """Return a naive datetime representing the current UTC time."""
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def now_local_for_timezone(timezone_str):
+def now_local_for_timezone(timezone_str: str | None) -> datetime:
     try:
         tz = zoneinfo.ZoneInfo(timezone_str or "UTC")
         return datetime.now(tz).replace(tzinfo=None)

@@ -54,12 +54,26 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff==0.15.19
-      - run: ruff check . --config pyproject.toml
+      - run: ruff check .
         working-directory: backend
-      - run: ruff format --check . --config pyproject.toml
+      - run: ruff format --check .
         working-directory: backend
       - name: Error code checker
         run: python backend/scripts/check_error_codes.py
+
+  backend-types:
+    name: Backend type check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
+      - run: mypy . --no-incremental
+        working-directory: backend
 
   frontend-lint:
     name: Frontend lint

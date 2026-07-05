@@ -1,10 +1,14 @@
 """Celery task for asynchronous leaderboard recalculation."""
 
+from __future__ import annotations
+
+from flask import Flask
+
 from models import Challenge
 from services.leaderboard_service import build_and_cache_leaderboard
 
 
-def run_recalculate_all_leaderboards(app):
+def run_recalculate_all_leaderboards(app: Flask) -> None:
 
     with app.app_context():
         # Get active or recent challenges

@@ -1,9 +1,14 @@
 """Service-layer functions for challenge CRUD, archiving, and export."""
 
+from __future__ import annotations
+
 import csv
 import io
 import json
+import uuid
+import zipfile
 from datetime import datetime
+from typing import Any
 
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from services.file_validation import check_dangerous_extension
@@ -14,9 +19,9 @@ from utils.dates import utcnow
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 
 
-def generate_scores_csv(challenge):
+def generate_scores_csv(challenge: Challenge) -> str:
     """Build a CSV string with per-competitor scores across all tasks in a challenge."""
-    tasks = challenge.tasks
+    tasks: list[Task] = challenge.tasks  # type: ignore[assignment]
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
 
     # Determine users who have late submissions
@@ -66,7 +71,7 @@ def generate_scores_csv(challenge):
         Submission.query.join(subq, Submission.id == subq.c.sub_id).filter(subq.c.rn == 1).all()
     )
 
-    sub_by_user_task = {}
+    sub_by_user_task: dict[tuple[uuid.UUID, uuid.UUID], list[Submission]] = {}
     for s in all_subs:
         key = (s.user_id, s.task_id)
         sub_by_user_task.setdefault(key, []).append(s)
@@ -133,9 +138,9 @@ def generate_scores_csv(challenge):
     return output.getvalue()
 
 
-def generate_exported_results_csv(challenge, view_role="admin"):
+def generate_exported_results_csv(challenge: Challenge, view_role: str = "admin") -> str:
     leaderboard = build_and_cache_leaderboard(challenge.id) or []
-    tasks = challenge.tasks
+    tasks: list[Task] = challenge.tasks  # type: ignore[assignment]
 
     now = utcnow()
     has_started = challenge.start_time is not None and now >= challenge.start_time
@@ -277,7 +282,9 @@ def generate_exported_results_csv(challenge, view_role="admin"):
     return output.getvalue()
 
 
-def import_challenge_from_dict(data, zip_ref=None):
+def import_challenge_from_dict(
+    data: dict[str, Any], zip_ref: zipfile.ZipFile | None = None
+) -> Challenge:
     """Create a challenge (with stages and tasks) from an exported dict.
     Returns the created Challenge object. Raises ValueError on invalid data."""
     import os
@@ -289,13 +296,13 @@ def import_challenge_from_dict(data, zip_ref=None):
     if not title:
         raise ValueError("Challenge title is required.")
 
-    def _parse_dt(val):
+    def _parse_dt(val: Any) -> datetime | None:
         if not val:
             return None
         try:
             if isinstance(val, str):
                 return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
-            return val
+            return val  # type: ignore[no-any-return]
         except Exception:
             return None
 

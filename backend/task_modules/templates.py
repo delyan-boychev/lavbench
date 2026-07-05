@@ -1,5 +1,9 @@
 """Jinja2 templates for Dockerfiles used in sandbox execution."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from jinja2 import Environment
 
 DEFAULT_EVALUATION_TEMPLATE = """\
@@ -302,7 +306,7 @@ except Exception as e:
 """
 
 
-def render_eval_template(template_str, **kwargs):
+def render_eval_template(template_str: str, **kwargs: Any) -> str:
     env = Environment(
         variable_start_string="[[",
         variable_end_string="]]",

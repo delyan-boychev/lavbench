@@ -1,15 +1,28 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.19
+    rev: v0.15.20
     hooks:
       - id: ruff
-        args: [--fix, --config, backend/pyproject.toml]
+        name: Ruff (backend lint)
+        entry: bash -c 'cd backend && micromamba run -n lavbench_backend ruff check .'
+        language: system
         files: ^backend/
+        pass_filenames: false
       - id: ruff-format
-        args: [--config, backend/pyproject.toml]
+        name: Ruff (backend format)
+        entry: bash -c 'cd backend && micromamba run -n lavbench_backend ruff format --check .'
+        language: system
         files: ^backend/
+        pass_filenames: false
   - repo: local
     hooks:
+      - id: mypy
+        name: Mypy (backend)
+        entry: bash -c 'cd backend && micromamba run -n lavbench_backend mypy . --no-incremental'
+        language: system
+        files: ^backend/
+        pass_filenames: false
+        require_serial: true
       - id: prettier
         name: Prettier (frontend)
         entry: npx prettier --write

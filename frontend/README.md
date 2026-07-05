@@ -50,7 +50,7 @@ This validates key parity between `public/locales/en/translation.json` and `publ
 
 The frontend uses **JSDoc `@type` annotations** with an auto-generated TypeScript declaration file (`src/types/api.d.ts`). The pipeline:
 
-1. Backend Flasgger docstrings define the OpenAPI spec
+1. Backend spectree `@api.validate` decorators generate the OpenAPI spec at `/apidoc/openapi.json`
 2. `openapi-typescript` generates `src/types/api.d.ts`
 3. `tsc --noEmit` validates all types at build time
 

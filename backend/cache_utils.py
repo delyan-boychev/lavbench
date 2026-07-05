@@ -1,10 +1,14 @@
 """Redis connection pool, distributed cache locking, and dead-letter logging."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 import uuid
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
+from typing import Any
 
 import redis as redis_lib
 
@@ -13,17 +17,17 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
-_pool = None
-_pool_pid = None
+_pool: redis_lib.ConnectionPool | None = None
+_pool_pid: int | None = None
 
 
-def get_redis_client():
+def get_redis_client() -> redis_lib.Redis[Any] | None:
     """Returns a Redis client from a shared ConnectionPool (auto-reconnect, greenlet-safe)."""
     global _pool, _pool_pid
     current_pid = os.getpid()
     if _pool is None or _pool_pid != current_pid:
         broker_url = Config.CELERY_BROKER_URL
-        ssl_kwargs = {}
+        ssl_kwargs: dict[str, Any] = {}
         if broker_url.startswith("rediss://"):
             import ssl
 
@@ -63,7 +67,7 @@ def get_redis_client():
 
 
 @contextmanager
-def cache_lock(lock_key, ttl=120):
+def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     """Context manager: acquires a Redis lock (SET NX), releases on exit.
     Uses a UUID value so only the owner can release (prevents TTL cross-deletion)."""
     r = get_redis_client()
@@ -71,7 +75,7 @@ def cache_lock(lock_key, ttl=120):
     got = False
     if r:
         try:
-            got = r.set(lock_key, owner, nx=True, ex=ttl)
+            got = bool(r.set(lock_key, owner, nx=True, ex=ttl))
         except Exception:
             logger.exception("cache_lock acquire failed for %s", lock_key)
     try:
@@ -85,24 +89,24 @@ def cache_lock(lock_key, ttl=120):
                 end
                 return 0
                 """
-                r.eval(lua_script, 1, lock_key, owner)
+                r.eval(lua_script, 1, lock_key, owner)  # type: ignore[no-untyped-call]
             except Exception as e:
                 logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
 
 
-def acquire_cache_lock(lock_key, ttl=30):
+def acquire_cache_lock(lock_key: str, ttl: int = 30) -> bool:
     """Legacy compat — use `with cache_lock(key, ttl)` instead."""
     r = get_redis_client()
     if not r:
         return False
     try:
-        return r.set(lock_key, "1", nx=True, ex=ttl)
+        return bool(r.set(lock_key, "1", nx=True, ex=ttl))
     except Exception:
         logger.exception("acquire_cache_lock failed for %s", lock_key)
         return False
 
 
-def release_cache_lock(lock_key):
+def release_cache_lock(lock_key: str) -> None:
     """Legacy compat — automatically handled by cache_lock context manager."""
     r = get_redis_client()
     if not r:
@@ -111,7 +115,9 @@ def release_cache_lock(lock_key):
         r.delete(lock_key)
 
 
-def log_dead_letter(submission_id, task_id=None, challenge_id=None, error=None):
+def log_dead_letter(
+    submission_id: Any, task_id: Any = None, challenge_id: Any = None, error: Any = None
+) -> None:
     """Logs a permanently failed Celery task to Redis for inspection."""
     r = get_redis_client()
     if not r:
@@ -130,7 +136,7 @@ def log_dead_letter(submission_id, task_id=None, challenge_id=None, error=None):
         logger.exception("log_dead_letter failed")
 
 
-def get_cached(key):
+def get_cached(key: str) -> Any:
     """Get a JSON-deserialized value from Redis by key. Returns None on miss/error."""
     r = get_redis_client()
     if not r:
@@ -144,7 +150,7 @@ def get_cached(key):
     return None
 
 
-def set_cached(key, value, timeout=300):
+def set_cached(key: str, value: Any, timeout: int = 300) -> bool:
     """JSON-serialize and store a value in Redis with an expiry TTL."""
     r = get_redis_client()
     if not r:
@@ -157,7 +163,7 @@ def set_cached(key, value, timeout=300):
         return False
 
 
-def delete_cached(key):
+def delete_cached(key: str) -> bool:
     """Delete a key from Redis. Returns True if deleted, False on error."""
     r = get_redis_client()
     if not r:
@@ -170,7 +176,7 @@ def delete_cached(key):
         return False
 
 
-def invalidate_challenge_cache(challenge_id=None):
+def invalidate_challenge_cache(challenge_id: Any = None) -> None:
     """Clear cached challenge listings and (optionally) a specific challenge entry."""
     delete_cached("challenges:all")
     if challenge_id:
@@ -179,7 +185,7 @@ def invalidate_challenge_cache(challenge_id=None):
         delete_cached(f"challenge:{challenge_id}:competitor")
 
 
-def invalidate_leaderboard_cache(challenge_id, delete_only=False):
+def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -> None:
     """Mark the challenge leaderboard cache as dirty for periodic Celery Beat rebuilding."""
     if not challenge_id:
         return

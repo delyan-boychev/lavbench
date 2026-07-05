@@ -390,7 +390,7 @@ cd docs && make html
 | [Competitor Guide](guides/en/competitor_guide.md)                 | Competitors     | Logging in, understanding tasks, submitting notebooks, leaderboard navigation.     |
 | [Jury Guide](guides/en/jury_guide.md)                       | Jury Members    | Monitoring submissions, manual scoring, competitor registration, exports.          |
 | [Admin Guide](guides/en/admin_guide.md)                     | Administrators  | Full setup, TLS/HTTPS, worker deployment, challenge/task management, backups.      |
-| [API Reference](http://localhost:5001/apidocs)              | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
+| [API Reference](http://localhost:5001/apidoc/swagger/)    | Developers      | Interactive Swagger UI detailing all 72 backend endpoints.                         |
 | [Error Code Linter](backend/scripts/check_error_codes.py) | Developers      | Validates `err()` usage and `api.ERR_*` translation parity across EN/BG.           |
 | [Sphinx Documentation](https://lavbench.readthedocs.io/)    | Developers      | Full auto-generated API reference (autodoc) and rendered OpenAPI spec.             |
 

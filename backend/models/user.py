@@ -3,6 +3,7 @@
 import contextlib
 import json
 import logging
+from typing import Any
 
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
 from models.naming import generate_pseudonym
@@ -11,7 +12,7 @@ from utils.dates import utcnow
 logger = logging.getLogger(__name__)
 
 
-class User(db.Model):
+class User(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "users"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
@@ -38,8 +39,15 @@ class User(db.Model):
     )
 
     def set_demographics(
-        self, name, surname, grade, school, city, middle_name=None, birth_date=None
-    ):
+        self,
+        name: str,
+        surname: str,
+        grade: str,
+        school: str,
+        city: str,
+        middle_name: str | None = None,
+        birth_date: str | None = None,
+    ) -> None:
         self.name = encrypt_field(name)
         self.surname = encrypt_field(surname)
         self.middle_name = encrypt_field(middle_name) if middle_name is not None else None
@@ -50,12 +58,12 @@ class User(db.Model):
 
     def to_dict(
         self,
-        view_role="competitor",
-        scores_finalized=False,
-        current_user_id=None,
-        challenge_cache=None,
-        jury_challenge_map=None,
-    ):
+        view_role: str = "competitor",
+        scores_finalized: bool = False,
+        current_user_id: Any = None,
+        challenge_cache: dict[str, Any] | None = None,
+        jury_challenge_map: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         from models.challenge import Challenge
 
         has_started = False
@@ -167,7 +175,7 @@ class User(db.Model):
         return res
 
 
-class JuryChallenge(db.Model):
+class JuryChallenge(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "jury_challenges"
 
     jury_id = db.Column(GUID, db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)

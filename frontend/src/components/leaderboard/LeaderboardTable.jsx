@@ -645,10 +645,11 @@ export default function LeaderboardTable({
         setScoringModalOpen(false);
         if (onRefresh) onRefresh();
       } else {
-        const errCode = res.data?.code;
+        const errData = /** @type {any} */ (res.data);
+        const errCode = errData?.code;
         const errMsg = errCode
-          ? t(`api.${errCode}`, res.data?.error || t('leaderboard.save_points_failed'))
-          : res.data?.error || t('leaderboard.save_points_failed');
+          ? t(`api.${errCode}`, errData?.error)
+          : t('leaderboard.save_points_failed');
         showToast(errMsg, 'error');
       }
     } catch {

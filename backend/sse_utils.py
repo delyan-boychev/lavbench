@@ -1,8 +1,12 @@
 """Server-Sent Events (SSE) publish/subscribe helpers for real-time updates."""
 
+from __future__ import annotations
+
 import json
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any
 
 from cache_utils import get_redis_client
 from config import Config
@@ -14,12 +18,14 @@ SSE_IDLE_TIMEOUT = Config.SSE_IDLE_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-def _redis():
+def _redis() -> Any:
     return get_redis_client()
 
 
 @contextmanager
-def sse_connection_limit(user_id=None, remote_addr=None):
+def sse_connection_limit(
+    user_id: Any = None, remote_addr: Any = None
+) -> Generator[bool, None, None]:
     """Context manager that tracks and caps concurrent SSE connections via Redis.
     Enforces per-user and global connection limits with auto-cleanup on exit."""
     r = get_redis_client()
@@ -66,7 +72,7 @@ def sse_connection_limit(user_id=None, remote_addr=None):
                 logger.warning("SSE connection counter cleanup failed: %s", e)
 
 
-def publish_leaderboard_update(task_id, challenge_id=None):
+def publish_leaderboard_update(task_id: Any, challenge_id: Any = None) -> None:
     """Publish a leaderboard-changed event to Redis channels for SSE consumers."""
     if not task_id:
         return
@@ -83,7 +89,7 @@ def publish_leaderboard_update(task_id, challenge_id=None):
         logger.exception("Redis publish leaderboard update error for task %s", task_id)
 
 
-def publish_submissions_update(task_id, user_id):
+def publish_submissions_update(task_id: Any, user_id: Any) -> None:
     """Publish a submission-list-changed event for a specific task+user."""
     if not task_id or not user_id:
         return
@@ -102,7 +108,7 @@ def publish_submissions_update(task_id, user_id):
         )
 
 
-def publish_submission_log(submission_id, log_line):
+def publish_submission_log(submission_id: Any, log_line: str) -> None:
     """Append a log line to the submission's Redis list and publish to its SSE channel."""
     if not submission_id:
         return
@@ -118,7 +124,7 @@ def publish_submission_log(submission_id, log_line):
         logger.exception("Redis publish submission log error for submission %s", submission_id)
 
 
-def clear_submission_logs(submission_id):
+def clear_submission_logs(submission_id: Any) -> None:
     """Delete the Redis log list for a submission."""
     if not submission_id:
         return
@@ -130,7 +136,7 @@ def clear_submission_logs(submission_id):
         logger.exception("Redis clear submission logs error for submission %s", submission_id)
 
 
-def publish_submission_status(submission_id, status):
+def publish_submission_status(submission_id: Any, status: str) -> None:
     """Publish the final status of a submission to its SSE channel."""
     if not submission_id or not status:
         return

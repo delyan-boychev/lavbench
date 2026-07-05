@@ -11,33 +11,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get paginated audit logs, optionally filtered by challenge_id and action_type.
-         * @description Only available to admins.<br/>
-         */
-        get: {
-            parameters: {
-                query?: {
-                    page?: number;
-                    per_page?: number;
-                    challenge_id?: string;
-                    action_type?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        /** get_audit_logs <GET> */
+        get: operations["get__api_admin_audit-logs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -53,27 +28,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all system backups with filenames, sizes, and timestamps. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** list_backups <GET> */
+        get: operations["get__api_admin_backups"];
         put?: never;
         post?: never;
         delete?: never;
@@ -91,27 +47,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Trigger an immediate manual backup of the database and uploaded files. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** force_backup <POST> */
+        post: operations["post__api_admin_backups_force"];
         delete?: never;
         options?: never;
         head?: never;
@@ -125,27 +62,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream backup events in real-time via Server-Sent Events. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** stream_backup_status <GET> */
+        get: operations["get__api_admin_backups_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -164,29 +82,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a manual backup file. Auto-backups cannot be deleted. */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    filename: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** delete_backup_file <DELETE> */
+        delete: operations["delete__api_admin_backups_{filename}"];
         options?: never;
         head?: never;
         patch?: never;
@@ -199,29 +96,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download a specific backup archive file. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    filename: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** download_backup_file <GET> */
+        get: operations["get__api_admin_backups_{filename}_download"];
         put?: never;
         post?: never;
         delete?: never;
@@ -237,29 +113,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Generate and download a CSV of all competitor scores for a challenge. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
+        /** download_scores_csv <GET> */
+        get: operations["get__api_admin_challenges_{challenge_id}_download-scores-csv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/challenges/{challenge_id}/download-submissions-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /** Download completed competitor submissions as a ZIP archive. Allows anonymized downloads when a stage or the competition has ended, and non-anonymized downloads once finalized. */
+        get: operations["get__api_admin_challenges_{challenge_id}_download-submissions-zip"];
         put?: never;
         post?: never;
         delete?: never;
@@ -277,29 +149,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate new passwords for all competitors in a challenge. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** reset_all_challenge_passwords <POST> */
+        post: operations["post__api_admin_challenges_{challenge_id}_reset-all-passwords"];
         delete?: never;
         options?: never;
         head?: never;
@@ -313,27 +164,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Inspect the dead letter queue of permanently failed submission evaluations. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** get_dead_letters <GET> */
+        get: operations["get__api_admin_dead-letters"];
         put?: never;
         post?: never;
         delete?: never;
@@ -351,27 +183,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk import competitors from a CSV file. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** import_competitors_csv <POST> */
+        post: operations["post__api_admin_import-competitors-csv"];
         delete?: never;
         options?: never;
         head?: never;
@@ -385,27 +198,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all built-in evaluation metrics available for task configuration. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** get_available_metrics <GET> */
+        get: operations["get__api_admin_metrics"];
         put?: never;
         post?: never;
         delete?: never;
@@ -423,27 +217,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register a new competitor with auto-generated credentials. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** register_competitor <POST> */
+        post: operations["post__api_admin_register-competitor"];
         delete?: never;
         options?: never;
         head?: never;
@@ -459,27 +234,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register a new user account with specified role and demographics. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** register_user <POST> */
+        post: operations["post__api_admin_register-user"];
         delete?: never;
         options?: never;
         head?: never;
@@ -493,27 +249,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List and search users with pagination. Supports filtering by role and challenge. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** get_users <GET> */
+        get: operations["get__api_admin_users"];
         put?: never;
         post?: never;
         delete?: never;
@@ -530,53 +267,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update user profile fields. Jury members have restricted edit access. */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    user_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** update_user <PUT> */
+        put: operations["put__api_admin_users_{user_id}"];
         post?: never;
-        /** Permanently delete a user and all their submissions. */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    user_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** delete_user <DELETE> */
+        delete: operations["delete__api_admin_users_{user_id}"];
         options?: never;
         head?: never;
         patch?: never;
@@ -591,29 +286,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate a new random password for a specific user. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    user_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** reset_user_password <POST> */
+        post: operations["post__api_admin_users_{user_id}_reset-password"];
         delete?: never;
         options?: never;
         head?: never;
@@ -627,27 +301,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get detailed worker cluster statistics including CPU, RAM, GPU specs. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** get_detailed_worker_stats <GET> */
+        get: operations["get__api_admin_workers_stats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -663,27 +318,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream real-time worker cluster statistics via Server-Sent Events. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** stream_worker_stats <GET> */
+        get: operations["get__api_admin_workers_stats_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -699,32 +335,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get a CSRF token for state-changing requests.
-         * @description Returns the token in the response body and sets it as a non-httpOnly cookie.<br/>The frontend should read the cookie and include it as X-CSRF-Token header.<br/>
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description CSRF token generated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            csrf_token?: string;
-                        };
-                    };
-                };
-            };
-        };
+        /** Get a CSRF token for state-changing requests. */
+        get: operations["get__api_auth_csrf-token"];
         put?: never;
         post?: never;
         delete?: never;
@@ -742,72 +354,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Authenticate a user and receive a session cookie.
-         * @description Password must be sent as plaintext; the server hashes it.<br/>Sets httpOnly cookie `auth_token` on success.<br/>Rate limited: 5 failed attempts per username+IP per 60 seconds.<br/>
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Login successful. httpOnly cookie set. */
-                200: {
-                    headers: {
-                        /** @description auth_token=httpOnly; SameSite=Strict */
-                        "Set-Cookie"?: unknown;
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** @example Logged in successfully. */
-                            message?: string;
-                            user?: components["schemas"]["User"];
-                        };
-                    };
-                };
-                /** @description Missing username or password */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Invalid credentials */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Competition archived (competitor login only) */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Rate limited (5 failures per 60s per username+IP) */
-                429: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
+        /** Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username+IP per 60 seconds. */
+        post: operations["post__api_auth_login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -824,29 +372,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Log out the current user. Clears the httpOnly cookie and revokes the JWT token. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Logged out successfully. Cookie cleared, token revoked. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** @example Logged out successfully. */
-                            message?: string;
-                        };
-                    };
-                };
-            };
-        };
+        post: operations["post__api_auth_logout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -860,50 +386,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get the current authenticated user's profile.
-         * @description Requires valid httpOnly cookie or Authorization header.<br/>
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Current user profile */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            user?: components["schemas"]["User"];
-                        };
-                    };
-                };
-                /** @description Unauthorized — missing, expired, or revoked token */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description User not found (deleted after token was issued) */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
+        /** Get the current authenticated user's profile. */
+        get: operations["get__api_auth_me"];
         put?: never;
         post?: never;
         delete?: never;
@@ -920,48 +404,10 @@ export interface paths {
             cookie?: never;
         };
         /** List all available challenges with their tasks and stages. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges"];
         put?: never;
         /** Create a new competition with start/end times, resource limits, and privacy settings. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_challenges"];
         delete?: never;
         options?: never;
         head?: never;
@@ -977,37 +423,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Import a challenge configuration from a ZIP archive.
-         * @description Creates challenge, stages, and tasks, and restores files.<br/>
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "multipart/form-data": {
-                        /** Format: binary */
-                        file?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Challenge created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** Import a challenge configuration from a ZIP archive. */
+        post: operations["post__api_challenges_import"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1022,75 +439,12 @@ export interface paths {
             cookie?: never;
         };
         /** Get detailed information about a specific challenge. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges_{challenge_id}"];
         /** Update the configuration of an existing challenge. */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        put: operations["put__api_challenges_{challenge_id}"];
         post?: never;
-        /** Permanently delete a challenge including all its tasks, submissions, and competition backups. */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** Permanently delete a challenge and all its tasks, submissions, and backups. */
+        delete: operations["delete__api_challenges_{challenge_id}"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1106,28 +460,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Toggle archive state. Archived challenges are hidden from competitors. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
+        post: operations["post__api_challenges_{challenge_id}_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/audit-logs/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /** Download challenge audit logs dynamically as a JSON stream. */
+        get: operations["get__api_challenges_{challenge_id}_audit-logs_download"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1142,28 +492,7 @@ export interface paths {
             cookie?: never;
         };
         /** Export a challenge configuration as ZIP, including tasks, stages, and uploaded files. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Challenge export ZIP file */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/zip": string;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges_{challenge_id}_export"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1180,28 +509,7 @@ export interface paths {
             cookie?: never;
         };
         /** Export comprehensive competition results as CSV with ranks, scores, and audit log. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges_{challenge_id}_export-results"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1220,28 +528,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Finalize the competition scores. Locks rankings and reveals competitor identities. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_challenges_{challenge_id}_finalize"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1255,33 +542,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get the leaderboard for a specific challenge.
-         * @description Competitors only see their own challenge, and frozen/finalized rules apply.<br/>
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description ID of the challenge */
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** Get the leaderboard for a specific challenge. */
+        get: operations["get__api_challenges_{challenge_id}_leaderboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1298,29 +560,7 @@ export interface paths {
             cookie?: never;
         };
         /** Stream live updates to the challenge leaderboard using Server-Sent Events (SSE). */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description ID of the challenge */
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/event-stream": string;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges_{challenge_id}_leaderboard_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1338,51 +578,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Save manual points for a user in a challenge.
-         * @description Jury members only.<br/>
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description ID of the challenge */
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Manual points saved successfully */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Validation error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description User or Challenge not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** Save manual points for a user in a challenge. Jury members only. */
+        post: operations["post__api_challenges_{challenge_id}_manual-points"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1398,49 +595,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Upload and parse a Jupyter Notebook (.ipynb) to preview cells.
-         * @description 5MB file limit. Returns a list of cell objects with type and source.<br/>
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Notebook parsed successfully */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            cells?: components["schemas"]["Cell"][];
-                            filename?: string;
-                        };
-                    };
-                };
-                /** @description Invalid file type, file too large, or parse error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Not registered for this challenge */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        /** Upload and parse a Jupyter Notebook (.ipynb) to preview cells. */
+        post: operations["post__api_challenges_{challenge_id}_parse-notebook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/reveal-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        /** Toggle reveal of private scores and manual points to competitors. */
+        put: operations["put__api_challenges_{challenge_id}_reveal-results"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1457,28 +630,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Add a new stage to a challenge with its own deadline and score visibility rules. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_challenges_{challenge_id}_stages"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1494,54 +646,10 @@ export interface paths {
         };
         get?: never;
         /** Update an existing stage configuration. */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                    stage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        put: operations["put__api_challenges_{challenge_id}_stages_{stage_id}"];
         post?: never;
         /** Remove a stage from a challenge. */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                    stage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        delete: operations["delete__api_challenges_{challenge_id}_stages_{stage_id}"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1557,29 +665,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Finalize a specific stage. Locks stage scores. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                    stage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
+        post: operations["post__api_challenges_{challenge_id}_stages_{stage_id}_finalize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/stages/{stage_id}/reveal-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        /** Toggle reveal_results on a finalized stage. */
+        put: operations["put__api_challenges_{challenge_id}_stages_{stage_id}_reveal-results"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1594,40 +697,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get paginated submissions for a challenge. */
-        get: {
-            parameters: {
-                query?: {
-                    page?: number;
-                    per_page?: number;
-                };
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of submissions */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Access denied */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_challenges_{challenge_id}_submissions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1646,55 +716,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Submit parsed code cells for a task. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Submission received and queued */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Validation error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Access denied or challenge frozen */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Rate limit exceeded */
-                429: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_challenges_{challenge_id}_submit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1711,28 +733,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create a new evaluation task with resource limits, metrics, and test data files. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
+        post: operations["post__api_challenges_{challenge_id}_tasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/tasks/{task_id}/users/{user_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /** Download a competitor's final selection or highest-scoring submission. */
+        get: operations["get__api_challenges_{challenge_id}_tasks_{task_id}_users_{user_id}_download"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1749,38 +767,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create a test stage before the competition starts for testing purposes. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    challenge_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** Format: date-time */
-                        end_time?: string;
-                        /** Format: date-time */
-                        start_time?: string;
-                        title?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Test stage created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_challenges_{challenge_id}_test-stage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1795,29 +782,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get the admin documentation guide. */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Language code (e.g. 'en', 'bg') */
-                    lang?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Returns the rendered guide */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_docs_admin"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1834,29 +799,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get the competitor documentation guide. */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Language code (e.g. 'en', 'bg') */
-                    lang?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Returns the rendered guide */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_docs_competitor"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1873,29 +816,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get the jury documentation guide. */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Language code (e.g. 'en', 'bg') */
-                    lang?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Returns the rendered guide */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_docs_jury"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1911,39 +832,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Health check for Docker and load balancer monitoring.
-         * @description Verifies database, Redis, Celery, and disk availability.<br/>
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Service healthy */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Service degraded */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** Health check for Docker and load balancer monitoring. */
+        get: operations["get__api_health"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1960,46 +850,24 @@ export interface paths {
             cookie?: never;
         };
         /** Get details of a specific submission. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    submission_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Submission details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Access denied */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Submission not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
+        get: operations["get__api_submissions_{submission_id}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submission_id}/logs/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /** Stream live logs for a submission using Server-Sent Events (SSE). */
+        get: operations["get__api_submissions_{submission_id}_logs_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2018,55 +886,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Select a submission as the final one for scoring. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    submission_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Submission selected as final */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Selection window closed */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Access denied */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Submission not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_submissions_{submission_id}_select-final"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2081,75 +901,12 @@ export interface paths {
             cookie?: never;
         };
         /** API endpoint. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}"];
         /** Update an existing task configuration including files and evaluator scripts. */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        put: operations["put__api_tasks_{task_id}"];
         post?: never;
         /** Remove a task and all its submissions from a challenge. */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        delete: operations["delete__api_tasks_{task_id}"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2163,29 +920,7 @@ export interface paths {
             cookie?: never;
         };
         /** Download a resource file attached to a task. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                    filename: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}_download_{filename}"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2202,28 +937,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get cached leaderboard data for a specific task. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}_leaderboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2240,28 +954,7 @@ export interface paths {
             cookie?: never;
         };
         /** Stream live task leaderboard updates via SSE. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}_leaderboard_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2278,28 +971,7 @@ export interface paths {
             cookie?: never;
         };
         /** List submissions for a specific task with pagination. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}_submissions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2316,28 +988,7 @@ export interface paths {
             cookie?: never;
         };
         /** Stream live task submission updates via SSE. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_tasks_{task_id}_submissions_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2356,28 +1007,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Submit code cells for execution under a specific task. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_tasks_{task_id}_submit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2392,26 +1022,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get current worker cluster health status with specs. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_worker-status"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2428,26 +1039,7 @@ export interface paths {
             cookie?: never;
         };
         /** Stream worker cluster health status via SSE. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_worker-status_live"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2464,26 +1056,7 @@ export interface paths {
             cookie?: never;
         };
         /** List all HuggingFace datasets used by active challenges for worker preloading. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_worker_active-datasets"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2500,24 +1073,7 @@ export interface paths {
             cookie?: never;
         };
         /** List all active task configurations for worker image pre-building. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get__api_worker_active-tasks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2536,28 +1092,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Worker callback to report submission status and scores. */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    submission_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        post: operations["post__api_worker_report_{submission_id}"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2572,29 +1107,7 @@ export interface paths {
             cookie?: never;
         };
         /** Worker endpoint to securely download task resource files. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                    filename: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        get: operations["get__api_worker_tasks_{task_id}_files_{filename}"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2610,31 +1123,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Worker endpoint to fetch the HuggingFace API key for a task. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-            };
-        };
+        /** get_task_hf_key <GET> */
+        get: operations["get__api_worker_tasks_{task_id}_hf-key"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workers/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** receive_worker_logs <POST> */
+        post: operations["post__api_workers_logs"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2645,105 +1154,4193 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Cell: {
-            id?: number;
-            source?: string;
-            /** @enum {string} */
-            type?: "code" | "markdown";
+        /** ArchiveResponse */
+        "ArchiveResponse.7ed3705": {
+            challenge: components["schemas"]["ArchiveResponse.7ed3705.ChallengeResponse"];
+            /** Message */
+            message: string;
         };
-        Challenge: {
-            description?: string;
-            double_blind?: boolean;
-            /** Format: date-time */
-            end_time?: string;
-            gpu_required?: boolean;
-            /** Format: uuid */
-            id?: string;
-            is_active?: boolean;
-            is_archived?: boolean;
-            is_frozen?: boolean;
-            max_eval_requests?: number;
-            ram_limit_mb?: number;
-            scores_finalized?: boolean;
-            /** Format: date-time */
-            start_time?: string;
-            status?: string;
-            time_limit_sec?: number;
-            timezone?: string;
-            title?: string;
-        };
-        Error: {
+        /** ChallengeResponse */
+        "ArchiveResponse.7ed3705.ChallengeResponse": {
             /**
-             * @description Machine-readable error code
-             * @example ERR_INVALID_CREDENTIALS
+             * Deadline Grace Period Seconds
+             * @default 60
+             */
+            deadline_grace_period_seconds: number;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default null
+             */
+            is_active: boolean | null;
+            /**
+             * Is Archived
+             * @default null
+             */
+            is_archived: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Num Tasks
+             * @default 0
+             */
+            num_tasks: number;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Scores Finalized
+             * @default null
+             */
+            scores_finalized: boolean | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["ArchiveResponse.7ed3705.StageResponse"][];
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Status
+             * @default null
+             */
+            status: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks: components["schemas"]["ArchiveResponse.7ed3705.TaskResponse"][];
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** FileInfo */
+        "ArchiveResponse.7ed3705.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /** StageResponse */
+        "ArchiveResponse.7ed3705.StageResponse": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "ArchiveResponse.7ed3705.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["ArchiveResponse.7ed3705.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** AuditLinkListResponse */
+        "AuditLinkListResponse.febf810": {
+            /** Logs */
+            logs: components["schemas"]["AuditLinkListResponse.febf810.AuditLogResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Per Page */
+            per_page: number;
+            /** Total */
+            total: number;
+        };
+        /** AuditLogResponse */
+        "AuditLinkListResponse.febf810.AuditLogResponse": {
+            /** Action Type */
+            action_type: string;
+            /**
+             * Admin Id
+             * Format: uuid
+             */
+            admin_id: string;
+            /**
+             * Admin Username
+             * @default null
+             */
+            admin_username: string | null;
+            /**
+             * Details
+             * @default null
+             */
+            details: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Ip Address
+             * @default null
+             */
+            ip_address: string | null;
+            /**
+             * New Score
+             * @default null
+             */
+            new_score: number | null;
+            /**
+             * Old Score
+             * @default null
+             */
+            old_score: number | null;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Target Id
+             * @default null
+             */
+            target_id: string | null;
+            /** Target Type */
+            target_type: string;
+            /**
+             * Target User Id
+             * @default null
+             */
+            target_user_id: string | null;
+            /**
+             * Target User Username
+             * @default null
+             */
+            target_user_username: string | null;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * Timestamp
+             * @default null
+             */
+            timestamp: string | null;
+        };
+        /**
+         * AvailableMetricsResponse
+         * @description Available metrics with their configurable parameters.
+         */
+        "AvailableMetricsResponse.febf810": {
+            [key: string]: {
+                [key: string]: string[] | string;
+            };
+        };
+        /** BackupListResponse */
+        "BackupListResponse.febf810": {
+            /** Backups */
+            backups: components["schemas"]["BackupListResponse.febf810.BackupInfo"][];
+        };
+        /** BackupInfo */
+        "BackupListResponse.febf810.BackupInfo": {
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /** Filename */
+            filename: string;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+        };
+        /** BackupStartResponse */
+        "BackupStartResponse.febf810": {
+            /**
+             * Status
+             * @default started
+             */
+            status: string;
+            /** Task Id */
+            task_id: string;
+        };
+        /** BulkResetPasswordResponse */
+        "BulkResetPasswordResponse.febf810": {
+            /** Message */
+            message: string;
+            /** Reset Accounts */
+            reset_accounts: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** ChallengeResponse */
+        "ChallengeResponse.7ed3705": {
+            /**
+             * Deadline Grace Period Seconds
+             * @default 60
+             */
+            deadline_grace_period_seconds: number;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default null
+             */
+            is_active: boolean | null;
+            /**
+             * Is Archived
+             * @default null
+             */
+            is_archived: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Num Tasks
+             * @default 0
+             */
+            num_tasks: number;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Scores Finalized
+             * @default null
+             */
+            scores_finalized: boolean | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["ChallengeResponse.7ed3705.StageResponse"][];
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Status
+             * @default null
+             */
+            status: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks: components["schemas"]["ChallengeResponse.7ed3705.TaskResponse"][];
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** FileInfo */
+        "ChallengeResponse.7ed3705.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /** StageResponse */
+        "ChallengeResponse.7ed3705.StageResponse": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "ChallengeResponse.7ed3705.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["ChallengeResponse.7ed3705.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** CreateChallengeSchema */
+        "CreateChallengeSchema.8145bef": {
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default true
+             */
+            double_blind: boolean;
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Gpu Required
+             * @default true
+             */
+            gpu_required: boolean;
+            /**
+             * Is Frozen
+             * @default false
+             */
+            is_frozen: boolean;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+            /**
+             * Test Stage End Time
+             * @default null
+             */
+            test_stage_end_time: string | null;
+            /**
+             * Test Stage Start Time
+             * @default null
+             */
+            test_stage_start_time: string | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** CreateStageSchema */
+        "CreateStageSchema.6aa1402": {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Stage Number
+             * @default null
+             */
+            stage_number: number | null;
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+            /** Title */
+            title: string;
+        };
+        /** CreateTaskMetaSchema */
+        "CreateTaskMetaSchema.605fb63": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default false
+             */
+            ban_magic_commands: boolean;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Gpu Required
+             * @default false
+             */
+            gpu_required: boolean;
+            /**
+             * Hf Datasets
+             * @default null
+             */
+            hf_datasets: string[] | null;
+            /**
+             * Hf Models
+             * @default null
+             */
+            hf_models: string[] | null;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** CreateTestStageSchema */
+        "CreateTestStageSchema.6aa1402": {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+        };
+        /** CreateUserSchema */
+        "CreateUserSchema.e1ac751": {
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Is Anonymous
+             * @default false
+             */
+            is_anonymous: boolean;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Password
+             * @default null
+             */
+            password: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /** Surname */
+            surname: string;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** CsrfTokenResponse */
+        "CsrfTokenResponse.bfffb0d": {
+            /** Csrf Token */
+            csrf_token: string;
+        };
+        /** CurrentUserResponse */
+        "CurrentUserResponse.bfffb0d": {
+            user: components["schemas"]["CurrentUserResponse.bfffb0d.UserResponse"];
+        };
+        /** UserResponse */
+        "CurrentUserResponse.bfffb0d.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** DeadLetterListResponse */
+        "DeadLetterListResponse.febf810": {
+            /** Items */
+            items: components["schemas"]["DeadLetterListResponse.febf810.DeadLetterItem"][];
+        };
+        /** DeadLetterItem */
+        "DeadLetterListResponse.febf810.DeadLetterItem": {
+            /**
+             * Details
+             * @default null
+             */
+            details: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Id
+             * @default null
+             */
+            id: string | null;
+            /**
+             * Message
+             * @default null
+             */
+            message: string | null;
+            /**
+             * Timestamp
+             * @default null
+             */
+            timestamp: string | null;
+        };
+        /** DocContentResponse */
+        "DocContentResponse.340a197": {
+            /** Content */
+            content: string;
+            /** Title */
+            title: string;
+        };
+        /** ErrorResponse */
+        "ErrorResponse.c6e31f5": {
+            /**
+             * Code
+             * @description Machine-readable error code, e.g. ERR_INVALID_CREDENTIALS
              */
             code: string;
-            /** @description Human-readable error message */
+            /**
+             * Error
+             * @description Human-readable error message
+             */
             error: string;
         };
-        Submission: {
-            /** Format: uuid */
-            challenge_id?: string;
-            /** Format: date-time */
-            created_at?: string;
-            detailed_status?: string;
-            /** Format: date-time */
-            executed_at?: string;
-            execution_time_ms?: number;
-            /** Format: uuid */
-            id?: string;
-            is_baseline?: boolean;
-            is_final_selection?: boolean;
-            private_score?: number;
-            public_score?: number;
-            status?: string;
-            /** Format: uuid */
-            task_id?: string;
-            task_title?: string;
-            user?: components["schemas"]["User"];
+        /** FinalizeChallengeResponse */
+        "FinalizeChallengeResponse.7ed3705": {
+            challenge: components["schemas"]["FinalizeChallengeResponse.7ed3705.ChallengeResponse"];
+            /** Message */
+            message: string;
         };
-        Task: {
-            apt_packages?: string;
-            ban_magic_commands?: boolean;
-            banned_imports?: string;
-            base_docker_image?: string;
-            /** Format: uuid */
-            challenge_id?: string;
-            description?: string;
-            files?: Record<string, never>[];
-            gpu_required?: boolean;
-            /** Format: uuid */
-            id?: string;
-            max_submissions_per_period?: number;
-            metrics_config?: Record<string, never>;
-            pip_requirements?: string;
-            ram_limit_mb?: number;
-            /** Format: uuid */
-            stage_id?: string;
-            submission_period_hours?: number;
-            time_limit_sec?: number;
-            title?: string;
-            whitelisted_imports?: string;
+        /** ChallengeResponse */
+        "FinalizeChallengeResponse.7ed3705.ChallengeResponse": {
+            /**
+             * Deadline Grace Period Seconds
+             * @default 60
+             */
+            deadline_grace_period_seconds: number;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default null
+             */
+            is_active: boolean | null;
+            /**
+             * Is Archived
+             * @default null
+             */
+            is_archived: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Num Tasks
+             * @default 0
+             */
+            num_tasks: number;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Scores Finalized
+             * @default null
+             */
+            scores_finalized: boolean | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["FinalizeChallengeResponse.7ed3705.StageResponse"][];
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Status
+             * @default null
+             */
+            status: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks: components["schemas"]["FinalizeChallengeResponse.7ed3705.TaskResponse"][];
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
         };
-        User: {
-            /** @description Pseudonym for leaderboard display */
-            alias_id?: string;
-            /** Format: uuid */
-            challenge_id?: string;
-            city?: string;
-            email?: string;
-            grade?: string;
-            /** Format: uuid */
-            id?: string;
-            is_anonymous?: boolean;
-            manual_points?: Record<string, never>;
-            name?: string;
-            /** @enum {string} */
-            role?: "competitor" | "jury" | "admin";
-            school?: string;
-            surname?: string;
-            username?: string;
+        /** FileInfo */
+        "FinalizeChallengeResponse.7ed3705.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
         };
+        /** StageResponse */
+        "FinalizeChallengeResponse.7ed3705.StageResponse": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "FinalizeChallengeResponse.7ed3705.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["FinalizeChallengeResponse.7ed3705.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** HealthResponse */
+        "HealthResponse.c6e31f5": {
+            /** Status */
+            status: string;
+            /** Version */
+            version: string;
+        };
+        /** ImportCompetitorsResponse */
+        "ImportCompetitorsResponse.febf810": {
+            /** Competitors */
+            competitors: components["schemas"]["ImportCompetitorsResponse.febf810.ImportedCompetitorResponse"][];
+            /** Message */
+            message: string;
+        };
+        /** ImportedCompetitorResponse */
+        "ImportCompetitorsResponse.febf810.ImportedCompetitorResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /** Birth Date */
+            birth_date: string;
+            /** City */
+            city: string;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /** Generated Password */
+            generated_password: string;
+            /** Generated Username */
+            generated_username: string;
+            /** Grade */
+            grade: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default false
+             */
+            is_anonymous: boolean;
+            /**
+             * Middle Name
+             * @default
+             */
+            middle_name: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+            /** School */
+            school: string;
+            /** Surname */
+            surname: string;
+        };
+        /** LeaderboardResponse */
+        "LeaderboardResponse.cc8acb7": {
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Challenge Title
+             * @default null
+             */
+            challenge_title: string | null;
+            /**
+             * Is Finalized
+             * @default false
+             */
+            is_finalized: boolean;
+            /**
+             * Is Normalized
+             * @default false
+             */
+            is_normalized: boolean;
+            /** Leaderboard */
+            leaderboard: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Metric Name
+             * @default Score
+             */
+            metric_name: string;
+            /**
+             * Reveal Results
+             * @default true
+             */
+            reveal_results: boolean;
+            /** Tasks */
+            tasks: components["schemas"]["LeaderboardResponse.cc8acb7.TaskResponse"][];
+        };
+        /** FileInfo */
+        "LeaderboardResponse.cc8acb7.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "LeaderboardResponse.cc8acb7.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["LeaderboardResponse.cc8acb7.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** LoginResponse */
+        "LoginResponse.bfffb0d": {
+            /** Message */
+            message: string;
+            user: components["schemas"]["LoginResponse.bfffb0d.UserResponse"];
+        };
+        /** UserResponse */
+        "LoginResponse.bfffb0d.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** LoginSchema */
+        "LoginSchema.de5424a": {
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /** LogoutResponse */
+        "LogoutResponse.bfffb0d": {
+            /** Message */
+            message: string;
+        };
+        /** ManualPointsResponse */
+        "ManualPointsResponse.cc8acb7": {
+            /** Manual Points */
+            manual_points: {
+                [key: string]: unknown;
+            };
+            /** Message */
+            message: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** ManualPointsSchema */
+        "ManualPointsSchema.448b425": {
+            /** Points */
+            points: {
+                [key: string]: unknown;
+            };
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /** MessageResponse */
+        "MessageResponse.c6e31f5": {
+            /** Message */
+            message: string;
+        };
+        /** PaginatedResponse[ChallengeResponse] */
+        "PaginatedResponse[ChallengeResponse].c6e31f5": {
+            /** Items */
+            items: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** ChallengeResponse */
+        "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
+            /**
+             * Deadline Grace Period Seconds
+             * @default 60
+             */
+            deadline_grace_period_seconds: number;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default null
+             */
+            is_active: boolean | null;
+            /**
+             * Is Archived
+             * @default null
+             */
+            is_archived: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Num Tasks
+             * @default 0
+             */
+            num_tasks: number;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Scores Finalized
+             * @default null
+             */
+            scores_finalized: boolean | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse"][];
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Status
+             * @default null
+             */
+            status: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse"][];
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** FileInfo */
+        "PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /** StageResponse */
+        "PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** PaginatedResponse[SubmissionLightResponse] */
+        "PaginatedResponse[SubmissionLightResponse].c6e31f5": {
+            /** Items */
+            items: components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** SubmissionLightResponse */
+        "PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Disqualified
+             * @default false
+             */
+            is_disqualified: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse"] | components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse"] | null;
+        };
+        /** UserMinimalResponse */
+        "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** PaginatedResponse[UserResponse] */
+        "PaginatedResponse[UserResponse].c6e31f5": {
+            /** Items */
+            items: components["schemas"]["PaginatedResponse[UserResponse].c6e31f5.UserResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** UserResponse */
+        "PaginatedResponse[UserResponse].c6e31f5.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** ParseNotebookResponse */
+        "ParseNotebookResponse.7ed3705": {
+            /** Cells */
+            cells: components["schemas"]["ParseNotebookResponse.7ed3705.CellResponse"][];
+            /** Filename */
+            filename: string;
+        };
+        /** CellResponse */
+        "ParseNotebookResponse.7ed3705.CellResponse": {
+            /** Id */
+            id: number;
+            /** Source */
+            source: string;
+            /** Type */
+            type: string;
+        };
+        /** RegisterCompetitorSchema */
+        "RegisterCompetitorSchema.e1ac751": {
+            /** Birth Date */
+            birth_date: string;
+            /** Challenge Id */
+            challenge_id: string;
+            /** City */
+            city: string;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /** Grade */
+            grade: string;
+            /** Middle Name */
+            middle_name: string;
+            /** Name */
+            name: string;
+            /** School */
+            school: string;
+            /** Surname */
+            surname: string;
+        };
+        /** RegisterUserResponse */
+        "RegisterUserResponse.febf810": {
+            /** Generated Password */
+            generated_password: string;
+            /** Generated Username */
+            generated_username: string;
+            /** Message */
+            message: string;
+            user: components["schemas"]["RegisterUserResponse.febf810.UserResponse"];
+        };
+        /** UserResponse */
+        "RegisterUserResponse.febf810.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** ResetPasswordResponse */
+        "ResetPasswordResponse.febf810": {
+            /** Message */
+            message: string;
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
+        };
+        /** RevealResultsResponse */
+        "RevealResultsResponse.7ed3705": {
+            challenge: components["schemas"]["RevealResultsResponse.7ed3705.ChallengeResponse"];
+            /** Reveal Results */
+            reveal_results: boolean;
+        };
+        /** ChallengeResponse */
+        "RevealResultsResponse.7ed3705.ChallengeResponse": {
+            /**
+             * Deadline Grace Period Seconds
+             * @default 60
+             */
+            deadline_grace_period_seconds: number;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Active
+             * @default null
+             */
+            is_active: boolean | null;
+            /**
+             * Is Archived
+             * @default null
+             */
+            is_archived: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Num Tasks
+             * @default 0
+             */
+            num_tasks: number;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Scores Finalized
+             * @default null
+             */
+            scores_finalized: boolean | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["RevealResultsResponse.7ed3705.StageResponse"][];
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Status
+             * @default null
+             */
+            status: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks: components["schemas"]["RevealResultsResponse.7ed3705.TaskResponse"][];
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** FileInfo */
+        "RevealResultsResponse.7ed3705.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /** StageResponse */
+        "RevealResultsResponse.7ed3705.StageResponse": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TaskResponse
+         * @description Fields visible to competitors.
+         */
+        "RevealResultsResponse.7ed3705.TaskResponse": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["RevealResultsResponse.7ed3705.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** RevealResultsSchema */
+        "RevealResultsSchema.6aa1402": {
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+        };
+        /** SelectFinalResponse */
+        "SelectFinalResponse.aad2a03": {
+            /** Message */
+            message: string;
+            submission: components["schemas"]["SelectFinalResponse.aad2a03.SubmissionResponse"];
+        };
+        /** SubmissionResponse */
+        "SelectFinalResponse.aad2a03.SubmissionResponse": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Disqualified
+             * @default false
+             */
+            is_disqualified: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["SelectFinalResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SelectFinalResponse.aad2a03.UserResponse"] | null;
+        };
+        /** UserMinimalResponse */
+        "SelectFinalResponse.aad2a03.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "SelectFinalResponse.aad2a03.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** SelectedCellsSchema */
+        "SelectedCellsSchema.59fcbab": {
+            /** Selected Cells */
+            selected_cells: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** StageResponse */
+        "StageResponse.7ed3705": {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Is Test
+             * @default null
+             */
+            is_test: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /** Stage Number */
+            stage_number: number;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /** Title */
+            title: string;
+        };
+        /** SubmissionResponse */
+        "SubmissionResponse.aad2a03": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Disqualified
+             * @default false
+             */
+            is_disqualified: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["SubmissionResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SubmissionResponse.aad2a03.UserResponse"] | null;
+        };
+        /** UserMinimalResponse */
+        "SubmissionResponse.aad2a03.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "SubmissionResponse.aad2a03.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** SubmissionsListResponse */
+        "SubmissionsListResponse.aad2a03": {
+            /**
+             * Challenge
+             * @default null
+             */
+            challenge: {
+                [key: string]: unknown;
+            } | null;
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Per Page */
+            per_page: number;
+            /** Submissions */
+            submissions: components["schemas"]["SubmissionsListResponse.aad2a03.SubmissionLightResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** SubmissionLightResponse */
+        "SubmissionsListResponse.aad2a03.SubmissionLightResponse": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Disqualified
+             * @default false
+             */
+            is_disqualified: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["SubmissionsListResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SubmissionsListResponse.aad2a03.UserResponse"] | null;
+        };
+        /** UserMinimalResponse */
+        "SubmissionsListResponse.aad2a03.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "SubmissionsListResponse.aad2a03.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** SubmitCodeSchema */
+        "SubmitCodeSchema.59fcbab": {
+            /** Selected Cells */
+            selected_cells: {
+                [key: string]: unknown;
+            }[];
+            /** Task Id */
+            task_id: string;
+        };
+        /** SubmitResponse */
+        "SubmitResponse.7ed3705": {
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @default queued
+             */
+            status: string;
+            /**
+             * Submission Id
+             * Format: uuid
+             */
+            submission_id: string;
+        };
+        /**
+         * TaskAdminResponse
+         * @description All fields — visible to admin/jury only.
+         */
+        "TaskAdminResponse.c8dc413": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["TaskAdminResponse.c8dc413.FileInfo"][];
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default []
+             */
+            hf_datasets: string[];
+            /**
+             * Hf Models
+             * @default []
+             */
+            hf_models: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** FileInfo */
+        "TaskAdminResponse.c8dc413.FileInfo": {
+            /** Filename */
+            filename: string;
+            /**
+             * Saved Name
+             * @default null
+             */
+            saved_name: string | null;
+            /**
+             * Size Bytes
+             * @default null
+             */
+            size_bytes: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
+        };
+        /** TaskLeaderboardResponse */
+        "TaskLeaderboardResponse.cc8acb7": {
+            /**
+             * Challenge Title
+             * @default null
+             */
+            challenge_title: string | null;
+            /**
+             * Is Finalized
+             * @default false
+             */
+            is_finalized: boolean;
+            /**
+             * Is Normalized
+             * @default false
+             */
+            is_normalized: boolean;
+            /** Leaderboard */
+            leaderboard: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Metric Name
+             * @default Score
+             */
+            metric_name: string;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+        };
+        /** UpdateChallengeSchema */
+        "UpdateChallengeSchema.8145bef": {
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Double Blind
+             * @default null
+             */
+            double_blind: boolean | null;
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Is Frozen
+             * @default null
+             */
+            is_frozen: boolean | null;
+            /**
+             * Max Eval Requests
+             * @default null
+             */
+            max_eval_requests: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Test Stage End Time
+             * @default null
+             */
+            test_stage_end_time: string | null;
+            /**
+             * Test Stage Start Time
+             * @default null
+             */
+            test_stage_start_time: string | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Timezone
+             * @default null
+             */
+            timezone: string | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
+        /** UpdateStageSchema */
+        "UpdateStageSchema.6aa1402": {
+            /**
+             * End Time
+             * @default null
+             */
+            end_time: string | null;
+            /**
+             * Is Finalized
+             * @default null
+             */
+            is_finalized: boolean | null;
+            /**
+             * Reveal Results
+             * @default null
+             */
+            reveal_results: boolean | null;
+            /**
+             * Stage Number
+             * @default null
+             */
+            stage_number: number | null;
+            /**
+             * Start Time
+             * @default null
+             */
+            start_time: string | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+        };
+        /** UpdateTaskMetaSchema */
+        "UpdateTaskMetaSchema.605fb63": {
+            /**
+             * Apt Packages
+             * @default null
+             */
+            apt_packages: string | null;
+            /**
+             * Ban Magic Commands
+             * @default null
+             */
+            ban_magic_commands: boolean | null;
+            /**
+             * Banned Imports
+             * @default null
+             */
+            banned_imports: string | null;
+            /**
+             * Base Docker Image
+             * @default null
+             */
+            base_docker_image: string | null;
+            /**
+             * Delete Baseline
+             * @default null
+             */
+            delete_baseline: boolean | null;
+            /**
+             * Delete Evaluator
+             * @default null
+             */
+            delete_evaluator: boolean | null;
+            /**
+             * Deleted Files
+             * @default null
+             */
+            deleted_files: string | null;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Gpu Required
+             * @default null
+             */
+            gpu_required: boolean | null;
+            /**
+             * Hf Datasets
+             * @default null
+             */
+            hf_datasets: string[] | null;
+            /**
+             * Hf Models
+             * @default null
+             */
+            hf_models: string[] | null;
+            /**
+             * Max Submissions Per Period
+             * @default null
+             */
+            max_submissions_per_period: number | null;
+            /**
+             * Metrics Config
+             * @default null
+             */
+            metrics_config: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Pip Requirements
+             * @default null
+             */
+            pip_requirements: string | null;
+            /**
+             * Public Eval Percentage
+             * @default null
+             */
+            public_eval_percentage: number | null;
+            /**
+             * Ram Limit Mb
+             * @default null
+             */
+            ram_limit_mb: number | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /**
+             * Submission Period Hours
+             * @default null
+             */
+            submission_period_hours: number | null;
+            /**
+             * Time Limit Sec
+             * @default null
+             */
+            time_limit_sec: number | null;
+            /**
+             * Title
+             * @default null
+             */
+            title: string | null;
+            /**
+             * Whitelisted Imports
+             * @default null
+             */
+            whitelisted_imports: string | null;
+        };
+        /** UpdateUserResponse */
+        "UpdateUserResponse.febf810": {
+            /** Message */
+            message: string;
+            user: components["schemas"]["UpdateUserResponse.febf810.UserResponse"];
+        };
+        /** UserResponse */
+        "UpdateUserResponse.febf810.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /** UpdateUserSchema */
+        "UpdateUserSchema.e1ac751": {
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Password
+             * @default null
+             */
+            password: string | null;
+            /**
+             * Role
+             * @default null
+             */
+            role: string | null;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
+        };
+        /**
+         * ValidationError
+         * @description Model of a validation error response.
+         */
+        "ValidationError.6a07bef": components["schemas"]["ValidationError.6a07bef.ValidationErrorElement"][];
+        /**
+         * ValidationErrorElement
+         * @description Model of a validation error response element.
+         */
+        "ValidationError.6a07bef.ValidationErrorElement": {
+            /**
+             * Error context
+             * @default null
+             */
+            ctx: {
+                [key: string]: unknown;
+            } | null;
+            /** Missing field name */
+            loc: string[];
+            /** Error message */
+            msg: string;
+            /** Error type */
+            type: string;
+        };
+        /** WorkerActiveDatasetsResponse */
+        "WorkerActiveDatasetsResponse.6bc6f68": {
+            /** Datasets */
+            datasets: string[];
+            /**
+             * Hf Api Key
+             * @default null
+             */
+            hf_api_key: string | null;
+        };
+        /** WorkerActiveTasksResponse */
+        "WorkerActiveTasksResponse.6bc6f68": {
+            /** Tasks */
+            tasks: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** WorkerReportResponse */
+        "WorkerReportResponse.6bc6f68": {
+            /** Message */
+            message: string;
+        };
+        /**
+         * WorkerStatsResponse
+         * @description Free-form worker stats dict.
+         */
+        "WorkerStatsResponse.febf810": Record<string, never>;
+        /** WorkerStatusResponse */
+        "WorkerStatusResponse.6bc6f68": Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -2752,4 +5349,2685 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    "get__api_admin_audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLinkListResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_admin_backups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupListResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_admin_backups_force: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupStartResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_admin_backups_live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "delete__api_admin_backups_{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_admin_backups_{filename}_download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_admin_challenges_{challenge_id}_download-scores-csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_admin_challenges_{challenge_id}_download-submissions-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_admin_challenges_{challenge_id}_reset-all-passwords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkResetPasswordResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_admin_dead-letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadLetterListResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_admin_import-competitors-csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportCompetitorsResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_admin_metrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableMetricsResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_admin_register-competitor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCompetitorSchema.e1ac751"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterUserResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_admin_register-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserSchema.e1ac751"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterUserResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_admin_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse[UserResponse].c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "put__api_admin_users_{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserSchema.e1ac751"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateUserResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "delete__api_admin_users_{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_admin_users_{user_id}_reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResetPasswordResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_admin_workers_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerStatsResponse.febf810"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_admin_workers_stats_live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_auth_csrf-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CsrfTokenResponse.bfffb0d"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_auth_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginSchema.de5424a"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse.bfffb0d"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_auth_logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoutResponse.bfffb0d"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_auth_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUserResponse.bfffb0d"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_challenges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_challenges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChallengeSchema.8145bef"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_challenges_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse.7ed3705"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChallengeSchema.8145bef"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "delete__api_challenges_{challenge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveResponse.7ed3705"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_audit-logs_download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_export-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealResultsSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalizeChallengeResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaderboardResponse.cc8acb7"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_leaderboard_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_manual-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualPointsSchema.448b425"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualPointsResponse.cc8acb7"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_parse-notebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseNotebookResponse.7ed3705"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}_reveal-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealResultsSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealResultsResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_stages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStageSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StageResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}_stages_{stage_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStageSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StageResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "delete__api_challenges_{challenge_id}_stages_{stage_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_stages_{stage_id}_finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealResultsSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StageResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}_stages_{stage_id}_reveal-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealResultsSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealResultsResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionsListResponse.aad2a03"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitCodeSchema.59fcbab"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitResponse.7ed3705"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreateTaskMetaSchema.605fb63"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_tasks_{task_id}_users_{user_id}_download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                task_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_test-stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTestStageSchema.6aa1402"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StageResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_docs_admin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocContentResponse.340a197"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_docs_competitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocContentResponse.340a197"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_docs_jury: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocContentResponse.340a197"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_submissions_{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionResponse.aad2a03"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_submissions_{submission_id}_logs_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_submissions_{submission_id}_select-final": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectFinalResponse.aad2a03"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "put__api_tasks_{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UpdateTaskMetaSchema.605fb63"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "delete__api_tasks_{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_download_{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskLeaderboardResponse.cc8acb7"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_leaderboard_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_submissions_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_tasks_{task_id}_submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectedCellsSchema.59fcbab"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_worker-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerStatusResponse.6bc6f68"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_worker-status_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_worker_active-datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerActiveDatasetsResponse.6bc6f68"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_worker_active-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerActiveTasksResponse.6bc6f68"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_worker_report_{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerReportResponse.6bc6f68"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_worker_tasks_{task_id}_files_{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_worker_tasks_{task_id}_hf-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: never;
+    };
+    post__api_workers_logs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: never;
+    };
+}

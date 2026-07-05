@@ -1,19 +1,23 @@
 """Worker runtime utilities — Docker sandbox execution, status reporting."""
 
+from __future__ import annotations
+
 import logging
 import os
 import threading
 import time
+from typing import Any
 
 import requests
-from docker.types import DeviceRequest, Ulimit
+from docker import DockerClient  # type: ignore[import-untyped]
+from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
 
 from config import Config
 
 logger = logging.getLogger(__name__)
 
 
-def _sign_worker_token(submission_id):
+def _sign_worker_token(submission_id: str) -> str:
     """Create an Ed25519-signed token for authenticating to the main server.
 
     The worker reads WORKER_PRIVATE_KEY from its environment, signs a nonce
@@ -41,24 +45,24 @@ def _sign_worker_token(submission_id):
 
 
 def run_command_streaming(
-    docker_client,
-    image_tag,
-    command,
-    logs_list,
-    time_limit=None,
-    mem_limit=None,
-    cpu_count=2,
-    network_mode="none",
-    cap_drop=None,
-    security_opt=None,
-    pids_limit=64,
-    tmpfs=None,
-    volumes=None,
-    working_dir="/app",
-    environment=None,
-    gpu_required=False,
-    gpu_id=None,
-):
+    docker_client: DockerClient,
+    image_tag: str,
+    command: list[str],
+    logs_list: list[str],
+    time_limit: int | None = None,
+    mem_limit: str | None = None,
+    cpu_count: int = 2,
+    network_mode: str = "none",
+    cap_drop: list[str] | None = None,
+    security_opt: list[str] | None = None,
+    pids_limit: int = 64,
+    tmpfs: dict[str, str] | None = None,
+    volumes: dict[str, dict[str, str]] | None = None,
+    working_dir: str = "/app",
+    environment: dict[str, str] | None = None,
+    gpu_required: bool = False,
+    gpu_id: str | None = None,
+) -> tuple[int, str, str, bool]:
     """Run a Docker container and stream its output to *logs_list* in real-time.
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
@@ -98,10 +102,10 @@ def run_command_streaming(
         logs_list.append(f"Failed to start container: {exc}")
         return -1, "", str(exc), False
 
-    stdout_lines = []
+    stdout_lines: list[str] = []
     process_timeout = False
 
-    def stream_logs():
+    def stream_logs() -> None:
         try:
             for chunk in container.logs(stream=True, follow=True):
                 if chunk:
@@ -154,14 +158,14 @@ def run_command_streaming(
 MAX_LOG_LINES = Config.WORKER_MAX_LOG_LINES
 
 
-class StreamingLogList(list):
+class StreamingLogList(list[str]):
     """A list subclass that publishes each appended log line via SSE in real time."""
 
-    def __init__(self, submission_id):
+    def __init__(self, submission_id: Any) -> None:
         super().__init__()
         self.submission_id = submission_id
 
-    def append(self, item):
+    def append(self, item: str) -> None:
         super().append(item)
         if len(self) > MAX_LOG_LINES:
             self.pop(0)
@@ -176,25 +180,25 @@ class StreamingLogList(list):
 class MockModel:
     """A simple dict-like object for passing metadata without a real ORM model."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
 
 def report_status_to_server(
-    metadata,
-    status,
-    detailed_status,
-    logs=None,
-    public_score=None,
-    private_score=None,
-    execution_time_ms=None,
-    metrics_payload_pub=None,
-    metrics_payload_priv=None,
-    gpu_node=None,
-    max_retries=Config.WORKER_REPORT_MAX_RETRIES,
-    backoff_factor=2,
-):
+    metadata: dict[str, Any] | None,
+    status: str,
+    detailed_status: str,
+    logs: str | list[str] | None = None,
+    public_score: float | None = None,
+    private_score: float | None = None,
+    execution_time_ms: int | None = None,
+    metrics_payload_pub: dict[str, Any] | None = None,
+    metrics_payload_priv: dict[str, Any] | None = None,
+    gpu_node: str | None = None,
+    max_retries: int = Config.WORKER_REPORT_MAX_RETRIES,
+    backoff_factor: int = 2,
+) -> bool:
     """POST submission status/scores back to the main server with exponential backoff retry."""
     if not metadata or "main_server_url" not in metadata:
         return False
@@ -214,7 +218,7 @@ def report_status_to_server(
     token = _sign_worker_token(submission_id)
     headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
 
-    payload = {"status": status, "detailed_status": detailed_status}
+    payload: dict[str, Any] = {"status": status, "detailed_status": detailed_status}
     if logs is not None:
         if isinstance(logs, list):
             payload["logs"] = "\n".join(str(x) for x in logs)
@@ -266,7 +270,9 @@ def report_status_to_server(
     return False
 
 
-def download_task_files_to_dir(metadata, temp_dir, logs):
+def download_task_files_to_dir(
+    metadata: dict[str, Any] | None, temp_dir: str, logs: list[str]
+) -> None:
     """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
     if not metadata or "main_server_url" not in metadata:
         return
@@ -303,7 +309,9 @@ def download_task_files_to_dir(metadata, temp_dir, logs):
             logs.append(f"Error downloading task file '{filename}': {e!s}")
 
 
-def download_labels_parquet_to_dir(metadata, labels_dir, logs):
+def download_labels_parquet_to_dir(
+    metadata: dict[str, Any] | None, labels_dir: str, logs: list[str]
+) -> str | None:
     """Download labels.parquet securely from the server for evaluation comparison."""
     if not metadata or "main_server_url" not in metadata:
         return None

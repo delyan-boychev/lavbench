@@ -1,9 +1,11 @@
 """Stage model."""
 
+from typing import Any
+
 from models.base import GUID, db, uuid7
 
 
-class Stage(db.Model):
+class Stage(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "stages"
 
     __table_args__ = (
@@ -22,7 +24,7 @@ class Stage(db.Model):
     reveal_results = db.Column(db.Boolean, default=False, nullable=False)
     is_test = db.Column(db.Boolean, default=False, nullable=False)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "challenge_id": self.challenge_id,

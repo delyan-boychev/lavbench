@@ -1,10 +1,14 @@
 """Parquet-based evaluation engine for comparing competitor submissions against labels."""
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import math
+from typing import Any
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     adjusted_mutual_info_score,
@@ -89,7 +93,9 @@ AVAILABLE_METRICS = {
 # ---------------------------------------------------------
 
 
-def validate_parquet_schema(df, is_submission=True):
+def validate_parquet_schema(
+    df: pd.DataFrame, is_submission: bool = True
+) -> tuple[bool, str | None]:
     """Validates a pandas DataFrame against the standardized schema columns."""
     if "id" not in df.columns:
         role = "Submission" if is_submission else "Labels/Ground Truth"
@@ -100,7 +106,9 @@ def validate_parquet_schema(df, is_submission=True):
     return True, None
 
 
-def validate_parquet_schema_columns(column_names, is_submission=True):
+def validate_parquet_schema_columns(
+    column_names: list[str], is_submission: bool = True
+) -> tuple[bool, str | None]:
     """Validates a list of column names (from pyarrow schema) against the standardized schema."""
     if "id" not in column_names:
         role = "Submission" if is_submission else "Labels/Ground Truth"
@@ -117,7 +125,7 @@ def validate_parquet_schema_columns(column_names, is_submission=True):
 
 
 # Basic String/NLP Helpers
-def calculate_lcs(x, y):
+def calculate_lcs(x: str, y: str) -> int:
     """Computes the Longest Common Subsequence of tokens for ROUGE-L fallback."""
     x_tokens = x.split()
     y_tokens = y.split()
@@ -135,13 +143,13 @@ def calculate_lcs(x, y):
 
 
 # NLP Metric Fallbacks
-def compute_bleu(ref, hyp):
+def compute_bleu(ref: str, hyp: str) -> float:
     """Compute BLEU score for machine translation quality."""
     try:
         from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
         cc = SmoothingFunction()
-        return sentence_bleu([ref.split()], hyp.split(), smoothing_function=cc.method1)
+        return float(sentence_bleu([ref.split()], hyp.split(), smoothing_function=cc.method1))
     except ImportError:
         # Simplistic word overlap ratio as fallback
         ref_words = set(ref.split())
@@ -152,14 +160,14 @@ def compute_bleu(ref, hyp):
         return overlap / max(len(ref_words), len(hyp_words))
 
 
-def compute_rouge_l(ref, hyp):
+def compute_rouge_l(ref: str, hyp: str) -> float:
     """Compute ROUGE-L (Longest Common Subsequence) for summarization evaluation."""
     try:
         from rouge_score import rouge_scorer
 
         scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
         scores = scorer.score(ref, hyp)
-        return scores["rougeL"].fmeasure
+        return float(scores["rougeL"].fmeasure)
     except ImportError:
         lcs = calculate_lcs(ref, hyp)
         ref_len = len(ref.split())
@@ -173,13 +181,13 @@ def compute_rouge_l(ref, hyp):
         return (2 * precision * recall) / (precision + recall)
 
 
-def compute_meteor(ref, hyp):
+def compute_meteor(ref: str, hyp: str) -> float:
     """Compute METEOR score for machine translation evaluation."""
     try:
         from nltk.translate.meteor_score import meteor_score
 
         # nltk meteor_score expects token lists
-        return meteor_score([ref.split()], hyp.split())
+        return float(meteor_score([ref.split()], hyp.split()))
     except ImportError:
         # Fallback to Jaccard similarity
         r = set(ref.split())
@@ -189,12 +197,12 @@ def compute_meteor(ref, hyp):
         return len(r.intersection(h)) / len(r.union(h))
 
 
-def compute_chrf(ref, hyp, beta=3):
+def compute_chrf(ref: str, hyp: str, beta: int = 3) -> float:
     """Compute chrF (character n-gram F-score) for translation quality."""
     try:
         from nltk.translate.chrf_score import sentence_chrf
 
-        return sentence_chrf(ref, hyp, beta=beta)
+        return float(sentence_chrf(ref, hyp, beta=beta))
     except ImportError:
         ref_chars = set(ref)
         hyp_chars = set(hyp)
@@ -203,7 +211,7 @@ def compute_chrf(ref, hyp, beta=3):
         return len(ref_chars.intersection(hyp_chars)) / len(ref_chars.union(hyp_chars))
 
 
-def compute_ter(ref, hyp):
+def compute_ter(ref: str, hyp: str) -> float:
     """Compute Translation Edit Rate (TER) — higher is worse, 0 = perfect."""
     ref_words = ref.split()
     hyp_words = hyp.split()
@@ -225,7 +233,7 @@ def compute_ter(ref, hyp):
 
 
 # Object Detection IoU Matcher
-def calculate_box_iou(box1, box2):
+def calculate_box_iou(box1: dict[str, Any], box2: dict[str, Any]) -> float:
     """box = {x_min, y_min, x_max, y_max}"""
     x_min = max(box1.get("x_min", 0), box2.get("x_min", 0))
     y_min = max(box1.get("y_min", 0), box2.get("y_min", 0))
@@ -243,10 +251,14 @@ def calculate_box_iou(box1, box2):
     union_area = box1_area + box2_area - inter_area
     if union_area == 0:
         return 0.0
-    return inter_area / union_area
+    return float(inter_area / union_area)
 
 
-def compute_map_detection(y_true, y_pred, iou_threshold=0.5):
+def compute_map_detection(
+    y_true: list[list[dict[str, Any]]],
+    y_pred: list[list[dict[str, Any]]],
+    iou_threshold: float = 0.5,
+) -> float:
     """
     Computes Average Precision (AP) at IoU threshold.
     y_true: list of list of boxes (ground truth)
@@ -293,7 +305,7 @@ def compute_map_detection(y_true, y_pred, iou_threshold=0.5):
 
 
 # CV Signal Quality / Image & Audio Quality Metrics
-def compute_psnr(ref_bytes_list, hyp_bytes_list):
+def compute_psnr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
     """Compute Peak Signal-to-Noise Ratio for image reconstruction quality."""
     psnr_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
@@ -336,7 +348,7 @@ def compute_psnr(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(psnr_scores))
 
 
-def compute_ssim(ref_bytes_list, hyp_bytes_list):
+def compute_ssim(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
     """Compute Structural Similarity Index for image quality assessment."""
     ssim_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
@@ -378,7 +390,7 @@ def compute_ssim(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(ssim_scores))
 
 
-def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
+def compute_audio_snr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
     """Compute Signal-to-Noise Ratio for audio quality assessment."""
     snr_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
@@ -403,7 +415,7 @@ def compute_audio_snr(ref_bytes_list, hyp_bytes_list):
     return float(np.mean(snr_scores))
 
 
-def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
+def compute_mel_lsd(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
     """Compute Mel-scale Log Spectral Distance for audio quality."""
     lsd_scores = []
     for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
@@ -435,7 +447,7 @@ def compute_mel_lsd(ref_bytes_list, hyp_bytes_list):
 
 
 # Segmentation Helpers
-def compute_segmentation_iou(y_true, y_pred):
+def compute_segmentation_iou(y_true: list[bytes], y_pred: list[bytes]) -> float:
     """Compute Intersection over Union for image segmentation."""
     iou_scores = []
     for t, p in zip(y_true, y_pred, strict=False):
@@ -452,7 +464,7 @@ def compute_segmentation_iou(y_true, y_pred):
     return float(np.mean(iou_scores))
 
 
-def compute_segmentation_dice(y_true, y_pred):
+def compute_segmentation_dice(y_true: list[bytes], y_pred: list[bytes]) -> float:
     """Compute Dice coefficient for image segmentation overlap."""
     dice_scores = []
     for t, p in zip(y_true, y_pred, strict=False):
@@ -470,7 +482,7 @@ def compute_segmentation_dice(y_true, y_pred):
 
 
 # Keypoints / OKS
-def compute_oks(y_true, y_pred):
+def compute_oks(y_true: list[Any], y_pred: list[Any]) -> float:
     """Compute Object Keypoint Similarity for pose estimation."""
     oks_scores = []
     for t, p in zip(y_true, y_pred, strict=False):
@@ -493,7 +505,7 @@ def compute_oks(y_true, y_pred):
     return float(np.mean(oks_scores))
 
 
-def compute_pck(y_true, y_pred, threshold=0.05):
+def compute_pck(y_true: list[Any], y_pred: list[Any], threshold: float = 0.05) -> float:
     """Compute Percentage of Correct Keypoints for pose estimation."""
     pck_scores = []
     for t, p in zip(y_true, y_pred, strict=False):
@@ -512,7 +524,7 @@ def compute_pck(y_true, y_pred, threshold=0.05):
 
 
 # Retrieval NDCG/MRR
-def compute_ndcg_at_k(relevance_scores, k=10):
+def compute_ndcg_at_k(relevance_scores: list[float] | np.ndarray[Any, Any], k: int = 10) -> float:
     """Compute Normalized Discounted Cumulative Gain for ranking quality."""
     relevance_scores = np.asarray(relevance_scores, dtype=np.float64)[:k]
     if relevance_scores.size == 0:
@@ -527,10 +539,12 @@ def compute_ndcg_at_k(relevance_scores, k=10):
 
     if idcg == 0:
         return 0.0
-    return dcg / idcg
+    return float(dcg / idcg)
 
 
-def compute_retrieval_metrics(df_true, df_pred, k=10):
+def compute_retrieval_metrics(
+    df_true: pd.DataFrame, df_pred: pd.DataFrame, k: int = 10
+) -> dict[str, float]:
     """
     df_true: Columns query_id, doc_id
     df_pred: Columns query_id, doc_id, score
@@ -577,7 +591,9 @@ def compute_retrieval_metrics(df_true, df_pred, k=10):
 # ---------------------------------------------------------
 
 
-def evaluate_predictions(df_sub, df_labels, metrics_cfg):
+def evaluate_predictions(
+    df_sub: pd.DataFrame, df_labels: pd.DataFrame, metrics_cfg: dict[str, Any] | None
+) -> dict[str, Any]:
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
     metrics_cfg: dict of {metric_name: {weight: float, higher_is_better: bool}}
@@ -929,9 +945,10 @@ def evaluate_predictions(df_sub, df_labels, metrics_cfg):
             val = compute_map_detection(y_true, y_pred, iou_threshold=0.75)
         elif m_name_clean == "map_50_95":
             thresholds = np.arange(0.5, 0.95, 0.05)
-            val = np.mean(
-                [compute_map_detection(y_true, y_pred, iou_threshold=th) for th in thresholds]
-            )
+            vals = [
+                compute_map_detection(y_true, y_pred, iou_threshold=float(th)) for th in thresholds
+            ]
+            val = np.mean(vals)
 
         # 8. CV Segmentation
         elif m_name_clean == "mean_iou":

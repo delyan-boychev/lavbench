@@ -190,7 +190,7 @@ while [ "$CONFIG_OK" = "false" ]; do
     fi
     micromamba activate lavbench_worker
     echo "    ✔ micromamba env 'lavbench_worker'"
-    pip install -q -r backend/requirements.txt
+    pip install -q -r backend/requirements.txt -r backend/dev-requirements.txt
     echo "    ✔ Dependencies installed"
     echo ""
   elif [ "$WORKER_MODE" = "docker" ]; then

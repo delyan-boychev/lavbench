@@ -353,15 +353,9 @@ export default function AdminPanel() {
       if (res.ok) {
         /** @type {import('../types/api').paths['/api/challenges']['get']['responses']['200']['content']['application/json']} */
         const data = await res.json();
-        if (data.items) {
-          setPaginatedChallengesList(data.items);
-          setChallengesTotal(data.total);
-          setChallengesPages(data.pages);
-        } else {
-          setPaginatedChallengesList(/** @type {any[]} */ (data || []));
-          setChallengesTotal(data?.length || 0);
-          setChallengesPages(1);
-        }
+        setPaginatedChallengesList(data.items);
+        setChallengesTotal(data.total);
+        setChallengesPages(data.pages);
       } else {
         showToast(t('admin.notifications.network_error'), 'rose');
         setPaginatedChallengesList([]);
@@ -422,7 +416,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(newChallenge),
       });
-      /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['200']['content']['application/json']} */
+      /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['201']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.competition_created'));
@@ -673,7 +667,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(payload),
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['200']['content']['application/json']} */
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['201']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.stage_created'));
@@ -946,7 +940,7 @@ export default function AdminPanel() {
         headers: {},
         body: formData,
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['200']['content']['application/json']} */
+      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['201']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.task_created'));
@@ -1074,7 +1068,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(newCompetitor),
       });
-      /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['200']['content']['application/json']} */
+      /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['201']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         setGeneratedCredentials({
@@ -1145,7 +1139,7 @@ export default function AdminPanel() {
         },
         body: JSON.stringify(requestBody),
       });
-      /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['200']['content']['application/json']} */
+      /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['201']['content']['application/json']} */
       const data = await res.json();
       if (res.ok) {
         showToast(t('admin.notifications.user_registered'));

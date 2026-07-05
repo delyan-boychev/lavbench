@@ -50,7 +50,7 @@ micromamba activate lavbench_backend
 echo "  ✔ micromamba env 'lavbench_backend' (Python 3.12)"
 
 echo "  → Verifying pip dependencies..."
-pip install -q -r backend/requirements.txt
+pip install -q -r backend/requirements.txt -r backend/dev-requirements.txt
 echo "  ✔ Dependencies up to date"
 echo ""
 
