@@ -72,7 +72,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
-      - run: mypy backend/ --no-incremental
+      - run: mypy . --no-incremental
         working-directory: backend
 
   frontend-lint:
