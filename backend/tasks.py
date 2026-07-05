@@ -199,15 +199,11 @@ def check_and_backup() -> dict[str, Any]:
     if not app:
         return {"error": "no_app"}
     with app.app_context():
-        from config import Config
-
         now = utcnow()
-        timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
-        timedelta(minutes=20)
 
         from models import Challenge
 
-        challenges = Challenge.query.filter(Challenge.is_active, not Challenge.is_archived).all()
+        challenges = Challenge.query.filter(Challenge.is_active, ~Challenge.is_archived).all()
 
         active_count = 0
         for c in challenges:
@@ -257,6 +253,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
         # 1. Recover fallback results from Redis (workers that finished but couldn't reach server)
         recovered = 0
+        stuck: list[Any] = []
         try:
             from cache_utils import get_redis_client
 

@@ -1591,7 +1591,17 @@ def _get_worker_stats_response() -> dict[str, Any]:
     try:
         return cached_or_compute_unless_testing("worker:status:detailed", _compute, timeout=10)
     except Exception as e:
-        return err("ERR_INTERNAL", 500, message=str(e))
+        return {
+            "connected_workers_count": 0,
+            "workers": [],
+            "system": {
+                "cpu_count": os.cpu_count(),
+                "load_avg": [0.0, 0.0, 0.0],
+                "memory": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
+                "disk": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
+            },
+            "error": str(e),
+        }
 
 
 @admin_bp.route("/dead-letters", methods=["GET"])

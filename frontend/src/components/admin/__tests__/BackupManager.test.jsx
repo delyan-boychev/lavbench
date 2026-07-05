@@ -114,7 +114,11 @@ describe('BackupManager', () => {
       expect(screen.getByText('Download')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText('Download'));
-    expect(openSpy).toHaveBeenCalledWith('/api/admin/backups/backup.db/download', '_blank');
+    expect(openSpy).toHaveBeenCalledWith(
+      '/api/admin/backups/backup.db/download',
+      '_blank',
+      'noopener,noreferrer',
+    );
     openSpy.mockRestore();
   });
 

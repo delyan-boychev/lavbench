@@ -217,7 +217,7 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             now = utcnow()
             active_comp = Challenge.query.filter(
                 Challenge.is_active,
-                not Challenge.is_archived,
+                ~Challenge.is_archived,
                 Challenge.start_time <= now,
                 (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
             ).first()

@@ -201,6 +201,10 @@ export default function SubmissionsView() {
   const [searching, setSearching] = useState(false);
 
   const [adminActiveTask, setAdminActiveTask] = useState(null);
+  const adminActiveTaskRef = useRef(adminActiveTask);
+  useEffect(() => {
+    adminActiveTaskRef.current = adminActiveTask;
+  }, [adminActiveTask]);
   const [adminSubmissions, setAdminSubmissions] = useState([]);
   const [adminSubPage, setAdminSubPage] = useState(1);
   const [adminSubPages, setAdminSubPages] = useState(1);
@@ -248,7 +252,7 @@ export default function SubmissionsView() {
           setSubmissionsPages(data.pages || 1);
           setSelectedSubmission((prev) => {
             if (!prev) return null;
-            const updated = data.items.find((s) => s.id === prev.id);
+            const updated = (data.items || []).find((s) => s.id === prev.id);
             return updated ? { ...prev, ...updated } : prev;
           });
         } else {
@@ -265,6 +269,7 @@ export default function SubmissionsView() {
       }
     } catch (err) {
       console.error(err);
+      setSubmissions([]);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -563,13 +568,13 @@ export default function SubmissionsView() {
     fetchAllCompetitorSubmissions().then((result) => {
       if (cancelled) return;
       setBestSubs(result);
-      const activeId = adminActiveTask;
+      const activeId = adminActiveTaskRef.current;
       const resolvedTaskId = activeId && result[activeId] ? activeId : Object.keys(result)[0];
       if (resolvedTaskId) {
         if (resolvedTaskId !== activeId) {
           setAdminActiveTask(resolvedTaskId);
           setAdminSubPage(1);
-          fetchAdminTaskSubmissions(resolvedTaskId, 1);
+          if (!cancelled) fetchAdminTaskSubmissions(resolvedTaskId, 1);
         }
         const sub = result[resolvedTaskId];
         if (sub) {
@@ -586,7 +591,6 @@ export default function SubmissionsView() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompetitor, selectedChallenge, isAdminOrJury, fetchAllCompetitorSubmissions]);
 
   const handleAdminViewSubmission = async (sub) => {
