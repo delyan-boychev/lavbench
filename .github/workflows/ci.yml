@@ -244,6 +244,24 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.yml down --volumes
 
+  check-passes:
+    name: All checks passed
+    if: ${{ !cancelled() }}
+    needs:
+      - backend-tests
+      - backend-lint
+      - backend-types
+      - frontend-lint
+      - frontend-format
+      - frontend-tests
+      - translations-check
+      - frontend-types
+      - docker-build
+      - docs-build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All checks passed (${{ join(needs.*.result, ', ') }})"
+
   docs-build:
     name: Build Sphinx documentation
     runs-on: ubuntu-latest
