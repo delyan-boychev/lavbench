@@ -14,7 +14,6 @@ from celery import Task as CeleryTask
 
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
-from task_modules.leaderboard import run_recalculate_all_leaderboards
 from task_modules.submission_runner import run_eval_submission
 from task_modules.system import (
     run_backup as _do_backup,
@@ -145,6 +144,8 @@ def recalculate_all_leaderboards() -> None:
     """Celery task: rebuild leaderboard cache for all active challenges."""
     if RUNNING_AS_WORKER:
         return
+    from task_modules.leaderboard import run_recalculate_all_leaderboards
+
     return run_recalculate_all_leaderboards(app)
 
 
