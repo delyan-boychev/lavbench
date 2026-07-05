@@ -380,6 +380,43 @@ class TestCreateTask:
         resp = client.post(url, data=data, content_type="multipart/form-data")
         assert resp.status_code == 403
 
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_create_with_columns_metadata(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        url = f"/api/challenges/{sample_challenge.id}/tasks"
+        headers = auth_headers(tokens.admin)
+        nb = _make_notebook()
+        metrics = json.dumps(
+            {
+                "accuracy": {"weight": 1.0},
+                "_columns": [{"name": "id", "type": "string", "desc": "primary identifier"}],
+            }
+        )
+        data = {
+            "title": "Task with columns",
+            "baseline_notebook": (nb, "baseline.ipynb"),
+            "metrics_config": metrics,
+        }
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 201
+        body = resp.get_json()
+        assert body["title"] == "Task with columns"
+        assert body["metrics_config"] == {
+            "accuracy": {"weight": 1.0},
+            "_columns": [{"name": "id", "type": "string", "desc": "primary identifier"}],
+        }
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  UPDATE — /api/tasks/<id>  (PUT)
