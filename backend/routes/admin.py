@@ -1534,6 +1534,14 @@ def _get_worker_stats_response() -> dict[str, Any]:
         reserved = inspect.reserved() or {}
         registered = inspect.registered() or {}
 
+        r = None
+        try:
+            from cache_utils import get_redis_client
+
+            r = get_redis_client()
+        except Exception:
+            r = None
+
         workers_list = []
         for worker_name in pings:
             w_stats = stats.get(worker_name, {})
@@ -1560,10 +1568,35 @@ def _get_worker_stats_response() -> dict[str, Any]:
                     "maxrss_mb": maxrss_mb,
                 }
 
+            spec = None
+            if r:
+                try:
+                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    if spec_data:
+                        spec = json.loads(spec_data)
+                except Exception as e:
+                    logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
+
+            has_gpu = "gpu" in worker_name.lower()
+            if spec:
+                gpu_type = spec.get("gpu_type", "NVIDIA GPU" if has_gpu else "N/A")
+                vram_gb = spec.get("vram_gb", 8.0 if has_gpu else "N/A")
+                ram_gb = spec.get("ram_gb", 16.0 if has_gpu else 8.0)
+                worker_type = spec.get("type", "GPU" if has_gpu else "CPU")
+            else:
+                gpu_type = "NVIDIA GPU" if has_gpu else "N/A"
+                vram_gb = 8.0 if has_gpu else "N/A"
+                ram_gb = 16.0 if has_gpu else 8.0
+                worker_type = "GPU" if has_gpu else "CPU"
+
             workers_list.append(
                 {
                     "name": worker_name,
                     "status": "online",
+                    "type": worker_type,
+                    "gpu_type": gpu_type,
+                    "vram_gb": vram_gb,
+                    "ram_gb": ram_gb,
                     "pid": w_stats.get("pid"),
                     "uptime": w_stats.get("uptime"),
                     "pool_size": pool.get("max-concurrency", 0),
