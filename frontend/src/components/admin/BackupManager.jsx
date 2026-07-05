@@ -74,7 +74,7 @@ export default function BackupManager() {
 
   const handleDownload = (filename) => {
     const url = `${downloadBase}/${filename}/download`;
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const formatDate = (iso) => formatDateTime(iso, selectedChallenge?.timezone || 'UTC');

@@ -260,9 +260,14 @@ export default function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (currentUser) {
-      fetchAvailableMetrics(); // eslint-disable-line react-hooks/set-state-in-effect
-    }
+    if (!currentUser) return;
+    let cancelled = false;
+    fetchAvailableMetrics().then(() => {
+      if (cancelled) setAvailableMetrics([]);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser, fetchAvailableMetrics]);
 
   // Worker stats via SSE (persistent connection, no polling)
@@ -319,8 +324,9 @@ export default function AdminPanel() {
       }
     } catch (e) {
       console.error(e);
+      showToast(t('admin.notifications.network_error'), 'rose');
     }
-  }, [usersPage, userSearch]);
+  }, [usersPage, userSearch, showToast, t]);
 
   const fetchCompetitors = useCallback(async () => {
     if (!selectedChallenge) return;
@@ -341,8 +347,9 @@ export default function AdminPanel() {
       }
     } catch (e) {
       console.error(e);
+      showToast(t('admin.notifications.network_error'), 'rose');
     }
-  }, [selectedChallenge, competitorsPage, competitorSearch]);
+  }, [selectedChallenge, competitorsPage, competitorSearch, showToast, t]);
 
   const fetchPaginatedChallenges = useCallback(async () => {
     try {
@@ -369,6 +376,8 @@ export default function AdminPanel() {
     if (adminSubTab === 'user-management') {
       fetchUsers(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // fetchUsers omitted from deps intentionally — its own deps (usersPage, userSearch)
+    // are already listed, so identity changes coincide with existing dep changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, usersPage, debouncedUserSearch]);
 
@@ -376,6 +385,8 @@ export default function AdminPanel() {
     if (adminSubTab === 'competitor-reg' || adminSubTab === 'competition-mgmt') {
       fetchCompetitors(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // fetchCompetitors omitted — its deps (selectedChallenge, competitorsPage, competitorSearch)
+    // are already in this effect's deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, selectedChallenge, competitorsPage, debouncedCompetitorSearch]);
 
@@ -383,6 +394,7 @@ export default function AdminPanel() {
     if (adminSubTab === 'competition-mgmt') {
       fetchPaginatedChallenges(); // eslint-disable-line react-hooks/set-state-in-effect
     }
+    // fetchPaginatedChallenges omitted — its deps (challengesPage) are already listed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminSubTab, challengesPage]);
 

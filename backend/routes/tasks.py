@@ -34,6 +34,8 @@ from schemas.responses import (
     TaskLeaderboardResponse,
     WorkerActiveDatasetsResponse,
     WorkerActiveTasksResponse,
+    WorkerHfKeyResponse,
+    WorkerLogsResponse,
     WorkerReportResponse,
     WorkerStatusResponse,
 )
@@ -1580,7 +1582,7 @@ def worker_download_task_file(
     resp=Response(HTTP_200=WorkerActiveTasksResponse, HTTP_401=ErrorResponse),
     tags=["Tasks"],
 )
-def get_active_tasks() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskResponse, int]:
     """List all active task configurations for worker image pre-building."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1629,7 +1631,7 @@ def get_active_tasks() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
     resp=Response(HTTP_200=WorkerActiveDatasetsResponse, HTTP_401=ErrorResponse),
     tags=["Tasks"],
 )
-def get_active_datasets() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
+def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[FlaskResponse, int]:
     """List all HuggingFace datasets used by active challenges for worker preloading."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1691,8 +1693,11 @@ def get_active_datasets() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, i
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
-@api.validate(tags=["Tasks"])
-def get_task_hf_key(task_id: Any) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
+@api.validate(
+    resp=Response(HTTP_200=WorkerHfKeyResponse, HTTP_401=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Tasks"],
+)
+def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
 
     if not check_worker_auth(token):
@@ -1708,8 +1713,16 @@ def get_task_hf_key(task_id: Any) -> tuple[dict[str, str], int] | tuple[FlaskRes
 
 @tasks_bp.route("/workers/logs", methods=["POST"])
 @rate_limit(max_requests=12, window_seconds=60, per_user=False)
-@api.validate(tags=["Tasks"])
-def receive_worker_logs() -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
+@api.validate(
+    resp=Response(
+        HTTP_200=WorkerLogsResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_500=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
     if not check_worker_auth(token):
         return err("ERR_UNAUTHORIZED", 401)

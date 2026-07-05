@@ -16,7 +16,7 @@ export default function CodePreview({
     <div className="flex flex-col gap-2">
       {cells.map((cell, idx) => (
         <CodeCell
-          key={idx}
+          key={cell.id ?? idx}
           cell={cell}
           idx={idx}
           defaultCollapsed={defaultCollapsed}

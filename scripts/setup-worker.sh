@@ -140,9 +140,13 @@ RESERVED_RAM=4
 
 # ── Interactive configuration ─────────────────────────────────────
 if [ -f "worker.env" ]; then
-  read -p "  worker.env exists. Overwrite? [y/N]: " OVERWRITE
+  read -p "  worker.env exists. Overwrite worker config? [y/N]: " OVERWRITE
   case "${OVERWRITE:-N}" in
-    y|Y) rm -f worker.env ;;
+    y|Y)
+      # Strip existing worker-local config lines, preserving server credentials
+      grep -v -E '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env > worker.env.tmp
+      mv worker.env.tmp worker.env
+      ;;
     *) echo "  Exiting. Keep existing worker.env."; exit 0 ;;
   esac
 fi

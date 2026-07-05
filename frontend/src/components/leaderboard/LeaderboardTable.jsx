@@ -1217,7 +1217,7 @@ export default function LeaderboardTable({
               </thead>
               <tbody>
                 {displayData.map((entry) => {
-                  const key = entry.user?.id || (entry.is_baseline_entry ? 'baseline' : entry.rank);
+                  const key = entry.user?.id ?? `row-${entry.rank}`;
                   return (
                     <Row
                       key={key}

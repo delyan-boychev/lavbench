@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env in workspace root
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
+_IS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
+
 
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
@@ -25,7 +27,9 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
 
     # Database configuration - PostgreSQL strictly enforced
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or _require_env("DATABASE_URL")
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or (
+        "" if _IS_WORKER else _require_env("DATABASE_URL")
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Celery configuration
@@ -105,7 +109,9 @@ class Config:
     DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
 
     # Encryption key for PII fields
-    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY") or _require_env("ENCRYPTION_KEY")
+    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY") or (
+        "" if _IS_WORKER else _require_env("ENCRYPTION_KEY")
+    )
 
     # Secure cookies (set True when behind HTTPS)
     SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() in ("1", "true", "yes")

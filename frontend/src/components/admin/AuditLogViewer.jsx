@@ -40,7 +40,13 @@ export default function AuditLogViewer() {
   }, [page, selectedChallengeId, selectedAction]);
 
   useEffect(() => {
-    fetchLogs();
+    let cancelled = false;
+    fetchLogs().then(() => {
+      if (cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedChallengeId, selectedAction]);
 
