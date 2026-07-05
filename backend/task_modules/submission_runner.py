@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import functools
 import json
 import logging
 import math
@@ -15,6 +16,7 @@ import traceback
 from collections.abc import Callable
 from typing import Any
 
+import redis
 import requests
 from celery.signals import task_prerun, worker_ready
 
@@ -39,6 +41,45 @@ logger = logging.getLogger(__name__)
 # after a Redis restart without re-running nvidia-smi.
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
+_spec_reconnect_needed = False
+
+
+def _recreate_spec_on_reconnect() -> None:
+    global _spec_reconnect_needed
+    _spec_reconnect_needed = False
+    if not _cached_worker_spec or not _cached_worker_name:
+        return
+    r = get_redis_client()
+    if not r:
+        return
+    try:
+        key = f"worker_spec:{_cached_worker_name}"
+        _cached_worker_spec["last_seen"] = time.time()
+        r.set(key, json.dumps(_cached_worker_spec), ex=604800)
+        logger.info("Recreated worker spec for %s after Redis reconnect", _cached_worker_name)
+    except Exception as e:
+        logger.debug("Failed to recreate worker spec on reconnect: %s", e)
+
+
+def _install_reconnect_guard() -> None:
+    _orig_exec = redis.client.Redis.execute_command
+
+    @functools.wraps(_orig_exec)
+    def _guard(self: Any, *args: Any, **options: Any) -> Any:
+        global _spec_reconnect_needed
+        try:
+            result = _orig_exec(self, *args, **options)
+            if _spec_reconnect_needed:
+                _recreate_spec_on_reconnect()
+            return result
+        except redis.exceptions.ConnectionError:
+            _spec_reconnect_needed = True
+            raise
+
+    redis.client.Redis.execute_command = _guard
+
+
+_install_reconnect_guard()
 
 
 def _fetch_hf_key_from_server(
@@ -1051,10 +1092,10 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "last_seen": time.time(),
         }
         r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
-        r.delete("worker:status:detailed", "worker:status:summary")
-        global _cached_worker_spec, _cached_worker_name
+        global _cached_worker_spec, _cached_worker_name, _spec_reconnect_needed
         _cached_worker_spec = spec
         _cached_worker_name = worker_name
+        _spec_reconnect_needed = False
         logger.info("Worker specs registered: %s", spec)
 
         # Build Docker images for all active tasks + start rebuild listener
@@ -1094,14 +1135,5 @@ def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
                 spec = json.loads(spec_data)
                 spec["last_seen"] = time.time()
                 r.set(key, json.dumps(spec), ex=604800)
-                r.delete("worker:status:detailed", "worker:status:summary")
-        else:
-            # Redis was restarted or key expired — recreate from in-memory cache
-            global _cached_worker_spec, _cached_worker_name
-            if _cached_worker_spec and _cached_worker_name == worker_name:
-                _cached_worker_spec["last_seen"] = time.time()
-                r.set(key, json.dumps(_cached_worker_spec), ex=604800)
-                r.delete("worker:status:detailed", "worker:status:summary")
-                logger.info("Recreated worker spec for %s after Redis restart", worker_name)
     except Exception as e:
         logger.debug("Failed to refresh worker spec heartbeat: %s", e)
