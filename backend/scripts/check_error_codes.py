@@ -103,17 +103,33 @@ def check_file(filepath, valid_codes):
                     )
                 )
 
-        # ── Check 2: err() calls must have literal first arg ──
+        # ── Check 2a: SchemaError() calls — count code as used ──
+        if func_name == "SchemaError" and node.args:
+            code_val = _get_str_value(node.args[0])
+            if code_val is not None:
+                used_codes.add(code_val)
+
+        # ── Check 2b: _validate_hf_json_list() calls — count err_code kwarg ──
+        if func_name == "_validate_hf_json_list" and node.keywords:
+            for kw in node.keywords:
+                if kw.arg == "err_code":
+                    cv = _get_str_value(kw.value)
+                    if cv is not None:
+                        used_codes.add(cv)
+
+        # ── Check 2c: err() calls must have literal first arg ──
         if func_name == "err" and node.args:
             code_val = _get_str_value(node.args[0])
             if code_val is None:
-                violations.append(
-                    (
-                        filepath,
-                        node.lineno,
-                        "err() first argument must be a string literal (error code)",
+                # Allow dynamic code in schemas/__init__.py forwarding
+                if filepath.name != "__init__.py" or "schemas" not in str(filepath.parent):
+                    violations.append(
+                        (
+                            filepath,
+                            node.lineno,
+                            "err() first argument must be a string literal (error code)",
+                        )
                     )
-                )
             elif not re.match(r"^ERR_[A-Z0-9_]+$", code_val):
                 violations.append(
                     (
@@ -146,6 +162,8 @@ def main():
     else:
         routes_dir = root / "routes"
         files = sorted(routes_dir.glob("*.py"))
+        schemas_dir = root / "schemas"
+        files.extend(sorted(schemas_dir.glob("*.py")))
         for extra in ["auth_utils.py", "app.py"]:
             p = root / extra
             if p.exists():

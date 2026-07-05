@@ -34,11 +34,11 @@ class Test500Errors:
 
     def test_missing_json_body_causes_400_not_500(self, client, db_session):
         res = client.post("/api/auth/login", data="", content_type="application/json")
-        assert res.status_code == 400
+        assert res.status_code == 422
 
     def test_invalid_json_causes_400_not_500(self, client, db_session):
         res = client.post("/api/auth/login", data="not-json", content_type="application/json")
-        assert res.status_code == 400
+        assert res.status_code == 422
 
     def test_flask_default_500_is_html(self):
         app = _make_test_app()

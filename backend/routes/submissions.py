@@ -9,6 +9,8 @@ from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cac
 from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
+from schemas import validate_json
+from schemas.submission import SubmitCodeSchema
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import check_execution_rules
 from sqlalchemy.orm import joinedload
@@ -112,7 +114,8 @@ def parse_notebook(challenge_id):
 @login_required
 @jury_access_required
 @rate_limit(max_requests=30, window_seconds=60)
-def submit_code(challenge_id):
+@validate_json(SubmitCodeSchema)
+def submit_code(challenge_id, data):
     """
     Submit parsed code cells for a task.
     ---
@@ -168,7 +171,6 @@ def submit_code(challenge_id):
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
-    # Restrict competitors to their registered challenge
     if user_role == "competitor":
         from utils.access import ensure_registered
 
@@ -187,14 +189,10 @@ def submit_code(challenge_id):
     if challenge.scores_finalized:
         return err("ERR_COMPETITION_FINALIZED", 403)
 
-    data = request.json or {}
-    task_id = data.get("task_id")
-    selected_cells = data.get("selected_cells")
+    task_id = data.task_id
+    selected_cells = data.selected_cells
 
-    # Retrieve task safely to see if it has a stage
-    task = None
-    if task_id:
-        task = db.session.get(Task, task_id)
+    task = db.session.get(Task, task_id)
 
     if user_role == "competitor":
         from datetime import timedelta
@@ -226,12 +224,6 @@ def submit_code(challenge_id):
                 return err("ERR_COMPETITION_NOT_STARTED", 400)
             if challenge.end_time and now > (challenge.end_time + timedelta(seconds=grace_seconds)):
                 return err("ERR_COMPETITION_ENDED", 400)
-
-    if not selected_cells or not isinstance(selected_cells, list):
-        return err("ERR_MISSING_SELECTED_CELLS", 400)
-
-    if not task_id:
-        return err("ERR_MISSING_TASK_ID", 400)
 
     if not task or str(task.challenge_id) != str(challenge_id):
         return err("ERR_INVALID_TASK_ID", 400)

@@ -574,8 +574,8 @@ class TestManualPointsEndpoint:
             headers=self._auth(self.jury_token),
             json=payload,
         )
-        assert res.status_code == 400
-        assert "Missing" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_missing_points_dict_returns_400(self, client):
         payload = {"user_id": self.competitor.id}
@@ -584,7 +584,8 @@ class TestManualPointsEndpoint:
             headers=self._auth(self.jury_token),
             json=payload,
         )
-        assert res.status_code == 400
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_user_not_registered_in_challenge_returns_404(self, client, db_session):
         other_challenge = Challenge(
@@ -597,7 +598,7 @@ class TestManualPointsEndpoint:
         db_session.add(other_challenge)
         db_session.commit()
 
-        payload = {"user_id": 99999, "points": {str(self.task.id): 50}}
+        payload = {"user_id": "99999", "points": {str(self.task.id): 50}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.jury_token),
@@ -655,7 +656,8 @@ class TestManualPointsEndpoint:
             headers=self._auth(self.jury_token),
             json=payload,
         )
-        assert res.status_code == 400
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_POINTS_MUST_BE_INT"
 
     def test_points_out_of_bounds_returns_400(self, client):
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 150}}
@@ -664,8 +666,8 @@ class TestManualPointsEndpoint:
             headers=self._auth(self.jury_token),
             json=payload,
         )
-        assert res.status_code == 400
-        assert "must be between 0 and 100" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_POINTS_OUT_OF_BOUNDS"
 
     def test_no_submissions_returns_400(self, client):
         payload = {

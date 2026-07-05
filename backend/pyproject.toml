@@ -62,10 +62,10 @@ exclude = ["venv", ".git", "__pycache__", "test_stage_templates"]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "S", "A", "T", "C4", "RUF", "PERF", "LOG"]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/tests/**" = ["S101", "S105", "S106", "S108", "T201", "PERF"]
-"backend/conftest.py" = ["S101", "S105", "S106", "S107", "S108", "T201", "PERF"]
-"backend/scripts/check_error_codes.py" = ["T201"]
-"backend/routes/admin.py" = ["RUF001"]
+"tests/**" = ["S101", "S105", "S106", "S108", "T201", "PERF"]
+"conftest.py" = ["S101", "S105", "S106", "S107", "S108", "T201", "PERF"]
+"scripts/check_error_codes.py" = ["T201"]
+"routes/admin.py" = ["RUF001"]
 
 [tool.ruff.format]
 quote-style = "double"

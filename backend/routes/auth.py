@@ -5,6 +5,8 @@ from auth_utils import clear_auth_cookie, generate_csrf_token, login_required, s
 from error_utils import err
 from flask import Blueprint, jsonify, make_response, request
 from models import User, db
+from schemas import validate_json
+from schemas.auth import LoginSchema
 from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,8 @@ def get_client_ip():
 
 
 @auth_bp.route("/login", methods=["POST"])
-def login():
+@validate_json(LoginSchema)
+def login(data):
     """
     Authenticate a user and receive a session cookie.
     Password must be sent as plaintext; the server hashes it.
@@ -148,13 +151,8 @@ def login():
             schema:
               $ref: '#/components/schemas/Error'
     """
-    data = request.json or {}
-    username = data.get("username")
-    password = data.get("password")
-
-    if not username or not password:
-        return err("ERR_MISSING_CREDENTIALS", 400)
-
+    username = data.username
+    password = data.password
     ip = get_client_ip()
 
     if _login_rate_limit_exceeded(username, ip):

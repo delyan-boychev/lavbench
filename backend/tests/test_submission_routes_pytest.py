@@ -596,8 +596,8 @@ class TestSubmitCode:
             json={"task_id": self.task.id},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 400
-        assert resp.get_json()["code"] == "ERR_MISSING_SELECTED_CELLS"
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_missing_task_id(self):
         resp = self.client.post(
@@ -605,13 +605,13 @@ class TestSubmitCode:
             json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 400
-        assert resp.get_json()["code"] == "ERR_MISSING_TASK_ID"
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_invalid_task_id(self):
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": 99999, "selected_cells": self.valid_cells},
+            json={"task_id": "99999", "selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400

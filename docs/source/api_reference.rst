@@ -17,6 +17,18 @@ API Reference
    :members:
    :undoc-members:
 
+.. automodule:: schemas
+   :members:
+   :undoc-members:
+
+.. automodule:: schemas.exceptions
+   :members:
+   :undoc-members:
+
+.. automodule:: schemas.common
+   :members:
+   :undoc-members:
+
 .. automodule:: evaluation_engine
    :members:
    :undoc-members:

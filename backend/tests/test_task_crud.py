@@ -268,8 +268,8 @@ class TestCreateTask:
         nb = _make_notebook()
         data = {"baseline_notebook": (nb, "baseline.ipynb")}
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
-        assert resp.status_code == 400
-        assert "title is required" in resp.get_json()["error"].lower()
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_missing_baseline(
         self, client, db_session, sample_challenge, tokens, auth_headers
@@ -341,8 +341,8 @@ class TestCreateTask:
             "metrics_config": "not-json",
         }
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
-        assert resp.status_code == 400
-        assert "metrics" in resp.get_json()["error"].lower()
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_INVALID_METRIC_CONFIG"
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
@@ -367,8 +367,8 @@ class TestCreateTask:
             "base_docker_image": "UPPERCASE_IMAGE!!",
         }
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
-        assert resp.status_code == 400
-        assert "docker" in resp.get_json()["error"].lower()
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_INVALID_DOCKER_IMAGE"
 
     def test_create_unauthenticated_returns_403(self, client, db_session, sample_challenge):
         url = f"/api/challenges/{sample_challenge.id}/tasks"

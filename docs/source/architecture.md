@@ -103,7 +103,81 @@ Every `ERR_*` code must be:
 2. Used by at least one `err()` call in the codebase
 3. Translated in both `en/translation.json` and `bg/translation.json` under the `api.ERR_*` namespace
 
-The script `backend/scripts/check_error_codes.py` enforces all three rules in CI.
+The script `backend/scripts/check_error_codes.py` enforces all three rules in CI, plus scanning `schemas/*.py` for `SchemaError()` calls and `_validate_hf_json_list(err_code=...)` kwargs.
+
+## Pydantic Schema Validation Layer
+
+Request validation uses Pydantic v2 schemas in `backend/schemas/`. Two decorators inject validated model objects into route handlers:
+
+```python
+from schemas import validate_json, validate_form
+
+@validate_json(CreateChallengeSchema)       # JSON body → data: CreateChallengeSchema
+@validate_form(CreateTaskMetaSchema)         # multipart/form-data → form_data: CreateTaskMetaSchema
+```
+
+### Validation flow
+
+1. Decorator catches `ValidationError` from Pydantic and calls `_validation_error()`
+2. `_validation_error` inspects each error's `ctx["error"]` — if it contains a `SchemaError`, the specific error code (e.g., `ERR_INVALID_DOCKER_IMAGE`) is used
+3. Otherwise falls back to generic `ERR_VALIDATION` with field-level details
+4. Response: `422 {"error": "...", "code": "ERR_SPECIFIC_CODE"}`
+
+### SchemaError
+
+Defined in `schemas/exceptions.py`:
+
+```python
+class SchemaError(ValueError):
+    def __init__(self, code: str, message: str = ""):
+        self.code = code      # e.g. "ERR_INVALID_DOCKER_IMAGE"
+        self.message = message
+```
+
+All schema validators raise `SchemaError` with specific codes instead of generic `ValueError`.
+
+### CREATE vs PATCH patterns
+
+**CREATE** schemas use Pydantic `Field(default=...)` for optional fields and require all necessary fields:
+
+```python
+class CreateChallengeSchema(BaseModel):
+    title: str
+    description: str
+    gpu_required: bool = True
+    double_blind: bool = True
+    start_time: datetime
+    end_time: datetime
+```
+
+**PATCH** schemas set `None` on every field — use `data.model_fields_set` to detect which fields the client actually sent:
+
+```python
+@validate_json(UpdateChallengeSchema)
+def update_challenge(challenge_id, data):
+    fields = data.model_fields_set
+    if "title" in fields:
+        challenge.title = data.title
+```
+
+### Form data coercion
+
+`@validate_form` provides `@field_validator(mode="before")` helpers in each schema to coerce form strings to native types:
+
+- `_coerce_bool` — maps `"true"`/`"1"`/`"yes"` → `True`, `"false"`/`"0"`/`"no"` → `False`
+- `_coerce_int` — maps strings to `int` (or `None` for blank)
+
+### Fully parsed fields
+
+Schema validators parse complex fields so route handlers receive native Python types:
+
+| Raw form/JSON value | Schema field type | Parser |
+|---|---|---|
+| `"2024-01-01T00:00:00"` | `datetime` | `_parse_datetime_strict` in `schemas/common.py` |
+| `'["dataset1", "dataset2"]'` | `list[str]` | `_validate_hf_json_list` in `schemas/task.py` |
+| `'{"metric": "accuracy"}'` | `dict` | `_validate_metrics_config` in `schemas/task.py` |
+
+Route handlers never call `parse_datetime()` or `json.loads()` for these fields.
 
 ## SSE Streaming
 

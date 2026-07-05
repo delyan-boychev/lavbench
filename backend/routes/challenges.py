@@ -14,6 +14,14 @@ from config import Config
 from error_utils import err
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from schemas import validate_json
+from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
+from schemas.stage import (
+    CreateStageSchema,
+    CreateTestStageSchema,
+    RevealResultsSchema,
+    UpdateStageSchema,
+)
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
 from sqlalchemy import or_, select
@@ -21,8 +29,8 @@ from sqlalchemy.orm import joinedload
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
-from utils.dates import parse_datetime, utcnow
 from utils.dates import to_utc as _to_utc
+from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 from werkzeug.utils import secure_filename
@@ -277,7 +285,8 @@ def get_challenge(challenge_id):
 
 @challenges_bp.route("", methods=["POST"])
 @role_required(["admin", "jury"])
-def create_challenge():
+@validate_json(CreateChallengeSchema)
+def create_challenge(data):
     """
     Create a new competition with start/end times, resource limits, and privacy settings.
     ---
@@ -294,29 +303,17 @@ def create_challenge():
             schema:
               type: object
     """
-    data = request.json or {}
-    title = data.get("title")
-    description = data.get("description")
-    max_eval_requests = int(data.get("max_eval_requests", 10))
-    ram_limit_mb = int(data.get("ram_limit_mb", 8192))
-    time_limit_sec = int(data.get("time_limit_sec", 300))
-    gpu_required = bool(data.get("gpu_required", True))
-    double_blind = data.get("double_blind")
-    double_blind = True if double_blind is None else bool(double_blind)
-
-    start_time = parse_datetime(data.get("start_time"))
-    end_time = parse_datetime(data.get("end_time"))
-    is_frozen = bool(data.get("is_frozen", False))
-
-    timezone = data.get("timezone", "UTC")
-
-    if start_time:
-        start_time = _to_utc(start_time, timezone)
-    if end_time:
-        end_time = _to_utc(end_time, timezone)
-
-    if not title:
-        return err("ERR_TITLE_REQUIRED", 400, message="Competition title is required.")
+    title, description = data.title, data.description
+    max_eval_requests, ram_limit_mb, time_limit_sec = (
+        data.max_eval_requests,
+        data.ram_limit_mb,
+        data.time_limit_sec,
+    )
+    gpu_required, double_blind, is_frozen = data.gpu_required, data.double_blind, data.is_frozen
+    start_time, end_time = (
+        _to_utc(data.start_time, data.timezone),
+        _to_utc(data.end_time, data.timezone),
+    )
 
     if not start_time or not end_time:
         return err(
@@ -324,18 +321,6 @@ def create_challenge():
             400,
             message="Competition start time and end time are required.",
         )
-
-    if max_eval_requests is not None and max_eval_requests < 1:
-        return err("ERR_INVALID_LIMITS", 400, message="Daily submissions limit must be at least 1.")
-
-    if ram_limit_mb is not None and ram_limit_mb < 128:
-        return err("ERR_INVALID_LIMITS", 400, message="RAM limit must be at least 128 MB.")
-
-    if time_limit_sec is not None and time_limit_sec < 1:
-        return err("ERR_INVALID_LIMITS", 400, message="Time limit must be at least 1 second.")
-
-    if end_time <= start_time:
-        return err("ERR_INVALID_DATES", 400, message="End time must be after start time.")
 
     challenge = Challenge(
         title=title,
@@ -348,7 +333,7 @@ def create_challenge():
         end_time=end_time,
         is_frozen=is_frozen,
         double_blind=double_blind,
-        timezone=timezone,
+        timezone=data.timezone,
     )
     db.session.add(challenge)
     db.session.commit()
@@ -363,8 +348,8 @@ def create_challenge():
 
     invalidate_challenge_cache()
 
-    test_stage_start = parse_datetime(data.get("test_stage_start_time"))
-    test_stage_end = parse_datetime(data.get("test_stage_end_time"))
+    test_stage_start = data.test_stage_start_time
+    test_stage_end = data.test_stage_end_time
     if test_stage_start and test_stage_end:
         _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
         return jsonify(challenge.to_dict()), 201
@@ -477,7 +462,8 @@ def _create_test_stage_for_challenge(challenge, start_time, end_time):
 @challenges_bp.route("/<uuid:challenge_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def update_challenge(challenge_id):
+@validate_json(UpdateChallengeSchema)
+def update_challenge(challenge_id, data):
     """
     Update the configuration of an existing challenge.
     ---
@@ -500,64 +486,44 @@ def update_challenge(challenge_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    data = request.json or {}
 
-    title = data.get("title")
-    description = data.get("description")
-    max_eval_requests = data.get("max_eval_requests")
-    ram_limit_mb = data.get("ram_limit_mb")
-    time_limit_sec = data.get("time_limit_sec")
-    gpu_required = data.get("gpu_required")
+    fields = data.model_fields_set
 
-    if title:
-        challenge.title = title
-    if description is not None:
-        challenge.description = description
-    if max_eval_requests is not None:
-        val = int(max_eval_requests)
-        if val < 1:
-            return err(
-                "ERR_INVALID_LIMITS", 400, message="Daily submissions limit must be at least 1."
-            )
-        challenge.max_eval_requests = val
-    if ram_limit_mb is not None:
-        val = int(ram_limit_mb)
-        if val < 128:
-            return err("ERR_INVALID_LIMITS", 400, message="RAM limit must be at least 128 MB.")
-        challenge.ram_limit_mb = val
-    if time_limit_sec is not None:
-        val = int(time_limit_sec)
-        if val < 1:
-            return err("ERR_INVALID_LIMITS", 400, message="Time limit must be at least 1 second.")
-        challenge.time_limit_sec = val
-    if gpu_required is not None:
-        challenge.gpu_required = bool(gpu_required)
+    if "title" in fields:
+        challenge.title = data.title
+    if "description" in fields:
+        challenge.description = data.description
+    if "max_eval_requests" in fields and data.max_eval_requests is not None:
+        challenge.max_eval_requests = data.max_eval_requests
+    if "ram_limit_mb" in fields and data.ram_limit_mb is not None:
+        challenge.ram_limit_mb = data.ram_limit_mb
+    if "time_limit_sec" in fields and data.time_limit_sec is not None:
+        challenge.time_limit_sec = data.time_limit_sec
+    if "gpu_required" in fields:
+        challenge.gpu_required = data.gpu_required
 
-    timezone = data.get("timezone", challenge.timezone or "UTC")
-    if "start_time" in data:
-        st = parse_datetime(data.get("start_time"))
+    timezone = data.timezone if "timezone" in fields else (challenge.timezone or "UTC")
+    if "start_time" in fields:
+        st = data.start_time
         if not st:
             return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
         challenge.start_time = _to_utc(st, timezone)
-    if "end_time" in data:
-        et = parse_datetime(data.get("end_time"))
+    if "end_time" in fields:
+        et = data.end_time
         if not et:
             return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
         challenge.end_time = _to_utc(et, timezone)
 
-    if challenge.end_time <= challenge.start_time:
-        return err("ERR_INVALID_DATES", 400, message="End time must be after start time.")
+    if "is_frozen" in fields:
+        challenge.is_frozen = data.is_frozen
+    if "double_blind" in fields:
+        challenge.double_blind = data.double_blind
+    if "timezone" in fields:
+        challenge.timezone = data.timezone
 
-    if "is_frozen" in data:
-        challenge.is_frozen = bool(data.get("is_frozen"))
-    if "double_blind" in data:
-        challenge.double_blind = bool(data.get("double_blind"))
-    if "timezone" in data:
-        challenge.timezone = data.get("timezone")
-
-    if "test_stage_start_time" in data or "test_stage_end_time" in data:
-        test_stage_start = parse_datetime(data.get("test_stage_start_time"))
-        test_stage_end = parse_datetime(data.get("test_stage_end_time"))
+    if "test_stage_start_time" in fields or "test_stage_end_time" in fields:
+        test_stage_start = data.test_stage_start_time
+        test_stage_end = data.test_stage_end_time
         if test_stage_start and test_stage_end:
             _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
         else:
@@ -645,7 +611,8 @@ def delete_challenge(challenge_id):
 @challenges_bp.route("/<uuid:challenge_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
-def finalize_challenge(challenge_id):
+@validate_json(RevealResultsSchema)
+def finalize_challenge(challenge_id, data):
     """
     Finalize the competition scores. Locks rankings and reveals competitor identities.
     ---
@@ -706,9 +673,8 @@ def finalize_challenge(challenge_id):
                         ),
                     )
 
-    data = request.get_json() or {}
     challenge.scores_finalized = True
-    challenge.reveal_results = bool(data.get("reveal_results", False))
+    challenge.reveal_results = data.reveal_results if data.reveal_results is not None else False
     db.session.commit()
 
     log_audit(
@@ -735,7 +701,8 @@ def finalize_challenge(challenge_id):
 @challenges_bp.route("/<uuid:challenge_id>/reveal-results", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def toggle_reveal_results(challenge_id):
+@validate_json(RevealResultsSchema)
+def toggle_reveal_results(challenge_id, data):
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
@@ -744,8 +711,7 @@ def toggle_reveal_results(challenge_id):
             400,
             message="Must finalize scores before revealing results.",
         )
-    data = request.get_json() or {}
-    challenge.reveal_results = bool(data.get("reveal_results", True))
+    challenge.reveal_results = data.reveal_results if data.reveal_results is not None else True
     db.session.commit()
 
     invalidate_leaderboard_cache(challenge_id)
@@ -803,7 +769,8 @@ def archive_challenge(challenge_id):
 @challenges_bp.route("/<uuid:challenge_id>/stages", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def create_stage(challenge_id):
+@validate_json(CreateStageSchema)
+def create_stage(challenge_id, data):
     """
     Add a new stage to a challenge with its own deadline and score visibility rules.
     ---
@@ -826,31 +793,12 @@ def create_stage(challenge_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    data = request.json or {}
 
-    title = data.get("title")
-    stage_number = data.get("stage_number")
-    start_time_str = data.get("start_time")
-    end_time_str = data.get("end_time")
-
-    if not title or not start_time_str or not end_time_str:
-        return err(
-            "ERR_MISSING_STAGE_FIELDS", 400, message="Missing title, start_time or end_time."
-        )
-
-    start_time = parse_datetime(start_time_str)
-    end_time = parse_datetime(end_time_str)
+    start_time = _to_utc(data.start_time, challenge.timezone or "UTC")
+    end_time = _to_utc(data.end_time, challenge.timezone or "UTC")
 
     if not start_time or not end_time:
         return err("ERR_INVALID_DATE_FORMAT", 400, message="Invalid date format.")
-
-    start_time = _to_utc(start_time, challenge.timezone or "UTC")
-    end_time = _to_utc(end_time, challenge.timezone or "UTC")
-
-    if end_time <= start_time:
-        return err(
-            "ERR_INVALID_STAGE_DATES", 400, message="Stage end time must be after start time."
-        )
 
     if challenge.start_time and start_time < challenge.start_time:
         return err(
@@ -866,6 +814,7 @@ def create_stage(challenge_id):
             message="Stage end time must be within the competition timeframe.",
         )
 
+    stage_number = data.stage_number
     if not stage_number:
         max_num = (
             db.session.query(db.func.max(Stage.stage_number))
@@ -878,7 +827,7 @@ def create_stage(challenge_id):
     stage = Stage(
         challenge_id=challenge_id,
         stage_number=stage_number,
-        title=title,
+        title=data.title,
         start_time=start_time,
         end_time=end_time,
     )
@@ -902,7 +851,8 @@ def create_stage(challenge_id):
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def update_stage(challenge_id, stage_id):
+@validate_json(UpdateStageSchema)
+def update_stage(challenge_id, stage_id, data):
     """
     Update an existing stage configuration.
     ---
@@ -931,29 +881,20 @@ def update_stage(challenge_id, stage_id):
     challenge = db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
-    data = request.json or {}
+    fields = data.model_fields_set
 
-    if "title" in data:
-        stage.title = data["title"]
-    if "stage_number" in data:
-        stage.stage_number = data["stage_number"]
-    if "start_time" in data:
-        t = parse_datetime(data["start_time"])
-        if t:
-            stage.start_time = _to_utc(t, challenge.timezone or "UTC")
-    if "end_time" in data:
-        t = parse_datetime(data["end_time"])
-        if t:
-            stage.end_time = _to_utc(t, challenge.timezone or "UTC")
-    if "reveal_results" in data:
-        stage.reveal_results = bool(data["reveal_results"])
-    if "is_finalized" in data:
-        stage.is_finalized = bool(data["is_finalized"])
-
-    if stage.end_time <= stage.start_time:
-        return err(
-            "ERR_INVALID_STAGE_DATES", 400, message="Stage end time must be after start time."
-        )
+    if "title" in fields:
+        stage.title = data.title
+    if "stage_number" in fields:
+        stage.stage_number = data.stage_number
+    if "start_time" in fields and data.start_time:
+        stage.start_time = _to_utc(data.start_time, challenge.timezone or "UTC")
+    if "end_time" in fields and data.end_time:
+        stage.end_time = _to_utc(data.end_time, challenge.timezone or "UTC")
+    if "reveal_results" in fields:
+        stage.reveal_results = data.reveal_results
+    if "is_finalized" in fields:
+        stage.is_finalized = data.is_finalized
 
     if challenge.start_time and stage.start_time < challenge.start_time:
         return err(
@@ -988,7 +929,8 @@ def update_stage(challenge_id, stage_id):
 @login_required
 @role_required(["admin", "jury"])
 @jury_access_required
-def toggle_stage_reveal_results(challenge_id, stage_id):
+@validate_json(RevealResultsSchema)
+def toggle_stage_reveal_results(challenge_id, stage_id, data):
     """Toggle reveal_results on a finalized stage."""
     db.get_or_404(Challenge, challenge_id)
 
@@ -997,8 +939,9 @@ def toggle_stage_reveal_results(challenge_id, stage_id):
         return err(
             "ERR_NOT_FINALIZED", 400, message="Stage must be finalized before toggling reveal."
         )
-    data = request.get_json() or {}
-    stage.reveal_results = bool(data.get("reveal_results", not stage.reveal_results))
+    stage.reveal_results = (
+        data.reveal_results if data.reveal_results is not None else not stage.reveal_results
+    )
     db.session.commit()
 
     invalidate_entity_cache(challenge_id)
@@ -1062,7 +1005,8 @@ def delete_stage(challenge_id, stage_id):
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
-def finalize_stage(challenge_id, stage_id):
+@validate_json(RevealResultsSchema)
+def finalize_stage(challenge_id, stage_id, data):
     """
     Finalize a specific stage. Locks stage scores.
     ---
@@ -1099,7 +1043,6 @@ def finalize_stage(challenge_id, stage_id):
         return err(
             "ERR_STAGE_NOT_ENDED", 400, message="Cannot finalize the stage before its end time."
         )
-    data = request.json or {}
 
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
@@ -1138,7 +1081,7 @@ def finalize_stage(challenge_id, stage_id):
                     )
 
     stage.is_finalized = True
-    stage.reveal_results = bool(data.get("reveal_results", False))
+    stage.reveal_results = data.reveal_results if data.reveal_results is not None else False
 
     db.session.commit()
 
@@ -1159,7 +1102,8 @@ def finalize_stage(challenge_id, stage_id):
 @login_required
 @role_required(["admin", "jury"])
 @jury_access_required
-def create_test_stage(challenge_id):
+@validate_json(CreateTestStageSchema)
+def create_test_stage(challenge_id, data):
     """
     Create a test stage before the competition starts for testing purposes.
     ---
@@ -1196,10 +1140,9 @@ def create_test_stage(challenge_id):
               type: object
     """
     challenge = db.get_or_404(Challenge, challenge_id)
-    data = request.json or {}
 
-    start_time = parse_datetime(data.get("start_time"))
-    end_time = parse_datetime(data.get("end_time"))
+    start_time = data.start_time
+    end_time = data.end_time
 
     if not start_time or not end_time:
         return err("ERR_MISSING_DATES", 400, message="start_time and end_time are required.")
@@ -1223,11 +1166,6 @@ def create_test_stage(challenge_id):
             "ERR_TEST_STAGE_AFTER_COMP_START",
             400,
             message="Test stage must end before the competition starts.",
-        )
-
-    if end_time <= start_time:
-        return err(
-            "ERR_INVALID_STAGE_DATES", 400, message="Test stage end time must be after start time."
         )
 
     if any(s.is_test for s in challenge.stages):

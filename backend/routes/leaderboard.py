@@ -8,6 +8,8 @@ from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
 from flask import Blueprint, jsonify, request
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
+from schemas import validate_json
+from schemas.leaderboard import ManualPointsSchema
 from services.leaderboard_service import build_and_cache_leaderboard
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.access import ensure_registered
@@ -446,7 +448,8 @@ def stream_challenge_leaderboard(challenge_id):
 @role_required(["jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-def save_manual_points(challenge_id):
+@validate_json(ManualPointsSchema)
+def save_manual_points(challenge_id, data):
     """
     Save manual points for a user in a challenge.
     Jury members only.
@@ -508,13 +511,9 @@ def save_manual_points(challenge_id):
             "competition results are finalized and revealed.",
         )
 
-    data = request.get_json() or {}
-    user_id = data.get("user_id")
-    points_dict = data.get("points")
-    reason = data.get("reason")
-
-    if not user_id or not isinstance(points_dict, dict):
-        return err("ERR_MISSING_FIELDS", 400)
+    user_id = data.user_id
+    points_dict = data.points
+    reason = data.reason
 
     user = User.query.filter_by(id=user_id, challenge_id=challenge_id).with_for_update().first()
     if not user:
@@ -528,7 +527,6 @@ def save_manual_points(challenge_id):
             "manual points after the competition is finalized.",
         )
 
-    # Validate points (0-100 integers) and completed submissions count
     validated_points = {}
     tasks = {t.id for t in challenge.tasks}
     for k, v in points_dict.items():
@@ -540,16 +538,8 @@ def save_manual_points(challenge_id):
                 message=f"Task ID {task_id} does not belong to this challenge.",
             )
 
-        try:
-            pts = int(v)
-        except (ValueError, TypeError):
-            return err(
-                "ERR_POINTS_MUST_BE_INT",
-                400,
-                message=f"Points for task {task_id} must be an integer.",
-            )
+        pts = v
 
-        # Check if the task is in a finalized stage with revealed results
         task = db.session.get(Task, task_id)
         if task and task.stage_id:
             stage = db.session.get(Stage, task.stage_id)
@@ -561,14 +551,6 @@ def save_manual_points(challenge_id):
                     f"because the stage is finalized and revealed.",
                 )
 
-        if not (0 <= pts <= 100):
-            return err(
-                "ERR_POINTS_OUT_OF_BOUNDS",
-                400,
-                message=f"Points for task {task_id} must be between 0 and 100.",
-            )
-
-        # Check if the user has any submissions at all for this task
         total_count = Submission.query.filter_by(user_id=user_id, task_id=task_id).count()
         if total_count == 0:
             return err(

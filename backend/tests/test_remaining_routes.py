@@ -322,11 +322,11 @@ class TestRegisterCompetitor:
             headers=auth_headers(tokens.admin),
             json={**self.COMP_PAYLOAD},
         )
-        assert resp.status_code == 400
-        assert "challenge_id is required" in resp.get_json()["error"]
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_invalid_challenge_id_returns_400(self, client, tokens, auth_headers):
-        payload = {**self.COMP_PAYLOAD, "challenge_id": 99999}
+        payload = {**self.COMP_PAYLOAD, "challenge_id": "99999"}
         resp = client.post(
             "/api/admin/register-competitor",
             headers=auth_headers(tokens.admin),
@@ -344,11 +344,8 @@ class TestRegisterCompetitor:
             headers=auth_headers(tokens.admin),
             json=payload,
         )
-        assert resp.status_code == 400
-        assert (
-            "Name, Surname, Middle Name, Birth Date, Grade, School and City"
-            in resp.get_json()["error"]
-        )
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_jury_registers_competitor_before_start(
         self, client, db_session, sample_future_challenge, auth_headers

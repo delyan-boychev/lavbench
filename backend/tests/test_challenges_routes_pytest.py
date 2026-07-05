@@ -83,8 +83,8 @@ class TestCreateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "title is required" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_challenge_missing_dates(self, client):
         payload = self._valid_payload()
@@ -95,8 +95,8 @@ class TestCreateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "start time and end time are required" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_challenge_end_before_start(self, client):
         payload = self._valid_payload()
@@ -108,8 +108,8 @@ class TestCreateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "end time must be after start time" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
 
     def test_create_challenge_invalid_limits(self, client):
         payload = self._valid_payload()
@@ -120,8 +120,8 @@ class TestCreateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "at least 1" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_challenge_ram_too_low(self, client):
         payload = self._valid_payload()
@@ -132,8 +132,8 @@ class TestCreateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "at least 128" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_challenge_competitor_forbidden(self, client):
         payload = self._valid_payload()
@@ -224,8 +224,8 @@ class TestUpdateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "at least 1" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_update_challenge_invalid_ram(self, client):
         res = client.put(
@@ -234,8 +234,8 @@ class TestUpdateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "at least 128" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_update_challenge_invalid_time_limit(self, client):
         res = client.put(
@@ -244,8 +244,8 @@ class TestUpdateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "at least 1" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_update_challenge_gpu_required(self, client):
         res = client.put(
@@ -269,8 +269,8 @@ class TestUpdateChallenge:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "end time must be after start time" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
 
     def test_update_challenge_is_frozen_and_double_blind(self, client):
         res = client.put(
@@ -587,5 +587,5 @@ class TestStageBoundariesValidation:
             content_type="application/json",
             headers=self._auth(self.admin_token),
         )
-        assert res.status_code == 400
-        assert "ERR_INVALID_STAGE_DATES" in res.get_json()["code"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
