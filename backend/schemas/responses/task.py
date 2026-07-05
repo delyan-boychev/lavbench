@@ -35,15 +35,14 @@ class TaskResponse(BaseModel):
     max_submissions_per_period: int | None = None
     submission_period_hours: int | None = None
     stage_id: UUID | None = None
+    evaluator_script_path: str | None = None
+    baseline_notebook_path: str | None = None
+    solution_notebook_path: str | None = None
 
     model_config = RESPONSE_CONFIG
 
 
 class TaskAdminResponse(TaskResponse):
     """All fields — visible to admin/jury only."""
-
-    evaluator_script_path: str | None = None
-    baseline_notebook_path: str | None = None
-    solution_notebook_path: str | None = None
 
     model_config = RESPONSE_CONFIG
