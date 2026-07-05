@@ -4,10 +4,9 @@ import contextlib
 import json
 import logging
 
-from utils.dates import utcnow
-
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
 from models.naming import generate_pseudonym
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 

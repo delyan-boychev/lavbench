@@ -50,11 +50,14 @@ if (ok) {
 
 ### Adding a new endpoint
 
-1. Define the route in the appropriate `routes/*.py` file
-2. Add a flasgger YAML docstring with request/response schemas
-3. The Swagger UI at `/apidocs` auto-updates on next server restart
-4. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
-5. Run `npm run check-types` to verify 0 errors
+1. Create a Pydantic v2 schema in `backend/schemas/` (e.g., `schemas/admin.py`) with `BaseModel` and `Field()` definitions
+2. Define the route in the appropriate `routes/*.py` file, decorating with `@validate_json(MySchema)` or `@validate_form(MyFormSchema)` for request validation
+3. Add a flasgger YAML docstring with request/response schemas
+4. The Swagger UI at `/apidocs` auto-updates on next server restart
+5. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
+6. Run `npm run check-types` to verify 0 errors
+
+For PATCH routes, use `data.model_fields_set` to detect which fields were explicitly sent by the client (not `None` defaults). For form-data endpoints, use `@validate_form` which coerces form strings to bools/ints before validation.
 
 ### flasgger docstring template (OpenAPI 3.0)
 

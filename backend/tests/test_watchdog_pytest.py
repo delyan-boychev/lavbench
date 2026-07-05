@@ -2,6 +2,7 @@ import json
 from datetime import timedelta
 
 import pytest
+
 from models import Challenge, Submission, Task, User, db
 from tasks import watchdog_stuck_submissions
 from utils.dates import utcnow

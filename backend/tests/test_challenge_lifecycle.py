@@ -6,6 +6,7 @@ Uses fixture-based patterns from conftest.py.
 import json
 
 import pytest
+
 from utils.dates import utcnow
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -471,8 +472,8 @@ class TestCreateTestStage:
             content_type="application/json",
             headers=headers,
         )
-        assert res.status_code == 400
-        assert "end time must be after start time" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

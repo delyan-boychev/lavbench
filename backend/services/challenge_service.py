@@ -6,11 +6,10 @@ import json
 from datetime import datetime
 
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
-from utils.dates import utcnow
-
 from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission
+from utils.dates import utcnow
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 

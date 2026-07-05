@@ -1,9 +1,10 @@
 import secrets
 
+from werkzeug.security import generate_password_hash
+
 from app import create_app
 from models import User, db
 from utils.dates import utcnow
-from werkzeug.security import generate_password_hash
 
 
 def generate_master_key():

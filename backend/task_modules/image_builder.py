@@ -20,7 +20,6 @@ import time
 
 from cache_utils import get_redis_client
 from config import Config
-
 from task_modules.docker_utils import _get_client
 from task_modules.docker_utils import image_exists as _image_exists
 
@@ -308,6 +307,7 @@ def _rebuild_listener(main_server_url, worker_token):
                     logger.info("Rebuild notification for task %s", task_id)
                     # Fetch updated config from the server
                     import requests
+
                     from worker_utils import _sign_worker_token
 
                     url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"

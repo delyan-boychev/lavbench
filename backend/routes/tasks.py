@@ -6,6 +6,16 @@ import os
 import time
 from datetime import datetime, timedelta
 
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    request,
+    send_file,
+    send_from_directory,
+)
+from werkzeug.utils import secure_filename
+
 from auth_utils import (
     check_worker_auth,
     jury_access_required,
@@ -15,15 +25,10 @@ from auth_utils import (
 )
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
-from flask import (
-    Blueprint,
-    current_app,
-    jsonify,
-    request,
-    send_file,
-    send_from_directory,
-)
 from models import Challenge, Stage, Submission, Task, db
+from schemas import validate_form, validate_json
+from schemas.submission import SelectedCellsSchema
+from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
 from services.leaderboard_service import get_task_leaderboard_data
 from services.submission_service import (
     calculate_submission_priority,
@@ -45,7 +50,6 @@ from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
-from werkzeug.utils import secure_filename
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -62,10 +66,6 @@ class UUIDEncoder(json.JSONEncoder):
 
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
-
-DOCKER_IMAGE_REGEX = (
-    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$"
-)
 
 VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
@@ -241,7 +241,8 @@ def get_task(task_id):
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def create_task(challenge_id):
+@validate_form(CreateTaskMetaSchema)
+def create_task(challenge_id, form_data):
     """
     Create a new evaluation task with resource limits, metrics, and test data files.
     ---
@@ -265,11 +266,8 @@ def create_task(challenge_id):
     """
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    title = request.form.get("title")
-    description = request.form.get("description")
-
-    if not title:
-        return err("ERR_TITLE_REQUIRED", 400, message="Task title is required.")
+    title = form_data.title
+    description = form_data.description
 
     if (
         "baseline_notebook" not in request.files
@@ -277,14 +275,13 @@ def create_task(challenge_id):
     ):
         return err("ERR_BASELINE_REQUIRED", 400)
 
-    ram_limit_mb = to_int(request.form.get("ram_limit_mb"))
-    time_limit_sec = to_int(request.form.get("time_limit_sec"))
-    gpu_required_raw = request.form.get("gpu_required")
-    gpu_required = to_bool(gpu_required_raw) if gpu_required_raw is not None else None
+    ram_limit_mb = form_data.ram_limit_mb
+    time_limit_sec = form_data.time_limit_sec
+    gpu_required = form_data.gpu_required
 
-    base_docker_image = request.form.get("base_docker_image")
-    apt_packages = request.form.get("apt_packages")
-    pip_requirements = request.form.get("pip_requirements")
+    base_docker_image = form_data.base_docker_image
+    apt_packages = form_data.apt_packages
+    pip_requirements = form_data.pip_requirements
 
     if request.user.get("role") != "admin" and (
         base_docker_image or apt_packages or pip_requirements
@@ -295,80 +292,14 @@ def create_task(challenge_id):
             message="Only administrators are allowed to configure custom environments.",
         )
 
-    # Task parameter validations
-    if ram_limit_mb is not None and (ram_limit_mb <= 0 or ram_limit_mb > 16384):
-        return err("ERR_INVALID_RAM_LIMIT", 400)
+    ban_magic_commands = form_data.ban_magic_commands
+    banned_imports = form_data.banned_imports
+    whitelisted_imports = form_data.whitelisted_imports
 
-    import re
+    hf_datasets = form_data.hf_datasets
+    hf_models = form_data.hf_models
 
-    if base_docker_image and not re.match(DOCKER_IMAGE_REGEX, base_docker_image):
-        return err("ERR_INVALID_DOCKER_IMAGE", 400)
-
-    if apt_packages:
-        packages = [p.strip() for p in apt_packages.replace(",", " ").split() if p.strip()]
-        for pkg in packages:
-            if not re.match(r"^[a-zA-Z0-9.+-]+$", pkg):
-                return err(
-                    "ERR_INVALID_APT_PACKAGE", 400, message=f"Invalid APT package name: '{pkg}'."
-                )
-
-    if pip_requirements:
-        for line in pip_requirements.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if not re.match(
-                r"^[a-zA-Z0-9_.-]+(?:\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+(?:\s*,\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+)*)?$",
-                line,
-            ):
-                return err(
-                    "ERR_INVALID_PIP_REQUIREMENT",
-                    400,
-                    message=f"Invalid pip requirement line format: '{line}'.",
-                )
-
-    ban_magic_commands = to_bool(request.form.get("ban_magic_commands")) or False
-    banned_imports = request.form.get("banned_imports")
-    whitelisted_imports = request.form.get("whitelisted_imports")
-
-    hf_datasets_raw = request.form.get("hf_datasets")
-    hf_datasets = None
-    if hf_datasets_raw:
-        try:
-            hf_datasets = json.loads(hf_datasets_raw)
-        except json.JSONDecodeError:
-            return err("ERR_INVALID_HF_DATASETS", 400)
-        if not isinstance(hf_datasets, list):
-            return err("ERR_INVALID_HF_DATASETS", 400)
-        if len(hf_datasets) > 5:
-            return err("ERR_INVALID_HF_DATASETS", 400)
-        for item in hf_datasets:
-            if not isinstance(item, str):
-                return err("ERR_INVALID_HF_DATASETS", 400)
-
-    hf_models_raw = request.form.get("hf_models")
-    hf_models = None
-    if hf_models_raw:
-        try:
-            hf_models = json.loads(hf_models_raw)
-        except json.JSONDecodeError:
-            return err("ERR_INVALID_HF_MODELS", 400)
-        if not isinstance(hf_models, list):
-            return err("ERR_INVALID_HF_MODELS", 400)
-        if len(hf_models) > 5:
-            return err("ERR_INVALID_HF_MODELS", 400)
-        for item in hf_models:
-            if not isinstance(item, str):
-                return err("ERR_INVALID_HF_MODELS", 400)
-
-    metrics_config_raw = request.form.get("metrics_config")
-    metrics_config = None
-    if metrics_config_raw:
-        try:
-            metrics_config = json.loads(metrics_config_raw)
-        except json.JSONDecodeError:
-            return err("ERR_INVALID_METRICS_CONFIG", 400)
-
+    metrics_config = form_data.metrics_config
     if metrics_config:
         from evaluation_engine import AVAILABLE_METRICS
 
@@ -382,34 +313,11 @@ def create_task(challenge_id):
                     400,
                     message=f"Invalid metric '{metric_name}'. Allowed metrics: {allowed_metrics}",
                 )
-            cfg = metrics_config[metric_name]
-            if not isinstance(cfg, dict) or "weight" not in cfg:
-                return err(
-                    "ERR_INVALID_METRIC_CONFIG",
-                    400,
-                    message=f"Metric '{metric_name}' config must be a dict with a 'weight'.",
-                )
-            try:
-                float(cfg["weight"])
-            except (ValueError, TypeError):
-                return err(
-                    "ERR_INVALID_METRIC_WEIGHT",
-                    400,
-                    message=f"Weight for metric '{metric_name}' must be a numeric value.",
-                )
-            if "options" in cfg and not isinstance(cfg["options"], dict):
-                return err(
-                    "ERR_INVALID_METRIC_OPTIONS",
-                    400,
-                    message=f"Options for metric '{metric_name}' must be a dictionary/JSON object.",
-                )
 
-    public_eval_percentage = to_int(request.form.get("public_eval_percentage"))
-    if public_eval_percentage is None:
-        public_eval_percentage = 30
-    max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
-    submission_period_hours = to_int(request.form.get("submission_period_hours"))
-    stage_id = request.form.get("stage_id")
+    public_eval_percentage = form_data.public_eval_percentage
+    max_submissions_per_period = form_data.max_submissions_per_period
+    submission_period_hours = form_data.submission_period_hours
+    stage_id = form_data.stage_id
     if stage_id == "":
         stage_id = None
 
@@ -535,6 +443,7 @@ def create_task(challenge_id):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
+
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
@@ -607,7 +516,8 @@ def create_task(challenge_id):
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def update_task(task_id):
+@validate_form(UpdateTaskMetaSchema)
+def update_task(task_id, form_data):
     """
     Update an existing task configuration including files and evaluator scripts.
     ---
@@ -630,14 +540,12 @@ def update_task(task_id):
               type: object
     """
     task = db.get_or_404(Task, task_id)
-
-    title = request.form.get("title")
-    description = request.form.get("description")
+    fields = form_data.model_fields_set
 
     if request.user.get("role") != "admin":
         for field in ["base_docker_image", "apt_packages", "pip_requirements"]:
-            if field in request.form:
-                val = request.form.get(field)
+            if field in fields:
+                val = getattr(form_data, field)
                 current_val = getattr(task, field)
                 if (val or "").strip() != (current_val or "").strip():
                     return err(
@@ -646,170 +554,62 @@ def update_task(task_id):
                         message="Only administrators are allowed to configure custom environments.",
                     )
 
-    if title:
-        task.title = title
-    if description is not None:
-        task.description = description
+    if "title" in fields:
+        task.title = form_data.title
+    if "description" in fields:
+        task.description = form_data.description
 
-    # Task parameter validation on update
-    import re
+    if "ram_limit_mb" in fields and form_data.ram_limit_mb is not None:
+        task.ram_limit_mb = form_data.ram_limit_mb
 
-    if "ram_limit_mb" in request.form:
-        ram_val = to_int(request.form.get("ram_limit_mb"))
-        if ram_val is not None and (ram_val <= 0 or ram_val > 16384):
-            return err("ERR_INVALID_RAM_LIMIT", 400)
+    if "base_docker_image" in fields:
+        task.base_docker_image = form_data.base_docker_image
 
-    if "base_docker_image" in request.form:
-        base_img = request.form.get("base_docker_image")
-        if base_img and not re.match(DOCKER_IMAGE_REGEX, base_img):
-            return err("ERR_INVALID_DOCKER_IMAGE", 400)
+    if "apt_packages" in fields:
+        task.apt_packages = form_data.apt_packages
 
-    if "apt_packages" in request.form:
-        apt_pkgs = request.form.get("apt_packages")
-        if apt_pkgs:
-            packages = [p.strip() for p in apt_pkgs.replace(",", " ").split() if p.strip()]
-            for pkg in packages:
-                if not re.match(r"^[a-zA-Z0-9.+-]+$", pkg):
-                    return err(
-                        "ERR_INVALID_APT_PACKAGE",
-                        400,
-                        message=f"Invalid APT package name: '{pkg}'.",
-                    )
+    if "pip_requirements" in fields:
+        task.pip_requirements = form_data.pip_requirements
 
-    if "pip_requirements" in request.form:
-        pip_reqs = request.form.get("pip_requirements")
-        if pip_reqs:
-            for line in pip_reqs.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if not re.match(
-                    r"^[a-zA-Z0-9_.-]+(?:\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+(?:\s*,\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+)*)?$",
-                    line,
-                ):
-                    return err(
-                        "ERR_INVALID_PIP_REQUIREMENT",
-                        400,
-                        message=f"Invalid pip requirement line format: '{line}'.",
-                    )
+    if "time_limit_sec" in fields and form_data.time_limit_sec is not None:
+        task.time_limit_sec = form_data.time_limit_sec
+    if "gpu_required" in fields:
+        task.gpu_required = form_data.gpu_required
 
-    if "ram_limit_mb" in request.form:
-        task.ram_limit_mb = to_int(request.form.get("ram_limit_mb"))
-    if "time_limit_sec" in request.form:
-        task.time_limit_sec = to_int(request.form.get("time_limit_sec"))
-    if "gpu_required" in request.form:
-        gpu_required_raw = request.form.get("gpu_required")
-        task.gpu_required = to_bool(gpu_required_raw) if gpu_required_raw is not None else None
+    if "ban_magic_commands" in fields:
+        task.ban_magic_commands = form_data.ban_magic_commands
+    if "banned_imports" in fields:
+        task.banned_imports = form_data.banned_imports
 
-    if "base_docker_image" in request.form:
-        task.base_docker_image = request.form.get("base_docker_image")
-    if "apt_packages" in request.form:
-        task.apt_packages = request.form.get("apt_packages")
-    if "pip_requirements" in request.form:
-        task.pip_requirements = request.form.get("pip_requirements")
+    if "metrics_config" in fields:
+        task.metrics_config = form_data.metrics_config
 
-    if "ban_magic_commands" in request.form:
-        task.ban_magic_commands = to_bool(request.form.get("ban_magic_commands"))
-    if "banned_imports" in request.form:
-        task.banned_imports = request.form.get("banned_imports")
+    if "whitelisted_imports" in fields:
+        task.whitelisted_imports = form_data.whitelisted_imports
 
-    if "metrics_config" in request.form:
-        metrics_config_raw = request.form.get("metrics_config")
-        if metrics_config_raw:
-            try:
-                metrics_config = json.loads(metrics_config_raw)
-            except json.JSONDecodeError:
-                return err("ERR_INVALID_METRICS_CONFIG", 400)
+    if "hf_datasets" in fields:
+        task.hf_datasets = form_data.hf_datasets
 
-            if metrics_config:
-                for metric_name in metrics_config:
-                    if metric_name == "_columns":
-                        continue
-                    cfg = metrics_config[metric_name]
-                    if not isinstance(cfg, dict) or "weight" not in cfg:
-                        return err(
-                            "ERR_INVALID_METRIC_CONFIG",
-                            400,
-                            message=(
-                                f"Metric '{metric_name}' config must be a dict with a 'weight'."
-                            ),
-                        )
-                    try:
-                        float(cfg["weight"])
-                    except (ValueError, TypeError):
-                        return err(
-                            "ERR_INVALID_METRIC_WEIGHT",
-                            400,
-                            message=f"Weight for metric '{metric_name}' must be numeric.",
-                        )
-                    if "options" in cfg and not isinstance(cfg["options"], dict):
-                        return err(
-                            "ERR_INVALID_METRIC_OPTIONS",
-                            400,
-                            message=f"Options for metric '{metric_name}' must be a dict.",
-                        )
-            task.metrics_config = metrics_config
-        else:
-            task.metrics_config = None
-
-    if "whitelisted_imports" in request.form:
-        task.whitelisted_imports = request.form.get("whitelisted_imports")
-
-    if "hf_datasets" in request.form:
-        hf_datasets_raw = request.form.get("hf_datasets")
-        if hf_datasets_raw:
-            try:
-                hf_datasets = json.loads(hf_datasets_raw)
-            except json.JSONDecodeError:
-                return err("ERR_INVALID_HF_DATASETS", 400)
-            if not isinstance(hf_datasets, list):
-                return err("ERR_INVALID_HF_DATASETS", 400)
-            if len(hf_datasets) > 5:
-                return err("ERR_INVALID_HF_DATASETS", 400)
-            for item in hf_datasets:
-                if not isinstance(item, str):
-                    return err("ERR_INVALID_HF_DATASETS", 400)
-            task.hf_datasets = hf_datasets
-        else:
-            task.hf_datasets = None
-
-    if "hf_models" in request.form:
-        hf_models_raw = request.form.get("hf_models")
-        if hf_models_raw:
-            try:
-                hf_models = json.loads(hf_models_raw)
-            except json.JSONDecodeError:
-                return err("ERR_INVALID_HF_MODELS", 400)
-            if not isinstance(hf_models, list):
-                return err("ERR_INVALID_HF_MODELS", 400)
-            if len(hf_models) > 5:
-                return err("ERR_INVALID_HF_MODELS", 400)
-            for item in hf_models:
-                if not isinstance(item, str):
-                    return err("ERR_INVALID_HF_MODELS", 400)
-            task.hf_models = hf_models
-        else:
-            task.hf_models = None
+    if "hf_models" in fields:
+        task.hf_models = form_data.hf_models
 
     if "hf_api_key" in request.form:
         hf_api_key = request.form.get("hf_api_key")
         if hf_api_key:
             task.set_hf_api_key(hf_api_key)
-    if "public_eval_percentage" in request.form:
-        val = to_int(request.form.get("public_eval_percentage"))
-        task.public_eval_percentage = val if val is not None else 30
-    if "max_submissions_per_period" in request.form:
-        task.max_submissions_per_period = to_int(request.form.get("max_submissions_per_period"))
-    if "submission_period_hours" in request.form:
-        task.submission_period_hours = to_int(request.form.get("submission_period_hours"))
-    if "stage_id" in request.form:
+    if "public_eval_percentage" in fields and form_data.public_eval_percentage is not None:
+        task.public_eval_percentage = form_data.public_eval_percentage
+    if "max_submissions_per_period" in fields and form_data.max_submissions_per_period is not None:
+        task.max_submissions_per_period = form_data.max_submissions_per_period
+    if "submission_period_hours" in fields and form_data.submission_period_hours is not None:
+        task.submission_period_hours = form_data.submission_period_hours
+    if "stage_id" in fields:
         from models import Stage
 
-        stage_id_val = request.form.get("stage_id")
+        stage_id_val = form_data.stage_id
         if stage_id_val == "":
             stage_id_val = None
 
-        # Block moving from a finalized or ended stage
         old_stage = db.session.get(Stage, task.stage_id) if task.stage_id else None
         if stage_id_val is not None and old_stage:
             if old_stage.is_finalized:
@@ -817,7 +617,6 @@ def update_task(task_id):
             if old_stage.end_time and old_stage.end_time <= utcnow():
                 return err("ERR_CANNOT_MOVE_ENDED", 400)
 
-        # Block moving if any submission has manual points
         if (
             stage_id_val is not None
             and stage_id_val != task.stage_id
@@ -872,7 +671,7 @@ def update_task(task_id):
 
     current_files = safe_json_loads(task.files, [])
 
-    deleted_files_raw = request.form.get("deleted_files")
+    deleted_files_raw = form_data.deleted_files
     if deleted_files_raw:
         try:
             deleted_filenames = json.loads(deleted_files_raw)
@@ -887,14 +686,12 @@ def update_task(task_id):
             current_files = updated_files
         except (json.JSONDecodeError, TypeError, KeyError, OSError) as e:
             logger.warning("Failed to process deleted_files for task %s: %s", task.id, e)
-            # Keep current_files unchanged
 
-    # Handle evaluator script and baseline notebook deletion
-    if request.form.get("delete_evaluator") == "true" and task.evaluator_script_path:
+    if form_data.delete_evaluator and task.evaluator_script_path:
         if os.path.exists(task.evaluator_script_path):
             os.remove(task.evaluator_script_path)
         task.evaluator_script_path = None
-    if request.form.get("delete_baseline") == "true" and task.baseline_notebook_path:
+    if form_data.delete_baseline and task.baseline_notebook_path:
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
@@ -942,6 +739,7 @@ def update_task(task_id):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
+
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
@@ -1144,7 +942,8 @@ def download_task_file(task_id, filename):
 @login_required
 @jury_access_required
 @rate_limit(max_requests=10, window_seconds=60)
-def submit_task(task_id):
+@validate_json(SelectedCellsSchema)
+def submit_task(task_id, data):
     """
     Submit code cells for execution under a specific task.
     ---
@@ -1176,6 +975,7 @@ def submit_task(task_id):
 
     user_id = request.user["user_id"]
     user_role = request.user["role"]
+    selected_cells = data.selected_cells
 
     if user_role == "competitor":
         if not check_competitor_access(user_id, task.challenge_id):
@@ -1213,12 +1013,6 @@ def submit_task(task_id):
                 return err("ERR_COMPETITION_NOT_STARTED", 400)
             if challenge.is_ended:
                 return err("ERR_COMPETITION_ENDED", 400)
-
-    data = request.json or {}
-    selected_cells = data.get("selected_cells")
-
-    if not selected_cells or not isinstance(selected_cells, list):
-        return err("ERR_INVALID_SELECTED_CELLS", 400)
 
     today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     submission_count = Submission.query.filter(

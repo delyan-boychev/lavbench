@@ -8,9 +8,10 @@ from datetime import timedelta
 from functools import wraps
 
 import jwt
+from flask import jsonify, request
+
 from config import Config
 from error_utils import err
-from flask import jsonify, request
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)

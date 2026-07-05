@@ -930,12 +930,12 @@ describe('SubmissionsView Page', () => {
       fireEvent.click(task1Card);
 
       await waitFor(() => {
-        const icons = screen.getAllByTitle('submissions.download');
+        const icons = screen.getAllByTitle('Download');
         expect(icons.length).toBeGreaterThan(1);
       });
 
       await act(async () => {
-        fireEvent.click(screen.getAllByTitle('submissions.download')[1]);
+        fireEvent.click(screen.getAllByTitle('Download')[1]);
       });
       await act(async () => {
         await new Promise((r) => setTimeout(r, 20));
@@ -1077,7 +1077,7 @@ describe('SubmissionsView Page', () => {
       render(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText('common.searching')).toBeInTheDocument();
+        expect(screen.getByText('Searching...')).toBeInTheDocument();
       });
     });
 

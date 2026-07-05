@@ -13,11 +13,6 @@ import time
 import zipfile
 from datetime import datetime
 
-from auth_utils import jury_access_required, rate_limit, role_required
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
-from config import Config
-from error_utils import err
-from evaluation_engine import AVAILABLE_METRICS
 from flask import (
     Blueprint,
     Response,
@@ -26,6 +21,14 @@ from flask import (
     request,
     send_file,
 )
+from sqlalchemy import or_
+from werkzeug.security import generate_password_hash
+
+from auth_utils import jury_access_required, rate_limit, role_required
+from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from config import Config
+from error_utils import err
+from evaluation_engine import AVAILABLE_METRICS
 from models import (
     AuditLog,
     Challenge,
@@ -36,9 +39,10 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
+from schemas import validate_json
+from schemas.admin import CreateUserSchema, RegisterCompetitorSchema, UpdateUserSchema
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
-from sqlalchemy import or_
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
@@ -48,7 +52,6 @@ from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 from utils.sse import sse_response
-from werkzeug.security import generate_password_hash
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
@@ -149,7 +152,8 @@ def generate_random_password(length=12):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-def register_competitor():
+@validate_json(RegisterCompetitorSchema)
+def register_competitor(data):
     """
     Register a new competitor with auto-generated credentials.
     ---
@@ -166,39 +170,17 @@ def register_competitor():
             schema:
               type: object
     """
-    data = request.json or {}
-    name = data.get("name")
-    surname = data.get("surname")
-    middle_name = data.get("middle_name")
-    birth_date = data.get("birth_date")
-    grade = data.get("grade")
-    school = data.get("school")
-    city = data.get("city")
-    challenge_id = data.get("challenge_id")
-
-    if not challenge_id:
-        return err("ERR_CHALLENGE_ID_REQUIRED", 400)
+    name, surname, middle_name = data.name, data.surname, data.middle_name
+    birth_date, grade, school, city = data.birth_date, data.grade, data.school, data.city
+    challenge_id = data.challenge_id
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return err("ERR_INVALID_CHALLENGE_ID", 400)
 
-    # Check if the competition has started
     if challenge.is_started and request.user["role"] != "admin":
         return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
-    if (
-        not name
-        or not surname
-        or not middle_name
-        or not birth_date
-        or not grade
-        or not school
-        or not city
-    ):
-        return err("ERR_MISSING_DEMOGRAPHICS", 400)
-
-    # Check if a competitor with the same demographics is already registered for this competition
     existing = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
     if check_duplicate_demographics(
@@ -220,6 +202,7 @@ def register_competitor():
         role="competitor",
         alias_id=generate_pseudonym(),
         challenge_id=challenge_id,
+        email=data.email,
     )
     user.set_demographics(
         name,
@@ -435,7 +418,8 @@ def delete_user(user_id):
 @role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
-def register_user():
+@validate_json(CreateUserSchema)
+def register_user(data):
     """
     Register a new user account with specified role and demographics.
     ---
@@ -452,32 +436,16 @@ def register_user():
             schema:
               type: object
     """
-    data = request.json or {}
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
-    name = data.get("name")
-    surname = data.get("surname")
-    middle_name = data.get("middle_name")
-    birth_date = data.get("birth_date")
-    grade = data.get("grade")
-    school = data.get("school")
-    city = data.get("city")
-    role = data.get("role")
-    challenge_id = data.get("challenge_id")
-
-    if not role or role not in ["competitor", "jury", "admin"]:
-        return err("ERR_VALID_ROLE_REQUIRED", 400)
+    username, email, password = data.username, data.email, data.password
+    name, surname, middle_name = data.name, data.surname, data.middle_name
+    birth_date, grade, school, city = data.birth_date, data.grade, data.school, data.city
+    role, challenge_id = data.role, data.challenge_id
 
     if request.user["role"] == "jury" and role != "competitor":
         return err("ERR_JURY_ONLY_COMPETITOR", 403)
 
-    # STRICT CONSTRAINT: Only server-side CLI can register an Administrator (admin)
     if role == "admin":
         return err("ERR_ADMIN_CLI_ONLY", 403)
-
-    if not name or not surname:
-        return err("ERR_MISSING_DEMOGRAPHICS", 400, message="Name and Surname are required.")
 
     if role == "competitor":
         if not middle_name or not birth_date or not grade or not school or not city:
@@ -493,9 +461,6 @@ def register_user():
         if not challenge:
             return err("ERR_INVALID_CHALLENGE_ID", 400)
 
-        # Check if a competitor with the same
-        # demographics is already registered for this competition
-
         existing = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
         if check_duplicate_demographics(
@@ -507,14 +472,12 @@ def register_user():
                 message="A competitor with these demographic "
                 "details is already registered for this competition.",
             )
-        # Check if the competition has started
         if challenge.is_started and request.user["role"] != "admin":
             return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
     if not password:
         password = generate_random_password(12)
 
-    # Pregenerate username for competitors and judges (jury) if not provided
     if role in ["competitor", "jury"] and not username:
         username = generate_unique_username(name, surname, role=role)
 
@@ -524,7 +487,7 @@ def register_user():
     if User.query.filter_by(username=username).first():
         return err("ERR_USERNAME_TAKEN", 400)
 
-    is_anon = bool(data.get("is_anonymous", False))
+    is_anon = data.is_anonymous
 
     user = User(
         username=username,
@@ -547,7 +510,7 @@ def register_user():
     db.session.add(user)
     db.session.commit()
 
-    jury_challenges = data.get("jury_challenges")
+    jury_challenges = data.jury_challenges
     if role == "jury" and jury_challenges:
         from models import JuryChallenge
 
@@ -1104,7 +1067,8 @@ def get_audit_logs():
 @admin_bp.route("/users/<uuid:user_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
-def update_user(user_id):
+@validate_json(UpdateUserSchema)
+def update_user(user_id, data):
     """
     Update user profile fields. Jury members have restricted edit access.
     ---
@@ -1130,38 +1094,34 @@ def update_user(user_id):
     current_role = request.user["role"]
     old_challenge_id = user.challenge_id
 
-    # Check if the competition has started for jury edits
     if current_role == "jury":
-        # Jury cannot edit admin or other jury members
         if user.role in ("admin", "jury"):
             return err("ERR_JURY_CANNOT_EDIT_ADMIN", 403)
 
-        # Check current assigned challenge
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
             if challenge and challenge.is_started:
                 return err("ERR_CANNOT_EDIT_STARTED", 403)
 
-    data = request.json or {}
-    name = data.get("name")
-    surname = data.get("surname")
-    middle_name = data.get("middle_name")
-    birth_date = data.get("birth_date")
-    grade = data.get("grade")
-    school = data.get("school")
-    city = data.get("city")
-    email = data.get("email")
-    username = data.get("username")
-    challenge_id = data.get("challenge_id")
-    password = data.get("password")
-    is_anonymous = data.get("is_anonymous")
-    role = data.get("role")
-    jury_challenges = data.get("jury_challenges")
+    name = data.name
+    surname = data.surname
+    middle_name = data.middle_name
+    birth_date = data.birth_date
+    grade = data.grade
+    school = data.school
+    city = data.city
+    email = data.email
+    username = data.username
+    challenge_id = data.challenge_id
+    password = data.password
+    is_anonymous = data.is_anonymous
+    role = data.role
+    jury_challenges = data.jury_challenges
 
     if is_anonymous is not None:
-        user.is_anonymous = bool(is_anonymous)
+        user.is_anonymous = is_anonymous
 
-    if role is not None and role in ["competitor", "jury", "admin"]:
+    if role is not None:
         if role == "admin" and user.role != "admin":
             return err("ERR_CANNOT_CHANGE_ROLE_ADMIN", 403)
         user.role = role
@@ -1175,7 +1135,6 @@ def update_user(user_id):
                 assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
                 db.session.add(assignment)
 
-    # Check new challenge start time if jury is assigning
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
         target_challenge_id = str(challenge_id)
         if current_role == "jury":
@@ -1197,7 +1156,6 @@ def update_user(user_id):
     elif challenge_id == "":
         user.challenge_id = None
 
-    # Update demographics using fallback decryption
     dec_name = decrypt_field(user.name)
     dec_surname = decrypt_field(user.surname)
     dec_middle_name = decrypt_field(user.middle_name) if getattr(user, "middle_name", None) else ""
@@ -1214,19 +1172,9 @@ def update_user(user_id):
     new_school = school if school is not None else dec_school
     new_city = city if city is not None else dec_city
 
-    # Validate that middle name, birth date, grade, school and
-    # city are present for competitors if they are being updated
-
-    if user.role == "competitor" and (
-        "name" in data
-        or "surname" in data
-        or "middle_name" in data
-        or "birth_date" in data
-        or "grade" in data
-        or "school" in data
-        or "city" in data
-        or role == "competitor"
-    ):
+    demo_fields = {"name", "surname", "middle_name", "birth_date", "grade", "school", "city"}
+    changed_demographics = data.model_fields_set & demo_fields
+    if user.role == "competitor" and (changed_demographics or role == "competitor"):
         if (
             not new_name
             or not new_surname
@@ -1242,9 +1190,6 @@ def update_user(user_id):
                 message="Name, Surname, Middle Name, Birth Date, Grade, School "
                 "and City are required for competitor accounts.",
             )
-
-        # Check if a competitor with the same demographics is already
-        # registered for this competition (excluding this user themselves)
 
         existing = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
 

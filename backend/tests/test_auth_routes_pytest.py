@@ -1,10 +1,11 @@
 from datetime import timedelta
 
 import pytest
+from werkzeug.security import generate_password_hash
+
 from auth_utils import generate_token
 from models import Challenge, User, db
 from utils.dates import utcnow
-from werkzeug.security import generate_password_hash
 
 
 class TestAuthLogin:
@@ -104,18 +105,18 @@ class TestAuthLogin:
 
     def test_login_missing_username(self, client):
         res = client.post("/api/auth/login", json={"password": self.password})
-        assert res.status_code == 400
-        assert res.get_json()["code"] == "ERR_MISSING_CREDENTIALS"
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_login_missing_password(self, client):
         res = client.post("/api/auth/login", json={"username": "test_competitor"})
-        assert res.status_code == 400
-        assert res.get_json()["code"] == "ERR_MISSING_CREDENTIALS"
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_login_empty_body(self, client):
         res = client.post("/api/auth/login", json={})
-        assert res.status_code == 400
-        assert res.get_json()["code"] == "ERR_MISSING_CREDENTIALS"
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_login_archived_challenge_blocked(self, client):
         res = client.post(

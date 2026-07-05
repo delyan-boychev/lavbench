@@ -5,6 +5,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+
 from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -107,7 +108,7 @@ class TestRouteLevelLogic:
         self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
 
-        payload = {"selected_cells": ["# SUBMIT\nprint('code')"]}
+        payload = {"selected_cells": [{"source": "# SUBMIT\nprint('code')"}]}
         res = self.client.post(
             f"/api/tasks/{self.task.id}/submit",
             headers=self.get_auth_header(self.competitor_token),
@@ -144,7 +145,7 @@ class TestRouteLevelLogic:
         self.challenge.max_eval_requests = 2
         db.session.commit()
 
-        payload = {"selected_cells": ["# SUBMIT\nprint('hello')"]}
+        payload = {"selected_cells": [{"source": "# SUBMIT\nprint('hello')"}]}
 
         res = self.client.post(
             f"/api/tasks/{self.task.id}/submit",
@@ -216,7 +217,7 @@ class TestRouteLevelLogic:
         self.task.custom_eval_code = "print('custom evaluation code')"
         db.session.commit()
 
-        payload = {"selected_cells": ["# SUBMIT\ndef predict(x): return x"]}
+        payload = {"selected_cells": [{"source": "# SUBMIT\ndef predict(x): return x"}]}
         res = self.client.post(
             f"/api/tasks/{self.task.id}/submit",
             headers=self.get_auth_header(self.competitor_token),
@@ -617,7 +618,7 @@ class TestRouteLevelLogic:
 
         res_submit = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": []},
+            json={"task_id": self.task.id, "selected_cells": [{"source": "cell"}]},
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res_submit.status_code == 403
@@ -756,8 +757,8 @@ class TestRouteLevelLogic:
             data=data,
             headers=admin_header,
         )
-        assert res.status_code == 400
-        assert "cannot exceed 16384 MB" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
         data = {
             "title": "Invalid Image Task",
@@ -770,8 +771,8 @@ class TestRouteLevelLogic:
             data=data,
             headers=admin_header,
         )
-        assert res.status_code == 400
-        assert "Invalid base Docker image" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DOCKER_IMAGE"
 
         data = {
             "title": "Invalid APT Task",
@@ -784,8 +785,8 @@ class TestRouteLevelLogic:
             data=data,
             headers=admin_header,
         )
-        assert res.status_code == 400
-        assert "Invalid APT package name" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_APT_PACKAGE"
 
         data = {
             "title": "Invalid Pip Task",
@@ -798,8 +799,8 @@ class TestRouteLevelLogic:
             data=data,
             headers=admin_header,
         )
-        assert res.status_code == 400
-        assert "Invalid pip requirement line" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_PIP_REQUIREMENT"
 
     def test_jury_custom_environment_restrictions(self):
         jury_user = User(username="test_jury_env", password_hash="pbkdf2:sha256:...", role="jury")
@@ -900,16 +901,16 @@ class TestRouteLevelLogic:
     def test_challenge_submission_route_and_ast_rule_engine(self, mock_celery):
         comp_header = self.get_auth_header(self.competitor_token)
 
-        payload = {"selected_cells": ["print('hello')"]}
+        payload = {"selected_cells": [{"source": "print('hello')"}]}
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
             json=payload,
             headers=comp_header,
         )
-        assert res.status_code == 400
-        assert "task_id is required" in res.get_json()["error"]
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
-        payload = {"selected_cells": ["print('hello')"], "task_id": 99999}
+        payload = {"selected_cells": [{"source": "print('hello')"}], "task_id": "99999"}
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
             json=payload,
@@ -922,7 +923,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         payload = {
-            "selected_cells": ["import os\nprint('hack')"],
+            "selected_cells": [{"source": "import os\nprint('hack')"}],
             "task_id": self.task.id,
         }
         res = self.client.post(
@@ -937,7 +938,7 @@ class TestRouteLevelLogic:
         self.task.banned_imports = ""
         db.session.commit()
 
-        payload = {"selected_cells": ["!pip install requests"], "task_id": self.task.id}
+        payload = {"selected_cells": [{"source": "!pip install requests"}], "task_id": self.task.id}
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
             json=payload,
@@ -947,7 +948,7 @@ class TestRouteLevelLogic:
         assert "magic commands" in res.get_json()["error"]
 
         payload = {
-            "selected_cells": ["# SUBMIT\nprint('hello')"],
+            "selected_cells": [{"source": "# SUBMIT\nprint('hello')"}],
             "task_id": self.task.id,
         }
         res = self.client.post(

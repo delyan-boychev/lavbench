@@ -3,6 +3,7 @@ import sys
 from datetime import timedelta
 
 import pytest
+
 from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
@@ -149,8 +150,8 @@ class TestRegisterUser:
             json={"name": "John", "surname": "Doe"},
             headers=self._auth(self.admin_token),
         )
-        assert resp.status_code == 400
-        assert "Valid role" in resp.get_json()["error"]
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_invalid_role_returns_400(self, client):
         resp = client.post(
@@ -158,7 +159,8 @@ class TestRegisterUser:
             json={"name": "John", "surname": "Doe", "role": "superadmin"},
             headers=self._auth(self.admin_token),
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_admin_role_blocked_via_api(self, client):
         resp = client.post(
@@ -179,8 +181,8 @@ class TestRegisterUser:
             },
             headers=self._auth(self.admin_token),
         )
-        assert resp.status_code == 400
-        assert "Name and Surname" in resp.get_json()["error"]
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_VALIDATION"
 
     def test_competitor_missing_challenge_id_returns_400(self, client):
         resp = client.post(
@@ -212,7 +214,7 @@ class TestRegisterUser:
                 "school": "Test HS",
                 "city": "Sofia",
                 "role": "competitor",
-                "challenge_id": 99999,
+                "challenge_id": "99999",
             },
             headers=self._auth(self.admin_token),
         )

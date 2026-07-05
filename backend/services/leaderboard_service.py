@@ -6,10 +6,10 @@ import time
 from datetime import datetime
 from functools import cmp_to_key
 
-from cache_utils import cache_lock, get_cached, set_cached
-from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from sqlalchemy.orm import joinedload
 
+from cache_utils import cache_lock, get_cached, set_cached
+from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from services.submission_service import get_best_submission
 
 logger = logging.getLogger(__name__)

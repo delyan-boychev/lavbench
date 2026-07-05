@@ -7,6 +7,7 @@ import json
 from datetime import timedelta
 
 import pytest
+
 from utils.dates import utcnow
 
 
@@ -116,8 +117,8 @@ class TestCreateStage:
             content_type="application/json",
             headers=csrf_headers(tokens.admin),
         )
-        assert res.status_code == 400
-        assert "title" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_stage_missing_start_time(
         self, client, db_session, sample_challenge, sample_admin, tokens, csrf_headers
@@ -132,8 +133,8 @@ class TestCreateStage:
             content_type="application/json",
             headers=csrf_headers(tokens.admin),
         )
-        assert res.status_code == 400
-        assert "start_time" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_stage_missing_end_time(
         self, client, db_session, sample_challenge, sample_admin, tokens, csrf_headers
@@ -148,16 +149,16 @@ class TestCreateStage:
             content_type="application/json",
             headers=csrf_headers(tokens.admin),
         )
-        assert res.status_code == 400
-        assert "end_time" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_VALIDATION"
 
     def test_create_stage_invalid_date_format(
         self, client, db_session, sample_challenge, sample_admin, tokens, csrf_headers
     ):
         payload = {
             "title": "Bad Dates",
-            "start_time": "not-a-date",
-            "end_time": "also-not-a-date",
+            "start_time": "not-a-date-end",
+            "end_time": "not-a-date-start",
         }
         res = client.post(
             f"/api/challenges/{sample_challenge.id}/stages",
@@ -165,8 +166,8 @@ class TestCreateStage:
             content_type="application/json",
             headers=csrf_headers(tokens.admin),
         )
-        assert res.status_code == 400
-        assert "invalid date" in res.get_json()["error"].lower()
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_FORMAT"
 
     def test_create_stage_competitor_forbidden(
         self,

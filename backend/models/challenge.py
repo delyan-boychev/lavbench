@@ -3,9 +3,8 @@
 import zoneinfo
 from datetime import datetime
 
-from utils.dates import utcnow
-
 from models.base import GUID, db, uuid7
+from utils.dates import utcnow
 
 
 class Challenge(db.Model):

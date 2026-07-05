@@ -54,8 +54,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff==0.15.19
-      - run: ruff check backend/ --config backend/pyproject.toml
-      - run: ruff format --check backend/ --config backend/pyproject.toml
+      - run: ruff check . --config pyproject.toml
+        working-directory: backend
+      - run: ruff format --check . --config pyproject.toml
+        working-directory: backend
       - name: Error code checker
         run: python backend/scripts/check_error_codes.py
 
@@ -121,40 +123,7 @@ jobs:
       - run: python -m json.tool frontend/public/locales/en/translation.json > /dev/null
       - run: python -m json.tool frontend/public/locales/bg/translation.json > /dev/null
       - name: Check translation key parity
-        run: |
-          python3 -c "
-          import json, sys
-          with open('frontend/public/locales/en/translation.json') as f:
-              en = json.load(f)
-          with open('frontend/public/locales/bg/translation.json') as f:
-              bg = json.load(f)
-          def flatten(d, prefix=''):
-              items = {}
-              for k, v in d.items():
-                  key = f'{prefix}.{k}' if prefix else k
-                  if isinstance(v, dict):
-                      items.update(flatten(v, key))
-                  else:
-                      items[key] = v
-              return items
-          en_flat = flatten(en)
-          bg_flat = flatten(bg)
-          en_keys = set(en_flat.keys())
-          bg_keys = set(bg_flat.keys())
-          missing_bg = en_keys - bg_keys
-          missing_en = bg_keys - en_keys
-          if missing_bg:
-              print(f'Keys missing in bg ({len(missing_bg)}):')
-              for k in sorted(missing_bg):
-                  print(f'  {k}: {en_flat[k]}')
-          if missing_en:
-              print(f'Keys missing in en ({len(missing_en)}):')
-              for k in sorted(missing_en):
-                  print(f'  {k}: {bg_flat[k]}')
-          if missing_bg or missing_en:
-              sys.exit(1)
-          print('All translation keys are consistent between en and bg')
-          "
+        run: python frontend/scripts/check_translations.py
 
   frontend-types:
     name: Frontend type check

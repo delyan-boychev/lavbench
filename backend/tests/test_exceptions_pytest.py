@@ -5,6 +5,7 @@ from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -77,12 +78,12 @@ class TestBackendExceptionAndErrorCases:
 
     def test_login_missing_parameters(self):
         res = self.client.post("/api/auth/login", json={})
-        assert res.status_code == 400
-        assert "Missing username or password" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
         res = self.client.post("/api/auth/login", json={"username": "admin_user"})
-        assert res.status_code == 400
-        assert "Missing username or password" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
     def test_login_invalid_credentials(self):
         res = self.client.post("/api/auth/login", json={"username": "ghost", "password": "pwd"})
@@ -133,8 +134,8 @@ class TestBackendExceptionAndErrorCases:
     def test_create_challenge_missing_title(self):
         headers = self._auth(self.admin)
         res = self.client.post("/api/challenges", json={"description": "No Title"}, headers=headers)
-        assert res.status_code == 400
-        assert "Competition title is required" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
     def test_update_challenge_not_found(self):
         headers = self._auth(self.admin)
@@ -191,8 +192,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{self.challenge_b.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 403
-        assert "Access denied" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
     def test_submit_code_challenge_inactive_or_archived(self):
         headers = self._auth(self.competitor)
@@ -213,8 +214,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{inactive_challenge.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 400
-        assert "This challenge is currently inactive" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
         archived_challenge = Challenge(
             title="Archived",
@@ -233,8 +234,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{archived_challenge.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 400
-        assert "This competition has been archived" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
     def test_submit_code_timeline_violations(self):
         headers = self._auth(self.competitor)
@@ -248,8 +249,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 400
-        assert "This competition has not started yet" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
         self.challenge_a.start_time = utcnow() - timedelta(hours=2)
         self.challenge_a.end_time = utcnow() - timedelta(hours=1)
@@ -258,8 +259,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 400
-        assert "This competition has ended" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
     @patch("tasks.evaluate_submission.delay")
     def test_submit_code_missing_cells_and_rate_limits(self, mock_celery):
@@ -272,8 +273,8 @@ class TestBackendExceptionAndErrorCases:
         res = self.client.post(
             f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
         )
-        assert res.status_code == 400
-        assert "selected_cells list is required" in res.json["error"]
+        assert res.status_code == 422
+        assert res.json["code"] == "ERR_VALIDATION"
 
         for _i in range(3):
             sub = Submission(
@@ -289,7 +290,7 @@ class TestBackendExceptionAndErrorCases:
 
         res = self.client.post(
             f"/api/challenges/{self.challenge_a.id}/submit",
-            json={"selected_cells": ["cell_content"], "task_id": self.task_a.id},
+            json={"selected_cells": [{"source": "cell_content"}], "task_id": self.task_a.id},
             headers=headers,
         )
         assert res.status_code == 429

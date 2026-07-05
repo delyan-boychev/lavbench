@@ -7,12 +7,13 @@ import os
 import sys
 import uuid
 
-from config import Config
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import CHAR, TypeDecorator
+
+from config import Config
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
