@@ -3,10 +3,11 @@ import json
 import logging
 import time
 
+from flask import Blueprint, jsonify, request
+
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
-from flask import Blueprint, jsonify, request
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas import validate_json
 from schemas.leaderboard import ManualPointsSchema

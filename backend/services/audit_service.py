@@ -4,6 +4,7 @@ import logging
 import uuid
 
 from flask import request
+
 from models import AuditLog, db
 
 logger = logging.getLogger(__name__)

@@ -6,6 +6,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+
 from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"

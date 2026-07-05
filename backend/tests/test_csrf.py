@@ -179,8 +179,9 @@ class TestCsrfFunctions:
 
 class TestCsrfDecorator:
     def test_csrf_required_decorator_rejects_missing(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():
@@ -193,8 +194,9 @@ class TestCsrfDecorator:
             assert data.get("code") == "ERR_CSRF_FAILED"
 
     def test_csrf_required_decorator_allows_valid(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():
@@ -214,8 +216,9 @@ class TestCsrfDecorator:
             assert resp.get_json()["ok"] is True
 
     def test_csrf_required_get_always_passes(self, app):
-        from auth_utils import csrf_required
         from flask import jsonify
+
+        from auth_utils import csrf_required
 
         @csrf_required
         def fake_view():

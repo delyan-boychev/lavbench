@@ -2,8 +2,9 @@ import os
 import secrets
 import sys
 
-from utils.dates import utcnow
 from werkzeug.security import generate_password_hash
+
+from utils.dates import utcnow
 
 backend_path = os.path.dirname(os.path.abspath(__file__))
 if backend_path not in sys.path:

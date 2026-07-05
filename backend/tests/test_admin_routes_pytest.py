@@ -3,6 +3,7 @@ import sys
 from datetime import timedelta
 
 import pytest
+
 from utils.dates import utcnow
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"

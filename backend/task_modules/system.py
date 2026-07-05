@@ -12,6 +12,7 @@ import urllib.parse
 from pathlib import Path
 
 import requests
+
 from config import Config
 from utils.dates import utcnow
 

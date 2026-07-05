@@ -1,9 +1,9 @@
 from functools import wraps
 
-from error_utils import err
 from flask import request
 from pydantic import BaseModel, ValidationError
 
+from error_utils import err
 from schemas.exceptions import SchemaError
 
 

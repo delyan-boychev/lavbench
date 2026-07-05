@@ -8,11 +8,15 @@ import zipfile
 import zoneinfo
 from datetime import datetime
 
+from flask import Blueprint, Response, current_app, jsonify, request, send_file
+from sqlalchemy import or_, select
+from sqlalchemy.orm import joinedload
+from werkzeug.utils import secure_filename
+
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from config import Config
 from error_utils import err
-from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from schemas import validate_json
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
@@ -24,8 +28,6 @@ from schemas.stage import (
 )
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
-from sqlalchemy import or_, select
-from sqlalchemy.orm import joinedload
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
@@ -33,7 +35,6 @@ from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
-from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)

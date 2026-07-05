@@ -4,16 +4,17 @@ import json
 import logging
 import time
 
+from flask import Blueprint, jsonify, request
+from sqlalchemy.orm import joinedload
+
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
-from flask import Blueprint, jsonify, request
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas import validate_json
 from schemas.submission import SubmitCodeSchema
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import check_execution_rules
-from sqlalchemy.orm import joinedload
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,

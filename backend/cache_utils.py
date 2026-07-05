@@ -7,6 +7,7 @@ import uuid
 from contextlib import contextmanager, suppress
 
 import redis as redis_lib
+
 from config import Config
 from utils.dates import utcnow
 

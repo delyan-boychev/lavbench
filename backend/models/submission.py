@@ -6,9 +6,8 @@ import logging
 import os
 import uuid
 
-from utils.dates import utcnow
-
 from models.base import GUID, db, uuid7
+from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 

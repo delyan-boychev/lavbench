@@ -13,11 +13,6 @@ import time
 import zipfile
 from datetime import datetime
 
-from auth_utils import jury_access_required, rate_limit, role_required
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
-from config import Config
-from error_utils import err
-from evaluation_engine import AVAILABLE_METRICS
 from flask import (
     Blueprint,
     Response,
@@ -26,6 +21,14 @@ from flask import (
     request,
     send_file,
 )
+from sqlalchemy import or_
+from werkzeug.security import generate_password_hash
+
+from auth_utils import jury_access_required, rate_limit, role_required
+from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from config import Config
+from error_utils import err
+from evaluation_engine import AVAILABLE_METRICS
 from models import (
     AuditLog,
     Challenge,
@@ -40,7 +43,6 @@ from schemas import validate_json
 from schemas.admin import CreateUserSchema, RegisterCompetitorSchema, UpdateUserSchema
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
-from sqlalchemy import or_
 from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
@@ -50,7 +52,6 @@ from utils.ipynb import cells_to_ipynb_json
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 from utils.sse import sse_response
-from werkzeug.security import generate_password_hash
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)

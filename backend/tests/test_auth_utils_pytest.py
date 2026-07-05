@@ -2,6 +2,8 @@ from datetime import datetime
 from unittest.mock import patch
 
 import pytest
+from flask import Flask, jsonify, request
+
 from auth_utils import (
     SECRET_KEY,
     check_worker_auth,
@@ -11,7 +13,6 @@ from auth_utils import (
     role_required,
     verify_token,
 )
-from flask import Flask, jsonify, request
 
 
 class TestAuthUtils:
@@ -218,8 +219,9 @@ class TestRateLimit:
     @pytest.fixture(scope="function")
     def rate_limit_client(self):
         """Create a fresh Flask app with rate-limited routes for each test."""
-        from auth_utils import login_required
         from flask import Flask, jsonify, request
+
+        from auth_utils import login_required
 
         app = Flask(__name__)
         app.config["TESTING"] = True

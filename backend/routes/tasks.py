@@ -6,6 +6,16 @@ import os
 import time
 from datetime import datetime, timedelta
 
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    request,
+    send_file,
+    send_from_directory,
+)
+from werkzeug.utils import secure_filename
+
 from auth_utils import (
     check_worker_auth,
     jury_access_required,
@@ -15,14 +25,6 @@ from auth_utils import (
 )
 from cache_utils import get_redis_client, invalidate_leaderboard_cache
 from error_utils import err
-from flask import (
-    Blueprint,
-    current_app,
-    jsonify,
-    request,
-    send_file,
-    send_from_directory,
-)
 from models import Challenge, Stage, Submission, Task, db
 from schemas import validate_form, validate_json
 from schemas.submission import SelectedCellsSchema
@@ -48,7 +50,6 @@ from utils.dates import utcnow
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
-from werkzeug.utils import secure_filename
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -442,6 +443,7 @@ def create_task(challenge_id, form_data):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
+
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
@@ -737,6 +739,7 @@ def update_task(task_id, form_data):
             if uploaded_file.filename == "labels.parquet":
                 try:
                     import pyarrow.parquet as pq
+
                     from evaluation_engine import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)

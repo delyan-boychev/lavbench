@@ -1,8 +1,7 @@
 """AuditLog model."""
 
-from utils.dates import utcnow
-
 from models.base import GUID, db, uuid7
+from utils.dates import utcnow
 
 
 class AuditLog(db.Model):

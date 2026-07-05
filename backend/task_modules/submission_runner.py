@@ -12,9 +12,12 @@ import time
 import traceback
 
 import requests
-from cache_utils import get_redis_client
 from celery.signals import worker_ready
+
+from cache_utils import get_redis_client
 from config import Config
+from task_modules.docker_utils import _get_client, check_docker_available
+from task_modules.docker_utils import image_exists as _image_exists_docker
 from utils.dates import utcnow
 from worker_utils import (
     MockModel,
@@ -25,9 +28,6 @@ from worker_utils import (
     report_status_to_server,
     run_command_streaming,
 )
-
-from task_modules.docker_utils import _get_client, check_docker_available
-from task_modules.docker_utils import image_exists as _image_exists_docker
 
 logger = logging.getLogger(__name__)
 
@@ -740,6 +740,7 @@ def run_eval_submission(self_task, submission_id, metadata, app, db, submission_
                 else:
                     try:
                         import pandas as pd
+
                         from evaluation_engine import (
                             evaluate_predictions,
                             validate_parquet_schema,

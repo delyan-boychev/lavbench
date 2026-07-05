@@ -1,6 +1,7 @@
+from flask import current_app
+
 from cache_utils import get_cached, set_cached
 from config import Config
-from flask import current_app
 
 
 def cached_or_compute(cache_key, compute_fn, timeout=None):

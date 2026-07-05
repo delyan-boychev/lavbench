@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 
 from celery import Celery
+
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
 from task_modules.leaderboard import run_recalculate_all_leaderboards
