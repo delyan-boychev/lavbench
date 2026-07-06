@@ -2,7 +2,7 @@
 -c requirements.txt
 
 # ── Testing ────────────────────────────────────────────────────────
-pytest>=7.4.0
+pytest>=9.1.1
 pytest-cov>=7.0.0
 pytest-timeout>=2.0.0
 pytest-mock>=3.14.0
@@ -15,4 +15,4 @@ types-redis
 types-PyYAML
 
 # ── Test data ──────────────────────────────────────────────────────
-Faker>=20.0.0
+Faker>=40.28.1
