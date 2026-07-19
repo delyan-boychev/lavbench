@@ -155,6 +155,8 @@ class Config:
     GPU_RAM_PER_TASK_GB = int(os.environ.get("GPU_RAM_PER_TASK_GB", 8))
     CPU_RAM_PER_TASK_GB = int(os.environ.get("CPU_RAM_PER_TASK_GB", 8))
     RESERVED_RAM_GB = int(os.environ.get("RESERVED_RAM_GB", 4))
+    GPU_CORES_PER_TASK = int(os.environ.get("GPU_CORES_PER_TASK", 0))
+    CPU_CORES_PER_TASK = int(os.environ.get("CPU_CORES_PER_TASK", 0))
     RESERVED_CPU_CORES = int(os.environ.get("RESERVED_CPU_CORES", 1))
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 

@@ -758,7 +758,13 @@ def run_eval_submission(
             environment["CUDA_VISIBLE_DEVICES"] = "0"
 
         total_cpus = os.cpu_count() or 1
-        cpu_limit = max(1, total_cpus - Config.RESERVED_CPU_CORES)
+        cpu_limit = (
+            Config.GPU_CORES_PER_TASK
+            if gpu_required and Config.GPU_CORES_PER_TASK > 0
+            else Config.CPU_CORES_PER_TASK
+            if Config.CPU_CORES_PER_TASK > 0
+            else max(1, total_cpus - Config.RESERVED_CPU_CORES)
+        )
         docker_client = _get_client()
         logs.append(
             f"Executing sandbox: image={image_tag}, "
