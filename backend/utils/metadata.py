@@ -39,6 +39,15 @@ def build_submission_metadata(
             task.custom_eval_code
             or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
+        "custom_eval_code": (
+            task.custom_eval_code
+            if task.custom_eval_code
+            else (
+                open(task.evaluator_script_path).read()
+                if task.evaluator_script_path and os.path.exists(task.evaluator_script_path)
+                else None
+            )
+        ),
         "metrics_config": task.metrics_config,
         "hf_datasets": _hf_value(task.hf_datasets),
         "hf_models": _hf_value(task.hf_models),
