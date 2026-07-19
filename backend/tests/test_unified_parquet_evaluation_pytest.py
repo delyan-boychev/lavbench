@@ -951,11 +951,11 @@ class TestMetricsCalculationEdgeCases:
         assert "contains no prediction columns" in str(exc_info.value)
 
     def test_metrics_empty_nlp_inputs(self):
-        from evaluation_engine import compute_rouge_l, compute_ter
+        from evaluation_engine import compute_rouge, compute_ter
 
-        assert compute_rouge_l("", "") == 0.0
-        assert compute_rouge_l("hello", "") == 0.0
-        assert compute_rouge_l("", "world") == 0.0
+        assert compute_rouge("", "") == 0.0
+        assert compute_rouge("hello", "") == 0.0
+        assert compute_rouge("", "world") == 0.0
 
         assert compute_ter("", "") == 0.0
         assert compute_ter("hello", "") == 1.0

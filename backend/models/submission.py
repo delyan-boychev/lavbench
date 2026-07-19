@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, ClassVar
+from typing import Any
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
@@ -62,17 +62,15 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     is_disqualified = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(255), nullable=True)
 
-    _cached_code_cells: ClassVar[str | None] = None
-    _cached_logs: ClassVar[str | None] = None
-
     @property
     def code_cells(self) -> str:
-        if hasattr(self, "_cached_code_cells") and self._cached_code_cells is not None:
-            return self._cached_code_cells
+        cached = getattr(self, "_cached_code_cells", None)
+        if isinstance(cached, str):
+            return cached
         if self.code_storage_path and os.path.exists(self.code_storage_path):
             try:
                 with open(self.code_storage_path, encoding="utf-8") as f:
-                    self._cached_code_cells = f.read()  # type: ignore[misc]
+                    self._cached_code_cells = f.read()
                     return self._cached_code_cells
             except Exception as e:
                 logger.warning("Failed to read code_cells file for submission %s: %s", self.id, e)
@@ -80,7 +78,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
 
     @code_cells.setter
     def code_cells(self, value: str) -> None:
-        self._cached_code_cells = value  # type: ignore[misc]
+        self._cached_code_cells = value
         try:
             from flask import current_app
 
@@ -113,7 +111,6 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
 
     @logs.setter
     def logs(self, value: str) -> None:
-        self._cached_logs = value  # type: ignore[misc]
         try:
             from flask import current_app
 

@@ -356,7 +356,7 @@ export default function TaskForm({
           )}
 
           {!evaluatorIsActive && (
-            <div className="flex gap-2 w-full">
+            <div className="flex gap-2 w-full min-w-0">
               <SelectField
                 options={Object.keys(effectiveMetrics)
                   .filter((m) => !metricsOnly[m])
@@ -381,6 +381,7 @@ export default function TaskForm({
                 }}
                 placeholder={t('admin.tasks.add_eval_metric')}
                 disabled={selectedCount >= 10}
+                className="min-w-0"
               />
             </div>
           )}
@@ -750,7 +751,6 @@ export default function TaskForm({
               value={taskForm.description}
               onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
               rows={6}
-              required
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 pt-6 border-t border-white/5">
@@ -762,6 +762,7 @@ export default function TaskForm({
                   setTaskForm({ ...taskForm, max_submissions_per_period: e.target.value })
                 }
                 placeholder={t('admin.tasks.max_submissions_placeholder')}
+                min={1}
               />
               <InputField
                 label={t('admin.tasks.submission_period_hours')}
@@ -771,6 +772,7 @@ export default function TaskForm({
                   setTaskForm({ ...taskForm, submission_period_hours: e.target.value })
                 }
                 placeholder={t('admin.tasks.submission_period_placeholder')}
+                min={1}
               />
             </div>
           </div>
@@ -928,6 +930,8 @@ export default function TaskForm({
                   value={taskForm.ram_limit_mb}
                   onChange={(e) => setTaskForm({ ...taskForm, ram_limit_mb: e.target.value })}
                   placeholder={t('admin.tasks.ram_limit_placeholder')}
+                  min={128}
+                  max={8192}
                 />
                 <InputField
                   label={t('admin.tasks.override_timeout')}
@@ -935,6 +939,7 @@ export default function TaskForm({
                   value={taskForm.time_limit_sec}
                   onChange={(e) => setTaskForm({ ...taskForm, time_limit_sec: e.target.value })}
                   placeholder={t('admin.tasks.time_limit_placeholder')}
+                  min={1}
                 />
                 <div className="flex items-center h-full pt-5">
                   <div className="bg-slate-900/50 p-3 w-full rounded-xl border border-white/5 h-full flex items-center">

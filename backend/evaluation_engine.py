@@ -160,15 +160,17 @@ def compute_bleu(ref: str, hyp: str) -> float:
         return overlap / max(len(ref_words), len(hyp_words))
 
 
-def compute_rouge_l(ref: str, hyp: str) -> float:
-    """Compute ROUGE-L (Longest Common Subsequence) for summarization evaluation."""
+def compute_rouge(ref: str, hyp: str, rouge_type: str = "rougeL") -> float:
+    """Compute ROUGE score for summarization evaluation."""
     try:
         from rouge_score import rouge_scorer
 
-        scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+        scorer = rouge_scorer.RougeScorer([rouge_type], use_stemmer=True)
         scores = scorer.score(ref, hyp)
-        return float(scores["rougeL"].fmeasure)
+        return float(scores[rouge_type].fmeasure)
     except ImportError:
+        if rouge_type != "rougeL":
+            return 0.0
         lcs = calculate_lcs(ref, hyp)
         ref_len = len(ref.split())
         hyp_len = len(hyp.split())
@@ -948,12 +950,11 @@ def evaluate_predictions(
         elif m_name_clean == "bleu":
             val = np.mean([compute_bleu(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "rouge":
-            m_opts.get("rouge_type", "rougeL")
-            # Currently compute_rouge_l specifically returns rougeL. We can adapt it if needed,
-            # but for now we'll pass the type to a custom wrapper or just use rougeL.
-            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred, strict=False)])
+            rouge_type = str(m_opts.get("rouge_type", "rougeL"))
+            pairs = zip(y_true, y_pred, strict=False)
+            val = np.mean([compute_rouge(t, p, rouge_type=rouge_type) for t, p in pairs])
         elif m_name_clean == "rouge_l":
-            val = np.mean([compute_rouge_l(t, p) for t, p in zip(y_true, y_pred, strict=False)])
+            val = np.mean([compute_rouge(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "meteor":
             val = np.mean([compute_meteor(t, p) for t, p in zip(y_true, y_pred, strict=False)])
         elif m_name_clean == "chrf":

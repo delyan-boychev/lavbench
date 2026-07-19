@@ -588,6 +588,7 @@ def run_eval_submission(
                 while acquired_gpu is None:
                     for g_id in gpus:
                         lock_path = os.path.join(tempfile.gettempdir(), f"gpu_lock_{g_id}.lock")
+                        f: Any = None
                         try:
                             f = open(lock_path, "w")  # noqa: SIM115  # intentionally kept open for lock
                             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -595,6 +596,8 @@ def run_eval_submission(
                             gpu_lock_file = f
                             break
                         except OSError:
+                            if f is not None:
+                                f.close()
                             continue
                     if acquired_gpu is None:
                         time.sleep(1)
@@ -654,8 +657,29 @@ def run_eval_submission(
 
         image_tag = f"lavbench_task_{task.id if task else 0}"
 
+        # Prepopulate build_meta so it is always defined — the safety check at
+        # line ~698 may need it even when the task has no custom config.
+        build_meta: dict[str, Any] = {
+            "task_id": task.id,
+            "base_docker_image": "python:3.10-slim",
+            "pip_requirements": "",
+            "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
+            "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
+            "hf_api_key": (
+                _fetch_hf_key_from_server(
+                    task.id,
+                    metadata.get("main_server_url", ""),
+                    _sign_worker_token(metadata.get("submission_id", "unknown")),
+                )
+                if metadata and metadata.get("main_server_url")
+                else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
+            ),
+        }
+
         if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
             base_image = task.base_docker_image or "python:3.10-slim"
+            build_meta["base_docker_image"] = base_image
+            build_meta["pip_requirements"] = task.pip_requirements or ""
 
             if _image_exists_docker(image_tag):
                 logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
@@ -663,22 +687,6 @@ def run_eval_submission(
                 logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
                 from task_modules.image_builder import build_task_image
 
-                build_meta = {
-                    "task_id": task.id,
-                    "base_docker_image": base_image,
-                    "pip_requirements": task.pip_requirements or "",
-                    "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
-                    "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
-                    "hf_api_key": (
-                        _fetch_hf_key_from_server(
-                            task.id,
-                            metadata.get("main_server_url", ""),
-                            _sign_worker_token(metadata.get("submission_id", "unknown")),
-                        )
-                        if metadata and metadata.get("main_server_url")
-                        else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
-                    ),
-                }
                 built = build_task_image(build_meta)
                 if built:
                     logs.append("Docker image built successfully.")

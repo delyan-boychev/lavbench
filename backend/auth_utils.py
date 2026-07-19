@@ -276,7 +276,8 @@ def verify_csrf_token() -> bool:
     """Verify the X-CSRF-Token header matches the csrf_token cookie."""
     if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
         return True
-    # Worker endpoints use token auth, skip CSRF
+    # Worker endpoints use token auth (Ed25519 signed), skip CSRF
+    # Bearer token auth is not vulnerable to CSRF (browsers don't auto-attach Authorization)
     if request.headers.get("X-Worker-Token") or request.headers.get("Authorization", "").startswith(
         "Bearer "
     ):
