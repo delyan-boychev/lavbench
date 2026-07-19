@@ -228,7 +228,7 @@ services:
     container_name: lavbench_frontend
     restart: always
     ports:
-      - "80:80"
+      - "${NGINX_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy

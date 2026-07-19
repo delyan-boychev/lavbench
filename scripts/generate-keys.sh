@@ -119,6 +119,11 @@ if [ "$HTTP_CHOICE" = "2" ]; then
 else
   PROTOCOL="http"
   SERVER_URL="http://${SERVER_ADDR}"
+  echo ""
+  read -p "  Nginx port (external) [80]: " NGINX_PORT
+  NGINX_PORT="${NGINX_PORT:-80}"
+  set_env "NGINX_PORT" "$NGINX_PORT"
+  set_env "CORS_ORIGINS" "http://${SERVER_ADDR}:${NGINX_PORT}"
 fi
 echo ""
 
