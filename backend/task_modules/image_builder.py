@@ -86,7 +86,11 @@ def _download_model(
         logger.info("Downloading model '%s' for task %s...", model_name, task_id)
         from huggingface_hub import snapshot_download
 
-        snapshot_download(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
+        snapshot_download(
+            repo_id=model_name,
+            cache_dir=os.path.join(hf_cache_dir, "hub"),
+            token=hf_api_key or None,
+        )
         logger.info("Successfully downloaded model '%s' for task %s", model_name, task_id)
     except Exception as e:
         logger.warning("Failed to download model '%s' for task %s: %s", model_name, task_id, e)
