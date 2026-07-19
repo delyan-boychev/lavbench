@@ -71,7 +71,7 @@ def _download_dataset(
         snapshot_download(
             repo_id=ds_name,
             repo_type="dataset",
-            cache_dir=hf_cache_dir,
+            cache_dir=os.path.join(hf_cache_dir, "hub"),
             token=hf_api_key or None,
         )
         logger.info("snapshot_download succeeded for '%s'", ds_name)
