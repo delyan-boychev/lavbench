@@ -679,12 +679,29 @@ def run_eval_submission(
                         else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
                     ),
                 }
-                if not build_task_image(build_meta):
+                built = build_task_image(build_meta)
+                if built:
+                    logs.append("Docker image built successfully.")
+                elif _image_exists_docker(image_tag):
+                    logs.append("Docker image built successfully (by another process).")
+                    built = True
+                else:
                     logs.append("Docker image build failed!")
                     update_status("failed", "failed", logs_list=logs)
                     report_status_to_server(metadata, "failed", "failed", logs=logs)
                     return
-                logs.append("Docker image built successfully.")
+
+        # Safety check: verify the sandbox image exists before launching
+        if not _image_exists_docker(image_tag):
+            from task_modules.image_builder import ensure_task_image
+
+            logs.append(f"Sandbox image '{image_tag}' missing — attempting final blocking build...")
+            if not ensure_task_image(build_meta):
+                logs.append("Docker image build failed after retries!")
+                update_status("failed", "failed", logs_list=logs)
+                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                return
+            logs.append("Docker image built successfully (final retry).")
 
         # Update status: Running Inference
         update_status("running", "running_inference", logs_list=logs)

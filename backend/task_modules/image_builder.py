@@ -27,6 +27,9 @@ from task_modules.docker_utils import _get_client
 from task_modules.docker_utils import image_exists as _image_exists
 
 MIN_BUILD_DISK_GB = 5
+BUILD_LOCK_TTL = 900  # 15 minutes — plenty for any build, short enough for stale locks
+BUILD_LOCK_RETRY_INTERVAL = 10  # seconds between retries
+BUILD_LOCK_MAX_WAIT = 300  # max seconds to block waiting for lock
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +97,44 @@ def _check_build_disk_space() -> bool:
     return True
 
 
+def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
+    """Try to acquire the build lock, optionally retrying up to *timeout* seconds."""
+    r = get_redis_client()
+    if not r:
+        return False
+    lock_key = _build_lock_key(task_id)
+    deadline = time.time() + timeout if timeout > 0 else 0
+    while True:
+        acquired = False
+        with contextlib.suppress(Exception):
+            result = r.set(lock_key, "1", nx=True, ex=BUILD_LOCK_TTL)
+            if result is not None:
+                acquired = bool(result)
+        if acquired:
+            return True
+        if deadline and time.time() < deadline:
+            time.sleep(BUILD_LOCK_RETRY_INTERVAL)
+            continue
+        return False
+
+
+def _release_build_lock(task_id: int) -> None:
+    r = get_redis_client()
+    if r is None:
+        return
+    with contextlib.suppress(Exception):
+        r.delete(_build_lock_key(task_id))
+
+
 def build_task_image(metadata: dict[str, Any]) -> bool:
     """Build (or skip) a Docker image for a single task.
+
+    Returns ``True`` if the image is ready (built or already up-to-date),
+    ``False`` on build failure.
+
+    If another build is in progress and returns within
+    ``BUILD_LOCK_MAX_WAIT`` seconds, this call blocks waiting for it
+    rather than immediately failing.
 
     Parameters are read from *metadata* (the same dict dispatched via
     Celery to ``evaluate_submission``):
@@ -112,26 +151,65 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
         logger.warning("build_task_image: no task_id in metadata")
         return False
 
-    # Acquire Redis lock to prevent concurrent builds for the same task
-    r = get_redis_client()
-    lock_key = _build_lock_key(task_id)
-    lock_acquired = False
-    if r:
-        with contextlib.suppress(Exception):
-            result = r.set(lock_key, "1", nx=True, ex=3600)
-            if result is not None:
-                lock_acquired = bool(result)
+    # Fast path: image already exists and is up-to-date
+    tag = f"lavbench_task_{task_id}"
+    if _image_exists(tag):
+        existing_hash = ""
+        meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", "hf_meta.json")
+        if os.path.isfile(meta_path):
+            with contextlib.suppress(Exception), open(meta_path) as f:
+                existing_hash = json.load(f).get("hash", "")
+        if existing_hash:
+            new_hash = _config_hash(
+                metadata.get("base_docker_image", ""),
+                metadata.get("pip_requirements", ""),
+                metadata.get("hf_datasets", "[]"),
+                metadata.get("hf_models", "[]"),
+            )
+            if existing_hash == new_hash:
+                logger.info("Task %s image up-to-date, skipping build", task_id)
+                return True
 
-    if not lock_acquired:
-        logger.info("Build already in progress for task %s, skipping", task_id)
-        return False
+    # Acquire lock — wait for another build to finish if one is in progress
+    acquired = _try_acquire_build_lock(task_id, timeout=BUILD_LOCK_MAX_WAIT)
+    if not acquired:
+        logger.warning(
+            "Build lock for task %s could not be acquired within %ss — another build may be stuck",
+            task_id,
+            BUILD_LOCK_MAX_WAIT,
+        )
+        # Final fallback: check if image now exists (the other build may have finished)
+        return _image_exists(tag)
 
     try:
         return _do_build(metadata)
     finally:
-        if r is not None:
-            with contextlib.suppress(Exception):
-                r.delete(lock_key)
+        _release_build_lock(task_id)
+
+
+def ensure_task_image(metadata: dict[str, Any]) -> bool:
+    """Blocking build: retry until the image exists or the build fails.
+
+    Unlike ``build_task_image`` (which skips if the lock is held),
+    this function blocks for up to ``BUILD_LOCK_MAX_WAIT`` seconds,
+    retries on transient failures, and only returns ``False`` when
+    the build truly cannot succeed.
+    """
+    task_id = metadata.get("task_id")
+    if not task_id:
+        return False
+    tag = f"lavbench_task_{task_id}"
+
+    # Give the build up to 3 attempts
+    for attempt in range(3):
+        if attempt > 0:
+            logger.info("Retrying image build for task %s (attempt %s/3)", task_id, attempt + 1)
+        if build_task_image(metadata):
+            return True
+        if _image_exists(tag):
+            return True
+        time.sleep(BUILD_LOCK_RETRY_INTERVAL)
+    return _image_exists(tag)
 
 
 def _do_build(metadata: dict[str, Any]) -> bool:
@@ -254,6 +332,28 @@ def _run_docker_build(tag: str, build_dir: str, logs: list[str]) -> tuple[int, s
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
         return -1, "", str(e), False
+
+
+def clear_build_lock(task_id: int) -> bool:
+    """Force-clear a stuck build lock for *task_id*.
+
+    Intended for manual/admin use when a worker crashes mid-build.
+    Returns ``True`` if a lock was actually held and cleared.
+    """
+    r = get_redis_client()
+    if not r:
+        return False
+    lock_key = _build_lock_key(task_id)
+    try:
+        deleted = r.delete(lock_key)
+        if deleted:
+            logger.info("Cleared stale build lock for task %s", task_id)
+            return True
+        logger.info("No build lock found for task %s", task_id)
+        return False
+    except Exception as e:
+        logger.warning("Failed to clear build lock for task %s: %s", task_id, e)
+        return False
 
 
 def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
