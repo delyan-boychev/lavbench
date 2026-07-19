@@ -27,6 +27,10 @@ export default function TaskForm({
   setBaselineFile,
   formatDateTime,
   savingTask = false,
+  evaluatorScript,
+  setEvaluatorScript,
+  evaluatorDeleted,
+  setEvaluatorDeleted,
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
@@ -713,6 +717,101 @@ export default function TaskForm({
               </div>
             </div>
 
+            {/* CUSTOM EVALUATOR SCRIPT */}
+            <div className="flex flex-col gap-4 border border-violet-500/20 p-5 bg-violet-950/10 rounded-xl">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-violet-300">
+                  {t('admin.tasks.custom_evaluator_script')}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400">
+                {t('admin.tasks.custom_evaluator_desc')}
+              </p>
+
+              {/* Existing Evaluator (editing) */}
+              {editingTask?.evaluator_script_path && !evaluatorScript && !evaluatorDeleted && (
+                <div className="flex items-center justify-between p-3 bg-slate-950 border border-violet-500/15 rounded-lg text-xs">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <FileText size={16} className="text-violet-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate text-slate-200 font-semibold font-mono block">
+                        evaluator.py
+                      </span>
+                      {editingTask.evaluator_metric_name && (
+                        <span className="text-violet-400 text-[10px] font-mono">
+                          {editingTask.evaluator_metric_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEvaluatorDeleted(true)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Replace / Upload */}
+              {(!editingTask?.evaluator_script_path || evaluatorDeleted) && !evaluatorScript && (
+                <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 transition-colors">
+                  <input
+                    type="file"
+                    accept=".py"
+                    id="evaluator-script-upload"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setEvaluatorScript(file);
+                        setEvaluatorDeleted(false);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="evaluator-script-upload"
+                    className="cursor-pointer flex flex-col items-center gap-2"
+                  >
+                    <FileText size={24} className="text-slate-500" />
+                    <span className="text-xs text-slate-400 font-medium">
+                      {t('admin.tasks.custom_evaluator_upload_label')}
+                    </span>
+                    <span className="text-[10px] text-slate-500">.py</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Newly selected evaluator script */}
+              {evaluatorScript && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between p-3 bg-slate-950 border border-emerald-500/15 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText size={16} className="text-emerald-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <span className="truncate text-slate-200 font-semibold font-mono block">
+                          {evaluatorScript.name}
+                        </span>
+                        <span className="text-slate-500 text-[10px]">
+                          {(evaluatorScript.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEvaluatorScript(null)}
+                      className="text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  {/* Read file content preview */}
+                  <ScriptPreview file={evaluatorScript} />
+                </div>
+              )}
+            </div>
+
             {evalContent}
           </div>
         )}
@@ -1203,6 +1302,40 @@ export default function TaskForm({
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function ScriptPreview({ file }) {
+  const [content, setContent] = useState('');
+  const [metricName, setMetricName] = useState('');
+
+  useEffect(() => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      if (typeof text !== 'string') return;
+      setContent(text);
+      const match = text.match(/^METRIC_NAME\s*=\s*["']([^"']+)["']/m);
+      setMetricName(match ? match[1] : '');
+    };
+    reader.readAsText(file);
+  }, [file]);
+
+  if (!content) return null;
+
+  return (
+    <div className="rounded-lg border border-white/5 overflow-hidden">
+      {metricName && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border-b border-violet-500/20">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider">Metric:</span>
+          <span className="text-xs font-mono font-bold text-violet-300">{metricName}</span>
+        </div>
+      )}
+      <pre className="text-[11px] text-slate-400 leading-relaxed p-3 max-h-32 overflow-y-auto bg-slate-950/80 font-mono whitespace-pre-wrap">
+        {content.length > 800 ? content.slice(0, 800) + '\n...' : content}
+      </pre>
     </div>
   );
 }

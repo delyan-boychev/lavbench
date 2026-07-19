@@ -69,6 +69,32 @@ tasks_bp = Blueprint("tasks", __name__)
 logger = logging.getLogger(__name__)
 
 
+def _parse_evaluator_script(code: str) -> str | None:
+    """Extract METRIC_NAME from a custom evaluator script using AST.
+
+    Returns the metric name string, or None if not found.
+    """
+    try:
+        import ast
+
+        tree = ast.parse(code)
+        for node in ast.iter_child_nodes(tree):
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "METRIC_NAME"
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                name = node.value.value.strip()
+                if name:
+                    return name
+    except SyntaxError:
+        pass
+    return None
+
+
 class UUIDEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
         import uuid
@@ -370,6 +396,16 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
+            try:
+                code = f.read().decode("utf-8")
+                f.seek(0)
+            except Exception:
+                with open(save_path, encoding="utf-8") as ef:
+                    code = ef.read()
+            task.custom_eval_code = code
+            parsed_metric = _parse_evaluator_script(code)
+            if parsed_metric:
+                task.evaluator_metric_name = parsed_metric
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]
@@ -646,6 +682,16 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
+            try:
+                code = f.read().decode("utf-8")
+                f.seek(0)
+            except Exception:
+                with open(save_path, encoding="utf-8") as ef:
+                    code = ef.read()
+            task.custom_eval_code = code
+            parsed_metric = _parse_evaluator_script(code)
+            if parsed_metric:
+                task.evaluator_metric_name = parsed_metric
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]
@@ -695,6 +741,8 @@ def update_task(
         if os.path.exists(task.evaluator_script_path):
             os.remove(task.evaluator_script_path)
         task.evaluator_script_path = None
+        task.custom_eval_code = None
+        task.evaluator_metric_name = None
     if form.delete_baseline and task.baseline_notebook_path:
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)

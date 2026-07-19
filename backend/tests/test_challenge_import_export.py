@@ -414,7 +414,10 @@ class TestImportChallenge:
 
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("challenge.json", json.dumps(manifest))
-            zf.writestr(f"tasks/{old_task_uuid}/evaluator.py", b"print('evaluator')")
+            zf.writestr(
+                f"tasks/{old_task_uuid}/evaluator.py",
+                b'METRIC_NAME = "import_metric"\nprint("evaluator")\n',
+            )
             zf.writestr(f"tasks/{old_task_uuid}/baseline_test.ipynb", b"print('notebook')")
             zf.writestr(f"tasks/{old_task_uuid}/labels.parquet", b"labels_content")
 
@@ -453,7 +456,7 @@ class TestImportChallenge:
         assert os.path.isfile(labels_local)
 
         with open(evaluator_local, "rb") as f:
-            assert f.read() == b"print('evaluator')"
+            assert b"METRIC_NAME" in f.read()
 
         with open(baseline_local, "rb") as f:
             assert f.read() == b"print('notebook')"
@@ -462,6 +465,7 @@ class TestImportChallenge:
             assert f.read() == b"labels_content"
 
         assert new_task.evaluator_script_path == evaluator_local
+        assert new_task.evaluator_metric_name == "import_metric"
         assert new_task.baseline_notebook_path == baseline_local
 
 

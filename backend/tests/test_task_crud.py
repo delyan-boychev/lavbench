@@ -226,7 +226,7 @@ class TestCreateTask:
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
-        script = io.BytesIO(b"def evaluate(): pass\n")
+        script = io.BytesIO(b'METRIC_NAME = "my_eval"\ndef evaluate(): pass\n')
         data = {
             "title": "Eval Script Task",
             "baseline_notebook": (nb, "baseline.ipynb"),
@@ -236,6 +236,7 @@ class TestCreateTask:
         assert resp.status_code == 201
         body = resp.get_json()
         assert body["evaluator_script_path"] is not None
+        assert body["evaluator_metric_name"] == "my_eval"
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")

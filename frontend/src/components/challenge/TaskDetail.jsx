@@ -183,6 +183,22 @@ export default function TaskDetail({ task }) {
                 />
               </svg>
               <span>{t('challenge.jury_custom_evaluator')}</span>
+              {task.evaluator_metric_name && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: '1px 8px',
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    borderRadius: 10,
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    color: 'var(--accent)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {task.evaluator_metric_name}
+                </span>
+              )}
             </div>
             <p>{t('challenge.jury_custom_evaluator_desc')}</p>
           </div>

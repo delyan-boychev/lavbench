@@ -988,3 +988,106 @@ class TestMetricsCalculationEdgeCases:
         res_reg = evaluate_predictions(df_sub_reg, df_labels_reg, {"mse": {"weight": 1.0}})
         assert "mse" in res_reg
         assert res_reg["mse"] == 999.0
+
+
+class TestCustomEvaluator:
+    """Tests for the custom evaluator script integration."""
+
+    EVAL_SCRIPT = """\
+METRIC_NAME = "custom_f1"
+
+def evaluate(df_sub, df_labels, options=None):
+    import pandas as pd
+    merged = df_sub.merge(df_labels, on="id", suffixes=("_sub", "_label"))
+    correct = (merged["pred"] == merged["label"]).sum()
+    total = len(merged)
+    return {"custom_f1": correct / total if total > 0 else 0.0}
+"""
+
+    def test_custom_evaluator_basic(self):
+        df_s = pd.DataFrame({"id": [1, 2, 3], "pred": ["a", "b", "c"]})
+        df_l = pd.DataFrame({"id": [1, 2, 3], "label": ["a", "b", "c"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+        )
+        assert res["custom_f1"] == pytest.approx(1.0)
+
+    def test_custom_evaluator_partial(self):
+        df_s = pd.DataFrame({"id": [1, 2, 3], "pred": ["a", "x", "c"]})
+        df_l = pd.DataFrame({"id": [1, 2, 3], "label": ["a", "b", "c"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+        )
+        assert res["custom_f1"] == pytest.approx(2 / 3)
+
+    def test_custom_evaluator_with_options(self):
+        script = """\
+METRIC_NAME = "weighted_acc"
+
+def evaluate(df_sub, df_labels, options=None):
+    if options is None:
+        options = {}
+    import pandas as pd
+    merged = df_sub.merge(df_labels, on="id")
+    correct = (merged["pred"] == merged["label"]).sum()
+    total = len(merged)
+    threshold = float(options.get("threshold", 0.0))
+    score = correct / total if total > 0 else 0.0
+    return {"weighted_acc": score + threshold}
+"""
+        df_s = pd.DataFrame({"id": [1, 2], "pred": ["a", "b"]})
+        df_l = pd.DataFrame({"id": [1, 2], "label": ["a", "b"]})
+        opts = {"threshold": "0.5"}
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"weighted_acc": {"weight": 1.0, "options": opts}},
+            custom_eval_code=script,
+        )
+        assert res["weighted_acc"] == pytest.approx(1.5)
+
+    def test_custom_evaluator_empty_dataframes(self):
+        df_s = pd.DataFrame({"id": pd.Series(dtype="int"), "pred": pd.Series(dtype="str")})
+        df_l = pd.DataFrame({"id": pd.Series(dtype="int"), "label": pd.Series(dtype="str")})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+        )
+        assert res == {}
+
+    def test_custom_evaluator_no_custom_code(self):
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+        )
+        assert res == {}
+
+    def test_custom_evaluator_returns_multiple_metrics(self):
+        script = """\
+METRIC_NAME = "multi_eval"
+
+def evaluate(df_sub, df_labels, options=None):
+    return {"my_acc": 0.9, "my_f1": 0.85, "my_loss": 0.1}
+"""
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"my_acc": {"weight": 1.0}, "my_f1": {"weight": 1.0}, "my_loss": {"weight": 1.0}},
+            custom_eval_code=script,
+        )
+        assert res["my_acc"] == pytest.approx(0.9)
+        assert res["my_f1"] == pytest.approx(0.85)
+        assert res["my_loss"] == pytest.approx(0.1)

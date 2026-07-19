@@ -1353,6 +1353,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -1362,6 +1367,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -1414,6 +1434,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -1768,6 +1793,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -1777,6 +1807,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -1829,6 +1874,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -2446,6 +2496,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -2455,6 +2510,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -2507,6 +2577,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -2675,6 +2750,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -2684,6 +2764,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -2736,6 +2831,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -3096,6 +3196,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -3105,6 +3210,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -3157,6 +3277,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -3855,6 +3980,11 @@ export interface components {
              */
             base_docker_image: string | null;
             /**
+             * Baseline Notebook Path
+             * @default null
+             */
+            baseline_notebook_path: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -3864,6 +3994,21 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
+             * Evaluator Script Path
+             * @default null
+             */
+            evaluator_script_path: string | null;
             /**
              * Files
              * @default []
@@ -3916,6 +4061,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Solution Notebook Path
+             * @default null
+             */
+            solution_notebook_path: string | null;
             /**
              * Stage Id
              * @default null
@@ -4780,6 +4930,16 @@ export interface components {
              */
             description: string | null;
             /**
+             * Evaluator Metric Name
+             * @default null
+             */
+            evaluator_metric_name: string | null;
+            /**
+             * Evaluator Options Schema
+             * @default null
+             */
+            evaluator_options_schema: string | null;
+            /**
              * Evaluator Script Path
              * @default null
              */
@@ -5328,6 +5488,19 @@ export interface components {
             tasks: {
                 [key: string]: unknown;
             }[];
+        };
+        /** WorkerHfKeyResponse */
+        "WorkerHfKeyResponse.6bc6f68": {
+            /**
+             * Hf Key
+             * @default null
+             */
+            hf_key: string | null;
+        };
+        /** WorkerLogsResponse */
+        "WorkerLogsResponse.6bc6f68": {
+            /** Status */
+            status: string;
         };
         /** WorkerReportResponse */
         "WorkerReportResponse.6bc6f68": {
@@ -8018,7 +8191,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerHfKeyResponse.6bc6f68"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
     };
     post__api_workers_logs: {
         parameters: {
@@ -8028,6 +8238,52 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerLogsResponse.6bc6f68"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
     };
 }

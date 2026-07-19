@@ -131,6 +131,8 @@ export default function AdminPanel() {
   // Task Upload Files
   const [taskFiles, setTaskFiles] = useState([]);
   const [baselineFile, setBaselineFile] = useState(null);
+  const [evaluatorScript, setEvaluatorScript] = useState(null);
+  const [evaluatorDeleted, setEvaluatorDeleted] = useState(false);
 
   // Stage CRUD & Finalization State
   const [isCreatingStage, setIsCreatingStage] = useState(false);
@@ -816,6 +818,8 @@ export default function AdminPanel() {
     });
     setTaskFiles([]);
     setBaselineFile(null);
+    setEvaluatorScript(null);
+    setEvaluatorDeleted(false);
     setIsCreatingTask(true);
   };
 
@@ -855,6 +859,8 @@ export default function AdminPanel() {
     setEditingTask(task);
     setTaskFiles([]);
     setBaselineFile(null);
+    setEvaluatorScript(null);
+    setEvaluatorDeleted(false);
   };
 
   const prepareTaskFormData = () => {
@@ -922,6 +928,11 @@ export default function AdminPanel() {
 
     // Special uploads
     if (baselineFile) formData.append('baseline_notebook', baselineFile);
+    if (evaluatorScript) {
+      formData.append('evaluator_script', evaluatorScript);
+    } else if (evaluatorDeleted) {
+      formData.append('delete_evaluator', 'true');
+    }
 
     return formData;
   };
@@ -2317,6 +2328,10 @@ export default function AdminPanel() {
               setBaselineFile={setBaselineFile}
               formatDateTime={formatDateTime}
               savingTask={savingTask}
+              evaluatorScript={evaluatorScript}
+              setEvaluatorScript={setEvaluatorScript}
+              evaluatorDeleted={evaluatorDeleted}
+              setEvaluatorDeleted={setEvaluatorDeleted}
             />
           )}
 

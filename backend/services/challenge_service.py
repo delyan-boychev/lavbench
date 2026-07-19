@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import uuid
 import zipfile
 from datetime import datetime
@@ -15,6 +16,8 @@ from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission
 from utils.dates import utcnow
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 
@@ -433,6 +436,18 @@ def import_challenge_from_dict(
                     eval_path = os.path.join(task_dir, secure_filename(eval_base))
                     if os.path.isfile(eval_path):
                         task.evaluator_script_path = eval_path
+                        try:
+                            with open(eval_path, encoding="utf-8") as ef:
+                                code = ef.read()
+                            task.custom_eval_code = code
+                            from routes.tasks import _parse_evaluator_script
+
+                            metric_name = _parse_evaluator_script(code)
+                            if metric_name:
+                                task.evaluator_metric_name = metric_name
+                        except Exception:
+                            logger.exception("Failed to read evaluator script during import")
+                            pass
 
                 if t_data.get("baseline_notebook_path"):
                     base_base = os.path.basename(t_data["baseline_notebook_path"])

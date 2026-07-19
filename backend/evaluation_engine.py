@@ -587,16 +587,49 @@ def compute_retrieval_metrics(
 
 
 # ---------------------------------------------------------
-# 4. MAIN EVALUATION & METRIC RESOLUTION ROUTINE
+# 4. CUSTOM EVALUATOR EXECUTION
+# ---------------------------------------------------------
+
+
+def _run_custom_evaluator(
+    code: str,
+    df_sub: pd.DataFrame,
+    df_labels: pd.DataFrame,
+    options: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """Executes a custom evaluator script and returns its metric results.
+
+    The script must define:
+        METRIC_NAME (str)
+        evaluate(df_sub, df_labels, options) -> dict[str, float]
+    """
+    try:
+        local_ns: dict[str, Any] = {}
+        exec(code, local_ns)  # noqa: S102
+        if "evaluate" not in local_ns:
+            logger.warning("Custom evaluator missing 'evaluate' function")
+            return {}
+        return local_ns["evaluate"](df_sub, df_labels, options or {})
+    except Exception as e:
+        logger.warning("Custom evaluator failed: %s", e)
+        return {}
+
+
+# ---------------------------------------------------------
+# 5. MAIN EVALUATION & METRIC RESOLUTION ROUTINE
 # ---------------------------------------------------------
 
 
 def evaluate_predictions(
-    df_sub: pd.DataFrame, df_labels: pd.DataFrame, metrics_cfg: dict[str, Any] | None
+    df_sub: pd.DataFrame,
+    df_labels: pd.DataFrame,
+    metrics_cfg: dict[str, Any] | None,
+    custom_eval_code: str | None = None,
 ) -> dict[str, Any]:
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
     metrics_cfg: dict of {metric_name: {weight: float, higher_is_better: bool}}
+    custom_eval_code: optional Python code defining a custom evaluator
     """
     if not metrics_cfg:
         metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
@@ -998,6 +1031,20 @@ def evaluate_predictions(
             val = adjusted_mutual_info_score(y_true, y_pred)
         elif m_name_clean == "v_measure":
             val = v_measure_score(y_true, y_pred)
+
+        # 13. Custom evaluator dispatch
+        elif custom_eval_code:
+            try:
+                result = _run_custom_evaluator(custom_eval_code, df_sub, df_labels, m_opts)
+                val = float(result[m_name_clean]) if m_name_clean in result else 0.0
+            except Exception as e:
+                logger.warning(
+                    "Custom evaluator metric '%s' failed, using fallback 0.0: %s", m_name, e
+                )
+                val = 0.0
+        else:
+            # Skip unknown metrics when no custom evaluator code is provided
+            continue
 
         payload[m_name] = float(val)
 
