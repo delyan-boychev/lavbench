@@ -79,7 +79,7 @@ print(f'WORKER_PRIVATE_KEY={priv}')
 ")
 WORKER_PUBLIC_KEY=$(echo "$KEYPAIR" | grep WORKER_PUBLIC_KEY | cut -d= -f2-)
 WORKER_PRIVATE_KEY=$(echo "$KEYPAIR" | grep WORKER_PRIVATE_KEY | cut -d= -f2-)
-set_if_missing "WORKER_PUBLIC_KEY" "$WORKER_PUBLIC_KEY"
+set_env "WORKER_PUBLIC_KEY" "$WORKER_PUBLIC_KEY"
 
 # ── Read existing values ───────────────────────────────────────────
 read_env() {
