@@ -252,8 +252,8 @@ class TestUpdateStage:
         )
         assert res.status_code == 200
         data = res.get_json()
-        assert data["start_time"] == new_start + "Z"
-        assert data["end_time"] == new_end + "Z"
+        assert data["start_time"] == new_start + "+00:00"
+        assert data["end_time"] == new_end + "+00:00"
 
     def test_update_stage_stage_number(
         self,

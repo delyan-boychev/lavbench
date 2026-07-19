@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Self
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -36,8 +37,16 @@ class CreateChallengeSchema(_ChallengeLimits):
 
     @model_validator(mode="after")
     def check_dates(self) -> Self:
-        if self.end_time and self.start_time and self.end_time <= self.start_time:
-            raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
+        start = self.start_time
+        end = self.end_time
+        if start and end:
+            tz = ZoneInfo(self.timezone) if self.timezone != "UTC" else UTC
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=tz)
+            if end <= start:
+                raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
         return self
 
 
@@ -65,6 +74,15 @@ class UpdateChallengeSchema(BaseModel):
 
     @model_validator(mode="after")
     def check_dates(self) -> Self:
-        if self.end_time and self.start_time and self.end_time <= self.start_time:
-            raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
+        start = self.start_time
+        end = self.end_time
+        if start and end:
+            tz_str = self.timezone or "UTC"
+            tz = ZoneInfo(tz_str) if tz_str != "UTC" else UTC
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=tz)
+            if end <= start:
+                raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
         return self

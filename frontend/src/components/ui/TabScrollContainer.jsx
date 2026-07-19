@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function TabScrollContainer({ children }) {
   const { t } = useTranslation();
@@ -56,15 +57,7 @@ export default function TabScrollContainer({ children }) {
           className="absolute left-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -ml-3"
           title={t('common.scroll_left')}
         >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
+          <ChevronLeft className="w-4 h-4" />
         </button>
       )}
 
@@ -98,15 +91,7 @@ export default function TabScrollContainer({ children }) {
           className="absolute right-0 z-10 flex items-center justify-center w-7 h-7 bg-slate-900/90 border border-slate-800 rounded-full text-slate-400 hover:text-white shadow-lg backdrop-blur-sm hover:border-slate-700 cursor-pointer transition-all -mr-3"
           title={t('common.scroll_right')}
         >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className="w-4 h-4" />
         </button>
       )}
     </div>

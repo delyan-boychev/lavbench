@@ -11,43 +11,14 @@ import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import CountdownTimer from './CountdownTimer';
+import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
 
 function SunIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <circle cx="12" cy="12" r="5" />
-      <path
-        strokeLinecap="round"
-        d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-      />
-    </svg>
-  );
+  return <Sun size={15} />;
 }
 
 function MoonIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
-      />
-    </svg>
-  );
+  return <Moon size={15} />;
 }
 
 export default function Navbar() {
@@ -246,20 +217,7 @@ export default function Navbar() {
               className="hover:scale-[1.02] active:scale-[0.98] select-none"
               title={t('nav.docs_title')}
             >
-              <svg
-                width="13"
-                height="13"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                />
-              </svg>
+              <BookOpen size={13} strokeWidth={2.5} />
               {t('nav.docs')}
             </button>
           )}
@@ -345,29 +303,7 @@ export default function Navbar() {
               flexShrink: 0,
             }}
           >
-            {mobileMenuOpen ? (
-              <svg
-                width="16"
-                height="16"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg
-                width="16"
-                height="16"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            )}
+            {mobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
 
           {/* Language toggle */}
@@ -452,20 +388,7 @@ export default function Navbar() {
               flexShrink: 0,
             }}
           >
-            <svg
-              width="15"
-              height="15"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
+            <LogOut size={15} />
           </button>
         </div>
       </div>
@@ -578,20 +501,7 @@ export default function Navbar() {
                 justifyContent: 'center',
               }}
             >
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                />
-              </svg>
+              <BookOpen size={14} />
               {t('nav.docs')}
             </button>
           )}
@@ -613,20 +523,7 @@ export default function Navbar() {
               justifyContent: 'center',
             }}
           >
-            <svg
-              width="14"
-              height="14"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
+            <LogOut size={14} />
             {t('nav.sign_out')}
           </button>
         </div>

@@ -27,6 +27,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
 
     files = db.Column(db.Text, default="[]")
     custom_eval_code = db.Column(db.Text, nullable=True)
+    evaluator_metric_name = db.Column(db.String(128), nullable=True)
+    evaluator_options_schema = db.Column(db.Text, nullable=True)
 
     ram_limit_mb = db.Column(db.Integer, nullable=True)
     time_limit_sec = db.Column(db.Integer, nullable=True)
@@ -136,6 +138,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "whitelisted_imports": self.whitelisted_imports,
             "metrics_config": metrics_cfg_val,
             "evaluator_script_path": self.evaluator_script_path if show_internal else None,
+            "evaluator_metric_name": self.evaluator_metric_name,
+            "evaluator_options_schema": self.evaluator_options_schema,
             "baseline_notebook_path": self.baseline_notebook_path if show_internal else None,
             "solution_notebook_path": self.solution_notebook_path if show_internal else None,
             "hf_datasets": hf_datasets_list,

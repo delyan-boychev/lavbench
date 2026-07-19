@@ -916,13 +916,27 @@ def run_eval_submission(
                             )
 
                         # Compute metrics (skip empty splits)
+                        eval_kwargs = {}
+                        if task and getattr(task, "custom_eval_code", None):
+                            eval_kwargs["custom_eval_code"] = task.custom_eval_code
+
                         m_pub = (
-                            evaluate_predictions(df_sub_pub, df_labels_pub, metrics_cfg)
+                            evaluate_predictions(
+                                df_sub_pub,
+                                df_labels_pub,
+                                metrics_cfg,
+                                **eval_kwargs,
+                            )
                             if len(df_labels_pub) > 0
                             else {}
                         )
                         m_priv = (
-                            evaluate_predictions(df_sub_priv, df_labels_priv, metrics_cfg)
+                            evaluate_predictions(
+                                df_sub_priv,
+                                df_labels_priv,
+                                metrics_cfg,
+                                **eval_kwargs,
+                            )
                             if len(df_labels_priv) > 0
                             else {}
                         )

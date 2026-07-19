@@ -784,7 +784,7 @@ def create_stage(
 
     invalidate_entity_cache(challenge_id)
 
-    return stage.to_dict(), 201
+    return stage.to_dict(challenge.timezone or "UTC"), 201
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["PUT"])
@@ -844,7 +844,7 @@ def update_stage(
 
     invalidate_entity_cache(challenge_id)
 
-    return stage.to_dict()
+    return stage.to_dict(challenge.timezone or "UTC")
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>/reveal-results", methods=["PUT"])
@@ -861,7 +861,7 @@ def toggle_stage_reveal_results(
     challenge_id: Any, stage_id: Any, json: RevealResultsSchema
 ) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Toggle reveal_results on a finalized stage."""
-    db.get_or_404(Challenge, challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if not stage.is_finalized:
@@ -874,7 +874,7 @@ def toggle_stage_reveal_results(
     db.session.commit()
 
     invalidate_entity_cache(challenge_id)
-    return stage.to_dict()
+    return stage.to_dict(challenge.timezone or "UTC")
 
 
 @challenges_bp.route("/<uuid:challenge_id>/stages/<uuid:stage_id>", methods=["DELETE"])
@@ -986,7 +986,7 @@ def finalize_stage(
 
     invalidate_entity_cache(challenge_id)
 
-    return stage.to_dict()
+    return stage.to_dict(challenge.timezone or "UTC")
 
 
 @challenges_bp.route("/<uuid:challenge_id>/test-stage", methods=["POST"])
@@ -995,7 +995,7 @@ def finalize_stage(
 @jury_access_required
 @api.validate(
     json=CreateTestStageSchema,
-    resp=Response(HTTP_201=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -1046,7 +1046,7 @@ def create_test_stage(
 
     invalidate_challenge_cache(challenge_id)
 
-    return stage.to_dict(), 201
+    return stage.to_dict(challenge.timezone or "UTC"), 201
 
 
 @challenges_bp.route("/<uuid:challenge_id>/export-results", methods=["GET"])

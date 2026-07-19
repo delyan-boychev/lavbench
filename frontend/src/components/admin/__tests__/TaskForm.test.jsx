@@ -98,6 +98,12 @@ vi.mock('lucide-react', () => ({
   Folder: () => <span data-testid="icon-folder" />,
   Plus: () => <span data-testid="icon-plus" />,
   FileText: () => <span data-testid="icon-filetext" />,
+  X: () => <span data-testid="icon-x" />,
+  Trash2: () => <span data-testid="icon-trash2" />,
+  Package: () => <span data-testid="icon-package" />,
+  Zap: () => <span data-testid="icon-zap" />,
+  ChevronDown: () => <span data-testid="icon-chevron-down" />,
+  Check: () => <span data-testid="icon-check" />,
 }));
 
 describe('TaskForm', () => {
@@ -399,6 +405,61 @@ describe('TaskForm', () => {
       fireEvent.click(screen.getByText('Files'));
       expect(screen.getByTestId('existing-file-labels.parquet')).toBeInTheDocument();
       expect(screen.getByText('labels.parquet')).toBeInTheDocument();
+    });
+  });
+
+  describe('Evaluator Section', () => {
+    it('renders custom evaluator section in Evaluation tab', () => {
+      renderTaskForm();
+      fireEvent.click(screen.getByText('Evaluation'));
+      expect(screen.getByText('Custom Evaluator Script')).toBeInTheDocument();
+    });
+
+    it('shows existing evaluator file when editingTask has evaluator_script_path', () => {
+      const editingTask = {
+        id: 1,
+        title: 'Edit Eval Task',
+        challenge_id: 1,
+        evaluator_script_path: '/path/to/evaluator.py',
+        evaluator_metric_name: 'my_metric',
+      };
+      renderTaskForm({ editingTask, isCreatingTask: false });
+      fireEvent.click(screen.getByText('Evaluation'));
+      expect(screen.getByText('evaluator.py')).toBeInTheDocument();
+      expect(screen.getByText('my_metric')).toBeInTheDocument();
+    });
+
+    it('shows existing evaluator without metric name when none is set', () => {
+      const editingTask = {
+        id: 2,
+        title: 'Edit Eval No Metric',
+        challenge_id: 1,
+        evaluator_script_path: '/path/to/eval.py',
+        evaluator_metric_name: null,
+      };
+      renderTaskForm({ editingTask, isCreatingTask: false });
+      fireEvent.click(screen.getByText('Evaluation'));
+      expect(screen.getByText('evaluator.py')).toBeInTheDocument();
+    });
+
+    it('shows upload area when no evaluator exists', () => {
+      renderTaskForm();
+      fireEvent.click(screen.getByText('Evaluation'));
+      expect(screen.getByText('.py')).toBeInTheDocument();
+    });
+
+    it('existing evaluator has a remove button', () => {
+      const editingTask = {
+        id: 1,
+        title: 'Edit Eval Task',
+        challenge_id: 1,
+        evaluator_script_path: '/path/to/evaluator.py',
+        evaluator_metric_name: 'my_metric',
+      };
+      renderTaskForm({ editingTask, isCreatingTask: false });
+      fireEvent.click(screen.getByText('Evaluation'));
+      expect(screen.getByText('evaluator.py')).toBeInTheDocument();
+      expect(screen.getByTestId('icon-x')).toBeInTheDocument();
     });
   });
 

@@ -87,7 +87,7 @@ read_env() {
 }
 POSTGRES_PASSWORD=$(read_env "POSTGRES_PASSWORD")
 REDIS_PASSWORD=$(read_env "REDIS_PASSWORD")
-WORKER_PRIVATE_KEY=$(grep "^WORKER_PRIVATE_KEY=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-) || true
+WORKER_PRIVATE_KEY="${WORKER_PRIVATE_KEY:-$(grep "^WORKER_PRIVATE_KEY=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)}" || true
 
 # ── Interative prompts ─────────────────────────────────────────────
 echo ""

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 
 const NAMES = [
   'Alpha-Titan',
@@ -102,17 +103,13 @@ export default function LeaderboardDemo() {
               <div className="w-16 text-center">
                 {delta > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-emerald-400 font-bold text-xs animate-[slideUp_0.5s_ease-out]">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4l-8 8h5v8h6v-8h5z" />
-                    </svg>
+                    <TrendingUp className="w-3 h-3" />
                     {delta}
                   </span>
                 )}
                 {delta < 0 && (
                   <span className="inline-flex items-center gap-0.5 text-rose-400 font-bold text-xs animate-[slideDown_0.5s_ease-out]">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 20l8-8h-5V4H9v8H4z" />
-                    </svg>
+                    <TrendingDown className="w-3 h-3" />
                     {Math.abs(delta)}
                   </span>
                 )}

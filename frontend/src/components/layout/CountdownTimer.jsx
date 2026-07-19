@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { Clock } from 'lucide-react';
 
 /**
  * CountdownTimer Component
@@ -142,20 +143,7 @@ export default function CountdownTimer({ selectedChallenge }) {
         className={isFlashing ? 'animate-flash-red' : ''}
         title={titleStr}
       >
-        <svg
-          width="13"
-          height="13"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <Clock size={13} strokeWidth={2.5} />
         <span>
           {labelStr}: {timeStr}
         </span>
@@ -201,20 +189,7 @@ export default function CountdownTimer({ selectedChallenge }) {
         className={isFlashing ? 'animate-flash-purple' : ''}
         title={t('nav.stage_starts_in_title', { stage: upcomingStage.stage_number })}
       >
-        <svg
-          width="13"
-          height="13"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <Clock size={13} strokeWidth={2.5} />
         <span>
           {t('nav.stage_starts_in', { stage: upcomingStage.stage_number })}: {timeStr}
         </span>
@@ -260,20 +235,7 @@ export default function CountdownTimer({ selectedChallenge }) {
         className={isFlashing ? 'animate-flash-purple' : ''}
         title={t('nav.starts_in_title')}
       >
-        <svg
-          width="13"
-          height="13"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <Clock size={13} strokeWidth={2.5} />
         <span>
           {t('nav.starts_in')}: {timeStr}
         </span>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import InputField from '../ui/InputField';
 import Button from '../ui/Button';
@@ -6,7 +6,20 @@ import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
 import TabScrollContainer from '../ui/TabScrollContainer';
-import { Pencil, BarChart3, Lock, Box, Folder, Plus, FileText, X } from 'lucide-react';
+import {
+  Pencil,
+  BarChart3,
+  Lock,
+  Box,
+  Folder,
+  Plus,
+  FileText,
+  X,
+  Trash2,
+  Package,
+  Zap,
+} from 'lucide-react';
+import CodeHighlight from '../ui/CodeHighlight';
 
 export default function TaskForm({
   taskForm,
@@ -27,9 +40,77 @@ export default function TaskForm({
   setBaselineFile,
   formatDateTime,
   savingTask = false,
+  evaluatorScript,
+  setEvaluatorScript,
+  evaluatorDeleted,
+  setEvaluatorDeleted,
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
+  const [evaluatorMetricName, setEvaluatorMetricName] = useState(
+    editingTask?.evaluator_metric_name || '',
+  );
+  const [, setEvalParsedData] = useState(null);
+  const [evaluatorOptions, setEvaluatorOptions] = useState({});
+
+  const evaluatorIsActive =
+    evaluatorScript != null || (editingTask?.evaluator_script_path && !evaluatorDeleted);
+
+  useEffect(() => {
+    if (!evaluatorMetricName || !evaluatorIsActive) return;
+    let metricsObj = {};
+    try {
+      metricsObj = JSON.parse(taskForm.metrics_config) || {};
+    } catch {
+      /* noop */
+    }
+    const current = metricsObj[evaluatorMetricName];
+    if (!current) {
+      const updated = {
+        ...metricsObj,
+        [evaluatorMetricName]: { weight: 1.0, options: evaluatorOptions },
+      };
+      setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updated) });
+    } else if (JSON.stringify(current.options) !== JSON.stringify(evaluatorOptions)) {
+      const updated = {
+        ...metricsObj,
+        [evaluatorMetricName]: { ...current, options: evaluatorOptions },
+      };
+      setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updated) });
+    }
+  }, [evaluatorMetricName, evaluatorIsActive, evaluatorOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleScriptParsed = useCallback(
+    (data) => {
+      setEvalParsedData(data);
+      if (data) {
+        setEvaluatorMetricName(data.metricName);
+        setEvaluatorOptions(data.options);
+        setTaskForm((prev) => {
+          const updated = {
+            [data.metricName]: { weight: 1.0, options: data.options },
+          };
+          return { ...prev, metrics_config: JSON.stringify(updated) };
+        });
+      }
+    },
+    [setTaskForm],
+  );
+
+  const removeMetricFromConfig = (mName) => {
+    if (!mName) return;
+    let metricsObj;
+    try {
+      metricsObj = JSON.parse(taskForm.metrics_config) || {};
+    } catch {
+      return;
+    }
+    if (metricsObj[mName]) {
+      const updated = { ...metricsObj };
+      delete updated[mName];
+      setTaskForm({ ...taskForm, metrics_config: JSON.stringify(updated) });
+    }
+  };
 
   const existingBaselineFile = useMemo(() => {
     if (!editingTask?.files) return null;
@@ -155,10 +236,16 @@ export default function TaskForm({
 
     const columnNames = columnsDef.map((c) => c.name).filter(Boolean);
 
+    const effectiveMetrics = evaluatorMetricName
+      ? { ...availableMetrics, [evaluatorMetricName]: {} }
+      : availableMetrics;
+
     return (
       <div className="flex flex-col gap-6">
         {/* COLUMN DEFINITIONS */}
-        <div className="relative z-20 flex flex-col gap-4 border border-emerald-500/20 p-5 bg-emerald-950/10 rounded-xl">
+        <div
+          className={`relative z-20 flex-col gap-4 border border-emerald-500/20 p-5 bg-emerald-950/10 rounded-xl ${evaluatorIsActive ? 'hidden' : 'flex'}`}
+        >
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-bold text-emerald-300">
               {t('admin.tasks.column_definitions')}
@@ -228,20 +315,7 @@ export default function TaskForm({
                           onClick={() => removeColumn(idx)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </td>
                     </tr>
@@ -273,33 +347,35 @@ export default function TaskForm({
             </div>
           )}
 
-          <div className="flex gap-2 w-full">
-            <SelectField
-              options={Object.keys(availableMetrics)
-                .filter((m) => !metricsOnly[m])
-                .sort()
-                .map((m) => ({ value: m, label: formatMetricName(m) }))}
-              value=""
-              onChange={(mName) => {
-                if (mName && !metricsOnly[mName]) {
-                  let updatedObj = { ...metricsObj };
-                  const schema = availableMetrics[mName] || {};
-                  let defaultOpts = { column: columnNames[0] || '' };
-                  if (schema.average) defaultOpts.average = schema.average[0];
-                  if (schema.rouge_type) defaultOpts.rouge_type = schema.rouge_type[0];
-                  if (schema.k) defaultOpts.k = parseInt(schema.k[0]);
-                  if (schema.threshold) defaultOpts.threshold = parseFloat(schema.threshold[0]);
-                  if (schema.beta) defaultOpts.beta = parseInt(schema.beta[0]);
-                  if (schema.shape) defaultOpts.shape = '0';
-                  if (schema.multioutput) defaultOpts.multioutput = schema.multioutput[0];
-                  updatedObj[mName] = { weight: 1.0, options: defaultOpts };
-                  updateMetricsConfig(updatedObj);
-                }
-              }}
-              placeholder={t('admin.tasks.add_eval_metric')}
-              disabled={selectedCount >= 10}
-            />
-          </div>
+          {!evaluatorIsActive && (
+            <div className="flex gap-2 w-full">
+              <SelectField
+                options={Object.keys(effectiveMetrics)
+                  .filter((m) => !metricsOnly[m])
+                  .sort()
+                  .map((m) => ({ value: m, label: formatMetricName(m) }))}
+                value=""
+                onChange={(mName) => {
+                  if (mName && !metricsOnly[mName]) {
+                    let updatedObj = { ...metricsObj };
+                    const schema = effectiveMetrics[mName] || {};
+                    let defaultOpts = { column: columnNames[0] || '' };
+                    if (schema.average) defaultOpts.average = schema.average[0];
+                    if (schema.rouge_type) defaultOpts.rouge_type = schema.rouge_type[0];
+                    if (schema.k) defaultOpts.k = parseInt(schema.k[0]);
+                    if (schema.threshold) defaultOpts.threshold = parseFloat(schema.threshold[0]);
+                    if (schema.beta) defaultOpts.beta = parseInt(schema.beta[0]);
+                    if (schema.shape) defaultOpts.shape = '0';
+                    if (schema.multioutput) defaultOpts.multioutput = schema.multioutput[0];
+                    updatedObj[mName] = { weight: 1.0, options: defaultOpts };
+                    updateMetricsConfig(updatedObj);
+                  }
+                }}
+                placeholder={t('admin.tasks.add_eval_metric')}
+                disabled={selectedCount >= 10}
+              />
+            </div>
+          )}
 
           {selectedCount > 0 && (
             <div className="overflow-x-auto rounded-lg border border-white/5">
@@ -308,19 +384,26 @@ export default function TaskForm({
                   <tr>
                     <th className="px-4 py-3 rounded-tl-lg">{t('admin.tasks.metric')}</th>
                     <th className="px-4 py-3">{t('admin.tasks.weight')}</th>
-                    <th className="px-4 py-3">{t('admin.tasks.column_mapping')}</th>
-                    <th className="px-4 py-3">{t('admin.tasks.parameters')}</th>
-                    <th className="px-4 py-3 rounded-tr-lg text-right">
-                      {t('admin.tasks.remove')}
+                    {!evaluatorIsActive && (
+                      <th className="px-4 py-3">{t('admin.tasks.column_mapping')}</th>
+                    )}
+                    <th className={`px-4 py-3 ${evaluatorIsActive ? 'rounded-tr-lg' : ''}`}>
+                      {t('admin.tasks.parameters')}
                     </th>
+                    {!evaluatorIsActive && (
+                      <th className="px-4 py-3 text-right rounded-tr-lg">
+                        {t('admin.tasks.remove')}
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-slate-950/50 divide-y divide-white/5">
                   {Object.keys(metricsOnly).map((mName) => {
                     const currentWeight =
                       metricsOnly[mName].weight !== undefined ? metricsOnly[mName].weight : 1.0;
-                    const schema = availableMetrics[mName] || {};
+                    const schema = effectiveMetrics[mName] || {};
                     const opts = metricsOnly[mName].options || {};
+                    const isEvalMetric = mName === evaluatorMetricName && evaluatorIsActive;
 
                     return (
                       <tr key={mName} className="hover:bg-slate-900/50 transition-colors">
@@ -328,117 +411,120 @@ export default function TaskForm({
                           {formatMetricName(mName)}
                         </td>
                         <td className="px-4 py-3">
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={currentWeight}
-                            onChange={(e) => {
-                              let updatedObj = { ...metricsObj };
-                              updatedObj[mName].weight = parseFloat(e.target.value) || 0;
-                              updateMetricsConfig(updatedObj);
-                            }}
-                            className="w-16 text-center text-xs bg-slate-900 border border-white/10 rounded-md text-slate-200 py-1 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
+                          {isEvalMetric ? (
+                            <span className="text-xs text-slate-400 font-mono">
+                              {currentWeight}
+                            </span>
+                          ) : (
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              value={currentWeight}
+                              onChange={(e) => {
+                                let updatedObj = { ...metricsObj };
+                                updatedObj[mName].weight = parseFloat(e.target.value) || 0;
+                                updateMetricsConfig(updatedObj);
+                              }}
+                              className="w-16 text-center text-xs bg-slate-900 border border-white/10 rounded-md text-slate-200 py-1 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          )}
                         </td>
+                        {!evaluatorIsActive && (
+                          <td className="px-4 py-3">
+                            <SelectField
+                              options={columnNames.map((cn) => ({ value: cn, label: cn }))}
+                              value={opts.column || ''}
+                              onChange={(val) => {
+                                let updatedObj = { ...metricsObj };
+                                updatedObj[mName].options = { ...opts, column: val };
+                                updateMetricsConfig(updatedObj);
+                              }}
+                              placeholder={t('admin.tasks.no_columns_option')}
+                            />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
-                          <SelectField
-                            options={columnNames.map((cn) => ({ value: cn, label: cn }))}
-                            value={opts.column || ''}
-                            onChange={(val) => {
-                              let updatedObj = { ...metricsObj };
-                              updatedObj[mName].options = { ...opts, column: val };
-                              updateMetricsConfig(updatedObj);
-                            }}
-                            placeholder={t('admin.tasks.no_columns_option')}
-                          />
+                          {isEvalMetric ? (
+                            <span className="text-xs text-slate-500 italic">
+                              {t('admin.tasks.evaluator_auto_params')}
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {Object.keys(schema).map((param) => {
+                                if (schema[param] === 'string') {
+                                  return (
+                                    <div
+                                      key={param}
+                                      className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded border border-white/5"
+                                    >
+                                      <span className="text-[10px] text-slate-400 capitalize">
+                                        {param}:
+                                      </span>
+                                      <input
+                                        type="text"
+                                        placeholder="0"
+                                        value={opts[param] || ''}
+                                        onChange={(e) => {
+                                          let updatedObj = { ...metricsObj };
+                                          updatedObj[mName].options = {
+                                            ...opts,
+                                            [param]: e.target.value,
+                                          };
+                                          updateMetricsConfig(updatedObj);
+                                        }}
+                                        className="w-16 text-center text-[11px] bg-slate-950 border border-transparent rounded text-slate-200 py-0.5 focus:border-indigo-500/50 focus:outline-none"
+                                      />
+                                    </div>
+                                  );
+                                } else if (Array.isArray(schema[param])) {
+                                  return (
+                                    <div
+                                      key={param}
+                                      className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded border border-white/5"
+                                    >
+                                      <span className="text-[10px] text-slate-400 capitalize">
+                                        {param.replace('_', ' ')}:
+                                      </span>
+                                      <SelectField
+                                        options={schema[param].map((val) => ({
+                                          value: val.toString(),
+                                          label: val.toString(),
+                                        }))}
+                                        value={(opts[param] || schema[param][0]).toString()}
+                                        onChange={(val) => {
+                                          let updatedObj = { ...metricsObj };
+                                          updatedObj[mName].options = {
+                                            ...opts,
+                                            [param]: val,
+                                          };
+                                          updateMetricsConfig(updatedObj);
+                                        }}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          )}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            {Object.keys(schema).map((param) => {
-                              if (schema[param] === 'string') {
-                                return (
-                                  <div
-                                    key={param}
-                                    className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded border border-white/5"
-                                  >
-                                    <span className="text-[10px] text-slate-400 capitalize">
-                                      {param}:
-                                    </span>
-                                    <input
-                                      type="text"
-                                      placeholder="0"
-                                      value={opts[param] || ''}
-                                      onChange={(e) => {
-                                        let updatedObj = { ...metricsObj };
-                                        updatedObj[mName].options = {
-                                          ...opts,
-                                          [param]: e.target.value,
-                                        };
-                                        updateMetricsConfig(updatedObj);
-                                      }}
-                                      className="w-16 text-center text-[11px] bg-slate-950 border border-transparent rounded text-slate-200 py-0.5 focus:border-indigo-500/50 focus:outline-none"
-                                    />
-                                  </div>
-                                );
-                              } else if (Array.isArray(schema[param])) {
-                                return (
-                                  <div
-                                    key={param}
-                                    className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded border border-white/5"
-                                  >
-                                    <span className="text-[10px] text-slate-400 capitalize">
-                                      {param.replace('_', ' ')}:
-                                    </span>
-                                    <SelectField
-                                      options={schema[param].map((val) => ({
-                                        value: val.toString(),
-                                        label: val.toString(),
-                                      }))}
-                                      value={(opts[param] || schema[param][0]).toString()}
-                                      onChange={(val) => {
-                                        let updatedObj = { ...metricsObj };
-                                        updatedObj[mName].options = {
-                                          ...opts,
-                                          [param]: val,
-                                        };
-                                        updateMetricsConfig(updatedObj);
-                                      }}
-                                    />
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors"
-                            title={t('admin.tasks.remove_metric_title')}
-                            onClick={() => {
-                              let updatedObj = { ...metricsObj };
-                              delete updatedObj[mName];
-                              updateMetricsConfig(updatedObj);
-                            }}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
+                        {!evaluatorIsActive && (
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors"
+                              title={t('admin.tasks.remove_metric_title')}
+                              onClick={() => {
+                                let updatedObj = { ...metricsObj };
+                                delete updatedObj[mName];
+                                updateMetricsConfig(updatedObj);
+                              }}
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
-                        </td>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -448,7 +534,7 @@ export default function TaskForm({
           )}
 
           {/* FORMAT VISUALIZER */}
-          {columnsDef.length > 0 && (
+          {columnsDef.length > 0 && !evaluatorIsActive && (
             <div className="flex flex-col gap-4 border border-white/10 p-5 bg-slate-900/40 rounded-xl">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
                 {t('admin.tasks.parquet_preview')}
@@ -713,6 +799,109 @@ export default function TaskForm({
               </div>
             </div>
 
+            {/* CUSTOM EVALUATOR SCRIPT */}
+            <div className="flex flex-col gap-4 border border-violet-500/20 p-5 bg-violet-950/10 rounded-xl">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-bold text-violet-300">
+                  {t('admin.tasks.custom_evaluator_script')}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400">{t('admin.tasks.custom_evaluator_desc')}</p>
+
+              {/* Existing Evaluator (editing) */}
+              {editingTask?.evaluator_script_path && !evaluatorScript && !evaluatorDeleted && (
+                <div className="flex items-center justify-between p-3 bg-slate-950 border border-violet-500/15 rounded-lg text-xs">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <FileText size={16} className="text-violet-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate text-slate-200 font-semibold font-mono block">
+                        evaluator.py
+                      </span>
+                      {editingTask.evaluator_metric_name && (
+                        <span className="text-violet-400 text-[10px] font-mono">
+                          {editingTask.evaluator_metric_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEvaluatorDeleted(true);
+                      setEvaluatorMetricName('');
+                      setEvalParsedData(null);
+                      removeMetricFromConfig(editingTask?.evaluator_metric_name);
+                    }}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Replace / Upload */}
+              {(!editingTask?.evaluator_script_path || evaluatorDeleted) && !evaluatorScript && (
+                <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 transition-colors">
+                  <input
+                    type="file"
+                    accept=".py"
+                    id="evaluator-script-upload"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setEvaluatorScript(file);
+                        setEvaluatorDeleted(false);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="evaluator-script-upload"
+                    className="cursor-pointer flex flex-col items-center gap-2"
+                  >
+                    <FileText size={24} className="text-slate-500" />
+                    <span className="text-xs text-slate-400 font-medium">
+                      {t('admin.tasks.custom_evaluator_upload_label')}
+                    </span>
+                    <span className="text-[10px] text-slate-500">.py</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Newly selected evaluator script */}
+              {evaluatorScript && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between p-3 bg-slate-950 border border-emerald-500/15 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText size={16} className="text-emerald-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <span className="truncate text-slate-200 font-semibold font-mono block">
+                          {evaluatorScript.name}
+                        </span>
+                        <span className="text-slate-500 text-[10px]">
+                          {(evaluatorScript.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEvaluatorScript(null);
+                        setEvaluatorMetricName('');
+                        setEvalParsedData(null);
+                        removeMetricFromConfig(evaluatorMetricName);
+                      }}
+                      className="text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  {/* Read file content preview */}
+                  <ScriptPreview file={evaluatorScript} onParsed={handleScriptParsed} />
+                </div>
+              )}
+            </div>
+
             {evalContent}
           </div>
         )}
@@ -798,19 +987,7 @@ export default function TaskForm({
             <div className="flex flex-col gap-4 bg-slate-900/30 p-6 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3 mb-2">
                 <div className="bg-blue-500/20 p-2 rounded-lg">
-                  <svg
-                    className="w-5 h-5 text-blue-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                    />
-                  </svg>
+                  <Package className="w-5 h-5 text-blue-400" />
                 </div>
                 <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
                   {t('admin.tasks.docker_sandbox')}
@@ -843,19 +1020,7 @@ export default function TaskForm({
             <div className="flex flex-col gap-4 bg-amber-900/10 p-6 rounded-2xl border border-amber-500/20">
               <div className="flex items-center gap-3 mb-2">
                 <div className="bg-amber-500/20 p-2 rounded-lg">
-                  <svg
-                    className="w-5 h-5 text-amber-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
+                  <Zap className="w-5 h-5 text-amber-400" />
                 </div>
                 <h3 className="text-sm font-bold text-amber-200 uppercase tracking-wider">
                   {t('admin.tasks.hf_integrations')}
@@ -1203,6 +1368,251 @@ export default function TaskForm({
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function countBracketsInString(str, depth) {
+  let d = depth;
+  for (let j = 0; j < str.length; j++) {
+    const ch = str[j];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      j++;
+      while (j < str.length && str[j] !== quote) {
+        if (str[j] === '\\') j++;
+        j++;
+      }
+    } else {
+      if (ch === '[' || ch === '{') d++;
+      if (ch === ']' || ch === '}') d--;
+    }
+  }
+  return d;
+}
+
+function parsePythonValue(text, varName) {
+  const lines = text.split('\n');
+  const startIdx = lines.findIndex((l) => new RegExp(`^\\s*${varName}\\s*=`).test(l));
+  if (startIdx === -1) return null;
+
+  let bracketDepth = 0;
+  let jsonLines = [];
+  let started = false;
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i];
+    if (!started) {
+      const eqIdx = line.indexOf('=');
+      const afterEq = line.substring(eqIdx + 1).trim();
+      if (afterEq) {
+        jsonLines.push(afterEq);
+        bracketDepth = countBracketsInString(afterEq, bracketDepth);
+        started = true;
+      }
+    } else {
+      jsonLines.push(line);
+      bracketDepth = countBracketsInString(line, bracketDepth);
+    }
+    if (started && bracketDepth <= 0) break;
+  }
+
+  const valueStr = jsonLines.join('\n').trim();
+  if (!valueStr) return null;
+
+  const cleaned = valueStr.replace(/,\s*([\]}])/g, '$1').replace(/\s*#[^\n]*/g, '');
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const pyToJson = cleaned
+      .replace(/\bTrue\b/g, 'true')
+      .replace(/\bFalse\b/g, 'false')
+      .replace(/\bNone\b/g, 'null');
+    try {
+      return JSON.parse(pyToJson);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractReturnKeys(text) {
+  const returnMatch = text.match(/return\s*\{([^}]+)\}/);
+  if (!returnMatch) return [];
+  return returnMatch[1]
+    .split(',')
+    .map((k) => {
+      const m = k.match(/["']([^"']+)["']/);
+      return m ? m[1] : null;
+    })
+    .filter(Boolean);
+}
+
+function ScriptPreview({ file, onParsed }) {
+  const { t } = useTranslation();
+  const [content, setContent] = useState('');
+  const [parsed, setParsed] = useState(null);
+  const [errors, setErrors] = useState([]);
+  const [options, setOptions] = useState({});
+
+  useEffect(() => {
+    if (!file) return;
+    setErrors([]);
+    setParsed(null);
+    setOptions({});
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      if (typeof text !== 'string') return;
+      setContent(text);
+
+      const metricName = text.match(/^METRIC_NAME\s*=\s*["']([^"']+)["']/m)?.[1] || '';
+      const subCols = parsePythonValue(text, 'SUBMISSION_COLUMNS');
+      const lblCols = parsePythonValue(text, 'LABELS_COLUMNS');
+      const opts = parsePythonValue(text, 'EVALUATOR_OPTIONS');
+      const returnKeys = extractReturnKeys(text);
+
+      const errs = [];
+      if (!metricName) errs.push(t('admin.tasks.evaluator_err_missing_metric_name'));
+      if (!subCols) errs.push(t('admin.tasks.evaluator_err_missing_sub_columns'));
+      if (!lblCols) errs.push(t('admin.tasks.evaluator_err_missing_lbl_columns'));
+
+      const data = {
+        metricName,
+        subCols: subCols || [],
+        lblCols: lblCols || [],
+        options: opts || {},
+        returnKeys,
+      };
+      setParsed(data);
+      setOptions(opts || {});
+      setErrors(errs);
+      if (onParsed) onParsed(errs.length === 0 ? data : null);
+    };
+    reader.readAsText(file);
+  }, [file, onParsed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleOptionChange = (key, value) => {
+    const next = { ...options, [key]: value };
+    setOptions(next);
+    if (onParsed) {
+      const data = parsed ? { ...parsed, options: next } : null;
+      onParsed(data);
+    }
+  };
+
+  if (!content) return null;
+
+  const metricWarning =
+    parsed?.metricName &&
+    parsed.returnKeys.length > 0 &&
+    !parsed.returnKeys.includes(parsed.metricName)
+      ? t('admin.tasks.evaluator_err_metric_not_in_return', {
+          name: parsed.metricName,
+          keys: parsed.returnKeys.join(', '),
+        })
+      : null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Validation errors */}
+      {errors.length > 0 && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400">
+          {errors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Warning if METRIC_NAME not in return keys */}
+      {metricWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
+          {metricWarning}
+        </div>
+      )}
+
+      {/* Syntax-highlighted code */}
+      {parsed?.metricName && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border border-violet-500/20 rounded-t-lg">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+            {t('admin.tasks.evaluator_metric_label')}:
+          </span>
+          <span className="text-xs font-mono font-bold text-violet-300">{parsed.metricName}</span>
+        </div>
+      )}
+      <div className="rounded-lg border border-white/5 overflow-hidden">
+        <CodeHighlight code={content} language="python" maxHeight="360px" />
+      </div>
+
+      {/* Column cards */}
+      {parsed?.subCols?.length > 0 && parsed?.lblCols?.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-indigo-500/20 bg-slate-950/60 overflow-hidden">
+            <div className="bg-indigo-500/10 px-4 py-3 border-b border-indigo-500/20">
+              <span className="text-sm font-semibold text-indigo-300">submission.parquet</span>
+              <span className="text-[10px] text-slate-500 ml-3">
+                {t('admin.tasks.evaluator_columns_count', { count: parsed.subCols.length })}
+              </span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {parsed.subCols.map((col, i) => (
+                <div key={i} className="flex items-center gap-2 px-4 py-2.5 text-xs">
+                  <code className="text-emerald-300 font-semibold">{col.name}</code>
+                  <span className="text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                    {col.type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-xl border border-emerald-500/20 bg-slate-950/60 overflow-hidden">
+            <div className="bg-emerald-500/10 px-4 py-3 border-b border-emerald-500/20">
+              <span className="text-sm font-semibold text-emerald-300">labels.parquet</span>
+              <span className="text-[10px] text-slate-500 ml-3">
+                {t('admin.tasks.evaluator_columns_count', { count: parsed.lblCols.length })}
+              </span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {parsed.lblCols.map((col, i) => (
+                <div key={i} className="flex items-center gap-2 px-4 py-2.5 text-xs">
+                  <code className="text-emerald-300 font-semibold">{col.name}</code>
+                  <span className="text-slate-500 bg-slate-900/60 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                    {col.type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Options editor */}
+      {Object.keys(options).length > 0 && (
+        <div className="flex flex-col gap-2 p-3 bg-slate-950/60 rounded-xl border border-white/5">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+            {t('admin.tasks.options_label')}
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {Object.entries(options).map(([key, val]) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 font-mono w-24 shrink-0">{key}</span>
+                <input
+                  type={typeof val === 'number' ? 'number' : 'text'}
+                  value={val}
+                  onChange={(e) =>
+                    handleOptionChange(
+                      key,
+                      typeof val === 'number' ? parseFloat(e.target.value) : e.target.value,
+                    )
+                  }
+                  className="w-full text-xs bg-slate-900 border border-white/10 rounded-md text-slate-200 py-1 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder-slate-600"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

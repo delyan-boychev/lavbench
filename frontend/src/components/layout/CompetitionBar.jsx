@@ -4,7 +4,7 @@ import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import SelectField from '../ui/SelectField';
 import { useTranslation } from 'react-i18next';
-import { Layout, Trophy, Pencil, Shield } from 'lucide-react';
+import { Layout, Trophy, Pencil, Shield, Flag } from 'lucide-react';
 
 function TabIcon({ name }) {
   const iconStyle = { flexShrink: 0 };
@@ -138,20 +138,7 @@ export default function CompetitionBar() {
               title={t('nav.assigned_competition_tooltip')}
               data-testid="competitor-competition-label"
             >
-              <svg
-                width="12"
-                height="12"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2zm-7 2h14v2a7 7 0 01-14 0V9z"
-                />
-              </svg>
+              <Flag size={12} strokeWidth={2.5} />
               <span>
                 {selectedChallenge ? selectedChallenge.title : t('nav.no_competition_assigned')}
               </span>

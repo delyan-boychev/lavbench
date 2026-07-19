@@ -52,6 +52,19 @@ class TestSubmissionRunnerMetrics:
         score = calculate_weighted_score(payload, cfg)
         assert score == 0.0
 
+    def test_weighted_score_mse_lower_better(self):
+        payload = {"mse": 5.0, "mae": 3.0}
+        cfg = {"mse": {"weight": 1.0}, "mae": {"weight": 1.0}}
+        score = calculate_weighted_score(payload, cfg)
+        expected = (1.0 / 6.0 + 1.0 / 4.0) / 2.0
+        assert abs(score - expected) < 1e-6
+
+    def test_weighted_score_default_higher_better(self):
+        payload = {"accuracy": 0.95, "f1_score": 0.85}
+        cfg = {"accuracy": {"weight": 1.0}, "f1_score": {"weight": 1.0}}
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - (0.95 + 0.85) / 2.0) < 1e-6
+
 
 captured_run_kwargs = {}
 

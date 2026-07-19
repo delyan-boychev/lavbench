@@ -2,6 +2,7 @@ import React from 'react';
 import Badge from '../ui/Badge';
 import { useTranslation } from 'react-i18next';
 import { formatDateTime } from '../../utils/formatDate';
+import { Timer, Calendar, Clock } from 'lucide-react';
 
 function StatCard({ label, value, accent = undefined }) {
   return (
@@ -112,20 +113,7 @@ export default function ChallengeOverview({ challenge }) {
         className={isFlashing ? 'animate-flash-purple' : ''}
         title={t('nav.starts_in_title')}
       >
-        <svg
-          width="15"
-          height="15"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <Timer size={15} strokeWidth={2.5} />
         <span>
           {t('challenge.starts_in')}: {timeStr}
         </span>
@@ -177,40 +165,14 @@ export default function ChallengeOverview({ challenge }) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg
-            width="14"
-            height="14"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
+          <Calendar size={14} />
           <span>
             <strong>{t('challenge.start')}</strong>{' '}
             {formatDateTime(challenge.start_time, challenge.timezone)}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg
-            width="14"
-            height="14"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
+          <Clock size={14} />
           <span>
             <strong>{t('challenge.end')}</strong>{' '}
             {formatDateTime(challenge.end_time, challenge.timezone)}
