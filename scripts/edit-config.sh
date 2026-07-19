@@ -16,7 +16,7 @@ get_val() {
 set_val() {
   local file="$1" key="$2" val="$3"
   if grep -qE "^${key}=" "$file" 2>/dev/null; then
-    sed -i '' "s|^${key}=.*|${key}=${val}|" "$file"
+    sed -i.bak "s|^${key}=.*|${key}=${val}|" "$file" && rm -f "$file.bak"
   else
     echo "${key}=${val}" >> "$file"
   fi
@@ -25,10 +25,10 @@ set_val() {
 toggle_comment() {
   local file="$1" key="$2" state="$3"
   if [ "$state" = "uncomment" ]; then
-    sed -i '' "s|^# ${key}=|${key}=|" "$file"
+    sed -i.bak "s|^# ${key}=|${key}=|" "$file" && rm -f "$file.bak"
   else
     if grep -qE "^${key}=" "$file" 2>/dev/null; then
-      sed -i '' "s|^${key}=|# ${key}=|" "$file"
+      sed -i.bak "s|^${key}=|# ${key}=|" "$file" && rm -f "$file.bak"
     fi
   fi
 }
@@ -245,7 +245,7 @@ edit_worker() {
         if [ -n "$NEW_GPU" ]; then
           set_val "$WORKER_FILE" "WORKER_GPU_ID" "$NEW_GPU"
         else
-          sed -i '' "/^WORKER_GPU_ID=/d" "$WORKER_FILE"
+          sed -i.bak "/^WORKER_GPU_ID=/d" "$WORKER_FILE" && rm -f "$WORKER_FILE.bak"
         fi
         echo "  ✔ GPU IDs updated"
         ;;
