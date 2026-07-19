@@ -32,8 +32,14 @@ done
 echo "  ✔ .env configured (all required keys present)"
 echo ""
 
-# ── Create Docker-specific .env (strips localhost URLs) ─────────────
+# ── Create Docker-specific .env (resolves nested variables) ──────────
+REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" .env | tail -1 | cut -d= -f2-)
+POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" .env | tail -1 | cut -d= -f2-)
+export REDIS_PASSWORD POSTGRES_PASSWORD
 grep -v -E '^(CELERY_BROKER_URL|CELERY_RESULT_BACKEND|DATABASE_URL)=' .env > .env.docker
+echo "CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0" >> .env.docker
+echo "CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0" >> .env.docker
+echo "DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db" >> .env.docker
 DOCKER_ENV="--env-file .env.docker"
 
 # ── Stop existing services ─────────────────────────────────────────
