@@ -51,15 +51,7 @@ export default function TaskForm({
     editingTask?.evaluator_metric_name || '',
   );
   const [, setEvalParsedData] = useState(null);
-  const [evaluatorOptions, setEvaluatorOptions] = useState(() => {
-    if (!editingTask?.evaluator_metric_name) return {};
-    try {
-      const parsed = JSON.parse(taskForm.metrics_config) || {};
-      return parsed[editingTask.evaluator_metric_name]?.options || {};
-    } catch {
-      return {};
-    }
-  });
+  const [evaluatorOptions, setEvaluatorOptions] = useState({});
 
   const evaluatorIsActive =
     evaluatorScript != null || (editingTask?.evaluator_script_path && !evaluatorDeleted);

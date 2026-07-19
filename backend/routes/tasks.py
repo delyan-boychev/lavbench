@@ -455,8 +455,18 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
-            task.custom_eval_code = evaluator_code
-            task.evaluator_metric_name = evaluator_metric_name
+            with open(save_path, encoding="utf-8") as ef:
+                code = ef.read()
+            task.custom_eval_code = code
+            eval_result, eval_err = _validate_evaluator_script(code)
+            if eval_result is None:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
+            task.evaluator_metric_name = eval_result["metric_name"]
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]
