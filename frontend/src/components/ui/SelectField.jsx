@@ -154,7 +154,7 @@ export default function SelectField({
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between w-full px-3 py-2 text-sm text-slate-200 bg-slate-900 border rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`flex items-center justify-between w-full px-3 py-2 text-sm text-slate-200 bg-slate-900 border rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
             error || hasError ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-800'
           }`}
         >

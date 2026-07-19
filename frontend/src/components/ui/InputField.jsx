@@ -14,6 +14,8 @@ export default function InputField({
   id = '',
   multiline = false,
   rows = 4,
+  min = undefined,
+  max = undefined,
 }) {
   const { t } = useTranslation();
   const [error, setError] = useState(false);
@@ -65,6 +67,8 @@ export default function InputField({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
+          min={min}
+          max={max}
           onInvalid={required ? handleInvalid : undefined}
         />
       )}

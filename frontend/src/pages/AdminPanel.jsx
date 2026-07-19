@@ -440,7 +440,7 @@ export default function AdminPanel() {
           max_eval_requests: 10,
           ram_limit_mb: 8192,
           time_limit_sec: 300,
-          gpu_required: true,
+          gpu_required: false,
           start_time: '',
           end_time: '',
           is_frozen: false,
@@ -863,6 +863,63 @@ export default function AdminPanel() {
     setEvaluatorDeleted(false);
   };
 
+  const validateTaskForm = () => {
+    const errors = [];
+
+    const DOCKER_IMAGE_RE =
+      /^[a-z0-9]+(?:[._-][a-z0-9]+)*\/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$/;
+    const APT_PACKAGE_RE = /^[a-zA-Z0-9.+-]+$/;
+    const PIP_REQUIREMENT_RE =
+      /^\s*([a-zA-Z0-9_.-]+)\s*(([><=!~]+)\s*[\w.*-]+(?:\s*,\s*[><=!~]+\s*[\w.*-]+)*)?\s*(#.*)?$/;
+
+    if (taskForm.base_docker_image && !DOCKER_IMAGE_RE.test(taskForm.base_docker_image)) {
+      errors.push('Invalid Docker image format.');
+    }
+
+    if (taskForm.apt_packages) {
+      const packages = taskForm.apt_packages
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const invalid = packages.filter((p) => !APT_PACKAGE_RE.test(p));
+      if (invalid.length > 0) {
+        errors.push(`Invalid APT package(s): ${invalid.join(', ')}`);
+      }
+    }
+
+    if (taskForm.pip_requirements) {
+      const lines = taskForm.pip_requirements
+        .split('\n')
+        .filter((l) => l.trim() && !l.trim().startsWith('#'));
+      const invalid = lines.filter((l) => !PIP_REQUIREMENT_RE.test(l.trim()));
+      if (invalid.length > 0) {
+        errors.push(`Invalid pip requirement(s): ${invalid.join('; ')}`);
+      }
+    }
+
+    if (taskForm.hf_datasets_raw) {
+      const count = taskForm.hf_datasets_raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean).length;
+      if (count > 5) {
+        errors.push(`HF datasets: maximum 5 allowed, got ${count}.`);
+      }
+    }
+
+    if (taskForm.hf_models_raw) {
+      const count = taskForm.hf_models_raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean).length;
+      if (count > 5) {
+        errors.push(`HF models: maximum 5 allowed, got ${count}.`);
+      }
+    }
+
+    return errors;
+  };
+
   const prepareTaskFormData = () => {
     const formData = new FormData();
     formData.append('title', taskForm.title);
@@ -942,6 +999,12 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!selectedChallenge) return;
 
+    const validationErrors = validateTaskForm();
+    if (validationErrors.length > 0) {
+      showToast(validationErrors.join('\n'), 'rose');
+      return;
+    }
+
     const hasLabels = taskFiles.some((f) => f.name === 'labels.parquet');
     if (!hasLabels) {
       showToast(t('admin.tasks.labels_parquet_required'), 'rose');
@@ -984,6 +1047,12 @@ export default function AdminPanel() {
   const handleSaveUpdateTask = async (e) => {
     e.preventDefault();
     if (!editingTask) return;
+
+    const validationErrors = validateTaskForm();
+    if (validationErrors.length > 0) {
+      showToast(validationErrors.join('\n'), 'rose');
+      return;
+    }
 
     const deletedNames = editingTask.filesToDelete || [];
     const existingLabels = (() => {

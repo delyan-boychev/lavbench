@@ -61,13 +61,17 @@ def sse_connection_limit(
     try:
         yield allowed
     finally:
+        # Safely decrement counters — only if the key still exists and is > 0.
+        # This prevents DECR from creating a key with value -1 if the TTL
+        # expired between the INCR (entry) and DECR (cleanup).
         if r and allowed:
             try:
-                pipe = r.pipeline()
-                if user_key:
-                    pipe.decr(user_key)
-                pipe.decr(global_key)
-                pipe.execute()
+                for key in ([user_key] if user_key else []) + [global_key]:
+                    val = r.get(key)
+                    if val is not None and int(val) > 0:
+                        r.decr(key)
+                    elif val is not None:
+                        r.delete(key)
             except Exception as e:
                 logger.warning("SSE connection counter cleanup failed: %s", e)
 

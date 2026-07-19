@@ -26,6 +26,9 @@ def _sign_worker_token(submission_id: str) -> str:
     """
     import base64 as _b64
 
+    def _pad_b64(s: str) -> str:
+        return s + "=" * (-len(s) % 4)
+
     priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY", "")
     if not priv_key_b64:
         logger.critical(
@@ -35,7 +38,7 @@ def _sign_worker_token(submission_id: str) -> str:
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-        private_key = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(priv_key_b64))
+        private_key = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(_pad_b64(priv_key_b64)))
         nonce = f"{submission_id}:{int(time.time())}"
         signature = private_key.sign(nonce.encode())
         return f"{nonce}.{_b64.b64encode(signature).decode()}"

@@ -22,7 +22,7 @@ from evaluation_engine import (
     compute_pck,
     compute_psnr,
     compute_retrieval_metrics,
-    compute_rouge_l,
+    compute_rouge,
     compute_segmentation_dice,
     compute_segmentation_iou,
     compute_ssim,
@@ -76,24 +76,24 @@ class TestComputeBleu:
 
 class TestComputeRougeL:
     def test_identical(self):
-        score = compute_rouge_l("the cat sat on the mat", "the cat sat on the mat")
+        score = compute_rouge("the cat sat on the mat", "the cat sat on the mat")
         assert score == pytest.approx(1.0)
 
     def test_no_overlap(self):
-        score = compute_rouge_l("the cat", "xyz abc")
+        score = compute_rouge("the cat", "xyz abc")
         assert score == 0.0
 
     def test_partial_lcs(self):
-        score = compute_rouge_l("the cat sat", "the dog sat")
+        score = compute_rouge("the cat sat", "the dog sat")
         assert score > 0.0
         assert score < 1.0
 
     def test_empty_ref(self):
-        score = compute_rouge_l("", "the cat")
+        score = compute_rouge("", "the cat")
         assert score == 0.0
 
     def test_empty_hyp(self):
-        score = compute_rouge_l("the cat", "")
+        score = compute_rouge("the cat", "")
         assert score == 0.0
 
 
