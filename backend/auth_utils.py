@@ -316,6 +316,9 @@ def check_worker_auth(token: str) -> bool:
     import base64
     import time
 
+    def _pad_b64(s: str) -> str:
+        return s + "=" * (-len(s) % 4)
+
     pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY", "")
     if not pub_key_b64:
         logger.critical("WORKER_PUBLIC_KEY not set — all worker requests will be rejected")
@@ -332,8 +335,8 @@ def check_worker_auth(token: str) -> bool:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-        pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_key_b64))
-        pub_key.verify(base64.b64decode(sig_b64), nonce.encode())
+        pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(_pad_b64(pub_key_b64)))
+        pub_key.verify(base64.b64decode(_pad_b64(sig_b64)), nonce.encode())
     except (InvalidSignature, ValueError, Exception) as e:
         logger.warning("Worker auth failed: %s", e)
         return False
