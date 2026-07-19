@@ -127,6 +127,7 @@
     "ERR_DATETIME_REQUIRED": "Началният и крайният час на състезанието са задължителни.",
     "ERR_EDITING_BLOCKED": "Не могат да се променят ръчни точки.",
     "ERR_EVALUATOR_LOAD_FAILED": "Грешка при зареждане на evaluator скрипта.",
+    "ERR_EVALUATOR_SCRIPT_INVALID": "Evaluator скриптът е невалиден.",
     "ERR_FILE_INVALID": "Грешка при четене на качения файл.",
     "ERR_FILE_NOT_FOUND": "Файлът не е намерен в метаданните на задачата.",
     "ERR_FILE_REQUIRED": "Няма качен файл.",

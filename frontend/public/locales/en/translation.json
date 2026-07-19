@@ -127,6 +127,7 @@
     "ERR_DATETIME_REQUIRED": "Competition start time and end time are required.",
     "ERR_EDITING_BLOCKED": "Cannot modify manual points.",
     "ERR_EVALUATOR_LOAD_FAILED": "Failed to load evaluator script.",
+    "ERR_EVALUATOR_SCRIPT_INVALID": "Evaluator script is invalid.",
     "ERR_FILE_INVALID": "Failed to read uploaded file.",
     "ERR_FILE_NOT_FOUND": "File not found in task metadata.",
     "ERR_FILE_REQUIRED": "No file uploaded.",
