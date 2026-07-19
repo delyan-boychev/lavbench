@@ -108,6 +108,7 @@ HTTP_CHOICE="${HTTP_CHOICE:-1}"
 if [ "$HTTP_CHOICE" = "2" ]; then
   PROTOCOL="https"
   SERVER_URL="https://${SERVER_ADDR}"
+  set_env "CORS_ORIGINS" "https://${SERVER_ADDR}"
   GENERATE_HTTPS_CERTS=false
   echo ""
   echo "  Generate self-signed HTTPS certificates?"
@@ -175,6 +176,11 @@ else
     fi
   done
 fi
+
+# ── Resolve derived URLs with actual password values ─────────────────
+set_env "DATABASE_URL" "postgresql://lavbench_user:${POSTGRES_PASSWORD}@localhost:5432/lavbench_db"
+set_env "CELERY_BROKER_URL" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
+set_env "CELERY_RESULT_BACKEND" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
 
 # ── Generate worker.env ────────────────────────────────────────────
 CERTS_SECTION=""

@@ -3,6 +3,12 @@
 # Called by: make deploy-server
 set -euo pipefail
 
+# Clean up .env.docker on exit
+cleanup() {
+  rm -f .env.docker
+}
+trap cleanup EXIT
+
 echo ""
 echo "  ╔════════════════════════════════════════════════╗"
 echo "  ║  Deploying LavBench with Docker Compose        ║"

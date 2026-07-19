@@ -72,6 +72,14 @@ edit_server() {
           proto="${proto:-http}"
           set_val "$ENV_FILE" "SERVER_ADDRESS" "$NEW_ADDR"
           set_val "$ENV_FILE" "MAIN_SERVER_URL" "${proto}://${NEW_ADDR}"
+          local port
+          if [ "$proto" = "https" ]; then
+            port="443"
+          else
+            port="$(get_val "$ENV_FILE" "NGINX_PORT")"
+            port="${port:-80}"
+          fi
+          set_val "$ENV_FILE" "CORS_ORIGINS" "${proto}://${NEW_ADDR}:${port}"
           echo "  ✔ Server address updated"
         fi
         ;;
@@ -80,23 +88,30 @@ edit_server() {
         local addr="$(get_val "$ENV_FILE" "SERVER_ADDRESS")"
         if [ "$current_proto" = "https" ]; then
           set_val "$ENV_FILE" "MAIN_SERVER_URL" "http://${addr}"
+          local port="$(get_val "$ENV_FILE" "NGINX_PORT")"
+          port="${port:-80}"
+          set_val "$ENV_FILE" "CORS_ORIGINS" "http://${addr}:${port}"
           echo "  ✔ HTTPS → OFF"
         else
           set_val "$ENV_FILE" "MAIN_SERVER_URL" "https://${addr}"
+          set_val "$ENV_FILE" "CORS_ORIGINS" "https://${addr}:443"
           echo "  ✔ HTTPS → ON"
-          echo "  Note: Place server.crt + server.key in certs/ or regenerate (option 7)"
+          echo "  Note: Place server.crt + server.key in certs/ or regenerate (option 8)"
         fi
         ;;
       3)
         local current_proto="$(get_val "$ENV_FILE" "REDIS_PROTO")"
+        local new_proto
         if [ "$current_proto" = "rediss" ]; then
-          set_val "$ENV_FILE" "REDIS_PROTO" "redis"
+          new_proto="redis"
+          set_val "$ENV_FILE" "REDIS_PROTO" "$new_proto"
           for v in REDIS_SSL_CA_CERTS REDIS_SSL_CERTFILE REDIS_SSL_KEYFILE; do
             toggle_comment "$ENV_FILE" "$v" "comment"
           done
           echo "  ✔ Redis TLS → OFF"
         else
-          set_val "$ENV_FILE" "REDIS_PROTO" "rediss"
+          new_proto="rediss"
+          set_val "$ENV_FILE" "REDIS_PROTO" "$new_proto"
           set_val "$ENV_FILE" "REDIS_SSL_CA_CERTS" "/etc/ssl/certs/redis/redis-ca.crt"
           set_val "$ENV_FILE" "REDIS_SSL_CERTFILE" "/etc/ssl/certs/redis/redis-client.crt"
           set_val "$ENV_FILE" "REDIS_SSL_KEYFILE" "/etc/ssl/certs/redis/redis-client.key"
@@ -104,6 +119,9 @@ edit_server() {
           echo "  ✔ Redis TLS → ON"
           echo "  Note: Place TLS certs in certs/ or re-run make setup"
         fi
+        local rp="$(get_val "$ENV_FILE" "REDIS_PASSWORD")"
+        set_val "$ENV_FILE" "CELERY_BROKER_URL" "${new_proto}://:${rp}@localhost:6379/0"
+        set_val "$ENV_FILE" "CELERY_RESULT_BACKEND" "${new_proto}://:${rp}@localhost:6379/0"
         ;;
       4)
         read -p "  Redis bind address [$(get_val "$ENV_FILE" "REDIS_BIND")]: " NEW_BIND
