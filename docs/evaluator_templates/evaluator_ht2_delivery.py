@@ -58,8 +58,17 @@ def evaluate(df_sub, df_labels, options=None):
         label_row = df_labels[df_labels["id"] == sid].iloc[0]
 
         actions = sub_row.get("actions", [])
-        if not isinstance(actions, (list, tuple)):
+        if isinstance(actions, np.ndarray):
+            actions = actions.tolist()
+        elif not isinstance(actions, (list, tuple)):
             actions = []
+
+        if not actions:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning(
+                "Empty or unparseable actions for %s (type=%s) — score will be 0.0",
+                sid, type(sub_row.get("actions", None)).__name__,
+            )
 
         walls = set(map(tuple, label_row.get("walls", [])))
         depots = list(map(tuple, label_row.get("depots", [])))
