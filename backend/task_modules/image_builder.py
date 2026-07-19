@@ -51,14 +51,32 @@ def _config_hash(
 def _download_dataset(
     ds_name: str, task_id: Any, hf_cache_dir: str, hf_api_key: str | None
 ) -> None:
+    logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
+
+    # 1. Try the standard load_dataset — handles Parquet, CSV, JSONL, etc.
     try:
-        logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
         from datasets import load_dataset  # type: ignore[import-untyped]
 
         load_dataset(ds_name, cache_dir=hf_cache_dir, token=hf_api_key or None)
-        logger.info("Successfully downloaded dataset '%s' for task %s", ds_name, task_id)
+        logger.info("load_dataset succeeded for '%s'", ds_name)
     except Exception as e:
-        logger.warning("Failed to download dataset '%s' for task %s: %s", ds_name, task_id, e)
+        logger.warning("load_dataset failed for '%s': %s", ds_name, e)
+
+    # 2. Snapshot-download the full repo — picks up .pkl, .yaml, and any
+    #    other files that load_dataset doesn't recognise.
+    #    Duplicate files are deduplicated by HF's cache layer (no extra cost).
+    try:
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(
+            repo_id=ds_name,
+            repo_type="dataset",
+            cache_dir=hf_cache_dir,
+            token=hf_api_key or None,
+        )
+        logger.info("snapshot_download succeeded for '%s'", ds_name)
+    except Exception as e:
+        logger.warning("snapshot_download failed for '%s': %s", ds_name, e)
 
 
 def _download_model(
