@@ -52,6 +52,7 @@ def evaluate(df_sub, df_labels, options=None):
     ids = sorted(set(df_sub["id"].tolist()) & set(df_labels["id"].tolist()))
 
     solved_list, steps_list, invalid_list = [], [], []
+    skipped = 0
 
     for sid in ids:
         sub_row = df_sub[df_sub["id"] == sid].iloc[0]
@@ -64,11 +65,7 @@ def evaluate(df_sub, df_labels, options=None):
             actions = []
 
         if not actions:
-            logger = __import__("logging").getLogger(__name__)
-            logger.warning(
-                "Empty or unparseable actions for %s (type=%s) — score will be 0.0",
-                sid, type(sub_row.get("actions", None)).__name__,
-            )
+            skipped += 1
 
         walls = set(map(tuple, label_row.get("walls", [])))
         depots = list(map(tuple, label_row.get("depots", [])))
@@ -99,6 +96,15 @@ def evaluate(df_sub, df_labels, options=None):
         solved_list.append(1.0 if solved else 0.0)
         steps_list.append(step)
         invalid_list.append(invalid)
+
+    if skipped:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Skipped %d/%d scenarios: actions column empty or unparseable "
+            "(type was %s) — score will be lowered",
+            skipped, len(ids),
+            type(df_sub.iloc[0].get("actions", None)).__name__ if len(df_sub) else "N/A",
+        )
 
     return {
         "delivery_success_rate": float(np.mean(solved_list)),
