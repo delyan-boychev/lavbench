@@ -108,6 +108,7 @@ HTTP_CHOICE="${HTTP_CHOICE:-1}"
 if [ "$HTTP_CHOICE" = "2" ]; then
   PROTOCOL="https"
   SERVER_URL="https://${SERVER_ADDR}"
+  set_env "CORS_ORIGINS" "https://${SERVER_ADDR}"
   GENERATE_HTTPS_CERTS=false
   echo ""
   echo "  Generate self-signed HTTPS certificates?"
