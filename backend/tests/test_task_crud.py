@@ -226,7 +226,12 @@ class TestCreateTask:
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
-        script = io.BytesIO(b'METRIC_NAME = "my_eval"\ndef evaluate(): pass\n')
+        script = io.BytesIO(
+            b'METRIC_NAME = "my_eval"\n'
+            b'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b"def evaluate(): pass\n"
+        )
         data = {
             "title": "Eval Script Task",
             "baseline_notebook": (nb, "baseline.ipynb"),
@@ -384,6 +389,98 @@ class TestCreateTask:
         }
         resp = client.post(url, data=data, content_type="multipart/form-data")
         assert resp.status_code == 403
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_create_invalid_evaluator_syntax(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        url = f"/api/challenges/{sample_challenge.id}/tasks"
+        headers = auth_headers(tokens.admin)
+        nb = _make_notebook()
+        script = io.BytesIO(b"def foo(:")
+        data = {
+            "title": "Bad Eval Syntax",
+            "baseline_notebook": (nb, "baseline.ipynb"),
+            "evaluator_script": (script, "eval.py"),
+        }
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
+        assert "Syntax error" in resp.get_json()["error"]
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_create_invalid_evaluator_missing_metric_name(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        url = f"/api/challenges/{sample_challenge.id}/tasks"
+        headers = auth_headers(tokens.admin)
+        nb = _make_notebook()
+        script = io.BytesIO(
+            b'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b"def evaluate(): pass\n"
+        )
+        data = {
+            "title": "Bad Eval No Metric",
+            "baseline_notebook": (nb, "baseline.ipynb"),
+            "evaluator_script": (script, "eval.py"),
+        }
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
+        assert "Missing required variable: METRIC_NAME" in resp.get_json()["error"]
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_create_invalid_evaluator_bad_columns(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        url = f"/api/challenges/{sample_challenge.id}/tasks"
+        headers = auth_headers(tokens.admin)
+        nb = _make_notebook()
+        script = io.BytesIO(
+            b'METRIC_NAME = "x"\nSUBMISSION_COLUMNS = "not_a_list"\n'
+            b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b"def evaluate(): pass\n"
+        )
+        data = {
+            "title": "Bad Eval Columns",
+            "baseline_notebook": (nb, "baseline.ipynb"),
+            "evaluator_script": (script, "eval.py"),
+        }
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
+        assert "must be a list" in resp.get_json()["error"]
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
@@ -708,6 +805,173 @@ class TestUpdateTask:
             resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 200
         assert resp.get_json()["baseline_notebook_path"] is not None
+
+    # ── Evaluator update tests ──
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_replace_evaluator_script(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        import os
+        import tempfile
+
+        from models import Task
+
+        task = Task(
+            title="Eval Update",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        upload_dir = os.path.join(tempfile.gettempdir(), f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        # Write an existing evaluator script on disk
+        with open(os.path.join(upload_dir, "evaluator.py"), "w") as f:
+            f.write(
+                'METRIC_NAME = "old"\n'
+                'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                "def evaluate(): pass\n"
+            )
+        task.evaluator_script_path = os.path.join(upload_dir, "evaluator.py")
+        task.evaluator_metric_name = "old"
+
+        with patch.dict(
+            client.application.config,
+            {"UPLOAD_FOLDER": tempfile.gettempdir()},
+            clear=False,
+        ):
+            url = f"/api/tasks/{task.id}"
+            headers = auth_headers(tokens.admin)
+            new_script = io.BytesIO(
+                b'METRIC_NAME = "new_metric"\n'
+                b'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                b"def evaluate(): pass\n"
+            )
+            data = {
+                "title": "Eval Update",
+                "evaluator_script": (new_script, "eval.py"),
+            }
+            resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["evaluator_metric_name"] == "new_metric"
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_delete_evaluator(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        import os
+        import tempfile
+
+        from models import Task
+
+        task = Task(
+            title="Delete Eval",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        upload_dir = os.path.join(tempfile.gettempdir(), f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        eval_path = os.path.join(upload_dir, "evaluator.py")
+        with open(eval_path, "w") as f:
+            f.write(
+                'METRIC_NAME = "del"\n'
+                'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                "def evaluate(): pass\n"
+            )
+        task.evaluator_script_path = eval_path
+        task.evaluator_metric_name = "del"
+
+        with patch.dict(
+            client.application.config,
+            {"UPLOAD_FOLDER": tempfile.gettempdir()},
+            clear=False,
+        ):
+            url = f"/api/tasks/{task.id}"
+            headers = auth_headers(tokens.admin)
+            data = {
+                "title": "Delete Eval",
+                "delete_evaluator": "true",
+            }
+            resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["evaluator_script_path"] is None
+        assert body["evaluator_metric_name"] is None
+        assert not os.path.exists(eval_path)
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_invalid_evaluator_script_returns_error(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        from models import Task
+
+        task = Task(
+            title="Bad Eval Update",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        url = f"/api/tasks/{task.id}"
+        headers = auth_headers(tokens.admin)
+        bad_script = io.BytesIO(b"this is not valid python !!!")
+        data = {
+            "title": "Bad Eval Update",
+            "evaluator_script": (bad_script, "eval.py"),
+        }
+        resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
+        # Task should still exist and not be deleted
+        from models import Task as TaskModel
+
+        assert db_session.get(TaskModel, task.id) is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

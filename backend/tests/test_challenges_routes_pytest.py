@@ -598,7 +598,7 @@ class TestDeleteChallenge:
         self.db = db_session
         self.admin_token = tokens.admin
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         from auth_utils import generate_token
         from models import Challenge, User
@@ -616,8 +616,8 @@ class TestDeleteChallenge:
         self.challenge = Challenge(
             title="Challenge To Delete",
             description="Test deleting challenge cascade",
-            start_time=datetime.utcnow() - timedelta(days=1),
-            end_time=datetime.utcnow() + timedelta(days=1),
+            start_time=utcnow() - timedelta(days=1),
+            end_time=utcnow() + timedelta(days=1),
         )
         self.db.add(self.challenge)
         self.db.flush()

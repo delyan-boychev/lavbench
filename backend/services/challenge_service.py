@@ -440,11 +440,15 @@ def import_challenge_from_dict(
                             with open(eval_path, encoding="utf-8") as ef:
                                 code = ef.read()
                             task.custom_eval_code = code
-                            from routes.tasks import _parse_evaluator_script
+                            from routes.tasks import _validate_evaluator_script
 
-                            metric_name = _parse_evaluator_script(code)
-                            if metric_name:
-                                task.evaluator_metric_name = metric_name
+                            eval_result, eval_err = _validate_evaluator_script(code)
+                            if eval_result:
+                                task.evaluator_metric_name = eval_result["metric_name"]
+                            else:
+                                logger.warning(
+                                    "Evaluator script in import failed validation: %s", eval_err
+                                )
                         except Exception:
                             logger.exception("Failed to read evaluator script during import")
                             pass

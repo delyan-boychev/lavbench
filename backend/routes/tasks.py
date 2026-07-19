@@ -69,30 +69,77 @@ tasks_bp = Blueprint("tasks", __name__)
 logger = logging.getLogger(__name__)
 
 
-def _parse_evaluator_script(code: str) -> str | None:
-    """Extract METRIC_NAME from a custom evaluator script using AST.
+def _validate_evaluator_script(code: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse and validate required module-level variables from an evaluator script.
 
-    Returns the metric name string, or None if not found.
+    Required: METRIC_NAME (str), SUBMISSION_COLUMNS (list[dict{name, type}]),
+              LABELS_COLUMNS (list[dict{name, type}])
+    Optional: EVALUATOR_OPTIONS (dict)
+
+    Returns (metadata_dict, None) on success or (None, error_message) on failure.
     """
     try:
         import ast
 
         tree = ast.parse(code)
+    except SyntaxError as e:
+        return None, f"Syntax error in evaluator script: {e}"
+
+    def _get_value(var_name: str) -> Any:
         for node in ast.iter_child_nodes(tree):
             if (
                 isinstance(node, ast.Assign)
                 and len(node.targets) == 1
                 and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id == "METRIC_NAME"
-                and isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)
+                and node.targets[0].id == var_name
             ):
-                name = node.value.value.strip()
-                if name:
-                    return name
-    except SyntaxError:
-        pass
-    return None
+                return ast.literal_eval(node.value)
+        return None
+
+    metric_name = _get_value("METRIC_NAME")
+    if metric_name is None:
+        return None, "Missing required variable: METRIC_NAME (str)"
+    if not isinstance(metric_name, str) or not metric_name.strip():
+        return None, "METRIC_NAME must be a non-empty string"
+
+    sub_cols = _get_value("SUBMISSION_COLUMNS")
+    if sub_cols is None:
+        return None, "Missing required variable: SUBMISSION_COLUMNS (list of {name, type})"
+    if not isinstance(sub_cols, list):
+        return None, "SUBMISSION_COLUMNS must be a list"
+    for i, col in enumerate(sub_cols):
+        if not isinstance(col, dict) or "name" not in col or "type" not in col:
+            return (
+                None,
+                f"SUBMISSION_COLUMNS[{i}]: each entry must be a dict with 'name' and 'type' keys",
+            )
+        if not isinstance(col["name"], str) or not isinstance(col["type"], str):
+            return None, f"SUBMISSION_COLUMNS[{i}]: 'name' and 'type' must be strings"
+
+    lbl_cols = _get_value("LABELS_COLUMNS")
+    if lbl_cols is None:
+        return None, "Missing required variable: LABELS_COLUMNS (list of {name, type})"
+    if not isinstance(lbl_cols, list):
+        return None, "LABELS_COLUMNS must be a list"
+    for i, col in enumerate(lbl_cols):
+        if not isinstance(col, dict) or "name" not in col or "type" not in col:
+            return (
+                None,
+                f"LABELS_COLUMNS[{i}]: each entry must be a dict with 'name' and 'type' keys",
+            )
+        if not isinstance(col["name"], str) or not isinstance(col["type"], str):
+            return None, f"LABELS_COLUMNS[{i}]: 'name' and 'type' must be strings"
+
+    options = _get_value("EVALUATOR_OPTIONS")
+    if options is not None and not isinstance(options, dict):
+        return None, "EVALUATOR_OPTIONS must be a dict"
+
+    return {
+        "metric_name": metric_name.strip(),
+        "submission_columns": sub_cols,
+        "labels_columns": lbl_cols,
+        "options": options or {},
+    }, None
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -396,16 +443,18 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
-            try:
-                code = f.read().decode("utf-8")
-                f.seek(0)
-            except Exception:
-                with open(save_path, encoding="utf-8") as ef:
-                    code = ef.read()
+            with open(save_path, encoding="utf-8") as ef:
+                code = ef.read()
             task.custom_eval_code = code
-            parsed_metric = _parse_evaluator_script(code)
-            if parsed_metric:
-                task.evaluator_metric_name = parsed_metric
+            eval_result, eval_err = _validate_evaluator_script(code)
+            if eval_result is None:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
+            task.evaluator_metric_name = eval_result["metric_name"]
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]
@@ -682,16 +731,13 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.evaluator_script_path = save_path
-            try:
-                code = f.read().decode("utf-8")
-                f.seek(0)
-            except Exception:
-                with open(save_path, encoding="utf-8") as ef:
-                    code = ef.read()
+            with open(save_path, encoding="utf-8") as ef:
+                code = ef.read()
             task.custom_eval_code = code
-            parsed_metric = _parse_evaluator_script(code)
-            if parsed_metric:
-                task.evaluator_metric_name = parsed_metric
+            eval_result, eval_err = _validate_evaluator_script(code)
+            if eval_result is None:
+                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
+            task.evaluator_metric_name = eval_result["metric_name"]
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]

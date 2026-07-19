@@ -414,10 +414,13 @@ class TestImportChallenge:
 
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("challenge.json", json.dumps(manifest))
-            zf.writestr(
-                f"tasks/{old_task_uuid}/evaluator.py",
-                b'METRIC_NAME = "import_metric"\nprint("evaluator")\n',
+            eval_py = (
+                b'METRIC_NAME = "import_metric"\n'
+                b'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+                b'print("evaluator")\n'
             )
+            zf.writestr(f"tasks/{old_task_uuid}/evaluator.py", eval_py)
             zf.writestr(f"tasks/{old_task_uuid}/baseline_test.ipynb", b"print('notebook')")
             zf.writestr(f"tasks/{old_task_uuid}/labels.parquet", b"labels_content")
 

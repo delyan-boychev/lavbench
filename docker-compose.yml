@@ -116,6 +116,7 @@ services:
       - backups_data:/backups
       - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
+      - ./guides:/guides:ro
     deploy:
       resources:
         limits:

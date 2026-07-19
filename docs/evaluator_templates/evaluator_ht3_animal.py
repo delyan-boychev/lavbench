@@ -13,6 +13,18 @@ is computed entirely from the submission's pre-computed results.
 
 METRIC_NAME = "mean_score"
 
+SUBMISSION_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "solved", "type": "float"},
+    {"name": "queries", "type": "int"},
+]
+
+LABELS_COLUMNS = []
+
+EVALUATOR_OPTIONS = {
+    "penalty_per_query": 0.02,
+}
+
 
 def evaluate(df_sub, df_labels, options=None):
     import numpy as np

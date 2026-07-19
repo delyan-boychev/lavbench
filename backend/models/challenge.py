@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from models.base import GUID, db, uuid7
-from utils.dates import utcnow
+from utils.dates import to_tz_iso, utcnow
 
 
 class Challenge(db.Model):  # type: ignore[misc, name-defined]
@@ -94,14 +94,16 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             "is_archived": self.is_archived,
             "scores_finalized": self.scores_finalized,
             "reveal_results": self.reveal_results,
-            "start_time": self.start_time.isoformat() + "Z" if self.start_time else None,
-            "end_time": self.end_time.isoformat() + "Z" if self.end_time else None,
+            "start_time": to_tz_iso(self.start_time, self.timezone or "UTC")
+            if self.start_time
+            else None,
+            "end_time": to_tz_iso(self.end_time, self.timezone or "UTC") if self.end_time else None,
             "is_frozen": self.is_frozen,
             "double_blind": self.double_blind,
             "timezone": self.timezone,
             "status": self.computed_status,
             "tasks": [t.to_dict(view_role=view_role) for t in self.tasks],  # type: ignore[attr-defined]
-            "stages": [s.to_dict() for s in self.stages],  # type: ignore[attr-defined]
+            "stages": [s.to_dict(timezone=self.timezone or "UTC") for s in self.stages],  # type: ignore[attr-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,
         }

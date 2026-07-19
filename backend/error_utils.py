@@ -151,6 +151,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_CANNOT_MOVE_ENDED": "Cannot move task -- source stage has ended",
     "ERR_CANNOT_MOVE_HAS_MANUAL_POINTS": "Cannot move task -- submissions have manual points assigned",
     # tasks.py — worker routes
+    "ERR_EVALUATOR_SCRIPT_INVALID": "Evaluator script validation failed.",
     "ERR_EVALUATOR_LOAD_FAILED": "Failed to load evaluator script.",
     "ERR_UNAUTHORIZED": "Unauthorized",
     "ERR_INVALID_REQUEST_BODY": "Request must be JSON",

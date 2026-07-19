@@ -3,6 +3,7 @@
 from typing import Any
 
 from models.base import GUID, db, uuid7
+from utils.dates import to_tz_iso
 
 
 class Stage(db.Model):  # type: ignore[misc, name-defined]
@@ -28,14 +29,14 @@ class Stage(db.Model):  # type: ignore[misc, name-defined]
 
     tasks = db.relationship("Task", backref="stage", lazy=True)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, timezone: str = "UTC") -> dict[str, Any]:
         return {
             "id": self.id,
             "challenge_id": self.challenge_id,
             "stage_number": self.stage_number,
             "title": self.title,
-            "start_time": self.start_time.isoformat() + "Z" if self.start_time else None,
-            "end_time": self.end_time.isoformat() + "Z" if self.end_time else None,
+            "start_time": to_tz_iso(self.start_time, timezone) if self.start_time else None,
+            "end_time": to_tz_iso(self.end_time, timezone) if self.end_time else None,
             "is_finalized": self.is_finalized,
             "reveal_results": self.reveal_results,
             "is_test": self.is_test,

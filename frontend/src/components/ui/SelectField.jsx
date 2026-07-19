@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { ChevronDown, Check } from 'lucide-react';
 
 export default function SelectField({
   label = null,
@@ -158,17 +159,9 @@ export default function SelectField({
           }`}
         >
           <span className="truncate mr-2 text-left">{buttonLabel}</span>
-          <svg
-            className={`text-slate-500 transition-transform duration-200 w-4 h-4 flex-shrink-0 ${
-              isOpen ? 'rotate-180 text-indigo-400' : ''
-            }`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDown
+            className={`text-slate-500 transition-transform duration-200 w-4 h-4 flex-shrink-0 ${isOpen ? 'rotate-180 text-indigo-400' : ''}`}
+          />
         </button>
 
         {isOpen &&
@@ -222,17 +215,7 @@ export default function SelectField({
                         } text-sm`}
                       >
                         <span className="truncate mr-2">{opt.label}</span>
-                        {selected && (
-                          <svg
-                            className="text-indigo-400 flex-shrink-0 w-4 h-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
+                        {selected && <Check className="text-indigo-400 flex-shrink-0 w-4 h-4" />}
                       </button>
                     );
                   })

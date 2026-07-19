@@ -33,6 +33,13 @@ def to_utc(dt: datetime, timezone_str: str = "UTC") -> datetime:
     return dt.replace(tzinfo=tz).astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
 
 
+def to_tz_iso(dt: datetime, timezone_str: str = "UTC") -> str:
+    """Convert a naive UTC datetime to the given timezone and return ISO string with offset."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+    return dt.astimezone(zoneinfo.ZoneInfo(timezone_str)).isoformat()
+
+
 def utcnow() -> datetime:
     """Return a naive datetime representing the current UTC time."""
     return datetime.now(UTC).replace(tzinfo=None)

@@ -1,7 +1,7 @@
 import React from 'react';
 import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
-import { Folder } from 'lucide-react';
+import { Folder, FileText } from 'lucide-react';
 
 export default function TaskSidebar({ tasks, selectedTask, onSelect }) {
   const { t } = useTranslation();
@@ -11,21 +11,7 @@ export default function TaskSidebar({ tasks, selectedTask, onSelect }) {
       <EmptyState
         minHeight={120}
         message={t('challenge.no_tasks_published')}
-        icon={
-          <svg
-            width="28"
-            height="28"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <path
-              strokeLinecap="round"
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-            />
-          </svg>
-        }
+        icon={<FileText size={28} />}
       />
     );
   }

@@ -18,6 +18,26 @@ Metric: delivery_success_rate (fraction of episodes that delivered the package).
 
 METRIC_NAME = "delivery_success_rate"
 
+SUBMISSION_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "actions", "type": "list[int]"},
+]
+
+LABELS_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "walls", "type": "list[list[int]]"},
+    {"name": "depots", "type": "list[list[int]]"},
+    {"name": "agent_row", "type": "int"},
+    {"name": "agent_col", "type": "int"},
+    {"name": "package_location", "type": "int"},
+    {"name": "destination", "type": "int"},
+]
+
+EVALUATOR_OPTIONS = {
+    "max_steps": 120,
+    "grid_size": 8,
+}
+
 ACTION_DELTAS = {0: (1, 0), 1: (-1, 0), 2: (0, 1), 3: (0, -1)}
 
 

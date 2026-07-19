@@ -14,6 +14,20 @@ where acc_old = accuracy on classes 0-15, acc_new = accuracy on classes 16-28.
 
 METRIC_NAME = "competition_score"
 
+SUBMISSION_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "prediction", "type": "int"},
+]
+
+LABELS_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "label", "type": "int"},
+]
+
+EVALUATOR_OPTIONS = {
+    "num_old_classes": 16,
+}
+
 
 def evaluate(df_sub, df_labels, options=None):
     import numpy as np
