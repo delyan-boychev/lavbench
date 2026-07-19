@@ -176,6 +176,11 @@ else
   done
 fi
 
+# ── Resolve derived URLs with actual password values ─────────────────
+set_env "DATABASE_URL" "postgresql://lavbench_user:${POSTGRES_PASSWORD}@localhost:5432/lavbench_db"
+set_env "CELERY_BROKER_URL" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
+set_env "CELERY_RESULT_BACKEND" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
+
 # ── Generate worker.env ────────────────────────────────────────────
 CERTS_SECTION=""
 if [ "$REDIS_TLS" = true ]; then
