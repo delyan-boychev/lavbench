@@ -24,7 +24,7 @@ set_if_missing() {
   if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
     current=$(grep "^${key}=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
     if [ -z "$current" ] || [ "$current" = "replace_with_secure_random_64_chars_min" ] || [ "$current" = "replace_with_base64_encoded_ed25519_public_key" ]; then
-      sed -i '' "s/^${key}=.*/${key}=${value}/" "$ENV_FILE"
+      sed -i.bak "s/^${key}=.*/${key}=${value}/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
       echo "  → ${key}    ✓ generated"
     else
       echo "  → ${key}    ✓ already set (skipped)"
@@ -40,7 +40,7 @@ set_env() {
   local key="$1"
   local value="$2"
   if grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
-    sed -i '' "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
   else
     echo "${key}=${value}" >> "$ENV_FILE"
   fi
@@ -171,7 +171,7 @@ else
   # Comment out or clear TLS settings if they exist
   for tls_var in REDIS_SSL_CA_CERTS REDIS_SSL_CERTFILE REDIS_SSL_KEYFILE REDIS_SSL_CERT_REQS; do
     if grep -qE "^${tls_var}=" "$ENV_FILE" 2>/dev/null; then
-      sed -i '' "s/^${tls_var}=.*/# ${tls_var}=/" "$ENV_FILE"
+      sed -i.bak "s/^${tls_var}=.*/# ${tls_var}=/" "$ENV_FILE" && rm -f "$ENV_FILE.bak"
     fi
   done
 fi
