@@ -56,9 +56,10 @@ edit_server() {
     echo "    3) Redis TLS               [${tls_status}]"
     echo "    4) Redis bind address      [$(get_val "$ENV_FILE" "REDIS_BIND")]"
     echo "    5) CORS origins            [$(get_val "$ENV_FILE" "CORS_ORIGINS")]"
-    echo "    6) HF cache directory      [$(get_val "$ENV_FILE" "HF_CACHE_DIR")]"
-    echo "    7) Regenerate self-signed HTTPS certs"
-    echo "    8) Open in \$EDITOR"
+    echo "    6) Nginx port (HTTP only)  [$(get_val "$ENV_FILE" "NGINX_PORT")]"
+    echo "    7) HF cache directory      [$(get_val "$ENV_FILE" "HF_CACHE_DIR")]"
+    echo "    8) Regenerate self-signed HTTPS certs"
+    echo "    9) Open in \$EDITOR"
     echo "    0) Save and exit"
     echo ""
     read -p "  Choose: " CHOICE
@@ -119,13 +120,27 @@ edit_server() {
         fi
         ;;
       6)
+        local https_proto="$(get_val "$ENV_FILE" "MAIN_SERVER_URL" | sed 's|://.*||')"
+        if [ "$https_proto" = "https" ]; then
+          echo "  Nginx port is fixed to 443 when HTTPS is enabled."
+        else
+          read -p "  Nginx port [$(get_val "$ENV_FILE" "NGINX_PORT")]: " NEW_PORT
+          if [ -n "$NEW_PORT" ]; then
+            set_val "$ENV_FILE" "NGINX_PORT" "$NEW_PORT"
+            local addr="$(get_val "$ENV_FILE" "SERVER_ADDRESS")"
+            set_val "$ENV_FILE" "CORS_ORIGINS" "http://${addr}:${NEW_PORT}"
+            echo "  ✔ Nginx port updated to ${NEW_PORT} (CORS also updated)"
+          fi
+        fi
+        ;;
+      7)
         read -p "  HF cache directory [$(get_val "$ENV_FILE" "HF_CACHE_DIR")]: " NEW_HF
         if [ -n "$NEW_HF" ]; then
           set_val "$ENV_FILE" "HF_CACHE_DIR" "$NEW_HF"
           echo "  ✔ HF cache directory updated"
         fi
         ;;
-      7)
+      8)
         if command -v openssl &>/dev/null; then
           local addr="$(get_val "$ENV_FILE" "SERVER_ADDRESS")"
           mkdir -p certs
@@ -137,7 +152,7 @@ edit_server() {
           echo "  [ERROR] openssl not found"
         fi
         ;;
-      8)
+      9)
         ${EDITOR:-vi} "$ENV_FILE"
         echo "  ✔ Saved"
         ;;
