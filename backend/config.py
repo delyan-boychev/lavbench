@@ -176,6 +176,12 @@ class Config:
     # Log shipping endpoint for remote workers
     WORKER_LOG_SHIP_URL = os.environ.get("WORKER_LOG_SHIP_URL", "")
 
+    # Submission file size limits (prevents OOM on property access)
+    MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
+    MAX_CODE_CELLS_CHARS = int(
+        os.environ.get("MAX_CODE_CELLS_CHARS", 50 * 1024 * 1024)  # 50 MB
+    )
+
     # Redis SSL settings
     REDIS_SSL_CA_CERTS = os.environ.get("REDIS_SSL_CA_CERTS", "")
     REDIS_SSL_CERTFILE = os.environ.get("REDIS_SSL_CERTFILE", "")

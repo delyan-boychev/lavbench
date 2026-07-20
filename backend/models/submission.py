@@ -69,6 +69,16 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             return cached
         if self.code_storage_path and os.path.exists(self.code_storage_path):
             try:
+                size = os.path.getsize(self.code_storage_path)
+                from config import Config
+
+                if size > Config.MAX_CODE_CELLS_CHARS:
+                    logger.warning(
+                        "Reading large code_cells file for submission %s: %d bytes (limit: %d)",
+                        self.id,
+                        size,
+                        Config.MAX_CODE_CELLS_CHARS,
+                    )
                 with open(self.code_storage_path, encoding="utf-8") as f:
                     self._cached_code_cells = f.read()
                     return self._cached_code_cells
@@ -103,6 +113,20 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     def logs(self) -> str:
         if self.log_storage_path and os.path.exists(self.log_storage_path):
             try:
+                size = os.path.getsize(self.log_storage_path)
+                from config import Config
+
+                if size > Config.MAX_LOG_CHARS:
+                    logger.warning(
+                        "Log file %s is %d bytes, reading last %d bytes",
+                        self.log_storage_path,
+                        size,
+                        Config.MAX_LOG_CHARS,
+                    )
+                    with open(self.log_storage_path, "rb") as f:
+                        f.seek(-Config.MAX_LOG_CHARS, os.SEEK_END)
+                        val = f.read().decode("utf-8", errors="replace")
+                        return val + f"\n--- LOG TRUNCATED at {Config.MAX_LOG_CHARS} bytes ---"
                 with open(self.log_storage_path, encoding="utf-8") as f:
                     return f.read()
             except Exception as e:
@@ -112,13 +136,21 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     @logs.setter
     def logs(self, value: str) -> None:
         try:
+            from config import Config
+
+            if value and len(value) > Config.MAX_LOG_CHARS:
+                value = value[: Config.MAX_LOG_CHARS]
+                logger.warning(
+                    "Truncated logs for submission %s to %d chars",
+                    self.id,
+                    Config.MAX_LOG_CHARS,
+                )
+
             from flask import current_app
 
             if current_app:
                 upload_folder = current_app.config.get("UPLOAD_FOLDER")
             else:
-                from config import Config
-
                 upload_folder = Config.UPLOAD_FOLDER
 
             logs_dir = os.path.join(upload_folder, "logs")  # type: ignore[arg-type]

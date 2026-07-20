@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -34,7 +35,7 @@ from sse_utils import (
     sse_connection_limit,
 )
 from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json
+from utils.ipynb import cells_to_ipynb_json, wrap_raw_code_cells
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
@@ -647,11 +648,6 @@ def download_competitor_submission(
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
 
-    try:
-        cells_data = safe_json_loads(best_sub.code_cells, [])
-    except json.JSONDecodeError:
-        cells_data = []
-
     user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
 
@@ -664,7 +660,18 @@ def download_competitor_submission(
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
-    notebook_bytes = cells_to_ipynb_json(cells_data).encode("utf-8")
+    if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):
+        file_size = os.path.getsize(best_sub.code_storage_path)
+        logger.info("Download submission %s code_cells file size: %d bytes", best_sub.id, file_size)
+
+    notebook_bytes = wrap_raw_code_cells(best_sub.code_storage_path)
+    if notebook_bytes is None:
+        logger.warning(
+            "wrap_raw_code_cells failed for submission %s, path=%s",
+            best_sub.id,
+            best_sub.code_storage_path,
+        )
+        notebook_bytes = cells_to_ipynb_json([]).encode("utf-8")
 
     return (
         notebook_bytes,

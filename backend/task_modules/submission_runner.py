@@ -355,6 +355,28 @@ def run_eval_submission(
                 metric_name="accuracy",
                 hf_dataset_split="test",
             )
+            # Log file sizes before accessing file-backed properties
+            for _field, path, label, limit_key in [
+                (
+                    "code_cells",
+                    db_submission.code_storage_path,
+                    "code_cells",
+                    "MAX_CODE_CELLS_CHARS",
+                ),
+                ("logs", db_submission.log_storage_path, "logs", "MAX_LOG_CHARS"),
+            ]:
+                if path and os.path.exists(path):
+                    size = os.path.getsize(path)
+                    limit = getattr(Config, limit_key, float("inf"))
+                    if size > limit:
+                        logger.warning(
+                            "Submission %s %s file is %d bytes (limit %d) — may cause slow reads",
+                            db_submission.id,
+                            label,
+                            size,
+                            limit,
+                        )
+
             submission = MockModel(
                 id=db_submission.id,
                 task_id=db_submission.task_id,
