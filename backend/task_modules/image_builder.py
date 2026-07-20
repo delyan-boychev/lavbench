@@ -403,6 +403,7 @@ def _run_docker_build(
                 err = entry["error"]
                 logs.append(f"Docker build error: {err}")
                 logger.error("[build %s] Error: %s", tag, err)
+                return -1, "", err, False
         return 0, "", "", False
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
