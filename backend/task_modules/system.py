@@ -38,15 +38,13 @@ def run_register_worker_specs(celery_app: Any) -> None:
     except ImportError:
         ram_gb = 16.0
 
-    api_base = Config.API_BASE
-
     gpu_count = 0
     if gpu_id:
         gpu_count = len([g for g in gpu_id.split(",") if g.strip()])
 
     try:
         requests.post(
-            f"{api_base}/admin/workers/register",
+            f"{Config.MAIN_SERVER_URL.rstrip('/')}/api/admin/workers/register",
             json={
                 "worker_id": machine_id,
                 "ram_gb": ram_gb,

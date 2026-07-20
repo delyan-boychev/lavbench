@@ -132,8 +132,6 @@ class Config:
 
     # Main server URL (for worker callbacks)
     MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-    _api_base = os.environ.get("API_BASE", "")
-    API_BASE = _api_base or f"{MAIN_SERVER_URL.rstrip('/')}/api"
 
     # Worker identity / tokens
     RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
