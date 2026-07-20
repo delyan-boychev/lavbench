@@ -175,8 +175,14 @@ export default function SubmissionsView() {
   const { t } = useTranslation();
   const { challengeId } = useParams();
   const { currentUser } = useAuth();
-  const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask, confirm } =
-    useApp();
+  const {
+    selectedChallenge,
+    setSelectedChallengeById,
+    selectedTask,
+    setSelectedTask,
+    confirm,
+    showToast,
+  } = useApp();
 
   const [submissions, setSubmissions] = useState([]);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
@@ -695,9 +701,11 @@ export default function SubmissionsView() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+      } else {
+        showToast(t('submissions.download_failed', 'Download failed'), 'rose');
       }
-    } catch (err) {
-      console.error('Download failed:', err);
+    } catch {
+      showToast(t('submissions.download_error', 'Error downloading submission'), 'rose');
     }
   };
 
