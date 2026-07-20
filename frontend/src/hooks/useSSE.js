@@ -14,8 +14,11 @@ export default function useSSE(url, opts = {}) {
   const timeoutRef = useRef(null);
   const onMessageRef = useRef(onMessage);
   const onErrorRef = useRef(onError);
-  onMessageRef.current = onMessage;
-  onErrorRef.current = onError;
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    onErrorRef.current = onError;
+  }, [onMessage, onError]);
 
   const clearConnection = useCallback(() => {
     if (timeoutRef.current) {
@@ -27,6 +30,8 @@ export default function useSSE(url, opts = {}) {
       esRef.current = null;
     }
   }, []);
+
+  const connectRef = useRef(null);
 
   const connect = useCallback(() => {
     if (!urlRef.current || !mountedRef.current) return;
@@ -67,7 +72,7 @@ export default function useSSE(url, opts = {}) {
       if (reconnect && retryCountRef.current < maxReconnects) {
         retryCountRef.current += 1;
         timeoutRef.current = setTimeout(() => {
-          if (mountedRef.current) connect();
+          if (mountedRef.current && connectRef.current) connectRef.current();
         }, reconnectDelay);
       } else {
         const msg = 'Connection lost';
@@ -78,6 +83,10 @@ export default function useSSE(url, opts = {}) {
       }
     };
   }, [clearConnection, reconnect, reconnectDelay, maxReconnects]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  });
 
   const reconnectFn = useCallback(() => {
     retryCountRef.current = 0;

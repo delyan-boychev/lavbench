@@ -263,6 +263,8 @@
     "baseline_label": "Базово решение",
     "download": "Изтегли",
     "execution_time_heading": "Изпълнение",
+    "download_error": "Грешка при изтегляне на решението",
+    "download_failed": "Неуспешно изтегляне",
     "task_count": "задачи"
   },
   "challenge": {

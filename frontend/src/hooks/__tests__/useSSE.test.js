@@ -142,7 +142,6 @@ describe('useSSE', () => {
     act(() => {
       triggerOpen();
     });
-    const initialInstance = mockEventSourceInstance;
     act(() => {
       triggerError();
     });

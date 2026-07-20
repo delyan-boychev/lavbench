@@ -108,7 +108,7 @@ export default function AdminPanel() {
   // Task Form State
   const [editingTask, setEditingTask] = useState(null); // Task object or null
   const [isCreatingTask, setIsCreatingTask] = useState(false); // boolean
-  const [savingTask, setSavingTask] = useState(false);
+  const [savingTask] = useState(false);
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
@@ -218,7 +218,7 @@ export default function AdminPanel() {
 
   // CSV Import State
   const [csvFile, setCsvFile] = useState(null);
-  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvImporting] = useState(false);
   const [csvChallengeId, setCsvChallengeId] = useState('');
   const [importedCompetitors, setImportedCompetitors] = useState([]);
 
