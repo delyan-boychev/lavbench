@@ -119,6 +119,7 @@ deploy_docker() {
     -e CELERY_RESULT_BACKEND \
     -e SECRET_KEY \
     -e WORKER_PRIVATE_KEY \
+    -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_TYPE \
     -e HF_CACHE_DIR \
