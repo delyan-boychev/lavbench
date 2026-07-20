@@ -8,7 +8,7 @@ import tempfile
 import time
 from typing import Any
 
-from flask import Blueprint, after_this_request, request, stream_with_context
+from flask import Blueprint, request, stream_with_context
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
@@ -671,23 +671,23 @@ def download_competitor_submission(
         tmp.write(notebook_str.encode("utf-8"))
         tmp_path = tmp.name
 
-    try:
-
-        @after_this_request
-        def cleanup(response):
+    def _stream():
+        try:
+            with open(tmp_path, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
             with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            return response
 
-        return FlaskResponse(
-            stream_with_context(open(tmp_path, "rb")),
-            200,
-            {
-                "Content-Type": "application/x-ipynb+json",
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
+    return FlaskResponse(
+        stream_with_context(_stream()),
+        200,
+        {
+            "Content-Type": "application/x-ipynb+json",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
