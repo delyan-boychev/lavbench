@@ -4,6 +4,7 @@ import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import api from '../../services/ApiService';
 import { useApp } from '../../context/AppContext';
+import useSSE from '../../hooks/useSSE';
 import { formatDateTime } from '../../utils/formatDate';
 
 export default function BackupManager() {
@@ -28,31 +29,27 @@ export default function BackupManager() {
 
   useEffect(() => {
     loadBackups();
-    const eventSource = new EventSource('/api/admin/backups/live');
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.backups) {
-          const filtered = data.backups.filter(
-            (b) =>
-              !b.filename.includes('submission_ended') &&
-              !b.filename.includes('grace_ended') &&
-              !b.filename.includes('finalized'),
-          );
-          setBackups(filtered);
-          setLoading(false);
-        }
-        if (data.event?.status === 'completed') {
-          setForcing(false);
-          loadBackups();
-        }
-      } catch (e) {
-        console.error('Backup SSE parse error:', e);
-      }
-    };
-    return () => eventSource.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useSSE('/api/admin/backups/live', {
+    onMessage: (data) => {
+      if (data.backups) {
+        const filtered = data.backups.filter(
+          (b) =>
+            !b.filename.includes('submission_ended') &&
+            !b.filename.includes('grace_ended') &&
+            !b.filename.includes('finalized'),
+        );
+        setBackups(filtered);
+        setLoading(false);
+      }
+      if (data.event?.status === 'completed') {
+        setForcing(false);
+        loadBackups();
+      }
+    },
+  });
 
   const handleForce = async () => {
     setForcing(true);

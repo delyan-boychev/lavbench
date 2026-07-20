@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
+import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
 
@@ -94,26 +95,19 @@ export default function Navbar() {
     showToast(t('nav.signed_out_success'));
   };
 
-  React.useEffect(() => {
-    const eventSource = new EventSource('/api/worker-status/live');
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        setWorkerStatus(data.status);
-        setClusters(data.clusters || []);
-      } catch {
-        /* noop */
-      }
-    };
-
-    eventSource.onerror = () => {
+  useSSE('/api/worker-status/live', {
+    reconnect: true,
+    reconnectDelay: 10000,
+    maxReconnects: Infinity,
+    onMessage: (msg) => {
+      setWorkerStatus(msg.status);
+      setClusters(msg.clusters || []);
+    },
+    onError: () => {
       setWorkerStatus('offline');
       setClusters([]);
-    };
-
-    return () => eventSource.close();
-  }, []);
+    },
+  });
 
   React.useEffect(() => {
     const mq = window.matchMedia('(max-width: 450px)');

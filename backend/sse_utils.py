@@ -1,81 +1,104 @@
-"""Server-Sent Events (SSE) publish/subscribe helpers for real-time updates."""
+"""Server-Sent Events (SSE) publish/subscribe helpers for real-time updates.
+
+Connection limiting uses Redis Sorted Sets — new connections are always
+accepted, but if a limit is exceeded the **oldest** connection is dropped.
+This ensures the UI never gets blocked from connecting.
+"""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
 from cache_utils import get_redis_client
 from config import Config
+from models.base import uuid7
+
+logger = logging.getLogger(__name__)
 
 SSE_MAX_PER_USER = Config.SSE_MAX_PER_USER
 SSE_MAX_GLOBAL = Config.SSE_MAX_GLOBAL
 SSE_IDLE_TIMEOUT = Config.SSE_IDLE_TIMEOUT
 
-logger = logging.getLogger(__name__)
+_CONNECTIONS_KEY = "sse:connections"
+_STALE_TTL = 120
 
 
 def _redis() -> Any:
     return get_redis_client()
 
 
+def _member_for(user_id: Any = None) -> tuple[str, str | None]:
+    member = str(uuid7())
+    user_key = f"sse:user:{user_id}" if user_id else None
+    return member, user_key
+
+
+def _cleanup_stale(r: Any, *keys: str) -> None:
+    cutoff = time.time() - _STALE_TTL
+    for key in keys:
+        with contextlib.suppress(Exception):
+            r.zremrangebyscore(key, 0, cutoff)
+
+
+def _trim_oldest(r: Any, key: str, limit: int) -> None:
+    count = r.zcard(key)
+    if count > limit:
+        r.zpopmin(key, count - limit)
+
+
 @contextmanager
 def sse_connection_limit(
-    user_id: Any = None, remote_addr: Any = None
+    user_id: Any = None,
+    remote_addr: Any = None,
+    max_global: int | None = None,
+    max_per_user: int | None = None,
 ) -> Generator[bool, None, None]:
-    """Context manager that tracks and caps concurrent SSE connections via Redis.
-    Enforces per-user and global connection limits with auto-cleanup on exit."""
+    """Context manager that caps concurrent SSE connections via Redis Sorted Sets.
+
+    New connections are **always** allowed. If the per-user or global limit
+    is exceeded, the **oldest** connection in that set is dropped instead.
+    Stale connections (no heartbeat for 120s) are pruned on every check.
+
+    Yields ``True`` always — the caller does not need to handle rejection.
+    """
     r = get_redis_client()
-    user_key = f"sse:user:{user_id}" if user_id else None
-    global_key = "sse:global"
-    allowed = True
+    if not r:
+        yield True
+        return
 
-    if r:
-        try:
-            pipe = r.pipeline()
-            if user_key:
-                pipe.incr(user_key)
-            pipe.incr(global_key)
-            results = pipe.execute()
-            if user_key:
-                user_count = results[0]
-                if user_count == 1:
-                    r.expire(user_key, 120)
-                global_count = results[1]
-            else:
-                user_count = 0
-                global_count = results[0]
-            if global_count == 1:
-                r.expire(global_key, 120)
+    member, user_key = _member_for(user_id)
+    now = time.time()
 
-            if user_count > SSE_MAX_PER_USER:
-                allowed = False
-                logger.warning("SSE limit: user %s has %s active connections", user_id, user_count)
-            elif global_count > SSE_MAX_GLOBAL:
-                allowed = False
-                logger.warning("SSE limit: global connections at %s", global_count)
-        except Exception as e:
-            logger.warning("SSE connection limit check failed (allowing): %s", e)
+    effective_max_global = max_global if max_global is not None else SSE_MAX_GLOBAL
+    effective_max_per_user = max_per_user if max_per_user is not None else SSE_MAX_PER_USER
 
     try:
-        yield allowed
+        r.zadd(_CONNECTIONS_KEY, {member: now})
+        _cleanup_stale(r, _CONNECTIONS_KEY)
+        _trim_oldest(r, _CONNECTIONS_KEY, effective_max_global)
+
+        if user_key:
+            r.zadd(user_key, {member: now})
+            _cleanup_stale(r, user_key)
+            _trim_oldest(r, user_key, effective_max_per_user)
+
+        yield True
+    except Exception:
+        logger.warning("SSE connection limit check failed (allowing):", exc_info=True)
+        yield True
     finally:
-        # Safely decrement counters — only if the key still exists and is > 0.
-        # This prevents DECR from creating a key with value -1 if the TTL
-        # expired between the INCR (entry) and DECR (cleanup).
-        if r:
-            try:
-                for key in ([user_key] if user_key else []) + [global_key]:
-                    val = r.get(key)
-                    if val is not None and int(val) > 0:
-                        r.decr(key)
-                    elif val is not None:
-                        r.delete(key)
-            except Exception as e:
-                logger.warning("SSE connection counter cleanup failed: %s", e)
+        try:
+            r.zrem(_CONNECTIONS_KEY, member)
+            if user_key:
+                r.zrem(user_key, member)
+        except Exception:
+            logger.warning("SSE connection cleanup failed:", exc_info=True)
 
 
 def publish_leaderboard_update(task_id: Any, challenge_id: Any = None) -> None:

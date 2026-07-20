@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
+import useSSE from '../hooks/useSSE';
 import TaskService from '../services/TaskService';
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import Badge from '../components/ui/Badge';
@@ -302,50 +303,37 @@ export default function SubmissionsView() {
     setSubmissionsPage(1);
   }, [selectedTask]);
 
-  useEffect(() => {
-    if (!selectedTask) {
-      setSubmissions([]);
-      return;
-    }
-    setLoading(true);
-    const taskId = selectedTask.id;
-    const page = submissionsPage;
-    const sseUrl = `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10`;
-    const eventSource = new EventSource(sseUrl);
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data) {
-          if (data.items !== undefined) {
-            setSubmissions(data.items || []);
-            setSubmissionsTotal(data.total || 0);
-            setSubmissionsPages(data.pages || 1);
-            setSelectedSubmission((prev) => {
-              if (!prev) return null;
-              const updated = data.items.find((s) => s.id === prev.id);
-              if (updated) return { ...prev, ...updated };
-              return prev;
-            });
-          } else {
-            const arr = data || [];
-            setSubmissions(arr);
-            setSubmissionsTotal(arr.length);
-            setSubmissionsPages(1);
-            setSelectedSubmission((prev) => {
-              if (!prev) return null;
-              const updated = arr.find((s) => s.id === prev.id);
-              if (updated) return { ...prev, ...updated };
-              return prev;
-            });
-          }
-        }
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to parse submissions SSE data:', err);
+  const taskId = selectedTask?.id;
+  const page = submissionsPage;
+
+  useSSE(taskId ? `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10` : '', {
+    onMessage: (data) => {
+      if (!data) return;
+      if (data.items !== undefined) {
+        setSubmissions(data.items || []);
+        setSubmissionsTotal(data.total || 0);
+        setSubmissionsPages(data.pages || 1);
+        setSelectedSubmission((prev) => {
+          if (!prev) return null;
+          const updated = data.items.find((s) => s.id === prev.id);
+          if (updated) return { ...prev, ...updated };
+          return prev;
+        });
+      } else {
+        const arr = data || [];
+        setSubmissions(arr);
+        setSubmissionsTotal(arr.length);
+        setSubmissionsPages(1);
+        setSelectedSubmission((prev) => {
+          if (!prev) return null;
+          const updated = arr.find((s) => s.id === prev.id);
+          if (updated) return { ...prev, ...updated };
+          return prev;
+        });
       }
-    };
-    eventSource.onerror = () => {
-      eventSource.close();
+      setLoading(false);
+    },
+    onError: () => {
       const loadFallback = async () => {
         try {
           const res = await api.fetch(`/api/tasks/${taskId}/submissions?page=${page}&per_page=10`, {
@@ -372,9 +360,8 @@ export default function SubmissionsView() {
         }
       };
       loadFallback();
-    };
-    return () => eventSource.close();
-  }, [selectedTask, submissionsPage]);
+    },
+  });
 
   const handleSelectFinal = async (submissionId) => {
     setSelectingFinal(true);

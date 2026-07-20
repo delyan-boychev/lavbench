@@ -8,7 +8,6 @@ import uuid
 from typing import Any
 
 from models import Challenge, Submission, Task
-from utils.dates import utcnow
 
 
 def extract_code_from_cells(cells_list: list[Any]) -> list[str]:
@@ -225,20 +224,10 @@ def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple
 
 
 def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
-    (
-        """Return a priority integer: 9 for admin/jury, """
-        """decaying from 6 for competitors per daily count."""
-    )
+    """Return 0 for admin/jury (always first), 1 for all students (FIFO by timestamp)."""
     if role in ["admin", "jury"]:
-        return 9
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    submission_count = Submission.query.filter(
-        Submission.user_id == user_id, Submission.created_at >= today_start
-    ).count()
-    if submission_count == 0:
-        return 6
-    priority = max(1, 6 - submission_count)
-    return priority  # type: ignore[no-any-return]
+        return 0
+    return 1
 
 
 def get_best_submission(

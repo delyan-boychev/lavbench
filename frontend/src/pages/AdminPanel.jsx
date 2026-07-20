@@ -7,6 +7,8 @@ import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import Badge from '../components/ui/Badge';
 import useDebounce from '../hooks/useDebounce';
+import useSSE from '../hooks/useSSE';
+import useMutation from '../hooks/useMutation';
 import { Navigate } from 'react-router-dom';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
@@ -32,6 +34,7 @@ export { formatMetricName };
 export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
+  const { isLoading, run } = useMutation();
 
   const {
     challenges,
@@ -274,37 +277,21 @@ export default function AdminPanel() {
 
   // Worker stats via SSE (persistent connection, no polling)
 
-  useEffect(() => {
-    if (adminSubTab !== 'workers-stats') return;
-
-    setWorkerStatsLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
-    const sseUrl = `/api/admin/workers/stats/live`;
-    const eventSource = new EventSource(sseUrl);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data && !data.error) {
-          setWorkerStats(data);
-          setWorkerStatsError(null);
-        } else if (data?.error) {
-          setWorkerStatsError(data.error);
-        }
-        setWorkerStatsLoading(false);
-      } catch (e) {
-        console.error('Worker stats SSE parse error:', e);
+  useSSE(adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '', {
+    onMessage: (data) => {
+      if (data && !data.error) {
+        setWorkerStats(data);
+        setWorkerStatsError(null);
+      } else if (data?.error) {
+        setWorkerStatsError(data.error);
       }
-    };
-
-    eventSource.onerror = () => {
+      setWorkerStatsLoading(false);
+    },
+    onError: () => {
       setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
       setWorkerStatsLoading(false);
-      eventSource.close();
-    };
-
-    return () => eventSource.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminSubTab]);
+    },
+  });
 
   const fetchWorkerStats = () => setWorkerStatsLoading(true);
 
@@ -422,39 +409,41 @@ export default function AdminPanel() {
   const handleCreateChallenge = async (e) => {
     e.preventDefault();
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newChallenge),
-      });
-      /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['201']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.competition_created'));
-        setNewChallenge({
-          title: '',
-          description: '',
-          max_eval_requests: 10,
-          ram_limit_mb: 8192,
-          time_limit_sec: 300,
-          gpu_required: false,
-          start_time: '',
-          end_time: '',
-          is_frozen: false,
-          double_blind: true,
-          timezone: 'UTC',
-          test_stage_start_time: '',
-          test_stage_end_time: '',
+      await run('createChallenge', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newChallenge),
         });
-        fetchChallenges();
-        fetchPaginatedChallenges();
-        setAdminSubTab('competition-mgmt');
-      } else {
-        showApiError(data, 'admin.notifications.competition_create_failed');
-      }
+        /** @type {import('../types/api').paths['/api/challenges']['post']['responses']['201']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.competition_created'));
+          setNewChallenge({
+            title: '',
+            description: '',
+            max_eval_requests: 10,
+            ram_limit_mb: 8192,
+            time_limit_sec: 300,
+            gpu_required: false,
+            start_time: '',
+            end_time: '',
+            is_frozen: false,
+            double_blind: true,
+            timezone: 'UTC',
+            test_stage_start_time: '',
+            test_stage_end_time: '',
+          });
+          fetchChallenges();
+          fetchPaginatedChallenges();
+          setAdminSubTab('competition-mgmt');
+        } else {
+          showApiError(data, 'admin.notifications.competition_create_failed');
+        }
+      });
     } catch {
       showToast(t('admin.notifications.network_error_create_competition'), 'rose');
     }
@@ -462,30 +451,32 @@ export default function AdminPanel() {
 
   // Handle Competition update
   const handleUpdateChallenge = async (id, updated) => {
+    let result = { success: false };
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updated),
+      await run('updateChallenge', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updated),
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['put']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.competition_updated'));
+          fetchChallenges();
+          fetchPaginatedChallenges();
+          result = { success: true };
+        } else {
+          showApiError(data, 'admin.notifications.competition_update_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['put']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.competition_updated'));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-        return { success: true };
-      } else {
-        showApiError(data, 'admin.notifications.competition_update_failed');
-        return { success: false };
-      }
     } catch {
       showToast(t('admin.notifications.network_error_update_competition'), 'rose');
-      return { success: false };
     }
+    return result;
   };
 
   // Handle Competition delete
@@ -496,21 +487,23 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
-        method: 'DELETE',
-        headers: {},
+      await run('deleteChallenge', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
+          method: 'DELETE',
+          headers: {},
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['delete']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.competition_deleted', { title }));
+          if (editingChallenge?.id === id) setEditingChallenge(null);
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.competition_delete_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}']['delete']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.competition_deleted', { title }));
-        if (editingChallenge?.id === id) setEditingChallenge(null);
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.competition_delete_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_delete_competition'), 'rose');
     }
@@ -527,24 +520,26 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!finalizingChallenge) return;
     try {
-      const res = await api.fetch(`${API_BASE}/challenges/${finalizingChallenge.id}/finalize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reveal_results: challengeFinalizeForm.reveal_results,
-        }),
+      await run('finalizeChallenge', async () => {
+        const res = await api.fetch(`${API_BASE}/challenges/${finalizingChallenge.id}/finalize`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reveal_results: challengeFinalizeForm.reveal_results,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.scores_finalized'));
+          setFinalizingChallenge(null);
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.scores_finalize_failed');
+        }
       });
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.scores_finalized'));
-        setFinalizingChallenge(null);
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.scores_finalize_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
     }
@@ -554,25 +549,27 @@ export default function AdminPanel() {
   const handleToggleRevealChallenge = async (id, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      const res = await api.fetch(`${API_BASE}/challenges/${id}/reveal-results`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ reveal_results: nextVal }),
+      await run('toggleRevealChallenge', async () => {
+        const res = await api.fetch(`${API_BASE}/challenges/${id}/reveal-results`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ reveal_results: nextVal }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(
+            nextVal
+              ? t('admin.notifications.results_revealed', 'Results revealed successfully.')
+              : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
+          );
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, '', 'Failed to toggle reveal');
+        }
       });
-      const data = await res.json();
-      if (res.ok) {
-        showToast(
-          nextVal
-            ? t('admin.notifications.results_revealed', 'Results revealed successfully.')
-            : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
-        );
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, '', 'Failed to toggle reveal');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -581,26 +578,28 @@ export default function AdminPanel() {
   const handleToggleRevealStage = async (challengeId, stageId, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      const res = await api.fetch(
-        `${API_BASE}/challenges/${challengeId}/stages/${stageId}/reveal-results`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reveal_results: nextVal }),
-        },
-      );
-      const data = await res.json();
-      if (res.ok) {
-        showToast(
-          nextVal
-            ? t('admin.notifications.stage_results_revealed', 'Stage results revealed.')
-            : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
+      await run('toggleRevealStage', async () => {
+        const res = await api.fetch(
+          `${API_BASE}/challenges/${challengeId}/stages/${stageId}/reveal-results`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reveal_results: nextVal }),
+          },
         );
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, '', 'Failed to toggle stage reveal');
-      }
+        const data = await res.json();
+        if (res.ok) {
+          showToast(
+            nextVal
+              ? t('admin.notifications.stage_results_revealed', 'Stage results revealed.')
+              : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
+          );
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, '', 'Failed to toggle stage reveal');
+        }
+      });
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -609,20 +608,22 @@ export default function AdminPanel() {
   // Handle archive toggle
   const handleArchiveToggle = async (id) => {
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
-        method: 'POST',
-        headers: {},
+      await run('archiveToggle', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
+          method: 'POST',
+          headers: {},
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message || t('admin.notifications.archive_toggle_success'));
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.archive_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/archive']['post']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(data.message || t('admin.notifications.archive_toggle_success'));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.archive_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -666,31 +667,33 @@ export default function AdminPanel() {
 
   const handleSaveCreateStage = async (e) => {
     e.preventDefault();
+    const payload = {
+      title: stageForm.title,
+      stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
+      start_time: stageForm.start_time,
+      end_time: stageForm.end_time,
+    };
     try {
-      const payload = {
-        title: stageForm.title,
-        stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
-        start_time: stageForm.start_time,
-        end_time: stageForm.end_time,
-      };
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+      await run('createStage', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['201']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.stage_created'));
+          setIsCreatingStage(false);
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.stage_create_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages']['post']['responses']['201']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.stage_created'));
-        setIsCreatingStage(false);
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.stage_create_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_create_stage'), 'rose');
     }
@@ -698,35 +701,37 @@ export default function AdminPanel() {
 
   const handleSaveUpdateStage = async (e) => {
     e.preventDefault();
+    const payload = {
+      title: stageForm.title,
+      stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
+      start_time: stageForm.start_time,
+      end_time: stageForm.end_time,
+      reveal_results: !!stageForm.reveal_results,
+    };
     try {
-      const payload = {
-        title: stageForm.title,
-        stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
-        start_time: stageForm.start_time,
-        end_time: stageForm.end_time,
-        reveal_results: !!stageForm.reveal_results,
-      };
-      /** @type {Response} */
-      const res = await api.fetch(
-        `${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
+      await run('updateStage', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(
+          `${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-        },
-      );
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['put']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.stage_updated'));
-        setEditingStage(null);
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.stage_update_failed');
-      }
+        );
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['put']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.stage_updated'));
+          setEditingStage(null);
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.stage_update_failed');
+        }
+      });
     } catch {
       showToast(t('admin.notifications.network_error_update_stage'), 'rose');
     }
@@ -739,20 +744,22 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
-        method: 'DELETE',
-        headers: {},
+      await run('deleteStage', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
+          method: 'DELETE',
+          headers: {},
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['delete']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.stage_deleted', { title }));
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.stage_delete_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}']['delete']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.stage_deleted', { title }));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.stage_delete_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_delete_stage'), 'rose');
     }
@@ -760,31 +767,33 @@ export default function AdminPanel() {
 
   const handleSaveFinalizeStage = async (e) => {
     e.preventDefault();
+    const payload = {
+      reveal_results: stageFinalizeForm.reveal_results,
+    };
     try {
-      const payload = {
-        reveal_results: stageFinalizeForm.reveal_results,
-      };
-      /** @type {Response} */
-      const res = await api.fetch(
-        `${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+      await run('finalizeStage', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(
+          `${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-        },
-      );
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}/finalize']['post']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.stage_finalized'));
-        setFinalizingStage(null);
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(data, 'admin.notifications.stage_finalize_failed');
-      }
+        );
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/stages/{stage_id}/finalize']['post']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.stage_finalized'));
+          setFinalizingStage(null);
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(data, 'admin.notifications.stage_finalize_failed');
+        }
+      });
     } catch {
       showToast(t('admin.notifications.network_error_finalize_stage'), 'rose');
     }
@@ -1016,30 +1025,29 @@ export default function AdminPanel() {
       return;
     }
 
-    setSavingTask(true);
     const formData = prepareTaskFormData();
 
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
-        method: 'POST',
-        headers: {},
-        body: formData,
+      await run('createTask', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
+          method: 'POST',
+          headers: {},
+          body: formData,
+        });
+        /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['201']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.task_created'));
+          fetchChallenges();
+          fetchPaginatedChallenges();
+          setIsCreatingTask(false);
+        } else {
+          showApiError(data, 'admin.notifications.task_create_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/challenges/{challenge_id}/tasks']['post']['responses']['201']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.task_created'));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-        setIsCreatingTask(false);
-      } else {
-        showApiError(data, 'admin.notifications.task_create_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
-    } finally {
-      setSavingTask(false);
     }
   };
 
@@ -1079,7 +1087,6 @@ export default function AdminPanel() {
       return;
     }
 
-    setSavingTask(true);
     const formData = prepareTaskFormData();
     if (deletedNames.length > 0) {
       formData.append('deleted_files', JSON.stringify(deletedNames));
@@ -1089,26 +1096,26 @@ export default function AdminPanel() {
     }
 
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
-        method: 'PUT',
-        headers: {},
-        body: formData,
+      await run('updateTask', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
+          method: 'PUT',
+          headers: {},
+          body: formData,
+        });
+        /** @type {import('../types/api').paths['/api/tasks/{task_id}']['put']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.task_updated'));
+          fetchChallenges();
+          fetchPaginatedChallenges();
+          setEditingTask(null);
+        } else {
+          showApiError(data, 'admin.notifications.task_update_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/tasks/{task_id}']['put']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.task_updated'));
-        fetchChallenges();
-        fetchPaginatedChallenges();
-        setEditingTask(null);
-      } else {
-        showApiError(data, 'admin.notifications.task_update_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
-    } finally {
-      setSavingTask(false);
     }
   };
 
@@ -1120,23 +1127,25 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
-        method: 'DELETE',
-        headers: {},
-      });
-      if (res.ok) {
-        showToast(t('admin.notifications.task_deleted', { title }));
-        if (editingTask?.id === taskId) {
-          setEditingTask(null);
-          setIsCreatingTask(false);
+      await run('deleteTask', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
+          method: 'DELETE',
+          headers: {},
+        });
+        if (res.ok) {
+          showToast(t('admin.notifications.task_deleted', { title }));
+          if (editingTask?.id === taskId) {
+            setEditingTask(null);
+            setIsCreatingTask(false);
+          }
+          fetchChallenges();
+          fetchPaginatedChallenges();
+        } else {
+          const data = await res.json();
+          showApiError(data, 'admin.notifications.task_delete_failed');
         }
-        fetchChallenges();
-        fetchPaginatedChallenges();
-      } else {
-        const data = await res.json();
-        showApiError(data, 'admin.notifications.task_delete_failed');
-      }
+      });
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -1152,39 +1161,41 @@ export default function AdminPanel() {
     setGeneratedCredentials(null);
 
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/register-competitor`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newCompetitor),
+      await run('registerCompetitor', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/register-competitor`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newCompetitor),
+        });
+        /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['201']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          setGeneratedCredentials({
+            username: data.generated_username,
+            password: data.generated_password,
+            name: newCompetitor.name,
+            surname: newCompetitor.surname,
+          });
+          setNewCompetitor({
+            name: '',
+            middle_name: '',
+            surname: '',
+            birth_date: '',
+            grade: '',
+            school: '',
+            city: '',
+            challenge_id: '',
+            is_anonymous: false,
+          });
+          showToast(t('admin.notifications.competitor_registered'));
+          fetchCompetitors();
+        } else {
+          showApiError(data, 'admin.notifications.competitor_register_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/admin/register-competitor']['post']['responses']['201']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        setGeneratedCredentials({
-          username: data.generated_username,
-          password: data.generated_password,
-          name: newCompetitor.name,
-          surname: newCompetitor.surname,
-        });
-        setNewCompetitor({
-          name: '',
-          middle_name: '',
-          surname: '',
-          birth_date: '',
-          grade: '',
-          school: '',
-          city: '',
-          challenge_id: '',
-          is_anonymous: false,
-        });
-        showToast(t('admin.notifications.competitor_registered'));
-        fetchCompetitors();
-      } else {
-        showApiError(data, 'admin.notifications.competitor_register_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -1218,50 +1229,53 @@ export default function AdminPanel() {
         .join('');
     };
 
+    const requestBody = { ...newUser };
+    if (newUser.password) {
+      requestBody.password = await hashPassword(newUser.password);
+    }
+
     try {
-      const requestBody = { ...newUser };
-      if (newUser.password) {
-        requestBody.password = await hashPassword(newUser.password);
-      }
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/register-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+      await run('registerUser', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/register-user`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+        /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['201']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.user_registered'));
+          setGeneratedUserCredentials({
+            username: data.generated_username,
+            password: data.generated_password,
+            role: newUser.role,
+            name: newUser.name,
+            surname: newUser.surname,
+          });
+          setNewUser({
+            username: '',
+            email: '',
+            password: '',
+            name: '',
+            middle_name: '',
+            surname: '',
+            birth_date: '',
+            role: 'competitor',
+            grade: '',
+            school: '',
+            city: '',
+            challenge_id: '',
+            is_anonymous: false,
+            jury_challenges: [],
+          });
+          fetchUsers();
+        } else {
+          showApiError(data, 'admin.notifications.user_register_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/admin/register-user']['post']['responses']['201']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.user_registered'));
-        setGeneratedUserCredentials({
-          username: data.generated_username,
-          password: data.generated_password,
-          role: newUser.role,
-          name: newUser.name,
-          surname: newUser.surname,
-        });
-        setNewUser({
-          username: '',
-          email: '',
-          password: '',
-          name: '',
-          middle_name: '',
-          surname: '',
-          birth_date: '',
-          role: 'competitor',
-          grade: '',
-          school: '',
-          city: '',
-          challenge_id: '',
-          is_anonymous: false,
-          jury_challenges: [],
-        });
-        fetchUsers();
-      } else {
-        showApiError(data, 'admin.notifications.user_register_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -1275,18 +1289,20 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: {},
+      await run('deleteUser', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
+          method: 'DELETE',
+          headers: {},
+        });
+        if (res.ok) {
+          showToast(t('admin.notifications.user_deleted', { username }));
+          fetchUsers();
+        } else {
+          const data = await res.json();
+          showApiError(data, 'admin.notifications.user_delete_failed');
+        }
       });
-      if (res.ok) {
-        showToast(t('admin.notifications.user_deleted', { username }));
-        fetchUsers();
-      } else {
-        const data = await res.json();
-        showApiError(data, 'admin.notifications.user_delete_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -1303,7 +1319,6 @@ export default function AdminPanel() {
       showToast(t('admin.notifications.select_csv_file'), 'rose');
       return;
     }
-    setCsvImporting(true);
     setImportedCompetitors([]);
 
     const fd = new FormData();
@@ -1311,30 +1326,30 @@ export default function AdminPanel() {
     fd.append('challenge_id', csvChallengeId);
 
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
-        method: 'POST',
-        headers: {},
-        body: fd,
+      await run('csvImport', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
+          method: 'POST',
+          headers: {},
+          body: fd,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(
+            t('admin.notifications.imported_competitors_success', {
+              count: data.competitors?.length || 0,
+            }),
+          );
+          const competitors = data.competitors || [];
+          setImportedCompetitors(competitors);
+          setCsvFile(null);
+          fetchCompetitors();
+        } else {
+          showApiError(data, 'admin.notifications.import_csv_failed');
+        }
       });
-      const data = await res.json();
-      if (res.ok) {
-        showToast(
-          t('admin.notifications.imported_competitors_success', {
-            count: data.competitors?.length || 0,
-          }),
-        );
-        const competitors = data.competitors || [];
-        setImportedCompetitors(competitors);
-        setCsvFile(null);
-        fetchCompetitors();
-      } else {
-        showApiError(data, 'admin.notifications.import_csv_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
-    } finally {
-      setCsvImporting(false);
     }
   };
 
@@ -1343,27 +1358,29 @@ export default function AdminPanel() {
   // Download Scores CSV
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
-      /** @type {Response} */
-      const res = await api.fetch(
-        `${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`,
-        {
-          headers: {},
-        },
-      );
-      if (!res.ok) {
-        const errData = await res.json();
-        showApiError(errData, 'admin.notifications.download_scores_failed');
-        return;
-      }
-      const blob = await res.blob();
-      const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast(t('admin.notifications.scores_csv_downloaded'));
+      await run('downloadScores', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(
+          `${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`,
+          {
+            headers: {},
+          },
+        );
+        if (!res.ok) {
+          const errData = await res.json();
+          showApiError(errData, 'admin.notifications.download_scores_failed');
+          return;
+        }
+        const blob = await res.blob();
+        const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(t('admin.notifications.scores_csv_downloaded'));
+      });
     } catch {
       showToast(t('admin.notifications.download_scores_failed'), 'rose');
     }
@@ -1377,34 +1394,36 @@ export default function AdminPanel() {
     stageTitle = null,
   ) => {
     try {
-      let url = `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`;
-      if (stageId) {
-        url += `?stage_id=${stageId}`;
-      }
-      /** @type {Response} */
-      const res = await api.fetch(url, {
-        headers: {},
+      await run('downloadSubmissionsZip', async () => {
+        let url = `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`;
+        if (stageId) {
+          url += `?stage_id=${stageId}`;
+        }
+        /** @type {Response} */
+        const res = await api.fetch(url, {
+          headers: {},
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          showApiError(errData, 'admin.notifications.download_submissions_failed');
+          return;
+        }
+        const blob = await res.blob();
+
+        let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
+        if (stageTitle) {
+          filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
+        }
+        filename += '.zip';
+
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(t('admin.notifications.submissions_zip_downloaded'));
       });
-      if (!res.ok) {
-        const errData = await res.json();
-        showApiError(errData, 'admin.notifications.download_submissions_failed');
-        return;
-      }
-      const blob = await res.blob();
-
-      let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
-      if (stageTitle) {
-        filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
-      }
-      filename += '.zip';
-
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast(t('admin.notifications.submissions_zip_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_submissions_failed'), 'rose');
     }
@@ -1412,25 +1431,27 @@ export default function AdminPanel() {
 
   const handleDownloadAuditLogs = async (challengeId, challengeTitle) => {
     try {
-      const res = await ChallengeService.downloadAuditLogs(challengeId);
-      if (!res.ok) {
+      await run('downloadAuditLogs', async () => {
+        const res = await ChallengeService.downloadAuditLogs(challengeId);
+        if (!res.ok) {
+          showToast(
+            t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
+            'rose',
+          );
+          return;
+        }
+        const blob = await res.blob();
+        const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
         showToast(
-          t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
-          'rose',
+          t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
         );
-        return;
-      }
-      const blob = await res.blob();
-      const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast(
-        t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
-      );
+      });
     } catch {
       showToast(
         t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
@@ -1441,22 +1462,24 @@ export default function AdminPanel() {
 
   const handleExportChallenge = async (challengeId, challengeTitle) => {
     try {
-      const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
-        headers: {},
+      await run('exportChallenge', async () => {
+        const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
+          headers: {},
+        });
+        if (!res.ok) {
+          showToast('Failed to export challenge.', 'rose');
+          return;
+        }
+        const blob = await res.blob();
+        const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Challenge exported.');
       });
-      if (!res.ok) {
-        showToast('Failed to export challenge.', 'rose');
-        return;
-      }
-      const blob = await res.blob();
-      const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast('Challenge exported.');
     } catch {
       showToast('Failed to export challenge.', 'rose');
     }
@@ -1468,13 +1491,15 @@ export default function AdminPanel() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await api.postForm(`/challenges/import`, formData);
-      if (res.ok) {
-        showToast('Challenge imported successfully.');
-        fetchPaginatedChallenges();
-      } else {
-        showApiError(res.data, '', 'Failed to import challenge.');
-      }
+      await run('importChallenge', async () => {
+        const res = await api.postForm(`/challenges/import`, formData);
+        if (res.ok) {
+          showToast('Challenge imported successfully.');
+          fetchPaginatedChallenges();
+        } else {
+          showApiError(res.data, '', 'Failed to import challenge.');
+        }
+      });
     } catch {
       showToast('Failed to import challenge.', 'rose');
     }
@@ -1515,39 +1540,41 @@ export default function AdminPanel() {
       }
     }
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: editUserForm.username,
-          email: editUserForm.email || null,
-          password: editUserForm.password || null,
-          name: editUserForm.name,
-          middle_name: editUserForm.middle_name || null,
-          surname: editUserForm.surname,
-          birth_date: editUserForm.birth_date || null,
-          grade: editUserForm.grade || null,
-          school: editUserForm.school || null,
-          city: editUserForm.city || null,
-          challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
-          is_anonymous: editUserForm.is_anonymous,
-          role: editUserForm.role,
-          jury_challenges: editUserForm.jury_challenges,
-        }),
+      await run('updateUser', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: editUserForm.username,
+            email: editUserForm.email || null,
+            password: editUserForm.password || null,
+            name: editUserForm.name,
+            middle_name: editUserForm.middle_name || null,
+            surname: editUserForm.surname,
+            birth_date: editUserForm.birth_date || null,
+            grade: editUserForm.grade || null,
+            school: editUserForm.school || null,
+            city: editUserForm.city || null,
+            challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
+            is_anonymous: editUserForm.is_anonymous,
+            role: editUserForm.role,
+            jury_challenges: editUserForm.jury_challenges,
+          }),
+        });
+        /** @type {import('../types/api').paths['/api/admin/users/{user_id}']['put']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.competitor_updated'));
+          setEditingUser(null);
+          fetchUsers();
+          fetchCompetitors();
+        } else {
+          showApiError(data, 'admin.notifications.competitor_update_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/admin/users/{user_id}']['put']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.competitor_updated'));
-        setEditingUser(null);
-        fetchUsers();
-        fetchCompetitors();
-      } else {
-        showApiError(data, 'admin.notifications.competitor_update_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_update_competitor'), 'rose');
     }
@@ -1560,22 +1587,24 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      /** @type {Response} */
-      const res = await api.fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      await run('resetPassword', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        /** @type {import('../types/api').paths['/api/admin/users/{user_id}/reset-password']['post']['responses']['200']['content']['application/json']} */
+        const data = await res.json();
+        if (res.ok) {
+          showToast(t('admin.notifications.password_reset_success'));
+          setResetCredentials({ username: data.username, password: data.password });
+          setBulkResetCredentials([]);
+        } else {
+          showApiError(data, 'admin.notifications.password_reset_failed');
+        }
       });
-      /** @type {import('../types/api').paths['/api/admin/users/{user_id}/reset-password']['post']['responses']['200']['content']['application/json']} */
-      const data = await res.json();
-      if (res.ok) {
-        showToast(t('admin.notifications.password_reset_success'));
-        setResetCredentials({ username: data.username, password: data.password });
-        setBulkResetCredentials([]);
-      } else {
-        showApiError(data, 'admin.notifications.password_reset_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_reset_password'), 'rose');
     }
@@ -1613,26 +1642,28 @@ export default function AdminPanel() {
     if (!ok) return;
 
     try {
-      /** @type {Response} */
-      const res = await api.fetch(
-        `${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+      await run('bulkResetPasswords', async () => {
+        /** @type {Response} */
+        const res = await api.fetch(
+          `${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
           },
-        },
-      );
-      const data = await res.json();
-      if (res.ok) {
-        showToast(
-          t('admin.notifications.bulk_reset_success', { count: data.reset_accounts?.length }),
         );
-        setBulkResetCredentials(data.reset_accounts || []);
-        setResetCredentials(null);
-      } else {
-        showApiError(data, 'admin.notifications.bulk_reset_failed');
-      }
+        const data = await res.json();
+        if (res.ok) {
+          showToast(
+            t('admin.notifications.bulk_reset_success', { count: data.reset_accounts?.length }),
+          );
+          setBulkResetCredentials(data.reset_accounts || []);
+          setResetCredentials(null);
+        } else {
+          showApiError(data, 'admin.notifications.bulk_reset_failed');
+        }
+      });
     } catch {
       showToast(t('admin.notifications.network_error_bulk_reset'), 'rose');
     }
@@ -1946,6 +1977,7 @@ export default function AdminPanel() {
                                   <Button
                                     variant="secondary"
                                     onClick={() => handleArchiveToggle(c.id)}
+                                    disabled={isLoading('archiveToggle')}
                                   >
                                     {c.is_archived ? t('admin.restore') : t('admin.archive')}
                                   </Button>
@@ -1956,6 +1988,7 @@ export default function AdminPanel() {
                                 <Button
                                   variant="accent"
                                   onClick={() => handleDownloadScores(c.id, c.title)}
+                                  disabled={isLoading('downloadScores')}
                                 >
                                   {t('admin.download_csv_scores_short', 'Scores (CSV)')}
                                 </Button>
@@ -1966,6 +1999,7 @@ export default function AdminPanel() {
                                 <Button
                                   variant="accent"
                                   onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
+                                  disabled={isLoading('downloadSubmissionsZip')}
                                 >
                                   {c.scores_finalized
                                     ? t('admin.download_submissions_zip_short', 'Submissions (ZIP)')
@@ -1981,6 +2015,7 @@ export default function AdminPanel() {
                                   <Button
                                     variant="accent"
                                     onClick={() => handleDownloadAuditLogs(c.id, c.title)}
+                                    disabled={isLoading('downloadAuditLogs')}
                                   >
                                     {t('admin.download_audits_json_short', 'Audits (JSON)')}
                                   </Button>
@@ -1990,6 +2025,7 @@ export default function AdminPanel() {
                                       onClick={() =>
                                         handleToggleRevealChallenge(c.id, c.reveal_results)
                                       }
+                                      disabled={isLoading('toggleRevealChallenge')}
                                     >
                                       {c.reveal_results
                                         ? t('admin.hide_results', 'Hide')
@@ -2017,6 +2053,7 @@ export default function AdminPanel() {
                               <Button
                                 variant="secondary"
                                 onClick={() => handleExportChallenge(c.id, c.title)}
+                                disabled={isLoading('exportChallenge')}
                               >
                                 {t('admin.export_short', 'Export')}
                               </Button>
@@ -2024,6 +2061,7 @@ export default function AdminPanel() {
                                 <Button
                                   variant="danger"
                                   onClick={() => handleDeleteChallenge(c.id, c.title)}
+                                  disabled={isLoading('deleteChallenge')}
                                 >
                                   {t('admin.stages.delete')}
                                 </Button>
@@ -2076,6 +2114,7 @@ export default function AdminPanel() {
                                       <Button
                                         variant="danger"
                                         onClick={() => handleDeleteTask(task.id, task.title)}
+                                        disabled={isLoading('deleteTask')}
                                       >
                                         {t('admin.stages.delete')}
                                       </Button>
@@ -2171,6 +2210,7 @@ export default function AdminPanel() {
                                           onClick={() =>
                                             handleToggleRevealStage(c.id, st.id, st.reveal_results)
                                           }
+                                          disabled={isLoading('toggleRevealStage')}
                                         >
                                           {st.reveal_results
                                             ? t('admin.hide_results', 'Hide')
@@ -2194,6 +2234,7 @@ export default function AdminPanel() {
                                               st.title,
                                             )
                                           }
+                                          disabled={isLoading('downloadSubmissionsZip')}
                                         >
                                           {c.scores_finalized
                                             ? t('admin.download_submissions_stage', 'Download')
@@ -2207,6 +2248,7 @@ export default function AdminPanel() {
                                         variant="danger"
                                         className="py-1 px-2.5"
                                         onClick={() => handleDeleteStage(c.id, st.id, st.title)}
+                                        disabled={isLoading('deleteStage')}
                                       >
                                         {t('admin.stages.delete')}
                                       </Button>
@@ -2279,7 +2321,11 @@ export default function AdminPanel() {
                 </div>
 
                 <div className="flex gap-3 mt-4">
-                  <Button type="submit" variant="primary">
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={isLoading('createStage') || isLoading('updateStage')}
+                  >
                     {isCreatingStage
                       ? t('admin.stages.create_stage_btn')
                       : t('admin.stages.save_changes_btn')}
@@ -2326,7 +2372,7 @@ export default function AdminPanel() {
                 </div>
 
                 <div className="flex gap-3 mt-4">
-                  <Button type="submit" variant="primary">
+                  <Button type="submit" variant="primary" disabled={isLoading('finalizeStage')}>
                     {t('admin.stages.finalize_stage_btn')}
                   </Button>
                   <Button onClick={() => setFinalizingStage(null)} variant="secondary">
@@ -2365,7 +2411,7 @@ export default function AdminPanel() {
                 </div>
 
                 <div className="flex gap-3 mt-4">
-                  <Button type="submit" variant="primary">
+                  <Button type="submit" variant="primary" disabled={isLoading('finalizeChallenge')}>
                     {t('admin.finalize_short', 'Finalize')}
                   </Button>
                   <Button onClick={() => setFinalizingChallenge(null)} variant="secondary">
@@ -2411,6 +2457,7 @@ export default function AdminPanel() {
               newChallenge={newChallenge}
               setNewChallenge={setNewChallenge}
               timezones={TIMEZONES}
+              isCreatingChallenge={isLoading('createChallenge')}
             />
           )}
 
@@ -2448,6 +2495,9 @@ export default function AdminPanel() {
               competitorsPages={competitorsPages}
               competitorsTotal={competitorsTotal}
               setCompetitorsPage={setCompetitorsPage}
+              isRegisteringCompetitor={isLoading('registerCompetitor')}
+              isResettingBulkPasswords={isLoading('bulkResetPasswords')}
+              isResettingPassword={isLoading('resetPassword')}
             />
           )}
 
@@ -2472,6 +2522,8 @@ export default function AdminPanel() {
               challenges={challenges}
               currentUser={currentUser}
               initEditUser={initEditUser}
+              isRegisteringUser={isLoading('registerUser')}
+              isDeletingUser={isLoading('deleteUser')}
             />
           )}
 
@@ -2621,7 +2673,11 @@ export default function AdminPanel() {
                   <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
                     {t('common.cancel')}
                   </Button>
-                  <Button type="submit" variant="primary" disabled={isEditDisabled}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={isEditDisabled || isLoading('updateUser')}
+                  >
                     {t('admin.stages.save_changes_btn')}
                   </Button>
                 </div>
@@ -2805,7 +2861,7 @@ export default function AdminPanel() {
                   <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
                     {t('common.cancel', 'Cancel')}
                   </Button>
-                  <Button type="submit" variant="primary">
+                  <Button type="submit" variant="primary" disabled={isLoading('updateUser')}>
                     {t('common.save', 'Save')}
                   </Button>
                 </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import useSSE from '../hooks/useSSE';
 import ChallengeService from '../services/ChallengeService';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
 import EmptyState from '../components/ui/EmptyState';
@@ -18,6 +19,22 @@ export default function LeaderboardView() {
   const [isNormalized, setIsNormalized] = useState(false);
 
   const [useSse, setUseSse] = useState(true);
+
+  const activeId = challengeId || selectedChallenge?.id;
+  const hasSse = typeof EventSource !== 'undefined';
+
+  useSSE(useSse && hasSse && activeId ? `/api/challenges/${activeId}/leaderboard/live` : '', {
+    onMessage: (data) => {
+      if (data.info === 'connected') return;
+      setLeaderboardData(data.leaderboard || []);
+      setTasks(data.tasks || []);
+      setMetricName(data.metric_name || 'Score');
+      setIsNormalized(data.is_normalized || false);
+    },
+    onError: () => {
+      setUseSse(false);
+    },
+  });
 
   useEffect(() => {
     if (challengeId) {
@@ -63,49 +80,14 @@ export default function LeaderboardView() {
     const activeId = challengeId || selectedChallenge?.id;
     if (!activeId) return;
 
-    const hasSse = typeof EventSource !== 'undefined';
-    if (!hasSse) {
+    if (!hasSse || !useSse) {
       const interval = setInterval(() => {
         loadLeaderboard(false);
       }, 15000);
-      return () => clearInterval(interval);
-    }
-
-    if (useSse) {
-      const sseUrl = `/api/challenges/${activeId}/leaderboard/live`;
-      const eventSource = new EventSource(sseUrl);
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.info === 'connected') return;
-          setLeaderboardData(data.leaderboard || []);
-          setTasks(data.tasks || []);
-          setMetricName(data.metric_name || 'Score');
-          setIsNormalized(data.is_normalized || false);
-        } catch (err) {
-          console.error('Failed to parse live leaderboard update:', err);
-        }
-      };
-
-      eventSource.onerror = () => {
-        console.warn('Leaderboard SSE failed, falling back to polling.');
-        eventSource.close();
-        setUseSse(false);
-      };
-
-      return () => {
-        eventSource.close();
-      };
-    } else {
-      const interval = setInterval(() => {
-        loadLeaderboard(false);
-      }, 15000);
-
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [challengeId, selectedChallenge?.id, useSse]);
+  }, [challengeId, selectedChallenge?.id, useSse, hasSse]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">

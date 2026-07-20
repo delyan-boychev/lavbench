@@ -245,7 +245,11 @@ def queue_system_submission(
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     result = evaluate_submission.apply_async(
-        args=[submission.id, metadata], priority=priority, queue=queue_name
+        args=[submission.id, metadata],
+        priority=priority,
+        queue=queue_name,
+        countdown=1,
+        task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
     )
     if result is not None:
         submission.celery_task_id = str(result.id)
@@ -1208,7 +1212,7 @@ def submit_task(
             priority=priority,
             queue=queue_name,
             countdown=1,
-            task_id=f"submission_{submission.id}",
+            task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
             submission.celery_task_id = str(result.id)

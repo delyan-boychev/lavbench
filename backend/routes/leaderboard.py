@@ -422,10 +422,11 @@ def stream_challenge_leaderboard(
                         pubsub.unsubscribe()
                         pubsub.close()
             else:
-                while True:
+                while time.time() - start_time <= SSE_IDLE_TIMEOUT:
                     time.sleep(10.0)
                     for msg in get_and_yield_leaderboard():
                         yield msg
+                yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
 
     return sse_response(event_generator)
 

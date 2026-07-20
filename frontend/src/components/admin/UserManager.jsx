@@ -10,11 +10,13 @@ export default function UserManager({
   newUser,
   setNewUser,
   handleRegisterUser,
+  isRegisteringUser,
   generatedUserCredentials,
   allUsers,
   userSearch,
   setUserSearch,
   handleDeleteUser,
+  isDeletingUser,
   usersPage,
   usersPages,
   usersTotal,
@@ -150,7 +152,13 @@ export default function UserManager({
               />
             )}
 
-            <Button type="submit" variant="primary" className="mt-2">
+            <Button
+              type="submit"
+              variant="primary"
+              className="mt-2"
+              disabled={isRegisteringUser}
+              isLoading={isRegisteringUser}
+            >
               {t('admin.user_mgmt.register_user_btn')}
             </Button>
           </form>
@@ -259,7 +267,8 @@ export default function UserManager({
                         {user.id !== currentUser.id ? (
                           <button
                             onClick={() => handleDeleteUser(user.id, user.username)}
-                            className="text-[11px] font-bold text-rose-400 hover:underline bg-transparent border-0 cursor-pointer"
+                            disabled={isDeletingUser}
+                            className="text-[11px] font-bold text-rose-400 hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50"
                           >
                             {t('admin.user_mgmt.delete_btn')}
                           </button>
