@@ -38,16 +38,18 @@ def sse_connection_limit(
             pipe = r.pipeline()
             if user_key:
                 pipe.incr(user_key)
-                pipe.expire(user_key, 120)
             pipe.incr(global_key)
-            pipe.expire(global_key, 120)
             results = pipe.execute()
             if user_key:
                 user_count = results[0]
+                if user_count == 1:
+                    r.expire(user_key, 120)
                 global_count = results[1]
             else:
                 user_count = 0
-                global_count = results[0] if not user_key else results[1]
+                global_count = results[0]
+            if global_count == 1:
+                r.expire(global_key, 120)
 
             if user_count > SSE_MAX_PER_USER:
                 allowed = False
@@ -64,7 +66,7 @@ def sse_connection_limit(
         # Safely decrement counters — only if the key still exists and is > 0.
         # This prevents DECR from creating a key with value -1 if the TTL
         # expired between the INCR (entry) and DECR (cleanup).
-        if r and allowed:
+        if r:
             try:
                 for key in ([user_key] if user_key else []) + [global_key]:
                     val = r.get(key)
