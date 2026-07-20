@@ -124,6 +124,7 @@ deploy_docker() {
     -e WORKER_PRIVATE_KEY \
     -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
+    -e WORKER_GPU_ID \
     -e WORKER_TYPE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
