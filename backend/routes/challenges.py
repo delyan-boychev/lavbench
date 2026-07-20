@@ -16,7 +16,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
-from werkzeug.utils import secure_filename
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
@@ -48,6 +47,7 @@ from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
+from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 
@@ -1097,7 +1097,7 @@ def export_challenge(
                             zf.write(file_path, f"tasks/{task.id}/{filename}")
 
     zip_buffer.seek(0)
-    safe_title = secure_filename(challenge.title) or "challenge"
+    safe_title = sanitize_filename_part(challenge.title) or "challenge"
     download_name = f"challenge_{safe_title}.zip"
 
     return (

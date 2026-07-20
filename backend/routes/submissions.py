@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import time
-import urllib.parse
 from typing import Any
 
 from flask import Blueprint, request
@@ -36,7 +35,7 @@ from sse_utils import (
     sse_connection_limit,
 )
 from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json, wrap_raw_code_cells
+from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
@@ -655,20 +654,10 @@ def download_competitor_submission(
     name_part = decrypt_field(user.name) or ""
     surname_part = decrypt_field(user.surname) or ""
     comp_name = f"{name_part}_{surname_part}_{user.alias_id}"
-    comp_name = (
-        "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-"))
-        .strip()
-        .replace(" ", "_")
-    )
+    comp_name = sanitize_filename_part(comp_name)
+    task_title = sanitize_filename_part(task.title)
 
-    task_title = (
-        "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-"))
-        .strip()
-        .replace(" ", "_")
-    )
-
-    filename_full = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
-    filename_ascii = "".join(c if c.isascii() else "_" for c in filename_full)
+    filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
     if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):
         file_size = os.path.getsize(best_sub.code_storage_path)
@@ -688,9 +677,6 @@ def download_competitor_submission(
         200,
         {
             "Content-Type": "application/x-ipynb+json",
-            "Content-Disposition": (
-                f'attachment; filename="{filename_ascii}"; '
-                f"filename*=UTF-8''{urllib.parse.quote(filename_full, safe='')}"
-            ),
+            "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )

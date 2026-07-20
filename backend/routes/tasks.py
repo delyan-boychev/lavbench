@@ -60,6 +60,7 @@ from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.dates import utcnow
+from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
@@ -996,12 +997,13 @@ def download_task_file(
             return err("ERR_NOT_FOUND", 404)
         with open(file_path, "rb") as f:
             file_data = f.read()
+        safe_filename = sanitize_filename_part(filename)
         return (
             file_data,
             200,
             {
                 "Content-Type": "application/octet-stream",
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
             },
         )
 
@@ -1010,12 +1012,13 @@ def download_task_file(
         if filename == baseline_basename:
             with open(task.baseline_notebook_path, "rb") as fh:
                 baseline_bytes = fh.read()
+            safe_filename = sanitize_filename_part(filename)
             return (
                 baseline_bytes,
                 200,
                 {
                     "Content-Type": "application/octet-stream",
-                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
                 },
             )
 
@@ -1714,6 +1717,7 @@ def worker_download_task_file(
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     file_path = os.path.join(task_upload_dir, saved_name)
+    safe_filename = sanitize_filename_part(filename)
     with open(file_path, "rb") as fh:
         file_bytes = fh.read()
     return (
@@ -1721,7 +1725,7 @@ def worker_download_task_file(
         200,
         {
             "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
         },
     )
 

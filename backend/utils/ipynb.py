@@ -6,6 +6,20 @@ import shutil
 import tempfile
 from typing import Any
 
+from unidecode import unidecode
+
+
+def sanitize_filename_part(text: str, replacement: str = "_") -> str:
+    text = unidecode(text)
+    text = "".join(
+        c if c.isascii() and (c.isalnum() or c in (" ", "_", "-")) else replacement for c in text
+    )
+    text = "_".join(text.split())
+    safe = text.strip("_") or "unnamed"
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+    return safe
+
 
 def wrap_raw_code_cells(code_storage_path: str | None) -> bytes | None:
     """Wrap a raw code_cells JSON array file into notebook format without parsing.

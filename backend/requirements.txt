@@ -282,6 +282,8 @@ tzdata==2026.2
     #   pandas
 tzlocal==5.3.1
     # via celery
+unidecode==1.4.0
+    # via -r requirements.in
 urllib3==2.7.0
     # via
     #   -r requirements.in
