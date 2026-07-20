@@ -197,8 +197,6 @@ services:
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
       - BACKUPS_DIR=/backups
       - INTERNAL_ONLY_WORKER=true
-      - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
-      - WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY:-}
     depends_on:
       redis:
         condition: service_healthy
