@@ -371,7 +371,8 @@ export default function SubmissionsView() {
         headers: { 'Content-Type': 'application/json' },
       });
       if (res.ok) {
-        fetchSubmissions(true);
+        setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
+        await fetchSubmissions(true);
       } else {
         const errData = await res.json();
         await confirm({
