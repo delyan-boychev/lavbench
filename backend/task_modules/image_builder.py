@@ -384,8 +384,7 @@ def _run_docker_build(
     """
     client = _get_client()
     try:
-        _image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
-        for entry in build_logs:
+        for entry in client.api.build(path=build_dir, tag=tag, rm=True, decode=True):
             if "stream" in entry:
                 line = entry["stream"].rstrip("\n")
                 if line:
