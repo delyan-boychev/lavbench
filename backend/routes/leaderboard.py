@@ -38,6 +38,110 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def _compute_task_ranks(
+    entries: list[dict[str, Any]],
+    tasks: list[Any],
+    challenge_finalized: bool,
+    reveal_results: bool,
+) -> None:
+    task_lower_better: dict[int, bool] = {}
+    for task in tasks:
+        lower = False
+        if task.metrics_config:
+            try:
+                cfg = (
+                    json.loads(task.metrics_config)
+                    if isinstance(task.metrics_config, str)
+                    else task.metrics_config
+                )
+                for m_name in cfg:
+                    if m_name.startswith("_"):
+                        continue
+                    if is_metric_lower_better(m_name):
+                        lower = True
+                        break
+            except Exception:
+                logger.warning("Failed to parse metrics_config for task %s", task.id)
+        task_lower_better[task.id] = lower
+
+    for task in tasks:
+        tid = str(task.id)
+        scorable = []
+        for e in entries:
+            ts = e.get("task_scores", {}).get(tid, {})
+            if ts.get("public_score") is not None:
+                scorable.append(e)
+
+        if challenge_finalized and reveal_results:
+            scorable.sort(
+                key=lambda e: e.get("user", {}).get("manual_points", {}).get(tid, 0),
+                reverse=True,
+            )
+        else:
+            is_lower = task_lower_better.get(task.id, False)
+            scorable.sort(
+                key=lambda e: e["task_scores"][tid]["public_score"],
+                reverse=not is_lower,
+            )
+
+        rank = 0
+        prev_key = None
+        for idx, e in enumerate(scorable):
+            if challenge_finalized and reveal_results:
+                key = e.get("user", {}).get("manual_points", {}).get(tid, 0)
+            else:
+                key = e["task_scores"][tid]["public_score"]
+            if idx == 0 or key != prev_key:
+                rank = idx + 1
+            e.setdefault("task_ranks", {})[tid] = rank
+            prev_key = key
+
+        for e in entries:
+            e.setdefault("task_ranks", {})
+            if tid not in e["task_ranks"]:
+                e["task_ranks"][tid] = None
+
+
+def _compute_stage_ranks(
+    entries: list[dict[str, Any]],
+    tasks: list[Any],
+) -> None:
+    stage_tasks: dict[int, list[Any]] = {}
+    for t in tasks:
+        if t.stage_id:
+            stage_tasks.setdefault(t.stage_id, []).append(t)
+
+    for stage_id, stage_tasks_list in stage_tasks.items():
+        sid = str(stage_id)
+
+        scorable = []
+        for e in entries:
+            total = 0.0
+            has_any = False
+            for t in stage_tasks_list:
+                score = e.get("task_scores", {}).get(str(t.id), {}).get("public_score")
+                if score is not None:
+                    total += score
+                    has_any = True
+            if has_any:
+                scorable.append((e, total))
+
+        scorable.sort(key=lambda x: x[1], reverse=True)
+
+        rank = 0
+        prev_score = None
+        for idx, (e, score) in enumerate(scorable):
+            if idx == 0 or score != prev_score:
+                rank = idx + 1
+            e.setdefault("stage_ranks", {})[sid] = rank
+            prev_score = score
+
+        for e in entries:
+            e.setdefault("stage_ranks", {})
+            if sid not in e["stage_ranks"]:
+                e["stage_ranks"][sid] = None
+
+
 def _get_leaderboard_payload(
     challenge: Any, user_role: str, current_user_id: int | None
 ) -> dict[str, Any]:
@@ -173,7 +277,6 @@ def _get_leaderboard_payload(
                 show_details = False
 
             if not show_details:
-                entry_copy["has_submitted"] = False
                 entry_copy["user"] = {
                     "id": comp_user_id,
                     "alias_id": comp_user.get("alias_id"),
@@ -242,6 +345,13 @@ def _get_leaderboard_payload(
                 entry_dict["rank"] = current_rank
 
         post_processed_leaderboard = sorted_competitor
+        _compute_task_ranks(
+            post_processed_leaderboard,
+            visible_tasks,
+            challenge_finalized,
+            challenge.reveal_results,
+        )
+        _compute_stage_ranks(post_processed_leaderboard, visible_tasks)
         tasks_list = [t.to_dict(view_role=user_role) for t in visible_tasks]
     else:
         now = utcnow()
@@ -269,7 +379,6 @@ def _get_leaderboard_payload(
                 show_details = False
 
             if not show_details:
-                entry_copy["has_submitted"] = False
                 entry_copy["user"] = {
                     "id": comp_user_id,
                     "alias_id": comp_user.get("alias_id"),
@@ -279,6 +388,13 @@ def _get_leaderboard_payload(
                     "manual_points": comp_user.get("manual_points", {}),
                 }
             post_processed_leaderboard.append(entry_copy)
+        _compute_task_ranks(
+            post_processed_leaderboard,
+            tasks,
+            challenge_finalized,
+            challenge.reveal_results,
+        )
+        _compute_stage_ranks(post_processed_leaderboard, tasks)
         tasks_list = [t.to_dict(view_role=user_role) for t in tasks]
 
     metric_name = "Score"

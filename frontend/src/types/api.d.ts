@@ -1493,7 +1493,7 @@ export interface components {
              * Details
              * @default null
              */
-            details: string | null;
+            details: unknown | null;
             /**
              * Id
              * Format: uuid
@@ -7290,8 +7290,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created */
-            201: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
