@@ -19,6 +19,7 @@ import os
 import shlex
 import shutil
 import time
+from collections.abc import Callable
 from typing import Any
 
 from cache_utils import get_redis_client
@@ -148,7 +149,10 @@ def _release_build_lock(task_id: int) -> None:
         r.delete(_build_lock_key(task_id))
 
 
-def build_task_image(metadata: dict[str, Any]) -> bool:
+def build_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Build (or skip) a Docker image for a single task.
 
     Returns ``True`` if the image is ready (built or already up-to-date),
@@ -167,6 +171,9 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
     - ``hf_datasets``   (JSON string or list)
     - ``hf_models``     (JSON string or list)
     - ``hf_api_key``    (optional, needed for private datasets)
+
+    *log_callback* is called with each Docker build output line
+    as it is produced, enabling real-time progress reporting.
     """
     task_id = metadata.get("task_id")
     if not task_id:
@@ -204,12 +211,15 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
         return _image_exists(tag)
 
     try:
-        return _do_build(metadata)
+        return _do_build(metadata, log_callback=log_callback)
     finally:
         _release_build_lock(task_id)
 
 
-def ensure_task_image(metadata: dict[str, Any]) -> bool:
+def ensure_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Blocking build: retry until the image exists or the build fails.
 
     Unlike ``build_task_image`` (which skips if the lock is held),
@@ -226,7 +236,7 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     for attempt in range(3):
         if attempt > 0:
             logger.info("Retrying image build for task %s (attempt %s/3)", task_id, attempt + 1)
-        if build_task_image(metadata):
+        if build_task_image(metadata, log_callback=log_callback):
             return True
         if _image_exists(tag):
             return True
@@ -234,7 +244,10 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     return _image_exists(tag)
 
 
-def _do_build(metadata: dict[str, Any]) -> bool:
+def _do_build(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
@@ -317,7 +330,7 @@ def _do_build(metadata: dict[str, Any]) -> bool:
     logs: list[str] = []
     start = time.time()
     try:
-        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
+        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs, log_callback)
         elapsed = time.time() - start
         if retcode == 0:
             with open(meta_path, "w") as f:
@@ -339,17 +352,29 @@ def _do_build(metadata: dict[str, Any]) -> bool:
         return False
 
 
-def _run_docker_build(tag: str, build_dir: str, logs: list[str]) -> tuple[int, str, str, bool]:
-    """Build Docker image using the SDK and capture output."""
+def _run_docker_build(
+    tag: str,
+    build_dir: str,
+    logs: list[str],
+    log_callback: Callable[[str], None] | None = None,
+) -> tuple[int, str, str, bool]:
+    """Build Docker image using the SDK and capture output.
+
+    Each build output line is logged via ``logger.info`` and forwarded
+    to *log_callback* (if provided) so callers can stream progress to
+    submission logs or other real-time channels.
+    """
     client = _get_client()
     try:
-        build_logs = []
         _image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
         for entry in build_logs:
             if "stream" in entry:
                 line = entry["stream"].rstrip("\n")
                 if line:
                     logs.append(line)
+                    logger.info("[build %s] %s", tag, line)
+                    if log_callback:
+                        log_callback(line)
         return 0, "", "", False
     except Exception as e:
         logs.append(f"Docker build failed: {e}")

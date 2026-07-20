@@ -709,7 +709,13 @@ def run_eval_submission(
                 logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
                 from task_modules.image_builder import build_task_image
 
-                built = build_task_image(build_meta)
+                build_logs_accum: list[str] = []
+
+                def _on_build_line(line: str) -> None:
+                    build_logs_accum.append(line)
+
+                built = build_task_image(build_meta, log_callback=_on_build_line)
+                logs.extend(build_logs_accum)
                 if built:
                     logs.append("Docker image built successfully.")
                 elif _image_exists_docker(image_tag):
@@ -726,11 +732,18 @@ def run_eval_submission(
             from task_modules.image_builder import ensure_task_image
 
             logs.append(f"Sandbox image '{image_tag}' missing — attempting final blocking build...")
-            if not ensure_task_image(build_meta):
+            retry_logs: list[str] = []
+
+            def _on_retry_line(line: str) -> None:
+                retry_logs.append(line)
+
+            if not ensure_task_image(build_meta, log_callback=_on_retry_line):
+                logs.extend(retry_logs)
                 logs.append("Docker image build failed after retries!")
                 update_status("failed", "failed", logs_list=logs)
                 report_status_to_server(metadata, "failed", "failed", logs=logs)
                 return
+            logs.extend(retry_logs)
             logs.append("Docker image built successfully (final retry).")
 
         # Update status: Running Inference
