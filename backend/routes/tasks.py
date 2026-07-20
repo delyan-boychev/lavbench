@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from flask import Blueprint, current_app, request, send_from_directory
+from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.utils import secure_filename
@@ -999,8 +999,18 @@ def download_task_file(
 
     if saved_name:
         task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
-        return send_from_directory(
-            task_upload_dir, saved_name, as_attachment=True, download_name=filename
+        file_path = os.path.join(task_upload_dir, saved_name)
+        if not os.path.isfile(file_path):
+            return err("ERR_NOT_FOUND", 404)
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+        return (
+            file_data,
+            200,
+            {
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
         )
 
     if task.baseline_notebook_path:
