@@ -22,7 +22,7 @@ export default function SubmissionViewer({
   const [completedData, setCompletedData] = useState(null);
   const logRef = useRef(null);
 
-  const displaySubmission = completedData || submission;
+  const displaySubmission = completedData ? { ...completedData, ...submission } : submission;
   const isTerminal =
     displaySubmission?.status === 'completed' || displaySubmission?.status === 'failed';
   const displayLogs = isTerminal
