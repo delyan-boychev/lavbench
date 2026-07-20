@@ -1288,7 +1288,11 @@ def download_submissions_zip(
                 surname_part = decrypt_field(comp.surname) or ""
                 comp_name = f"{name_part}_{surname_part}_{comp.alias_id}"
 
-            comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
+            comp_name = (
+                "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-"))
+                .strip()
+                .replace(" ", "_")
+            )
 
             for task in tasks:
                 subs = subs_by_key.get((comp.id, task.id), [])
@@ -1300,16 +1304,20 @@ def download_submissions_zip(
                 best_sub = get_best_submission(task, subs, challenge)
 
                 if best_sub:
-                    task_title = "".join(
-                        c for c in task.title if c.isalnum() or c in (" ", "_", "-")
-                    ).strip()
+                    task_title = (
+                        "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-"))
+                        .strip()
+                        .replace(" ", "_")
+                    )
 
                     if not stage_id and task.stage_id:
                         task_stage = stages.get(task.stage_id)
                         stage_title = (
                             "".join(
                                 c for c in task_stage.title if c.isalnum() or c in (" ", "_", "-")
-                            ).strip()
+                            )
+                            .strip()
+                            .replace(" ", "_")
                             if task_stage
                             else "Stage"
                         )

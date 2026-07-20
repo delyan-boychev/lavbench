@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import urllib.parse
 from typing import Any
 
 from flask import Blueprint, request
@@ -654,11 +655,20 @@ def download_competitor_submission(
     name_part = decrypt_field(user.name) or ""
     surname_part = decrypt_field(user.surname) or ""
     comp_name = f"{name_part}_{surname_part}_{user.alias_id}"
-    comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
+    comp_name = (
+        "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-"))
+        .strip()
+        .replace(" ", "_")
+    )
 
-    task_title = "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-")).strip()
+    task_title = (
+        "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-"))
+        .strip()
+        .replace(" ", "_")
+    )
 
-    filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
+    filename_full = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
+    filename_ascii = "".join(c if c.isascii() else "_" for c in filename_full)
 
     if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):
         file_size = os.path.getsize(best_sub.code_storage_path)
@@ -678,6 +688,9 @@ def download_competitor_submission(
         200,
         {
             "Content-Type": "application/x-ipynb+json",
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": (
+                f'attachment; filename="{filename_ascii}"; '
+                f"filename*=UTF-8''{urllib.parse.quote(filename_full, safe='')}"
+            ),
         },
     )
