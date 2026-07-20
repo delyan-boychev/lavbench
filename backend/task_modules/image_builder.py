@@ -18,6 +18,7 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import time
 from collections.abc import Callable
 from typing import Any
@@ -35,6 +36,9 @@ BUILD_LOCK_MAX_WAIT = 300  # max seconds to block waiting for lock
 logger = logging.getLogger(__name__)
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
+
+# Used to namespace Redis build locks per machine.
+_WORKER_HOSTNAME = socket.gethostname()
 
 
 def _config_hash(
@@ -98,7 +102,7 @@ def _download_model(
 
 
 def _build_lock_key(task_id: int) -> str:
-    return f"docker_build:lock:{task_id}"
+    return f"docker_build:lock:{_WORKER_HOSTNAME}:{task_id}"
 
 
 def _check_build_disk_space() -> bool:
@@ -127,14 +131,28 @@ def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
         return False
     lock_key = _build_lock_key(task_id)
     deadline = time.time() + timeout if timeout > 0 else 0
+    warned = False
     while True:
         acquired = False
         with contextlib.suppress(Exception):
-            result = r.set(lock_key, "1", nx=True, ex=BUILD_LOCK_TTL)
+            result = r.set(lock_key, _WORKER_HOSTNAME, nx=True, ex=BUILD_LOCK_TTL)
             if result is not None:
                 acquired = bool(result)
         if acquired:
             return True
+        if not warned:
+            holder = ""
+            with contextlib.suppress(Exception):
+                val = r.get(lock_key)
+                if val is not None:
+                    holder = val.decode() if isinstance(val, bytes) else str(val)
+            logger.info(
+                "Build lock for task %s held by %s, waiting up to %ss...",
+                task_id,
+                holder or "unknown",
+                int(deadline - time.time()) if deadline else 0,
+            )
+            warned = True
         if deadline and time.time() < deadline:
             time.sleep(BUILD_LOCK_RETRY_INTERVAL)
             continue
@@ -403,8 +421,26 @@ def clear_build_lock(task_id: int) -> bool:
         return False
 
 
+def _clear_stale_build_locks() -> None:
+    """Clear any build locks left by a previous instance of this worker."""
+    r = get_redis_client()
+    if not r:
+        return
+    prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
+    try:
+        cleared = 0
+        for key in r.scan_iter(f"{prefix}*"):
+            r.delete(key)
+            cleared += 1
+        if cleared:
+            logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
+    except Exception as e:
+        logger.warning("Failed to clear stale build locks: %s", e)
+
+
 def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
     """Fetch active tasks from the server and build images for all of them."""
+    _clear_stale_build_locks()
     import requests
 
     try:
