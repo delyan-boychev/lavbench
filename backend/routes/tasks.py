@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from flask import Blueprint, current_app, request
@@ -172,16 +172,8 @@ def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
             from models import Stage
 
             stage = db.session.get(Stage, task.stage_id)
-            if stage:
-                try:
-                    import zoneinfo
-
-                    tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
-                    now_local = datetime.now(tz).replace(tzinfo=None)
-                except Exception:
-                    now_local = utcnow()
-                if now_local < stage.start_time:
-                    return False
+            if stage and utcnow() < stage.start_time:
+                return False
     return True
 
 
@@ -1079,20 +1071,13 @@ def submit_task(
 
             stage = db.session.get(Stage, task.stage_id)
             if stage:
-                try:
-                    import zoneinfo
-
-                    tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
-                    now_local = datetime.now(tz).replace(tzinfo=None)
-                except Exception:
-                    now_local = utcnow()
-                if now_local < stage.start_time:
+                if utcnow() < stage.start_time:
                     return err(
                         "ERR_STAGE_NOT_STARTED",
                         400,
                         message=f"The stage '{stage.title}' has not started yet.",
                     )
-                if now_local > stage.end_time:
+                if utcnow() > stage.end_time:
                     return err(
                         "ERR_STAGE_DEADLINE_PASSED",
                         400,

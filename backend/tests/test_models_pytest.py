@@ -200,7 +200,7 @@ class TestChallengeStatusAndTiming:
         db.session.add(challenge)
         db.session.commit()
 
-        now_local = challenge._now_local()
+        now_local = utcnow()
 
         # Not started
         challenge.start_time = now_local + timedelta(hours=2)

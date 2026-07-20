@@ -929,7 +929,7 @@ def finalize_stage(
     if stage.is_finalized:
         return err("ERR_ALREADY_FINALIZED", 400, message="Stage is already finalized.")
 
-    now_local = challenge._now_local()
+    now_local = utcnow()
     if now_local < stage.end_time:
         return err(
             "ERR_STAGE_NOT_ENDED", 400, message="Cannot finalize the stage before its end time."
