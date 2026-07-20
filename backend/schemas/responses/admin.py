@@ -114,7 +114,7 @@ class AuditLogResponse(BaseModel):
     action_type: str
     target_type: str
     target_id: str | None = None
-    details: str | None = None
+    details: dict[str, Any] | None = None
     ip_address: str | None = None
     timestamp: str | None = None
     target_user_id: UUID | None = None
