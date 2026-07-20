@@ -393,6 +393,17 @@ def _run_docker_build(
                     logger.info("[build %s] %s", tag, line)
                     if log_callback:
                         log_callback(line)
+            elif "status" in entry:
+                status = entry["status"].rstrip(".")
+                layer = entry.get("id", "")
+                # Skip fine-grained progress detail to avoid log spam
+                if layer or status not in ("Downloading", "Extracting"):
+                    msg = f"{status} {layer}" if layer else status
+                    logger.info("[build %s] %s", tag, msg)
+            elif "error" in entry:
+                err = entry["error"]
+                logs.append(f"Docker build error: {err}")
+                logger.error("[build %s] Error: %s", tag, err)
         return 0, "", "", False
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
