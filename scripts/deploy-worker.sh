@@ -109,6 +109,9 @@ deploy_docker() {
   LAVBENCH_WORKSPACE_DIR="$(pwd)/.lavbench_workspace"
   mkdir -p "$LAVBENCH_WORKSPACE_DIR"
   rm -rf "$LAVBENCH_WORKSPACE_DIR"/*
+  TASK_IMAGES_DIR="$(pwd)/task_images"
+  mkdir -p "$TASK_IMAGES_DIR"
+  rm -rf "$TASK_IMAGES_DIR"/*
 
   # ── Run container ──────────────────────────────────────────────
   echo "  → Starting container..."
@@ -124,6 +127,7 @@ deploy_docker() {
     -e WORKER_TYPE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
+    -e TASK_IMAGES_DIR=/app/task_images \
     -e GPU_CORES_PER_TASK \
     -e CPU_CORES_PER_TASK \
     -e GPU_RAM_PER_TASK_GB \
@@ -138,6 +142,7 @@ deploy_docker() {
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
+    -v "${TASK_IMAGES_DIR}:/app/task_images" \
     $( [ -n "$GPU_ID" ] && echo "--gpus all" || true ) \
     "$WORKER_IMAGE" \
     celery -A tasks.celery worker --loglevel=info -Q "$CELERY_QUEUES" -c "$CONCURRENCY"
