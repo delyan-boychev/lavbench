@@ -198,7 +198,7 @@ services:
       - BACKUPS_DIR=/backups
       - INTERNAL_ONLY_WORKER=true
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
-      - WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY:?WORKER_PRIVATE_KEY must be set in .env}
+      - WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY:-}
     depends_on:
       redis:
         condition: service_healthy
