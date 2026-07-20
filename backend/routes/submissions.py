@@ -3,12 +3,10 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
-import tempfile
 import time
 from typing import Any
 
-from flask import Blueprint, request, stream_with_context
+from flask import Blueprint, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
@@ -666,25 +664,10 @@ def download_competitor_submission(
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
-    notebook_str = cells_to_ipynb_json(cells_data)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".ipynb") as tmp:
-        tmp.write(notebook_str.encode("utf-8"))
-        tmp_path = tmp.name
+    notebook_bytes = cells_to_ipynb_json(cells_data).encode("utf-8")
 
-    def _stream():
-        try:
-            with open(tmp_path, "rb") as f:
-                while True:
-                    chunk = f.read(65536)
-                    if not chunk:
-                        break
-                    yield chunk
-        finally:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp_path)
-
-    return FlaskResponse(
-        stream_with_context(_stream()),
+    return (
+        notebook_bytes,
         200,
         {
             "Content-Type": "application/x-ipynb+json",
