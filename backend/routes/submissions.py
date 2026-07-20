@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import contextlib
-import io
 import json
 import logging
+import os
+import tempfile
 import time
 from typing import Any
 
-from flask import Blueprint, request
+from flask import Blueprint, after_this_request, request, stream_with_context
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
@@ -653,9 +654,6 @@ def download_competitor_submission(
     except json.JSONDecodeError:
         cells_data = []
 
-    notebook_str = cells_to_ipynb_json(cells_data)
-    mem_file = io.BytesIO(notebook_str.encode("utf-8"))
-
     user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
 
@@ -668,11 +666,28 @@ def download_competitor_submission(
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
-    return (
-        mem_file.read(),
-        200,
-        {
-            "Content-Type": "application/x-ipynb+json",
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )
+    notebook_str = cells_to_ipynb_json(cells_data)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".ipynb") as tmp:
+        tmp.write(notebook_str.encode("utf-8"))
+        tmp_path = tmp.name
+
+    try:
+
+        @after_this_request
+        def cleanup(response):
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+            return response
+
+        return FlaskResponse(
+            stream_with_context(open(tmp_path, "rb")),
+            200,
+            {
+                "Content-Type": "application/x-ipynb+json",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise

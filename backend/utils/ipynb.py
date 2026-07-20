@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 
-def cells_to_ipynb_json(cells_data: list[Any], indent: int = 2) -> str:
+def cells_to_ipynb_json(cells_data: list[Any], indent: int | None = None) -> str:
     ipynb_cells = []
     for c in cells_data:
         if isinstance(c, dict):
