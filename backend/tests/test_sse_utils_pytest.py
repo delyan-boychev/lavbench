@@ -36,42 +36,41 @@ class TestPublishLeaderboardUpdate:
     def test_publishes_to_correct_channel(self, mock_get_redis):
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        publish_leaderboard_update(task_id=42)
+        publish_leaderboard_update(challenge_id=42)
         mock_redis.publish.assert_called_once()
         args = mock_redis.publish.call_args[0]
-        assert args[0] == "task_42_leaderboard"
+        assert args[0] == "challenge_42_leaderboard"
 
     @patch("sse_utils.get_redis_client")
     def test_publishes_with_challenge_id(self, mock_get_redis):
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        publish_leaderboard_update(task_id=42, challenge_id=7)
-        assert mock_redis.publish.call_count == 2
-        channels = [c[0][0] for c in mock_redis.publish.call_args_list]
-        assert "task_42_leaderboard" in channels
-        assert "challenge_7_leaderboard" in channels
+        publish_leaderboard_update(challenge_id=7)
+        mock_redis.publish.assert_called_once()
+        args = mock_redis.publish.call_args[0]
+        assert args[0] == "challenge_7_leaderboard"
 
     @patch("sse_utils.get_redis_client")
-    def test_none_task_id_does_nothing(self, mock_get_redis):
-        publish_leaderboard_update(task_id=None)
+    def test_none_challenge_id_does_nothing(self, mock_get_redis):
+        publish_leaderboard_update(challenge_id=None)
         mock_get_redis.return_value.publish.assert_not_called()
 
     @patch("sse_utils.get_redis_client")
-    def test_empty_task_id_does_nothing(self, mock_get_redis):
-        publish_leaderboard_update(task_id="")
+    def test_empty_challenge_id_does_nothing(self, mock_get_redis):
+        publish_leaderboard_update(challenge_id="")
         mock_get_redis.return_value.publish.assert_not_called()
 
     @patch("sse_utils.get_redis_client")
     def test_redis_none_no_error(self, mock_get_redis):
         mock_get_redis.return_value = None
-        publish_leaderboard_update(task_id=1)
+        publish_leaderboard_update(challenge_id=1)
 
     @patch("sse_utils.get_redis_client")
     def test_redis_exception_caught(self, mock_get_redis):
         mock_redis = MagicMock()
         mock_redis.publish.side_effect = Exception("Redis down")
         mock_get_redis.return_value = mock_redis
-        publish_leaderboard_update(task_id=1)
+        publish_leaderboard_update(challenge_id=1)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -84,25 +83,25 @@ class TestPublishSubmissionsUpdate:
     def test_publishes_to_correct_channel(self, mock_get_redis):
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        publish_submissions_update(task_id=7, user_id=3)
+        publish_submissions_update(task_id=7, challenge_id=3)
         mock_redis.publish.assert_called_once()
         args = mock_redis.publish.call_args[0]
-        assert args[0] == "task_7_user_3_submissions"
+        assert args[0] == "challenge_3_submissions"
 
     @patch("sse_utils.get_redis_client")
     def test_none_task_id_does_nothing(self, mock_get_redis):
-        publish_submissions_update(task_id=None, user_id=1)
+        publish_submissions_update(task_id=None, challenge_id=1)
         mock_get_redis.return_value.publish.assert_not_called()
 
     @patch("sse_utils.get_redis_client")
-    def test_none_user_id_does_nothing(self, mock_get_redis):
-        publish_submissions_update(task_id=1, user_id=None)
+    def test_none_challenge_id_does_nothing(self, mock_get_redis):
+        publish_submissions_update(task_id=1, challenge_id=None)
         mock_get_redis.return_value.publish.assert_not_called()
 
     @patch("sse_utils.get_redis_client")
     def test_redis_none_no_error(self, mock_get_redis):
         mock_get_redis.return_value = None
-        publish_submissions_update(task_id=1, user_id=1)
+        publish_submissions_update(task_id=1, challenge_id=1)
 
 
 # ═══════════════════════════════════════════════════════════════════════

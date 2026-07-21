@@ -212,9 +212,9 @@ def queue_system_submission(
     db.session.add(submission)
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_leaderboard_update(submission.challenge_id)
 
     from tasks import evaluate_submission
 
@@ -1187,9 +1187,9 @@ def submit_task(
         )
         db.session.add(submission)
         db.session.commit()
-        publish_submissions_update(submission.task_id, submission.user_id)
+        publish_submissions_update(submission.task_id, submission.challenge_id)
         publish_queue_update()
-        publish_leaderboard_update(submission.task_id, submission.challenge_id)
+        publish_leaderboard_update(submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
             200,
@@ -1213,9 +1213,9 @@ def submit_task(
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
-    publish_submissions_update(submission.task_id, submission.user_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_leaderboard_update(submission.challenge_id)
     from tasks import evaluate_submission
 
     gpu_required = False
@@ -1386,67 +1386,6 @@ def get_task_leaderboard(
     )
 
 
-@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-)
-def stream_task_leaderboard(
-    task_id: Any,
-) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live task leaderboard updates via SSE."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
-            return err("ERR_NOT_AVAILABLE", 403)
-
-    def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
-            if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
-                return
-
-            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-
-            r = get_redis_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(f"task_{task_id}_leaderboard")
-            start_time = time.time()
-
-            try:
-                while True:
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-                            continue
-                    else:
-                        time.sleep(2.0)
-                    yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Leaderboard SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
 @jury_access_required
@@ -1463,9 +1402,14 @@ def stream_task_submissions(
     current_user_id = request.user["user_id"]
     page = request.args.get("page", type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
+
+    task = db.session.get(Task, task_id)
+    if not task:
+        return err("ERR_NOT_FOUND", 404)
+    challenge_id = task.challenge_id
+
     if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
+        if not check_task_started(task, user_role, current_user_id):
             return err("ERR_NOT_AVAILABLE", 403)
         if task.challenge and task.challenge.scores_finalized:
             return err(
@@ -1487,10 +1431,7 @@ def stream_task_submissions(
             pubsub = r.pubsub() if r else None
 
             if pubsub:
-                if user_role in ["admin", "jury"]:
-                    pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
-                else:
-                    pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+                pubsub.subscribe(f"challenge_{challenge_id}_submissions")
 
             start_time = time.time()
 
@@ -1517,10 +1458,7 @@ def stream_task_submissions(
             finally:
                 if pubsub:
                     with contextlib.suppress(Exception):
-                        if user_role in ["admin", "jury"]:
-                            pubsub.punsubscribe()
-                        else:
-                            pubsub.unsubscribe()
+                        pubsub.unsubscribe()
                         pubsub.close()
 
     return sse_response(event_generator)
@@ -1718,9 +1656,9 @@ def report_worker_progress(
         submission.final_weighted_score_private = data["final_weighted_score_private"]
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_leaderboard_update(submission.challenge_id)
 
     if submission.status in ("completed", "failed"):
         from sse_utils import publish_submission_status

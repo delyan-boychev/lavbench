@@ -444,8 +444,8 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_leaderboard_update(submission.challenge_id)
 
     return SelectFinalResponse(
         message="Submission selected as final.",
@@ -499,7 +499,7 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
 
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
     publish_submission_status(submission.id, "failed")
     clear_submission_logs(submission.id)

@@ -512,9 +512,9 @@ def run_eval_submission(
                                 "Failed to invalidate leaderboard cache in submission runner"
                             )
 
-                    publish_submissions_update(sub.task_id, sub.user_id)
+                    publish_submissions_update(sub.task_id, sub.challenge_id)
                     publish_queue_update()
-                    publish_leaderboard_update(sub.task_id)
+                    publish_leaderboard_update(sub.challenge_id)
 
     logs: StreamingLogList | None = None
     status: str = "queued"

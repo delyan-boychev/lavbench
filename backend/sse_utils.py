@@ -101,39 +101,37 @@ def sse_connection_limit(
             logger.warning("SSE connection cleanup failed:", exc_info=True)
 
 
-def publish_leaderboard_update(task_id: Any, challenge_id: Any = None) -> None:
-    """Publish a leaderboard-changed event to Redis channels for SSE consumers."""
-    if not task_id:
-        return
-    try:
-        r = _redis()
-        if r:
-            r.publish(f"task_{task_id}_leaderboard", json.dumps({"event": "update"}))
-            if challenge_id:
-                r.publish(
-                    f"challenge_{challenge_id}_leaderboard",
-                    json.dumps({"event": "update"}),
-                )
-    except Exception:
-        logger.exception("Redis publish leaderboard update error for task %s", task_id)
-
-
-def publish_submissions_update(task_id: Any, user_id: Any) -> None:
-    """Publish a submission-list-changed event for a specific task+user."""
-    if not task_id or not user_id:
+def publish_leaderboard_update(challenge_id: Any) -> None:
+    """Publish a leaderboard-changed event to the challenge-level Redis channel for SSE."""
+    if not challenge_id:
         return
     try:
         r = _redis()
         if r:
             r.publish(
-                f"task_{task_id}_user_{user_id}_submissions",
+                f"challenge_{challenge_id}_leaderboard",
+                json.dumps({"event": "update"}),
+            )
+    except Exception:
+        logger.exception("Redis publish leaderboard update error for challenge %s", challenge_id)
+
+
+def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
+    """Publish a submission-list-changed event to the challenge-level Redis channel."""
+    if not task_id or not challenge_id:
+        return
+    try:
+        r = _redis()
+        if r:
+            r.publish(
+                f"challenge_{challenge_id}_submissions",
                 json.dumps({"event": "update"}),
             )
     except Exception:
         logger.exception(
-            "Redis publish submissions update error for task %s user %s",
+            "Redis publish submissions update error for task %s challenge %s",
             task_id,
-            user_id,
+            challenge_id,
         )
 
 

@@ -483,13 +483,18 @@ class TestRouteLevelLogic:
 
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard/live",
+            f"/api/challenges/{self.challenge.id}/leaderboard/live",
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
-        assert b"data: " in first_chunk
-        assert b"challenge_title" in first_chunk
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)  # "connected" message
+        assert b"connected" in first_chunk
+        second_chunk = next(response_iter)  # leaderboard data
+        assert b"data: " in second_chunk
+        assert b"challenge_title" in second_chunk
+        # Close to prevent generator from lingering
+        res.close()
 
     @patch("redis.Redis.from_url")
     def test_sse_live_submissions_route(self, mock_redis_cls):
@@ -501,11 +506,14 @@ class TestRouteLevelLogic:
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
             f"/api/tasks/{self.task.id}/submissions/live",
+            buffered=False,
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)
         assert b"data: " in first_chunk
+        res.close()
 
     def test_blind_review_during_ongoing_competition(self):
         self.challenge.start_time = utcnow() - timedelta(hours=1)

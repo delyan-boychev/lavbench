@@ -1827,7 +1827,7 @@ def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
         log_line = f"[{utcnow().isoformat()}] Submission killed by admin queue clear"
         existing_logs = sub.logs or ""
         sub.logs = f"{existing_logs}\n{log_line}".strip()
-        publish_submissions_update(sub.task_id, sub.user_id)
+        publish_submissions_update(sub.task_id, sub.challenge_id)
         publish_queue_update()
         publish_submission_status(sub.id, "failed")
         clear_submission_logs(sub.id)

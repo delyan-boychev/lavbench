@@ -45,24 +45,6 @@ class TestStreamSubmissionLogs:
             res.close()
 
 
-class TestStreamTaskLeaderboard:
-    def test_requires_auth(self, client):
-        res = client.get("/api/tasks/00000000-0000-0000-0000-000000000000/leaderboard/live")
-        assert res.status_code in (401, 302)
-
-    def test_returns_event_stream_with_auth(self, client, tokens, auth_headers):
-        res = client.get(
-            "/api/tasks/00000000-0000-0000-0000-000000000000/leaderboard/live",
-            headers=auth_headers(tokens.admin),
-            buffered=False,
-        )
-        try:
-            if res.status_code == 200:
-                assert res.mimetype == "text/event-stream"
-        finally:
-            res.close()
-
-
 class TestStreamTaskSubmissions:
     def test_requires_auth(self, client):
         res = client.get("/api/tasks/00000000-0000-0000-0000-000000000000/submissions/live")
