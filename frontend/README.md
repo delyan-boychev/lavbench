@@ -1,91 +1,123 @@
 # LavBench Frontend
 
-React + Vite application with Tailwind CSS, i18next internationalization, and JSDoc-based type checking.
+React 19 + Vite application styled with Vanilla CSS and Tailwind CSS, featuring i18next internationalization (English and Bulgarian), Server-Sent Events (SSE) live data streaming, and full JSDoc-based TypeScript validation.
+
+---
 
 ## Development
 
 ```bash
-npm install
-npm run dev          # Start dev server at http://localhost:5173
+# 1. Install dependencies
+npm ci
+
+# 2. Start Vite development server (http://localhost:5173)
+npm run dev
 ```
 
-The API proxy is configured in `nginx.conf` for production and in `vite.config.js` for development.
+The API reverse proxy is configured in `vite.config.js` for local development (proxying `/api` requests to `http://localhost:5001`) and in `nginx.conf` for production Docker deployments.
 
-## Scripts
+---
 
-| Command                      | Description                                        |
-| ---------------------------- | -------------------------------------------------- |
-| `npm run dev`                | Start Vite dev server with HMR                     |
-| `npm run build`              | Production build to `dist/`                        |
-| `npm run test`               | Run vitest unit/component tests (362 tests)        |
-| `npm run test:coverage`      | Run tests with v8 coverage report                  |
-| `npm run lint`               | ESLint across the project                          |
-| `npm run check-types`        | TypeScript type check via `tsc --noEmit`           |
-| `npm run generate-api-types` | Generate TypeScript declarations from OpenAPI spec |
-| `npm run preview`            | Preview production build locally                   |
+## Available Scripts
 
-## Testing
+| Command | Description |
+| :--- | :--- |
+| `npm run dev` | Starts Vite dev server with Hot Module Replacement (HMR) at `:5173`. |
+| `npm run build` | Builds optimized production bundle to `dist/`. |
+| `npm run test` | Runs vitest unit and component test suite. |
+| `npm run test:coverage` | Runs unit tests with v8 code coverage thresholds. |
+| `npm run lint` | Runs ESLint across all frontend source files. |
+| `npm run format` | Formats frontend source files using Prettier. |
+| `npm run format:check` | Checks code formatting against Prettier rules. |
+| `npm run check-types` | Validates TypeScript types using `tsc --noEmit`. |
+| `npm run generate-api-types` | Auto-generates TypeScript declarations (`src/types/api.d.ts`) from backend OpenAPI spec (`/apidoc/openapi.json`). |
+| `npm run preview` | Previews production build locally. |
+
+---
+
+## Testing & Quality Assurance
 
 ```bash
-# Unit and component tests
+# Unit and component tests (vitest + happy-dom + MSW)
 npm run test
 
-# With coverage thresholds (lines ≥ 60%, statements ≥ 60%, branches ≥ 55%, functions ≥ 55%)
+# Run tests with coverage reporting (lines ≥ 60%, statements ≥ 60%, branches ≥ 55%, functions ≥ 55%)
 npm run test:coverage
+
+# TypeScript type checking
+npm run check-types
 ```
 
-Tests use **vitest** with **happy-dom** environment. API calls are mocked with **MSW**. Component tests use **@testing-library/react**.
+Tests use **vitest** with a **happy-dom** environment. API calls are mocked using **MSW** (Mock Service Worker). Component tests use **@testing-library/react**.
 
-## Translation Checking
+---
 
-English and Bulgarian locale files must stay in sync:
+## Translation Parity Checking
+
+English (`public/locales/en/translation.json`) and Bulgarian (`public/locales/bg/translation.json`) locale files must maintain 100% symmetrical key structures:
 
 ```bash
 python3 scripts/check_translations.py
 ```
 
-This validates key parity between `public/locales/en/translation.json` and `public/locales/bg/translation.json`. Runs automatically in CI.
+This script validates key symmetry and detects missing or orphaned translation keys. Runs automatically in CI (`.github/workflows/ci.yml`).
 
-## Type System
+---
 
-The frontend uses **JSDoc `@type` annotations** with an auto-generated TypeScript declaration file (`src/types/api.d.ts`). The pipeline:
+## Type System Architecture
 
-1. Backend spectree `@api.validate` decorators generate the OpenAPI spec at `/apidoc/openapi.json`
-2. `openapi-typescript` generates `src/types/api.d.ts`
-3. `tsc --noEmit` validates all types at build time
+The frontend uses **JSDoc `@type` annotations** coupled with auto-generated TypeScript declarations (`src/types/api.d.ts`):
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for type system conventions.
+1. Backend spectree `@api.validate` decorators generate the OpenAPI 3.0 spec at `/apidoc/openapi.json`.
+2. `npm run generate-api-types` runs `openapi-typescript` to update `src/types/api.d.ts`.
+3. `npm run check-types` executes `tsc --noEmit` to validate all JSDoc types and React component props without requiring `.ts`/`.tsx` extensions.
 
-## Architecture
+---
 
-```
+## Project Structure
+
+```text
 frontend/
 ├── src/
 │   ├── components/        # Reusable UI components
-│   │   ├── admin/         # Admin panel components
-│   │   ├── challenge/     # Challenge/task browsing
+│   │   ├── admin/         # Admin panel modals, worker specs, task forms
+│   │   ├── challenge/     # Challenge cards, stage selector, task rules
 │   │   ├── layout/        # Navbar, CompetitionBar, ProtectedLayout
-│   │   ├── leaderboard/   # Leaderboard table
-│   │   ├── submissions/   # Submission list and viewer
-│   │   └── ui/            # Shared UI primitives (Button, Modal, etc.)
-│   ├── pages/             # Route-level page components
-│   ├── services/          # ApiService, AuthContext, AppContext
+│   │   ├── leaderboard/   # Live leaderboard table & score breakdown
+│   │   ├── submissions/   # Submission list, code cell viewer & log stream
+│   │   └── ui/            # UI primitives (Button, Modal, Toast, Badge)
+│   ├── pages/             # Route page components (Login, Admin, Challenge, etc.)
+│   ├── services/          # ApiService (fetch wrapper), AuthContext, AppContext
 │   ├── context/           # React context providers
-│   ├── hooks/             # Custom hooks (useDebounce)
-│   ├── utils/             # formatDate, metrics, timezones
-│   └── types/             # Auto-generated api.d.ts
-├── public/locales/        # i18n — en/, bg/
-├── nginx.conf             # Nginx reverse proxy config
-├── tsconfig.json          # TypeScript config (JSDoc mode)
-├── vite.config.js         # Vite + vitest config
-└── Dockerfile             # Multi-stage Node/Alpine + Nginx build
+│   ├── hooks/             # Custom hooks (useDebounce, useSSE)
+│   ├── utils/             # Dates, metric formatters, timezone utilities
+│   └── types/             # Auto-generated api.d.ts declarations
+├── public/locales/        # i18n translation JSON files (en/, bg/)
+├── nginx.conf             # Nginx production reverse proxy config
+├── tsconfig.json          # TypeScript config (JSDoc checkJs mode)
+├── vite.config.js         # Vite dev server + vitest configuration
+└── Dockerfile             # Multi-stage Node/Alpine build + Nginx container
 ```
 
-## Docker
+---
+
+## Sphinx Documentation
+
+To build Sphinx documentation from the frontend directory:
 
 ```bash
-docker build -t lavbench-frontend .
-docker run -p 80:80 lavbench-frontend
+pip install -r ../docs/requirements.txt
+cd ../docs && make html
 ```
 
-The multi-stage build compiles the React app with `node:26-alpine`, then serves static assets via Nginx with API proxying to the backend.
+---
+
+## Docker Deployment
+
+```bash
+# Build production frontend container
+docker build -t lavbench-frontend .
+
+# Run container on port 80
+docker run -p 80:80 lavbench-frontend
+```
