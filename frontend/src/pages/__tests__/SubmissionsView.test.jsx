@@ -22,6 +22,7 @@ vi.mock('../../context/AppContext', () => ({
 
 vi.mock('../../services/TaskService', () => ({
   default: {
+    selectFinal: vi.fn(),
     getSubmissions: vi.fn(),
     getSubmissionDetail: vi.fn(),
   },
@@ -434,10 +435,7 @@ describe('SubmissionsView Page', () => {
       fireEvent.click(toggleLabel);
 
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          '/api/submissions/100/select-final',
-          expect.objectContaining({ method: 'POST' }),
-        );
+        expect(TaskService.selectFinal).toHaveBeenCalledWith(100);
         expect(TaskService.getSubmissions).toHaveBeenCalledWith(10, 1, 10);
       });
     });
@@ -482,9 +480,9 @@ describe('SubmissionsView Page', () => {
         data: { items: mockSubmissions, total: 1, pages: 1 },
       });
 
-      global.fetch = vi.fn().mockResolvedValue({
+      TaskService.selectFinal.mockResolvedValue({
         ok: false,
-        json: () => Promise.resolve({ code: 'some_error', error: 'Something went wrong' }),
+        data: { code: 'some_error', error: 'Something went wrong' },
       });
 
       renderWithProviders(<SubmissionsView />);

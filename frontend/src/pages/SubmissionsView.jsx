@@ -198,7 +198,10 @@ export default function SubmissionsView() {
   };
 
   const handleKillSubmission = async (submissionId) => {
-    const confirmed = await confirm(t('submissions.kill_confirm'), t('submissions.kill'));
+    const confirmed = await confirm({
+      message: t('submissions.kill_confirm'),
+      confirmText: t('submissions.kill'),
+    });
     if (!confirmed) return;
 
     try {

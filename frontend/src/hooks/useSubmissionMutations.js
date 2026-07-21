@@ -5,12 +5,9 @@ export function useSelectFinal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (/** @type {any} */ submissionId) =>
-      fetch(`/api/submissions/${submissionId}/select-final`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).then((r) => {
-        if (!r.ok) return r.json().then((d) => Promise.reject(d));
-        return r.json();
+      TaskService.selectFinal(submissionId).then((r) => {
+        if (!r.ok) return Promise.reject(r.data);
+        return r.data;
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
   });

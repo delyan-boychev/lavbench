@@ -988,6 +988,9 @@
       "download_submissions_failed": "Неуспешно изтегляне на решения.",
       "submissions_zip_downloaded": "Архивът с решения в ZIP формат е изтеглен.",
       "invalid_email": "Моля, въведете валиден имейл адрес",
+      "clear_queue_success": "Опашката е изчистена успешно.",
+      "clear_queue_failed": "Неуспешно изчистване на опашката.",
+      "clear_queue_network_error": "Мрежова грешка при изчистване на опашката.",
       "stage_results_hidden": "Резултатите за етапа са скрити.",
       "stage_results_revealed": "Резултатите за етапа са показани."
     },

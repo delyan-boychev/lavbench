@@ -988,6 +988,9 @@
       "download_submissions_failed": "Failed to download submissions.",
       "submissions_zip_downloaded": "Submissions ZIP downloaded.",
       "invalid_email": "Please enter a valid email address",
+      "clear_queue_success": "Queue cleared successfully.",
+      "clear_queue_failed": "Failed to clear queue.",
+      "clear_queue_network_error": "Network error clearing queue.",
       "stage_results_hidden": "Stage results hidden.",
       "stage_results_revealed": "Stage results revealed."
     },

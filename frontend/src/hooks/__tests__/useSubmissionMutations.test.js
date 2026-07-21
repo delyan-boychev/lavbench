@@ -7,6 +7,7 @@ import { useSelectFinal, useKillSubmission, useClearQueue } from '../useSubmissi
 
 vi.mock('../../services/TaskService', () => ({
   default: {
+    selectFinal: vi.fn(),
     killSubmission: vi.fn(),
     clearQueue: vi.fn(),
   },
@@ -27,22 +28,18 @@ describe('useSubmissionMutations', () => {
   });
 
   describe('useSelectFinal', () => {
-    it('sends POST to select-final endpoint', async () => {
-      const okResponse = { ok: true, json: () => Promise.resolve({ message: 'done' }) };
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(okResponse);
+    it('calls TaskService.selectFinal', async () => {
+      TaskService.selectFinal.mockResolvedValue({ ok: true, data: { message: 'done' } });
       const { result } = renderHook(() => useSelectFinal(), { wrapper: createWrapper() });
       result.current.mutate('sub-1');
-      await waitFor(() =>
-        expect(globalThis.fetch).toHaveBeenCalledWith(
-          '/api/submissions/sub-1/select-final',
-          expect.objectContaining({ method: 'POST' }),
-        ),
-      );
+      await waitFor(() => expect(TaskService.selectFinal).toHaveBeenCalledWith('sub-1'));
     });
 
     it('rejects on non-ok response', async () => {
-      const errorResponse = { ok: false, json: () => Promise.resolve({ code: 'ERR_NOT_FOUND' }) };
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorResponse);
+      TaskService.selectFinal.mockResolvedValue({
+        ok: false,
+        data: { code: 'ERR_NOT_FOUND' },
+      });
       const { result } = renderHook(() => useSelectFinal(), { wrapper: createWrapper() });
       result.current.mutate('sub-missing');
       await waitFor(() => {

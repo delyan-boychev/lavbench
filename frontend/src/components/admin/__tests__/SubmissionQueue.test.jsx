@@ -199,7 +199,10 @@ describe('SubmissionQueue — clear queue', () => {
 
     expect(mockConfirm).toHaveBeenCalled();
     expect(TaskService.clearQueue).toHaveBeenCalled();
-    expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Cleared'), 'emerald');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'admin.notifications.clear_queue_success',
+      'emerald',
+    );
   });
 });
 

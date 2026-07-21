@@ -37,10 +37,10 @@ export default function SubmissionQueue() {
   const pages = data?.pages ?? 1;
 
   const handleKill = async (submissionId) => {
-    const confirmed = await confirm(
-      t('admin.submission_queue.kill_confirm'),
-      t('admin.submission_queue.kill'),
-    );
+    const confirmed = await confirm({
+      message: t('admin.submission_queue.kill_confirm'),
+      confirmText: t('admin.submission_queue.kill'),
+    });
     if (!confirmed) return;
 
     setKilling(submissionId);
@@ -57,24 +57,26 @@ export default function SubmissionQueue() {
   };
 
   const handleClearQueue = async () => {
-    const confirmed = await confirm(
-      t('admin.submission_queue.clear_queue_confirm'),
-      t('admin.submission_queue.clear_queue'),
-    );
+    const confirmed = await confirm({
+      message: t('admin.submission_queue.clear_queue_confirm'),
+      confirmText: t('admin.submission_queue.clear_queue'),
+    });
     if (!confirmed) return;
 
     try {
       const res = await clearQueueMutation.mutateAsync();
       if (res.ok) {
-        showToast(res.data?.message || 'Queue cleared.', 'emerald');
+        showToast(t('admin.notifications.clear_queue_success'), 'emerald');
         refetch();
       } else {
         const err = /** @type {{ code?: string, error?: string }} */ (res.data);
-        const errMsg = err.code ? t(`api.${err.code}`, err.error) : 'Failed to clear queue';
+        const errMsg = err.code
+          ? t(`api.${err.code}`, err.error)
+          : t('admin.notifications.clear_queue_failed');
         showToast(errMsg, 'rose');
       }
     } catch {
-      showToast('Network error clearing queue.', 'rose');
+      showToast(t('admin.notifications.clear_queue_network_error'), 'rose');
     }
   };
 

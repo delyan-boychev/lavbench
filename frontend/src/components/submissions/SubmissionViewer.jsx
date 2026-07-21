@@ -133,7 +133,7 @@ export default function SubmissionViewer({
                 (currentUser?.role === 'admin' ||
                   currentUser?.role === 'jury' ||
                   (currentUser?.role === 'competitor' &&
-                    displaySubmission.user_id === currentUser?.id)) && (
+                    displaySubmission.user?.id === currentUser?.id)) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
