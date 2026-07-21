@@ -827,51 +827,53 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                         {c.tasks?.map((task) => (
                           <div
                             key={task.id}
-                            className="flex justify-between items-start p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                            className="p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                           >
-                            <div>
-                              <span className="font-bold text-slate-200">
-                                {task.build_error && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedErrorTask(
-                                        expandedErrorTask === task.id ? null : task.id,
-                                      )
-                                    }
-                                    className="inline mr-1 align-middle"
-                                  >
-                                    <AlertTriangle className="w-4 h-4 text-amber-400 hover:text-amber-300 transition-colors" />
-                                  </button>
+                            <div className="flex justify-between items-center gap-4">
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold text-slate-200">
+                                  {task.build_error && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedErrorTask(
+                                          expandedErrorTask === task.id ? null : task.id,
+                                        )
+                                      }
+                                      className="inline mr-1 align-middle"
+                                    >
+                                      <AlertTriangle className="w-4 h-4 text-amber-400 hover:text-amber-300 transition-colors" />
+                                    </button>
+                                  )}
+                                  {task.title}
+                                </span>
+                                <span className="text-[10px] text-slate-500 ml-2">
+                                  {t('admin.public_eval_split', {
+                                    percentage: task.public_eval_percentage || 30,
+                                  })}
+                                </span>
+                                {expandedErrorTask === task.id && task.build_error && (
+                                  <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-[11px] text-red-300 whitespace-pre-wrap break-words">
+                                    {task.build_error}
+                                  </div>
                                 )}
-                                {task.title}
-                              </span>
-                              <span className="text-[10px] text-slate-500 ml-2">
-                                {t('admin.public_eval_split', {
-                                  percentage: task.public_eval_percentage || 30,
-                                })}
-                              </span>
-                              {expandedErrorTask === task.id && task.build_error && (
-                                <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-[11px] text-red-300 whitespace-pre-wrap break-words">
-                                  {task.build_error}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="secondary"
-                                onClick={() => onEditTask && onEditTask(task)}
-                              >
-                                {t('admin.edit_config')}
-                              </Button>
-                              <Button
-                                variant="danger"
-                                onClick={() => handleDeleteTask(task.id, task.title)}
-                                disabled={isDeletingTask}
-                                isLoading={isDeletingTask}
-                              >
-                                {t('admin.stages.delete')}
-                              </Button>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => onEditTask && onEditTask(task)}
+                                >
+                                  {t('admin.edit_config')}
+                                </Button>
+                                <Button
+                                  variant="danger"
+                                  onClick={() => handleDeleteTask(task.id, task.title)}
+                                  disabled={isDeletingTask}
+                                  isLoading={isDeletingTask}
+                                >
+                                  {t('admin.stages.delete')}
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         ))}
