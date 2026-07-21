@@ -827,7 +827,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                         {c.tasks?.map((task) => (
                           <div
                             key={task.id}
-                            className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                            className="flex justify-between items-start p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                           >
                             <div>
                               <span className="font-bold text-slate-200">

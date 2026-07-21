@@ -140,7 +140,7 @@ export default function SubmissionViewer({
                       onKill && onKill(displaySubmission.id);
                     }}
                     disabled={killing}
-                    className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+                    className="text-xs font-semibold px-3 py-1 rounded-lg border border-rose-600 bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {killing ? '...' : t('submissions.kill')}
                   </button>
