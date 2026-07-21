@@ -460,14 +460,17 @@ celery.conf.beat_schedule = {
     "watchdog-every-5m": {
         "task": "tasks.watchdog_stuck_submissions",
         "schedule": 300.0,
+        "options": {"queue": "internal"},
     },
     "backup-check-every-20m": {
         "task": "tasks.check_and_backup",
         "schedule": 1200.0,
+        "options": {"queue": "internal"},
     },
     "recalculate-dirty-leaderboards-every-20s": {
         "task": "tasks.recalculate_dirty_leaderboards",
         "schedule": 20.0,
+        "options": {"queue": "internal"},
     },
     "docker-prune-weekly": {
         "task": "tasks.prune_docker_images",
