@@ -29,6 +29,7 @@ export default function TaskForm({
   editingTask,
   setEditingTask,
   setIsCreatingTask,
+  onClose,
   handleSaveCreateTask,
   handleSaveUpdateTask,
   challenges,
@@ -1365,14 +1366,7 @@ export default function TaskForm({
         )}
 
         <div className="flex justify-end gap-4 border-t border-white/10 pt-6 mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setIsCreatingTask(false);
-              setEditingTask(null);
-            }}
-            className="px-8 py-2.5"
-          >
+          <Button variant="secondary" onClick={() => onClose?.()} className="px-8 py-2.5">
             {t('common.cancel')}
           </Button>
           <Button

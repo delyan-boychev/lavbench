@@ -330,6 +330,7 @@ export default function TaskManager({
       editingTask={editingTask}
       setEditingTask={() => {}}
       setIsCreatingTask={() => {}}
+      onClose={onClose}
       handleSaveCreateTask={handleSaveCreateTask}
       handleSaveUpdateTask={handleSaveUpdateTask}
       challenges={challenges}

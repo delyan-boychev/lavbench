@@ -61,6 +61,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const API_BASE = '/api';
 
   const importFileRef = useRef(null);
+  const [expandedErrorTask, setExpandedErrorTask] = useState(null);
 
   const [editingChallenge, setEditingChallenge] = useState(null);
 
@@ -831,9 +832,17 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                             <div>
                               <span className="font-bold text-slate-200">
                                 {task.build_error && (
-                                  <span title={task.build_error}>
-                                    <AlertTriangle className="w-4 h-4 text-amber-400 inline mr-1" />
-                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedErrorTask(
+                                        expandedErrorTask === task.id ? null : task.id,
+                                      )
+                                    }
+                                    className="inline mr-1 align-middle"
+                                  >
+                                    <AlertTriangle className="w-4 h-4 text-amber-400 hover:text-amber-300 transition-colors" />
+                                  </button>
                                 )}
                                 {task.title}
                               </span>
@@ -842,6 +851,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                   percentage: task.public_eval_percentage || 30,
                                 })}
                               </span>
+                              {expandedErrorTask === task.id && task.build_error && (
+                                <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-[11px] text-red-300 whitespace-pre-wrap break-words">
+                                  {task.build_error}
+                                </div>
+                              )}
                             </div>
                             <div className="flex gap-2">
                               <Button
