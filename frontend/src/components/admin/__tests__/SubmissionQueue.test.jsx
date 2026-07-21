@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
 
@@ -90,40 +91,36 @@ describe('SubmissionQueue — empty state', () => {
       isLoading: false,
       refetch: mockRefetch,
     });
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     expect(screen.getByText(/admin\.submission_queue\.queue_empty/i)).toBeInTheDocument();
-    cleanup();
   });
 });
 
 describe('SubmissionQueue — table rendering', () => {
   it('renders items in table rows', () => {
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     expect(screen.getByText('Task A')).toBeInTheDocument();
     expect(screen.getByText('Task B')).toBeInTheDocument();
     expect(screen.getByText('Alias-1')).toBeInTheDocument();
     expect(screen.getByText('Alias-2')).toBeInTheDocument();
-    cleanup();
   });
 
   it('shows status badges for each item', () => {
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     const badges = screen.getAllByTestId('badge');
     expect(badges).toHaveLength(2);
     expect(badges[0]).toHaveTextContent('queued');
     expect(badges[1]).toHaveTextContent('running');
-    cleanup();
   });
 
   it('renders kill button per item', () => {
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     const killBtns = screen.getAllByText(/admin\.submission_queue\.kill/i);
     expect(killBtns).toHaveLength(2);
-    cleanup();
   });
 });
 
@@ -131,7 +128,7 @@ describe('SubmissionQueue — kill action', () => {
   it('calls killSubmission and shows success toast', async () => {
     TaskService.killSubmission.mockResolvedValue({ ok: true, data: { message: 'Killed' } });
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     const killBtns = screen.getAllByText(/admin\.submission_queue\.kill/i);
     await act(async () => {
@@ -141,7 +138,6 @@ describe('SubmissionQueue — kill action', () => {
     expect(mockConfirm).toHaveBeenCalled();
     expect(TaskService.killSubmission).toHaveBeenCalledWith('sub-1');
     expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'emerald');
-    cleanup();
   });
 
   it('shows error toast when kill fails', async () => {
@@ -150,7 +146,7 @@ describe('SubmissionQueue — kill action', () => {
       data: { code: 'ERR_SUBMISSION_NOT_KILLABLE', error: 'Cannot kill' },
     });
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     const killBtns = screen.getAllByText(/admin\.submission_queue\.kill/i);
     await act(async () => {
@@ -158,13 +154,12 @@ describe('SubmissionQueue — kill action', () => {
     });
 
     expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'rose');
-    cleanup();
   });
 
   it('skips kill when confirm is cancelled', async () => {
     mockConfirm.mockResolvedValueOnce(false);
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     const killBtns = screen.getAllByText(/admin\.submission_queue\.kill/i);
     await act(async () => {
@@ -172,25 +167,22 @@ describe('SubmissionQueue — kill action', () => {
     });
 
     expect(TaskService.killSubmission).not.toHaveBeenCalled();
-    cleanup();
   });
 });
 
 describe('SubmissionQueue — clear queue', () => {
   it('shows clear queue button for admin', () => {
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     expect(screen.getByText(/admin\.submission_queue\.clear_queue/i)).toBeInTheDocument();
-    cleanup();
   });
 
   it('hides clear queue button for jury', () => {
     useAuth.mockReturnValue({ currentUser: { role: 'jury' } });
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     expect(screen.queryByText(/admin\.submission_queue\.clear_queue/i)).not.toBeInTheDocument();
-    cleanup();
   });
 
   it('calls clearQueue and shows success toast', async () => {
@@ -199,7 +191,7 @@ describe('SubmissionQueue — clear queue', () => {
       data: { message: 'Cleared 2 submission(s)' },
     });
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     await act(async () => {
       fireEvent.click(screen.getByText(/admin\.submission_queue\.clear_queue/i));
@@ -208,7 +200,6 @@ describe('SubmissionQueue — clear queue', () => {
     expect(mockConfirm).toHaveBeenCalled();
     expect(TaskService.clearQueue).toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Cleared'), 'emerald');
-    cleanup();
   });
 });
 
@@ -228,9 +219,8 @@ describe('SubmissionQueue — pagination', () => {
       refetch: mockRefetch,
     });
 
-    render(<SubmissionQueue />);
+    renderWithProviders(<SubmissionQueue />);
 
     expect(screen.getByText('2')).toBeInTheDocument();
-    cleanup();
   });
 });

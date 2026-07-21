@@ -412,7 +412,10 @@ describe('SubmissionsView Page', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
-      api.fetch.mockResolvedValueOnce({ ok: true });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }),
+      );
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
         data: { items: mockSubmissions, total: 1, pages: 1 },
@@ -431,9 +434,9 @@ describe('SubmissionsView Page', () => {
       fireEvent.click(toggleLabel);
 
       await waitFor(() => {
-        expect(api.fetch).toHaveBeenCalledWith(
+        expect(global.fetch).toHaveBeenCalledWith(
           '/api/submissions/100/select-final',
-          expect.any(Object),
+          expect.objectContaining({ method: 'POST' }),
         );
         expect(TaskService.getSubmissions).toHaveBeenCalledWith(10, 1, 10);
       });
@@ -479,7 +482,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockSubmissions, total: 1, pages: 1 },
       });
 
-      api.fetch.mockResolvedValueOnce({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         json: () => Promise.resolve({ code: 'some_error', error: 'Something went wrong' }),
       });

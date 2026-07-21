@@ -93,6 +93,8 @@ export default function Row({
   const [flashPrivate, setFlashPrivate] = useState(false);
   const [flashPoints, setFlashPoints] = useState(false);
 
+  const [downloadingId, setDownloadingId] = useState(null);
+
   const prevPublicRef = React.useRef(displayPublic);
   const prevPrivateRef = React.useRef(displayPrivate);
   const prevPointsRef = React.useRef(displayPoints);
@@ -237,6 +239,7 @@ export default function Row({
 
   const handleDownloadSubmission = async (taskId) => {
     if (!entry.user) return;
+    setDownloadingId(taskId);
     try {
       const res = await ChallengeService.downloadSubmission(challengeId, taskId, entry.user.id);
       if (!res.ok) {
@@ -260,6 +263,8 @@ export default function Row({
         t('leaderboard.download_submission_error', 'Error downloading submission'),
         'error',
       );
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -488,6 +493,7 @@ export default function Row({
                                 onClick={() => handleDownloadSubmission(task.id)}
                                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold transition-colors cursor-pointer text-[10px]"
                                 title={t('leaderboard.download_solution', 'Download Solution')}
+                                disabled={downloadingId === task.id}
                               >
                                 <Download size={10} />
                                 {t('leaderboard.download_solution', 'Download Solution')}
@@ -511,6 +517,7 @@ export default function Row({
                           onClick={() => handleDownloadSubmission(activeTask.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold transition-colors cursor-pointer text-xs"
                           title={t('leaderboard.download_solution', 'Download Solution')}
+                          disabled={downloadingId === activeTask.id}
                         >
                           <Download size={12} />
                           {t('leaderboard.download_solution', 'Download Solution')}

@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
-import { useQueryClient } from '@tanstack/react-query';
 import useDebounce from '../hooks/useDebounce';
 import useSSE from '../hooks/useSSE';
-import useMutation from '../hooks/useMutation';
 import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
 import { useUsersQuery } from '../hooks/useUsersQuery';
 import { useCompetitorsQuery } from '../hooks/useCompetitorsQuery';
@@ -16,6 +13,15 @@ import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
 import ToggleField from '../components/ui/ToggleField';
+import { useCreateChallenge } from '../hooks/useChallengeMutations';
+import { useRegisterCompetitor, useCsvImportCompetitors } from '../hooks/useCompetitorMutations';
+import {
+  useRegisterUser,
+  useUpdateUser,
+  useDeleteUser,
+  useResetPassword,
+  useBulkResetPasswords,
+} from '../hooks/useUserMutations';
 
 import WorkersStats from '../components/admin/WorkersStats';
 import BackupManager from '../components/admin/BackupManager';
@@ -34,18 +40,22 @@ export { formatMetricName } from '../components/admin/TaskManager';
 export default function AdminPanel() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { isLoading, run } = useMutation();
+  const { mutateAsync: handleCreateChallengeAction, isPending: isCreatingChallenge } =
+    useCreateChallenge();
+  const { mutateAsync: handleRegisterCompetitorAction, isPending: isRegisteringCompetitor } =
+    useRegisterCompetitor();
+  const { mutateAsync: handleRegisterUserAction, isPending: isRegisteringUser } = useRegisterUser();
+  const { mutateAsync: handleDeleteUserAction, isPending: isDeletingUser } = useDeleteUser();
+  const { mutateAsync: handleCsvImportAction, isPending: isCsvImporting } =
+    useCsvImportCompetitors();
+  const { mutateAsync: handleUpdateUserAction, isPending: isUpdatingUser } = useUpdateUser();
+  const { mutateAsync: handleResetPasswordAction, isPending: isResettingPassword } =
+    useResetPassword();
+  const { mutateAsync: handleBulkResetAction, isPending: isResettingBulk } =
+    useBulkResetPasswords();
 
-  const {
-    challenges,
-    selectedChallenge,
-    setSelectedChallengeById,
-    fetchChallenges,
-    showToast,
-    confirm,
-  } = useApp();
+  const { challenges, selectedChallenge, setSelectedChallengeById, showToast, confirm } = useApp();
 
-  const API_BASE = '/api';
   const showApiError = (data, defaultTranslationKey, defaultText = '') => {
     if (data?.code) {
       showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
@@ -115,8 +125,6 @@ export default function AdminPanel() {
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [resetCredentials, setResetCredentials] = useState(null);
   const [bulkResetCredentials, setBulkResetCredentials] = useState([]);
-
-  const queryClient = useQueryClient();
 
   // User Management State
   const [userSearch, setUserSearch] = useState('');
@@ -209,12 +217,6 @@ export default function AdminPanel() {
 
   const fetchWorkerStats = () => setWorkerStatsLoading(true);
 
-  const invalidateUsers = () => queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-  const invalidateCompetitors = () =>
-    queryClient.invalidateQueries({ queryKey: ['admin-competitors'] });
-  const fetchUsers = invalidateUsers;
-  const fetchCompetitors = invalidateCompetitors;
-
   useEffect(() => {
     setUsersPage(1);
   }, [userSearch]);
@@ -231,36 +233,28 @@ export default function AdminPanel() {
   const handleCreateChallenge = async (e) => {
     e.preventDefault();
     try {
-      await run('createChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newChallenge),
+      const result = await handleCreateChallengeAction(newChallenge);
+      if (result.ok) {
+        showToast(t('admin.notifications.competition_created'));
+        setNewChallenge({
+          title: '',
+          description: '',
+          max_eval_requests: 10,
+          ram_limit_mb: 8192,
+          time_limit_sec: 300,
+          gpu_required: false,
+          start_time: '',
+          end_time: '',
+          is_frozen: false,
+          double_blind: true,
+          timezone: 'UTC',
+          test_stage_start_time: '',
+          test_stage_end_time: '',
         });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competition_created'));
-          setNewChallenge({
-            title: '',
-            description: '',
-            max_eval_requests: 10,
-            ram_limit_mb: 8192,
-            time_limit_sec: 300,
-            gpu_required: false,
-            start_time: '',
-            end_time: '',
-            is_frozen: false,
-            double_blind: true,
-            timezone: 'UTC',
-            test_stage_start_time: '',
-            test_stage_end_time: '',
-          });
-          fetchChallenges();
-          setAdminSubTab('competition-mgmt');
-        } else {
-          showApiError(data, 'admin.notifications.competition_create_failed');
-        }
-      });
+        setAdminSubTab('competition-mgmt');
+      } else {
+        showApiError(result.data, 'admin.notifications.competition_create_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_create_competition'), 'rose');
     }
@@ -276,37 +270,29 @@ export default function AdminPanel() {
     setGeneratedCredentials(null);
 
     try {
-      await run('registerCompetitor', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/register-competitor`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newCompetitor),
+      const result = await handleRegisterCompetitorAction(newCompetitor);
+      if (result.ok) {
+        setGeneratedCredentials({
+          username: result.data.generated_username,
+          password: result.data.generated_password,
+          name: newCompetitor.name,
+          surname: newCompetitor.surname,
         });
-        const data = await res.json();
-        if (res.ok) {
-          setGeneratedCredentials({
-            username: data.generated_username,
-            password: data.generated_password,
-            name: newCompetitor.name,
-            surname: newCompetitor.surname,
-          });
-          setNewCompetitor({
-            name: '',
-            middle_name: '',
-            surname: '',
-            birth_date: '',
-            grade: '',
-            school: '',
-            city: '',
-            challenge_id: '',
-            is_anonymous: false,
-          });
-          showToast(t('admin.notifications.competitor_registered'));
-          fetchCompetitors();
-        } else {
-          showApiError(data, 'admin.notifications.competitor_register_failed');
-        }
-      });
+        setNewCompetitor({
+          name: '',
+          middle_name: '',
+          surname: '',
+          birth_date: '',
+          grade: '',
+          school: '',
+          city: '',
+          challenge_id: '',
+          is_anonymous: false,
+        });
+        showToast(t('admin.notifications.competitor_registered'));
+      } else {
+        showApiError(result.data, 'admin.notifications.competitor_register_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -345,43 +331,35 @@ export default function AdminPanel() {
     }
 
     try {
-      await run('registerUser', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/register-user`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
+      const result = await handleRegisterUserAction(requestBody);
+      if (result.ok) {
+        showToast(t('admin.notifications.user_registered'));
+        setGeneratedUserCredentials({
+          username: result.data.generated_username,
+          password: result.data.generated_password,
+          role: newUser.role,
+          name: newUser.name,
+          surname: newUser.surname,
         });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.user_registered'));
-          setGeneratedUserCredentials({
-            username: data.generated_username,
-            password: data.generated_password,
-            role: newUser.role,
-            name: newUser.name,
-            surname: newUser.surname,
-          });
-          setNewUser({
-            username: '',
-            email: '',
-            password: '',
-            name: '',
-            middle_name: '',
-            surname: '',
-            birth_date: '',
-            role: 'competitor',
-            grade: '',
-            school: '',
-            city: '',
-            challenge_id: '',
-            is_anonymous: false,
-            jury_challenges: [],
-          });
-          fetchUsers();
-        } else {
-          showApiError(data, 'admin.notifications.user_register_failed');
-        }
-      });
+        setNewUser({
+          username: '',
+          email: '',
+          password: '',
+          name: '',
+          middle_name: '',
+          surname: '',
+          birth_date: '',
+          role: 'competitor',
+          grade: '',
+          school: '',
+          city: '',
+          challenge_id: '',
+          is_anonymous: false,
+          jury_challenges: [],
+        });
+      } else {
+        showApiError(result.data, 'admin.notifications.user_register_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -395,19 +373,12 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      await run('deleteUser', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/users/${userId}`, {
-          method: 'DELETE',
-          headers: {},
-        });
-        if (res.ok) {
-          showToast(t('admin.notifications.user_deleted', { username }));
-          fetchUsers();
-        } else {
-          const data = await res.json();
-          showApiError(data, 'admin.notifications.user_delete_failed');
-        }
-      });
+      const result = await handleDeleteUserAction(userId);
+      if (result.ok) {
+        showToast(t('admin.notifications.user_deleted', { username }));
+      } else {
+        showApiError(result.data, 'admin.notifications.user_delete_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -431,26 +402,18 @@ export default function AdminPanel() {
     fd.append('challenge_id', csvChallengeId);
 
     try {
-      await run('csvImport', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/import-competitors-csv`, {
-          method: 'POST',
-          headers: {},
-          body: fd,
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(
-            t('admin.notifications.imported_competitors_success', {
-              count: data.competitors?.length || 0,
-            }),
-          );
-          setImportedCompetitors(data.competitors || []);
-          setCsvFile(null);
-          fetchCompetitors();
-        } else {
-          showApiError(data, 'admin.notifications.import_csv_failed');
-        }
-      });
+      const result = await handleCsvImportAction(fd);
+      if (result.ok) {
+        showToast(
+          t('admin.notifications.imported_competitors_success', {
+            count: result.data.competitors?.length || 0,
+          }),
+        );
+        setImportedCompetitors(result.data.competitors || []);
+        setCsvFile(null);
+      } else {
+        showApiError(result.data, 'admin.notifications.import_csv_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -490,37 +453,29 @@ export default function AdminPanel() {
       }
     }
     try {
-      await run('updateUser', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: editUserForm.username,
-            email: editUserForm.email || null,
-            password: editUserForm.password || null,
-            name: editUserForm.name,
-            middle_name: editUserForm.middle_name || null,
-            surname: editUserForm.surname,
-            birth_date: editUserForm.birth_date || null,
-            grade: editUserForm.grade || null,
-            school: editUserForm.school || null,
-            city: editUserForm.city || null,
-            challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
-            is_anonymous: editUserForm.is_anonymous,
-            role: editUserForm.role,
-            jury_challenges: editUserForm.jury_challenges,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competitor_updated'));
-          setEditingUser(null);
-          fetchUsers();
-          fetchCompetitors();
-        } else {
-          showApiError(data, 'admin.notifications.competitor_update_failed');
-        }
+      const result = await handleUpdateUserAction({
+        id: editingUser.id,
+        username: editUserForm.username,
+        email: editUserForm.email || null,
+        password: editUserForm.password || null,
+        name: editUserForm.name,
+        middle_name: editUserForm.middle_name || null,
+        surname: editUserForm.surname,
+        birth_date: editUserForm.birth_date || null,
+        grade: editUserForm.grade || null,
+        school: editUserForm.school || null,
+        city: editUserForm.city || null,
+        challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
+        is_anonymous: editUserForm.is_anonymous,
+        role: editUserForm.role,
+        jury_challenges: editUserForm.jury_challenges,
       });
+      if (result.ok) {
+        showToast(t('admin.notifications.competitor_updated'));
+        setEditingUser(null);
+      } else {
+        showApiError(result.data, 'admin.notifications.competitor_update_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_update_competitor'), 'rose');
     }
@@ -533,20 +488,14 @@ export default function AdminPanel() {
     });
     if (!ok) return;
     try {
-      await run('resetPassword', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/users/${userId}/reset-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.password_reset_success'));
-          setResetCredentials({ username: data.username, password: data.password });
-          setBulkResetCredentials([]);
-        } else {
-          showApiError(data, 'admin.notifications.password_reset_failed');
-        }
-      });
+      const result = await handleResetPasswordAction(userId);
+      if (result.ok) {
+        showToast(t('admin.notifications.password_reset_success'));
+        setResetCredentials({ username: result.data.username, password: result.data.password });
+        setBulkResetCredentials([]);
+      } else {
+        showApiError(result.data, 'admin.notifications.password_reset_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_reset_password'), 'rose');
     }
@@ -584,25 +533,18 @@ export default function AdminPanel() {
     if (!ok) return;
 
     try {
-      await run('bulkResetPasswords', async () => {
-        const res = await api.fetch(
-          `${API_BASE}/admin/challenges/${challenge.id}/reset-all-passwords`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          },
+      const result = await handleBulkResetAction(challenge.id);
+      if (result.ok) {
+        showToast(
+          t('admin.notifications.bulk_reset_success', {
+            count: result.data.reset_accounts?.length,
+          }),
         );
-        const data = await res.json();
-        if (res.ok) {
-          showToast(
-            t('admin.notifications.bulk_reset_success', { count: data.reset_accounts?.length }),
-          );
-          setBulkResetCredentials(data.reset_accounts || []);
-          setResetCredentials(null);
-        } else {
-          showApiError(data, 'admin.notifications.bulk_reset_failed');
-        }
-      });
+        setBulkResetCredentials(result.data.reset_accounts || []);
+        setResetCredentials(null);
+      } else {
+        showApiError(result.data, 'admin.notifications.bulk_reset_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_bulk_reset'), 'rose');
     }
@@ -666,7 +608,7 @@ export default function AdminPanel() {
               newChallenge={newChallenge}
               setNewChallenge={setNewChallenge}
               timezones={TIMEZONES}
-              isCreatingChallenge={isLoading('createChallenge')}
+              isCreatingChallenge={isCreatingChallenge}
             />
           )}
 
@@ -683,7 +625,7 @@ export default function AdminPanel() {
               setCsvChallengeId={setCsvChallengeId}
               csvFile={csvFile}
               setCsvFile={setCsvFile}
-              csvImporting={false}
+              csvImporting={isCsvImporting}
               isCSVImportDisabled={isCSVImportDisabled}
               handleCSVImport={handleCSVImport}
               importedCompetitors={importedCompetitors}
@@ -704,9 +646,9 @@ export default function AdminPanel() {
               competitorsPages={competitorsPages}
               competitorsTotal={competitorsTotal}
               setCompetitorsPage={setCompetitorsPage}
-              isRegisteringCompetitor={isLoading('registerCompetitor')}
-              isResettingBulkPasswords={isLoading('bulkResetPasswords')}
-              isResettingPassword={isLoading('resetPassword')}
+              isRegisteringCompetitor={isRegisteringCompetitor}
+              isResettingBulkPasswords={isResettingBulk}
+              isResettingPassword={isResettingPassword}
             />
           )}
 
@@ -719,21 +661,21 @@ export default function AdminPanel() {
               newUser={newUser}
               setNewUser={setNewUser}
               handleRegisterUser={handleRegisterUser}
-              isRegisteringUser={isLoading('registerUser')}
+              isRegisteringUser={isRegisteringUser}
               generatedUserCredentials={generatedUserCredentials}
               allUsers={filteredUsers}
               userSearch={userSearch}
               setUserSearch={setUserSearch}
               handleDeleteUser={handleDeleteUser}
-              isDeletingUser={isLoading('deleteUser')}
+              isDeletingUser={isDeletingUser}
+              handleUpdateUserSubmit={(id, data) => handleUpdateUserAction({ id, ...data })}
+              isUpdatingUser={isUpdatingUser}
               usersPage={usersPage}
               usersPages={usersPages}
               usersTotal={usersTotal}
               setUsersPage={setUsersPage}
               challenges={challenges}
               currentUser={currentUser}
-              fetchUsers={fetchUsers}
-              fetchCompetitors={fetchCompetitors}
             />
           )}
 
@@ -890,7 +832,7 @@ export default function AdminPanel() {
                   <Button
                     type="submit"
                     variant="primary"
-                    disabled={isEditDisabled || isLoading('updateUser')}
+                    disabled={isEditDisabled || isUpdatingUser}
                   >
                     {t('admin.stages.save_changes_btn')}
                   </Button>

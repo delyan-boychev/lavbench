@@ -1,6 +1,5 @@
 import React, { useState, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../AuthContext';
-import ChallengeService from '../../services/ChallengeService';
 import { useApp } from '../../context/AppContext';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -10,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, BarChart3, Layers, CheckSquare } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Row from './LeaderboardRow';
+import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
 
 export default function LeaderboardTable({
   data,
@@ -33,6 +33,8 @@ export default function LeaderboardTable({
   const [activeTab, setActiveTab] = useState('general');
   const [expandedUserIds, setExpandedUserIds] = useState(new Set());
   const revealResults = challenge?.reveal_results;
+
+  const savePointsMutation = useSaveManualPoints();
 
   const visibleStages = React.useMemo(() => {
     const now = new Date();
@@ -87,29 +89,21 @@ export default function LeaderboardTable({
     }
 
     try {
-      const res = await ChallengeService.saveManualPoints(challenge.id, {
+      await savePointsMutation.mutateAsync({
+        challengeId: challenge.id,
         user_id: scoringUser.id,
         points: { [scoringTask.id]: pts },
         reason: scoringReason.trim() || undefined,
       });
 
-      if (res.ok) {
-        showToast(
-          t('leaderboard.save_points_success', {
-            pts,
-            name: scoringUser.name || scoringUser.username || scoringUser.alias_id,
-          }),
-        );
-        setScoringModalOpen(false);
-        if (onRefresh) onRefresh();
-      } else {
-        const errData = /** @type {any} */ (res.data);
-        const errCode = errData?.code;
-        const errMsg = errCode
-          ? t(`api.${errCode}`, errData?.error)
-          : t('leaderboard.save_points_failed');
-        showToast(errMsg, 'error');
-      }
+      showToast(
+        t('leaderboard.save_points_success', {
+          pts,
+          name: scoringUser.name || scoringUser.username || scoringUser.alias_id,
+        }),
+      );
+      setScoringModalOpen(false);
+      if (onRefresh) onRefresh();
     } catch {
       showToast(t('leaderboard.server_error'), 'error');
     }
@@ -536,7 +530,12 @@ export default function LeaderboardTable({
             <Button variant="ghost" onClick={() => setScoringModalOpen(false)}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button variant="primary" onClick={handleSavePointsSubmit}>
+            <Button
+              variant="primary"
+              onClick={handleSavePointsSubmit}
+              disabled={savePointsMutation.isPending}
+              isLoading={savePointsMutation.isPending}
+            >
               {t('common.save', 'Save')}
             </Button>
           </div>

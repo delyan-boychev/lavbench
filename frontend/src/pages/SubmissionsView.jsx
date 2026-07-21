@@ -7,10 +7,10 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import useSSE from '../hooks/useSSE';
 import { useApiError } from '../hooks/useApiError';
-import TaskService from '../services/TaskService';
 import { useSubmissionsQuery } from '../hooks/useSubmissionsQuery';
 import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
 import { useCompetitorSearchQuery } from '../hooks/useCompetitorSearchQuery';
+import { useSelectFinal, useKillSubmission } from '../hooks/useSubmissionMutations';
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import Badge from '../components/ui/Badge';
 import Pagination from '../components/ui/Pagination';
@@ -35,8 +35,8 @@ export default function SubmissionsView() {
   const { showApiError } = useApiError();
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
-  const [selectingFinal, setSelectingFinal] = useState(false);
-  const [killing, setKilling] = useState(false);
+  const selectFinalMutation = useSelectFinal();
+  const killSubmissionMutation = useKillSubmission();
 
   const [submissionsPage, setSubmissionsPage] = useState(1);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -182,30 +182,18 @@ export default function SubmissionsView() {
   });
 
   const handleSelectFinal = async (submissionId) => {
-    setSelectingFinal(true);
     try {
-      const res = await api.fetch(`/api/submissions/${submissionId}/select-final`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (res.ok) {
-        setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
-        await queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      } else {
-        const errData = await res.json();
-        await confirm({
-          title: t('submissions.selection_error'),
-          message: errData.code
-            ? t(`api.${errData.code}`, errData.error || t('submissions.select_final_failed'))
-            : errData.error || t('submissions.select_final_failed'),
-          confirmText: t('common.ok'),
-          cancelText: '',
-        });
-      }
+      await selectFinalMutation.mutateAsync(submissionId);
+      setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
     } catch (err) {
-      console.error(err);
-    } finally {
-      setSelectingFinal(false);
+      await confirm({
+        title: t('submissions.selection_error'),
+        message: err.code
+          ? t(`api.${err.code}`, err.error || t('submissions.select_final_failed'))
+          : err.error || t('submissions.select_final_failed'),
+        confirmText: t('common.ok'),
+        cancelText: '',
+      });
     }
   };
 
@@ -213,25 +201,17 @@ export default function SubmissionsView() {
     const confirmed = await confirm(t('submissions.kill_confirm'), t('submissions.kill'));
     if (!confirmed) return;
 
-    setKilling(true);
     try {
-      const res = await TaskService.killSubmission(submissionId);
-      if (res.ok) {
-        showToast(t('submissions.kill_success'), 'emerald');
-        setSelectedSubmission((prev) =>
-          prev && prev.id === submissionId
-            ? { ...prev, status: 'failed', detailed_status: 'killed' }
-            : prev,
-        );
-        await queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      } else {
-        showApiError(res.data, 'submissions.kill_failed');
-      }
+      await killSubmissionMutation.mutateAsync(submissionId);
+      showToast(t('submissions.kill_success'), 'emerald');
+      setSelectedSubmission((prev) =>
+        prev && prev.id === submissionId
+          ? { ...prev, status: 'failed', detailed_status: 'killed' }
+          : prev,
+      );
     } catch (err) {
       console.error(err);
       showApiError(err, 'submissions.kill_failed');
-    } finally {
-      setKilling(false);
     }
   };
 
@@ -593,12 +573,12 @@ export default function SubmissionsView() {
                 submission={selectedSubmission}
                 currentUser={currentUser}
                 onSelectFinal={handleSelectFinal}
-                selectingFinal={selectingFinal}
+                selectingFinal={selectFinalMutation.isPending}
                 isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
                 isSubmissionAfterDeadline={isSubmissionAfterDeadline}
                 onSubmissionUpdate={handleSubmissionUpdate}
                 onKill={handleKillSubmission}
-                killing={killing}
+                killing={killSubmissionMutation.isPending}
               />
             </div>
           </div>
@@ -705,7 +685,7 @@ export default function SubmissionsView() {
               onSelectFinal={() => {}}
               onSubmissionUpdate={handleSubmissionUpdate}
               onKill={handleKillSubmission}
-              killing={killing}
+              killing={killSubmissionMutation.isPending}
             />
           )}
 
@@ -972,12 +952,12 @@ export default function SubmissionsView() {
               submission={selectedSubmission}
               currentUser={currentUser}
               onSelectFinal={handleSelectFinal}
-              selectingFinal={selectingFinal}
+              selectingFinal={selectFinalMutation.isPending}
               isSelectionDisabled={isSelectionDisabled}
               isSubmissionAfterDeadline={isSubmissionAfterDeadline}
               onSubmissionUpdate={handleSubmissionUpdate}
               onKill={handleKillSubmission}
-              killing={killing}
+              killing={killSubmissionMutation.isPending}
             />
           )}
         </>

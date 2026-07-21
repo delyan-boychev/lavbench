@@ -1,9 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
-import useMutation from '../../hooks/useMutation';
 import InputField from '../ui/InputField';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
@@ -21,27 +19,17 @@ export default function UserManager({
   setUserSearch,
   handleDeleteUser,
   isDeletingUser,
+  handleUpdateUserSubmit: onUpdateUserSubmit,
+  isUpdatingUser,
   usersPage,
   usersPages,
   usersTotal,
   setUsersPage,
   challenges,
   currentUser,
-  fetchUsers,
-  fetchCompetitors,
 }) {
   const { t } = useTranslation();
   const { showToast } = useApp();
-  const { isLoading, run } = useMutation();
-
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
-  const API_BASE = '/api';
 
   const [editingUser, setEditingUser] = useState(null);
   const [editUserForm, setEditUserForm] = useState({
@@ -102,37 +90,24 @@ export default function UserManager({
       }
     }
     try {
-      await run('updateUser', async () => {
-        const res = await api.fetch(`${API_BASE}/admin/users/${editingUser.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: editUserForm.username,
-            email: editUserForm.email || null,
-            password: editUserForm.password || null,
-            name: editUserForm.name,
-            middle_name: editUserForm.middle_name || null,
-            surname: editUserForm.surname,
-            birth_date: editUserForm.birth_date || null,
-            grade: editUserForm.grade || null,
-            school: editUserForm.school || null,
-            city: editUserForm.city || null,
-            challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
-            is_anonymous: editUserForm.is_anonymous,
-            role: editUserForm.role,
-            jury_challenges: editUserForm.jury_challenges,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competitor_updated'));
-          setEditingUser(null);
-          fetchUsers?.();
-          fetchCompetitors?.();
-        } else {
-          showApiError(data, 'admin.notifications.competitor_update_failed');
-        }
+      await onUpdateUserSubmit(editingUser.id, {
+        username: editUserForm.username,
+        email: editUserForm.email || null,
+        password: editUserForm.password || null,
+        name: editUserForm.name,
+        middle_name: editUserForm.middle_name || null,
+        surname: editUserForm.surname,
+        birth_date: editUserForm.birth_date || null,
+        grade: editUserForm.grade || null,
+        school: editUserForm.school || null,
+        city: editUserForm.city || null,
+        challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
+        is_anonymous: editUserForm.is_anonymous,
+        role: editUserForm.role,
+        jury_challenges: editUserForm.jury_challenges,
       });
+      showToast(t('admin.notifications.competitor_updated'));
+      setEditingUser(null);
     } catch {
       showToast(t('admin.notifications.network_error_update_competitor'), 'rose');
     }
@@ -587,7 +562,12 @@ export default function UserManager({
                   <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
                     {t('common.cancel', 'Cancel')}
                   </Button>
-                  <Button type="submit" variant="primary" disabled={isLoading('updateUser')}>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={isUpdatingUser}
+                    isLoading={isUpdatingUser}
+                  >
                     {t('common.save', 'Save')}
                   </Button>
                 </div>

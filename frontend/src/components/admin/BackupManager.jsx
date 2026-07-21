@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
-import api from '../../services/ApiService';
 import { useApp } from '../../context/AppContext';
 import useSSE from '../../hooks/useSSE';
 import { useBackupsQuery } from '../../hooks/useBackupsQuery';
+import { useDeleteBackup, useForceBackup } from '../../hooks/useBackupMutations';
 import { formatDateTime } from '../../utils/formatDate';
 
 export default function BackupManager() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
   const { data, isLoading, refetch } = useBackupsQuery();
-  const [forcing, setForcing] = useState(false);
+
+  const deleteBackupMutation = useDeleteBackup();
+  const forceBackupMutation = useForceBackup();
 
   const backups = data?.backups || [];
   const downloadBase = '/api/admin/backups';
@@ -20,24 +22,23 @@ export default function BackupManager() {
   useSSE('/api/admin/backups/live', {
     onMessage: (msg) => {
       if (msg.event?.status === 'completed') {
-        setForcing(false);
+        refetch();
       }
       refetch();
     },
   });
 
   const handleForce = async () => {
-    setForcing(true);
     try {
-      await api.post('/admin/backups/force');
+      await forceBackupMutation.mutateAsync();
     } catch {
-      setForcing(false);
+      /* noop */
     }
   };
 
   const handleDelete = async (filename) => {
     try {
-      await api.delete(`/admin/backups/${filename}`);
+      await deleteBackupMutation.mutateAsync(filename);
       refetch();
     } catch {
       /* noop */
@@ -57,8 +58,15 @@ export default function BackupManager() {
         <h2 className="text-xl font-bold text-white">
           {t('admin.backups.database_backups_security')}
         </h2>
-        <Button variant="accent" onClick={handleForce} disabled={forcing}>
-          {forcing ? t('admin.backups.forcing') : t('admin.backups.force_now')}
+        <Button
+          variant="accent"
+          onClick={handleForce}
+          disabled={forceBackupMutation.isPending}
+          isLoading={forceBackupMutation.isPending}
+        >
+          {forceBackupMutation.isPending
+            ? t('admin.backups.forcing')
+            : t('admin.backups.force_now')}
         </Button>
       </div>
 
@@ -85,7 +93,13 @@ export default function BackupManager() {
                   {t('admin.backups.download')}
                 </Button>
                 {b.type === 'manual' && (
-                  <Button variant="danger" size="sm" onClick={() => handleDelete(b.filename)}>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleDelete(b.filename)}
+                    disabled={deleteBackupMutation.isPending}
+                    isLoading={deleteBackupMutation.isPending}
+                  >
                     ✕
                   </Button>
                 )}

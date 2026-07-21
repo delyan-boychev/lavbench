@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import api from '../../services/ApiService';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
-import useMutation from '../../hooks/useMutation';
+import { useCreateTask, useUpdateTask } from '../../hooks/useTaskMutations';
 import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
@@ -16,7 +15,7 @@ export default function TaskManager({
   onClose,
 }) {
   const { t } = useTranslation();
-  const { showToast, fetchChallenges } = useApp();
+  const { showToast } = useApp();
 
   const showApiError = (data, defaultTranslationKey, defaultText = '') => {
     if (data?.code) {
@@ -25,9 +24,10 @@ export default function TaskManager({
       showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
     }
   };
-  const { run } = useMutation();
 
-  const API_BASE = '/api';
+  const createTaskMutation = useCreateTask();
+  const updateTaskMutation = useUpdateTask();
+
   const isCreatingTask = mode === 'create';
   const editingTask = mode === 'edit' ? initialTask : null;
 
@@ -248,21 +248,16 @@ export default function TaskManager({
     const formData = prepareTaskFormData();
 
     try {
-      await run('createTask', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${selectedChallenge.id}/tasks`, {
-          method: 'POST',
-          headers: {},
-          body: formData,
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.task_created'));
-          fetchChallenges();
-          onClose && onClose();
-        } else {
-          showApiError(data, 'admin.notifications.task_create_failed');
-        }
+      const result = await createTaskMutation.mutateAsync({
+        challengeId: selectedChallenge.id,
+        formData,
       });
+      if (result.ok) {
+        showToast(t('admin.notifications.task_created'));
+        onClose && onClose();
+      } else {
+        showApiError(result.data, 'admin.notifications.task_create_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
     }
@@ -312,21 +307,16 @@ export default function TaskManager({
     }
 
     try {
-      await run('updateTask', async () => {
-        const res = await api.fetch(`${API_BASE}/tasks/${editingTask.id}`, {
-          method: 'PUT',
-          headers: {},
-          body: formData,
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.task_updated'));
-          fetchChallenges();
-          onClose && onClose();
-        } else {
-          showApiError(data, 'admin.notifications.task_update_failed');
-        }
+      const result = await updateTaskMutation.mutateAsync({
+        taskId: editingTask.id,
+        formData,
       });
+      if (result.ok) {
+        showToast(t('admin.notifications.task_updated'));
+        onClose && onClose();
+      } else {
+        showApiError(result.data, 'admin.notifications.task_update_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
     }
@@ -338,8 +328,8 @@ export default function TaskManager({
       setTaskForm={setTaskForm}
       isCreatingTask={isCreatingTask}
       editingTask={editingTask}
-      setEditingTask={() => {}} // Unused — TaskManager handles edit state
-      setIsCreatingTask={() => {}} // Unused — TaskManager handles create state
+      setEditingTask={() => {}}
+      setIsCreatingTask={() => {}}
       handleSaveCreateTask={handleSaveCreateTask}
       handleSaveUpdateTask={handleSaveUpdateTask}
       challenges={challenges}
@@ -351,7 +341,7 @@ export default function TaskManager({
       baselineFile={baselineFile}
       setBaselineFile={setBaselineFile}
       formatDateTime={formatDateTime}
-      savingTask={false}
+      savingTask={createTaskMutation.isPending || updateTaskMutation.isPending}
       evaluatorScript={evaluatorScript}
       setEvaluatorScript={setEvaluatorScript}
       evaluatorDeleted={evaluatorDeleted}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
 import ChallengeService from '../../../services/ChallengeService';
@@ -42,13 +43,13 @@ describe('LeaderboardTable Component', () => {
 
   it('renders loading spinner when loading is true', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    render(<LeaderboardTable data={[]} tasks={[]} challenge={null} loading={true} />);
+    renderWithProviders(<LeaderboardTable data={[]} tasks={[]} challenge={null} loading={true} />);
     expect(screen.getByText('Loading leaderboard...')).toBeInTheDocument();
   });
 
   it('renders empty state message when data is empty', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
-    render(
+    renderWithProviders(
       <LeaderboardTable
         data={[]}
         tasks={[]}
@@ -85,7 +86,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
 
     expect(screen.getByTitle('Rank 1')).toBeInTheDocument();
     expect(screen.getByTitle('Rank 2')).toBeInTheDocument();
@@ -130,7 +133,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
 
     const expandBtn = screen.getByTitle('Toggle details');
     fireEvent.click(expandBtn);
@@ -167,7 +172,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
 
     // Baseline hidden from general tab
     expect(screen.queryByText('Baseline')).not.toBeInTheDocument();
@@ -201,7 +208,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />,
+    );
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
     expect(screen.queryByText('Alias-002')).not.toBeInTheDocument();
   });
@@ -217,7 +226,7 @@ describe('LeaderboardTable Component', () => {
     };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
-    render(
+    renderWithProviders(
       <LeaderboardTable
         data={data}
         tasks={[]}
@@ -241,7 +250,7 @@ describe('LeaderboardTable Component', () => {
     };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
-    render(
+    renderWithProviders(
       <LeaderboardTable
         data={data}
         tasks={[]}
@@ -264,7 +273,9 @@ describe('LeaderboardTable Component', () => {
     };
     const data = [{ rank: 1, public_score: 0.5, user: { id: 1, username: 'me' }, task_scores: {} }];
 
-    render(<LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />,
+    );
     expect(screen.getByText('Public')).toBeInTheDocument();
   });
 
@@ -290,7 +301,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
     expect(screen.getByText('General Leaderboard')).toBeInTheDocument();
     expect(screen.getByText('Task Alpha')).toBeInTheDocument();
     expect(screen.getByText('Task Beta')).toBeInTheDocument();
@@ -321,7 +334,7 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(
+    renderWithProviders(
       <LeaderboardTable
         data={data}
         tasks={tasks}
@@ -340,9 +353,11 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
     await waitFor(() => {
-      expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
+      expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith({
+        challengeId: 12,
         user_id: 5,
         points: { 10: 85 },
+        reason: undefined,
       });
     });
     expect(onRefresh).toHaveBeenCalled();
@@ -368,7 +383,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
 
     fireEvent.click(screen.getByTitle('Toggle details'));
     fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
@@ -422,7 +439,9 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    render(<LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />);
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
     expect(screen.getByText('Stage 1: Stage Alpha')).toBeInTheDocument();
 
     // Click on Stage 1 tab

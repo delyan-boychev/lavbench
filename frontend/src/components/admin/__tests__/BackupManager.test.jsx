@@ -96,8 +96,12 @@ describe('BackupManager', () => {
     await waitFor(() => {
       expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Force Backup Now'));
-    expect(api.post).toHaveBeenCalledWith('/admin/backups/force');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Force Backup Now'));
+    });
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/admin/backups/force');
+    });
   });
 
   it('calls download when download button clicked', async () => {

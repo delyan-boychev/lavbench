@@ -9,6 +9,7 @@ import EmptyState from '../ui/EmptyState';
 import { FileText } from 'lucide-react';
 import useSSE from '../../hooks/useSSE';
 import { useQueueQuery } from '../../hooks/useQueueQuery';
+import { useClearQueue } from '../../hooks/useSubmissionMutations';
 import TaskService from '../../services/TaskService';
 
 export default function SubmissionQueue() {
@@ -22,6 +23,8 @@ export default function SubmissionQueue() {
   const perPage = 20;
 
   const { data, refetch } = useQueueQuery(page, perPage);
+
+  const clearQueueMutation = useClearQueue();
 
   useSSE('/api/admin/submissions/queue/live', {
     onMessage: () => {
@@ -66,7 +69,7 @@ export default function SubmissionQueue() {
     if (!confirmed) return;
 
     try {
-      const res = await TaskService.clearQueue();
+      const res = await clearQueueMutation.mutateAsync();
       if (res.ok) {
         showToast(res.data?.message || 'Queue cleared.', 'emerald');
         refetch();
@@ -109,7 +112,13 @@ export default function SubmissionQueue() {
           </p>
         </div>
         {currentUser?.role === 'admin' && (
-          <Button variant="danger" onClick={handleClearQueue} className="text-xs">
+          <Button
+            variant="danger"
+            onClick={handleClearQueue}
+            className="text-xs"
+            disabled={clearQueueMutation.isPending}
+            isLoading={clearQueueMutation.isPending}
+          >
             {t('admin.submission_queue.clear_queue')}
           </Button>
         )}

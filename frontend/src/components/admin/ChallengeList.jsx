@@ -3,8 +3,23 @@ import api from '../../services/ApiService';
 import ChallengeService from '../../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
-import { useQueryClient } from '@tanstack/react-query';
-import useMutation from '../../hooks/useMutation';
+import {
+  useUpdateChallenge,
+  useDeleteChallenge,
+  useFinalizeChallenge,
+  useToggleRevealChallenge,
+  useArchiveToggle,
+  useExportChallenge,
+  useImportChallenge,
+} from '../../hooks/useChallengeMutations';
+import {
+  useCreateStage,
+  useUpdateStage,
+  useDeleteStage,
+  useFinalizeStage,
+  useToggleRevealStage,
+} from '../../hooks/useStageMutations';
+import { useDeleteTask } from '../../hooks/useTaskMutations';
 import { useAdminChallengesQuery } from '../../hooks/useAdminChallengesQuery';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -18,8 +33,22 @@ import { formatDateTime } from '../../utils/formatDate';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
   const { t } = useTranslation();
-  const { showToast, confirm, selectedChallenge, fetchChallenges } = useApp();
-  const { isLoading, run } = useMutation();
+  const { showToast, confirm, selectedChallenge } = useApp();
+  const { mutateAsync: updateChallengeAct } = useUpdateChallenge();
+  const { mutateAsync: deleteChallengeAct, isPending: isDeletingChallenge } = useDeleteChallenge();
+  const { mutateAsync: finalizeChallengeAct, isPending: isFinalizingChallenge } =
+    useFinalizeChallenge();
+  const { mutateAsync: toggleRevealChallengeAct, isPending: isRevealingChallenge } =
+    useToggleRevealChallenge();
+  const { mutateAsync: archiveToggleAct, isPending: isArchiving } = useArchiveToggle();
+  const { mutateAsync: exportChallengeAct, isPending: isExporting } = useExportChallenge();
+  const { mutateAsync: importChallengeAct } = useImportChallenge();
+  const { mutateAsync: createStageAct, isPending: isCreatingStagePending } = useCreateStage();
+  const { mutateAsync: updateStageAct, isPending: isUpdatingStage } = useUpdateStage();
+  const { mutateAsync: deleteStageAct, isPending: isDeletingStage } = useDeleteStage();
+  const { mutateAsync: finalizeStageAct, isPending: isFinalizingStage } = useFinalizeStage();
+  const { mutateAsync: toggleRevealStageAct, isPending: isRevealingStage } = useToggleRevealStage();
+  const { mutateAsync: deleteTaskAct, isPending: isDeletingTask } = useDeleteTask();
 
   const showApiError = (data, defaultTranslationKey, defaultText = '') => {
     if (data?.code) {
@@ -35,7 +64,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const [editingChallenge, setEditingChallenge] = useState(null);
 
-  const queryClient = useQueryClient();
   const [challengesPage, setChallengesPage] = useState(1);
   const { data: paginatedData } = useAdminChallengesQuery(challengesPage);
   const paginatedChallengesList = paginatedData?.items || [];
@@ -63,30 +91,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     reveal_results: false,
   });
 
-  const invalidateChallenges = () => {
-    queryClient.invalidateQueries({ queryKey: ['admin-challenges'] });
-    queryClient.invalidateQueries({ queryKey: ['challenges'] });
-  };
-
   const handleUpdateChallenge = async (id, updated) => {
     let result = { success: false };
     try {
-      await run('updateChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competition_updated'));
-          fetchChallenges();
-          invalidateChallenges();
-          result = { success: true };
-        } else {
-          showApiError(data, 'admin.notifications.competition_update_failed');
-        }
-      });
+      const res = await updateChallengeAct({ id, ...updated });
+      if (res.ok) {
+        showToast(t('admin.notifications.competition_updated'));
+        result = { success: true };
+      } else {
+        showApiError(res.data, 'admin.notifications.competition_update_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_update_competition'), 'rose');
     }
@@ -100,21 +114,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     });
     if (!ok) return;
     try {
-      await run('deleteChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${id}`, {
-          method: 'DELETE',
-          headers: {},
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.competition_deleted', { title }));
-          if (editingChallenge?.id === id) setEditingChallenge(null);
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.competition_delete_failed');
-        }
-      });
+      const res = await deleteChallengeAct(id);
+      if (res.ok) {
+        showToast(t('admin.notifications.competition_deleted', { title }));
+        if (editingChallenge?.id === id) setEditingChallenge(null);
+      } else {
+        showApiError(res.data, 'admin.notifications.competition_delete_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_delete_competition'), 'rose');
     }
@@ -129,22 +135,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     e.preventDefault();
     if (!finalizingChallenge) return;
     try {
-      await run('finalizeChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${finalizingChallenge.id}/finalize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reveal_results: challengeFinalizeForm.reveal_results }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.scores_finalized'));
-          setFinalizingChallenge(null);
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.scores_finalize_failed');
-        }
-      });
+      const res = await finalizeChallengeAct(finalizingChallenge.id);
+      if (res.ok) {
+        showToast(t('admin.notifications.scores_finalized'));
+        setFinalizingChallenge(null);
+      } else {
+        showApiError(res.data, 'admin.notifications.scores_finalize_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
     }
@@ -153,25 +150,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const handleToggleRevealChallenge = async (id, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      await run('toggleRevealChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${id}/reveal-results`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reveal_results: nextVal }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(
-            nextVal
-              ? t('admin.notifications.results_revealed', 'Results revealed successfully.')
-              : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
-          );
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, '', 'Failed to toggle reveal');
-        }
-      });
+      const res = await toggleRevealChallengeAct(id);
+      if (res.ok) {
+        showToast(
+          nextVal
+            ? t('admin.notifications.results_revealed', 'Results revealed successfully.')
+            : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
+        );
+      } else {
+        showApiError(res.data, '', 'Failed to toggle reveal');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -180,28 +168,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const handleToggleRevealStage = async (challengeId, stageId, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      await run('toggleRevealStage', async () => {
-        const res = await api.fetch(
-          `${API_BASE}/challenges/${challengeId}/stages/${stageId}/reveal-results`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reveal_results: nextVal }),
-          },
+      const res = await toggleRevealStageAct({ challengeId, stageId });
+      if (res.ok) {
+        showToast(
+          nextVal
+            ? t('admin.notifications.stage_results_revealed', 'Stage results revealed.')
+            : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
         );
-        const data = await res.json();
-        if (res.ok) {
-          showToast(
-            nextVal
-              ? t('admin.notifications.stage_results_revealed', 'Stage results revealed.')
-              : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
-          );
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, '', 'Failed to toggle stage reveal');
-        }
-      });
+      } else {
+        showApiError(res.data, '', 'Failed to toggle stage reveal');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -209,20 +185,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const handleArchiveToggle = async (id) => {
     try {
-      await run('archiveToggle', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${id}/archive`, {
-          method: 'POST',
-          headers: {},
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(data.message || t('admin.notifications.archive_toggle_success'));
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.archive_failed');
-        }
-      });
+      const res = await archiveToggleAct(id);
+      if (res.ok) {
+        showToast(res.data?.message || t('admin.notifications.archive_toggle_success'));
+      } else {
+        showApiError(res.data, 'admin.notifications.archive_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -270,22 +238,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       end_time: stageForm.end_time,
     };
     try {
-      await run('createStage', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${stageChallengeId}/stages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.stage_created'));
-          setIsCreatingStage(false);
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.stage_create_failed');
-        }
-      });
+      const res = await createStageAct({ challengeId: stageChallengeId, ...payload });
+      if (res.ok) {
+        showToast(t('admin.notifications.stage_created'));
+        setIsCreatingStage(false);
+      } else {
+        showApiError(res.data, 'admin.notifications.stage_create_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_create_stage'), 'rose');
     }
@@ -301,25 +260,17 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       reveal_results: !!stageForm.reveal_results,
     };
     try {
-      await run('updateStage', async () => {
-        const res = await api.fetch(
-          `${API_BASE}/challenges/${stageChallengeId}/stages/${editingStage.id}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          },
-        );
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.stage_updated'));
-          setEditingStage(null);
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.stage_update_failed');
-        }
+      const res = await updateStageAct({
+        challengeId: stageChallengeId,
+        stageId: editingStage.id,
+        ...payload,
       });
+      if (res.ok) {
+        showToast(t('admin.notifications.stage_updated'));
+        setEditingStage(null);
+      } else {
+        showApiError(res.data, 'admin.notifications.stage_update_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_update_stage'), 'rose');
     }
@@ -332,20 +283,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     });
     if (!ok) return;
     try {
-      await run('deleteStage', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/stages/${stageId}`, {
-          method: 'DELETE',
-          headers: {},
-        });
-        if (res.ok) {
-          showToast(t('admin.notifications.stage_deleted', { title }));
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          const data = await res.json();
-          showApiError(data, 'admin.notifications.stage_delete_failed');
-        }
-      });
+      const res = await deleteStageAct({ challengeId, stageId });
+      if (res.ok) {
+        showToast(t('admin.notifications.stage_deleted', { title }));
+      } else {
+        showApiError(res.data, 'admin.notifications.stage_delete_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_delete_stage'), 'rose');
     }
@@ -353,27 +296,17 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const handleSaveFinalizeStage = async (e) => {
     e.preventDefault();
-    const payload = { reveal_results: stageFinalizeForm.reveal_results };
     try {
-      await run('finalizeStage', async () => {
-        const res = await api.fetch(
-          `${API_BASE}/challenges/${stageChallengeId}/stages/${finalizingStage.id}/finalize`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          },
-        );
-        const data = await res.json();
-        if (res.ok) {
-          showToast(t('admin.notifications.stage_finalized'));
-          setFinalizingStage(null);
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          showApiError(data, 'admin.notifications.stage_finalize_failed');
-        }
+      const res = await finalizeStageAct({
+        challengeId: stageChallengeId,
+        stageId: finalizingStage.id,
       });
+      if (res.ok) {
+        showToast(t('admin.notifications.stage_finalized'));
+        setFinalizingStage(null);
+      } else {
+        showApiError(res.data, 'admin.notifications.stage_finalize_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error_finalize_stage'), 'rose');
     }
@@ -386,20 +319,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     });
     if (!ok) return;
     try {
-      await run('deleteTask', async () => {
-        const res = await api.fetch(`${API_BASE}/tasks/${taskId}`, {
-          method: 'DELETE',
-          headers: {},
-        });
-        if (res.ok) {
-          showToast(t('admin.notifications.task_deleted', { title }));
-          fetchChallenges();
-          invalidateChallenges();
-        } else {
-          const data = await res.json();
-          showApiError(data, 'admin.notifications.task_delete_failed');
-        }
-      });
+      const res = await deleteTaskAct(taskId);
+      if (res.ok) {
+        showToast(t('admin.notifications.task_deleted', { title }));
+      } else {
+        showApiError(res.data, 'admin.notifications.task_delete_failed');
+      }
     } catch {
       showToast(t('admin.notifications.network_error'), 'rose');
     }
@@ -407,26 +332,24 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const handleDownloadScores = async (challengeId, challengeTitle) => {
     try {
-      await run('downloadScores', async () => {
-        const res = await api.fetch(
-          `${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`,
-          { headers: {} },
-        );
-        if (!res.ok) {
-          const errData = await res.json();
-          showApiError(errData, 'admin.notifications.download_scores_failed');
-          return;
-        }
-        const blob = await res.blob();
-        const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast(t('admin.notifications.scores_csv_downloaded'));
-      });
+      const res = await api.fetch(
+        `${API_BASE}/admin/challenges/${challengeId}/download-scores-csv`,
+        { headers: {} },
+      );
+      if (!res.ok) {
+        const errData = await res.json();
+        showApiError(errData, 'admin.notifications.download_scores_failed');
+        return;
+      }
+      const blob = await res.blob();
+      const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(t('admin.notifications.scores_csv_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_scores_failed'), 'rose');
     }
@@ -439,27 +362,25 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     stageTitle = null,
   ) => {
     try {
-      await run('downloadSubmissionsZip', async () => {
-        let url = `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`;
-        if (stageId) url += `?stage_id=${stageId}`;
-        const res = await api.fetch(url, { headers: {} });
-        if (!res.ok) {
-          const errData = await res.json();
-          showApiError(errData, 'admin.notifications.download_submissions_failed');
-          return;
-        }
-        const blob = await res.blob();
-        let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
-        if (stageTitle) filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
-        filename += '.zip';
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast(t('admin.notifications.submissions_zip_downloaded'));
-      });
+      let url = `${API_BASE}/admin/challenges/${challengeId}/download-submissions-zip`;
+      if (stageId) url += `?stage_id=${stageId}`;
+      const res = await api.fetch(url, { headers: {} });
+      if (!res.ok) {
+        const errData = await res.json();
+        showApiError(errData, 'admin.notifications.download_submissions_failed');
+        return;
+      }
+      const blob = await res.blob();
+      let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
+      if (stageTitle) filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
+      filename += '.zip';
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(t('admin.notifications.submissions_zip_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_submissions_failed'), 'rose');
     }
@@ -467,27 +388,25 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const handleDownloadAuditLogs = async (challengeId, challengeTitle) => {
     try {
-      await run('downloadAuditLogs', async () => {
-        const res = await ChallengeService.downloadAuditLogs(challengeId);
-        if (!res.ok) {
-          showToast(
-            t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
-            'rose',
-          );
-          return;
-        }
-        const blob = await res.blob();
-        const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+      const res = await ChallengeService.downloadAuditLogs(challengeId);
+      if (!res.ok) {
         showToast(
-          t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
+          t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
+          'rose',
         );
-      });
+        return;
+      }
+      const blob = await res.blob();
+      const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(
+        t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
+      );
     } catch {
       showToast(
         t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
@@ -498,24 +417,20 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const handleExportChallenge = async (challengeId, challengeTitle) => {
     try {
-      await run('exportChallenge', async () => {
-        const res = await api.fetch(`${API_BASE}/challenges/${challengeId}/export`, {
-          headers: {},
-        });
-        if (!res.ok) {
-          showToast('Failed to export challenge.', 'rose');
-          return;
-        }
-        const blob = await res.blob();
-        const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast('Challenge exported.');
-      });
+      const result = await exportChallengeAct(challengeId);
+      if (!result.ok) {
+        showToast('Failed to export challenge.', 'rose');
+        return;
+      }
+      const blob = await result.res.blob();
+      const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Challenge exported.');
     } catch {
       showToast('Failed to export challenge.', 'rose');
     }
@@ -527,15 +442,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      await run('importChallenge', async () => {
-        const res = await api.postForm(`/challenges/import`, formData);
-        if (res.ok) {
-          showToast('Challenge imported successfully.');
-          invalidateChallenges();
-        } else {
-          showApiError(res.data, '', 'Failed to import challenge.');
-        }
-      });
+      const res = await importChallengeAct(formData);
+      if (res.ok) {
+        showToast('Challenge imported successfully.');
+      } else {
+        showApiError(res.data, '', 'Failed to import challenge.');
+      }
     } catch {
       showToast('Failed to import challenge.', 'rose');
     }
@@ -800,7 +712,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       <Button
                         variant="secondary"
                         onClick={() => handleArchiveToggle(c.id)}
-                        disabled={isLoading('archiveToggle')}
+                        disabled={isArchiving}
+                        isLoading={isArchiving}
                       >
                         {c.is_archived ? t('admin.restore') : t('admin.archive')}
                       </Button>
@@ -809,7 +722,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                         <Button
                           variant="accent"
                           onClick={() => handleDownloadScores(c.id, c.title)}
-                          disabled={isLoading('downloadScores')}
                         >
                           {t('admin.download_csv_scores_short', 'Scores (CSV)')}
                         </Button>
@@ -820,7 +732,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                         <Button
                           variant="accent"
                           onClick={() => handleDownloadSubmissionsZip(c.id, c.title)}
-                          disabled={isLoading('downloadSubmissionsZip')}
                         >
                           {c.scores_finalized
                             ? t('admin.download_submissions_zip_short', 'Submissions (ZIP)')
@@ -836,14 +747,14 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                           <Button
                             variant="accent"
                             onClick={() => handleDownloadAuditLogs(c.id, c.title)}
-                            disabled={isLoading('downloadAuditLogs')}
                           >
                             {t('admin.download_audits_json_short', 'Audits (JSON)')}
                           </Button>
                           <Button
                             variant="secondary"
                             onClick={() => handleToggleRevealChallenge(c.id, c.reveal_results)}
-                            disabled={isLoading('toggleRevealChallenge')}
+                            disabled={isRevealingChallenge}
+                            isLoading={isRevealingChallenge}
                           >
                             {c.reveal_results
                               ? t('admin.hide_results', 'Hide')
@@ -869,14 +780,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       <Button
                         variant="secondary"
                         onClick={() => handleExportChallenge(c.id, c.title)}
-                        disabled={isLoading('exportChallenge')}
+                        disabled={isExporting}
+                        isLoading={isExporting}
                       >
                         {t('admin.export_short', 'Export')}
                       </Button>
                       <Button
                         variant="danger"
                         onClick={() => handleDeleteChallenge(c.id, c.title)}
-                        disabled={isLoading('deleteChallenge')}
+                        disabled={isDeletingChallenge}
+                        isLoading={isDeletingChallenge}
                       >
                         {t('admin.stages.delete')}
                       </Button>
@@ -933,7 +846,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                               <Button
                                 variant="danger"
                                 onClick={() => handleDeleteTask(task.id, task.title)}
-                                disabled={isLoading('deleteTask')}
+                                disabled={isDeletingTask}
+                                isLoading={isDeletingTask}
                               >
                                 {t('admin.stages.delete')}
                               </Button>
@@ -1024,7 +938,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                   onClick={() =>
                                     handleToggleRevealStage(c.id, st.id, st.reveal_results)
                                   }
-                                  disabled={isLoading('toggleRevealStage')}
+                                  disabled={isRevealingStage}
+                                  isLoading={isRevealingStage}
                                 >
                                   {st.reveal_results
                                     ? t('admin.hide_results', 'Hide')
@@ -1041,7 +956,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                   onClick={() =>
                                     handleDownloadSubmissionsZip(c.id, c.title, st.id, st.title)
                                   }
-                                  disabled={isLoading('downloadSubmissionsZip')}
                                 >
                                   {c.scores_finalized
                                     ? t('admin.download_submissions_stage', 'Download')
@@ -1055,7 +969,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                 variant="danger"
                                 className="py-1 px-2.5"
                                 onClick={() => handleDeleteStage(c.id, st.id, st.title)}
-                                disabled={isLoading('deleteStage')}
+                                disabled={isDeletingStage}
+                                isLoading={isDeletingStage}
                               >
                                 {t('admin.stages.delete')}
                               </Button>
@@ -1128,7 +1043,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={isLoading('createStage') || isLoading('updateStage')}
+                disabled={isCreatingStagePending || isUpdatingStage}
+                isLoading={isCreatingStagePending || isUpdatingStage}
               >
                 {isCreatingStage
                   ? t('admin.stages.create_stage_btn')
@@ -1173,7 +1089,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             </div>
 
             <div className="flex gap-3 mt-4">
-              <Button type="submit" variant="primary" disabled={isLoading('finalizeStage')}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isFinalizingStage}
+                isLoading={isFinalizingStage}
+              >
                 {t('admin.stages.finalize_stage_btn')}
               </Button>
               <Button onClick={() => setFinalizingStage(null)} variant="secondary">
@@ -1211,7 +1132,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             </div>
 
             <div className="flex gap-3 mt-4">
-              <Button type="submit" variant="primary" disabled={isLoading('finalizeChallenge')}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isFinalizingChallenge}
+                isLoading={isFinalizingChallenge}
+              >
                 {t('admin.finalize_short', 'Finalize')}
               </Button>
               <Button onClick={() => setFinalizingChallenge(null)} variant="secondary">

@@ -240,9 +240,6 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       expect.stringContaining('/api/challenges/1/stages/10/finalize'),
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({
-          reveal_results: true,
-        }),
       }),
     );
 

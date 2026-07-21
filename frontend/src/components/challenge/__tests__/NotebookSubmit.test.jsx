@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
 import ChallengeService from '../../../services/ChallengeService';
@@ -46,7 +47,7 @@ describe('NotebookSubmit Component', () => {
       currentUser: { role: 'admin' },
     });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     expect(screen.getByText('Judge / Admin Session Active')).toBeInTheDocument();
     expect(screen.queryByText('Submit Solution')).not.toBeInTheDocument();
   });
@@ -57,7 +58,7 @@ describe('NotebookSubmit Component', () => {
     });
 
     const inactiveChallenge = { ...challenge, is_active: false };
-    render(<NotebookSubmit task={task} challenge={inactiveChallenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={inactiveChallenge} />);
     expect(screen.getByText('Competition Closed')).toBeInTheDocument();
   });
 
@@ -67,7 +68,7 @@ describe('NotebookSubmit Component', () => {
     });
 
     const archivedChallenge = { ...challenge, is_archived: true };
-    render(<NotebookSubmit task={task} challenge={archivedChallenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={archivedChallenge} />);
     expect(screen.getByText('Competition Closed')).toBeInTheDocument();
   });
 
@@ -76,7 +77,7 @@ describe('NotebookSubmit Component', () => {
       currentUser: { role: 'competitor' },
     });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     expect(screen.getByText('Submit Solution')).toBeInTheDocument();
     expect(screen.getByText('Upload Jupyter Notebook (.ipynb)')).toBeInTheDocument();
   });
@@ -86,7 +87,7 @@ describe('NotebookSubmit Component', () => {
       currentUser: { role: 'competitor' },
     });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     await act(async () => {});
 
     // Query file input element
@@ -120,7 +121,7 @@ describe('NotebookSubmit Component', () => {
       },
     });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
@@ -150,7 +151,7 @@ describe('NotebookSubmit Component', () => {
       data: { error: 'Invalid notebook JSON format.' },
     });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
@@ -171,7 +172,7 @@ describe('NotebookSubmit Component', () => {
 
     ChallengeService.parseNotebook.mockRejectedValue(new Error('DNS failure'));
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
@@ -198,7 +199,7 @@ describe('NotebookSubmit Component', () => {
     });
     TaskService.submit.mockResolvedValue({ ok: true });
 
-    render(<NotebookSubmit task={task} challenge={challenge} />);
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
     await act(async () => {});
 
     const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);

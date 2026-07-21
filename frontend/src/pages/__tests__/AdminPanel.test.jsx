@@ -22,8 +22,8 @@ vi.mock('../../components/ui/InputField', () => ({
 }));
 
 vi.mock('../../components/ui/Button', () => ({
-  default: ({ children, type, onClick }) => (
-    <button type={type || 'button'} onClick={onClick}>
+  default: ({ children, type, onClick, isLoading, disabled }) => (
+    <button type={type || 'button'} onClick={onClick} disabled={disabled || isLoading}>
       {children}
     </button>
   ),
@@ -552,10 +552,7 @@ describe('AdminPanel – challenge management', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/challenges/1'),
-      expect.objectContaining({ method: 'DELETE' }),
-    );
+    expect(api.delete).toHaveBeenCalledWith('/challenges/1');
   });
 
   it('calls handleArchiveToggle on archive button click', async () => {
@@ -570,10 +567,7 @@ describe('AdminPanel – challenge management', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/challenges/1/archive'),
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(api.post).toHaveBeenCalledWith('/challenges/1/archive');
   });
 
   it('renders download buttons for finalized challenges', async () => {
@@ -1112,10 +1106,7 @@ describe('AdminPanel – edit modals', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/admin/users/10'),
-      expect.objectContaining({ method: 'PUT' }),
-    );
+    expect(api.put).toHaveBeenCalledWith('/admin/users/10', expect.any(Object));
   });
 
   it('opens edit user account modal with competitor fields and submits update', async () => {
@@ -1203,10 +1194,7 @@ describe('AdminPanel – edit modals', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/admin/users/2'),
-      expect.objectContaining({ method: 'PUT' }),
-    );
+    expect(api.put).toHaveBeenCalledWith('/admin/users/2', expect.any(Object));
   });
 });
 
@@ -1291,10 +1279,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenCalledWith(
-      '/api/challenges',
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(api.post).toHaveBeenCalledWith('/challenges', expect.any(Object));
   });
 
   it('calls handleUpdateChallenge on challenge edit form submit', async () => {
@@ -1315,10 +1300,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/challenges/1'),
-      expect.objectContaining({ method: 'PUT' }),
-    );
+    expect(api.put).toHaveBeenCalledWith('/challenges/1', expect.any(Object));
   });
 
   it('calls handleToggleRevealChallenge on finalized challenge', async () => {
@@ -1352,10 +1334,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/challenges/1/reveal-results'),
-      expect.objectContaining({ method: 'PUT' }),
-    );
+    expect(api.put).toHaveBeenCalledWith('/challenges/1/reveal-results');
   });
 
   it('calls handleExportChallenge on Export button click', async () => {
@@ -1374,10 +1353,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).toHaveBeenLastCalledWith(
-      expect.stringContaining('/api/challenges/1/export'),
-      expect.objectContaining({ headers: {} }),
-    );
+    expect(api.get).toHaveBeenCalledWith('/challenges/1/export');
   });
 
   // ── Error paths ──────────────────────────────────────────────────────────
@@ -1548,10 +1524,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.fetch).not.toHaveBeenCalledWith(
-      expect.stringContaining('/api/challenges/1'),
-      expect.objectContaining({ method: 'DELETE' }),
-    );
+    expect(api.delete).not.toHaveBeenCalledWith('/challenges/1');
   });
 
   it('handles handleToggleRevealChallenge API error', async () => {
