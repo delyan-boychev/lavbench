@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
+# Used to namespace Redis build locks per machine.
+_WORKER_HOSTNAME = socket.gethostname()
+
 
 def _report_build_error(
     task_id: str | None,
