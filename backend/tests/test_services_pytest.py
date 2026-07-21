@@ -62,8 +62,8 @@ class TestServiceSandboxAndPriority:
         assert passed
 
     def test_calculate_submission_priority_admin_jury(self):
-        assert calculate_submission_priority(1, "admin") == 9
-        assert calculate_submission_priority(2, "jury") == 9
+        assert calculate_submission_priority(1, "admin") == 0
+        assert calculate_submission_priority(2, "jury") == 0
 
     def test_evaluation_templates_formatting(self):
         from task_modules.templates import (

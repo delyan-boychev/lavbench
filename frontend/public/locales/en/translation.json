@@ -263,6 +263,8 @@
     "baseline_label": "Baseline",
     "download": "Download",
     "execution_time_heading": "Execution",
+    "download_error": "Error downloading submission",
+    "download_failed": "Download failed",
     "task_count": "tasks"
   },
   "challenge": {

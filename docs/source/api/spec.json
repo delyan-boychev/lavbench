@@ -426,6 +426,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -442,6 +454,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -544,6 +592,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -668,9 +728,7 @@
           },
           "details": {
             "anyOf": [
-              {
-                "type": "string"
-              },
+              {},
               {
                 "type": "null"
               }
@@ -1341,6 +1399,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -1357,6 +1427,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -1459,6 +1565,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -1831,7 +1949,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
-                "maximum": 16384,
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -2830,6 +2948,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -2846,6 +2976,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -2948,6 +3114,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -3313,6 +3491,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -3329,6 +3519,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -3431,6 +3657,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -4246,6 +4484,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -4262,6 +4512,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -4364,6 +4650,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -5974,6 +6272,18 @@
             "default": null,
             "title": "Base Docker Image"
           },
+          "baseline_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Notebook Path"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -5990,6 +6300,42 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
+          "evaluator_script_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Script Path"
           },
           "files": {
             "default": [],
@@ -6092,6 +6438,18 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "solution_notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solution Notebook Path"
           },
           "stage_id": {
             "anyOf": [
@@ -8014,6 +8372,30 @@
             "default": null,
             "title": "Description"
           },
+          "evaluator_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Metric Name"
+          },
+          "evaluator_options_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluator Options Schema"
+          },
           "evaluator_script_path": {
             "anyOf": [
               {
@@ -8756,7 +9138,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
-                "maximum": 16384,
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -9312,6 +9694,37 @@
           "tasks"
         ],
         "title": "WorkerActiveTasksResponse",
+        "type": "object"
+      },
+      "WorkerHfKeyResponse.6bc6f68": {
+        "properties": {
+          "hf_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Key"
+          }
+        },
+        "title": "WorkerHfKeyResponse",
+        "type": "object"
+      },
+      "WorkerLogsResponse.6bc6f68": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "WorkerLogsResponse",
         "type": "object"
       },
       "WorkerReportResponse.6bc6f68": {
@@ -11934,7 +12347,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -11942,7 +12355,7 @@
                 }
               }
             },
-            "description": "Created"
+            "description": "OK"
           },
           "400": {
             "content": {
@@ -13169,7 +13582,48 @@
             }
           }
         ],
-        "responses": {},
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerHfKeyResponse.6bc6f68"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
         "summary": "get_task_hf_key <GET>",
         "tags": [
           "Tasks"
@@ -13181,7 +13635,58 @@
         "description": "",
         "operationId": "post__api_workers_logs",
         "parameters": [],
-        "responses": {},
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerLogsResponse.6bc6f68"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
         "summary": "receive_worker_logs <POST>",
         "tags": [
           "Tasks"

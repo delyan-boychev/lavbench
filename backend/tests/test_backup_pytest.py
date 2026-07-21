@@ -149,7 +149,6 @@ class TestRunRegisterWorkerSpecs:
             env = {
                 "WORKER_GPU_ID": None,
                 "HOSTNAME": "worker-01",
-                "API_BASE": "http://localhost:5001/api",
             }
             return env.get(key, default)
 
@@ -168,7 +167,6 @@ class TestRunRegisterWorkerSpecs:
             env = {
                 "WORKER_GPU_ID": "0",
                 "HOSTNAME": "gpu-box",
-                "API_BASE": "http://localhost:5001/api",
             }
             return env.get(key, default)
 

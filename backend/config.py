@@ -46,7 +46,7 @@ class Config:
     REDIS_SOCKET_TIMEOUT = int(os.environ.get("REDIS_SOCKET_TIMEOUT", 5))
 
     # SSE (Server-Sent Events) connection limits
-    SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 5))
+    SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
     SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 50))
     SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", 1800))
     SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 86400))
@@ -132,7 +132,6 @@ class Config:
 
     # Main server URL (for worker callbacks)
     MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
-    API_BASE = os.environ.get("API_BASE", "http://localhost:5001/api")
 
     # Worker identity / tokens
     RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
@@ -176,6 +175,12 @@ class Config:
 
     # Log shipping endpoint for remote workers
     WORKER_LOG_SHIP_URL = os.environ.get("WORKER_LOG_SHIP_URL", "")
+
+    # Submission file size limits (prevents OOM on property access)
+    MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
+    MAX_CODE_CELLS_CHARS = int(
+        os.environ.get("MAX_CODE_CELLS_CHARS", 50 * 1024 * 1024)  # 50 MB
+    )
 
     # Redis SSL settings
     REDIS_SSL_CA_CERTS = os.environ.get("REDIS_SSL_CA_CERTS", "")

@@ -92,11 +92,18 @@ echo "    ✔ Database schema created"
 rm -f .env.docker
 echo ""
 
+# ── Read URL config from .env ───────────────────────────────────────
+SERVER_ADDRESS=$(grep "^SERVER_ADDRESS=" .env | tail -1 | cut -d= -f2-)
+NGINX_PORT=$(grep "^NGINX_PORT=" .env | tail -1 | cut -d= -f2-)
+: "${SERVER_ADDRESS:=localhost}"
+: "${NGINX_PORT:=80}"
+BASE_URL="http://${SERVER_ADDRESS}:${NGINX_PORT}"
+
 # ── Done ───────────────────────────────────────────────────────────
 echo "  ──────────────────────────────────────────────────────────────"
 echo "    Deployment complete!"
-echo "    Frontend:  http://localhost"
-echo "    API:       http://localhost/api"
+echo "    Frontend:  ${BASE_URL}"
+echo "    API:       ${BASE_URL}/api"
 echo "    Logs:      docker compose logs -f"
 echo "    Stop:      docker compose down"
 echo "  ──────────────────────────────────────────────────────────────"

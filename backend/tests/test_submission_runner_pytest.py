@@ -271,7 +271,7 @@ class TestSubmissionRunnerDocker:
 
         assert captured_run_kwargs.get("gpu_required") is True
         assert captured_run_kwargs.get("gpu_id") == "2"
-        assert captured_run_kwargs["environment"].get("CUDA_VISIBLE_DEVICES") == "0"
+        assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
     def test_gpu_routing_none(self):
         from task_modules.submission_runner import run_eval_submission

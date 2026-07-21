@@ -11,6 +11,8 @@ from typing import Any
 
 from celery import Celery
 from celery import Task as CeleryTask
+from celery.exceptions import SoftTimeLimitExceeded
+from celery.signals import celeryd_init
 
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
@@ -109,17 +111,19 @@ celery.conf.update(
 )
 
 
+@celeryd_init.connect
+def _configure_worker_logging(sender: str, conf: Any, **kwargs: Any) -> None:
+    logfmt = f"[{sender}] [%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
+    conf.worker_log_format = logfmt
+    conf.worker_task_log_format = logfmt
+
+
 @celery.task(
     bind=True,
     soft_time_limit=1200,
     time_limit=1500,
     acks_late=True,
     reject_on_worker_lost=True,
-    autoretry_for=(Exception,),
-    max_retries=3,
-    retry_backoff=True,
-    retry_backoff_max=600,
-    retry_jitter=True,
 )
 def evaluate_submission(
     self: CeleryTask, submission_id: Any, metadata: dict[str, Any] | None = None
@@ -127,6 +131,19 @@ def evaluate_submission(
     """Celery task: run a competitor submission through the evaluation pipeline in Docker."""
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
+    except SoftTimeLimitExceeded:
+        if not RUNNING_AS_WORKER and app:
+            with app.app_context():
+                sub = db.session.get(Submission, submission_id)
+                if sub and sub.status not in ("completed", "failed"):
+                    sub.status = "failed"
+                    sub.detailed_status = "failed"
+                    sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
+                    db.session.commit()
+                    from sse_utils import publish_submission_status
+
+                    publish_submission_status(submission_id, "failed")
+        return
     except Exception as e:
         from cache_utils import log_dead_letter
 
@@ -342,6 +359,15 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
             sub.status = "failed"
             sub.detailed_status = "failed"
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
+            if sub.celery_task_id:
+                try:
+                    celery.control.revoke(sub.celery_task_id, terminate=True)
+                except Exception as e:
+                    logger.warning(
+                        "Watchdog: failed to revoke celery task %s: %s",
+                        sub.celery_task_id,
+                        e,
+                    )
             timeout_count += 1
             try:
                 from sse_utils import publish_submission_status

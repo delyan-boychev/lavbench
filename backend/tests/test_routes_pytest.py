@@ -355,45 +355,8 @@ class TestRouteLevelLogic:
         assert leaderboard[2]["user"]["alias_id"] == "User-One"
 
     def test_dynamic_priority_scheduling_calculation(self):
-        assert calculate_submission_priority(self.competitor.id, "competitor") == 6
-
-        s1 = Submission(
-            user_id=self.competitor.id,
-            challenge_id=self.challenge.id,
-            task_id=self.task.id,
-            status="completed",
-            public_score=0.8,
-            code_cells="[]",
-        )
-        db.session.add(s1)
-        db.session.commit()
-        assert calculate_submission_priority(self.competitor.id, "competitor") == 5
-
-        for _i in range(4):
-            s = Submission(
-                user_id=self.competitor.id,
-                challenge_id=self.challenge.id,
-                task_id=self.task.id,
-                status="completed",
-                public_score=0.8,
-                code_cells="[]",
-            )
-            db.session.add(s)
-        db.session.commit()
         assert calculate_submission_priority(self.competitor.id, "competitor") == 1
-
-        for _i in range(5):
-            s = Submission(
-                user_id=self.competitor.id,
-                challenge_id=self.challenge.id,
-                task_id=self.task.id,
-                status="completed",
-                public_score=0.8,
-                code_cells="[]",
-            )
-            db.session.add(s)
-        db.session.commit()
-        assert calculate_submission_priority(self.competitor.id, "competitor") == 1
+        assert calculate_submission_priority(self.competitor.id, "admin") == 0
 
     def test_leaderboard_contains_non_submitting_competitors(self):
         non_submitting = User(

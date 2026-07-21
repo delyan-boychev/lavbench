@@ -179,71 +179,70 @@ export default function NotebookSubmit({ task, challenge }) {
       </div>
 
       {/* Upload zone */}
-      <div className="file-drop-zone">
-        <input
-          type="file"
-          accept=".ipynb"
-          id="notebook-upload"
-          style={{ display: 'none' }}
-          onChange={handleUpload}
-        />
-        <label htmlFor="notebook-upload" style={{ cursor: 'pointer' }}>
-          {uploading ? (
+      <label className="file-drop-zone">
+        <input type="file" accept=".ipynb" className="sr-only" onChange={handleUpload} />
+        {uploading ? (
+          <div
+            className="pointer-events-none"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: 'var(--text-secondary)',
+            }}
+          >
             <div
+              className="animate-spin"
               style={{
+                width: 16,
+                height: 16,
+                border: '2px solid var(--border)',
+                borderTopColor: 'var(--accent)',
+                borderRadius: '50%',
+              }}
+            />
+            {t('challenge.parsing_notebook')}
+          </div>
+        ) : fileName ? (
+          <div
+            className="pointer-events-none"
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}
+          >
+            <span
+              style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                color: 'var(--text-secondary)',
+                gap: '0.375rem',
               }}
             >
-              <div
-                className="animate-spin"
-                style={{
-                  width: 16,
-                  height: 16,
-                  border: '2px solid var(--border)',
-                  borderTopColor: 'var(--accent)',
-                  borderRadius: '50%',
-                }}
-              />
-              {t('challenge.parsing_notebook')}
-            </div>
-          ) : fileName ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <span
-                style={{
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  color: 'var(--accent)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                }}
-              >
-                <Book className="w-4 h-4" />
-                {fileName}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {t('challenge.click_to_replace')}
-              </span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <Upload size={28} style={{ color: 'var(--text-muted)' }} />
-              <span
-                style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', fontWeight: 600 }}
-              >
-                {t('challenge.upload_jupyter_notebook')}
-              </span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('challenge.click_or_drag')}
-              </span>
-            </div>
-          )}
-        </label>
-      </div>
+              <Book className="w-4 h-4" />
+              {fileName}
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {t('challenge.click_to_replace')}
+            </span>
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none"
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}
+          >
+            <Upload size={28} style={{ color: 'var(--text-muted)' }} />
+            <span
+              style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', fontWeight: 600 }}
+            >
+              {t('challenge.upload_jupyter_notebook')}
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              {t('challenge.click_or_drag')}
+            </span>
+          </div>
+        )}
+      </label>
 
       {/* Cell picker */}
       {cells.length > 0 && (
@@ -274,7 +273,7 @@ export default function NotebookSubmit({ task, challenge }) {
               onClick={() =>
                 setSelectedCellIds(cells.filter((c) => c.type === 'code').map((c) => c.id))
               }
-              className="btn btn-ghost btn-sm"
+              className="btn btn-secondary"
             >
               {t('challenge.select_all_code')}
             </button>

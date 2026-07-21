@@ -6,10 +6,10 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
-from flask import Blueprint, current_app, request, send_from_directory
+from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.utils import secure_filename
@@ -60,6 +60,7 @@ from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.dates import utcnow
+from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
@@ -172,16 +173,8 @@ def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
             from models import Stage
 
             stage = db.session.get(Stage, task.stage_id)
-            if stage:
-                try:
-                    import zoneinfo
-
-                    tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
-                    now_local = datetime.now(tz).replace(tzinfo=None)
-                except Exception:
-                    now_local = utcnow()
-                if now_local < stage.start_time:
-                    return False
+            if stage and utcnow() < stage.start_time:
+                return False
     return True
 
 
@@ -252,7 +245,11 @@ def queue_system_submission(
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     result = evaluate_submission.apply_async(
-        args=[submission.id, metadata], priority=priority, queue=queue_name
+        args=[submission.id, metadata],
+        priority=priority,
+        queue=queue_name,
+        countdown=1,
+        task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
     )
     if result is not None:
         submission.celery_task_id = str(result.id)
@@ -999,8 +996,19 @@ def download_task_file(
 
     if saved_name:
         task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
-        return send_from_directory(
-            task_upload_dir, saved_name, as_attachment=True, download_name=filename
+        file_path = os.path.join(task_upload_dir, saved_name)
+        if not os.path.isfile(file_path):
+            return err("ERR_NOT_FOUND", 404)
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+        safe_filename = sanitize_filename_part(filename)
+        return (
+            file_data,
+            200,
+            {
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            },
         )
 
     if task.baseline_notebook_path:
@@ -1008,12 +1016,13 @@ def download_task_file(
         if filename == baseline_basename:
             with open(task.baseline_notebook_path, "rb") as fh:
                 baseline_bytes = fh.read()
+            safe_filename = sanitize_filename_part(filename)
             return (
                 baseline_bytes,
                 200,
                 {
                     "Content-Type": "application/octet-stream",
-                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
                 },
             )
 
@@ -1069,20 +1078,13 @@ def submit_task(
 
             stage = db.session.get(Stage, task.stage_id)
             if stage:
-                try:
-                    import zoneinfo
-
-                    tz = zoneinfo.ZoneInfo(challenge.timezone or "UTC")
-                    now_local = datetime.now(tz).replace(tzinfo=None)
-                except Exception:
-                    now_local = utcnow()
-                if now_local < stage.start_time:
+                if utcnow() < stage.start_time:
                     return err(
                         "ERR_STAGE_NOT_STARTED",
                         400,
                         message=f"The stage '{stage.title}' has not started yet.",
                     )
-                if now_local > stage.end_time:
+                if utcnow() > stage.end_time:
                     return err(
                         "ERR_STAGE_DEADLINE_PASSED",
                         400,
@@ -1210,7 +1212,7 @@ def submit_task(
             priority=priority,
             queue=queue_name,
             countdown=1,
-            task_id=f"submission_{submission.id}",
+            task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
             submission.celery_task_id = str(result.id)
@@ -1719,6 +1721,7 @@ def worker_download_task_file(
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     file_path = os.path.join(task_upload_dir, saved_name)
+    safe_filename = sanitize_filename_part(filename)
     with open(file_path, "rb") as fh:
         file_bytes = fh.read()
     return (
@@ -1726,7 +1729,7 @@ def worker_download_task_file(
         200,
         {
             "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
         },
     )
 

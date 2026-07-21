@@ -63,8 +63,7 @@ from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
 from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json
-from utils.json_utils import safe_json_loads
+from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
 from utils.sse import sse_response
 
@@ -1289,7 +1288,7 @@ def download_submissions_zip(
                 surname_part = decrypt_field(comp.surname) or ""
                 comp_name = f"{name_part}_{surname_part}_{comp.alias_id}"
 
-            comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
+            comp_name = sanitize_filename_part(comp_name)
 
             for task in tasks:
                 subs = subs_by_key.get((comp.id, task.id), [])
@@ -1301,30 +1300,21 @@ def download_submissions_zip(
                 best_sub = get_best_submission(task, subs, challenge)
 
                 if best_sub:
-                    task_title = "".join(
-                        c for c in task.title if c.isalnum() or c in (" ", "_", "-")
-                    ).strip()
+                    task_title = sanitize_filename_part(task.title)
 
                     if not stage_id and task.stage_id:
                         task_stage = stages.get(task.stage_id)
                         stage_title = (
-                            "".join(
-                                c for c in task_stage.title if c.isalnum() or c in (" ", "_", "-")
-                            ).strip()
-                            if task_stage
-                            else "Stage"
+                            sanitize_filename_part(task_stage.title) if task_stage else "Stage"
                         )
                         filename = f"{comp_name}/{stage_title}/{task_title}_sub_{best_sub.id}.ipynb"
                     else:
                         filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
 
-                    try:
-                        cells_data = safe_json_loads(best_sub.code_cells, [])
-                    except json.JSONDecodeError:
-                        cells_data = []
-
-                    notebook_str = cells_to_ipynb_json(cells_data)
-                    zip_file.writestr(filename, notebook_str)
+                    notebook_bytes = wrap_raw_code_cells(best_sub.code_storage_path)
+                    if notebook_bytes is None:
+                        notebook_bytes = cells_to_ipynb_json([]).encode("utf-8")
+                    zip_file.writestr(filename, notebook_bytes)
 
         if not zip_file.namelist():
             target_desc = f"stage: {stage.title}" if stage else f"challenge: {challenge.title}"

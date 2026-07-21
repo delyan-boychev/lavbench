@@ -18,7 +18,9 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import time
+from collections.abc import Callable
 from typing import Any
 
 from cache_utils import get_redis_client
@@ -34,6 +36,9 @@ BUILD_LOCK_MAX_WAIT = 300  # max seconds to block waiting for lock
 logger = logging.getLogger(__name__)
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
+
+# Used to namespace Redis build locks per machine.
+_WORKER_HOSTNAME = socket.gethostname()
 
 
 def _config_hash(
@@ -97,7 +102,7 @@ def _download_model(
 
 
 def _build_lock_key(task_id: int) -> str:
-    return f"docker_build:lock:{task_id}"
+    return f"docker_build:lock:{_WORKER_HOSTNAME}:{task_id}"
 
 
 def _check_build_disk_space() -> bool:
@@ -126,14 +131,28 @@ def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
         return False
     lock_key = _build_lock_key(task_id)
     deadline = time.time() + timeout if timeout > 0 else 0
+    warned = False
     while True:
         acquired = False
         with contextlib.suppress(Exception):
-            result = r.set(lock_key, "1", nx=True, ex=BUILD_LOCK_TTL)
+            result = r.set(lock_key, _WORKER_HOSTNAME, nx=True, ex=BUILD_LOCK_TTL)
             if result is not None:
                 acquired = bool(result)
         if acquired:
             return True
+        if not warned:
+            holder = ""
+            with contextlib.suppress(Exception):
+                val = r.get(lock_key)
+                if val is not None:
+                    holder = val.decode() if isinstance(val, bytes) else str(val)
+            logger.info(
+                "Build lock for task %s held by %s, waiting up to %ss...",
+                task_id,
+                holder or "unknown",
+                int(deadline - time.time()) if deadline else 0,
+            )
+            warned = True
         if deadline and time.time() < deadline:
             time.sleep(BUILD_LOCK_RETRY_INTERVAL)
             continue
@@ -148,7 +167,10 @@ def _release_build_lock(task_id: int) -> None:
         r.delete(_build_lock_key(task_id))
 
 
-def build_task_image(metadata: dict[str, Any]) -> bool:
+def build_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Build (or skip) a Docker image for a single task.
 
     Returns ``True`` if the image is ready (built or already up-to-date),
@@ -167,6 +189,9 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
     - ``hf_datasets``   (JSON string or list)
     - ``hf_models``     (JSON string or list)
     - ``hf_api_key``    (optional, needed for private datasets)
+
+    *log_callback* is called with each Docker build output line
+    as it is produced, enabling real-time progress reporting.
     """
     task_id = metadata.get("task_id")
     if not task_id:
@@ -204,12 +229,15 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
         return _image_exists(tag)
 
     try:
-        return _do_build(metadata)
+        return _do_build(metadata, log_callback=log_callback)
     finally:
         _release_build_lock(task_id)
 
 
-def ensure_task_image(metadata: dict[str, Any]) -> bool:
+def ensure_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Blocking build: retry until the image exists or the build fails.
 
     Unlike ``build_task_image`` (which skips if the lock is held),
@@ -226,7 +254,7 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     for attempt in range(3):
         if attempt > 0:
             logger.info("Retrying image build for task %s (attempt %s/3)", task_id, attempt + 1)
-        if build_task_image(metadata):
+        if build_task_image(metadata, log_callback=log_callback):
             return True
         if _image_exists(tag):
             return True
@@ -234,7 +262,10 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     return _image_exists(tag)
 
 
-def _do_build(metadata: dict[str, Any]) -> bool:
+def _do_build(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
@@ -317,7 +348,7 @@ def _do_build(metadata: dict[str, Any]) -> bool:
     logs: list[str] = []
     start = time.time()
     try:
-        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
+        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs, log_callback)
         elapsed = time.time() - start
         if retcode == 0:
             with open(meta_path, "w") as f:
@@ -339,17 +370,40 @@ def _do_build(metadata: dict[str, Any]) -> bool:
         return False
 
 
-def _run_docker_build(tag: str, build_dir: str, logs: list[str]) -> tuple[int, str, str, bool]:
-    """Build Docker image using the SDK and capture output."""
+def _run_docker_build(
+    tag: str,
+    build_dir: str,
+    logs: list[str],
+    log_callback: Callable[[str], None] | None = None,
+) -> tuple[int, str, str, bool]:
+    """Build Docker image using the SDK and capture output.
+
+    Each build output line is logged via ``logger.info`` and forwarded
+    to *log_callback* (if provided) so callers can stream progress to
+    submission logs or other real-time channels.
+    """
     client = _get_client()
     try:
-        build_logs = []
-        _image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
-        for entry in build_logs:
+        for entry in client.api.build(path=build_dir, tag=tag, rm=True, decode=True):
             if "stream" in entry:
                 line = entry["stream"].rstrip("\n")
                 if line:
                     logs.append(line)
+                    logger.info("[build %s] %s", tag, line)
+                    if log_callback:
+                        log_callback(line)
+            elif "status" in entry:
+                status = entry["status"].rstrip(".")
+                layer = entry.get("id", "")
+                # Skip fine-grained progress detail to avoid log spam
+                if layer or status not in ("Downloading", "Extracting"):
+                    msg = f"{status} {layer}" if layer else status
+                    logger.info("[build %s] %s", tag, msg)
+            elif "error" in entry:
+                err = entry["error"]
+                logs.append(f"Docker build error: {err}")
+                logger.error("[build %s] Error: %s", tag, err)
+                return -1, "", err, False
         return 0, "", "", False
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
@@ -378,8 +432,26 @@ def clear_build_lock(task_id: int) -> bool:
         return False
 
 
+def _clear_stale_build_locks() -> None:
+    """Clear any build locks left by a previous instance of this worker."""
+    r = get_redis_client()
+    if not r:
+        return
+    prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
+    try:
+        cleared = 0
+        for key in r.scan_iter(f"{prefix}*"):
+            r.delete(key)
+            cleared += 1
+        if cleared:
+            logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
+    except Exception as e:
+        logger.warning("Failed to clear stale build locks: %s", e)
+
+
 def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
     """Fetch active tasks from the server and build images for all of them."""
+    _clear_stale_build_locks()
     import requests
 
     try:

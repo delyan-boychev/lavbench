@@ -134,11 +134,18 @@ npm run dev &
 cd ..
 echo ""
 
+# ── Read URL config from .env ───────────────────────────────────────
+SERVER_ADDRESS=$(grep "^SERVER_ADDRESS=" .env | tail -1 | cut -d= -f2-)
+NGINX_PORT=$(grep "^NGINX_PORT=" .env | tail -1 | cut -d= -f2-)
+: "${SERVER_ADDRESS:=localhost}"
+: "${NGINX_PORT:=80}"
+BASE_URL="http://${SERVER_ADDRESS}:${NGINX_PORT}"
+
 # ── Done ───────────────────────────────────────────────────────────
 echo "  ──────────────────────────────────────────────────────────────"
 echo "    All services launching!"
-echo "    API:       http://localhost/api"
 echo "    Frontend:  http://localhost:5173"
+echo "    API:       ${BASE_URL}/api"
 echo "    Ctrl+C to stop all services"
 echo "  ──────────────────────────────────────────────────────────────"
 echo ""

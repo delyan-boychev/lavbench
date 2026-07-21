@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import functools
 import json
 import logging
 import math
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
 _spec_reconnect_needed = False
+
+_WORKER_HOSTNAME = socket.gethostname()
+GPU_LOCK_TTL = 2700  # 45 minutes — longer than max task timeout
 
 
 def _recreate_spec_on_reconnect() -> None:
@@ -355,6 +358,28 @@ def run_eval_submission(
                 metric_name="accuracy",
                 hf_dataset_split="test",
             )
+            # Log file sizes before accessing file-backed properties
+            for _field, path, label, limit_key in [
+                (
+                    "code_cells",
+                    db_submission.code_storage_path,
+                    "code_cells",
+                    "MAX_CODE_CELLS_CHARS",
+                ),
+                ("logs", db_submission.log_storage_path, "logs", "MAX_LOG_CHARS"),
+            ]:
+                if path and os.path.exists(path):
+                    size = os.path.getsize(path)
+                    limit = getattr(Config, limit_key, float("inf"))
+                    if size > limit:
+                        logger.warning(
+                            "Submission %s %s file is %d bytes (limit %d) — may cause slow reads",
+                            db_submission.id,
+                            label,
+                            size,
+                            limit,
+                        )
+
             submission = MockModel(
                 id=db_submission.id,
                 task_id=db_submission.task_id,
@@ -576,40 +601,32 @@ def run_eval_submission(
         # Setup environment variables
         env = os.environ.copy()
         gpu_id = Config.WORKER_GPU_ID or None
-        gpu_lock_file = None
 
         if gpu_required and gpu_id:
-            # Comma separated list of GPU IDs
             gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
+            acquired_gpu = None
             if gpus:
-                acquired_gpu = None
-                logs.append("Waiting for an available GPU device...")
-
-                while acquired_gpu is None:
-                    for g_id in gpus:
-                        lock_path = os.path.join(tempfile.gettempdir(), f"gpu_lock_{g_id}.lock")
-                        f: Any = None
-                        try:
-                            f = open(lock_path, "w")  # noqa: SIM115  # intentionally kept open for lock
-                            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                            acquired_gpu = g_id
-                            gpu_lock_file = f
-                            break
-                        except OSError:
-                            if f is not None:
-                                f.close()
-                            continue
-                    if acquired_gpu is None:
-                        time.sleep(1)
-
+                r = get_redis_client()
+                if r:
+                    logs.append("Waiting for an available GPU device...")
+                    while acquired_gpu is None:
+                        for g_id in gpus:
+                            lock_key = f"gpu:lock:{_WORKER_HOSTNAME}:{g_id}"
+                            result = r.set(lock_key, str(submission.id), nx=True, ex=GPU_LOCK_TTL)
+                            if result is not None:
+                                acquired_gpu = g_id
+                                break
+                        if acquired_gpu is None:
+                            time.sleep(1)
+                else:
+                    logs.append("WARNING: Redis unavailable — falling back to count=-1 (all GPUs)")
+            if acquired_gpu:
                 logs.append(f"Acquired GPU device: {acquired_gpu}")
-                env["CUDA_VISIBLE_DEVICES"] = acquired_gpu
                 submission.gpu_node = f"gpu-worker-device-{acquired_gpu}"
                 gpu_id = acquired_gpu
             else:
                 submission.gpu_node = env.get("HOSTNAME", "local-worker")
         else:
-            env.pop("CUDA_VISIBLE_DEVICES", None)
             submission.gpu_node = env.get("HOSTNAME", "local-worker")
             gpu_id = None
 
@@ -687,7 +704,13 @@ def run_eval_submission(
                 logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
                 from task_modules.image_builder import build_task_image
 
-                built = build_task_image(build_meta)
+                build_logs_accum: list[str] = []
+
+                def _on_build_line(line: str) -> None:
+                    build_logs_accum.append(line)
+
+                built = build_task_image(build_meta, log_callback=_on_build_line)
+                logs.extend(build_logs_accum)
                 if built:
                     logs.append("Docker image built successfully.")
                 elif _image_exists_docker(image_tag):
@@ -704,11 +727,18 @@ def run_eval_submission(
             from task_modules.image_builder import ensure_task_image
 
             logs.append(f"Sandbox image '{image_tag}' missing — attempting final blocking build...")
-            if not ensure_task_image(build_meta):
+            retry_logs: list[str] = []
+
+            def _on_retry_line(line: str) -> None:
+                retry_logs.append(line)
+
+            if not ensure_task_image(build_meta, log_callback=_on_retry_line):
+                logs.extend(retry_logs)
                 logs.append("Docker image build failed after retries!")
                 update_status("failed", "failed", logs_list=logs)
                 report_status_to_server(metadata, "failed", "failed", logs=logs)
                 return
+            logs.extend(retry_logs)
             logs.append("Docker image built successfully (final retry).")
 
         # Update status: Running Inference
@@ -761,9 +791,6 @@ def run_eval_submission(
             "PYTHONUNBUFFERED": "1",
             "RESULTS_KEY": results_key,
         }
-
-        if gpu_required and gpu_id is not None:
-            environment["CUDA_VISIBLE_DEVICES"] = "0"
 
         total_cpus = os.cpu_count() or 1
         cpu_limit = (
@@ -1032,9 +1059,11 @@ def run_eval_submission(
             update_status("failed", "failed", logs_list=logs_list)
         raise
     finally:
-        if "gpu_lock_file" in locals() and gpu_lock_file:
+        if "acquired_gpu" in locals() and acquired_gpu is not None:
             with contextlib.suppress(Exception):
-                gpu_lock_file.close()
+                r = get_redis_client()
+                if r:
+                    r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
         if "temp_dir" in locals() and temp_dir:
             import shutil
 
