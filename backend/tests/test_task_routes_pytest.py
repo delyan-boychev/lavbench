@@ -966,3 +966,71 @@ class TestGetTaskHfKey:
             "/api/worker/tasks/99999/hf-key", headers={"X-Worker-Token": "token"}
         )
         assert resp.status_code == 404
+
+
+class TestGetActiveTasks:
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session, client, redis_flush):
+        self.client = client
+        self.challenge = Challenge(
+            title="Active Tasks Test",
+            description="Test",
+            max_eval_requests=5,
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
+            is_frozen=False,
+            is_archived=False,
+        )
+        db.session.add(self.challenge)
+        db.session.flush()
+        self.task = Task(
+            title="Task With Files",
+            challenge_id=self.challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+            gpu_required=False,
+            files=json.dumps([{"filename": "data.csv", "saved_name": "data.csv"}]),
+            custom_eval_code="def evaluate(): pass",
+        )
+        db.session.add(self.task)
+        db.session.commit()
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_includes_task_files_and_custom_eval_code(self, mock_verify):
+        mock_verify.return_value = True
+        resp = self.client.get(
+            "/api/worker/active-tasks",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        task_data = [t for t in data["tasks"] if t["id"] == str(self.task.id)]
+        assert len(task_data) == 1
+        task = task_data[0]
+        assert task["task_files"] == [{"filename": "data.csv", "saved_name": "data.csv"}]
+        assert task["custom_eval_code"] == "def evaluate(): pass"
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_skips_archived_challenges(self, mock_verify):
+        mock_verify.return_value = True
+        self.challenge.is_archived = True
+        db.session.commit()
+        resp = self.client.get(
+            "/api/worker/active-tasks",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        task_ids = [t["id"] for t in data["tasks"]]
+        assert str(self.task.id) not in task_ids
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_returns_401_without_valid_token(self, mock_verify):
+        mock_verify.return_value = False
+        resp = self.client.get(
+            "/api/worker/active-tasks",
+            headers={"X-Worker-Token": "bad"},
+        )
+        assert resp.status_code == 401

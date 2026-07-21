@@ -1133,6 +1133,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worker/tasks/{task_id}/report-build-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** report_build_error <POST> */
+        post: operations["post__api_worker_tasks_{task_id}_report-build-error"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workers/logs": {
         parameters: {
             query?: never;
@@ -1493,7 +1510,9 @@ export interface components {
              * Details
              * @default null
              */
-            details: string | null;
+            details: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -4920,6 +4939,11 @@ export interface components {
              */
             baseline_notebook_path: string | null;
             /**
+             * Build Error
+             * @default null
+             */
+            build_error: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -7290,8 +7314,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created */
-            201: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8199,6 +8223,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkerHfKeyResponse.6bc6f68"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_worker_tasks_{task_id}_report-build-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Unauthorized */

@@ -1,11 +1,34 @@
+"""Tests for sse_utils.py — publish helpers and Sorted Set connection limiter."""
+
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from sse_utils import (
     clear_submission_logs,
     publish_leaderboard_update,
     publish_submission_log,
+    publish_submission_status,
     publish_submissions_update,
+    sse_connection_limit,
 )
+from tests.helpers.sse_test_utils import _FakeRedis, fake_redis
+
+# ═══════════════════════════════════════════════════════════════════════
+# Fixtures
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def fredis() -> _FakeRedis:
+    return fake_redis()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# publish_leaderboard_update
+# ═══════════════════════════════════════════════════════════════════════
 
 
 class TestPublishLeaderboardUpdate:
@@ -17,6 +40,16 @@ class TestPublishLeaderboardUpdate:
         mock_redis.publish.assert_called_once()
         args = mock_redis.publish.call_args[0]
         assert args[0] == "task_42_leaderboard"
+
+    @patch("sse_utils.get_redis_client")
+    def test_publishes_with_challenge_id(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_get_redis.return_value = mock_redis
+        publish_leaderboard_update(task_id=42, challenge_id=7)
+        assert mock_redis.publish.call_count == 2
+        channels = [c[0][0] for c in mock_redis.publish.call_args_list]
+        assert "task_42_leaderboard" in channels
+        assert "challenge_7_leaderboard" in channels
 
     @patch("sse_utils.get_redis_client")
     def test_none_task_id_does_nothing(self, mock_get_redis):
@@ -39,6 +72,11 @@ class TestPublishLeaderboardUpdate:
         mock_redis.publish.side_effect = Exception("Redis down")
         mock_get_redis.return_value = mock_redis
         publish_leaderboard_update(task_id=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# publish_submissions_update
+# ═══════════════════════════════════════════════════════════════════════
 
 
 class TestPublishSubmissionsUpdate:
@@ -65,6 +103,11 @@ class TestPublishSubmissionsUpdate:
     def test_redis_none_no_error(self, mock_get_redis):
         mock_get_redis.return_value = None
         publish_submissions_update(task_id=1, user_id=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# publish_submission_log
+# ═══════════════════════════════════════════════════════════════════════
 
 
 class TestPublishSubmissionLog:
@@ -97,6 +140,11 @@ class TestPublishSubmissionLog:
         publish_submission_log(submission_id=1, log_line="test")
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# clear_submission_logs
+# ═══════════════════════════════════════════════════════════════════════
+
+
 class TestClearSubmissionLogs:
     @patch("sse_utils.get_redis_client")
     def test_deletes_correct_key(self, mock_get_redis):
@@ -114,3 +162,135 @@ class TestClearSubmissionLogs:
     def test_redis_none_no_error(self, mock_get_redis):
         mock_get_redis.return_value = None
         clear_submission_logs(submission_id=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# publish_submission_status
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestPublishSubmissionStatus:
+    @patch("sse_utils.get_redis_client")
+    def test_publishes_status(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_get_redis.return_value = mock_redis
+        publish_submission_status(submission_id=42, status="completed")
+        mock_redis.publish.assert_called_once()
+        args = mock_redis.publish.call_args[0]
+        assert args[0] == "submission_42_logs"
+        assert '"status": "completed"' in args[1]
+
+    @patch("sse_utils.get_redis_client")
+    def test_none_submission_id_does_nothing(self, mock_get_redis):
+        publish_submission_status(submission_id=None, status="completed")
+        mock_get_redis.return_value.publish.assert_not_called()
+
+    @patch("sse_utils.get_redis_client")
+    def test_empty_status_does_nothing(self, mock_get_redis):
+        publish_submission_status(submission_id=1, status="")
+        mock_get_redis.return_value.publish.assert_not_called()
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_none_no_error(self, mock_get_redis):
+        mock_get_redis.return_value = None
+        publish_submission_status(submission_id=1, status="completed")
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_exception_caught(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_redis.publish.side_effect = Exception("Redis down")
+        mock_get_redis.return_value = mock_redis
+        publish_submission_status(submission_id=1, status="completed")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# sse_connection_limit — Sorted Set connection limiter
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestSseConnectionLimit:
+    """Tests use FakeRedis so no real Redis connection is needed."""
+
+    @patch("sse_utils.get_redis_client")
+    def test_allows_under_limit(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit(user_id=1) as allowed:
+            assert allowed is True
+            assert fredis.zcard("sse:connections") == 1
+            assert fredis.zcard("sse:user:1") == 1
+
+    @patch("sse_utils.get_redis_client")
+    def test_allows_without_user_id(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit() as allowed:
+            assert allowed is True
+            assert fredis.zcard("sse:connections") == 1
+            assert fredis.zcard("sse:user:1") == 0  # no user key created
+
+    @patch("sse_utils.get_redis_client")
+    def test_trim_oldest_when_over_global_limit(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        max_global = 2
+        ctxs = [sse_connection_limit(max_global=max_global) for _ in range(3)]
+        for ctx in ctxs:
+            ctx.__enter__()
+        assert fredis.zcard("sse:connections") == max_global  # oldest trimmed
+        for ctx in ctxs:
+            ctx.__exit__(None, None, None)
+
+    @patch("sse_utils.get_redis_client")
+    def test_trim_oldest_when_over_user_limit(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        max_per_user = 2
+        ctxs = [sse_connection_limit(user_id=1, max_per_user=max_per_user) for _ in range(3)]
+        for ctx in ctxs:
+            ctx.__enter__()
+        assert fredis.zcard("sse:user:1") == max_per_user  # oldest trimmed
+        for ctx in ctxs:
+            ctx.__exit__(None, None, None)
+
+    @patch("sse_utils.get_redis_client")
+    def test_cleanup_removes_member_on_exit(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit(user_id=1):
+            assert fredis.zcard("sse:connections") == 1
+            assert fredis.zcard("sse:user:1") == 1
+        assert fredis.zcard("sse:connections") == 0
+        assert fredis.zcard("sse:user:1") == 0
+
+    @patch("sse_utils.get_redis_client")
+    def test_handles_multiple_concurrent(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        n = 5
+        contexts = []
+        for _ in range(n):
+            ctx = sse_connection_limit(user_id=1)
+            ctx.__enter__()
+            contexts.append(ctx)
+        assert fredis.zcard("sse:connections") == n
+        assert fredis.zcard("sse:user:1") == n
+        for ctx in contexts:
+            ctx.__exit__(None, None, None)
+        assert fredis.zcard("sse:connections") == 0
+        assert fredis.zcard("sse:user:1") == 0
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_none_falls_open(self, mock_get_redis):
+        mock_get_redis.return_value = None
+        with sse_connection_limit(user_id=1) as allowed:
+            assert allowed is True
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_exception_falls_open(self, mock_get_redis):
+        bad_redis = MagicMock()
+        bad_redis.zadd.side_effect = Exception("Redis down")
+        mock_get_redis.return_value = bad_redis
+        with sse_connection_limit(user_id=1) as allowed:
+            assert allowed is True
+
+    @patch("sse_utils.get_redis_client")
+    def test_cleanup_stale_connections(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit(user_id=1):
+            pass
+        assert fredis.zcard("sse:connections") == 0  # cleaned on exit

@@ -140,15 +140,19 @@ RESERVED_RAM=4
 
 # ── Interactive configuration ─────────────────────────────────────
 if [ -f "worker.env" ]; then
-  read -p "  worker.env exists. Overwrite worker config? [y/N]: " OVERWRITE
-  case "${OVERWRITE:-N}" in
-    y|Y)
-      # Strip existing worker-local config lines, preserving server credentials
-      grep -v -E '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env > worker.env.tmp
-      mv worker.env.tmp worker.env
-      ;;
-    *) echo "  Exiting. Keep existing worker.env."; exit 0 ;;
-  esac
+  # Only ask about overwrite if worker-local config already exists
+  if grep -qE '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env 2>/dev/null; then
+    read -p "  worker.env has existing worker config. Overwrite? [y/N]: " OVERWRITE
+    case "${OVERWRITE:-N}" in
+      y|Y)
+        # Strip existing worker-local config lines, preserving server credentials
+        grep -v -E '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env > worker.env.tmp
+        mv worker.env.tmp worker.env
+        ;;
+      *) echo "  Exiting. Keep existing worker.env."; exit 0 ;;
+    esac
+  fi
+  # else: only server credentials present → proceed directly to interactive setup
 fi
 
 CONFIG_OK=false

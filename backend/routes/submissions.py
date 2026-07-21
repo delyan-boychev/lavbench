@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import io
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -35,7 +35,7 @@ from sse_utils import (
     sse_connection_limit,
 )
 from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json
+from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
@@ -136,6 +136,9 @@ def submit_code(
     selected_cells = json.selected_cells
 
     task = db.session.get(Task, task_id)
+
+    if task and task.build_error:
+        return err("ERR_TASK_BUILD_ERROR", 400)
 
     if user_role == "competitor":
         from datetime import timedelta
@@ -247,7 +250,7 @@ def submit_code(
             priority=priority,
             queue=queue_name,
             countdown=1,
-            task_id=f"submission_{submission.id}",
+            task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
             submission.celery_task_id = str(result.id)
@@ -648,28 +651,32 @@ def download_competitor_submission(
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
 
-    try:
-        cells_data = safe_json_loads(best_sub.code_cells, [])
-    except json.JSONDecodeError:
-        cells_data = []
-
-    notebook_str = cells_to_ipynb_json(cells_data)
-    mem_file = io.BytesIO(notebook_str.encode("utf-8"))
-
     user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
 
     name_part = decrypt_field(user.name) or ""
     surname_part = decrypt_field(user.surname) or ""
     comp_name = f"{name_part}_{surname_part}_{user.alias_id}"
-    comp_name = "".join(c for c in comp_name if c.isalnum() or c in (" ", "_", "-")).strip()
-
-    task_title = "".join(c for c in task.title if c.isalnum() or c in (" ", "_", "-")).strip()
+    comp_name = sanitize_filename_part(comp_name)
+    task_title = sanitize_filename_part(task.title)
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
 
+    if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):
+        file_size = os.path.getsize(best_sub.code_storage_path)
+        logger.info("Download submission %s code_cells file size: %d bytes", best_sub.id, file_size)
+
+    notebook_bytes = wrap_raw_code_cells(best_sub.code_storage_path)
+    if notebook_bytes is None:
+        logger.warning(
+            "wrap_raw_code_cells failed for submission %s, path=%s",
+            best_sub.id,
+            best_sub.code_storage_path,
+        )
+        notebook_bytes = cells_to_ipynb_json([]).encode("utf-8")
+
     return (
-        mem_file.read(),
+        notebook_bytes,
         200,
         {
             "Content-Type": "application/x-ipynb+json",

@@ -13,6 +13,7 @@ export default function CompetitorManager({
   setNewCompetitor,
   handleRegisterCompetitor,
   isManualRegisterDisabled,
+  isRegisteringCompetitor,
   generatedCredentials,
   csvChallengeId,
   setCsvChallengeId,
@@ -30,11 +31,13 @@ export default function CompetitorManager({
   competitorSearch,
   setCompetitorSearch,
   handleBulkResetPasswords,
+  isResettingBulkPasswords,
   currentUser,
   selectedChallenge,
   isChallengeStarted,
   initEditUser,
   handleResetUserPassword,
+  isResettingPassword,
   competitorsPage,
   competitorsPages,
   competitorsTotal,
@@ -227,7 +230,8 @@ export default function CompetitorManager({
               type="submit"
               variant="primary"
               className="mt-2"
-              disabled={isManualRegisterDisabled}
+              disabled={isManualRegisterDisabled || isRegisteringCompetitor}
+              isLoading={isRegisteringCompetitor}
             >
               {t('admin.competitor_reg.generate_credentials')}
             </Button>
@@ -341,7 +345,13 @@ export default function CompetitorManager({
           <div className="flex items-center gap-3.5 flex-wrap">
             {(currentUser.role === 'admin' ||
               challenges.some((c) => !isChallengeStarted(c.id))) && (
-              <Button variant="secondary" size="sm" onClick={handleBulkResetPasswords}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleBulkResetPasswords}
+                disabled={isResettingBulkPasswords}
+                isLoading={isResettingBulkPasswords}
+              >
                 {t('admin.competitor_reg.reset_all_passwords')}
               </Button>
             )}
@@ -500,7 +510,8 @@ export default function CompetitorManager({
                                   comp.name ? `${comp.name} ${comp.surname}` : comp.alias_id,
                                 )
                               }
-                              className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
+                              disabled={isResettingPassword}
+                              className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50"
                             >
                               {t('admin.competitor_reg.reset_pw_btn')}
                             </button>

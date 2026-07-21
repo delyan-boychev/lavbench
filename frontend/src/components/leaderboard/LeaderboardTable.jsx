@@ -303,7 +303,7 @@ function Row({
         <td className="px-4 py-3 text-center w-14 text-slate-300">
           {isBaseline ? (
             <span className="text-xs text-slate-500 font-mono">—</span>
-          ) : !entry.has_submitted ? (
+          ) : entry.rank == null ? (
             <span className="text-xs text-slate-500 font-mono">—</span>
           ) : (
             <div
@@ -778,223 +778,37 @@ export default function LeaderboardTable({
     });
   }
 
-  // After filtering baselines, recompute ranks for remaining entries
-  let currentRank = 0;
+  // Renumber ranks sequentially after baseline removal. Backend provides correct ranks.
+  let rankAcc = 0;
   displayData = displayData.map((entry) => {
-    const entryCopy = { ...entry };
-    const hasScore = entry.has_submitted;
-    if (hasScore) {
-      currentRank += 1;
+    if (entry.has_submitted && entry.rank != null) {
+      return { ...entry, rank: ++rankAcc };
     }
-    entryCopy.rank = hasScore ? currentRank : null;
-    return entryCopy;
+    return { ...entry, rank: null };
   });
 
-  const isMse = (challenge?.metric_name || '').toLowerCase() in { mse: 1, loss: 1, error: 1 };
-
   if (isStageTab) {
-    const stageTasks = visibleTasks.filter((t) => t.stage_id === activeTab);
+    displayData = displayData.map((entry) => ({
+      ...entry,
+      rank: entry.stage_ranks?.[activeTab] ?? null,
+    }));
     displayData.sort((a, b) => {
-      let hasPubA = false;
-      let pubSumA = 0;
-      let ptsSumA = 0;
-      stageTasks.forEach((t) => {
-        const sc = a.task_scores?.[t.id.toString()];
-        if (sc && sc.public_score != null) {
-          pubSumA += sc.public_score;
-          hasPubA = true;
-        }
-        ptsSumA += a.user?.manual_points?.[t.id.toString()] ?? 0;
-      });
-
-      let hasPubB = false;
-      let pubSumB = 0;
-      let ptsSumB = 0;
-      stageTasks.forEach((t) => {
-        const sc = b.task_scores?.[t.id.toString()];
-        if (sc && sc.public_score != null) {
-          pubSumB += sc.public_score;
-          hasPubB = true;
-        }
-        ptsSumB += b.user?.manual_points?.[t.id.toString()] ?? 0;
-      });
-
-      if (isFinalized && (isJuryOrAdmin || revealResults)) {
-        if (ptsSumA !== ptsSumB) return ptsSumB - ptsSumA;
-      } else if (stageRevealed) {
-        // Stage is revealed — sort by points for this stage
-        if (ptsSumA !== ptsSumB) return ptsSumB - ptsSumA;
-      } else {
-        if (hasPubA && hasPubB) {
-          if (pubSumA !== pubSumB) return pubSumB - pubSumA;
-        } else if (hasPubA) {
-          return -1;
-        } else if (hasPubB) {
-          return 1;
-        }
-      }
-
-      // Fallback name stable sort
-      const nameA = (
-        (a.user?.name ? `${a.user.name} ${a.user.surname}` : a.user?.username) ||
-        a.user?.alias_id ||
-        ''
-      ).toLowerCase();
-      const nameB = (
-        (b.user?.name ? `${b.user.name} ${b.user.surname}` : b.user?.username) ||
-        b.user?.alias_id ||
-        ''
-      ).toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-
-    let currentRank = 0;
-    displayData = displayData.map((entry, index) => {
-      const entryCopy = { ...entry };
-      let userHasSubmitted = false;
-      if (!entry.is_baseline_entry) {
-        stageTasks.forEach((t) => {
-          if (entry.task_scores?.[t.id.toString()]?.submission_id != null) {
-            userHasSubmitted = true;
-          }
-        });
-
-        if (userHasSubmitted) {
-          currentRank += 1;
-        }
-
-        // Tie detection only for submitters
-        if (userHasSubmitted) {
-          let prevIdx = index - 1;
-          let prevNonBaseline = null;
-          while (prevIdx >= 0) {
-            const candidate = displayData[prevIdx];
-            if (!candidate.is_baseline_entry && candidate.task_scores) {
-              const candidateSubmitted = stageTasks.some(
-                (t) => candidate.task_scores?.[t.id.toString()]?.submission_id != null,
-              );
-              if (candidateSubmitted) {
-                prevNonBaseline = candidate;
-                break;
-              }
-            }
-            prevIdx--;
-          }
-
-          if (prevNonBaseline) {
-            let prevPub = 0;
-            let prevPts = 0;
-            stageTasks.forEach((t) => {
-              prevPub += prevNonBaseline.task_scores?.[t.id.toString()]?.public_score ?? 0;
-              prevPts += prevNonBaseline.user?.manual_points?.[t.id.toString()] ?? 0;
-            });
-
-            let currPub = 0;
-            let currPts = 0;
-            stageTasks.forEach((t) => {
-              currPub += entry.task_scores?.[t.id.toString()]?.public_score ?? 0;
-              currPts += entry.user?.manual_points?.[t.id.toString()] ?? 0;
-            });
-
-            let isTie;
-            if ((isFinalized && (isJuryOrAdmin || revealResults)) || stageRevealed) {
-              isTie = currPts === prevPts;
-            } else {
-              isTie = currPub === prevPub;
-            }
-
-            if (isTie) {
-              currentRank = prevNonBaseline.rank;
-            }
-          }
-        }
-      }
-      entryCopy.rank = userHasSubmitted ? currentRank : null;
-      entryCopy.has_submitted = userHasSubmitted;
-      return entryCopy;
+      if (a.rank != null && b.rank != null) return a.rank - b.rank;
+      if (a.rank != null) return -1;
+      if (b.rank != null) return 1;
+      return 0;
     });
   } else if (activeTab !== 'general') {
     const activeTaskIdStr = activeTab.toString();
+    displayData = displayData.map((entry) => ({
+      ...entry,
+      rank: entry.task_ranks?.[activeTaskIdStr] ?? null,
+    }));
     displayData.sort((a, b) => {
-      if (isFinalized && (isJuryOrAdmin || revealResults)) {
-        const ptsA = Number(a.user?.manual_points?.[activeTaskIdStr] ?? 0);
-        const ptsB = Number(b.user?.manual_points?.[activeTaskIdStr] ?? 0);
-        if (ptsA !== ptsB) return ptsB - ptsA;
-      } else {
-        const scoreA = a.task_scores?.[activeTaskIdStr]?.public_score;
-        const scoreB = b.task_scores?.[activeTaskIdStr]?.public_score;
-
-        if (scoreA != null && scoreB != null) {
-          if (scoreA !== scoreB) {
-            return isMse ? scoreA - scoreB : scoreB - scoreA;
-          }
-        } else if (scoreA != null) {
-          return -1;
-        } else if (scoreB != null) {
-          return 1;
-        }
-      }
-
-      // Fallback name stable sort
-      const nameA = (
-        (a.user?.name ? `${a.user.name} ${a.user.surname}` : a.user?.username) ||
-        a.user?.alias_id ||
-        ''
-      ).toLowerCase();
-      const nameB = (
-        (b.user?.name ? `${b.user.name} ${b.user.surname}` : b.user?.username) ||
-        b.user?.alias_id ||
-        ''
-      ).toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-
-    let currentRank = 0;
-    displayData = displayData.map((entry, index) => {
-      const entryCopy = { ...entry };
-      const hasScore =
-        !entry.is_baseline_entry && entry.task_scores?.[activeTaskIdStr]?.submission_id != null;
-      if (!entry.is_baseline_entry) {
-        // Only rank entries that have submitted
-        if (hasScore) {
-          // eslint-disable-next-line react-hooks/immutability
-          currentRank += 1;
-        }
-        // Tie comparison only for submitters
-        if (hasScore) {
-          let prevIdx = index - 1;
-          let prevNonBaseline = null;
-          while (prevIdx >= 0) {
-            const candidate = displayData[prevIdx];
-            if (
-              !candidate.is_baseline_entry &&
-              candidate.task_scores?.[activeTaskIdStr]?.submission_id != null
-            ) {
-              prevNonBaseline = candidate;
-              break;
-            }
-            prevIdx--;
-          }
-          if (prevNonBaseline) {
-            let isTie;
-            if (isFinalized && (isJuryOrAdmin || revealResults)) {
-              const ptsA = Number(entry.user?.manual_points?.[activeTaskIdStr] ?? 0);
-              const ptsB = Number(prevNonBaseline.user?.manual_points?.[activeTaskIdStr] ?? 0);
-              isTie = ptsA === ptsB;
-            } else {
-              const scoreA = entry.task_scores?.[activeTaskIdStr]?.public_score;
-              const scoreB = prevNonBaseline.task_scores?.[activeTaskIdStr]?.public_score;
-              isTie = scoreA != null && scoreB != null && scoreA === scoreB;
-            }
-            if (isTie) {
-              currentRank = prevNonBaseline.rank;
-            }
-          }
-        }
-      }
-      entryCopy.rank = hasScore ? currentRank : null;
-      entryCopy.has_submitted = hasScore;
-      return entryCopy;
+      if (a.rank != null && b.rank != null) return a.rank - b.rank;
+      if (a.rank != null) return -1;
+      if (b.rank != null) return 1;
+      return 0;
     });
   }
 

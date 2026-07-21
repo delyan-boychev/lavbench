@@ -4,6 +4,7 @@ import CodePreview from '../ui/CodePreview';
 import EmptyState from '../ui/EmptyState';
 import { Star } from 'lucide-react';
 import ToggleField from '../ui/ToggleField';
+import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 export default function SubmissionViewer({
@@ -21,7 +22,7 @@ export default function SubmissionViewer({
   const [completedData, setCompletedData] = useState(null);
   const logRef = useRef(null);
 
-  const displaySubmission = completedData || submission;
+  const displaySubmission = completedData ? { ...completedData, ...submission } : submission;
   const isTerminal =
     displaySubmission?.status === 'completed' || displaySubmission?.status === 'failed';
   const displayLogs = isTerminal
@@ -46,52 +47,30 @@ export default function SubmissionViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission?.id]);
 
-  useEffect(() => {
-    if (!submission) {
-      return;
-    }
-
-    const sseUrl = `/api/submissions/${submission.id}/logs/live`;
-
-    const eventSource = new EventSource(sseUrl);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.log) {
-          setLiveLogs((prev) => prev + data.log + '\n');
-        } else if (data.status) {
-          eventSource.close();
-          if (data.status === 'completed' || data.status === 'failed') {
-            fetch(`/api/submissions/${submission.id}`, {
-              headers: { Accept: 'application/json' },
+  useSSE(submission ? `/api/submissions/${submission.id}/logs/live` : '', {
+    onMessage: (data) => {
+      if (data.log) {
+        setLiveLogs((prev) => prev + data.log + '\n');
+      } else if (data.status) {
+        if (data.status === 'completed' || data.status === 'failed') {
+          fetch(`/api/submissions/${submission.id}`, {
+            headers: { Accept: 'application/json' },
+          })
+            .then((r) => {
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              return r.json();
             })
-              .then((r) => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.json();
-              })
-              .then((freshData) => {
-                setCompletedData(freshData);
-                onSubmissionUpdate?.(freshData);
-              })
-              .catch((err) => {
-                console.error('Failed to fetch completed submission:', err);
-              });
-          }
+            .then((freshData) => {
+              setCompletedData(freshData);
+              onSubmissionUpdate?.(freshData);
+            })
+            .catch((err) => {
+              console.error('Failed to fetch completed submission:', err);
+            });
         }
-      } catch (err) {
-        console.error('Failed to parse live log line:', err);
       }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [submission?.id]);
+    },
+  });
 
   if (!displaySubmission) {
     return (

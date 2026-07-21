@@ -54,6 +54,14 @@ MODE="${WORKER_MODE:-docker}"
 GPU_ID="${WORKER_GPU_ID:-}"
 CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-4}"
 
+if [ -n "$GPU_ID" ]; then
+    GPU_COUNT=$(echo "$GPU_ID" | tr ',' '\n' | wc -l | tr -d ' ')
+else
+    GPU_COUNT=0
+fi
+CPU_CONCURRENCY=$(( CONCURRENCY - GPU_COUNT ))
+[ "$CPU_CONCURRENCY" -lt 1 ] && CPU_CONCURRENCY=1
+
 # ── Celery queue selection ─────────────────────────────────────────
 INTERNAL=false
 if [ "${WORKER_TYPE:-eval}" = "internal" ]; then
@@ -81,7 +89,9 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 deploy_docker() {
   echo ""
-  echo "  → Deploying Docker worker... (Concurrency: $CONCURRENCY)"
+  echo "  → Deploying Docker worker..."
+  echo "    GPU worker:  concurrency=${GPU_COUNT} (queue: gpu_queue)"
+  echo "    CPU worker:  concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
   echo ""
 
   # ── Preflight ──────────────────────────────────────────────────
@@ -109,6 +119,9 @@ deploy_docker() {
   LAVBENCH_WORKSPACE_DIR="$(pwd)/.lavbench_workspace"
   mkdir -p "$LAVBENCH_WORKSPACE_DIR"
   rm -rf "$LAVBENCH_WORKSPACE_DIR"/*
+  TASK_IMAGES_DIR="$(pwd)/task_images"
+  mkdir -p "$TASK_IMAGES_DIR"
+  rm -rf "$TASK_IMAGES_DIR"/*
 
   # ── Run container ──────────────────────────────────────────────
   echo "  → Starting container..."
@@ -119,10 +132,13 @@ deploy_docker() {
     -e CELERY_RESULT_BACKEND \
     -e SECRET_KEY \
     -e WORKER_PRIVATE_KEY \
+    -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
+    -e WORKER_GPU_ID \
     -e WORKER_TYPE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
+    -e TASK_IMAGES_DIR=/app/task_images \
     -e GPU_CORES_PER_TASK \
     -e CPU_CORES_PER_TASK \
     -e GPU_RAM_PER_TASK_GB \
@@ -130,6 +146,8 @@ deploy_docker() {
     -e RESERVED_RAM_GB \
     -e RESERVED_CPU_CORES \
     -e RAM_CLAMP_FACTOR \
+    -e GPU_WORKER_CONCURRENCY="$GPU_COUNT" \
+    -e CPU_WORKER_CONCURRENCY="$CPU_CONCURRENCY" \
     -e RUNNING_AS_WORKER=true \
     -e PYTHONPATH=/app \
     -e INTERNAL_ONLY_WORKER=$([ "$INTERNAL" = "true" ] && echo "true" || echo "false") \
@@ -137,9 +155,9 @@ deploy_docker() {
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
+    -v "${TASK_IMAGES_DIR}:/app/task_images" \
     $( [ -n "$GPU_ID" ] && echo "--gpus all" || true ) \
-    "$WORKER_IMAGE" \
-    celery -A tasks.celery worker --loglevel=info -Q "$CELERY_QUEUES" -c "$CONCURRENCY"
+    "$WORKER_IMAGE"
 
   echo ""
   echo "  ✔ Worker deployed"
@@ -186,17 +204,19 @@ deploy_local() {
   cd backend
 
   if [ "$INTERNAL" = "true" ]; then
-    echo "  → Internal worker"
+    echo "  → Internal worker: concurrency=${CONCURRENCY} (queue: celery)"
     export INTERNAL_ONLY_WORKER="true"
     export EVALUATION_ONLY_WORKER="false"
     exec celery -A tasks.celery worker --loglevel=info -Q celery -c "$CONCURRENCY"
   elif [ -n "$GPU_ID" ]; then
-    echo "  → GPU worker (GPUs: $GPU_ID)"
+    echo "  → GPU worker: concurrency=${GPU_COUNT} (queue: gpu_queue)"
+    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
     export INTERNAL_ONLY_WORKER="false"
     export EVALUATION_ONLY_WORKER="true"
-    exec celery -A tasks.celery worker --loglevel=info -Q gpu_queue,cpu_queue -c "$CONCURRENCY"
+    celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" &
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue,celery -c "$CPU_CONCURRENCY"
   else
-    echo "  → CPU worker"
+    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
     export INTERNAL_ONLY_WORKER="false"
     export EVALUATION_ONLY_WORKER="true"
     exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY"

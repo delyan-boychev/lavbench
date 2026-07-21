@@ -1,7 +1,5 @@
 """Challenge model."""
 
-import zoneinfo
-from datetime import datetime
 from typing import Any
 
 from models.base import GUID, db, uuid7
@@ -41,24 +39,17 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
         order_by="Stage.stage_number",
     )
 
-    def _now_local(self) -> datetime:
-        try:
-            tz = zoneinfo.ZoneInfo(self.timezone or "UTC")
-            return datetime.now(tz).replace(tzinfo=None)
-        except Exception:
-            return utcnow()
-
     @property
     def is_started(self) -> bool:
         if not self.start_time:
             return False
-        return bool(self._now_local() >= self.start_time)
+        return bool(utcnow() >= self.start_time)
 
     @property
     def is_ended(self) -> bool:
         if not self.end_time:
             return False
-        return bool(self._now_local() > self.end_time)
+        return bool(utcnow() > self.end_time)
 
     @property
     def computed_status(self) -> str:

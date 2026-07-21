@@ -17,8 +17,8 @@ if echo "$*" | grep -qE 'gunicorn'; then
   set -- "$@" \
     --max-requests "${GUNICORN_MAX_REQUESTS:-10000}" \
     --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}" \
-    --access-logfile "${GUNICORN_ACCESS_LOGFILE:-/app/logs/gunicorn_access.log}" \
-    --error-logfile "${GUNICORN_ERROR_LOGFILE:-/app/logs/gunicorn_error.log}"
+    --access-logfile "${GUNICORN_ACCESS_LOGFILE:--}" \
+    --error-logfile "${GUNICORN_ERROR_LOGFILE:--}"
 fi
 
 # Drop privileges to nobody (UID 65534) and exec the command

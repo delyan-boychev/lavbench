@@ -104,6 +104,7 @@ vi.mock('lucide-react', () => ({
   Zap: () => <span data-testid="icon-zap" />,
   ChevronDown: () => <span data-testid="icon-chevron-down" />,
   Check: () => <span data-testid="icon-check" />,
+  AlertTriangle: () => <span data-testid="icon-alert-triangle" />,
 }));
 
 describe('TaskForm', () => {
@@ -378,6 +379,16 @@ describe('TaskForm', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Environment'));
       expect(screen.getByText('HF API Key Token (Securely Encrypted)')).toBeInTheDocument();
+    });
+
+    it('shows build error banner when build_error is set', () => {
+      const propsWithError = {
+        taskForm: { ...defaultTaskForm, build_error: 'Docker pull failed: 404' },
+      };
+      renderTaskForm(propsWithError);
+      fireEvent.click(screen.getByText('Environment'));
+      expect(screen.getByText('Build Error')).toBeInTheDocument();
+      expect(screen.getByText('Docker pull failed: 404')).toBeInTheDocument();
     });
   });
 

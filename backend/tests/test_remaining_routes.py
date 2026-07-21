@@ -1,17 +1,14 @@
 import json
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import pytest
 
 # =============================================================================
 # Area 1: Task File Download
 # =============================================================================
-from flask import Response
 from werkzeug.security import generate_password_hash
 
 from models import Task, User
-
-MOCK_FILE_RESPONSE = Response("test file content", 200)
 
 
 class TestTaskFileDownload:
@@ -60,43 +57,40 @@ class TestTaskFileDownload:
 
     # --- admin downloads ---
 
-    @patch("routes.tasks.send_from_directory")
+    @patch("routes.tasks.os.path.isfile", return_value=True)
+    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
     def test_admin_downloads_regular_file(
-        self, mock_send, client, task_with_files, tokens, auth_headers
+        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
     ):
-        mock_send.return_value = MOCK_FILE_RESPONSE
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
             headers=auth_headers(tokens.admin),
         )
         assert resp.status_code == 200
-        mock_send.assert_called_once()
 
-    @patch("routes.tasks.send_from_directory")
+    @patch("routes.tasks.os.path.isfile", return_value=True)
+    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
     def test_admin_downloads_labels_parquet(
-        self, mock_send, client, task_with_files, tokens, auth_headers
+        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
     ):
-        mock_send.return_value = MOCK_FILE_RESPONSE
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/labels.parquet",
             headers=auth_headers(tokens.admin),
         )
         assert resp.status_code == 200
-        mock_send.assert_called_once()
 
     # --- competitor downloads ---
 
-    @patch("routes.tasks.send_from_directory")
+    @patch("routes.tasks.os.path.isfile", return_value=True)
+    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
     def test_competitor_downloads_regular_file(
-        self, mock_send, client, task_with_files, tokens, auth_headers
+        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
     ):
-        mock_send.return_value = MOCK_FILE_RESPONSE
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
             headers=auth_headers(tokens.competitor),
         )
         assert resp.status_code == 200
-        mock_send.assert_called_once()
 
     def test_competitor_blocked_from_labels_parquet(
         self, client, task_with_files, tokens, auth_headers

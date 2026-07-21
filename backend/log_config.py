@@ -18,9 +18,6 @@ def setup_logging(
     log_dir = log_dir or os.environ.get("LOG_DIR", "/app/logs")
 
     root = logging.getLogger()
-    if root.handlers:
-        return root
-
     root.setLevel(level)
 
     os.makedirs(log_dir, exist_ok=True)
@@ -30,24 +27,35 @@ def setup_logging(
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
 
-    stdout = logging.StreamHandler(sys.stdout)
-    stdout.setLevel(logging.INFO)
-    stdout.setFormatter(fmt)
-    root.addHandler(stdout)
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream is sys.stdout for h in root.handlers
+    ):
+        stdout = logging.StreamHandler(sys.stdout)
+        stdout.setLevel(logging.INFO)
+        stdout.setFormatter(fmt)
+        root.addHandler(stdout)
 
-    stderr = logging.StreamHandler(sys.stderr)
-    stderr.setLevel(logging.WARNING)
-    stderr.setFormatter(fmt)
-    root.addHandler(stderr)
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream is sys.stderr for h in root.handlers
+    ):
+        stderr = logging.StreamHandler(sys.stderr)
+        stderr.setLevel(logging.WARNING)
+        stderr.setFormatter(fmt)
+        root.addHandler(stderr)
 
-    fh = ConcurrentRotatingFileHandler(
-        os.path.join(log_dir, f"{service_name}.log"),
-        maxBytes=100 * 1024 * 1024,
-        backupCount=6,
-    )
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt)
-    root.addHandler(fh)
+    log_path = os.path.join(log_dir, f"{service_name}.log")
+    if not any(
+        isinstance(h, ConcurrentRotatingFileHandler) and h.baseFilename == log_path
+        for h in root.handlers
+    ):
+        fh = ConcurrentRotatingFileHandler(
+            log_path,
+            maxBytes=100 * 1024 * 1024,
+            backupCount=6,
+        )
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
 
     return root
 

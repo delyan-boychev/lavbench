@@ -688,6 +688,17 @@ class TestSubmitCode:
         body = resp.get_json()
         assert "submission_id" in body
 
+    def test_submit_blocked_by_build_error(self):
+        self.task.build_error = "Docker image not found"
+        db.session.flush()
+        resp = self.client.post(
+            f"/api/challenges/{self.challenge.id}/submit",
+            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_TASK_BUILD_ERROR"
+
 
 class TestGetSubmissions:
     @pytest.fixture(autouse=True)

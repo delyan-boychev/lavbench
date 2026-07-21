@@ -10,6 +10,7 @@ export default function ChallengeConfig({
   newChallenge,
   setNewChallenge,
   timezones,
+  isCreatingChallenge,
 }) {
   const { t } = useTranslation();
 
@@ -117,7 +118,13 @@ export default function ChallengeConfig({
             onChange={(e) => setNewChallenge({ ...newChallenge, is_frozen: e.target.checked })}
           />
         </div>
-        <Button type="submit" variant="primary" className="w-fit mt-4">
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-fit mt-4"
+          disabled={isCreatingChallenge}
+          isLoading={isCreatingChallenge}
+        >
           {t('admin.create_competition_btn')}
         </Button>
       </form>

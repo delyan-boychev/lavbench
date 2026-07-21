@@ -18,7 +18,9 @@ import logging
 import os
 import shlex
 import shutil
+import socket
 import time
+from collections.abc import Callable
 from typing import Any
 
 from cache_utils import get_redis_client
@@ -36,16 +38,93 @@ logger = logging.getLogger(__name__)
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
 
+def _report_build_error(
+    task_id: str | None,
+    error_msg: str,
+    main_server_url: str | None = None,
+    worker_token: str | None = None,
+) -> None:
+    if not task_id or not main_server_url or not worker_token:
+        return
+    try:
+        import requests
+
+        requests.post(
+            f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/report-build-error",
+            json={"error": error_msg},
+            headers={"X-Worker-Token": worker_token},
+            timeout=10,
+        )
+    except Exception:
+        logger.debug("Failed to report build error for task %s", task_id)
+
+
+# Used to namespace Redis build locks per machine.
+_WORKER_HOSTNAME = socket.gethostname()
+
+
 def _config_hash(
-    base_image: str, pip_packages: str, hf_datasets: list[str], hf_models: list[str]
+    base_image: str,
+    pip_packages: str,
+    hf_datasets: list[str],
+    hf_models: list[str],
+    task_files_hash: str,
+    eval_code_hash: str,
 ) -> str:
     """Stable hash of the task configuration for cache invalidation."""
     h = hashlib.sha256()
+    h.update(b"v2")
     h.update(base_image.encode())
     h.update(pip_packages.encode())
     h.update(json.dumps(sorted(hf_datasets), sort_keys=True).encode())
     h.update(json.dumps(sorted(hf_models), sort_keys=True).encode())
+    h.update(task_files_hash.encode())
+    h.update(eval_code_hash.encode())
     return h.hexdigest()[:16]
+
+
+def _task_files_hash(task_files: list[dict[str, Any]]) -> str:
+    if not task_files:
+        return ""
+    return hashlib.sha256(
+        json.dumps(sorted(task_files, key=lambda x: x.get("filename", "")), sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+
+def _eval_code_hash(custom_eval_code: str | None) -> str:
+    return hashlib.sha256((custom_eval_code or "").encode()).hexdigest()[:16]
+
+
+def _download_task_file_for_build(
+    task_id: Any,
+    filename: str,
+    saved_name: str,
+    dest_dir: str,
+    metadata: dict[str, Any],
+) -> None:
+    main_server_url = metadata.get("_main_server_url", "")
+    worker_token = metadata.get("_worker_token", "")
+    if not main_server_url or not worker_token:
+        logger.warning("Cannot download task file '%s': missing server URL or token", filename)
+        return
+    try:
+        import requests
+
+        url = f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/files/{filename}"
+        res = requests.get(
+            url,
+            headers={"X-Worker-Token": worker_token},
+            timeout=Config.WORKER_DOWNLOAD_TIMEOUT,
+        )
+        if res.status_code == 200:
+            dest = os.path.join(dest_dir, filename)
+            with open(dest, "wb") as f:
+                f.write(res.content)
+            os.chmod(dest, 0o644)
+        else:
+            logger.warning("Failed to download task file '%s': HTTP %s", filename, res.status_code)
+    except Exception as e:
+        logger.warning("Error downloading task file '%s': %s", filename, e)
 
 
 def _download_dataset(
@@ -97,7 +176,7 @@ def _download_model(
 
 
 def _build_lock_key(task_id: int) -> str:
-    return f"docker_build:lock:{task_id}"
+    return f"docker_build:lock:{_WORKER_HOSTNAME}:{task_id}"
 
 
 def _check_build_disk_space() -> bool:
@@ -126,14 +205,28 @@ def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
         return False
     lock_key = _build_lock_key(task_id)
     deadline = time.time() + timeout if timeout > 0 else 0
+    warned = False
     while True:
         acquired = False
         with contextlib.suppress(Exception):
-            result = r.set(lock_key, "1", nx=True, ex=BUILD_LOCK_TTL)
+            result = r.set(lock_key, _WORKER_HOSTNAME, nx=True, ex=BUILD_LOCK_TTL)
             if result is not None:
                 acquired = bool(result)
         if acquired:
             return True
+        if not warned:
+            holder = ""
+            with contextlib.suppress(Exception):
+                val = r.get(lock_key)
+                if val is not None:
+                    holder = val.decode() if isinstance(val, bytes) else str(val)
+            logger.info(
+                "Build lock for task %s held by %s, waiting up to %ss...",
+                task_id,
+                holder or "unknown",
+                int(deadline - time.time()) if deadline else 0,
+            )
+            warned = True
         if deadline and time.time() < deadline:
             time.sleep(BUILD_LOCK_RETRY_INTERVAL)
             continue
@@ -148,7 +241,10 @@ def _release_build_lock(task_id: int) -> None:
         r.delete(_build_lock_key(task_id))
 
 
-def build_task_image(metadata: dict[str, Any]) -> bool:
+def build_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Build (or skip) a Docker image for a single task.
 
     Returns ``True`` if the image is ready (built or already up-to-date),
@@ -167,6 +263,9 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
     - ``hf_datasets``   (JSON string or list)
     - ``hf_models``     (JSON string or list)
     - ``hf_api_key``    (optional, needed for private datasets)
+
+    *log_callback* is called with each Docker build output line
+    as it is produced, enabling real-time progress reporting.
     """
     task_id = metadata.get("task_id")
     if not task_id:
@@ -182,11 +281,18 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
             with contextlib.suppress(Exception), open(meta_path) as f:
                 existing_hash = json.load(f).get("hash", "")
         if existing_hash:
+            _task_files_raw = metadata.get("task_files", [])
+            if isinstance(_task_files_raw, str):
+                with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
+                    _task_files_raw = json.loads(_task_files_raw)
+            _task_files_list = _task_files_raw if isinstance(_task_files_raw, list) else []
             new_hash = _config_hash(
                 metadata.get("base_docker_image", ""),
                 metadata.get("pip_requirements", ""),
                 metadata.get("hf_datasets", "[]"),
                 metadata.get("hf_models", "[]"),
+                _task_files_hash(_task_files_list),
+                _eval_code_hash(metadata.get("custom_eval_code")),
             )
             if existing_hash == new_hash:
                 logger.info("Task %s image up-to-date, skipping build", task_id)
@@ -204,12 +310,15 @@ def build_task_image(metadata: dict[str, Any]) -> bool:
         return _image_exists(tag)
 
     try:
-        return _do_build(metadata)
+        return _do_build(metadata, log_callback=log_callback)
     finally:
         _release_build_lock(task_id)
 
 
-def ensure_task_image(metadata: dict[str, Any]) -> bool:
+def ensure_task_image(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     """Blocking build: retry until the image exists or the build fails.
 
     Unlike ``build_task_image`` (which skips if the lock is held),
@@ -226,7 +335,7 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     for attempt in range(3):
         if attempt > 0:
             logger.info("Retrying image build for task %s (attempt %s/3)", task_id, attempt + 1)
-        if build_task_image(metadata):
+        if build_task_image(metadata, log_callback=log_callback):
             return True
         if _image_exists(tag):
             return True
@@ -234,7 +343,10 @@ def ensure_task_image(metadata: dict[str, Any]) -> bool:
     return _image_exists(tag)
 
 
-def _do_build(metadata: dict[str, Any]) -> bool:
+def _do_build(
+    metadata: dict[str, Any],
+    log_callback: Callable[[str], None] | None = None,
+) -> bool:
     task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
@@ -258,7 +370,23 @@ def _do_build(metadata: dict[str, Any]) -> bool:
             hf_models_raw = []
     hf_models_list = hf_models_raw if isinstance(hf_models_raw, list) else []
 
-    config_hash = _config_hash(base_image, pip_packages, hf_datasets_list, hf_models_list)
+    task_files_raw = metadata.get("task_files", [])
+    if isinstance(task_files_raw, str):
+        try:
+            task_files_raw = json.loads(task_files_raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            task_files_raw = []
+    task_files_list = task_files_raw if isinstance(task_files_raw, list) else []
+    custom_eval_code = metadata.get("custom_eval_code", "") or ""
+
+    config_hash = _config_hash(
+        base_image,
+        pip_packages,
+        hf_datasets_list,
+        hf_models_list,
+        _task_files_hash(task_files_list),
+        _eval_code_hash(custom_eval_code),
+    )
     task_dir = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}")
     meta_path = os.path.join(task_dir, "hf_meta.json")
     hf_cache_dir = os.path.join(task_dir, "hf_cache")
@@ -279,6 +407,12 @@ def _do_build(metadata: dict[str, Any]) -> bool:
 
     # Pre-build disk space check
     if not _check_build_disk_space():
+        _report_build_error(
+            task_id,
+            "Insufficient disk space for build",
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
 
     os.makedirs(task_dir, exist_ok=True)
@@ -292,6 +426,31 @@ def _do_build(metadata: dict[str, Any]) -> bool:
         _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key)
     for model_name in hf_models_list:
         _download_model(model_name, task_id, hf_cache_dir, hf_api_key)
+
+    # Download task resource files into build context
+    task_data_dir = os.path.join(task_dir, "data")
+    os.makedirs(task_data_dir, exist_ok=True)
+    for tf in task_files_list:
+        tf_filename = tf.get("filename", "")
+        if tf_filename == "labels.parquet":
+            continue
+        tf_saved = tf.get("saved_name", tf_filename)
+        upload_folder = getattr(Config, "UPLOAD_FOLDER", "")
+        src_local = (
+            os.path.join(upload_folder, f"task_{task_id}", tf_saved) if upload_folder else ""
+        )
+        if src_local and os.path.exists(src_local):
+            shutil.copy2(src_local, os.path.join(task_data_dir, tf_filename))
+            logger.debug("Copied task file '%s' from local storage", tf_filename)
+        else:
+            _download_task_file_for_build(task_id, tf_filename, tf_saved, task_data_dir, metadata)
+
+    # Write evaluator script into build context
+    if custom_eval_code:
+        eval_path = os.path.join(task_dir, "evaluator_script.py")
+        with open(eval_path, "w") as f:
+            f.write(custom_eval_code)
+        os.chmod(eval_path, 0o644)
 
     req_path = os.path.join(task_dir, "requirements.txt")
     with open(req_path, "w") as f:
@@ -308,6 +467,10 @@ def _do_build(metadata: dict[str, Any]) -> bool:
             ]
         )
     dockerfile_lines.append("COPY hf_cache /hf_cache")
+    if task_files_list:
+        dockerfile_lines.append("COPY data/ /app/data/")
+    if custom_eval_code:
+        dockerfile_lines.append("COPY evaluator_script.py /app/evaluator_script.py")
 
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
@@ -317,12 +480,17 @@ def _do_build(metadata: dict[str, Any]) -> bool:
     logs: list[str] = []
     start = time.time()
     try:
-        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs)
+        retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs, log_callback)
         elapsed = time.time() - start
         if retcode == 0:
             with open(meta_path, "w") as f:
                 json.dump(
-                    {"hash": config_hash, "datasets": hf_datasets_list, "models": hf_models_list},
+                    {
+                        "hash": config_hash,
+                        "datasets": hf_datasets_list,
+                        "models": hf_models_list,
+                        "build_features": 2,
+                    },
                     f,
                 )
             logger.info(
@@ -331,25 +499,68 @@ def _do_build(metadata: dict[str, Any]) -> bool:
                 elapsed,
                 tag,
             )
+            _report_build_error(
+                task_id,
+                "",
+                metadata.get("_main_server_url"),
+                metadata.get("_worker_token"),
+            )
             return True
-        logger.error("Task %s image build failed (rc=%s)\n%s", task_id, retcode, "\n".join(logs))
+        err_msg = logs[-1] if logs else f"Build failed (rc={retcode})"
+        logger.error("Task %s image build failed (rc=%s): %s", task_id, retcode, err_msg)
+        _report_build_error(
+            task_id,
+            err_msg,
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
     except Exception as e:
-        logger.exception("Task %s image build crashed: %s", task_id, e)
+        err_msg = f"Build crashed: {e}"
+        logger.exception("Task %s %s", task_id, err_msg)
+        _report_build_error(
+            task_id,
+            err_msg,
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
 
 
-def _run_docker_build(tag: str, build_dir: str, logs: list[str]) -> tuple[int, str, str, bool]:
-    """Build Docker image using the SDK and capture output."""
+def _run_docker_build(
+    tag: str,
+    build_dir: str,
+    logs: list[str],
+    log_callback: Callable[[str], None] | None = None,
+) -> tuple[int, str, str, bool]:
+    """Build Docker image using the SDK and capture output.
+
+    Each build output line is logged via ``logger.info`` and forwarded
+    to *log_callback* (if provided) so callers can stream progress to
+    submission logs or other real-time channels.
+    """
     client = _get_client()
     try:
-        build_logs = []
-        _image, build_logs = client.images.build(path=build_dir, tag=tag, rm=True)
-        for entry in build_logs:
+        for entry in client.api.build(path=build_dir, tag=tag, rm=True, decode=True):
             if "stream" in entry:
                 line = entry["stream"].rstrip("\n")
                 if line:
                     logs.append(line)
+                    logger.info("[build %s] %s", tag, line)
+                    if log_callback:
+                        log_callback(line)
+            elif "status" in entry:
+                status = entry["status"].rstrip(".")
+                layer = entry.get("id", "")
+                # Skip fine-grained progress detail to avoid log spam
+                if layer or status not in ("Downloading", "Extracting"):
+                    msg = f"{status} {layer}" if layer else status
+                    logger.info("[build %s] %s", tag, msg)
+            elif "error" in entry:
+                err = entry["error"]
+                logs.append(f"Docker build error: {err}")
+                logger.error("[build %s] Error: %s", tag, err)
+                return -1, "", err, False
         return 0, "", "", False
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
@@ -378,8 +589,26 @@ def clear_build_lock(task_id: int) -> bool:
         return False
 
 
+def _clear_stale_build_locks() -> None:
+    """Clear any build locks left by a previous instance of this worker."""
+    r = get_redis_client()
+    if not r:
+        return
+    prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
+    try:
+        cleared = 0
+        for key in r.scan_iter(f"{prefix}*"):
+            r.delete(key)
+            cleared += 1
+        if cleared:
+            logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
+    except Exception as e:
+        logger.warning("Failed to clear stale build locks: %s", e)
+
+
 def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
     """Fetch active tasks from the server and build images for all of them."""
+    _clear_stale_build_locks()
     import requests
 
     try:
@@ -399,6 +628,10 @@ def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
                 "hf_datasets": task_config.get("hf_datasets", "[]"),
                 "hf_models": task_config.get("hf_models", "[]"),
                 "hf_api_key": task_config.get("hf_api_key", ""),
+                "task_files": task_config.get("task_files", []),
+                "custom_eval_code": task_config.get("custom_eval_code", ""),
+                "_main_server_url": main_server_url,
+                "_worker_token": worker_token,
             }
             try:
                 build_task_image(metadata)
@@ -458,6 +691,10 @@ def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
                                     "hf_datasets": t.get("hf_datasets", "[]"),
                                     "hf_models": t.get("hf_models", "[]"),
                                     "hf_api_key": t.get("hf_api_key", ""),
+                                    "task_files": t.get("task_files", []),
+                                    "custom_eval_code": t.get("custom_eval_code", ""),
+                                    "_main_server_url": main_server_url,
+                                    "_worker_token": worker_token,
                                 }
                                 build_task_image(metadata)
                                 break

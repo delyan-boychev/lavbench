@@ -10,5 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . ./
+COPY worker-entrypoint.sh .
+RUN chmod +x worker-entrypoint.sh
 
-CMD ["celery", "-A", "tasks.celery", "worker", "--loglevel=info", "-Q", "cpu_queue", "-c", "4"]
+CMD ["./worker-entrypoint.sh"]
