@@ -19,13 +19,13 @@ cryptography==49.0.0
     #   types-redis
 execnet==2.1.2
     # via pytest-xdist
-faker==40.23.0
+faker==40.32.0
     # via -r dev-requirements.in
 iniconfig==2.3.0
     # via pytest
-librt==0.12.0
+librt==0.13.0
     # via mypy
-mypy==2.1.0
+mypy==2.3.0
     # via -r dev-requirements.in
 mypy-extensions==1.1.0
     # via mypy
@@ -47,7 +47,7 @@ pygments==2.20.0
     # via
     #   -c requirements.txt
     #   pytest
-pytest==9.1.0
+pytest==9.1.1
     # via
     #   -r dev-requirements.in
     #   pytest-cov
