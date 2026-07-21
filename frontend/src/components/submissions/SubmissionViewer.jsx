@@ -7,6 +7,7 @@ import ToggleField from '../ui/ToggleField';
 import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
+import api from '../../services/ApiService';
 export default function SubmissionViewer({
   submission,
   currentUser,
@@ -55,9 +56,8 @@ export default function SubmissionViewer({
         setLiveLogs((prev) => prev + data.log + '\n');
       } else if (data.status) {
         if (data.status === 'completed' || data.status === 'failed') {
-          fetch(`/api/submissions/${submission.id}`, {
-            headers: { Accept: 'application/json' },
-          })
+          api
+            .fetch(`/api/submissions/${submission.id}`)
             .then((r) => {
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               return r.json();

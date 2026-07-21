@@ -86,6 +86,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     reveal_results: false,
   });
 
+  const [downloadingAudit, setDownloadingAudit] = useState(null);
+
   const [finalizingChallenge, setFinalizingChallenge] = useState(null);
   const [challengeFinalizeForm, setChallengeFinalizeForm] = useState({
     reveal_results: false,
@@ -387,6 +389,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   };
 
   const handleDownloadAuditLogs = async (challengeId, challengeTitle) => {
+    setDownloadingAudit(challengeId);
     try {
       const res = await ChallengeService.downloadAuditLogs(challengeId);
       if (!res.ok) {
@@ -412,6 +415,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         t('admin.notifications.download_audits_failed', 'Download audit logs failed'),
         'rose',
       );
+    } finally {
+      setDownloadingAudit(null);
     }
   };
 
@@ -747,6 +752,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                           <Button
                             variant="accent"
                             onClick={() => handleDownloadAuditLogs(c.id, c.title)}
+                            disabled={downloadingAudit === c.id}
+                            isLoading={downloadingAudit === c.id}
                           >
                             {t('admin.download_audits_json_short', 'Audits (JSON)')}
                           </Button>

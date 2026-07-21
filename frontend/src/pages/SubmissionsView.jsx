@@ -266,76 +266,61 @@ export default function SubmissionsView() {
   const handleSelectCompetitor = (competitor) => {
     setSelectedCompetitor(competitor);
     setBaselineExpanded(false);
-    setAdminActiveTask(null);
     setSelectedSubmission(null);
     setCompetitorSearch('');
-    const tasks = selectedChallenge?.tasks || [];
-    const firstTask = tasks[0];
-    if (firstTask) {
-      setAdminActiveTask(firstTask.id);
-      setAdminSubPage(1);
-    }
   };
 
   // Admin: fetch best submissions across all tasks for the selected competitor
-  const fetchAllCompetitorSubmissions = useCallback(async () => {
-    if (!selectedChallenge || !selectedCompetitor) return {};
-    const tasks = selectedChallenge.tasks || [];
-    const bestPerTask = {};
-    for (const task of tasks) {
-      try {
-        const res = await api.fetch(`/api/tasks/${task.id}/submissions?page=1&per_page=100`);
-        if (res.ok) {
-          const data = await res.json();
-          const items = data?.items || data || [];
-          const userSubs = items.filter((s) => s.user?.id === selectedCompetitor.id);
-          if (userSubs.length === 0) continue;
-          const final = userSubs.find((s) => s.is_final_selection);
-          if (final) {
-            bestPerTask[task.id] = final;
-            continue;
+  const { data: bestSubs = {} } = useQuery({
+    queryKey: ['admin-best-subs', selectedChallenge?.id, selectedCompetitor?.id],
+    queryFn: async () => {
+      const tasks = selectedChallenge?.tasks || [];
+      const bestPerTask = {};
+      for (const task of tasks) {
+        try {
+          const res = await api.fetch(`/api/tasks/${task.id}/submissions?page=1&per_page=100`);
+          if (res.ok) {
+            const data = await res.json();
+            const items = data?.items || data || [];
+            const userSubs = items.filter((s) => s.user?.id === selectedCompetitor.id);
+            if (userSubs.length === 0) continue;
+            const final = userSubs.find((s) => s.is_final_selection);
+            if (final) {
+              bestPerTask[task.id] = final;
+              continue;
+            }
+            const best = userSubs.reduce(
+              (b, s) => (s.public_score != null && (!b || s.public_score > b.public_score) ? s : b),
+              null,
+            );
+            if (best) bestPerTask[task.id] = best;
           }
-          const best = userSubs.reduce(
-            (b, s) => (s.public_score != null && (!b || s.public_score > b.public_score) ? s : b),
-            null,
-          );
-          if (best) bestPerTask[task.id] = best;
+        } catch (err) {
+          console.error(`Failed to fetch submissions for task ${task.id}:`, err);
         }
-      } catch (err) {
-        console.error(`Failed to fetch submissions for task ${task.id}:`, err);
       }
-    }
-    return bestPerTask;
-  }, [selectedChallenge, selectedCompetitor]);
+      return bestPerTask;
+    },
+    enabled: !!selectedChallenge && !!selectedCompetitor && isAdminOrJury,
+    staleTime: 10_000,
+  });
 
-  const [bestSubs, setBestSubs] = useState({});
-
+  const prevCompetitorKeyRef = useRef('');
   useEffect(() => {
-    if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) {
-      setBestSubs({});
-      return;
+    const key = `${selectedChallenge?.id}_${selectedCompetitor?.id}`;
+    if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) return;
+    if (prevCompetitorKeyRef.current === key) return;
+    prevCompetitorKeyRef.current = key;
+    const bestTaskIds = Object.keys(bestSubs);
+    const allTaskIds = (selectedChallenge.tasks || []).map((t) => t.id);
+    const resolvedTaskId = bestTaskIds[0] || allTaskIds[0];
+    if (resolvedTaskId) {
+      setAdminActiveTask(resolvedTaskId);
+      setAdminSubPage(1);
+      const sub = bestSubs[resolvedTaskId];
+      if (sub) setSelectedSubmission(sub);
     }
-    let cancelled = false;
-    fetchAllCompetitorSubmissions().then((result) => {
-      if (cancelled) return;
-      setBestSubs(result);
-      const activeId = adminActiveTaskRef.current;
-      const resolvedTaskId = activeId && result[activeId] ? activeId : Object.keys(result)[0];
-      if (resolvedTaskId) {
-        if (resolvedTaskId !== activeId) {
-          setAdminActiveTask(resolvedTaskId);
-          setAdminSubPage(1);
-        }
-        const sub = result[resolvedTaskId];
-        if (sub) {
-          setSelectedSubmission(sub);
-        }
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCompetitor, selectedChallenge, isAdminOrJury, fetchAllCompetitorSubmissions]);
+  }, [bestSubs, selectedChallenge, selectedCompetitor, isAdminOrJury]);
 
   const handleAdminViewSubmission = (sub) => {
     if (!sub) {
@@ -794,7 +779,6 @@ export default function SubmissionsView() {
                 setCompetitorSearch('');
                 setSelectedCompetitor(null);
                 setAdminActiveTask(null);
-                setBestSubs({});
                 setSelectedSubmission(null);
               }}
               className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-100 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700 hover:border-slate-500 transition-all px-3 py-1.5 rounded-lg flex-shrink-0"

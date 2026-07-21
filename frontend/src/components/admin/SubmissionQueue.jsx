@@ -9,8 +9,7 @@ import EmptyState from '../ui/EmptyState';
 import { FileText } from 'lucide-react';
 import useSSE from '../../hooks/useSSE';
 import { useQueueQuery } from '../../hooks/useQueueQuery';
-import { useClearQueue } from '../../hooks/useSubmissionMutations';
-import TaskService from '../../services/TaskService';
+import { useClearQueue, useKillSubmission } from '../../hooks/useSubmissionMutations';
 
 export default function SubmissionQueue() {
   const { t } = useTranslation();
@@ -25,6 +24,7 @@ export default function SubmissionQueue() {
   const { data, refetch } = useQueueQuery(page, perPage);
 
   const clearQueueMutation = useClearQueue();
+  const killMutation = useKillSubmission();
 
   useSSE('/api/admin/submissions/queue/live', {
     onMessage: () => {
@@ -45,17 +45,12 @@ export default function SubmissionQueue() {
 
     setKilling(submissionId);
     try {
-      const res = await TaskService.killSubmission(submissionId);
-      if (res.ok) {
-        showToast(t('submissions.kill_success'), 'emerald');
-        refetch();
-      } else {
-        const err = /** @type {{ code?: string, error?: string }} */ (res.data);
-        const errMsg = err.code ? t(`api.${err.code}`, err.error) : t('submissions.kill_failed');
-        showToast(errMsg, 'rose');
-      }
-    } catch {
-      showToast(t('submissions.kill_failed'), 'rose');
+      await killMutation.mutateAsync(submissionId);
+      showToast(t('submissions.kill_success'), 'emerald');
+      refetch();
+    } catch (err) {
+      const errMsg = err.code ? t(`api.${err.code}`, err.error) : t('submissions.kill_failed');
+      showToast(errMsg, 'rose');
     } finally {
       setKilling(null);
     }
