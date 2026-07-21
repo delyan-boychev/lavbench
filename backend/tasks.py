@@ -12,6 +12,7 @@ from typing import Any
 from celery import Celery
 from celery import Task as CeleryTask
 from celery.exceptions import SoftTimeLimitExceeded
+from celery.signals import celeryd_init
 
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
@@ -108,6 +109,13 @@ celery.conf.update(
         "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
     },
 )
+
+
+@celeryd_init.connect
+def _configure_worker_logging(sender: str, conf: Any, **kwargs: Any) -> None:
+    logfmt = f"[{sender}] [%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
+    conf.worker_log_format = logfmt
+    conf.worker_task_log_format = logfmt
 
 
 @celery.task(

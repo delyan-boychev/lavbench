@@ -5,14 +5,10 @@ GPU_WORKER_CONCURRENCY="${GPU_WORKER_CONCURRENCY:-0}"
 CPU_WORKER_CONCURRENCY="${CPU_WORKER_CONCURRENCY:-1}"
 HOST=$(hostname)
 
-LOGFMT="[%(hostname)s] [%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
-
 if [ "$GPU_WORKER_CONCURRENCY" -gt 0 ]; then
     echo "  → GPU worker: concurrency=$GPU_WORKER_CONCURRENCY (queue: gpu_queue)"
     celery -A tasks.celery worker -Q gpu_queue -c "$GPU_WORKER_CONCURRENCY" \
-        --loglevel=info --hostname="gpu@${HOST}" \
-        --worker-logformat="${LOGFMT}" \
-        --task-logformat="${LOGFMT}" &
+        --loglevel=info --hostname="gpu@${HOST}" &
     PID_GPU=$!
 else
     echo "  → No GPU worker"
@@ -21,9 +17,7 @@ fi
 
 echo "  → CPU worker: concurrency=$CPU_WORKER_CONCURRENCY (queues: cpu_queue,celery)"
 celery -A tasks.celery worker -Q cpu_queue,celery -c "$CPU_WORKER_CONCURRENCY" \
-    --loglevel=info --hostname="cpu@${HOST}" \
-    --worker-logformat="${LOGFMT}" \
-    --task-logformat="${LOGFMT}" &
+    --loglevel=info --hostname="cpu@${HOST}" &
 PID_CPU=$!
 
 cleanup() {
