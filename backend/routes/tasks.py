@@ -1648,8 +1648,14 @@ def report_worker_progress(
         submission.execution_time_ms = data["execution_time_ms"]
     if "metrics_payload_public" in data:
         submission.metrics_payload_public = data["metrics_payload_public"]
+    elif "metrics_payload_pub" in data:
+        submission.metrics_payload_public = data["metrics_payload_pub"]
     if "metrics_payload_private" in data:
         submission.metrics_payload_private = data["metrics_payload_private"]
+    elif "metrics_payload_priv" in data:
+        submission.metrics_payload_private = data["metrics_payload_priv"]
+    if "gpu_node" in data:
+        submission.gpu_node = data["gpu_node"]
     if "final_weighted_score_public" in data:
         submission.final_weighted_score_public = data["final_weighted_score_public"]
     if "final_weighted_score_private" in data:

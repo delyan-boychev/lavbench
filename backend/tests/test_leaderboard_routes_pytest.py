@@ -443,6 +443,43 @@ class TestChallengeLeaderboardGetEndpoint:
         assert leaderboard[2]["user"]["alias_id"] == "Charlie"
         assert leaderboard[2]["has_submitted"] is False  # Charlie has no submissions
 
+    def test_compute_task_ranks_always_sorts_descending(self):
+        """Even with a lower-is-better metric config, _compute_task_ranks
+        sorts by public_score descending (scores are already normalized)."""
+        from unittest.mock import MagicMock
+
+        from routes.leaderboard import _compute_task_ranks
+
+        task = MagicMock()
+        task.id = 999
+        task.metrics_config = {"mae": {"weight": 1.0}}
+        task_id = "999"
+
+        entries = [
+            {
+                "user": {"id": "1", "username": "alice"},
+                "task_scores": {task_id: {"public_score": 0.9, "private_score": 0.9}},
+            },
+            {
+                "user": {"id": "2", "username": "bob"},
+                "task_scores": {task_id: {"public_score": 0.5, "private_score": 0.5}},
+            },
+            {
+                "user": {"id": "3", "username": "charlie"},
+                "task_scores": {task_id: {"public_score": 0.7, "private_score": 0.7}},
+            },
+        ]
+
+        _compute_task_ranks(entries, [task], False, False)
+
+        alice_rank = next(e["task_ranks"][task_id] for e in entries if e["user"]["id"] == "1")
+        bob_rank = next(e["task_ranks"][task_id] for e in entries if e["user"]["id"] == "2")
+        charlie_rank = next(e["task_ranks"][task_id] for e in entries if e["user"]["id"] == "3")
+
+        assert alice_rank == 1, "Highest score should be rank 1"
+        assert charlie_rank == 2, "Middle score should be rank 2"
+        assert bob_rank == 3, "Lowest score should be rank 3"
+
 
 class TestManualPointsEndpoint:
     @pytest.fixture(autouse=True)

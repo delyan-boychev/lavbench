@@ -437,7 +437,6 @@ def get_task_leaderboard_data(
                     m_info.get("higher_is_better") is False or is_metric_lower_better(m_name)
                 ):
                     is_lower_better = True
-                break
         except Exception as e:
             logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
 

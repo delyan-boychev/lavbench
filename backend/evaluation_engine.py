@@ -34,6 +34,28 @@ from sklearn.metrics import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------
+# 0. DECOMPRESSION HELPERS
+# ---------------------------------------------------------
+
+
+def decode_mask_bytes(b: bytes) -> Any:
+    """Decode mask bytes to raw pixel array, handling compressed image formats."""
+    if not b:
+        return np.array([], dtype=np.uint8)
+    if b[:4] == b"\x89PNG" or b[:2] == b"\xff\xd8":
+        try:
+            import io
+
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(b)).convert("L")
+            return np.array(img, dtype=np.uint8)
+        except Exception:
+            logger.debug("Failed to decode image with PIL, falling back to raw bytes")
+    return np.frombuffer(b, dtype=np.uint8)
+
+
+# ---------------------------------------------------------
 # 1. TASK TYPE SCHEMAS & METRICS CONFIG
 # ---------------------------------------------------------
 
@@ -456,8 +478,8 @@ def compute_segmentation_iou(y_true: list[bytes], y_pred: list[bytes]) -> float:
         if not t or not p:
             iou_scores.append(0.0)
             continue
-        arr_t = np.frombuffer(t, dtype=np.uint8)
-        arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+        arr_t = decode_mask_bytes(t)
+        arr_p = decode_mask_bytes(p)
         if len(arr_p) < len(arr_t):
             arr_t = arr_t[: len(arr_p)]
         intersection = np.logical_and(arr_t > 0, arr_p > 0).sum()
@@ -473,8 +495,8 @@ def compute_segmentation_dice(y_true: list[bytes], y_pred: list[bytes]) -> float
         if not t or not p:
             dice_scores.append(0.0)
             continue
-        arr_t = np.frombuffer(t, dtype=np.uint8)
-        arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+        arr_t = decode_mask_bytes(t)
+        arr_p = decode_mask_bytes(p)
         if len(arr_p) < len(arr_t):
             arr_t = arr_t[: len(arr_p)]
         intersection = np.logical_and(arr_t > 0, arr_p > 0).sum()
@@ -995,8 +1017,8 @@ def evaluate_predictions(
                 if not t or not p:
                     accs.append(0.0)
                     continue
-                arr_t = np.frombuffer(t, dtype=np.uint8)
-                arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+                arr_t = decode_mask_bytes(t)
+                arr_p = decode_mask_bytes(p)
                 if len(arr_p) < len(arr_t):
                     arr_t = arr_t[: len(arr_p)]
                 accs.append(accuracy_score(arr_t, arr_p))

@@ -143,6 +143,15 @@ def evaluate_submission(
                     from sse_utils import publish_submission_status
 
                     publish_submission_status(submission_id, "failed")
+        elif RUNNING_AS_WORKER and metadata:
+            from worker_utils import report_status_to_server
+
+            report_status_to_server(
+                metadata=metadata,
+                status="failed",
+                detailed_status="failed",
+                logs="[TIMEOUT] Celery soft time limit exceeded.",
+            )
         return
     except Exception as e:
         from cache_utils import log_dead_letter

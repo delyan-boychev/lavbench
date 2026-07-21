@@ -188,6 +188,23 @@ class TestWorkerEndpoints:
         assert sub.metrics_payload_public is not None
         assert sub.metrics_payload_private is not None
 
+    def test_report_progress_saves_gpu_node_and_short_metric_keys(self):
+        self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={
+                "status": "completed",
+                "detailed_status": "done",
+                "metrics_payload_pub": json.dumps({"accuracy": 0.9}),
+                "metrics_payload_priv": json.dumps({"accuracy": 0.8}),
+                "gpu_node": "gpu-01",
+            },
+            headers=self._worker_headers(),
+        )
+        sub = db.session.get(Submission, self.submission.id)
+        assert sub.metrics_payload_public is not None
+        assert sub.metrics_payload_private is not None
+        assert sub.gpu_node == "gpu-01"
+
     def test_report_progress_with_fallback_data(self):
         from cache_utils import get_redis_client
 

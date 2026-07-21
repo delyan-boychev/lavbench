@@ -78,10 +78,9 @@ def _compute_task_ranks(
                 reverse=True,
             )
         else:
-            is_lower = task_lower_better.get(task.id, False)
             scorable.sort(
                 key=lambda e: e["task_scores"][tid]["public_score"],
-                reverse=not is_lower,
+                reverse=True,
             )
 
         rank = 0
