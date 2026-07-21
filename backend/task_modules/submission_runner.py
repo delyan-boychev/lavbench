@@ -477,6 +477,7 @@ def run_eval_submission(
             with app.app_context():
                 from sse_utils import (
                     publish_leaderboard_update,
+                    publish_queue_update,
                     publish_submissions_update,
                 )
 
@@ -512,6 +513,7 @@ def run_eval_submission(
                             )
 
                     publish_submissions_update(sub.task_id, sub.user_id)
+                    publish_queue_update()
                     publish_leaderboard_update(sub.task_id)
 
     logs: StreamingLogList | None = None

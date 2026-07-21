@@ -15,6 +15,10 @@ const TaskService = {
   getLeaderboard: (id) => api.get(`/tasks/${id}/leaderboard`),
   /** @type {(...args: any[]) => Promise<{ ok: boolean, data: import('../types/api').paths['/api/submissions/{submission_id}']['get']['responses']['200']['content']['application/json'] }>} */
   getSubmissionDetail: (submissionId) => api.get(`/submissions/${submissionId}`),
+  killSubmission: (submissionId) => api.post(`/submissions/${submissionId}/kill`),
+  getQueue: (page, perPage = 10) =>
+    api.get(`/admin/submissions/queue?page=${page}&per_page=${perPage}`),
+  clearQueue: () => api.post('/admin/submissions/queue/clear'),
   // Returns a direct URL string for anchor-based file downloads (streamed)
   getDownloadUrl: (taskId, filename) =>
     `/api/tasks/${taskId}/download/${encodeURIComponent(filename)}`,

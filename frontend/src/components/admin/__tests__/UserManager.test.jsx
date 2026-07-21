@@ -75,6 +75,19 @@ vi.mock('../../ui/Pagination', () => ({
 
 import UserManager from '../UserManager';
 
+vi.mock('../../../context/AppContext', () => ({
+  useApp: () => ({
+    showToast: vi.fn(),
+    confirm: vi.fn(),
+    challenges: [],
+    selectedChallenge: null,
+    selectedTask: null,
+    setSelectedChallengeById: vi.fn(),
+    setSelectedTask: vi.fn(),
+    fetchChallenges: vi.fn(),
+  }),
+}));
+
 // ── shared fixtures ──────────────────────────────────────────────────────────
 
 const BASE_NEW_USER = {
@@ -261,11 +274,13 @@ describe('UserManager – actions', () => {
     expect(handleDeleteUser).toHaveBeenCalledTimes(1);
   });
 
-  it('calls initEditUser with the correct user object when Edit is clicked', () => {
-    const { initEditUser } = renderComponent();
+  it('opens edit form with user data when Edit is clicked', () => {
+    renderComponent();
     fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
-    expect(initEditUser).toHaveBeenCalledWith(MOCK_USERS[1]);
-    expect(initEditUser).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Edit User/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('jury1')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Jury')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Member')).toBeInTheDocument();
   });
 
   it('submits the registration form', () => {

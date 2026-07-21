@@ -15,6 +15,8 @@ export default function SubmissionViewer({
   isSelectionDisabled = false,
   isSubmissionAfterDeadline = false,
   onSubmissionUpdate,
+  onKill,
+  killing = false,
 }) {
   const { t } = useTranslation();
   const [liveLogs, setLiveLogs] = useState('');
@@ -127,6 +129,22 @@ export default function SubmissionViewer({
                   {t('submissions.final_selection_star')}
                 </span>
               )}
+              {(displaySubmission.status === 'queued' || displaySubmission.status === 'running') &&
+                (currentUser?.role === 'admin' ||
+                  currentUser?.role === 'jury' ||
+                  (currentUser?.role === 'competitor' &&
+                    displaySubmission.user_id === currentUser?.id)) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onKill && onKill(displaySubmission.id);
+                    }}
+                    disabled={killing}
+                    className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+                  >
+                    {killing ? '...' : t('submissions.kill')}
+                  </button>
+                )}
             </div>
 
             {displaySubmission.user?.alias_id && (

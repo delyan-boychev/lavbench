@@ -52,6 +52,7 @@ from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
+    publish_queue_update,
     publish_submissions_update,
     sse_connection_limit,
 )
@@ -212,6 +213,7 @@ def queue_system_submission(
     db.session.commit()
 
     publish_submissions_update(submission.task_id, submission.user_id)
+    publish_queue_update()
     publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
     from tasks import evaluate_submission
@@ -1186,6 +1188,7 @@ def submit_task(
         db.session.add(submission)
         db.session.commit()
         publish_submissions_update(submission.task_id, submission.user_id)
+        publish_queue_update()
         publish_leaderboard_update(submission.task_id, submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
@@ -1211,6 +1214,7 @@ def submit_task(
     invalidate_leaderboard_cache(submission.challenge_id)
 
     publish_submissions_update(submission.task_id, submission.user_id)
+    publish_queue_update()
     publish_leaderboard_update(submission.task_id, submission.challenge_id)
     from tasks import evaluate_submission
 
@@ -1715,6 +1719,7 @@ def report_worker_progress(
     db.session.commit()
 
     publish_submissions_update(submission.task_id, submission.user_id)
+    publish_queue_update()
     publish_leaderboard_update(submission.task_id, submission.challenge_id)
 
     if submission.status in ("completed", "failed"):

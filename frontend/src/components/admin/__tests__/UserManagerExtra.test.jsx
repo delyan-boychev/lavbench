@@ -5,9 +5,12 @@
  *  - Lines 132-202: generated credentials display + jury-role jury_challenges picker
  */
 import React, { useState } from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import { renderWithProviders } from '../../../test-utils';
 import UserManager from '../UserManager';
+
+const render = renderWithProviders;
 
 vi.mock('../../ui/InputField', () => ({
   default: ({ label, value, onChange, type, placeholder }) => (
@@ -212,13 +215,12 @@ describe('UserManager – user list section (lines 187+)', () => {
     expect(screen.getByText('bob')).toBeInTheDocument();
   });
 
-  it('calls initEditUser when Edit is clicked', () => {
-    const initEditUser = vi.fn();
-    render(<ControlledUserManager allUsers={users} usersTotal={2} initEditUser={initEditUser} />);
-    // The edit button text is resolved via t('common.edit', 'Edit') → 'Edit'
+  it('opens edit form with user data when Edit is clicked', () => {
+    render(<ControlledUserManager allUsers={users} usersTotal={2} />);
     const editBtns = screen.getAllByText('Edit');
     fireEvent.click(editBtns[0]);
-    expect(initEditUser).toHaveBeenCalledWith(users[0]);
+    expect(screen.getByText(/Edit User/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('alice')).toBeInTheDocument();
   });
 
   it('calls handleDeleteUser when Delete is clicked', () => {

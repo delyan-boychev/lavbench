@@ -144,4 +144,93 @@ describe('TaskService', () => {
       expect(url).toBe('/api/tasks/1/download/my%20file.ipynb');
     });
   });
+
+  describe('killSubmission', () => {
+    it('kills a submission by id', async () => {
+      api.post.mockResolvedValue({ ok: true, status: 200, data: { message: 'Killed' } });
+
+      const result = await TaskService.killSubmission('sub-1');
+
+      expect(api.post).toHaveBeenCalledWith('/submissions/sub-1/kill');
+      expect(result.data).toEqual({ message: 'Killed' });
+    });
+
+    it('handles kill error', async () => {
+      api.post.mockResolvedValue({
+        ok: false,
+        status: 400,
+        data: { code: 'ERR_SUBMISSION_NOT_KILLABLE', error: 'Cannot kill' },
+      });
+
+      const result = await TaskService.killSubmission('sub-1');
+
+      expect(result.ok).toBe(false);
+      expect(result.data.code).toBe('ERR_SUBMISSION_NOT_KILLABLE');
+    });
+  });
+
+  describe('getQueue', () => {
+    it('fetches queue with pagination', async () => {
+      const queueData = { items: [{ id: 'q1' }], total: 1, page: 1, pages: 1 };
+      api.get.mockResolvedValue({ ok: true, status: 200, data: queueData });
+
+      const result = await TaskService.getQueue(1, 20);
+
+      expect(api.get).toHaveBeenCalledWith('/admin/submissions/queue?page=1&per_page=20');
+      expect(result.data).toEqual(queueData);
+    });
+
+    it('uses default perPage of 10', async () => {
+      api.get.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: { items: [], total: 0, page: 1, pages: 1 },
+      });
+
+      await TaskService.getQueue(2);
+
+      expect(api.get).toHaveBeenCalledWith('/admin/submissions/queue?page=2&per_page=10');
+    });
+
+    it('handles queue fetch error', async () => {
+      api.get.mockResolvedValue({
+        ok: false,
+        status: 403,
+        data: { code: 'ERR_FORBIDDEN', error: 'Access denied' },
+      });
+
+      const result = await TaskService.getQueue(1);
+
+      expect(result.ok).toBe(false);
+      expect(result.data.code).toBe('ERR_FORBIDDEN');
+    });
+  });
+
+  describe('clearQueue', () => {
+    it('clears the queue', async () => {
+      api.post.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: { message: 'Cleared 2 submission(s)' },
+      });
+
+      const result = await TaskService.clearQueue();
+
+      expect(api.post).toHaveBeenCalledWith('/admin/submissions/queue/clear');
+      expect(result.data.message).toContain('Cleared');
+    });
+
+    it('handles clear queue error', async () => {
+      api.post.mockResolvedValue({
+        ok: false,
+        status: 403,
+        data: { code: 'ERR_FORBIDDEN', error: 'Admins only' },
+      });
+
+      const result = await TaskService.clearQueue();
+
+      expect(result.ok).toBe(false);
+      expect(result.data.code).toBe('ERR_FORBIDDEN');
+    });
+  });
 });

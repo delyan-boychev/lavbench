@@ -396,6 +396,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/submissions/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get paginated queue of queued and running submissions in execution order. */
+        get: operations["get__api_admin_submissions_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/submissions/queue/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kill all queued and running submissions (admin only). */
+        post: operations["post__api_admin_submissions_queue_clear"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/challenges": {
         parameters: {
             query?: never;
@@ -717,6 +751,23 @@ export interface paths {
         put?: never;
         /** Select a submission as the final one for scoring. */
         post: operations["post__api_submissions_{submission_id}_select-final"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submission_id}/kill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kill a queued or running submission. Admins/jury can kill any; competitors can only kill their own. */
+        post: operations["post__api_submissions_{submission_id}_kill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1059,23 +1110,6 @@ export interface paths {
         get: operations["get__api_worker_tasks_{task_id}_hf-key"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/worker/tasks/{task_id}/report-build-error": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** report_build_error <POST> */
-        post: operations["post__api_worker_tasks_{task_id}_report-build-error"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1453,6 +1487,17 @@ export interface components {
         "DeadLetterListResponse.febf810": {
             /** Items */
             items: components["schemas"]["DeadLetterListResponse.febf810.DeadLetterItem"][];
+        };
+        /** PaginatedResponse[QueueItemResponse] */
+        "PaginatedResponse[QueueItemResponse].c6e31f5": {
+            /** Items */
+            items: components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
         };
         /** LoginSchema */
         "LoginSchema.de5424a": {
@@ -2248,11 +2293,6 @@ export interface components {
              * @default null
              */
             solution_notebook_path: string | null;
-            /**
-             * Build Error
-             * @default null
-             */
-            build_error: string | null;
         };
         /** CreateTaskMetaSchema */
         "CreateTaskMetaSchema.605fb63": {
@@ -2979,6 +3019,56 @@ export interface components {
             details: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** QueueItemResponse */
+        "PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse": {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * User Alias
+             * @default null
+             */
+            user_alias: string | null;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
         };
         /** UserResponse */
         "LoginResponse.bfffb0d.UserResponse": {
@@ -6319,6 +6409,82 @@ export interface operations {
             };
         };
     };
+    get__api_admin_submissions_queue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_admin_submissions_queue_clear: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
     get__api_challenges: {
         parameters: {
             query?: never;
@@ -7186,6 +7352,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_submissions_{submission_id}_kill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
                 };
             };
         };
@@ -8098,64 +8322,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkerHfKeyResponse.6bc6f68"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
-                };
-            };
-        };
-    };
-    "post__api_worker_tasks_{task_id}_report-build-error": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Unauthorized */

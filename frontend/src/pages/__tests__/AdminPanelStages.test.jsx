@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { screen, fireEvent, act, within } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import AdminPanel from '../AdminPanel';
@@ -78,7 +79,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   });
 
   it('renders stages list in the challenge view', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -89,7 +90,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   });
 
   it('triggers stage creation modal when "+ Add Stage" is clicked and handles submission', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -138,7 +139,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   });
 
   it('triggers stage editing and submits update', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -181,7 +182,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
   it('triggers stage deletion API call when confirmed', async () => {
     mockConfirm.mockResolvedValue(true);
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -214,7 +215,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   });
 
   it('triggers stage finalization modal and submits configuration', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -249,7 +250,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   });
 
   it('disables challenge finalization button if any stage is unfinalized', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -309,7 +310,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       }),
     );
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -345,7 +346,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   // ── Stage error paths ────────────────────────────────────────────────────
 
   it('handles stage finalization API error', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -380,7 +381,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
   it('skips stage delete API call when user cancels confirm', async () => {
     mockConfirm.mockResolvedValue(false);
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -425,7 +426,7 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
       }),
     );
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });

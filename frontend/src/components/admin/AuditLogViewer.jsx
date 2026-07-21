@@ -1,59 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import api from '../../services/ApiService';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import { useApp } from '../../context/AppContext';
+import { useAuditLogsQuery } from '../../hooks/useAuditLogsQuery';
 import { formatDateTime } from '../../utils/formatDate';
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
-  const [logs, setLogs] = useState([]);
   const [selectedAction, setSelectedAction] = useState('');
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [expandedLog, setExpandedLog] = useState(null);
 
-  const selectedChallengeId = selectedChallenge?.id || '';
+  const challengeId = selectedChallenge?.id;
+  const { data, isLoading } = useAuditLogsQuery(challengeId, page, selectedAction);
 
-  // Fetch paginated audit logs
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    try {
-      let url = `/admin/audit-logs?page=${page}&per_page=15`;
-      if (selectedChallengeId) url += `&challenge_id=${selectedChallengeId}`;
-      if (selectedAction) url += `&action_type=${selectedAction}`;
+  const logs = data?.logs || [];
+  const totalPages = data?.pages || 1;
+  const totalItems = data?.total || 0;
 
-      const { ok, data } = await api.get(url);
-      if (ok) {
-        setLogs(data.logs || []);
-        setTotalPages(data.pages || 1);
-        setTotalItems(data.total || 0);
-      }
-    } catch {
-      /* noop */
-    }
-    setLoading(false);
-  }, [page, selectedChallengeId, selectedAction]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchLogs().then(() => {
-      if (cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, selectedChallengeId, selectedAction]);
-
-  // Reset page to 1 when filters change
-  useEffect(() => {
+  const handleActionChange = (val) => {
+    setSelectedAction(val);
     setPage(1);
-  }, [selectedChallengeId, selectedAction]);
+  };
 
   const formatDate = (iso) => formatDateTime(iso, selectedChallenge?.timezone || 'UTC');
 
@@ -91,7 +61,7 @@ export default function AuditLogViewer() {
           <div className="w-full md:w-48">
             <SelectField
               value={selectedAction}
-              onChange={(val) => setSelectedAction(val)}
+              onChange={handleActionChange}
               options={[
                 { value: '', label: t('admin.all_actions') || 'All Actions' },
                 { value: 'create', label: t('admin.actions.create') || 'Create' },
@@ -109,7 +79,7 @@ export default function AuditLogViewer() {
         </div>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center py-12 text-slate-500 text-sm">{t('common.loading')}</div>
       ) : logs.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">

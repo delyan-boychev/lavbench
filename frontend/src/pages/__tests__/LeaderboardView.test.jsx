@@ -10,10 +10,8 @@ vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-vi.mock('../../services/ChallengeService', () => ({
-  default: {
-    getLeaderboard: vi.fn(),
-  },
+vi.mock('../../hooks/useLeaderboardQuery', () => ({
+  useLeaderboardQuery: vi.fn(),
 }));
 
 vi.mock('../../components/leaderboard/LeaderboardTable', () => ({
@@ -39,10 +37,11 @@ vi.mock('../../components/ui/EmptyState', () => ({
 
 import { useParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import ChallengeService from '../../services/ChallengeService';
+import { useLeaderboardQuery } from '../../hooks/useLeaderboardQuery';
 import LeaderboardView from '../LeaderboardView';
 
 const mockSetSelectedChallengeById = vi.fn();
+const mockRefetch = vi.fn();
 const defaultUseApp = {
   selectedChallenge: { id: 42, title: 'Test Challenge' },
   setSelectedChallengeById: mockSetSelectedChallengeById,
@@ -58,19 +57,22 @@ const mockTasks = [
   { id: 2, title: 'Task 2' },
 ];
 
+const defaultQueryData = {
+  leaderboard: mockLeaderboardData,
+  tasks: mockTasks,
+  metric_name: 'Accuracy',
+  is_normalized: false,
+};
+
 describe('LeaderboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useParams.mockReturnValue({ challengeId: '42' });
     useApp.mockReturnValue(defaultUseApp);
-    ChallengeService.getLeaderboard.mockResolvedValue({
-      ok: true,
-      data: {
-        leaderboard: mockLeaderboardData,
-        tasks: mockTasks,
-        metric_name: 'Accuracy',
-        is_normalized: false,
-      },
+    useLeaderboardQuery.mockReturnValue({
+      data: defaultQueryData,
+      isLoading: false,
+      refetch: mockRefetch,
     });
   });
 
@@ -150,6 +152,11 @@ describe('LeaderboardView', () => {
   });
 
   it('shows loading state before leaderboard resolves', async () => {
+    useLeaderboardQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      refetch: mockRefetch,
+    });
     render(<LeaderboardView />);
     expect(screen.getByTestId('loading').textContent).toBe('true');
     await act(async () => {});
@@ -164,7 +171,11 @@ describe('LeaderboardView', () => {
   });
 
   it('handles leaderboard API failure gracefully', async () => {
-    ChallengeService.getLeaderboard.mockResolvedValue({ ok: false, data: {} });
+    useLeaderboardQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      refetch: mockRefetch,
+    });
     render(<LeaderboardView />);
     await act(async () => {});
     await waitFor(() => {
@@ -173,22 +184,28 @@ describe('LeaderboardView', () => {
   });
 
   it('polls leaderboard every 15 seconds', async () => {
+    let refetchCalls = 0;
+    const refetchFn = () => {
+      refetchCalls++;
+    };
+    useLeaderboardQuery.mockReturnValue({
+      data: defaultQueryData,
+      isLoading: false,
+      refetch: refetchFn,
+    });
+
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', undefined);
     render(<LeaderboardView />);
     await act(async () => {});
 
-    await vi.waitFor(() => {
-      expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(1);
-    });
+    vi.advanceTimersByTime(15000);
+    await act(async () => {});
+    expect(refetchCalls).toBe(1);
 
     vi.advanceTimersByTime(15000);
     await act(async () => {});
-    expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(2);
-
-    vi.advanceTimersByTime(15000);
-    await act(async () => {});
-    expect(ChallengeService.getLeaderboard).toHaveBeenCalledTimes(3);
+    expect(refetchCalls).toBe(2);
 
     vi.useRealTimers();
     await act(async () => {});

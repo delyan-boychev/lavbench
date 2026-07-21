@@ -212,7 +212,9 @@
     "ERR_USERNAME_REQUIRED": "Username is required.",
     "ERR_USERNAME_TAKEN": "User with this username already exists.",
     "ERR_USER_NOT_FOUND": "User not found.",
-    "ERR_VALIDATION": "Request validation failed."
+    "ERR_VALIDATION": "Request validation failed.",
+    "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
+    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission."
   },
   "submissions": {
     "loading": "Loading submissions...",
@@ -257,6 +259,10 @@
     "connecting_live_logs": "Connecting to live logs...",
     "execution_log_live": "Execution Log (Live)",
     "best_submission": "Best Submission",
+    "kill": "Kill",
+    "kill_confirm": "Are you sure you want to kill this submission? It will be marked as failed.",
+    "kill_success": "Submission killed successfully.",
+    "kill_failed": "Failed to kill submission.",
     "select_competitor": "Select Competitor",
     "no_competitors_found": "No competitors found",
     "search_competitor_placeholder": "Search by alias, name, or school...",
@@ -620,6 +626,20 @@
       "gpu_model": "GPU Model:",
       "vram": "VRAM:",
       "ram": "RAM:"
+    },
+    "submission_queue": {
+      "title": "Submission Queue",
+      "clear_queue": "Clear Queue",
+      "clear_queue_confirm": "Are you sure you want to clear the entire submission queue? All queued and running submissions will be killed.",
+      "queue_empty": "Queue is empty.",
+      "kill": "Kill",
+      "kill_confirm": "Are you sure you want to kill this queued submission?",
+      "user_header": "User",
+      "task_header": "Task",
+      "status_header": "Status",
+      "created_header": "Created",
+      "actions_header": "Actions",
+      "queue_description": "{{count}} submission(s) in queue"
     },
     "stages": {
       "stages_in_competition": "Stages in this Competition ({{count}})",

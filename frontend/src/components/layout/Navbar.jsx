@@ -1,5 +1,4 @@
 import React from 'react';
-import api from '../../services/ApiService';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Logo from '../ui/Logo';
@@ -12,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
+import { useDocsQuery } from '../../hooks/useDocsQuery';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
 
 function SunIcon() {
@@ -34,9 +34,17 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
   const [activeDocTab, setActiveDocTab] = React.useState('competitor');
-  const [docContent, setDocContent] = React.useState('');
-  const [docLoading, setDocLoading] = React.useState(false);
-  const [docError, setDocError] = React.useState(null);
+
+  const {
+    data: docData,
+    isLoading: docLoading,
+    error: docError,
+  } = useDocsQuery(
+    isDocsModalOpen ? activeDocTab : null,
+    isDocsModalOpen ? i18n.language || 'en' : null,
+  );
+  const docContent = docData?.content || '';
+
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setMobileMenuOpen(false);
@@ -54,41 +62,6 @@ export default function Navbar() {
     }
     return tabs;
   }, [currentUser, t]);
-
-  React.useEffect(() => {
-    if (!isDocsModalOpen) return;
-
-    const fetchDoc = async () => {
-      setDocLoading(true);
-      setDocError(null);
-      try {
-        /** @type {Response} */
-        const res = await api.fetch(`/api/docs/${activeDocTab}?lang=${i18n.language || 'en'}`, {
-          headers: {
-            'Accept-Language': i18n.language || 'en',
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setDocContent(data.content);
-        } else {
-          const errData = await res.json();
-          setDocError(
-            errData.code
-              ? t(`api.${errData.code}`, errData.error || t('nav.failed_fetch_docs'))
-              : errData.error || t('nav.failed_fetch_docs'),
-          );
-        }
-      } catch {
-        setDocError(t('nav.failed_fetch_docs_network'));
-      } finally {
-        setDocLoading(false);
-      }
-    };
-
-    fetchDoc();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDocsModalOpen, activeDocTab]);
 
   const handleLogout = () => {
     logout();
@@ -675,7 +648,7 @@ export default function Navbar() {
               </div>
             ) : docError ? (
               <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-center">
-                {docError}
+                {docError?.message || t('nav.failed_fetch_docs')}
               </div>
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">

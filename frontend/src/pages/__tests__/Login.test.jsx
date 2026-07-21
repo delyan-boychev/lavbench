@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { useAuth } from '../../AuthContext';
-// eslint-disable-next-line no-unused-vars
+
 import { useApp } from '../../context/AppContext';
 import Login from '../Login';
 

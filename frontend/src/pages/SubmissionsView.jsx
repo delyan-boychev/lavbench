@@ -1,176 +1,24 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/ApiService';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import useSSE from '../hooks/useSSE';
+import { useApiError } from '../hooks/useApiError';
 import TaskService from '../services/TaskService';
+import { useSubmissionsQuery } from '../hooks/useSubmissionsQuery';
+import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
+import { useCompetitorSearchQuery } from '../hooks/useCompetitorSearchQuery';
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import Badge from '../components/ui/Badge';
 import Pagination from '../components/ui/Pagination';
 import EmptyState from '../components/ui/EmptyState';
+import BestSubmissionCard from '../components/submissions/BestSubmissionCard';
+import StageGroup from '../components/submissions/StageGroup';
 import { formatLocalizedDate } from '../utils/formatDate';
 import { Star, Download, ChevronRight, Search, X } from 'lucide-react';
-
-function BestSubmissionCard({ sub, task, onView, onDownload, showPrivate, challenge }) {
-  const { t } = useTranslation();
-  const tz = challenge?.timezone || 'UTC';
-  const timeStr = sub.created_at
-    ? `${formatLocalizedDate(sub.created_at, { timeZone: tz })} (${tz.replace(/_/g, ' ')})`
-    : '—';
-
-  return (
-    <div
-      onClick={() => onView(sub)}
-      className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 hover:bg-slate-800/60 hover:border-indigo-500/40 transition-all cursor-pointer text-left w-full"
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onView(sub);
-      }}
-    >
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-slate-200 truncate">{task.title}</span>
-            {sub.is_final_selection && (
-              <span className="flex items-center gap-0.5 text-[10px] font-bold text-indigo-400">
-                <Star className="w-3 h-3" />
-                {t('submissions.final_selection_label')}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-            <span className="font-mono">#{sub.id}</span>
-            <span>{timeStr}</span>
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {sub.public_score != null && (
-          <div className="text-right">
-            <div className="text-[9px] text-slate-500 uppercase tracking-wider">
-              {t('submissions.public_score')}
-            </div>
-            <div className="font-mono text-xs font-bold text-indigo-400">
-              {Number(sub.public_score).toFixed(4)}
-            </div>
-          </div>
-        )}
-        {showPrivate && sub.private_score != null && (
-          <div className="text-right">
-            <div className="text-[9px] text-slate-500 uppercase tracking-wider">
-              {t('submissions.private_score')}
-            </div>
-            <div className="font-mono text-xs font-bold text-emerald-400">
-              {Number(sub.private_score).toFixed(4)}
-            </div>
-          </div>
-        )}
-        {onDownload && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownload(sub);
-            }}
-            className="p-1.5 rounded text-slate-500 hover:text-indigo-400 hover:bg-slate-800 transition-colors cursor-pointer"
-            title={t('submissions.download')}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.stopPropagation();
-                onDownload(sub);
-              }
-            }}
-          >
-            <Download size={14} />
-          </span>
-        )}
-        <ChevronRight size={14} className="text-slate-500" />
-      </div>
-    </div>
-  );
-}
-
-function StageGroup({
-  stage,
-  tasks,
-  challenge,
-  bestSubs,
-  onView,
-  onDownload,
-  showPrivate,
-  onTaskClick,
-}) {
-  if (!tasks || tasks.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">
-          {stage ? stage.title : challenge?.title}
-        </span>
-        {stage && (
-          <Badge
-            status={
-              stage.is_finalized && stage.reveal_results
-                ? 'public'
-                : stage.is_finalized && !stage.reveal_results
-                  ? 'internal'
-                  : new Date() > new Date(stage.end_time)
-                    ? 'grading'
-                    : new Date() < new Date(stage.start_time)
-                      ? 'future'
-                      : 'active'
-            }
-          />
-        )}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {tasks.map((task) => {
-          const sub = bestSubs[task.id];
-          if (sub) {
-            return (
-              <BestSubmissionCard
-                key={task.id}
-                sub={sub}
-                task={task}
-                onView={onView}
-                onDownload={onDownload}
-                showPrivate={showPrivate}
-                challenge={challenge}
-              />
-            );
-          }
-          return (
-            <button
-              key={task.id}
-              onClick={() => onTaskClick && onTaskClick(task.id)}
-              className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 text-left w-full opacity-50 hover:opacity-80 hover:bg-slate-800/60 hover:border-slate-700 transition-all cursor-pointer"
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-sm font-bold text-slate-400 truncate">{task.title}</span>
-                  <div className="flex items-center gap-3 text-xs text-slate-600">
-                    <span className="font-mono">—</span>
-                    <span>—</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="text-right">
-                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">Score</div>
-                  <div className="font-mono text-xs text-slate-600">—</div>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function SubmissionsView() {
   const { t } = useTranslation();
@@ -184,15 +32,13 @@ export default function SubmissionsView() {
     confirm,
     showToast,
   } = useApp();
+  const { showApiError } = useApiError();
 
-  const [submissions, setSubmissions] = useState([]);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [selectingFinal, setSelectingFinal] = useState(false);
+  const [killing, setKilling] = useState(false);
 
   const [submissionsPage, setSubmissionsPage] = useState(1);
-  const [submissionsPages, setSubmissionsPages] = useState(1);
-  const [submissionsTotal, setSubmissionsTotal] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const taskIdRef = useRef(selectedTask?.id);
 
@@ -200,44 +46,101 @@ export default function SubmissionsView() {
   const isAdminOrJury = !isCompetitor;
 
   const [competitorSearch, setCompetitorSearch] = useState('');
-  const [competitorResults, setCompetitorResults] = useState([]);
   const [competitorPage, setCompetitorPage] = useState(1);
-  const [competitorPages, setCompetitorPages] = useState(1);
-  const [competitorTotal, setCompetitorTotal] = useState(0);
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
-  const [searching, setSearching] = useState(false);
 
   const [adminActiveTask, setAdminActiveTask] = useState(null);
   const adminActiveTaskRef = useRef(adminActiveTask);
   useEffect(() => {
     adminActiveTaskRef.current = adminActiveTask;
   }, [adminActiveTask]);
-  const [adminSubmissions, setAdminSubmissions] = useState([]);
   const [adminSubPage, setAdminSubPage] = useState(1);
-  const [adminSubPages, setAdminSubPages] = useState(1);
-  const [adminSubTotal, setAdminSubTotal] = useState(0);
-  const [adminLoading, setAdminLoading] = useState(false);
 
   const [baselineExpanded, setBaselineExpanded] = useState(false);
-  const [baselineSubmissions, setBaselineSubmissions] = useState([]);
-  const [baselineLoading, setBaselineLoading] = useState(false);
 
-  const handleSubmissionUpdate = useCallback((updated) => {
-    setSubmissions((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
-    setAdminSubmissions((prev) =>
-      prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)),
-    );
-    setBaselineSubmissions((prev) =>
-      prev.map((entry) =>
-        entry.submission?.id === updated.id
-          ? { ...entry, submission: { ...entry.submission, ...updated } }
-          : entry,
-      ),
-    );
-    setSelectedSubmission((prev) =>
-      prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
-    );
-  }, []);
+  const queryClient = useQueryClient();
+
+  const { data: subsData, isLoading: loading } = useSubmissionsQuery(
+    selectedTask?.id,
+    submissionsPage,
+    10,
+  );
+  const submissions = subsData?.items || [];
+  const submissionsPages = subsData?.pages || 1;
+  const submissionsTotal = subsData?.total || 0;
+
+  const { data: competitorData, isLoading: searching } = useCompetitorSearchQuery(
+    selectedChallenge?.id,
+    competitorSearch,
+    competitorPage,
+  );
+  const competitorResults = competitorData?.items || [];
+  const competitorPages = competitorData?.pages || 1;
+  const competitorTotal = competitorData?.total || 0;
+
+  const { data: adminSubsData, isLoading: adminLoading } = useQuery({
+    queryKey: ['admin-submissions', adminActiveTask, adminSubPage, selectedCompetitor?.id],
+    queryFn: async () => {
+      const res = await api.fetch(
+        `/api/tasks/${adminActiveTask}/submissions?page=${adminSubPage}&per_page=10&user_id=${selectedCompetitor.id}`,
+      );
+      if (!res.ok) throw new Error('Failed to load admin submissions');
+      return res.json();
+    },
+    enabled: !!adminActiveTask && !!selectedCompetitor,
+    staleTime: 10_000,
+  });
+  const adminSubmissions = adminSubsData?.items || [];
+  const adminSubPages = adminSubsData?.pages || 1;
+  const adminSubTotal = adminSubsData?.total || 0;
+
+  const { data: baselineSubmissions = [], isLoading: baselineLoading } = useQuery({
+    queryKey: ['baselines', selectedChallenge?.id],
+    queryFn: async () => {
+      const tasks = selectedChallenge?.tasks || [];
+      const results = await Promise.all(
+        tasks.map(async (task) => {
+          try {
+            const res = await api.fetch(
+              `/api/tasks/${task.id}/submissions?baseline=true&page=1&per_page=100`,
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const items = data?.items || data || [];
+              return items.length > 0 ? { task, submission: items[0] } : null;
+            }
+          } catch {
+            // ignore per-task errors
+          }
+          return null;
+        }),
+      );
+      return results.filter(Boolean);
+    },
+    enabled: baselineExpanded,
+    staleTime: 30_000,
+  });
+
+  const { data: submissionDetail } = useSubmissionDetailQuery(selectedSubmission?.id);
+  useEffect(() => {
+    if (submissionDetail && selectedSubmission) {
+      setSelectedSubmission((prev) =>
+        prev && prev.id === submissionDetail.id ? { ...prev, ...submissionDetail } : prev,
+      );
+    }
+  }, [submissionDetail, selectedSubmission?.id]);
+
+  const handleSubmissionUpdate = useCallback(
+    (updated) => {
+      setSelectedSubmission((prev) =>
+        prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['baselines'] });
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     taskIdRef.current = selectedTask?.id;
@@ -260,107 +163,22 @@ export default function SubmissionsView() {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchSubmissions = async (silent = false, pageToFetch = submissionsPage) => {
-    if (!selectedTask) {
-      setSubmissions([]);
-      return;
-    }
-    if (!silent) setLoading(true);
-    try {
-      const res = await TaskService.getSubmissions(selectedTask.id, pageToFetch, 10);
-      if (res.ok) {
-        const data = res.data;
-        if (data && data.items !== undefined) {
-          setSubmissions(data.items || []);
-          setSubmissionsTotal(data.total || 0);
-          setSubmissionsPages(data.pages || 1);
-          setSelectedSubmission((prev) => {
-            if (!prev) return null;
-            const updated = (data.items || []).find((s) => s.id === prev.id);
-            return updated ? { ...prev, ...updated } : prev;
-          });
-        } else {
-          const arr = data || [];
-          setSubmissions(arr);
-          setSubmissionsTotal(arr.length);
-          setSubmissionsPages(1);
-          setSelectedSubmission((prev) => {
-            if (!prev) return null;
-            const updated = arr.find((s) => s.id === prev.id);
-            return updated ? { ...prev, ...updated } : prev;
-          });
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      setSubmissions([]);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
-
   useEffect(() => {
     setSubmissionsPage(1);
   }, [selectedTask]);
+
+  useEffect(() => {
+    setCompetitorPage(1);
+  }, [competitorSearch]);
 
   const taskId = selectedTask?.id;
   const page = submissionsPage;
 
   useSSE(taskId ? `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10` : '', {
-    onMessage: (data) => {
-      if (!data) return;
-      if (data.items !== undefined) {
-        setSubmissions(data.items || []);
-        setSubmissionsTotal(data.total || 0);
-        setSubmissionsPages(data.pages || 1);
-        setSelectedSubmission((prev) => {
-          if (!prev) return null;
-          const updated = data.items.find((s) => s.id === prev.id);
-          if (updated) return { ...prev, ...updated };
-          return prev;
-        });
-      } else {
-        const arr = data || [];
-        setSubmissions(arr);
-        setSubmissionsTotal(arr.length);
-        setSubmissionsPages(1);
-        setSelectedSubmission((prev) => {
-          if (!prev) return null;
-          const updated = arr.find((s) => s.id === prev.id);
-          if (updated) return { ...prev, ...updated };
-          return prev;
-        });
-      }
-      setLoading(false);
+    onMessage: () => {
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
     },
-    onError: () => {
-      const loadFallback = async () => {
-        try {
-          const res = await api.fetch(`/api/tasks/${taskId}/submissions?page=${page}&per_page=10`, {
-            headers: {},
-          });
-          if (res.ok) {
-            if (taskIdRef.current !== taskId) return;
-            const d = await res.json();
-            if (d && d.items !== undefined) {
-              setSubmissions(d.items || []);
-              setSubmissionsTotal(d.total || 0);
-              setSubmissionsPages(d.pages || 1);
-            } else {
-              const arr = d || [];
-              setSubmissions(arr);
-              setSubmissionsTotal(arr.length);
-              setSubmissionsPages(1);
-            }
-          }
-        } catch (fetchErr) {
-          console.error('Fallback fetch failed:', fetchErr);
-        } finally {
-          setLoading(false);
-        }
-      };
-      loadFallback();
-    },
+    onError: () => {},
   });
 
   const handleSelectFinal = async (submissionId) => {
@@ -372,7 +190,7 @@ export default function SubmissionsView() {
       });
       if (res.ok) {
         setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
-        await fetchSubmissions(true);
+        await queryClient.invalidateQueries({ queryKey: ['submissions'] });
       } else {
         const errData = await res.json();
         await confirm({
@@ -391,21 +209,38 @@ export default function SubmissionsView() {
     }
   };
 
-  const handleSelectSubmission = async (sub) => {
+  const handleKillSubmission = async (submissionId) => {
+    const confirmed = await confirm(t('submissions.kill_confirm'), t('submissions.kill'));
+    if (!confirmed) return;
+
+    setKilling(true);
+    try {
+      const res = await TaskService.killSubmission(submissionId);
+      if (res.ok) {
+        showToast(t('submissions.kill_success'), 'emerald');
+        setSelectedSubmission((prev) =>
+          prev && prev.id === submissionId
+            ? { ...prev, status: 'failed', detailed_status: 'killed' }
+            : prev,
+        );
+        await queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      } else {
+        showApiError(res.data, 'submissions.kill_failed');
+      }
+    } catch (err) {
+      console.error(err);
+      showApiError(err, 'submissions.kill_failed');
+    } finally {
+      setKilling(false);
+    }
+  };
+
+  const handleSelectSubmission = (sub) => {
     if (!sub) {
       setSelectedSubmission(null);
       return;
     }
     setSelectedSubmission(sub);
-    try {
-      const res = await TaskService.getSubmissionDetail(sub.id);
-      if (res.ok)
-        setSelectedSubmission((prev) =>
-          prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
-        );
-    } catch (err) {
-      console.error(err);
-    }
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
@@ -448,80 +283,30 @@ export default function SubmissionsView() {
     );
   }, [submissions]);
 
-  // Admin: competitor search
-  const handleSearchCompetitors = useCallback(
-    async (search, pageNum = 1) => {
-      if (!selectedChallenge) return;
-      setSearching(true);
-      try {
-        const params = new URLSearchParams({
-          role: 'competitor',
-          challenge_id: String(selectedChallenge.id),
-          page: String(pageNum),
-          per_page: '10',
-        });
-        if (search) params.set('search', search);
-        const res = await api.get(`/admin/users?${params.toString()}`);
-        if (res.ok && res.data) {
-          setCompetitorResults(res.data.items || []);
-          setCompetitorPage(res.data.page || 1);
-          setCompetitorPages(res.data.pages || 1);
-          setCompetitorTotal(res.data.total || 0);
-        }
-      } catch (err) {
-        console.error('Competitor search failed:', err);
-      } finally {
-        setSearching(false);
-      }
-    },
-    [selectedChallenge],
-  );
-
-  useEffect(() => {
-    if (isAdminOrJury && selectedChallenge) handleSearchCompetitors('', 1);
-  }, [isAdminOrJury, selectedChallenge, handleSearchCompetitors]);
-
   const handleSelectCompetitor = (competitor) => {
     setSelectedCompetitor(competitor);
     setBaselineExpanded(false);
     setAdminActiveTask(null);
-    setAdminSubmissions([]);
     setSelectedSubmission(null);
     setCompetitorSearch('');
-    setCompetitorResults([]);
     const tasks = selectedChallenge?.tasks || [];
     const firstTask = tasks[0];
     if (firstTask) {
       setAdminActiveTask(firstTask.id);
       setAdminSubPage(1);
-      (async () => {
-        try {
-          const res = await api.fetch(
-            `/api/tasks/${firstTask.id}/submissions?page=1&per_page=10&user_id=${competitor.id}`,
-          );
-          if (res.ok) {
-            const data = await res.json();
-            setAdminSubmissions(data.items || []);
-            setAdminSubPages(data.pages || 1);
-            setAdminSubTotal(data.total || 0);
-          }
-        } catch (err) {
-          console.error('Failed to fetch admin task submissions:', err);
-        }
-      })();
     }
   };
 
   // Admin: fetch best submissions across all tasks for the selected competitor
   const fetchAllCompetitorSubmissions = useCallback(async () => {
-    if (!selectedChallenge || !selectedCompetitor) return;
+    if (!selectedChallenge || !selectedCompetitor) return {};
     const tasks = selectedChallenge.tasks || [];
     const bestPerTask = {};
     for (const task of tasks) {
       try {
-        const res = await TaskService.getSubmissions(task.id, 1, 100);
+        const res = await api.fetch(`/api/tasks/${task.id}/submissions?page=1&per_page=100`);
         if (res.ok) {
-          const data = res.data;
+          const data = await res.json();
           const items = data?.items || data || [];
           const userSubs = items.filter((s) => s.user?.id === selectedCompetitor.id);
           if (userSubs.length === 0) continue;
@@ -545,33 +330,6 @@ export default function SubmissionsView() {
 
   const [bestSubs, setBestSubs] = useState({});
 
-  // Admin: fetch all submissions for a specific task for the selected competitor
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
-  const fetchAdminTaskSubmissions = useCallback(
-    async (taskId, pageNum = 1) => {
-      if (!selectedCompetitor) return;
-      setAdminLoading(true);
-      try {
-        const res = await api.fetch(
-          `/api/tasks/${taskId}/submissions?page=${pageNum}&per_page=10&user_id=${selectedCompetitor.id}`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data) {
-            setAdminSubmissions(data.items || []);
-            setAdminSubPages(data.pages || 1);
-            setAdminSubTotal(data.total || 0);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch admin task submissions:', err);
-      } finally {
-        setAdminLoading(false);
-      }
-    },
-    [selectedCompetitor],
-  );
-
   useEffect(() => {
     if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) {
       setBestSubs({});
@@ -587,17 +345,10 @@ export default function SubmissionsView() {
         if (resolvedTaskId !== activeId) {
           setAdminActiveTask(resolvedTaskId);
           setAdminSubPage(1);
-          if (!cancelled) fetchAdminTaskSubmissions(resolvedTaskId, 1);
         }
         const sub = result[resolvedTaskId];
         if (sub) {
           setSelectedSubmission(sub);
-          TaskService.getSubmissionDetail(sub.id).then((res) => {
-            if (res.ok && !cancelled)
-              setSelectedSubmission((prev) =>
-                prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
-              );
-          });
         }
       }
     });
@@ -606,7 +357,7 @@ export default function SubmissionsView() {
     };
   }, [selectedCompetitor, selectedChallenge, isAdminOrJury, fetchAllCompetitorSubmissions]);
 
-  const handleAdminViewSubmission = async (sub) => {
+  const handleAdminViewSubmission = (sub) => {
     if (!sub) {
       setSelectedSubmission(null);
       return;
@@ -617,63 +368,9 @@ export default function SubmissionsView() {
       setAdminActiveTask(sub.task_id);
       if (taskChanged) {
         setAdminSubPage(1);
-        fetchAdminTaskSubmissions(sub.task_id, 1);
       }
     }
-    try {
-      const res = await TaskService.getSubmissionDetail(sub.id);
-      if (res.ok)
-        setSelectedSubmission((prev) =>
-          prev && prev.id === sub.id ? { ...prev, ...res.data } : prev,
-        );
-    } catch (err) {
-      console.error(err);
-    }
   };
-
-  // Admin: fetch baselines for all tasks
-  const fetchAllBaselines = useCallback(async () => {
-    const tasks = selectedChallenge?.tasks;
-    if (!tasks?.length) {
-      setBaselineSubmissions([]);
-      return;
-    }
-    setBaselineLoading(true);
-    try {
-      const results = await Promise.all(
-        tasks.map(async (task) => {
-          try {
-            const res = await api.fetch(
-              `/api/tasks/${task.id}/submissions?baseline=true&page=1&per_page=100`,
-            );
-            if (res.ok) {
-              const data = await res.json();
-              const items = data?.items || data || [];
-              return items.length > 0 ? { task, submission: items[0] } : null;
-            }
-          } catch {
-            // ignore per-task errors
-          }
-          return null;
-        }),
-      );
-      setBaselineSubmissions(results.filter(Boolean));
-    } catch (err) {
-      console.error('Failed to fetch baselines:', err);
-      setBaselineSubmissions([]);
-    } finally {
-      setBaselineLoading(false);
-    }
-  }, [selectedChallenge]);
-
-  useEffect(() => {
-    if (baselineExpanded) {
-      fetchAllBaselines();
-    } else {
-      setBaselineSubmissions([]);
-      setSelectedSubmission(null);
-    }
-  }, [baselineExpanded, fetchAllBaselines]);
 
   const handleDownloadSubmission = async (taskId, userId) => {
     if (!selectedChallenge) return;
@@ -900,6 +597,8 @@ export default function SubmissionsView() {
                 isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
                 isSubmissionAfterDeadline={isSubmissionAfterDeadline}
                 onSubmissionUpdate={handleSubmissionUpdate}
+                onKill={handleKillSubmission}
+                killing={killing}
               />
             </div>
           </div>
@@ -922,10 +621,7 @@ export default function SubmissionsView() {
               <button
                 onClick={() => {
                   if (baselineExpanded) {
-                    setBaselineSubmissions([]);
                     setSelectedSubmission(null);
-                  } else {
-                    setBaselineLoading(true);
                   }
                   setBaselineExpanded(!baselineExpanded);
                 }}
@@ -1008,6 +704,8 @@ export default function SubmissionsView() {
               currentUser={currentUser}
               onSelectFinal={() => {}}
               onSubmissionUpdate={handleSubmissionUpdate}
+              onKill={handleKillSubmission}
+              killing={killing}
             />
           )}
 
@@ -1025,7 +723,6 @@ export default function SubmissionsView() {
                 value={competitorSearch}
                 onChange={(e) => {
                   setCompetitorSearch(e.target.value);
-                  handleSearchCompetitors(e.target.value, 1);
                 }}
                 placeholder={t(
                   'submissions.search_competitor_placeholder',
@@ -1076,7 +773,7 @@ export default function SubmissionsView() {
                   pages={competitorPages}
                   total={competitorTotal}
                   perPage={10}
-                  onPageChange={(p) => handleSearchCompetitors(competitorSearch, p)}
+                  onPageChange={(p) => setCompetitorPage(p)}
                   itemName={t('submissions.pagination_item_name')}
                 />
               </div>
@@ -1115,7 +812,6 @@ export default function SubmissionsView() {
             <button
               onClick={() => {
                 setCompetitorSearch('');
-                handleSearchCompetitors('', 1);
                 setSelectedCompetitor(null);
                 setAdminActiveTask(null);
                 setBestSubs({});
@@ -1149,7 +845,6 @@ export default function SubmissionsView() {
                   setAdminActiveTask(taskId);
                   setSelectedSubmission(null);
                   setAdminSubPage(1);
-                  fetchAdminTaskSubmissions(taskId, 1);
                 }}
               />
             ))}
@@ -1264,7 +959,6 @@ export default function SubmissionsView() {
                   perPage={10}
                   onPageChange={(p) => {
                     setAdminSubPage(p);
-                    fetchAdminTaskSubmissions(adminActiveTask, p);
                   }}
                   itemName={t('submissions.pagination_item_name')}
                 />
@@ -1282,6 +976,8 @@ export default function SubmissionsView() {
               isSelectionDisabled={isSelectionDisabled}
               isSubmissionAfterDeadline={isSubmissionAfterDeadline}
               onSubmissionUpdate={handleSubmissionUpdate}
+              onKill={handleKillSubmission}
+              killing={killing}
             />
           )}
         </>

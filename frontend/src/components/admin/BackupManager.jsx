@@ -1,53 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import api from '../../services/ApiService';
 import { useApp } from '../../context/AppContext';
 import useSSE from '../../hooks/useSSE';
+import { useBackupsQuery } from '../../hooks/useBackupsQuery';
 import { formatDateTime } from '../../utils/formatDate';
 
 export default function BackupManager() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
-  const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading, refetch } = useBackupsQuery();
   const [forcing, setForcing] = useState(false);
 
-  const listUrl = '/admin/backups';
+  const backups = data?.backups || [];
   const downloadBase = '/api/admin/backups';
 
-  const loadBackups = useCallback(async () => {
-    try {
-      const { ok, data } = await api.get(listUrl);
-      if (ok) setBackups(data.backups || []);
-    } catch {
-      /* noop */
-    }
-    setLoading(false);
-  }, [listUrl]);
-
-  useEffect(() => {
-    loadBackups();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useSSE('/api/admin/backups/live', {
-    onMessage: (data) => {
-      if (data.backups) {
-        const filtered = data.backups.filter(
-          (b) =>
-            !b.filename.includes('submission_ended') &&
-            !b.filename.includes('grace_ended') &&
-            !b.filename.includes('finalized'),
-        );
-        setBackups(filtered);
-        setLoading(false);
-      }
-      if (data.event?.status === 'completed') {
+    onMessage: (msg) => {
+      if (msg.event?.status === 'completed') {
         setForcing(false);
-        loadBackups();
       }
+      refetch();
     },
   });
 
@@ -63,7 +38,7 @@ export default function BackupManager() {
   const handleDelete = async (filename) => {
     try {
       await api.delete(`/admin/backups/${filename}`);
-      loadBackups();
+      refetch();
     } catch {
       /* noop */
     }
@@ -87,7 +62,7 @@ export default function BackupManager() {
         </Button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center py-8 text-slate-500 text-sm">{t('common.loading')}</div>
       ) : backups.length === 0 ? (
         <EmptyState message={t('admin.backups.no_backups')} />

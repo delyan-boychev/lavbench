@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
@@ -222,10 +223,12 @@ const mockSystemStats = {
 
 vi.mock('../../services/ApiService', () => ({
   default: {
-    fetch: vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ items: [], total: 0, pages: 1 }) }),
-    ),
+    get: vi.fn(),
+    fetch: vi.fn(),
     postForm: vi.fn(() => Promise.resolve({ ok: true })),
+    post: vi.fn(() => Promise.resolve({ ok: true })),
+    put: vi.fn(() => Promise.resolve({ ok: true })),
+    delete: vi.fn(() => Promise.resolve({ ok: true })),
   },
 }));
 
@@ -269,6 +272,19 @@ describe('AdminPanel Page - Workers & Resources', () => {
       currentUser: { id: 1, username: 'admin', role: 'admin' },
     });
 
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
+    api.fetch.mockImplementation((url) => {
+      if (url.includes('metrics')) {
+        return Promise.resolve({ ok: true, json: async () => ({ metrics: {} }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0, pages: 1 }) });
+    });
+
     vi.stubGlobal(
       'EventSource',
       class {
@@ -285,32 +301,10 @@ describe('AdminPanel Page - Workers & Resources', () => {
         }
       },
     );
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((url) => {
-        if (url.includes('metrics')) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ metrics: {} }),
-          });
-        }
-        if (url.includes('challenges') || url.includes('users')) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ items: [], total: 0, pages: 1 }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: async () => mockSystemStats,
-        });
-      }),
-    );
   });
 
   it('renders sidebar options including Workers & Resources for admin', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
     expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
 
@@ -320,7 +314,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
   });
 
   it('switches to Workers & Resources tab and fetches detailed stats', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
@@ -372,7 +366,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
       },
     );
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
@@ -397,10 +391,19 @@ describe('AdminPanel Page - Workers & Resources', () => {
 describe('AdminPanel component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
+    api.fetch.mockImplementation(() => {
+      return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0, pages: 1 }) });
+    });
   });
 
   it('renders the sidebar with admin controls', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -411,7 +414,7 @@ describe('AdminPanel component', () => {
   });
 
   it('shows backup and user management buttons for admin', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -420,7 +423,7 @@ describe('AdminPanel component', () => {
   });
 
   it('shows workers and resources button for admin', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -477,6 +480,18 @@ describe('AdminPanel – challenge management', () => {
     useAuth.mockReturnValue({
       currentUser: { id: 2, username: 'admin', role: 'admin' },
     });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [setupChallenge()], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
     api.fetch.mockImplementation((url) => {
       if (url.includes('/api/challenges?')) {
         return Promise.resolve({
@@ -501,17 +516,20 @@ describe('AdminPanel – challenge management', () => {
     const challenges = variants.map((v, i) =>
       setupChallenge({ ...v, id: i + 1, title: `Challenge ${v.key}` }),
     );
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: challenges, pages: 1, total: challenges.length }),
+          data: { items: challenges, pages: 1, total: challenges.length },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -522,7 +540,7 @@ describe('AdminPanel – challenge management', () => {
   });
 
   it('calls confirm and api.fetch on delete challenge', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -541,7 +559,7 @@ describe('AdminPanel – challenge management', () => {
   });
 
   it('calls handleArchiveToggle on archive button click', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -560,17 +578,20 @@ describe('AdminPanel – challenge management', () => {
 
   it('renders download buttons for finalized challenges', async () => {
     const finalizedChallenge = setupChallenge({ scores_finalized: true, reveal_results: true });
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [finalizedChallenge], pages: 1, total: 1 }),
+          data: { items: [finalizedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -598,17 +619,20 @@ describe('AdminPanel – challenge management', () => {
         },
       ],
     });
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [challenge], pages: 1, total: 1 }),
+          data: { items: [challenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -654,6 +678,18 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       confirm: mockConfirm,
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'admin', role: 'admin' } });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [mockChallenge], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
     api.fetch.mockImplementation((url) => {
       if (url.includes('/api/challenges?')) {
         return Promise.resolve({
@@ -672,7 +708,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
   });
 
   it('switches to Challenge Configuration tab and renders ChallengeConfig', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -721,7 +757,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -735,7 +771,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
   });
 
   it('switches to Database Backup tab and renders BackupManager', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -780,7 +816,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -794,7 +830,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
   });
 
   it('switches to Workers & Resources tab and renders WorkersStats', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -824,7 +860,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -868,6 +904,27 @@ describe('AdminPanel – finalization', () => {
       confirm: mockConfirm,
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'jury', role: 'jury' } });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [pastChallenge], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
+    api.fetch.mockImplementation((url) => {
+      if (url.includes('/api/challenges?')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ items: [pastChallenge], pages: 1, total: 1 }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
   });
 
   it('opens challenge finalize form and submits', async () => {
@@ -885,14 +942,17 @@ describe('AdminPanel – finalization', () => {
         },
       ],
     };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [finalizedChallenge], pages: 1, total: 1 }),
+          data: { items: [finalizedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
     useApp.mockReturnValue({
       challenges: [finalizedChallenge],
@@ -903,7 +963,7 @@ describe('AdminPanel – finalization', () => {
       confirm: mockConfirm,
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -974,9 +1034,18 @@ describe('AdminPanel – edit modals', () => {
       confirm: mockConfirm,
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'admin', role: 'admin' } });
-  });
-
-  it('opens edit competitor modal and submits update', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [pastChallenge], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
     api.fetch.mockImplementation((url) => {
       if (url.includes('/api/challenges?')) {
         return Promise.resolve({
@@ -984,16 +1053,31 @@ describe('AdminPanel – edit modals', () => {
           json: () => Promise.resolve({ items: [pastChallenge], pages: 1, total: 1 }),
         });
       }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+  });
+
+  it('opens edit competitor modal and submits update', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [pastChallenge], pages: 1, total: 1 },
+        });
+      }
       if (url.includes('role=competitor')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [mockCompetitor], total: 1, pages: 1 }),
+          data: { items: [mockCompetitor], total: 1, pages: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1061,23 +1145,26 @@ describe('AdminPanel – edit modals', () => {
         middle_name: '',
       },
     ];
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ items: [pastChallenge], pages: 1, total: 1 }),
-        });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
       }
       if (url.includes('/admin/users')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: mockUsers, total: 2, pages: 1 }),
+          data: { items: mockUsers, total: 2, pages: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [pastChallenge], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1164,6 +1251,18 @@ describe('AdminPanel – handler coverage', () => {
       confirm: mockConfirm,
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'admin', role: 'admin' } });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({
+          ok: true,
+          data: { items: [baseChallenge], pages: 1, total: 1 },
+        });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
     api.fetch.mockImplementation((url) => {
       if (url.includes('/api/challenges?')) {
         return Promise.resolve({
@@ -1176,7 +1275,7 @@ describe('AdminPanel – handler coverage', () => {
   });
 
   it('calls handleCreateChallenge on ChallengeConfig form submit', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1199,7 +1298,7 @@ describe('AdminPanel – handler coverage', () => {
   });
 
   it('calls handleUpdateChallenge on challenge edit form submit', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1228,18 +1327,21 @@ describe('AdminPanel – handler coverage', () => {
       scores_finalized: true,
       reveal_results: false,
     };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [finalizedChallenge], pages: 1, total: 1 }),
+          data: { items: [finalizedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'jury', role: 'jury' } });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1257,7 +1359,7 @@ describe('AdminPanel – handler coverage', () => {
   });
 
   it('calls handleExportChallenge on Export button click', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1294,7 +1396,7 @@ describe('AdminPanel – handler coverage', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1327,7 +1429,7 @@ describe('AdminPanel – handler coverage', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1372,7 +1474,7 @@ describe('AdminPanel – handler coverage', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1412,7 +1514,7 @@ describe('AdminPanel – handler coverage', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1435,7 +1537,7 @@ describe('AdminPanel – handler coverage', () => {
   it('handleDeleteChallenge skips API when user cancels', async () => {
     mockConfirm.mockResolvedValue(false);
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1458,21 +1560,21 @@ describe('AdminPanel – handler coverage', () => {
       scores_finalized: true,
       reveal_results: false,
     };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('reveal-results')) {
-        return Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'fail' }) });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
       }
-      if (url.includes('/api/challenges?')) {
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [finalizedChallenge], pages: 1, total: 1 }),
+          data: { items: [finalizedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'jury', role: 'jury' } });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1500,7 +1602,7 @@ describe('AdminPanel – handler coverage', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1522,18 +1624,21 @@ describe('AdminPanel – handler coverage', () => {
       scores_finalized: true,
       reveal_results: true,
     };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [revealedChallenge], pages: 1, total: 1 }),
+          data: { items: [revealedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'jury', role: 'jury' } });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1543,17 +1648,20 @@ describe('AdminPanel – handler coverage', () => {
 
   it('shows Restore button for archived challenge', async () => {
     const archivedChallenge = { ...baseChallenge, is_archived: true };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [archivedChallenge], pages: 1, total: 1 }),
+          data: { items: [archivedChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -1568,17 +1676,20 @@ describe('AdminPanel – handler coverage', () => {
       end_time: '2024-01-01T00:00:00Z',
       scores_finalized: false,
     };
-    api.fetch.mockImplementation((url) => {
-      if (url.includes('/api/challenges?')) {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: { metrics: {} } });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [pastChallenge], pages: 1, total: 1 }),
+          data: { items: [pastChallenge], pages: 1, total: 1 },
         });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
     });
 
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });

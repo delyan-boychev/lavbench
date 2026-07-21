@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import AdminPanel from '../AdminPanel';
@@ -42,39 +43,49 @@ describe('AdminPanel - Column Config & Metrics', () => {
     tasks: [],
   };
 
+  const metricsData = {
+    accuracy: { balanced: ['false', 'true'] },
+    f1: { average: ['macro', 'micro', 'weighted', 'binary'] },
+    precision: { average: ['macro', 'micro', 'weighted', 'binary'] },
+    recall: { average: ['macro', 'micro', 'weighted', 'binary'] },
+    cohen_kappa: {},
+    matthews_corrcoef: {},
+    rmse: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
+    mae: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
+    r_squared: {},
+    mape: {},
+    chrf: { beta: ['1', '2', '3'] },
+    rouge: { rouge_type: ['rouge1', 'rouge2', 'rougeL'] },
+    bleu: {},
+    meteor: {},
+    exact_match: {},
+    pck: { threshold: ['0.01', '0.02', '0.05', '0.1', '0.15', '0.2'] },
+    ndcg_k: { k: ['5', '10', '20', '50', '100'] },
+    mrr: {},
+    recall_k: { k: ['5', '10', '20', '50', '100'] },
+  };
+
   const setupMockApi = () => {
-    const metricsData = {
-      accuracy: { balanced: ['false', 'true'] },
-      f1: { average: ['macro', 'micro', 'weighted', 'binary'] },
-      precision: { average: ['macro', 'micro', 'weighted', 'binary'] },
-      recall: { average: ['macro', 'micro', 'weighted', 'binary'] },
-      cohen_kappa: {},
-      matthews_corrcoef: {},
-      rmse: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
-      mae: { shape: 'string', multioutput: ['uniform_average', 'raw_values'] },
-      r_squared: {},
-      mape: {},
-      chrf: { beta: ['1', '2', '3'] },
-      rouge: { rouge_type: ['rouge1', 'rouge2', 'rougeL'] },
-      bleu: {},
-      meteor: {},
-      exact_match: {},
-      pck: { threshold: ['0.01', '0.02', '0.05', '0.1', '0.15', '0.2'] },
-      ndcg_k: { k: ['5', '10', '20', '50', '100'] },
-      mrr: {},
-      recall_k: { k: ['5', '10', '20', '50', '100'] },
-    };
+    api.get.mockImplementation((url) => {
+      if (url.includes('/admin/metrics')) {
+        return Promise.resolve({ ok: true, data: metricsData });
+      }
+      if (url.includes('/challenges')) {
+        return Promise.resolve({ ok: true, data: { items: [mockChallenge], pages: 1, total: 1 } });
+      }
+      return Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } });
+    });
     api.fetch.mockImplementation((url) => {
       if (url.includes('/admin/metrics') || url.includes('/metrics')) {
+        return Promise.resolve({ ok: true, json: async () => metricsData });
+      }
+      if (url.includes('/challenges')) {
         return Promise.resolve({
           ok: true,
-          json: async () => metricsData,
+          json: async () => ({ items: [mockChallenge], pages: 1, total: 1 }),
         });
       }
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      });
+      return Promise.resolve({ ok: true, json: async () => ({}) });
     });
   };
 
@@ -97,7 +108,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('renders column definitions section and allows adding columns', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
@@ -127,7 +138,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('shows parquet format preview when columns are defined', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
@@ -150,7 +161,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('allows adding metrics via dropdown and shows column mapping selector', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
@@ -174,7 +185,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('renders metric parameters dynamically based on metric schema', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
@@ -230,7 +241,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('enforces maximum of 10 metrics', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));
@@ -283,7 +294,7 @@ describe('AdminPanel - Column Config & Metrics', () => {
 
   it('removes a metric when remove button is clicked', async () => {
     setupMockApi();
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
 
     fireEvent.click(screen.getByText('Add Task'));
     fireEvent.click(screen.getByText('Evaluation'));

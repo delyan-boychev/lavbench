@@ -18,6 +18,7 @@ from error_utils import err
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     ErrorResponse,
+    MessageResponse,
     ParseNotebookResponse,
     SelectFinalResponse,
     SubmissionResponse,
@@ -30,7 +31,10 @@ from services.submission_service import check_execution_rules
 from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
+    clear_submission_logs,
     publish_leaderboard_update,
+    publish_queue_update,
+    publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
 )
@@ -449,6 +453,58 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
             **submission.to_dict(view_role=user_role, current_user_id=user_id)
         ),
     )
+
+
+@submissions_bp.route("/submissions/<uuid:submission_id>/kill", methods=["POST"])
+@login_required
+@api.validate(
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+    resp=Response(
+        HTTP_200=MessageResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+)
+def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
+    """Kill a queued or running submission. Admins/jury can kill any;
+    competitors can only kill their own."""
+    user_id = request.user["user_id"]
+    user_role = request.user["role"]
+
+    submission = db.session.get(Submission, submission_id)
+    if not submission:
+        return err("ERR_NOT_FOUND", 404)
+
+    if user_role == "competitor" and submission.user_id != user_id:
+        return err("ERR_SUBMISSION_KILL_DENIED", 403)
+
+    if submission.status not in ("queued", "running"):
+        return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
+
+    # Revoke Celery task if present
+    if submission.celery_task_id:
+        with contextlib.suppress(Exception):
+            from tasks import celery
+
+            celery.control.revoke(submission.celery_task_id, terminate=True)
+
+    submission.status = "failed"
+    submission.detailed_status = "killed"
+
+    log_line = f"[{utcnow().isoformat()}] Submission killed by {user_role} ({user_id})"
+    existing_logs = submission.logs or ""
+    submission.logs = f"{existing_logs}\n{log_line}".strip()
+
+    db.session.commit()
+
+    publish_submissions_update(submission.task_id, submission.user_id)
+    publish_queue_update()
+    publish_submission_status(submission.id, "failed")
+    clear_submission_logs(submission.id)
+
+    return MessageResponse(message="Submission killed successfully.")
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])

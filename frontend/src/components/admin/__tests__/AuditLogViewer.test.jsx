@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import AuditLogViewer from '../AuditLogViewer';
 import api from '../../../services/ApiService';
 
@@ -55,7 +56,7 @@ describe('AuditLogViewer Component', () => {
       return Promise.resolve({ ok: false });
     });
 
-    render(<AuditLogViewer />);
+    renderWithProviders(<AuditLogViewer />);
 
     await waitFor(() => {
       expect(screen.getByText('Audit Logs')).toBeInTheDocument();

@@ -175,3 +175,13 @@ def publish_submission_status(submission_id: Any, status: str) -> None:
             r.publish(f"submission_{submission_id}_logs", json.dumps({"status": status}))
     except Exception:
         logger.exception("Redis publish submission status error for submission %s", submission_id)
+
+
+def publish_queue_update() -> None:
+    """Notify queue listeners that the submission queue may have changed."""
+    try:
+        r = _redis()
+        if r:
+            r.publish("queue_updates", json.dumps({"event": "update"}))
+    except Exception:
+        logger.exception("Redis publish queue update error")
