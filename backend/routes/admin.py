@@ -273,10 +273,6 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
         if challenge_id_filter is not None:
             query = query.filter_by(challenge_id=challenge_id_filter)
 
-    # Fetch all challenges to cache started status
-    challenges = Challenge.query.all()
-    started_challenge_ids = {c.id for c in challenges if c.is_started}
-
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return paginated_response(
@@ -300,7 +296,13 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     if not candidates:
         candidates = query.limit(Config.USER_SEARCH_LIMIT).all()
 
+    # Fetch challenges lazily only when needed for search results
     filtered_items = []
+    if candidates:
+        challenges = Challenge.query.all()
+        started_challenge_ids = {c.id for c in challenges if c.is_started}
+    else:
+        started_challenge_ids = set()
     for u in candidates:
         comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
         alias_match = term in (u.alias_id or "").lower()
@@ -771,7 +773,7 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -786,6 +788,9 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1374,7 +1379,7 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1391,6 +1396,9 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1752,7 +1760,7 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1767,6 +1775,9 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
             start_time = time.time()
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break

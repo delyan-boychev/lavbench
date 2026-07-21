@@ -28,7 +28,6 @@ export default function TaskForm({
   isCreatingTask,
   editingTask,
   setEditingTask,
-  setIsCreatingTask,
   onClose,
   handleSaveCreateTask,
   handleSaveUpdateTask,

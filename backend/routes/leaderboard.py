@@ -487,7 +487,7 @@ def stream_challenge_leaderboard(
             return err("ERR_ACCESS_DENIED", 403)
 
     def event_generator():
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -523,6 +523,9 @@ def stream_challenge_leaderboard(
                     while True:
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:
                             yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                            break
+                        if member and r.zscore("sse:connections", member) is None:
+                            yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                             break
                         message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
                         if message:

@@ -458,12 +458,14 @@ def import_challenge_from_dict(
                     base_path = os.path.join(task_dir, secure_filename(base_base))
                     if os.path.isfile(base_path):
                         task.baseline_notebook_path = base_path
+                        task.baseline_notebook_size = os.path.getsize(base_path)
 
                 if t_data.get("solution_notebook_path"):
                     sol_base = os.path.basename(t_data["solution_notebook_path"])
                     sol_path = os.path.join(task_dir, secure_filename(sol_base))
                     if os.path.isfile(sol_path):
                         task.solution_notebook_path = sol_path
+                        task.solution_notebook_size = os.path.getsize(sol_path)
 
     db.session.commit()
     return challenge

@@ -408,6 +408,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         dest_baseline = os.path.join(task_upload_dir, baseline_filename)
         shutil.copy(src_baseline, dest_baseline)
         test_task.baseline_notebook_path = dest_baseline
+        test_task.baseline_notebook_size = os.path.getsize(dest_baseline)
 
         # Copy labels.parquet
         labels_filename = "labels.parquet"

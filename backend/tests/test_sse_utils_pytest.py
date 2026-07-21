@@ -213,16 +213,18 @@ class TestSseConnectionLimit:
     @patch("sse_utils.get_redis_client")
     def test_allows_under_limit(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit(user_id=1) as allowed:
+        with sse_connection_limit(user_id=1) as (allowed, member):
             assert allowed is True
+            assert member is not None
             assert fredis.zcard("sse:connections") == 1
             assert fredis.zcard("sse:user:1") == 1
 
     @patch("sse_utils.get_redis_client")
     def test_allows_without_user_id(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit() as allowed:
+        with sse_connection_limit() as (allowed, member):
             assert allowed is True
+            assert member is not None
             assert fredis.zcard("sse:connections") == 1
             assert fredis.zcard("sse:user:1") == 0  # no user key created
 
@@ -276,16 +278,18 @@ class TestSseConnectionLimit:
     @patch("sse_utils.get_redis_client")
     def test_redis_none_falls_open(self, mock_get_redis):
         mock_get_redis.return_value = None
-        with sse_connection_limit(user_id=1) as allowed:
+        with sse_connection_limit(user_id=1) as (allowed, member):
             assert allowed is True
+            assert member == ""
 
     @patch("sse_utils.get_redis_client")
     def test_redis_exception_falls_open(self, mock_get_redis):
         bad_redis = MagicMock()
         bad_redis.zadd.side_effect = Exception("Redis down")
         mock_get_redis.return_value = bad_redis
-        with sse_connection_limit(user_id=1) as allowed:
+        with sse_connection_limit(user_id=1) as (allowed, member):
             assert allowed is True
+            assert member == ""
 
     @patch("sse_utils.get_redis_client")
     def test_cleanup_stale_connections(self, mock_get_redis, fredis):

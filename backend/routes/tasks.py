@@ -485,6 +485,7 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -503,6 +504,7 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
 
     total_upload_size = 0
 
@@ -792,6 +794,7 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -805,6 +808,7 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
 
     current_files = safe_json_loads(task.files, [])
 
@@ -834,6 +838,7 @@ def update_task(
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
+        task.baseline_notebook_size = None
 
     new_files_keys = [k for k in request.files if k.startswith("file")]
     if len(current_files) + len(new_files_keys) > 5:
@@ -1419,7 +1424,7 @@ def stream_task_submissions(
             )
 
     def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
+        with sse_connection_limit(user_id=current_user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1437,6 +1442,9 @@ def stream_task_submissions(
 
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1484,7 +1492,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1501,6 +1509,9 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break

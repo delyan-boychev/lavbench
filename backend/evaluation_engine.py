@@ -212,7 +212,7 @@ def compute_meteor(ref: str, hyp: str) -> float:
 
         # nltk meteor_score expects token lists
         return float(meteor_score([ref.split()], hyp.split()))
-    except ImportError:
+    except Exception:
         # Fallback to Jaccard similarity
         r = set(ref.split())
         h = set(hyp.split())

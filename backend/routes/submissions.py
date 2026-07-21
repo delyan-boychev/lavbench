@@ -547,7 +547,7 @@ def stream_submission_logs(
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -600,6 +600,9 @@ def stream_submission_logs(
                 last_db_check = time.time()
                 try:
                     while True:
+                        if member and r.zscore("sse:connections", member) is None:
+                            yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                            break
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:
                             yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                             break

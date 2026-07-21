@@ -117,14 +117,8 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
     user = User.query.filter(User.username == username).first()
 
     if not user or not check_password_hash(user.password_hash, password):
-        # Check legacy format (SHA-256 wrapped). Migrate on successful match.
-        import hashlib
-
-        legacy_hash = hashlib.sha256(password.encode()).hexdigest()
-        if not user or not check_password_hash(user.password_hash, legacy_hash):
-            _record_login_failure(username, ip)
-            return err("ERR_INVALID_CREDENTIALS", 401)
-        db.session.commit()
+        _record_login_failure(username, ip)
+        return err("ERR_INVALID_CREDENTIALS", 401)
 
     _clear_login_failures(username, ip)
 
