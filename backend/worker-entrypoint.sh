@@ -6,7 +6,8 @@ CPU_WORKER_CONCURRENCY="${CPU_WORKER_CONCURRENCY:-1}"
 
 if [ "$GPU_WORKER_CONCURRENCY" -gt 0 ]; then
     echo "  → GPU worker: concurrency=$GPU_WORKER_CONCURRENCY (queue: gpu_queue)"
-    celery -A tasks.celery worker -Q gpu_queue -c "$GPU_WORKER_CONCURRENCY" --loglevel=info &
+    celery -A tasks.celery worker -Q gpu_queue -c "$GPU_WORKER_CONCURRENCY" \
+        --loglevel=info --hostname="gpu@%h" &
     PID_GPU=$!
 else
     echo "  → No GPU worker"
@@ -14,7 +15,8 @@ else
 fi
 
 echo "  → CPU worker: concurrency=$CPU_WORKER_CONCURRENCY (queues: cpu_queue,celery)"
-celery -A tasks.celery worker -Q cpu_queue,celery -c "$CPU_WORKER_CONCURRENCY" --loglevel=info &
+celery -A tasks.celery worker -Q cpu_queue,celery -c "$CPU_WORKER_CONCURRENCY" \
+    --loglevel=info --hostname="cpu@%h" &
 PID_CPU=$!
 
 cleanup() {
