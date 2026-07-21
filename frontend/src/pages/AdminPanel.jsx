@@ -15,7 +15,7 @@ import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';
 import Pagination from '../components/ui/Pagination';
 import ToggleField from '../components/ui/ToggleField';
-import { Plus } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 
 import WorkersStats from '../components/admin/WorkersStats';
 import BackupManager from '../components/admin/BackupManager';
@@ -2097,7 +2097,14 @@ export default function AdminPanel() {
                                     className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                                   >
                                     <div>
-                                      <span className="font-bold text-slate-200">{task.title}</span>
+                                      <span className="font-bold text-slate-200">
+                                        {task.build_error && (
+                                          <span title={task.build_error}>
+                                            <AlertTriangle className="w-4 h-4 text-amber-400 inline mr-1" />
+                                          </span>
+                                        )}
+                                        {task.title}
+                                      </span>
                                       <span className="text-[10px] text-slate-500 ml-2">
                                         {t('admin.public_eval_split', {
                                           percentage: task.public_eval_percentage || 30,

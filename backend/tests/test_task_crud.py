@@ -66,7 +66,7 @@ class TestCreateTask:
         assert body["title"] == "Basic Task"
         assert body["description"] == "A basic test task"
         assert body["challenge_id"] == sample_challenge.id
-        assert "baseline_baseline.ipynb" in [f["filename"] for f in body["files"]]
+        assert "baseline.ipynb" in [f["filename"] for f in body["files"]]
         assert body["stage_id"] is None
 
     @patch("routes.tasks._maybe_queue_baseline")
@@ -123,7 +123,7 @@ class TestCreateTask:
         assert body["base_docker_image"] == "python:3.11-slim"
         assert body["public_eval_percentage"] == 50
         assert body["solution_notebook_path"] is not None
-        assert "solution_solution.ipynb" in body["solution_notebook_path"]
+        assert "solution.ipynb" in body["solution_notebook_path"]
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
@@ -1053,3 +1053,60 @@ class TestDeleteTaskCRUD:
         assert not os.path.exists(task_dir)
 
         shutil.rmtree(temp_upload_dir, ignore_errors=True)
+
+
+class TestReportBuildError:
+    """Test the POST /worker/tasks/<id>/report-build-error endpoint."""
+
+    def test_report_error(self, client, db_session, sample_challenge, tokens, auth_headers):
+        from models.task import Task
+
+        task = Task(challenge_id=sample_challenge.id, title="Test Build Task")
+        db_session.add(task)
+        db_session.commit()
+        task_id = task.id
+
+        # No token → 401
+        resp = client.post(
+            f"/api/worker/tasks/{task_id}/report-build-error",
+            json={"error": "Docker pull failed"},
+        )
+        assert resp.status_code == 401
+
+        # Invalid token → 401
+        resp = client.post(
+            f"/api/worker/tasks/{task_id}/report-build-error",
+            json={"error": "Docker pull failed"},
+            headers={"X-Worker-Token": "bad-token"},
+        )
+        assert resp.status_code == 401
+
+        # Valid token → set build_error
+        with patch("routes.tasks.check_worker_auth", return_value=True):
+            resp = client.post(
+                f"/api/worker/tasks/{task_id}/report-build-error",
+                json={"error": "Docker pull failed: 404 Not Found"},
+                headers={"X-Worker-Token": "valid-token"},
+            )
+            assert resp.status_code == 200
+            db_session.refresh(task)
+            assert task.build_error == "Docker pull failed: 404 Not Found"
+
+            # Clear error with empty string
+            resp = client.post(
+                f"/api/worker/tasks/{task_id}/report-build-error",
+                json={"error": ""},
+                headers={"X-Worker-Token": "valid-token"},
+            )
+            assert resp.status_code == 200
+            db_session.refresh(task)
+            assert task.build_error is None
+
+    def test_report_error_not_found(self, client, tokens):
+        with patch("routes.tasks.check_worker_auth", return_value=True):
+            resp = client.post(
+                "/api/worker/tasks/00000000-0000-0000-0000-000000000000/report-build-error",
+                json={"error": "fail"},
+                headers={"X-Worker-Token": "valid-token"},
+            )
+            assert resp.status_code == 404

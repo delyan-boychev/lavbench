@@ -78,7 +78,7 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) == 0
 
     def test_times_out_stuck_queued_submission(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(minutes=15))
+        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
         sub = Submission.query.first()
@@ -165,7 +165,7 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) >= 1
 
     def test_multiple_stuck_submissions(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(minutes=15))
+        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 2

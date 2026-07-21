@@ -561,6 +561,8 @@ def run_eval_submission(
         workspace_root = Config.LAVBENCH_WORKSPACE_DIR
         temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
         os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
+        data_dir = os.path.join(temp_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
@@ -585,7 +587,7 @@ def run_eval_submission(
                             if is_unified_parquet and f["filename"] == "labels.parquet":
                                 continue  # Do NOT copy labels.parquet to sandbox
                             src_file = os.path.join(task_files_dir, f["saved_name"])
-                            dest_file = os.path.join(temp_dir, f["filename"])
+                            dest_file = os.path.join(data_dir, f["filename"])
                             if os.path.exists(src_file):
                                 shutil.copy(src_file, dest_file)
                 except Exception as copy_err:
@@ -690,6 +692,14 @@ def run_eval_submission(
                 )
                 if metadata and metadata.get("main_server_url")
                 else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
+            ),
+            "task_files": metadata.get("task_files", []) if metadata else [],
+            "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
+            "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
+            "_worker_token": (
+                _sign_worker_token(metadata.get("submission_id", "unknown"))
+                if metadata and metadata.get("main_server_url")
+                else ""
             ),
         }
 

@@ -68,7 +68,7 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or os.path.join(
         os.path.abspath(os.path.dirname(__file__)), "uploads"
     )
-    MAX_CONTENT_LENGTH = 150 * 1024 * 1024  # 150 MB limit
+    MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB limit
 
     # Hugging Face Settings
     HF_CACHE_DIR = os.environ.get(

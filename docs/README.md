@@ -1,97 +1,108 @@
-# LavBench Developer Documentation
+# LavBench Developer & Documentation Guide
 
-## Quick Access
+Welcome to the LavBench platform technical documentation directory. This folder contains developer guides, Sphinx documentation sources, architectural specifications, and custom evaluator script templates.
 
-| Resource                         | URL                                  | Who                     |
-| -------------------------------- | ------------------------------------ | ----------------------- |
-| **Swagger UI** (REST + SSE docs) | `http://localhost:5001/apidoc/swagger/` | Backend & Frontend devs |
-| **Health check**                 | `http://localhost:5001/api/health`   | DevOps, monitoring      |
-| **Architecture overview**        | [`ARCHITECTURE.md`](ARCHITECTURE.md) | New contributors        |
+---
 
-## For Frontend Developers
+## Quick Access & Sitemap
 
-### Generate TypeScript types from the API spec
+| Resource | URL / Path | Target Audience | Description |
+| :--- | :--- | :--- | :--- |
+| **Swagger UI** | `http://localhost:5001/apidoc/swagger/` | All Developers | Interactive REST API & SSE endpoint documentation. |
+| **Architecture Specification** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Contributors & DevOps | System architecture, worker budgeting, SSE pipelines, and security layers. |
+| **Custom Evaluator Guide** | [`custom-evaluators.md`](custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
+| **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Admins & Organizers | Challenge lifecycle, Docker build troubleshooting, worker setup, and backup rules. |
+| **Jury Portal Guide** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Competition Jury | Submission monitoring, build diagnostics, double-blind privacy, and manual scoring. |
+| **Competitor Guide** | [`../guides/en/competitor_guide.md`](../guides/en/competitor_guide.md) | Participants | Notebook submission, AST pre-validation, status pipeline, and troubleshooting. |
+
+---
+
+## 1. Frontend Developer Guidelines
+
+### API Type Pipeline
+
+The frontend uses an automated type pipeline to derive TypeScript definitions directly from the backend Pydantic schemas:
 
 ```bash
 cd frontend
-# Start the backend first (port 5001), then:
+
+# 1. Ensure backend is running (port 5001), then fetch OpenAPI spec & generate types:
 npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
-npm run check-types              # tsc --noEmit — verify 0 errors
+
+# 2. Validate all JSDoc types and React component props:
+npm run check-types              # tsc --noEmit (0 errors required)
 ```
 
-This pipeline generates `src/types/api.d.ts` (full type definitions for all ~72 endpoints), with JSDoc `@type` annotations verified by TypeScript's `checkJs` mode.
+### Key Frontend Conventions:
+- **Authentication**: `httpOnly` cookie (`auth_token`). `ApiService` automatically handles cookie persistence.
+- **SSE Streaming**: 7 live endpoints use Server-Sent Events. Connect via `new EventSource(url)` with automatic cookie authorization.
+- **Error Codes**: All API error responses return `{"error": "<message>", "code": "ERR_CODE"}`. Map `data.code` to user-facing translation strings via `t('api.' + data.code)`.
+- **i18n Translation Parity**: Run `python frontend/scripts/check_translations.py` to ensure symmetry between `en` and `bg` translation files.
 
-### Key things to know
+---
 
-- **Auth**: httpOnly cookie (`auth_token`). The `ApiService` wrapper sends cookies automatically. No manual token management needed.
-- **SSE endpoints**: 7 streaming endpoints use Server-Sent Events. Connect with `new EventSource(url)`. Cookie auth is automatic.
-- **Rate limiting**: Per-user, per-endpoint. Backend returns 429 with `ERR_RATE_LIMITED` code. Frontend should show a toast and throttle retries.
-- **Error format**: All errors return `{"error": "message", "code": "ERR_CODE"}`. Map `code` values to user-facing translations where needed.
-- **Type system**: JSDoc `@type` annotations reference `import('./types/api').paths['/api/...']['method']['responses']['200']['content']['application/json']`. Never use `@ts-ignore` or `@type {any}` — use specific assertions instead.
-- **Translation check**: `python3 scripts/check_translations.py` validates i18n keys across en/bg locales, finds missing/orphaned keys.
+## 2. Backend Developer Guidelines
 
-### Example: calling the login endpoint
+### Endpoint Implementation Pattern (spectree + Pydantic v2)
 
-```javascript
-import api from "./services/ApiService";
-
-/** @type {{ ok: boolean, data: import('./types/api').paths['/api/auth/login']['post']['responses']['200']['content']['application/json'] }} */
-const { ok, data } = await api.post("/auth/login", {
-  username: "admin_1c15d4d7",
-  password: hashedPassword,
-});
-if (ok) {
-  // data.user contains the typed User object
-  // cookie is set automatically by the browser
-}
-```
-
-## For Backend Developers
-
-### Adding a new endpoint
-
-1. Create Pydantic v2 schemas in `backend/schemas/` for request validation (e.g., `schemas/admin.py`) and response serialization (e.g., `schemas/responses.py`)
-2. Define the route in the appropriate `routes/*.py` file, decorating with `@api.validate(json=MyRequestSchema, resp=Response(HTTP_200=MyResponseSchema))`
-3. Register the blueprint in `backend/app.py` (if new file)
-4. Run `npm run generate-api-types` in `frontend/` to update TypeScript types
-5. Run `npm run check-types` to verify 0 errors
-
-For PATCH routes, use `json.model_fields_set` to detect which fields were explicitly sent by the client (not `None` defaults). For form-data endpoints, use `@api.validate(form=MyFormSchema, ...)`.
-
-### Route template (spectree + Pydantic)
+Every backend endpoint must use Pydantic v2 schemas and spectree `@api.validate` decorators for request/response validation:
 
 ```python
 from spectree import Response
+from spec import api
+from schemas.challenge import CreateChallengeSchema
+from schemas.responses.challenge import ChallengeResponse
 
-@some_bp.route('/path/<uuid:id>', methods=['POST'])
+@challenges_bp.route("", methods=["POST"])
 @login_required
+@role_required(["admin"])
 @api.validate(
-    json=MyRequestSchema,
-    resp=Response(HTTP_200=MyResponseSchema, HTTP_401=ErrorResponse),
-    tags=["Category"],
+    json=CreateChallengeSchema,
+    resp=Response(HTTP_201=ChallengeResponse),
+    tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
-def some_action(id, json: MyRequestSchema):
-    """Brief description of what this endpoint does."""
-    # json is the validated MyRequestSchema instance
-    ...
-    return MyResponseSchema(...)
+def create_challenge(json: CreateChallengeSchema):
+    """Creates a new competition challenge."""
+    # json is the pre-validated CreateChallengeSchema instance
+    challenge = Challenge(title=json.title, description=json.description)
+    db.session.add(challenge)
+    db.session.commit()
+    return challenge.to_dict(), 201
 ```
 
-### SSE endpoint template
+### Key Backend Conventions:
+- **Error Code Standard**: Use `err("ERR_CODE", status_code)` from `error_utils.py`. Every `ERR_*` code must be registered in `DEFAULT_ERROR_MESSAGES` and translated in both `en` and `bg` locales.
+- **Schema Errors**: Custom Pydantic field validators raise `SchemaError("ERR_CODE", "Message")` from `schemas/exceptions.py`.
+- **Error Linter**: Run `python backend/scripts/check_error_codes.py` before submitting PRs.
+- **Type Annotations**: All backend source code must pass `mypy . --no-incremental` with 0 errors.
 
-````python
-@some_bp.route('/path/<uuid:id>/live', methods=['GET'])
-@login_required
-@api.validate(
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-    skip_validation=True,  # SSE responses bypass validation
-)
-def stream_some_event(id):
-    """Brief description of the live stream."""
-    def event_generator():
-        ...
-        yield f"data: {json.dumps(data)}\n\n"
-    return sse_response(event_generator)
-````
+---
+
+## 3. Custom Evaluators & Templates
+
+When creating custom evaluator scripts for tasks:
+- Refer to [`custom-evaluators.md`](custom-evaluators.md) for the required 4 module variables contract (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, `EVALUATOR_OPTIONS`) and `evaluate()` signature.
+- Check template examples in `docs/evaluator_templates/`:
+  - [`evaluator_custom_template.py`](evaluator_templates/evaluator_custom_template.py) — Comprehensive reference template.
+  - [`evaluator_ht1_audio.py`](evaluator_templates/evaluator_ht1_audio.py) — Audio classification.
+  - [`evaluator_ht2_delivery.py`](evaluator_templates/evaluator_ht2_delivery.py) — Grid delivery navigation.
+  - [`evaluator_ht3_animal.py`](evaluator_templates/evaluator_ht3_animal.py) — Animal deduction logic.
+
+---
+
+## 4. Building Sphinx Documentation
+
+Sphinx compiles project documentation and autodoc API references into HTML:
+
+```bash
+cd docs
+
+# 1. Install Sphinx requirements
+pip install -r requirements.txt
+
+# 2. Build HTML output
+make html
+
+# Output is generated in docs/build/html/ (open index.html in browser)
+```

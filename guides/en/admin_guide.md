@@ -1,91 +1,152 @@
 # Administrator Portal Complete Guide
 
-Welcome to the LavBench Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform.
+Welcome to the LavBench Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform, executing worker nodes, configuring security rules, building task Docker images, and implementing custom evaluator scripts.
 
 ### Initial Setup
 
-After deploying the platform, create the admin account:
+After deploying the platform, initialize the admin account via the setup script:
 
 ```bash
 python backend/setup-admin.py
 ```
 
-This drops and recreates the database, generates a random admin username and master key, and saves them to `admin_credentials.txt` in the project root. Use those credentials on the login page with the "Sign In as Administrator" checkbox enabled.
+This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
 
 > [!IMPORTANT]
-> Run this only once on a fresh database. Re-running it resets all data.
+> Run `setup-admin.py` only once on a fresh deployment. Re-running this script will reset system administrator access.
+
+---
 
 ## Table of Contents
 
-1. [Challenge Lifecycle Management](#1-challenge-lifecycle-management)
-2. [Sandbox Customization & Resource Limits](#2-sandbox-customization--resource-limits)
-3. [Metrics & Rules Engine Configuration](#3-metrics--rules-engine-configuration)
-4. [User Management & CSV Imports](#4-user-management--csv-imports)
-5. [Backup Management](#5-backup-management)
-6. [Monitoring & Diagnostics](#6-monitoring--diagnostics)
+1. [Challenge and Stage Lifecycle Management](#1-challenge-and-stage-lifecycle-management)
+2. [Sandbox Customization and Image Build Error Remediation](#2-sandbox-customization-and-image-build-error-remediation)
+3. [Hugging Face Pre-Fetching and Offline Assets](#3-hugging-face-pre-fetching-and-offline-assets)
+4. [AST Code Security and Dynamic Metrics Engine](#4-ast-code-security-and-dynamic-metrics-engine)
+5. [Custom Evaluator Scripts Logic and Baseline Verification](#5-custom-evaluator-scripts-logic-and-baseline-verification)
+6. [User Management, CSV Imports and Credential PDFs](#6-user-management-csv-imports-and-credential-pdfs)
+7. [Automated and Manual Backup Retention Rules](#7-automated-and-manual-backup-retention-rules)
+8. [Worker Authentication, CLI Setup and SSE Telemetry](#8-worker-authentication-cli-setup-and-sse-telemetry)
+9. [Audit Logging and Score Justification Trail](#9-audit-logging-and-score-justification-trail)
 
 ---
 
-## 1. Challenge Lifecycle Management
+## 1. Challenge and Stage Lifecycle Management
 
-The Admin Panel (`/admin`) is your central hub for creating and transitioning challenges through their lifecycle.
+The Admin Panel (`/admin`) is the central control point for configuring competitions (challenges) and managing multi-stage lifecycles.
 
-### Challenge States
+### Stages Framework
 
-- **Draft / Not Started:** `start_time` > current time. Visible only to Admins and Jury members. Use this phase to safely test task configurations, metric scripts, and resource limits.
-- **Active:** `start_time` <= current time <= `end_time` and `is_frozen=False`. Competitors can actively browse tasks and submit their notebooks. Note that the **Grace Period** feature allows valid last-second attempts immediately following the exact `end_time`.
-- **Frozen (Emergency Manual Freeze):** If `is_frozen=True`. This toggle allows you to immediately halt all submissions and freeze the leaderboard during infrastructure emergencies or critical bugs _without_ needing to manually adjust and extend the `end_time` deadline.
-- **Ended:** `end_time` < current time. Submissions are closed, but scores are not yet finalized. Jury members can perform manual scoring audits.
-- **Finalized:** `scores_finalized=True`. Ranks are locked, and competitor aliases are de-anonymized. Post-finalization manual score edits are permitted but strictly require an audit justification log.
-- **Archived:** `is_archived=True`. Read-only mode. **Crucially**, archived competitions are strictly hidden from competitor accounts. Only Admins and Jury members retain access to archived statistics.
+Competitions on LavBench are structured around **Stages** (e.g., *Qualification Stage*, *Semifinals*, *Finals*). Each stage maintains independent configurations:
+- **Timeframes**: Dedicated `start_time` and `end_time` deadlines per stage.
+- **Task Allocations**: Specific machine learning tasks assigned to the stage.
+- **Stage Navigation**: Competitors switch between active stages using the stage selector tab bar.
 
----
+### Lifecycle States
 
-## 2. Sandbox Customization & Resource Limits
-
-To safeguard the execution cluster and ensure fair play, every task must be explicitly configured.
-
-### Resource Allocations
-
-- **RAM Limit:** (MB) Defines the Docker container's strict `-m` limit. If the participant's data processing or model memory footprint exceeds this, the kernel terminates immediately with an Out-Of-Memory (OOM) kill signal.
-- **Time Limit:** (Seconds) The maximum wall-clock runtime for the Celery process. Exceeding this triggers a Timeout failure.
-- **Requires GPU:** A boolean flag that routes the execution job specifically to the high-performance hardware accelerator (GPU) Celery queue.
-
-### Sandbox Security
-
-Every submission executes in a hardened Docker container with enforced isolation:
-
-| Restriction                            | Purpose                                                                                         |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `--network none`                       | Blocks all network access — no data exfiltration or downloads                                   |
-| `--cap-drop ALL`                       | Removes all Linux capabilities — no raw sockets, `mount()`, `ptrace()`, or privilege escalation |
-| `--read-only`                          | Root filesystem is read-only — competitor code cannot modify system binaries                       |
-| `--no-new-privileges`                  | Prevents suid binary escalation                                                                 |
-| `--tmpfs /tmp:noexec,nosuid,size=128m` | In-memory, size-capped temp — cannot fill host disk                                             |
-| `--memory-swap` = RAM limit            | Disables swap — no memory pressure bypass                                                       |
-| `--pids-limit 64`                      | Prevents fork bombs                                                                             |
-| `--ulimit nofile=256:256`              | Limits open file descriptors                                                                    |
-| `--cpus` (configurable)                | Limits CPU — set via `CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK` in `worker.env`                 |
-
-### Custom Docker Image Setup
-
-- **Base Image:** Provide a valid public Docker registry image (e.g., `pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime`).
-- **Apt Packages:** A comma-separated list of Ubuntu packages to install (e.g., `libglib2.0-0, build-essential`).
-- **Pip Requirements:** Define standard Python dependencies needed to evaluate or execute the task.
+| State | Condition / Indicator | System & Competitor Behavior |
+| :--- | :--- | :--- |
+| **Draft / Not Started** | `start_time` > current time | Visible only to Admins and assigned Jury members (`JuryChallenge`). Used for testing dataset uploads, metric scripts, and baseline runs. |
+| **Active** | `start_time` ≤ current time ≤ `end_time` & `is_frozen=False` | Competitors browse active stage tasks, view rules, download starter code, and submit notebooks. |
+| **Grace Period** | Post `end_time` (Timer turns orange) | Brief active buffer following deadline accepting pending or last-second submissions before pipeline closure. |
+| **Frozen (Emergency)** | `is_frozen=True` | Instantly halts all incoming submissions and locks leaderboards across active stages during infrastructure issues without needing to alter `end_time`. |
+| **Ended** | `end_time` < current time | Submissions closed. Automated scoring stops. Jury performs manual evaluations and code audits. |
+| **Finalized** | `scores_finalized=True` | Standings locked. Competitor aliases de-anonymized. Post-finalization score edits require mandatory audit justification reasons. |
+| **Archived** | `is_archived=True` | Read-only mode. Hidden from competitor dashboards; accessible only to Admins and Jury for historical analysis. |
 
 > [!NOTE]
-> The worker infrastructure auto-builds these dependencies dynamically on the first execution and caches the resulting sandbox container.
+> Setting `is_frozen=True` allows administrators to pause evaluation queues instantly without corrupting competition deadline metadata or timer state history.
 
 ---
 
-## 3. Metrics & Rules Engine Configuration
+## 2. Sandbox Customization and Image Build Error Remediation
+
+To safeguard worker nodes and guarantee fair hardware access, every machine learning task specifies resource limits, system packages, and container isolation settings.
+
+### Hardware Allocations
+
+- **RAM Limit (MB)**: Defines the Docker container memory limit (`--memory`). If competitor code exceeds this footprint, the process is instantly terminated by the kernel Out-Of-Memory (OOM) killer.
+- **Time Limit (Seconds)**: Wall-clock runtime cap for execution inside the container. Exceeding this triggers a `TIMEOUT EXPIRED` failure.
+- **GPU Required**: Boolean flag routing execution tasks to dedicated hardware acceleration GPU worker queues.
+- **CPU Cores (`--cpus`)**: Number of CPU cores allocated per container (configured via `CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK` in `worker.env`).
+
+### Sandbox Isolation Security
+
+Competitor code runs within a hardened, zero-trust Docker container enforcing the following security parameters:
+
+| Parameter | Purpose |
+| :--- | :--- |
+| `--network none` | Completely disables container networking — prevents data exfiltration and external downloads. |
+| `--cap-drop ALL` | Drops all Linux kernel capabilities — blocks raw sockets, `mount()`, `ptrace()`, and privilege escalation. |
+| `--read-only` | Mounts the root filesystem as read-only — competitor code cannot alter system libraries or binaries. |
+| `--no-new-privileges` | Prevents process privilege escalation via SUID binaries. |
+| `--tmpfs /tmp:noexec,nosuid,size=128m` | Provides a memory-backed, size-capped temporary directory that cannot execute binaries or fill host storage. |
+| `--memory-swap` = RAM Limit | Disables disk swap — prevents memory footprint evasion. |
+| `--pids-limit 64` | Restricts total process count to mitigate fork bombs. |
+| `--ulimit nofile=256:256` | Caps open file descriptor counts. |
+
+### Docker Image Build Pipeline & Error Troubleshooting
+
+Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` containing downloaded Hugging Face assets, a generated `Dockerfile`, and `requirements.txt`. The container image is tagged `lavbench_task_{task_id}` and built automatically when task settings change.
+
+#### Image Build Error Taxonomy:
+1. **Base Image Failure**: The specified `base_docker_image` repository tag does not exist or fails registry authentication.
+2. **APT Package Failure**: Invalid Ubuntu `apt_packages` names (e.g. typos or deprecated package names) cause `apt-get install` errors.
+3. **Pip Dependency Failure**: Incompatible Python `pip_requirements` or version conflicts cause `pip install` resolution errors.
+4. **HuggingFace Asset Timeout**: Network loss or invalid model/dataset IDs during pre-fetching cause download failures.
+5. **Disk Space Exhaustion**: If the worker host falls below `MIN_BUILD_DISK_GB` (5 GB), task image compilation is aborted.
+
+#### Inspecting & Resolving Build Errors:
+1. Open **Admin Panel** → **Tasks** → select the failing task.
+2. The UI highlights the `build_error` banner containing the exact Docker build stderr log traceback.
+3. Fix the base image, APT package string, or Pip requirements in the task edit modal.
+4. Saving the task re-triggers worker notification over Redis pub/sub (`rebuild_task_image`), clearing the error and building a fresh container.
+
+---
+
+## 3. Hugging Face Pre-Fetching and Offline Assets
+
+Because execution sandboxes enforce `--network none` for security, model weights and datasets cannot be downloaded dynamically over the internet during competitor runs.
+
+### Model and Dataset Pre-Fetching
+
+Administrators can pre-configure Hugging Face assets for each task using the task administration panel:
+- **`hf_datasets`**: Comma-separated list or JSON array of Hugging Face dataset IDs (e.g., `glue, sst2`).
+- **`hf_models`**: Comma-separated list or JSON array of Hugging Face model repository IDs (e.g., `bert-base-uncased`, `distilbert-base-uncased`).
+
+```json
+{
+  "hf_datasets": ["glue/sst2"],
+  "hf_models": ["bert-base-uncased", "distilbert/distilbert-base-uncased"]
+}
+```
+
+### Pre-Fetching Mechanism
+
+1. During task setup or worker preparation, the background service triggers Hugging Face download routines (`huggingface_hub` / `datasets`).
+2. Assets are fetched into the worker node's shared cache directory (`/root/.cache/huggingface`).
+3. When sandbox containers launch, this local cache directory is read-only mounted into the container.
+4. Competitor scripts using `transformers` or `datasets` load pre-cached models offline without network calls.
+
+---
+
+## 4. AST Code Security and Dynamic Metrics Engine
+
+### Pre-Execution AST Validation
+
+Before any submission is queued for execution, the server executes static application security testing (AST):
+
+1. **IPython Magic Stripping**: Regex strips all IPython shell commands (`%matplotlib inline`, `!pip install`, `%timeit`) before AST parsing.
+2. **Module Access Verification**:
+   - `banned_imports`: Explicit list of forbidden Python modules (e.g., `os, sys, subprocess, socket, requests, urllib, shutil`).
+   - `whitelisted_imports`: Restrictive allowed module list (when strict mode is activated).
+3. **Quota Preservation**: If AST validation fails (syntax error or restricted import), the submission status is marked as `Failed`, detailed diagnostics are returned, and **the competitor's submission quota is preserved (not decremented)**.
 
 ### Dynamic Metrics Schema
 
-A JSON configuration dictates how the final public and private scores are calculated and weighted.
+Evaluation metrics are defined per task using a JSON schema weighting public and private score components.
 
-**Example: Accuracy and F1 Score Optimization**
-
+**Example Multi-Metric Configuration:**
 ```json
 {
   "accuracy": { "weight": 0.5, "higher_is_better": true },
@@ -93,179 +154,215 @@ A JSON configuration dictates how the final public and private scores are calcul
 }
 ```
 
-**Example: Multi-metric Regression Task**
+### Supported Metric Categories (44 Metrics Across 12 Categories)
 
-```json
-{
-  "rmse": { "weight": 0.6 },
-  "mae": { "weight": 0.3 },
-  "r_squared": { "weight": 0.1 }
+LavBench includes 44 evaluation metrics covering 12 problem domains:
+
+| Category | Metric Keys | Description / Primary Use |
+| :--- | :--- | :--- |
+| **Classification** | `accuracy`, `f1`, `precision`, `recall`, `cohen_kappa`, `matthews_corrcoef` | Standard discrete prediction evaluation. |
+| **Probabilistic** | `auc_roc`, `logloss`, `brier_score` | Calibrated continuous confidence scores. |
+| **Regression** | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae` | Continuous target error measurement. |
+| **Seq-Labeling (NER)** | `seqeval_f1`, `seqeval_precision`, `seqeval_recall` | Entity extraction and token classification. |
+| **Generative NLP** | `bleu`, `rouge`, `rouge_l`, `meteor`, `chrf`, `ter` | Translation, summarization, and text generation. |
+| **QA Extractive** | `exact_match`, `f1` (word-overlap) | Reading comprehension token overlap. |
+| **Object Detection** | `map_50`, `map_75`, `map_50_95`, `recall` (box recall) | Bounding box IoU and mAP evaluation. |
+| **Segmentation** | `mean_iou`, `dice`, `pixel_accuracy` | Semantic and instance mask evaluation. |
+| **Keypoints** | `oks`, `pck` | Pose estimation object keypoint similarity. |
+| **Image Quality** | `psnr`, `ssim` | Image reconstruction and restoration metrics. |
+| **Audio Quality** | `snr`, `mel_lsd`, `si_sdr` | Speech and audio processing quality. |
+| **Clustering** | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` | Unsupervised cluster grouping similarity. |
+| **Retrieval** | `ndcg_k`, `recall_k`, `mrr` | Information retrieval and ranking metrics. |
+
+---
+
+## 5. Custom Evaluator Scripts Logic and Baseline Verification
+
+### Custom Evaluator Script Architecture
+
+For specialized ML problems where standard metrics are insufficient, admins can upload a custom Python evaluation script (`evaluator.py`).
+
+#### Custom Evaluator Module Contract:
+Each custom evaluator script **must** define the following module-level variables and entry-point function:
+
+```python
+METRIC_NAME = "custom_f1_score"
+
+SUBMISSION_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "prediction", "type": "int"},
+]
+
+LABELS_COLUMNS = [
+    {"name": "id", "type": "string"},
+    {"name": "label", "type": "int"},
+]
+
+EVALUATOR_OPTIONS = {
+    "beta": 1.0,
 }
+
+def evaluate(df_sub, df_labels, options=None):
+    """
+    Evaluates competitor predictions against ground truth labels.
+    
+    :param df_sub: pandas.DataFrame loaded from competitor's submission.parquet
+    :param df_labels: pandas.DataFrame loaded from hidden labels.parquet
+    :param options: dict parsed from task's metrics_config / options_schema
+    :return: dict[str, float] mapping metric names to score values
+    """
+    options = options or EVALUATOR_OPTIONS
+    # Join DataFrames on 'id'
+    merged = df_sub.merge(df_labels, on="id", suffixes=("_sub", "_gt"))
+    
+    # Calculate domain-specific metric logic
+    correct = (merged["prediction"] == merged["label"]).sum()
+    total = len(merged)
+    score = float(correct / total) if total > 0 else 0.0
+    
+    return {METRIC_NAME: score}
 ```
 
-### Supported Metric Categories
+#### Variable Specifications:
+- `METRIC_NAME`: `str` — Identifier key returned in the dictionary and displayed on the leaderboard.
+- `SUBMISSION_COLUMNS`: `list[dict]` — Expected columns and data types in `submission.parquet`. Used by UI for schema documentation cards.
+- `LABELS_COLUMNS`: `list[dict]` — Expected columns in `labels.parquet`.
+- `EVALUATOR_OPTIONS`: `dict` — Optional default parameters passed to `options`.
+- `evaluate()`: `function` — Main evaluation logic receiving DataFrames and returning `dict[str, float]`. All returned metric scores are treated as **higher-is-better**.
 
-The evaluation engine supports 44 metrics across 12 task types:
+> [!IMPORTANT]
+> Custom evaluator scripts are validated via AST on upload. If required variables (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate`) are missing, upload returns HTTP 400 with an error description.
 
-| Category             | Metric Keys                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| **Classification**   | `accuracy`, `f1`, `precision`, `recall`, `cohen_kappa`, `matthews_corrcoef`          |
-| **Probabilistic**    | `auc_roc`, `logloss`, `brier_score`                                                  |
-| **Regression**       | `rmse`, `mse`, `mae`, `r_squared`, `mape`, `median_ae`                               |
-| **Seq-label (NER)**  | `seqeval_f1`, `seqeval_precision`, `seqeval_recall`                                  |
-| **Generative NLP**   | `bleu`, `rouge`, `rouge_l`, `meteor`, `chrf`, `ter`                     |
-| **QA Extractive**    | `exact_match`, `f1` (word-overlap)                                                   |
-| **Object Detection** | `map_50`, `map_75`, `map_50_95`, `recall` (box recall)                               |
-| **Segmentation**     | `mean_iou`, `dice`, `pixel_accuracy`                                                 |
-| **Keypoints**        | `oks`, `pck`                                                                         |
-| **Image Quality**    | `psnr`, `ssim`                           |
-| **Audio Quality**    | `snr`, `mel_lsd`, `si_sdr`                                          |
-| **Clustering**       | `adjusted_rand_index`, `normalized_mutual_info`, `adjusted_mutual_info`, `v_measure` |
-| **Retrieval**        | `ndcg_k`, `recall_k`, `mrr`                                                          |
+### Baseline Solution Testing (`is_baseline`)
 
-> [!NOTE]
-> `f1` and `recall` automatically dispatch based on input type: string values → QA word-overlap; list-of-dict values → object detection box recall; integer/float values → sklearn classification.
-
-### Pre-Execution AST Rule Enforcement
-
-Before any submission reaches the Celery queue, it undergoes strict Static Application Security Testing (AST):
-
-- **Strip Magic Commands:** Jupyter `%` and `!` shell commands (e.g., `%matplotlib inline`, `!pip install`) are automatically removed via regex before AST parsing. They have no effect inside the sandbox.
-
-### Banned Imports
-
-Define modules (like `os, sys, subprocess, requests, socket`) that are forbidden. These are configured per-task — you can enforce different restrictions for different machine learning problems.
-
-### How Evaluation Works
-
-Participants submit Jupyter notebooks. Their code executes in an isolated Docker sandbox and must write a **`submission.parquet`** file containing their predictions. The system calculates evaluation metrics by comparing this against the hidden **`labels.parquet`** (uploaded per task).
-
-- The participant's code must produce `submission.parquet` with an `id` column and the respective prediction columns.
-- The `labels.parquet` file contains the ground truth — you must upload it when creating the task.
-- The task's `metrics_config` defines which metrics to compute and how to weight them.
-- `public_eval_percentage` controls the data split between the public leaderboard and the private test set used for final standings.
+Administrators and organizers can submit baseline solutions to verify task integrity:
+- When submitting a notebook as an admin, check the **"Mark as Baseline Solution"** toggle (`is_baseline=True`).
+- Baseline submissions bypass daily user quota limits.
+- Successfully evaluated baseline solutions generate benchmark entries on the leaderboard and populate the downloadable **starter baseline notebook** for competitors.
 
 ---
 
-## 4. User Management & CSV Imports
+## 6. User Management, CSV Imports and Credential PDFs
 
-Efficiently onboard entire classrooms or competition cohorts via the `/admin` portal.
+### Bulk Competitor Onboarding via CSV
 
-1. Navigate to the **Users** tab.
-2. Click **Import CSV**.
-3. Format requirements:
-   ```text
-   username,email,password,name,surname,class_number,school,city,challenge_id
-   competitor_a,compA@ai.edu,TempPass1,Alice,Smith,12,Tech High,Sofia,1
-   ```
+Administrators can onboard competitors in bulk via the `/admin` portal using standard CSV files.
 
----
-
-## 5. Backup Management
-
-The platform features an automated backup protocol to prevent data loss. All backups include a full PostgreSQL dump and the `uploads/` directory compressed into a `.tar.gz` archive.
-
-### Backup Types
-
-| Type       | Frequency                                                                      | Retention          | Location                                       |
-| ---------- | ------------------------------------------------------------------------------ | ------------------ | ---------------------------------------------- |
-| **Auto**   | Every **20 minutes** when competitions are active, every **6 hours** when idle | Latest **6**       | `auto_YYYYMMDD_HHMMSS.tar.gz` in `/backups/`   |
-| **Manual** | On demand via "Force Backup Now" button                                        | Never auto-deleted | `manual_YYYYMMDD_HHMMSS.tar.gz` in `/backups/` |
-
-### Backup Management UI
-
-Go to the **Admin Panel** → **Backups** tab:
-
-- View the list of all auto and manual backups with file sizes and timestamps.
-- **Force Backup Now** — creates an immediate manual backup. Shows a loading spinner while in progress via SSE.
-- **Download** — download any backup file.
-- **Delete** — delete manual backups only (auto-backups cannot be deleted manually, returns 403).
-
-### Retention Rules
-
-- **Auto-backups**: Only the 6 most recent are kept. The oldest ones are auto-deleted.
-- **Manual backups**: Never auto-deleted. Only removed via the delete button.
-
----
-
-## 6. Monitoring & Diagnostics
-
-### Health Endpoint
-
-`GET /api/health` — verifies database connectivity. Returns:
-
-```json
-{ "status": "ok", "database": "connected" }
+#### Required CSV Header Structure:
+```csv
+name,surname,middle_name,birth_date,grade,school,city
 ```
 
-Returns 503 if the database is unreachable. Used by Docker health checks and load balancers.
+#### Optional Fields:
+`email` and `is_anonymous` can be included in the CSV header.
 
-### Dead Letter Queue
+#### Example CSV Content:
+```csv
+name,surname,middle_name,birth_date,grade,school,city,email,is_anonymous
+Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
+Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
+```
 
-When a Celery evaluation task fails permanently (all retries exhausted), it is logged to a Redis dead letter queue. Inspect it via:
-`GET /api/admin/dead-letters` (admin only).
+### Printable PDF Credential Slips
 
-Each entry shows the submission ID, task ID, challenge ID, failure timestamp, and the error message. This is highly useful for debugging systemic evaluation or container failures.
+To distribute credentials securely during on-site competitions:
 
-### Audit Logs
+1. Navigate to **Admin Panel** → **Challenges**.
+2. Select the target challenge and click **Print Credentials PDF**.
+3. The server calls `/api/admin/challenges/<id>/credentials-pdf` to generate a multi-page PDF document.
+4. Each page contains formatted credential cut-out slips featuring:
+   - Competitor Name & Alias
+   - Auto-generated Username & Password
+   - Platform Login URL & Scannable QR Code
+   - Challenge Name & Stage Details
 
-The platform implements a comprehensive audit trail to track all administrative actions. This is crucial for verifying the integrity of the grading process, user management, and configuration changes.
+---
 
-- **Accessing Logs**: Go to the **Admin Panel** → **Audit Logs** tab (accessible only to users with the `admin` role).
-- **Logged Actions**:
-  - `create` / `update` / `delete` of challenges, stages, and tasks.
-  - `finalize` and `archive` transitions.
-  - Password resets (both individual and bulk/competition-wide).
-  - Manual score changes (which strictly require entering a justification reason).
-- **Filtering**: Search or filter audit records by **Action Type** (create, update, delete, etc.) or look up actions associated with a specific challenge.
-- **Log Payload Details**: Click **View** on any log entry to view the exact payload/meta-details in JSON format, along with any provided justification/reason (such as why a manual score edit was made).
+## 7. Automated and Manual Backup Retention Rules
 
-### Worker Status Monitoring
+LavBench maintains an automated backup subsystem to safeguard competition data. Each backup archive contains a complete PostgreSQL database dump along with compressed `uploads/` assets in a `.tar.gz` format.
 
-The **Cluster** badge in the navbar shows worker node status in real-time via SSE:
+| Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
+| :--- | :--- | :--- | :--- |
+| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Keeps the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-- Green: workers are connected and healthy.
-- Red: workers are disconnected.
-- Click for a modal showing per-worker specs (CPU cores, RAM, GPU type, VRAM, concurrency).
+---
 
-Workers are split into two categories to isolate system tasks from heavy evaluation workloads:
+## 8. Worker Authentication, CLI Setup and SSE Telemetry
 
-1. **Internal Task Worker**: Runs inside the main web server's Docker Compose setup (`celery_worker` service). It executes system tasks (like database backups, watchdog checks, and leaderboard recalculations). By default, its concurrency is capped at `2` (using `CELERY_WORKER_CONCURRENCY`) to preserve host resources for Flask, PostgreSQL, Redis, and SSE.
-2. **Evaluation Workers**: Run directly on host/remote machines (with CPU or GPU resources) to build and run competitor submission Docker sandboxes.
+### Ed25519 Asymmetric Worker Authentication
 
-#### Launching Evaluation Workers
+Worker nodes communicate securely with the backend API using asymmetric Ed25519 signature keys:
+- The worker node signs requests using its private key.
+- Tokens are passed in the `X-Worker-Token` HTTP header.
+- The backend verifies worker signatures against registered public keys before accepting job status updates.
 
-The recommended way is via the interactive setup:
+### Interactive Worker Setup CLI (`make setup-worker`)
+
+Execution workers are configured and launched using interactive CLI commands:
 
 ```bash
-# Copy worker.env from the server (generated by make setup-server):
+# 1. Fetch environment template from server:
 scp user@server:~/lavbench/worker.env .
 
-# Interactive config (mode, type, GPUs, cores):
+# 2. Run interactive setup wizard:
 make setup-worker
 ```
 
-On first run, the setup detects available CPUs and GPUs, then guides you through:
-1. **Run mode** — Docker (recommended) or local micromamba
-2. **Worker type** — evaluation, internal, or both
-3. **GPU IDs** — select which GPUs to use (requires `nvidia-smi`)
-4. **CPU cores per task** — allocated per GPU and per CPU evaluation container
-5. **Concurrency** — auto-calculated (GPU count + remaining CPU slots)
+The `make setup-worker` wizard guides you through:
+1. **Execution Engine Mode**: Docker sandbox container (recommended) or local environment.
+2. **Worker Node Type**: `evaluation` (runs competitor code), `internal` (handles system tasks/backups), or `both`.
+3. **GPU Configuration**: Select GPU IDs detected via `nvidia-smi`.
+4. **CPU Core Allocation**: Set CPU core limits per task container.
+5. **Worker Concurrency**: Auto-calculates optimal worker concurrency based on GPU and CPU availability.
 
-Then deploy from the saved config:
+#### Deploying and Editing Workers:
 
 ```bash
+# Launch worker process:
 make deploy-worker
+
+# Re-configure worker parameters via menu editor:
+make edit-worker
 ```
 
-To edit the saved configuration:
+> [!WARNING]
+> When running an evaluation worker on the primary web server host, reserve at least 2 CPU cores for Gunicorn, PostgreSQL, and Redis processes.
 
-```bash
-make edit-worker    # menu-based editor (type, GPUs, cores, concurrency)
-```
+### SSE Cluster Telemetry
 
-_Note: If running evaluation workers on the main backend web host, leave at least 2 CPU cores free to prevent resource starvation for the Gunicorn and Postgres containers._
+Real-time worker cluster health is streamed to the administrator navbar via Server-Sent Events (SSE):
+- **Status Indicator**: Green badge (workers connected and healthy) / Red badge (workers disconnected).
+- **Cluster Modal**: Clicking the indicator displays live worker telemetry, including CPU cores, RAM, GPU model, VRAM usage, and active execution slots.
+- **Dead Letter Queue (`/api/admin/dead-letters`)**: Displays permanently failed Celery evaluation tasks with complete error tracebacks for diagnostic debugging.
 
-### Worker Specs Registration
+---
 
-When a worker node starts, it automatically registers its hardware specs in Redis (if running as an evaluation worker). These appear in the cluster modal dashboard. If Redis is unavailable, worker specs will not be registered until the next worker restart. Internal workers are excluded from cluster metrics and telemetry.
+## 9. Audit Logging and Score Justification Trail
+
+### Audit Logging System
+
+Every sensitive administrative and jury operation is permanently recorded in the system audit trail (`AuditLog` database table).
+
+- **Tracked Operations**:
+  - Challenge, stage, and task creation, modification, or deletion.
+  - Lifecycle state transitions (`finalize`, `archive`, `freeze`).
+  - Account creation, CSV user imports, and password resets.
+  - Competitor disqualifications (`is_disqualified`) and baseline flags (`is_baseline`).
+  - Manual score modifications.
+
+### Post-Finalization Score Modification Justifications
+
+If an administrator or jury member modifies a competitor score after a competition has been finalized (`scores_finalized=True`):
+
+1. The user interface presents a mandatory **Audit Justification Modal**.
+2. The user must enter a detailed justification reason explaining the adjustment (e.g., *"Re-evaluation approved by jury due to baseline dataset formatting revision"*).
+3. The backend records an immutable log entry containing:
+   - User ID & Role of the editor
+   - Target Competitor & Submission ID
+   - Original Score vs Updated Score
+   - ISO Timestamp
+   - Textual Justification Reason
+
+Administrators can inspect these audit trails at any time via **Admin Panel** → **Audit Logs**.

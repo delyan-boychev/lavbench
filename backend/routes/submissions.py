@@ -137,6 +137,9 @@ def submit_code(
 
     task = db.session.get(Task, task_id)
 
+    if task and task.build_error:
+        return err("ERR_TASK_BUILD_ERROR", 400)
+
     if user_role == "competitor":
         from datetime import timedelta
 

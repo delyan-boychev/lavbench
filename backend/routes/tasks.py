@@ -152,7 +152,8 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
+MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB limit per file
+MAX_TOTAL_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB limit per task
 
 VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
@@ -478,7 +479,7 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "baseline_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
@@ -496,10 +497,12 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "solution_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+
+    total_upload_size = 0
 
     for key in files_keys:
         uploaded_file = request.files[key]
@@ -522,6 +525,19 @@ def create_task(
             size = uploaded_file.tell()
             uploaded_file.seek(0)
 
+            total_upload_size += size
+            if total_upload_size > MAX_TOTAL_UPLOAD_BYTES:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return err(
+                    "ERR_TOTAL_SIZE_EXCEEDED",
+                    400,
+                    message="Total file size exceeds the 2 GB limit for a single task.",
+                )
+
             if size > MAX_FILE_SIZE_BYTES:
                 db.session.delete(task)
                 db.session.commit()
@@ -529,9 +545,9 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
-                    "ERR_FILE_TOO_LARGE_25MB",
+                    "ERR_TASK_FILE_TOO_LARGE",
                     400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 25MB size limit.",
+                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
             safe_name = secure_filename(uploaded_file.filename)
@@ -656,6 +672,20 @@ def update_task(
     if "pip_requirements" in fields:
         task.pip_requirements = form.pip_requirements
 
+    # Clear build_error when environment config is changed
+    if task.build_error:
+        env_fields = {
+            "base_docker_image",
+            "apt_packages",
+            "pip_requirements",
+            "hf_datasets",
+            "hf_models",
+        }
+        if (fields & env_fields) or (
+            "hf_api_key" in request.form and request.form.get("hf_api_key", "").strip()
+        ):
+            task.build_error = None
+
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
     if "gpu_required" in fields:
@@ -756,7 +786,7 @@ def update_task(
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "baseline_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
@@ -769,7 +799,7 @@ def update_task(
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "solution_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
@@ -808,6 +838,7 @@ def update_task(
         return err("ERR_TOO_MANY_FILES", 400)
 
     newly_saved_paths: list[str] = []
+    total_update_size = 0
 
     for key in new_files_keys:
         uploaded_file = request.files[key]
@@ -828,14 +859,25 @@ def update_task(
             size = uploaded_file.tell()
             uploaded_file.seek(0)
 
+            total_update_size += size
+            if total_update_size > MAX_TOTAL_UPLOAD_BYTES:
+                for p in newly_saved_paths:
+                    if os.path.exists(p):
+                        os.remove(p)
+                return err(
+                    "ERR_TOTAL_SIZE_EXCEEDED",
+                    400,
+                    message="Total file size exceeds the 2 GB limit for a single task.",
+                )
+
             if size > MAX_FILE_SIZE_BYTES:
                 for p in newly_saved_paths:
                     if os.path.exists(p):
                         os.remove(p)
                 return err(
-                    "ERR_FILE_TOO_LARGE_25MB",
+                    "ERR_TASK_FILE_TOO_LARGE",
                     400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 25MB size limit.",
+                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
             safe_name = secure_filename(uploaded_file.filename)
@@ -963,7 +1005,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
 @tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
 @jury_access_required
-@rate_limit(max_requests=20, window_seconds=60)
+@rate_limit(max_requests=5, window_seconds=60)
 @api.validate(
     resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
     tags=["Tasks"],
@@ -1691,6 +1733,7 @@ def report_worker_progress(
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60, per_user=False)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
 def worker_download_task_file(
     task_id: Any, filename: str
@@ -1777,6 +1820,8 @@ def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskRes
                     "hf_datasets": hf_datasets_list,
                     "hf_models": hf_models_list,
                     "hf_api_key": task.get_hf_api_key() if task.hf_api_key else "",
+                    "task_files": safe_json_loads(task.files, []),
+                    "custom_eval_code": task.custom_eval_code or "",
                 }
             )
 
@@ -1866,6 +1911,33 @@ def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[Fla
     if not hf_key:
         logger.warning("No HF API key configured for task %s", task_id)
     return {"hf_key": hf_key}, 200
+
+
+@tasks_bp.route("/worker/tasks/<uuid:task_id>/report-build-error", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60, per_user=False)
+@api.validate(
+    resp=Response(
+        HTTP_200=MessageResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def report_build_error(
+    task_id: Any,
+) -> tuple[FlaskResponse, int] | tuple[dict[str, str], int]:
+    token = request.headers.get("X-Worker-Token")
+    if not check_worker_auth(token):
+        return err("ERR_UNAUTHORIZED", 401)
+    data = request.get_json(silent=True) or {}
+    error_msg = (data.get("error") or "").strip()
+    task = db.session.get(Task, task_id)
+    if not task:
+        return err("ERR_TASK_NOT_FOUND", 404)
+    task.build_error = error_msg if error_msg else None
+    db.session.commit()
+    return {"message": "ok"}, 200
 
 
 @tasks_bp.route("/workers/logs", methods=["POST"])

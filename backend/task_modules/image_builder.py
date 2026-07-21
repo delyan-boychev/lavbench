@@ -41,16 +41,93 @@ TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 _WORKER_HOSTNAME = socket.gethostname()
 
 
+def _report_build_error(
+    task_id: str | None,
+    error_msg: str,
+    main_server_url: str | None = None,
+    worker_token: str | None = None,
+) -> None:
+    if not task_id or not main_server_url or not worker_token:
+        return
+    try:
+        import requests
+
+        requests.post(
+            f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/report-build-error",
+            json={"error": error_msg},
+            headers={"X-Worker-Token": worker_token},
+            timeout=10,
+        )
+    except Exception:
+        logger.debug("Failed to report build error for task %s", task_id)
+
+
+# Used to namespace Redis build locks per machine.
+_WORKER_HOSTNAME = socket.gethostname()
+
+
 def _config_hash(
-    base_image: str, pip_packages: str, hf_datasets: list[str], hf_models: list[str]
+    base_image: str,
+    pip_packages: str,
+    hf_datasets: list[str],
+    hf_models: list[str],
+    task_files_hash: str,
+    eval_code_hash: str,
 ) -> str:
     """Stable hash of the task configuration for cache invalidation."""
     h = hashlib.sha256()
+    h.update(b"v2")
     h.update(base_image.encode())
     h.update(pip_packages.encode())
     h.update(json.dumps(sorted(hf_datasets), sort_keys=True).encode())
     h.update(json.dumps(sorted(hf_models), sort_keys=True).encode())
+    h.update(task_files_hash.encode())
+    h.update(eval_code_hash.encode())
     return h.hexdigest()[:16]
+
+
+def _task_files_hash(task_files: list[dict[str, Any]]) -> str:
+    if not task_files:
+        return ""
+    return hashlib.sha256(
+        json.dumps(sorted(task_files, key=lambda x: x.get("filename", "")), sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+
+def _eval_code_hash(custom_eval_code: str | None) -> str:
+    return hashlib.sha256((custom_eval_code or "").encode()).hexdigest()[:16]
+
+
+def _download_task_file_for_build(
+    task_id: Any,
+    filename: str,
+    saved_name: str,
+    dest_dir: str,
+    metadata: dict[str, Any],
+) -> None:
+    main_server_url = metadata.get("_main_server_url", "")
+    worker_token = metadata.get("_worker_token", "")
+    if not main_server_url or not worker_token:
+        logger.warning("Cannot download task file '%s': missing server URL or token", filename)
+        return
+    try:
+        import requests
+
+        url = f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/files/{filename}"
+        res = requests.get(
+            url,
+            headers={"X-Worker-Token": worker_token},
+            timeout=Config.WORKER_DOWNLOAD_TIMEOUT,
+        )
+        if res.status_code == 200:
+            dest = os.path.join(dest_dir, filename)
+            with open(dest, "wb") as f:
+                f.write(res.content)
+            os.chmod(dest, 0o644)
+        else:
+            logger.warning("Failed to download task file '%s': HTTP %s", filename, res.status_code)
+    except Exception as e:
+        logger.warning("Error downloading task file '%s': %s", filename, e)
 
 
 def _download_dataset(
@@ -207,11 +284,18 @@ def build_task_image(
             with contextlib.suppress(Exception), open(meta_path) as f:
                 existing_hash = json.load(f).get("hash", "")
         if existing_hash:
+            _task_files_raw = metadata.get("task_files", [])
+            if isinstance(_task_files_raw, str):
+                with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
+                    _task_files_raw = json.loads(_task_files_raw)
+            _task_files_list = _task_files_raw if isinstance(_task_files_raw, list) else []
             new_hash = _config_hash(
                 metadata.get("base_docker_image", ""),
                 metadata.get("pip_requirements", ""),
                 metadata.get("hf_datasets", "[]"),
                 metadata.get("hf_models", "[]"),
+                _task_files_hash(_task_files_list),
+                _eval_code_hash(metadata.get("custom_eval_code")),
             )
             if existing_hash == new_hash:
                 logger.info("Task %s image up-to-date, skipping build", task_id)
@@ -289,7 +373,23 @@ def _do_build(
             hf_models_raw = []
     hf_models_list = hf_models_raw if isinstance(hf_models_raw, list) else []
 
-    config_hash = _config_hash(base_image, pip_packages, hf_datasets_list, hf_models_list)
+    task_files_raw = metadata.get("task_files", [])
+    if isinstance(task_files_raw, str):
+        try:
+            task_files_raw = json.loads(task_files_raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            task_files_raw = []
+    task_files_list = task_files_raw if isinstance(task_files_raw, list) else []
+    custom_eval_code = metadata.get("custom_eval_code", "") or ""
+
+    config_hash = _config_hash(
+        base_image,
+        pip_packages,
+        hf_datasets_list,
+        hf_models_list,
+        _task_files_hash(task_files_list),
+        _eval_code_hash(custom_eval_code),
+    )
     task_dir = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}")
     meta_path = os.path.join(task_dir, "hf_meta.json")
     hf_cache_dir = os.path.join(task_dir, "hf_cache")
@@ -310,6 +410,12 @@ def _do_build(
 
     # Pre-build disk space check
     if not _check_build_disk_space():
+        _report_build_error(
+            task_id,
+            "Insufficient disk space for build",
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
 
     os.makedirs(task_dir, exist_ok=True)
@@ -323,6 +429,31 @@ def _do_build(
         _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key)
     for model_name in hf_models_list:
         _download_model(model_name, task_id, hf_cache_dir, hf_api_key)
+
+    # Download task resource files into build context
+    task_data_dir = os.path.join(task_dir, "data")
+    os.makedirs(task_data_dir, exist_ok=True)
+    for tf in task_files_list:
+        tf_filename = tf.get("filename", "")
+        if tf_filename == "labels.parquet":
+            continue
+        tf_saved = tf.get("saved_name", tf_filename)
+        upload_folder = getattr(Config, "UPLOAD_FOLDER", "")
+        src_local = (
+            os.path.join(upload_folder, f"task_{task_id}", tf_saved) if upload_folder else ""
+        )
+        if src_local and os.path.exists(src_local):
+            shutil.copy2(src_local, os.path.join(task_data_dir, tf_filename))
+            logger.debug("Copied task file '%s' from local storage", tf_filename)
+        else:
+            _download_task_file_for_build(task_id, tf_filename, tf_saved, task_data_dir, metadata)
+
+    # Write evaluator script into build context
+    if custom_eval_code:
+        eval_path = os.path.join(task_dir, "evaluator_script.py")
+        with open(eval_path, "w") as f:
+            f.write(custom_eval_code)
+        os.chmod(eval_path, 0o644)
 
     req_path = os.path.join(task_dir, "requirements.txt")
     with open(req_path, "w") as f:
@@ -339,6 +470,10 @@ def _do_build(
             ]
         )
     dockerfile_lines.append("COPY hf_cache /hf_cache")
+    if task_files_list:
+        dockerfile_lines.append("COPY data/ /app/data/")
+    if custom_eval_code:
+        dockerfile_lines.append("COPY evaluator_script.py /app/evaluator_script.py")
 
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
@@ -353,7 +488,12 @@ def _do_build(
         if retcode == 0:
             with open(meta_path, "w") as f:
                 json.dump(
-                    {"hash": config_hash, "datasets": hf_datasets_list, "models": hf_models_list},
+                    {
+                        "hash": config_hash,
+                        "datasets": hf_datasets_list,
+                        "models": hf_models_list,
+                        "build_features": 2,
+                    },
                     f,
                 )
             logger.info(
@@ -362,11 +502,31 @@ def _do_build(
                 elapsed,
                 tag,
             )
+            _report_build_error(
+                task_id,
+                "",
+                metadata.get("_main_server_url"),
+                metadata.get("_worker_token"),
+            )
             return True
-        logger.error("Task %s image build failed (rc=%s)\n%s", task_id, retcode, "\n".join(logs))
+        err_msg = logs[-1] if logs else f"Build failed (rc={retcode})"
+        logger.error("Task %s image build failed (rc=%s): %s", task_id, retcode, err_msg)
+        _report_build_error(
+            task_id,
+            err_msg,
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
     except Exception as e:
-        logger.exception("Task %s image build crashed: %s", task_id, e)
+        err_msg = f"Build crashed: {e}"
+        logger.exception("Task %s %s", task_id, err_msg)
+        _report_build_error(
+            task_id,
+            err_msg,
+            metadata.get("_main_server_url"),
+            metadata.get("_worker_token"),
+        )
         return False
 
 
@@ -471,6 +631,10 @@ def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
                 "hf_datasets": task_config.get("hf_datasets", "[]"),
                 "hf_models": task_config.get("hf_models", "[]"),
                 "hf_api_key": task_config.get("hf_api_key", ""),
+                "task_files": task_config.get("task_files", []),
+                "custom_eval_code": task_config.get("custom_eval_code", ""),
+                "_main_server_url": main_server_url,
+                "_worker_token": worker_token,
             }
             try:
                 build_task_image(metadata)
@@ -530,6 +694,10 @@ def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
                                     "hf_datasets": t.get("hf_datasets", "[]"),
                                     "hf_models": t.get("hf_models", "[]"),
                                     "hf_api_key": t.get("hf_api_key", ""),
+                                    "task_files": t.get("task_files", []),
+                                    "custom_eval_code": t.get("custom_eval_code", ""),
+                                    "_main_server_url": main_server_url,
+                                    "_worker_token": worker_token,
                                 }
                                 build_task_image(metadata)
                                 break

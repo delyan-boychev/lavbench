@@ -353,9 +353,9 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     continue
                 reason = f"task time limit ({task_time_limit}s) exceeded"
             else:
-                if now - sub.created_at <= timedelta(minutes=10):
+                if now - sub.created_at <= timedelta(hours=1):
                     continue
-                reason = "never picked up by a worker (10m+ queued)"
+                reason = "never picked up by a worker (1h+ queued)"
             sub.status = "failed"
             sub.detailed_status = "failed"
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."

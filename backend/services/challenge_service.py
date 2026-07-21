@@ -19,7 +19,7 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
 
 
 def generate_scores_csv(challenge: Challenge) -> str:

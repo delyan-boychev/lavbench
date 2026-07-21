@@ -140,8 +140,8 @@ DEFAULT_ERROR_MESSAGES = {
     # TODO: planned feature — not yet wired
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_TOO_MANY_FILES": "You can upload a maximum of 5 files per task.",
-    # TODO: planned feature — not yet wired
-    "ERR_FILE_TOO_LARGE_25MB": "File exceeds the maximum allowed size of 25MB.",
+    "ERR_TASK_FILE_TOO_LARGE": "File exceeds the maximum allowed size of 500MB.",
+    "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     # TODO: planned feature — not yet wired
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
     # TODO: planned feature — not yet wired
@@ -164,6 +164,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_NOT_AVAILABLE": "Access denied or task not available yet.",
     "ERR_FORBIDDEN": "Only administrators are allowed to configure custom environments.",
     "ERR_TASK_NOT_FOUND": "Task not found.",
+    "ERR_TASK_BUILD_ERROR": "This task is temporarily unavailable due to an environment configuration issue.",
     # TODO: planned feature — not yet wired
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",
     # app.py

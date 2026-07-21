@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
 import time
 from typing import Any
@@ -284,14 +285,37 @@ def download_task_files_to_dir(
         return
 
     task_id = metadata.get("task_id")
+
+    # Fast path: copy from pre-fetched build cache
+    build_cache = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
+    if os.path.isdir(build_cache):
+        copied = 0
+        for f in files_list:
+            fn = f["filename"]
+            if fn == "labels.parquet":
+                continue
+            src = os.path.join(build_cache, fn)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(temp_dir, fn))
+                copied += 1
+        non_parquet_files = [ff for ff in files_list if ff.get("filename") != "labels.parquet"]
+        if copied == len(non_parquet_files):
+            logs.append(f"Copied {copied} task file(s) from build cache")
+            return
+        elif copied > 0:
+            logs.append(
+                f"Partially copied {copied}/{len(non_parquet_files)} file(s)"
+                " from build cache, downloading rest"
+            )
+
     submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
     token = _sign_worker_token(submission_id)
     headers = {"X-Worker-Token": token}
-    is_unified = True
+
     for f in files_list:
         filename = f["filename"]
-        if is_unified and filename == "labels.parquet":
+        if filename == "labels.parquet":
             continue  # Do NOT download labels.parquet to sandbox temp_dir!
 
         url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
