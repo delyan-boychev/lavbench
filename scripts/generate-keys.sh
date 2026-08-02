@@ -109,6 +109,7 @@ if [ "$HTTP_CHOICE" = "2" ]; then
   PROTOCOL="https"
   SERVER_URL="https://${SERVER_ADDR}"
   set_env "CORS_ORIGINS" "https://${SERVER_ADDR}"
+  set_env "SECURE_COOKIES" "true"
   GENERATE_HTTPS_CERTS=false
   echo ""
   echo "  Generate self-signed HTTPS certificates?"
@@ -125,6 +126,7 @@ else
   SERVER_URL="http://${SERVER_ADDR}:${NGINX_PORT}"
   set_env "NGINX_PORT" "$NGINX_PORT"
   set_env "CORS_ORIGINS" "${SERVER_URL}"
+  set_env "SECURE_COOKIES" "false"
 fi
 echo ""
 

@@ -109,7 +109,7 @@ class BulkResetPasswordResponse(BaseModel):
 
 class AuditLogResponse(BaseModel):
     id: UUID
-    admin_id: UUID
+    admin_id: UUID | None = None  # system-generated logs have no admin
     admin_username: str | None = None
     action_type: str | None = None
     target_type: str | None = None

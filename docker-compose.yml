@@ -113,10 +113,12 @@ services:
     mem_limit: 1g
     cpus: "1.0"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - SECURE_COOKIES=${SECURE_COOKIES:-true}
@@ -166,10 +168,12 @@ services:
     restart: always
     command: celery -A tasks.celery beat --loglevel=info -s /app/run/celerybeat-schedule.db
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -212,10 +216,12 @@ services:
     restart: always
     command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q celery,internal -c $${CELERY_WORKER_CONCURRENCY:-2}'
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -247,12 +253,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pgrep -f 'celery.*worker' || exit 1",
+          "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
         ]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
 
   # 6. React Frontend & Nginx Router
   frontend:
