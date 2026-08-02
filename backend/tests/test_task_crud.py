@@ -1193,7 +1193,9 @@ class TestReportBuildError:
         assert resp.status_code == 401
 
         # Valid token → set build_error
-        with patch("routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}):
+        with patch(
+            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
+        ):
             resp = client.post(
                 f"/api/worker/tasks/{task_id}/report-build-error",
                 json={"error": "Docker pull failed: 404 Not Found"},
@@ -1214,7 +1216,9 @@ class TestReportBuildError:
             assert task.build_error is None
 
     def test_report_error_not_found(self, client, tokens):
-        with patch("routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}):
+        with patch(
+            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
+        ):
             resp = client.post(
                 "/api/worker/tasks/00000000-0000-0000-0000-000000000000/report-build-error",
                 json={"error": "fail"},

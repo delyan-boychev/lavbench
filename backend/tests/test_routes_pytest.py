@@ -667,17 +667,13 @@ class TestRouteLevelLogic:
         assert body["online_workers"] == 1
         assert body["clusters"] == []
 
-        res = self.client.get(
-            "/api/worker-status", headers=self.get_auth_header(self.admin_token)
-        )
+        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.admin_token))
         assert res.status_code == 200
         assert res.get_json()["status"] == "online"
         assert len(res.get_json()["clusters"]) == 1
 
         mock_inspect.ping.return_value = None
-        res = self.client.get(
-            "/api/worker-status", headers=self.get_auth_header(self.jury_token)
-        )
+        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.jury_token))
         assert res.status_code == 200
         assert res.get_json()["status"] == "offline"
 

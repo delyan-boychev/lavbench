@@ -41,11 +41,22 @@ class Config:
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
+        # Must exceed the 1h watchdog cutoff so queued tasks are never
+        # redelivered/duplicated right before the watchdog marks them failed.
+        "visibility_timeout": int(os.environ.get("CELERY_VISIBILITY_TIMEOUT", 7200)),
     }
+
+    # Max queued+accepted evaluations before submissions are rejected (per queue)
+    MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
+    # Broker message expiry for evaluation tasks (seconds)
+    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 1800))
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
     REDIS_SOCKET_TIMEOUT = int(os.environ.get("REDIS_SOCKET_TIMEOUT", 5))
+
+    # PostgreSQL statement timeout (milliseconds) — applied via connect_args
+    PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
 
     # SSE (Server-Sent Events) connection limits
     SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
@@ -87,6 +98,10 @@ class Config:
             "max_overflow": 50,
             "pool_pre_ping": True,
             "pool_recycle": 600,
+            # Abort runaway statements (leaderboard rebuilds, unindexed scans)
+            "connect_args": {
+                "options": f"-c statement_timeout={PG_STATEMENT_TIMEOUT_MS}",
+            },
         }
 
     # Pagination defaults

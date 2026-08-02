@@ -32,6 +32,12 @@ class PaginatedResponse[T](BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+    checks: dict[str, str] = Field(
+        ...,
+        description=(
+            "Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk."
+        ),
+    )
 
     model_config = RESPONSE_CONFIG
 

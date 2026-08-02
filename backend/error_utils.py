@@ -122,6 +122,7 @@ DEFAULT_ERROR_MESSAGES = {
     # TODO: planned feature — not yet wired
     "ERR_DAILY_LIMIT_REACHED": "Daily limit reached.",
     "ERR_QUEUE_UNAVAILABLE": "Submission queue is temporarily unavailable. Please try again.",
+    "ERR_QUEUE_FULL": "The evaluation queue is full. Please wait for pending evaluations to finish.",
     "ERR_SUBMISSIONS_LOCKED": "Access denied. Submissions are locked.",
     "ERR_SELECTION_WINDOW_CLOSED": "The final selection window for this stage has closed.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",

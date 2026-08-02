@@ -1,5 +1,5 @@
 import json
-from unittest.mock import mock_open, patch
+import os
 
 import pytest
 
@@ -15,7 +15,7 @@ class TestTaskFileDownload:
     """GET /api/tasks/<task_id>/download/<filename>"""
 
     @pytest.fixture
-    def task_with_files(self, db_session, sample_challenge):
+    def task_with_files(self, db_session, sample_challenge, client):
         task = Task(
             title="Download Test Task",
             challenge_id=sample_challenge.id,
@@ -32,6 +32,12 @@ class TestTaskFileDownload:
         )
         db_session.add(task)
         db_session.flush()
+        # Downloads are streamed from disk — create the real files
+        upload_dir = os.path.join(client.application.config["UPLOAD_FOLDER"], f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        for saved_name in ("abc_data.csv", "xyz_labels.parquet"):
+            with open(os.path.join(upload_dir, saved_name), "wb") as f:
+                f.write(b"test data")
         return task
 
     @pytest.fixture
@@ -57,22 +63,14 @@ class TestTaskFileDownload:
 
     # --- admin downloads ---
 
-    @patch("routes.tasks.os.path.isfile", return_value=True)
-    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
-    def test_admin_downloads_regular_file(
-        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
-    ):
+    def test_admin_downloads_regular_file(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
             headers=auth_headers(tokens.admin),
         )
         assert resp.status_code == 200
 
-    @patch("routes.tasks.os.path.isfile", return_value=True)
-    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
-    def test_admin_downloads_labels_parquet(
-        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
-    ):
+    def test_admin_downloads_labels_parquet(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/labels.parquet",
             headers=auth_headers(tokens.admin),
@@ -81,11 +79,7 @@ class TestTaskFileDownload:
 
     # --- competitor downloads ---
 
-    @patch("routes.tasks.os.path.isfile", return_value=True)
-    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"test data")
-    def test_competitor_downloads_regular_file(
-        self, mock_file, mock_isfile, client, task_with_files, tokens, auth_headers
-    ):
+    def test_competitor_downloads_regular_file(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
             headers=auth_headers(tokens.competitor),
@@ -137,12 +131,8 @@ class TestTaskFileDownload:
         assert resp.status_code == 403
         assert resp.get_json()["code"] == "ERR_LABELS_NOT_AVAILABLE"
 
-    @patch("routes.tasks.os.path.isfile", return_value=True)
-    @patch("routes.tasks.open", new_callable=mock_open, read_data=b"labels")
     def test_jury_allowed_labels_after_challenge_starts(
         self,
-        mock_file,
-        mock_isfile,
         client,
         db_session,
         task_with_files,

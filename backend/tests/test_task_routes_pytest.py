@@ -75,12 +75,18 @@ class TestWorkerNonceBinding:
         assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is False
 
     def test_empty_submission_id_rejected(self):
-        assert _worker_nonce_allowed_for_task({"submission_id": "", "ts": "0"}, self.task_a.id) is False
+        assert (
+            _worker_nonce_allowed_for_task({"submission_id": "", "ts": "0"}, self.task_a.id)
+            is False
+        )
         assert _worker_nonce_allowed_for_task({}, self.task_a.id) is False
 
     @patch("routes.tasks.check_worker_auth")
     def test_progress_report_rejects_unbound_nonce(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "99999999-9999-9999-9999-999999999999", "ts": "0"}
+        mock_verify.return_value = {
+            "submission_id": "99999999-9999-9999-9999-999999999999",
+            "ts": "0",
+        }
         resp = self.client.post(
             f"/api/worker/report/{self.submission.id}",
             json={"status": "completed", "scores": {"accuracy": 0.9}},

@@ -13,6 +13,7 @@ import string
 import tempfile
 import time
 import zipfile
+from collections.abc import Generator
 from datetime import datetime
 from typing import Any
 
@@ -77,6 +78,7 @@ from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
 from utils.sse import sse_response
+from utils.streaming import stream_file_response, stream_open_handle_response
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
@@ -258,6 +260,10 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     requester_role = request.user["role"]
     requester_id = request.user["user_id"]
 
+    # Preload all challenges once so to_dict() never issues a per-row
+    # Challenge lookup (avoids N+1 queries on the user listing)
+    challenge_cache: dict[Any, Any] = {c.id: c for c in Challenge.query.all()}
+
     if requester_role == "jury":
         from models import JuryChallenge
 
@@ -278,7 +284,10 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return paginated_response(
-            [u.to_dict(view_role=request.user["role"]) for u in pagination.items],
+            [
+                u.to_dict(view_role=request.user["role"], challenge_cache=challenge_cache)
+                for u in pagination.items
+            ],
             pagination.total,
             pagination.page,
             pagination.pages,
@@ -301,8 +310,7 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     # Fetch challenges lazily only when needed for search results
     filtered_items = []
     if candidates:
-        challenges = Challenge.query.all()
-        started_challenge_ids = {c.id for c in challenges if c.is_started}
+        started_challenge_ids = {c.id for c in challenge_cache.values() if c.is_started}
     else:
         started_challenge_ids = set()
     for u in candidates:
@@ -338,7 +346,10 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     paginated_items = filtered_items[start:end]
 
     return paginated_response(
-        [u.to_dict(view_role=request.user["role"]) for u in paginated_items],
+        [
+            u.to_dict(view_role=request.user["role"], challenge_cache=challenge_cache)
+            for u in paginated_items
+        ],
         total,
         page,
         (total + per_page - 1) // per_page if total > 0 else 1,
@@ -830,22 +841,14 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 )
 def download_backup_file(
     filename: str,
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
     safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
     if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
         return err("ERR_NOT_FOUND", 404, message="Not found")
-    with open(safe_path, "rb") as fh:
-        file_data = fh.read()
-    return (
-        file_data,
-        200,
-        {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )
+    # Stream from disk — backups can be multi-GB and must not be buffered in RAM
+    return stream_file_response(safe_path, "application/gzip", filename)
 
 
 @admin_bp.route("/backups/<path:filename>", methods=["DELETE"])
@@ -1299,7 +1302,7 @@ def download_scores_csv(challenge_id: Any) -> FlaskResponse | tuple[FlaskRespons
 )
 def download_submissions_zip(
     challenge_id: Any,
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """
     Download completed competitor submissions as a ZIP archive.
     Allows anonymized downloads when a stage or the competition has ended,
@@ -1409,7 +1412,7 @@ def download_submissions_zip(
                 "README.txt",
                 f"No completed competitor submissions found for {target_desc}",
             )
-    zip_filename = f"submissions_challenge_{challenge_id}"
+    zip_filename = "submissions_challenge_{challenge_id}"
     if stage_id:
         zip_filename += f"_stage_{stage_id}"
     if is_anonymized:
@@ -1424,16 +1427,11 @@ def download_submissions_zip(
             os.unlink(zip_tmp.name)
         return response
 
-    with open(zip_tmp.name, "rb") as fh:
-        zip_bytes = fh.read()
-    return (
-        zip_bytes,
-        200,
-        {
-            "Content-Type": "application/zip",
-            "Content-Disposition": f'attachment; filename="{zip_filename}"',
-        },
-    )
+    # Stream the ZIP from disk instead of buffering the whole archive in RAM.
+    # The handle stays open until the body is streamed (unlink only removes the
+    # name — the inode lives on POSIX), then closes after the stream ends.
+    zip_handle = open(zip_tmp.name, "rb")  # noqa: SIM115 — closed by the generator
+    return stream_open_handle_response(zip_handle, "application/zip", zip_filename)
 
 
 @admin_bp.route("/workers/stats", methods=["GET"])

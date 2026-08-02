@@ -88,16 +88,49 @@ def create_app() -> Flask:
     @app.route("/api/health", methods=["GET"])
     @api.validate(resp=Response(HTTP_200=HealthResponse, HTTP_503=HealthResponse), tags=["Health"])
     def health_check() -> tuple[HealthResponse, int]:
-        """Health check for Docker and load balancer monitoring."""
-        db_ok = True
+        """Health check for Docker and load balancer monitoring.
+
+        Probes the database, Redis (cache/SSE/broker) and disk space so a
+        degraded stack never reports healthy.
+        """
+        checks: dict[str, str] = {}
+
         try:
             db.session.execute(db.text("SELECT 1"))
+            checks["database"] = "ok"
         except Exception:
-            db_ok = False
+            checks["database"] = "degraded"
+
+        try:
+            from cache_utils import get_redis_client
+
+            redis_client = get_redis_client()
+            if redis_client is not None and redis_client.ping():
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "degraded"
+        except Exception:
+            checks["redis"] = "degraded"
+
+        try:
+            import shutil
+
+            probe_dir = Config.BACKUPS_DIR
+            if not os.path.isdir(probe_dir):
+                probe_dir = Config.LOG_DIR
+            if not os.path.isdir(probe_dir):
+                probe_dir = os.path.dirname(os.path.abspath(__file__))
+            free_bytes = shutil.disk_usage(probe_dir).free
+            checks["disk"] = "ok" if free_bytes >= 512 * 1024 * 1024 else "degraded"
+        except Exception:
+            checks["disk"] = "degraded"
+
+        ok = all(value == "ok" for value in checks.values())
         return HealthResponse(
-            status="ok" if db_ok else "degraded",
+            status="ok" if ok else "degraded",
             version=__version__,
-        ), 200 if db_ok else 503
+            checks=checks,
+        ), 200 if ok else 503
 
     # ── spectree / OpenAPI setup ─────────────────────────────────────
     api.register(app)

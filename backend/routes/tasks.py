@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
 
@@ -21,7 +22,8 @@ from auth_utils import (
     rate_limit,
     role_required,
 )
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from cache_utils import get_queue_depth, get_redis_client, invalidate_leaderboard_cache
+from config import Config
 from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
 from schemas.responses import (
@@ -66,6 +68,7 @@ from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
+from utils.streaming import stream_file_response
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -1026,7 +1029,11 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
 )
 def download_task_file(
     task_id: Any, filename: str
-) -> FlaskResponse | tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> (
+    FlaskResponse
+    | tuple[Generator[bytes, None, None], int, dict[str, str]]
+    | tuple[FlaskResponse, int]
+):
     """Download a resource file attached to a task."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -1063,31 +1070,16 @@ def download_task_file(
         file_path = os.path.join(task_upload_dir, saved_name)
         if not os.path.isfile(file_path):
             return err("ERR_NOT_FOUND", 404)
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        # Stream from disk (files can be up to 500 MB — never buffer in RAM)
         safe_filename = sanitize_filename_part(filename)
-        return (
-            file_data,
-            200,
-            {
-                "Content-Type": "application/octet-stream",
-                "Content-Disposition": f'attachment; filename="{safe_filename}"',
-            },
-        )
+        return stream_file_response(file_path, "application/octet-stream", safe_filename)
 
     if task.baseline_notebook_path:
         baseline_basename = os.path.basename(task.baseline_notebook_path)
         if filename == baseline_basename:
-            with open(task.baseline_notebook_path, "rb") as fh:
-                baseline_bytes = fh.read()
             safe_filename = sanitize_filename_part(filename)
-            return (
-                baseline_bytes,
-                200,
-                {
-                    "Content-Type": "application/octet-stream",
-                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
-                },
+            return stream_file_response(
+                task.baseline_notebook_path, "application/octet-stream", safe_filename
             )
 
     return err("ERR_FILE_NOT_FOUND", 404)
@@ -1176,6 +1168,23 @@ def submit_task(
             ),
         )
 
+    gpu_required = False
+    if task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+    if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+        return err(
+            "ERR_QUEUE_FULL",
+            429,
+            message=(
+                f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                "Please try again later."
+            ),
+        )
+
     if task.max_submissions_per_period and task.submission_period_hours:
         period_start = utcnow() - timedelta(hours=task.submission_period_hours)
         sub_count = Submission.query.filter(
@@ -1238,14 +1247,6 @@ def submit_task(
     publish_leaderboard_update(submission.challenge_id)
     from tasks import evaluate_submission
 
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
     task_files_list = safe_json_loads(task.files, [])
 
@@ -1278,6 +1279,7 @@ def submit_task(
             priority=priority,
             queue=queue_name,
             countdown=1,
+            expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
@@ -1746,7 +1748,7 @@ def _worker_nonce_allowed_for_task(nonce: dict[str, str], task_id: Any) -> bool:
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
 def worker_download_task_file(
     task_id: Any, filename: str
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Worker endpoint to securely download task resource files."""
     token = request.headers.get("X-Worker-Token")
 
@@ -1775,16 +1777,8 @@ def worker_download_task_file(
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     file_path = os.path.join(task_upload_dir, saved_name)
     safe_filename = sanitize_filename_part(filename)
-    with open(file_path, "rb") as fh:
-        file_bytes = fh.read()
-    return (
-        file_bytes,
-        200,
-        {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="{safe_filename}"',
-        },
-    )
+    # Stream from disk (files can be up to 500 MB — never buffer in RAM)
+    return stream_file_response(file_path, "application/octet-stream", safe_filename)
 
 
 @tasks_bp.route("/worker/active-tasks", methods=["GET"])

@@ -11,7 +11,7 @@ from flask import Response as FlaskResponse
 from spectree import Response
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from cache_utils import get_cached, get_redis_client, invalidate_leaderboard_cache, set_cached
 from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
@@ -501,7 +501,18 @@ def stream_challenge_leaderboard(
                     c = db.session.get(Challenge, challenge_id)
                     if not c:
                         return
-                    payload = _get_leaderboard_payload(c, user_role, user_id)
+                    # One computation per challenge per ~5s, shared by every
+                    # connected SSE client (prevents a thundering herd where
+                    # each client rebuilds the full payload per update)
+                    cache_key = (
+                        f"leaderboard:sse:{challenge_id}:{user_role}:{user_id}"
+                        if user_role == "competitor"
+                        else f"leaderboard:sse:{challenge_id}:{user_role}:shared"
+                    )
+                    payload = get_cached(cache_key)
+                    if payload is None:
+                        payload = _get_leaderboard_payload(c, user_role, user_id)
+                        set_cached(cache_key, payload, timeout=5)
                     yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
 
             for msg in get_and_yield_leaderboard():

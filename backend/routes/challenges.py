@@ -641,13 +641,21 @@ def finalize_challenge(
         )
     tasks = challenge.tasks
 
+    # Precompute (competitor, task) pairs with submissions in a single query
+    # (avoids the N x M per-row COUNT queries on large competitions)
+    submitted_pairs = {
+        (r[0], r[1])
+        for r in Submission.query.with_entities(Submission.user_id, Submission.task_id)
+        .filter(Submission.challenge_id == challenge_id)
+        .all()
+    }
+
     for comp in competitors:
         manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in tasks:
             # Check if this competitor has any submissions for this task
-            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
-            if total_subs > 0:
+            if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
                     return err(
@@ -965,13 +973,24 @@ def finalize_stage(
         )
     stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
 
+    # Precompute (competitor, task) pairs with submissions in a single query
+    # (avoids the N x M per-row COUNT queries on large stages)
+    stage_task_ids = [t.id for t in stage_tasks]
+    submitted_pairs: set[tuple[Any, Any]] = set()
+    if stage_task_ids:
+        submitted_pairs = {
+            (r[0], r[1])
+            for r in Submission.query.with_entities(Submission.user_id, Submission.task_id)
+            .filter(Submission.task_id.in_(stage_task_ids))
+            .all()
+        }
+
     for comp in competitors:
         manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in stage_tasks:
             # Check if this competitor has any submissions for this task
-            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
-            if total_subs > 0:
+            if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
                     name_str = comp.username

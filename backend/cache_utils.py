@@ -117,6 +117,22 @@ def log_dead_letter(
         logger.exception("log_dead_letter failed")
 
 
+def get_queue_depth(queue_name: str) -> int:
+    """Return the number of messages currently pending on a Celery queue.
+
+    Fails open (returns 0) when Redis is unavailable so submissions are never
+    rejected because of a monitoring hiccup.
+    """
+    r = get_redis_client()
+    if not r:
+        return 0
+    try:
+        return int(r.llen(queue_name) or 0)
+    except Exception:
+        logger.exception("Failed to read queue depth for %s", queue_name)
+        return 0
+
+
 def get_cached(key: str) -> Any:
     """Get a JSON-deserialized value from Redis by key. Returns None on miss/error."""
     r = get_redis_client()

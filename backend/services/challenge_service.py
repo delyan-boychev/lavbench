@@ -157,8 +157,15 @@ def generate_exported_results_csv(challenge: Challenge, view_role: str = "admin"
 
     task_ids = [t.id for t in tasks]
     if task_ids:
+        from sqlalchemy.orm import joinedload
+
         audit_logs = (
             AuditLog.query.filter(AuditLog.task_id.in_(task_ids))
+            .options(
+                joinedload(AuditLog.admin),
+                joinedload(AuditLog.target_user),
+                joinedload(AuditLog.task),
+            )
             .order_by(AuditLog.timestamp.asc())
             .all()
         )

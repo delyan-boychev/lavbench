@@ -74,13 +74,14 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
     target = os.path.join(backup_dir, filename)
 
     # Pre-flight disk space check
+    min_free_gb = Config.MIN_BACKUP_DISK_GB
     try:
         disk_usage = shutil.disk_usage(backup_dir)
         free_gb = disk_usage.free / (1024**3)
-        if free_gb < 1.0:
+        if free_gb < min_free_gb:
             raise RuntimeError(
                 f"Insufficient disk space for backup: {free_gb:.1f}GB free "
-                f"in {backup_dir} (min 1GB required)"
+                f"in {backup_dir} (min {min_free_gb}GB required)"
             )
     except FileNotFoundError:
         os.makedirs(backup_dir, exist_ok=True)
@@ -126,7 +127,7 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             env=env,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=Config.BACKUP_TIMEOUT,
         )
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
@@ -198,7 +199,9 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
         if auto:
             tar_args = ["nice", "-n", "19", *tar_args]
 
-        result = subprocess.run(tar_args, env=env, capture_output=True, text=True, timeout=600)  # noqa: S603 — args from trusted config
+        result = subprocess.run(  # noqa: S603 — args from trusted config
+            tar_args, env=env, capture_output=True, text=True, timeout=Config.BACKUP_TIMEOUT
+        )
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")
 

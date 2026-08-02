@@ -1,6 +1,6 @@
 """AuditLog model."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
@@ -32,9 +32,9 @@ class AuditLog(db.Model):  # type: ignore[misc, name-defined]
 
     timestamp = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
 
-    admin = db.relationship("User", foreign_keys=[admin_id])
-    target_user = db.relationship("User", foreign_keys=[target_user_id])
-    task = db.relationship("Task")
+    admin: ClassVar[Any] = db.relationship("User", foreign_keys=[admin_id])
+    target_user: ClassVar[Any] = db.relationship("User", foreign_keys=[target_user_id])
+    task: ClassVar[Any] = db.relationship("Task")
 
     def to_dict(self) -> dict[str, Any]:
         result = {

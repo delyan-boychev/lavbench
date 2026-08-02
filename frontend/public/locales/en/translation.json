@@ -188,6 +188,7 @@
     "ERR_POINTS_MUST_BE_INT": "Points must be integers.",
     "ERR_POINTS_OUT_OF_BOUNDS": "Points must be between 0 and 100.",
     "ERR_QUEUE_UNAVAILABLE": "Submission queue is temporarily unavailable. Please try again.",
+    "ERR_QUEUE_FULL": "The evaluation queue is full. Please wait for pending evaluations to finish.",
     "ERR_RATE_LIMITED": "Too many requests. Please slow down.",
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again in a minute.",
     "ERR_REASON_REQUIRED": "A justification reason is mandatory.",
