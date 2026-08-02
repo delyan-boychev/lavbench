@@ -113,7 +113,7 @@ return err("ERR_INVALID_CREDENTIALS", 401)
 This returns `{"error": "<message>", "code": "<ERR_*>"}` without a legacy `key` field, enabling frontend i18n translation mapping.
 
 ### C. Worker Sandbox Execution & Custom Evaluators
-- Competitor code is executed inside hardened Docker containers (`--network none`, `--cap-drop ALL`, `--read-only`, `--tmpfs /tmp:noexec,nosuid,size=128m`).
+- Competitor code is executed inside hardened Docker containers (`--network none`, `--cap-drop ALL`, `--user 65534`, `--read-only`, `--tmpfs /tmp:noexec,nosuid,size=128m`).
 - Custom evaluators (`evaluator.py`) are parsed via AST on upload (`routes/tasks.py`) and executed inside their own hardened container (`--network none --cap-drop ALL --user 65534 --read-only --pids-limit 64`, 300s cap) against ground-truth `labels.parquet` — never via `exec()` on the worker host. If the sandbox cannot start (image missing, no Docker), evaluation fails closed.
 
 ---

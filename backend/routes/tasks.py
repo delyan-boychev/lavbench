@@ -1038,6 +1038,15 @@ def download_task_file(
         if not check_task_started(task, user_role, user_id):
             return err("ERR_NOT_AVAILABLE", 403)
 
+    # Ground-truth labels are the core secret of a competition: jury members
+    # (already assignment-gated by jury_access_required) may only fetch them
+    # after the competition has started.
+    if user_role == "jury" and filename == "labels.parquet":
+        challenge = task.challenge
+        now = utcnow()
+        if challenge is None or challenge.start_time is None or now < challenge.start_time:
+            return err("ERR_LABELS_NOT_AVAILABLE", 403)
+
     try:
         files_meta = json.loads(task.files)
     except json.JSONDecodeError:

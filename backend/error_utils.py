@@ -146,6 +146,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     # TODO: planned feature — not yet wired
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
+    "ERR_LABELS_NOT_AVAILABLE": "Labels are not available yet for this challenge.",
     # TODO: planned feature — not yet wired
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     # tasks.py — move

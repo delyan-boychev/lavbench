@@ -152,6 +152,7 @@
     "ERR_INVALID_HF_MODELS": "Invalid Hugging Face models configuration.",
     "ERR_INVALID_IMPORT_DATA": "Import data must be a JSON object.",
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
+    "ERR_LABELS_NOT_AVAILABLE": "Labels are not available yet for this challenge.",
     "ERR_INVALID_METRIC_CONFIG": "Invalid metrics configuration.",
     "ERR_INVALID_METRIC_NAME": "Invalid metric name.",
     "ERR_INVALID_PATH": "Invalid path",

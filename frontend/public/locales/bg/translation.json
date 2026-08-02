@@ -152,6 +152,7 @@
     "ERR_INVALID_HF_MODELS": "Невалидна конфигурация на Hugging Face модели.",
     "ERR_INVALID_IMPORT_DATA": "Данните за импорт трябва да бъдат JSON обект.",
     "ERR_INVALID_LABELS_SCHEMA": "Невалидна схема на labels.parquet.",
+    "ERR_LABELS_NOT_AVAILABLE": "Етикетите все още не са налични за това състезание.",
     "ERR_INVALID_METRIC_CONFIG": "Невалидна конфигурация на метрики.",
     "ERR_INVALID_METRIC_NAME": "Невалидно име на метрика.",
     "ERR_INVALID_PATH": "Невалиден път",
