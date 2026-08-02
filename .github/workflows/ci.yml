@@ -165,6 +165,7 @@ jobs:
       WORKER_PUBLIC_KEY: unused-in-ci-worker-public-key-placeholder
       SERVER_ADDRESS: localhost
       MAIN_SERVER_URL: http://localhost:5001
+      SECURE_COOKIES: "false"
     steps:
       - uses: actions/checkout@v7
 
@@ -238,6 +239,15 @@ jobs:
             exit 1;
           }
           echo "Frontend is serving the SPA (HTTP 200)"
+
+      # --- Run full-stack API smoke test against the live stack ---
+      - name: Create admin user
+        run: |
+          docker compose exec -T backend python3 /app/setup-admin.py
+          docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt
+
+      - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE)
+        run: python3 scripts/api_smoke_test.py
 
       # --- Clean up ---
       - name: Clean up
