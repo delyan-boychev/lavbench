@@ -14,47 +14,12 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-import requests
 from flask import Flask
 
 from config import Config
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
-
-
-def run_register_worker_specs(celery_app: Any) -> None:
-    from config import Config
-
-    gpu_id = Config.WORKER_GPU_ID or None
-    machine_id = os.environ.get("HOSTNAME", "local-worker")
-    if gpu_id is not None:
-        machine_id = f"gpu-worker-device-{gpu_id}"
-
-    try:
-        import psutil  # type: ignore[import-untyped]
-
-        ram_gb = round(psutil.virtual_memory().total / (1024**3), 2)
-    except ImportError:
-        ram_gb = 16.0
-
-    gpu_count = 0
-    if gpu_id:
-        gpu_count = len([g for g in gpu_id.split(",") if g.strip()])
-
-    try:
-        requests.post(
-            f"{Config.MAIN_SERVER_URL.rstrip('/')}/api/admin/workers/register",
-            json={
-                "worker_id": machine_id,
-                "ram_gb": ram_gb,
-                "gpu_count": gpu_count,
-                "status": "idle",
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning("Worker registration failed for ID %s: %s", machine_id, str(e))
 
 
 def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
@@ -241,9 +206,10 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
 
 def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, state: Any) -> None:
     try:
-        from cache_utils import get_redis_client
+        from cache_utils import get_coordination_client
+        from sse_utils import CHANNEL_BACKUPS
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             payload = {
                 "filename": filename,
@@ -252,7 +218,7 @@ def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, sta
                 "challenge_id": challenge_id,
                 "state": state,
             }
-            r.publish("backup_status", json.dumps(payload))
+            r.publish(CHANNEL_BACKUPS, json.dumps(payload))
     except Exception as e:
         logger.warning("Failed to publish backup event: %s", e)
 

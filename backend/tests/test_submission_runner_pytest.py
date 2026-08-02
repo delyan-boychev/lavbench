@@ -97,7 +97,7 @@ class TestSubmissionRunnerDocker:
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_redis_client",
+            "task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
 
@@ -662,7 +662,7 @@ class TestDockerNotAvailable:
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_redis_client",
+            "task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
         mocker.patch(
@@ -713,7 +713,7 @@ class TestCodeCellsParseError:
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_redis_client",
+            "task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
         mocker.patch(

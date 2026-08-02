@@ -62,17 +62,6 @@ fi
 CPU_CONCURRENCY=$(( CONCURRENCY - GPU_COUNT ))
 [ "$CPU_CONCURRENCY" -lt 1 ] && CPU_CONCURRENCY=1
 
-# ── Celery queue selection ─────────────────────────────────────────
-INTERNAL=false
-if [ "${WORKER_TYPE:-eval}" = "internal" ]; then
-  INTERNAL=true
-  CELERY_QUEUES="celery"
-elif [ "${WORKER_TYPE:-eval}" = "both" ]; then
-  CELERY_QUEUES="${GPU_ID:+gpu_queue,}cpu_queue,celery"
-else
-  CELERY_QUEUES="${GPU_ID:+gpu_queue,}cpu_queue"
-fi
-
 # ── Common env vars ────────────────────────────────────────────────
 export CELERY_BROKER_URL="$REDIS_URL"
 export CELERY_RESULT_BACKEND="$REDIS_URL"
@@ -90,8 +79,8 @@ fi
 deploy_docker() {
   echo ""
   echo "  → Deploying Docker worker..."
-  echo "    GPU worker:  concurrency=${GPU_COUNT} (queue: gpu_queue)"
-  echo "    CPU worker:  concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
+    echo "    GPU worker:  concurrency=${GPU_COUNT} (queue: gpu_queue)"
+    echo "    CPU worker:  concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
   echo ""
 
   # ── Preflight ──────────────────────────────────────────────────
@@ -149,13 +138,17 @@ deploy_docker() {
     -e GPU_WORKER_CONCURRENCY="$GPU_COUNT" \
     -e CPU_WORKER_CONCURRENCY="$CPU_CONCURRENCY" \
     -e RUNNING_AS_WORKER=true \
+    -e EVALUATION_ONLY_WORKER=true \
+    $( [ -n "${REDIS_SSL_CA_CERTS:-}" ] && echo "-e REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS}" || true ) \
+    $( [ -n "${REDIS_SSL_CERTFILE:-}" ] && echo "-e REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE}" || true ) \
+    $( [ -n "${REDIS_SSL_KEYFILE:-}" ] && echo "-e REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE}" || true ) \
+    $( [ -n "${REDIS_SSL_CERT_REQS:-}" ] && echo "-e REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS}" || true ) \
     -e PYTHONPATH=/app \
-    -e INTERNAL_ONLY_WORKER=$([ "$INTERNAL" = "true" ] && echo "true" || echo "false") \
-    -e EVALUATION_ONLY_WORKER=$([ "$INTERNAL" = "true" ] && echo "false" || echo "true") \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
     -v "${TASK_IMAGES_DIR}:/app/task_images" \
+    $( [ -n "${REDIS_SSL_CA_CERTS:-}" ] && echo "-v $(pwd)/certs:/etc/ssl/certs/redis:ro" || true ) \
     $( [ -n "$GPU_ID" ] && echo "--gpus all" || true ) \
     "$WORKER_IMAGE"
 
@@ -203,21 +196,14 @@ deploy_local() {
   # ── Start Celery ────────────────────────────────────────────────
   cd backend
 
-  if [ "$INTERNAL" = "true" ]; then
-    echo "  → Internal worker: concurrency=${CONCURRENCY} (queue: celery)"
-    export INTERNAL_ONLY_WORKER="true"
-    export EVALUATION_ONLY_WORKER="false"
-    exec celery -A tasks.celery worker --loglevel=info -Q celery -c "$CONCURRENCY"
-  elif [ -n "$GPU_ID" ]; then
+  if [ -n "$GPU_ID" ]; then
     echo "  → GPU worker: concurrency=${GPU_COUNT} (queue: gpu_queue)"
-    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
-    export INTERNAL_ONLY_WORKER="false"
+    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export EVALUATION_ONLY_WORKER="true"
     celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" &
-    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue,celery -c "$CPU_CONCURRENCY"
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY"
   else
-    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queues: cpu_queue,celery)"
-    export INTERNAL_ONLY_WORKER="false"
+    echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export EVALUATION_ONLY_WORKER="true"
     exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY"
   fi

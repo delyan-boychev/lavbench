@@ -15,9 +15,10 @@ from sqlalchemy.orm import joinedload
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import (
     cache_lock,
+    get_coordination_client,
     get_queue_depth,
-    get_redis_client,
     invalidate_leaderboard_cache,
+    submission_logs_key,
 )
 from config import Config
 from error_utils import err
@@ -44,6 +45,7 @@ from sse_utils import (
     publish_submissions_update,
     sse_connection_limit,
     sse_heartbeat,
+    submission_logs_channel,
 )
 from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
@@ -566,13 +568,13 @@ def stream_submission_logs(
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
 
-            r = get_redis_client()
+            r = get_coordination_client()
 
             yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
             if r:
                 try:
-                    log_key = f"submission:{submission_id}:logs"
+                    log_key = submission_logs_key(submission_id)
                     existing_logs = r.lrange(log_key, 0, -1)
                     if existing_logs:
                         for log_bin in existing_logs:
@@ -604,7 +606,7 @@ def stream_submission_logs(
             if r:
                 try:
                     pubsub = r.pubsub()
-                    pubsub.subscribe(f"submission_{submission_id}_logs")
+                    pubsub.subscribe(submission_logs_channel(submission_id))
                 except Exception:
                     r = None
 

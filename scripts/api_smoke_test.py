@@ -120,6 +120,47 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"__error__": f"{type(e).__name__}: {e}"}
 
+    def sse_roundtrip(self, path: str, trigger, timeout: float = 40.0) -> tuple[bool, list[dict], str]:
+        """SSE publish→subscribe round-trip: open a stream, wait for the first
+        data payloads, then call *trigger* (zero-arg callable that publishes to
+        the stream's Redis channel) until a second leaderboard payload arrives.
+
+        Returns ``(ok, payloads, detail)``. Streams here carry no ``event:``
+        lines — updates arrive as full JSON ``data:`` payloads.
+        """
+        try:
+            with self.opener.open(self._req("GET", path), timeout=timeout) as r:
+                if r.headers.get("Content-Type", "") != "text/event-stream":
+                    return False, [], f"not SSE: Content-Type={r.headers.get('Content-Type', '')}"
+                deadline = time.time() + timeout
+                payloads: list[dict] = []
+                updates = 0
+                triggered = 0
+                last_trigger_at = 0.0
+                while time.time() < deadline:
+                    line = r.readline()
+                    if not line:
+                        return False, payloads, "stream EOF before update"
+                    if not line.startswith(b"data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if not raw:
+                        continue
+                    payload = json.loads(raw)
+                    payloads.append(payload)
+                    if "leaderboard" not in payload:
+                        continue
+                    updates += 1
+                    if updates >= 2:
+                        return True, payloads, f"update received (payloads={len(payloads)}, triggers={triggered})"
+                    if triggered < 5 and time.time() - last_trigger_at >= 5.0:
+                        trigger()
+                        triggered += 1
+                        last_trigger_at = time.time()
+                return False, payloads, f"timeout (payloads={len(payloads)}, updates={updates}, triggers={triggered})"
+        except Exception as e:  # noqa: BLE001
+            return False, [], f"{type(e).__name__}: {e}"
+
 
 def check(name: str, ok: bool, detail: str = "") -> None:
     (PASS if ok else FAIL).append(name)
@@ -354,6 +395,22 @@ def main() -> int:
     check("GET /api/admin/submissions/queue 200", code == 200 and isinstance(data, dict) and isinstance(data.get("items"), list))
     code, data = api.send("GET", "/api/admin/workers/stats")
     check("GET /api/admin/workers/stats 200", code == 200 and isinstance(data, dict))
+    wstats = data if code == 200 and isinstance(data, dict) else {}
+    wlist = wstats.get("workers", [])
+    check("workers/stats shape (workers list + count)",
+          isinstance(wlist, list) and isinstance(wstats.get("connected_workers_count"), int),
+          f"keys={sorted(wstats.keys())[:6] if isinstance(wstats, dict) else wstats}")
+    spec_keys = ("name", "status", "type", "gpu_type", "ram_gb", "vram_gb")
+    if wlist:
+        check("worker entries carry worker_spec fields (hostname/type/gpu/ram)",
+              all(isinstance(w, dict) and all(k in w for k in spec_keys) for w in wlist),
+              f"workers={len(wlist)}")
+        check("a CPU worker type is registered (worker_spec registry)",
+              any(w.get("type") == "CPU" for w in wlist),
+              f"types={sorted({w.get('type') for w in wlist if isinstance(w, dict)})}")
+    else:
+        warn("worker_spec registration",
+             "no workers connected (external machines absent) — verified endpoint shape only")
     code, data = api.send("GET", "/api/admin/backups")
     known_backups = data.get("backups", []) if isinstance(data, dict) else []
     check("GET /api/admin/backups 200", code == 200 and isinstance(known_backups, list))
@@ -381,7 +438,7 @@ def main() -> int:
         ("task submissions/live (admin)", f"/api/tasks/{tid}/submissions/live", api, ("items", "info")),
         ("submission logs/live (admin)", f"/api/submissions/{sid}/logs/live", api, ("info", "log", "status")),
         ("admin backups/live", "/api/admin/backups/live", api, ("backups",)),
-        ("admin queue/live", "/api/admin/submissions/queue/live", api, ("items",)),
+        ("admin queue/live", "/api/admin/submissions/queue/live", api, ("items", "event")),
         ("admin workers/stats/live", "/api/admin/workers/stats/live", api, ()),
         ("worker-status/live", "/api/worker-status/live", api, ()),
         ("worker-status/live (competitor)", "/api/worker-status/live", comp, ()),
@@ -398,6 +455,31 @@ def main() -> int:
         else:
             ok = any(k in payload for k in keys) if keys else len(payload) > 0
             check(f"SSE {name}", ok, f"keys={sorted(payload.keys())[:6]}")
+
+    # ── 11b. SSE round-trips (coordination pub/sub over the broker Redis) ──
+    print("\n== 11b. SSE round-trips ==")
+    # queue_updates channel: initial payload only — no deterministic trigger
+    # exists (kill/clear only publish when submissions are still queued, which
+    # is worker-timing dependent), so assert snapshot + connection.
+    payload = api.sse_first_data("/api/admin/submissions/queue/live")
+    check("SSE queue/live snapshot event (queue_updates channel)",
+          isinstance(payload, dict) and payload.get("event") == "snapshot"
+          and isinstance(payload.get("items"), list),
+          f"keys={sorted(payload.keys())[:6] if isinstance(payload, dict) else payload}")
+    # leaderboard live round-trip: select-final always republishes
+    # publish_leaderboard_update → the stream must deliver a second payload.
+    if sid:
+        def _trigger_leaderboard_update() -> None:
+            api.send("POST", f"/api/submissions/{sid}/select-final")
+
+        ok, payloads, detail = api.sse_roundtrip(
+            f"/api/challenges/{cid}/leaderboard/live", _trigger_leaderboard_update)
+        check("SSE leaderboard/live round-trip (publish → update received)", ok, detail)
+        check("SSE leaderboard/live initial 'info: connected' event",
+              bool(payloads) and payloads[0].get("info") == "connected",
+              str(payloads[0])[:120] if payloads else "no payloads collected")
+    else:
+        warn("SSE leaderboard/live round-trip", "no submission id (prior submission checks failed)")
 
     # ── 12. Edge cases ─────────────────────────────────────────────────
     print("\n== 12. Edge cases ==")

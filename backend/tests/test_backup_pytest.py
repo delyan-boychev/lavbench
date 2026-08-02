@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from auth_utils import generate_token
 from models import Challenge, User, db
-from task_modules.system import run_backup, run_register_worker_specs
+from task_modules.system import run_backup
 from tasks import check_and_backup
 
 
@@ -139,48 +139,6 @@ class TestRunBackup:
         mock_remove.assert_any_call("/custom_backups/auto_3.tar.gz")
         mock_remove.assert_any_call("/custom_backups/auto_4.tar.gz")
         mock_remove.assert_any_call("/custom_backups/auto_5.tar.gz")
-
-
-class TestRunRegisterWorkerSpecs:
-    @patch("task_modules.system.requests.post")
-    @patch("task_modules.system.os.environ.get")
-    def test_register_cpu_worker(self, mock_getenv, mock_post):
-        def getenv_side_effect(key, default=None):
-            env = {
-                "WORKER_GPU_ID": None,
-                "HOSTNAME": "worker-01",
-            }
-            return env.get(key, default)
-
-        mock_getenv.side_effect = getenv_side_effect
-        mock_celery = MagicMock()
-        run_register_worker_specs(mock_celery)
-        mock_post.assert_called_once()
-        payload = mock_post.call_args[1]["json"]
-        assert payload["worker_id"] == "worker-01"
-        assert payload["gpu_count"] == 0
-
-    @patch("task_modules.system.requests.post")
-    @patch("task_modules.system.os.environ.get")
-    def test_register_gpu_worker(self, mock_getenv, mock_post):
-        def getenv_side_effect(key, default=None):
-            env = {
-                "WORKER_GPU_ID": "0",
-                "HOSTNAME": "gpu-box",
-            }
-            return env.get(key, default)
-
-        mock_getenv.side_effect = getenv_side_effect
-        mock_celery = MagicMock()
-        run_register_worker_specs(mock_celery)
-        payload = mock_post.call_args[1]["json"]
-        assert "gpu" in payload["worker_id"]
-
-    @patch("task_modules.system.requests.post")
-    def test_register_handles_timeout(self, mock_post):
-        mock_post.side_effect = Exception("timeout")
-        mock_celery = MagicMock()
-        run_register_worker_specs(mock_celery)
 
 
 class TestCheckAndBackup:

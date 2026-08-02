@@ -11,14 +11,24 @@ from flask import Response as FlaskResponse
 from spectree import Response
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import get_cached, get_redis_client, invalidate_leaderboard_cache, set_cached
+from cache_utils import (
+    get_cached,
+    get_coordination_client,
+    invalidate_leaderboard_cache,
+    set_cached,
+)
 from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
 from spec import api
-from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit, sse_heartbeat
+from sse_utils import (
+    SSE_IDLE_TIMEOUT,
+    leaderboard_channel,
+    sse_connection_limit,
+    sse_heartbeat,
+)
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
 from utils.dates import utcnow
@@ -492,7 +502,7 @@ def stream_challenge_leaderboard(
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
 
-            r = get_redis_client()
+            r = get_coordination_client()
 
             yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
@@ -520,7 +530,7 @@ def stream_challenge_leaderboard(
 
             if r:
                 pubsub = r.pubsub()
-                channel_name = f"challenge_{challenge_id}_leaderboard"
+                channel_name = leaderboard_channel(challenge_id)
                 try:
                     pubsub.subscribe(channel_name)
                 except Exception as e:

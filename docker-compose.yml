@@ -231,6 +231,7 @@ services:
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
       - BACKUPS_DIR=/backups
       - INTERNAL_ONLY_WORKER=true
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
     depends_on:
       redis:

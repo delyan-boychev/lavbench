@@ -21,10 +21,7 @@ from task_modules.submission_runner import run_eval_submission
 from task_modules.system import (
     run_backup as _do_backup,
 )
-from task_modules.system import (
-    run_docker_prune,
-    run_register_worker_specs,
-)
+from task_modules.system import run_docker_prune
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
@@ -195,20 +192,9 @@ def recalculate_leaderboard(challenge_id: Any) -> None:
         if challenge.is_frozen:
             build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
 
-        from cache_utils import get_redis_client
+        from sse_utils import publish_leaderboard_update
 
-        r = get_redis_client()
-        if r:
-            channel_name = f"challenge_{challenge_id}_leaderboard"
-            import json
-
-            r.publish(channel_name, json.dumps({"event": "update"}))
-
-
-@celery.task
-def register_worker_specs() -> None:
-    """Celery task: register worker node specs (CPU/GPU/memory) in Redis."""
-    return run_register_worker_specs(celery)
+        publish_leaderboard_update(challenge_id)
 
 
 @celery.task
@@ -285,9 +271,9 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         recovered = 0
         stuck: list[Any] = []
         try:
-            from cache_utils import get_redis_client
+            from cache_utils import get_coordination_client, submission_fallback_key
 
-            r = get_redis_client()
+            r = get_coordination_client()
             if not r:
                 return {"error": "redis_unavailable"}
             stuck = Submission.query.filter(
@@ -302,7 +288,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 )
             ).yield_per(100)
             for sub in stuck:
-                fallback_key = f"submission:{sub.id}:fallback"
+                fallback_key = submission_fallback_key(sub.id)
                 fallback_data = r.get(fallback_key)
                 if fallback_data:
                     try:
@@ -413,29 +399,29 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
     if not app:
         return {"skipped": "no_app_context"}
 
-    from cache_utils import get_redis_client
+    from cache_utils import DIRTY_CHALLENGES_SET, get_coordination_client
 
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return {"error": "redis_unavailable"}
 
     try:
-        dirty_challenges = r.smembers("leaderboard:dirty_challenges")
+        dirty_challenges = r.smembers(DIRTY_CHALLENGES_SET)
         if not dirty_challenges:
             return {"recalculated": 0}
 
         recalculated_count = 0
-        import json
 
         from models import Challenge
         from services.leaderboard_service import build_and_cache_leaderboard
+        from sse_utils import publish_leaderboard_update
 
         with app.app_context():
             for cid_bytes in dirty_challenges:
                 cid = cid_bytes.decode("utf-8") if isinstance(cid_bytes, bytes) else str(cid_bytes)
 
                 # Remove from dirty set first to prevent race condition
-                r.srem("leaderboard:dirty_challenges", cid)
+                r.srem(DIRTY_CHALLENGES_SET, cid)
 
                 try:
                     challenge = Challenge.query.get(cid)
@@ -448,8 +434,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
                         build_and_cache_leaderboard(cid, is_frozen_view=True, force_rebuild=True)
 
                     # Publish event for live SSE updates
-                    channel_name = f"challenge_{cid}_leaderboard"
-                    r.publish(channel_name, json.dumps({"event": "update"}))
+                    publish_leaderboard_update(cid)
                     recalculated_count += 1
                 except Exception as e:
                     logger.error("recalculate_dirty_leaderboards: failed for %s: %s", cid, e)
@@ -488,6 +473,7 @@ celery.conf.beat_schedule = {
     "docker-prune-weekly": {
         "task": "tasks.prune_docker_images",
         "schedule": 604800.0,  # once a week (7 days)
+        "options": {"queue": "cpu_queue"},
     },
 }
 
@@ -495,26 +481,24 @@ celery.conf.beat_schedule = {
 INTERNAL_ONLY_WORKER = Config.INTERNAL_ONLY_WORKER
 EVALUATION_ONLY_WORKER = Config.EVALUATION_ONLY_WORKER
 
-if INTERNAL_ONLY_WORKER or EVALUATION_ONLY_WORKER:
-    all_task_names = [
-        "tasks.evaluate_submission",
-        "tasks.register_worker_specs",
-        "tasks.prune_docker_images",
-        "tasks.check_and_backup",
-        "tasks.recalculate_all_leaderboards",
-        "tasks.recalculate_dirty_leaderboards",
-        "tasks.recalculate_leaderboard",
-        "tasks.run_backup",
-        "tasks.watchdog_stuck_submissions",
-    ]
-    evaluation_tasks = {
-        "tasks.evaluate_submission",
-        "tasks.register_worker_specs",
-        "tasks.prune_docker_images",
-    }
-    for tname in all_task_names:
-        if (INTERNAL_ONLY_WORKER and tname in evaluation_tasks) or (
-            EVALUATION_ONLY_WORKER and tname not in evaluation_tasks
-        ):
-            with contextlib.suppress(KeyError):
-                celery.tasks.unregister(tname)
+INTERNAL_TASKS = {
+    "tasks.check_and_backup",
+    "tasks.recalculate_all_leaderboards",
+    "tasks.recalculate_dirty_leaderboards",
+    "tasks.recalculate_leaderboard",
+    "tasks.run_backup",
+    "tasks.watchdog_stuck_submissions",
+}
+EVALUATION_TASKS = {
+    "tasks.evaluate_submission",
+    "tasks.prune_docker_images",
+}
+
+if INTERNAL_ONLY_WORKER:
+    for tname in EVALUATION_TASKS:
+        with contextlib.suppress(KeyError):
+            celery.tasks.unregister(tname)
+if EVALUATION_ONLY_WORKER:
+    for tname in INTERNAL_TASKS:
+        with contextlib.suppress(KeyError):
+            celery.tasks.unregister(tname)

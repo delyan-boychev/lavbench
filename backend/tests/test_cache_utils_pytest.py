@@ -11,6 +11,7 @@ from cache_utils import (
     cache_lock,
     delete_cached,
     get_cached,
+    get_coordination_client,
     get_redis_client,
     log_dead_letter,
     set_cached,
@@ -18,72 +19,103 @@ from cache_utils import (
 
 
 class TestCacheLock:
-    def test_acquires_lock(self, redis_flush):
-        with cache_lock("lock:test:unit", ttl=10) as got:
+    @pytest.fixture
+    def lock_key(self):
+        import uuid
+
+        return f"lock:test:unit:{uuid.uuid4().hex}"
+
+    def test_acquires_lock(self, redis_flush, lock_key):
+        with cache_lock(lock_key, ttl=10) as got:
             assert got
 
-    def test_lock_releases_after_context(self, redis_flush):
-        with cache_lock("lock:test:unit", ttl=10) as got:
+    def test_lock_releases_after_context(self, redis_flush, lock_key):
+        with cache_lock(lock_key, ttl=10) as got:
             assert got
-        with cache_lock("lock:test:unit", ttl=10) as got2:
+        with cache_lock(lock_key, ttl=10) as got2:
             assert got2
 
-    def test_concurrent_lock_rejected(self, redis_flush):
-        with cache_lock("lock:test:unit", ttl=10) as got1:
+    def test_concurrent_lock_rejected(self, redis_flush, lock_key):
+        with cache_lock(lock_key, ttl=10) as got1:
             assert got1
             r = get_redis_client()
             if r:
-                got2 = r.set("lock:test:unit", "test", nx=True, ex=10)
+                got2 = r.set(lock_key, "test", nx=True, ex=10)
                 assert not got2
 
-    def test_uuid_ownership_prevents_cross_deletion(self, redis_flush):
+    def test_uuid_ownership_prevents_cross_deletion(self, redis_flush, lock_key):
         r = get_redis_client()
         if not r:
             pytest.skip("Redis unavailable")
-        with cache_lock("lock:test:unit", ttl=10):
-            r.set("lock:test:unit", "evil-owner", ex=10)
-        val = r.get("lock:test:unit")
+        with cache_lock(lock_key, ttl=10):
+            r.set(lock_key, "evil-owner", ex=10)
+        val = r.get(lock_key)
         assert val is not None
         decoded = val.decode() if isinstance(val, bytes) else val
         assert decoded == "evil-owner"
-        r.delete("lock:test:unit")
+        r.delete(lock_key)
 
 
 class TestDeadLetterQueue:
     @pytest.fixture(autouse=True)
     def clear_queue(self):
         try:
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
                 r.delete("dead_letter_queue")
         except Exception as e:
             warnings.warn(f"Failed to clear queue: {e}", stacklevel=2)
 
+    def _unique_submission_id(self):
+        import uuid
+
+        return f"dl-{uuid.uuid4().hex}"
+
     def test_logs_entry(self, redis_flush):
-        log_dead_letter(42, task_id=7, challenge_id=3, error="test error")
-        r = get_redis_client()
+        import time
+
+        r = get_coordination_client()
         if not r:
             pytest.skip("Redis unavailable")
-        entries = r.lrange("dead_letter_queue", 0, -1)
-        matches = [e for e in entries if b'"submission_id": 42' in e]
-        assert len(matches) >= 1, f"Entry for submission 42 not found in {entries}"
+        submission_id = self._unique_submission_id()
+        needle = f'"submission_id": "{submission_id}"'.encode()
+        deadline = time.time() + 2.0
+        matches = []
+        while time.time() < deadline:
+            log_dead_letter(submission_id, task_id=7, challenge_id=3, error="test error")
+            entries = r.lrange("dead_letter_queue", 0, -1)
+            matches = [e for e in entries if needle in e]
+            if matches:
+                break
+            time.sleep(0.05)
+        assert len(matches) >= 1, f"Entry for submission {submission_id} not found"
         data = json.loads(matches[0])
-        assert data["submission_id"] == 42
+        assert data["submission_id"] == submission_id
         assert data["task_id"] == 7
         assert data["challenge_id"] == 3
         assert "test error" in data["error"]
 
     def test_logs_without_error(self, redis_flush):
-        log_dead_letter(1)
-        r = get_redis_client()
+        import time
+
+        r = get_coordination_client()
         if not r:
             pytest.skip("Redis unavailable")
-        entries = r.lrange("dead_letter_queue", 0, -1)
-        matches = [e for e in entries if b'"submission_id": 1' in e]
-        assert len(matches) >= 1, f"Entry for submission 1 not found in {entries}"
+        submission_id = self._unique_submission_id()
+        needle = f'"submission_id": "{submission_id}"'.encode()
+        deadline = time.time() + 2.0
+        matches = []
+        while time.time() < deadline:
+            log_dead_letter(submission_id)
+            entries = r.lrange("dead_letter_queue", 0, -1)
+            matches = [e for e in entries if needle in e]
+            if matches:
+                break
+            time.sleep(0.05)
+        assert len(matches) >= 1, f"Entry for submission {submission_id} not found"
 
     def test_trims_to_1000(self, redis_flush):
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             pytest.skip("Redis unavailable")
         # Clear any entries left by other workers

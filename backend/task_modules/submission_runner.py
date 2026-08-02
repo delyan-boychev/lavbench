@@ -19,7 +19,7 @@ import redis
 import requests
 from celery.signals import task_prerun, worker_ready
 
-from cache_utils import get_redis_client
+from cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from config import Config
 from task_modules.docker_utils import _get_client, check_docker_available
 from task_modules.docker_utils import image_exists as _image_exists_docker
@@ -51,11 +51,11 @@ def _recreate_spec_on_reconnect() -> None:
     _spec_reconnect_needed = False
     if not _cached_worker_spec or not _cached_worker_name:
         return
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return
     try:
-        key = f"worker_spec:{_cached_worker_name}"
+        key = worker_spec_key(_cached_worker_name)
         _cached_worker_spec["last_seen"] = time.time()
         r.set(key, json.dumps(_cached_worker_spec), ex=604800)
         logger.info("Recreated worker spec for %s after Redis reconnect", _cached_worker_name)
@@ -425,7 +425,7 @@ def run_eval_submission(
                 if status_val in ("completed", "failed"):
                     # Final status: critical — must persist via Redis fallback
                     try:
-                        r = get_redis_client()
+                        r = get_coordination_client()
                         fallback = {
                             "submission_id": submission_id,
                             "status": status_val,
@@ -438,7 +438,7 @@ def run_eval_submission(
                             "metrics_payload_priv": m_priv,
                         }
                         r.set(
-                            f"submission:{submission_id}:fallback",
+                            submission_fallback_key(submission_id),
                             json.dumps(fallback, default=str),
                             ex=7200,
                         )
@@ -610,7 +610,7 @@ def run_eval_submission(
             gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
             acquired_gpu = None
             if gpus:
-                r = get_redis_client()
+                r = get_coordination_client()
                 if r:
                     logs.append("Waiting for an available GPU device...")
                     while acquired_gpu is None:
@@ -1080,7 +1080,7 @@ def run_eval_submission(
     finally:
         if "acquired_gpu" in locals() and acquired_gpu is not None:
             with contextlib.suppress(Exception):
-                r = get_redis_client()
+                r = get_coordination_client()
                 if r:
                     r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
         if host_labels_dir:
@@ -1100,7 +1100,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
     try:
         import platform
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
 
@@ -1188,7 +1188,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "last_seen": time.time(),
         }
-        r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
+        r.set(worker_spec_key(worker_name), json.dumps(spec), ex=604800)
         global _cached_worker_spec, _cached_worker_name, _spec_reconnect_needed
         _cached_worker_spec = spec
         _cached_worker_name = worker_name
@@ -1222,10 +1222,10 @@ def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
         worker_name = task_request.hostname
         if not worker_name:
             return
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
-        key = f"worker_spec:{worker_name}"
+        key = worker_spec_key(worker_name)
         if r.exists(key):
             spec_data = r.get(key)
             if spec_data:

@@ -157,9 +157,10 @@ fi
 
 CONFIG_OK=false
 while [ "$CONFIG_OK" = "false" ]; do
-  unset WORKER_MODE WORKER_TYPE WORKER_GPU_ID GPU_CORES_PER_TASK CPU_CORES_PER_TASK
+  unset WORKER_MODE WORKER_GPU_ID GPU_CORES_PER_TASK CPU_CORES_PER_TASK
   unset GPU_RAM_PER_TASK_GB CPU_RAM_PER_TASK_GB CELERY_WORKER_CONCURRENCY
   unset GPU_ID NUM_GPUS GPU_COUNT_VAL CPU_COUNT_VAL
+  WORKER_TYPE="eval"
 
   echo "  ── Worker parameter setup ──"
   if [ -n "$GPU_DETECTED_DISPLAY" ]; then
@@ -210,18 +211,6 @@ while [ "$CONFIG_OK" = "false" ]; do
     echo ""
   fi
 
-  # 2. Worker type
-  echo "  What type of tasks should this worker handle?"
-  echo "    1) Evaluation tasks only  (CPU/GPU queues)"
-  echo "    2) Internal tasks only    (system/beat tasks)"
-  echo "    3) Both                   (evaluation + internal)"
-  read -p "  Choose [1]: " WT_CHOICE
-  case "${WT_CHOICE:-1}" in
-    2) WORKER_TYPE="internal" ;;
-    3) WORKER_TYPE="both" ;;
-    *) WORKER_TYPE="eval" ;;
-  esac
-
   GPU_CORES_PER_TASK=""
   CPU_CORES_PER_TASK=""
   GPU_RAM_PER_TASK_GB=""
@@ -232,13 +221,7 @@ while [ "$CONFIG_OK" = "false" ]; do
   CORES_AVAILABLE=$(( TOTAL_CORES - RESERVED_CORES ))
   RAM_AVAILABLE=$(( TOTAL_RAM_GB - RESERVED_RAM ))
 
-  if [ "$WORKER_TYPE" = "internal" ]; then
-    DEFAULT_CONC=$(( TOTAL_CORES / 2 > 1 ? TOTAL_CORES / 2 : 1 ))
-    read -p "  Worker concurrency [$DEFAULT_CONC]: " CONC_USER
-    CELERY_WORKER_CONCURRENCY="${CONC_USER:-$DEFAULT_CONC}"
-    echo ""
-  else
-    if [ -n "$GPU_DETECTED" ]; then
+  if [ -n "$GPU_DETECTED" ]; then
       GPU_MAX_IDX=$(( GPU_COUNT - 1 ))
       while true; do
         read -p "  GPU IDs to use (e.g., 0 or 0,1 — empty for CPU-only): " GPU_ID
@@ -322,36 +305,28 @@ while [ "$CONFIG_OK" = "false" ]; do
       GPU_COUNT_VAL=0
     fi
     CELERY_WORKER_CONCURRENCY=$(( GPU_COUNT_VAL + CPU_COUNT_VAL ))
-  fi
 
-  if [ "$WORKER_TYPE" != "internal" ]; then
     GPU_CORES=${GPU_CORES_PER_TASK:-0}
     GPU_RAM=${GPU_RAM_PER_TASK_GB:-0}
     CPU_CORES=${CPU_CORES_PER_TASK:-0}
     CPU_RAM=${CPU_RAM_PER_TASK_GB:-0}
     SPARE_CORES=$(( CORES_AVAILABLE - GPU_COUNT_VAL * GPU_CORES - CPU_COUNT_VAL * CPU_CORES ))
     SPARE_RAM=$(( RAM_AVAILABLE - GPU_COUNT_VAL * GPU_RAM - CPU_COUNT_VAL * CPU_RAM ))
-  fi
 
   echo ""
   echo "  ──────────────────────────────────────────────"
   echo "    System:              ${TOTAL_CORES} cores, ${TOTAL_RAM_GB} GB"
   echo "    Reserved (system):   ${RESERVED_CORES} core, ${RESERVED_RAM} GB"
   echo "    Available:           ${CORES_AVAILABLE} cores, ${RAM_AVAILABLE} GB"
-  if [ "$WORKER_TYPE" = "internal" ]; then
-    echo "    Type:                internal (system tasks only)"
-    echo "    Concurrency:         ${CELERY_WORKER_CONCURRENCY}"
-  else
-    if [ -n "${WORKER_GPU_ID:-}" ]; then
-      echo "    GPU IDs:             ${WORKER_GPU_ID}"
-      echo "    GPU tasks:           ${GPU_COUNT_VAL} × (${GPU_CORES_PER_TASK} cores, ${GPU_RAM_PER_TASK_GB} GB)"
-    fi
-    if [ "$CPU_COUNT_VAL" -gt 0 ]; then
-      echo "    CPU tasks:           ${CPU_COUNT_VAL} × (${CPU_CORES_PER_TASK} cores, ${CPU_RAM_PER_TASK_GB} GB)"
-    fi
-    echo "    Spare (idle):        ${SPARE_CORES} cores, ${SPARE_RAM} GB"
-    echo "    Concurrency:         ${CELERY_WORKER_CONCURRENCY}"
+  if [ -n "${WORKER_GPU_ID:-}" ]; then
+    echo "    GPU IDs:             ${WORKER_GPU_ID}"
+    echo "    GPU tasks:           ${GPU_COUNT_VAL} × (${GPU_CORES_PER_TASK} cores, ${GPU_RAM_PER_TASK_GB} GB)"
   fi
+  if [ "$CPU_COUNT_VAL" -gt 0 ]; then
+    echo "    CPU tasks:           ${CPU_COUNT_VAL} × (${CPU_CORES_PER_TASK} cores, ${CPU_RAM_PER_TASK_GB} GB)"
+  fi
+  echo "    Spare (idle):        ${SPARE_CORES} cores, ${SPARE_RAM} GB"
+  echo "    Concurrency:         ${CELERY_WORKER_CONCURRENCY}"
   echo "    Mode:                ${WORKER_MODE}"
   echo "    Type:                ${WORKER_TYPE}"
   echo "  ──────────────────────────────────────────────"

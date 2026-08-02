@@ -15,7 +15,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from cache_utils import get_redis_client
+from cache_utils import get_coordination_client, submission_logs_key
 from config import Config
 from models.base import uuid7
 
@@ -28,9 +28,27 @@ SSE_IDLE_TIMEOUT = Config.SSE_IDLE_TIMEOUT
 _CONNECTIONS_KEY = "sse:connections"
 _STALE_TTL = 120
 
+CHANNEL_TASK_REBUILD = "task_rebuild"
+CHANNEL_BACKUPS = "backup_status"
+CHANNEL_WORKER_STATS = "worker_stats_update"
+CHANNEL_QUEUE = "queue_updates"
+CHANNEL_WORKER_STATUS = "worker_status_live"
+
+
+def leaderboard_channel(challenge_id: Any) -> str:
+    return f"leaderboard_{challenge_id}"
+
+
+def submissions_channel(task_id: Any, challenge_id: Any) -> str:
+    return f"task_{task_id}_challenge_{challenge_id}_submissions"
+
+
+def submission_logs_channel(submission_id: Any) -> str:
+    return f"submission_{submission_id}_logs"
+
 
 def _redis() -> Any:
-    return get_redis_client()
+    return get_coordination_client()
 
 
 def _member_for(user_id: Any = None) -> tuple[str, str | None]:
@@ -68,7 +86,7 @@ def sse_connection_limit(
     Yields ``(allowed, member)`` — ``allowed`` is always True. The caller
     should check ``zscore(member)`` inside polling loops to detect eviction.
     """
-    r = get_redis_client()
+    r = _redis()
     if not r:
         yield True, ""
         return
@@ -133,7 +151,7 @@ def publish_leaderboard_update(challenge_id: Any) -> None:
         r = _redis()
         if r:
             r.publish(
-                f"challenge_{challenge_id}_leaderboard",
+                leaderboard_channel(challenge_id),
                 json.dumps({"event": "update"}),
             )
     except Exception:
@@ -148,7 +166,7 @@ def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
         r = _redis()
         if r:
             r.publish(
-                f"challenge_{challenge_id}_submissions",
+                submissions_channel(task_id, challenge_id),
                 json.dumps({"event": "update"}),
             )
     except Exception:
@@ -166,11 +184,11 @@ def publish_submission_log(submission_id: Any, log_line: str) -> None:
     try:
         r = _redis()
         if r:
-            log_key = f"submission:{submission_id}:logs"
+            log_key = submission_logs_key(submission_id)
             r.rpush(log_key, log_line)
             r.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
             r.expire(log_key, Config.SSE_LOG_TTL)
-            r.publish(f"submission_{submission_id}_logs", json.dumps({"log": log_line}))
+            r.publish(submission_logs_channel(submission_id), json.dumps({"log": log_line}))
     except Exception:
         logger.exception("Redis publish submission log error for submission %s", submission_id)
 
@@ -182,7 +200,7 @@ def clear_submission_logs(submission_id: Any) -> None:
     try:
         r = _redis()
         if r:
-            r.delete(f"submission:{submission_id}:logs")
+            r.delete(submission_logs_key(submission_id))
     except Exception:
         logger.exception("Redis clear submission logs error for submission %s", submission_id)
 
@@ -194,7 +212,7 @@ def publish_submission_status(submission_id: Any, status: str) -> None:
     try:
         r = _redis()
         if r:
-            r.publish(f"submission_{submission_id}_logs", json.dumps({"status": status}))
+            r.publish(submission_logs_channel(submission_id), json.dumps({"status": status}))
     except Exception:
         logger.exception("Redis publish submission status error for submission %s", submission_id)
 
@@ -204,6 +222,6 @@ def publish_queue_update() -> None:
     try:
         r = _redis()
         if r:
-            r.publish("queue_updates", json.dumps({"event": "update"}))
+            r.publish(CHANNEL_QUEUE, json.dumps({"event": "update"}))
     except Exception:
         logger.exception("Redis publish queue update error")

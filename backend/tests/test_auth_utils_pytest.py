@@ -211,6 +211,7 @@ class MockCallTracker:
         self.rl2_calls = []
         self.user1_calls = []
         self.user2_calls = []
+        self.identity_calls = []
 
 
 mock_tracker = MockCallTracker()
@@ -218,6 +219,12 @@ mock_tracker = MockCallTracker()
 
 @pytest.mark.xdist_group(name="rate_limiting")
 class TestRateLimit:
+    @pytest.fixture
+    def unique_ip(self):
+        import uuid
+
+        return f"10.99.{uuid.uuid4().hex[:8]}"
+
     @pytest.fixture(scope="function")
     def rate_limit_client(self):
         """Create a fresh Flask app with rate-limited routes for each test."""
@@ -251,48 +258,89 @@ class TestRateLimit:
                 mock_tracker.user2_calls.append(1)
             return jsonify({"ok": True})
 
+        def _header_identity():
+            return request.headers.get("X-Test-Identity", "default")
+
+        @app.route("/test-rl-identity")
+        @rate_limit(max_requests=2, window_seconds=60, per_user=False, identity=_header_identity)
+        def test_route_identity():
+            mock_tracker.identity_calls.append(1)
+            return jsonify({"ok": len(mock_tracker.identity_calls)})
+
         return app.test_client()
 
     # Added db_session here so SQLAlchemy creates the tables for the @login_required check
+    # Keys are unique per test, so no global rate:* flush is needed (avoids races
+    # between xdist workers sharing the same Redis).
     @pytest.fixture(autouse=True)
-    def setup_method_state(self, db_session, redis_flush):
+    def setup_method_state(self, db_session):
         # Reset the static tracker attributes before every test
         mock_tracker.rl1_calls = []
         mock_tracker.rl2_calls = []
         mock_tracker.user1_calls = []
         mock_tracker.user2_calls = []
-        # Flush rate-limit keys (safe here because xdist_group serialises this class)
-        try:
-            from cache_utils import get_redis_client
+        mock_tracker.identity_calls = []
 
-            r = get_redis_client()
-            if r:
-                for key in r.scan_iter("rate:*"):
-                    r.delete(key)
-        except Exception:  # noqa: S110
-            pass
-
-    def test_allows_under_limit(self, rate_limit_client):
+    def test_allows_under_limit(self, rate_limit_client, unique_ip):
         for _ in range(3):
-            res = rate_limit_client.get("/test-rl1")
+            res = rate_limit_client.get("/test-rl1", environ_base={"REMOTE_ADDR": unique_ip})
             assert res.status_code == 200
         assert len(mock_tracker.rl1_calls) == 3
 
-    def test_rejects_over_limit(self, rate_limit_client):
+    def test_rejects_over_limit(self, rate_limit_client, unique_ip):
         for _ in range(2):
-            res = rate_limit_client.get("/test-rl2")
+            res = rate_limit_client.get("/test-rl2", environ_base={"REMOTE_ADDR": unique_ip})
             assert res.status_code == 200
-        res = rate_limit_client.get("/test-rl2")
+        res = rate_limit_client.get("/test-rl2", environ_base={"REMOTE_ADDR": unique_ip})
         assert res.status_code == 429
 
     def test_per_user_keying(self, rate_limit_client):
-        token1 = generate_token(1, "competitor")
+        import uuid
+
+        token1 = generate_token(uuid.uuid4().hex, "competitor")
         for _ in range(2):
             res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
             assert res.status_code == 200
         res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
         assert res.status_code == 429
 
-        token2 = generate_token(2, "competitor")
+        token2 = generate_token(uuid.uuid4().hex, "competitor")
         res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token2}"})
         assert res.status_code == 200
+
+    def test_identity_keyed_limiting(self, rate_limit_client):
+        import uuid
+
+        headers = {"X-Test-Identity": f"ident-{uuid.uuid4().hex[:8]}"}
+        for _ in range(2):
+            res = rate_limit_client.get("/test-rl-identity", headers=headers)
+            assert res.status_code == 200
+        res = rate_limit_client.get("/test-rl-identity", headers=headers)
+        assert res.status_code == 429
+
+    def test_identity_different_values_independent(self, rate_limit_client):
+        import uuid
+
+        ident_a = f"ident-a-{uuid.uuid4().hex[:8]}"
+        ident_b = f"ident-b-{uuid.uuid4().hex[:8]}"
+        for _ in range(2):
+            res = rate_limit_client.get("/test-rl-identity", headers={"X-Test-Identity": ident_a})
+            assert res.status_code == 200
+        for _ in range(2):
+            res = rate_limit_client.get("/test-rl-identity", headers={"X-Test-Identity": ident_b})
+            assert res.status_code == 200
+
+    def test_identity_key_format_in_redis(self, rate_limit_client):
+        import uuid
+
+        ident = f"ident-key-check-{uuid.uuid4().hex[:8]}"
+        res = rate_limit_client.get("/test-rl-identity", headers={"X-Test-Identity": ident})
+        assert res.status_code == 200
+
+        from cache_utils import get_redis_client
+
+        r = get_redis_client()
+        if not r:
+            pytest.skip("Redis unavailable")
+        keys = [k.decode() if isinstance(k, bytes) else k for k in r.scan_iter("rate:*")]
+        assert any(f"rate:{ident}:test_route_identity" in k for k in keys)

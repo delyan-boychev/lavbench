@@ -23,8 +23,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from cache_utils import get_redis_client
+from cache_utils import get_coordination_client
 from config import Config
+from sse_utils import CHANNEL_TASK_REBUILD
 from task_modules.docker_utils import _get_client
 from task_modules.docker_utils import image_exists as _image_exists
 
@@ -203,7 +204,7 @@ def _check_build_disk_space() -> bool:
 
 def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
     """Try to acquire the build lock, optionally retrying up to *timeout* seconds."""
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return False
     lock_key = _build_lock_key(task_id)
@@ -237,7 +238,7 @@ def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
 
 
 def _release_build_lock(task_id: int) -> None:
-    r = get_redis_client()
+    r = get_coordination_client()
     if r is None:
         return
     with contextlib.suppress(Exception):
@@ -576,7 +577,7 @@ def clear_build_lock(task_id: int) -> bool:
     Intended for manual/admin use when a worker crashes mid-build.
     Returns ``True`` if a lock was actually held and cleared.
     """
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return False
     lock_key = _build_lock_key(task_id)
@@ -594,7 +595,7 @@ def clear_build_lock(task_id: int) -> bool:
 
 def _clear_stale_build_locks() -> None:
     """Clear any build locks left by a previous instance of this worker."""
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return
     prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
@@ -658,13 +659,13 @@ def start_rebuild_listener(main_server_url: str, worker_token: str) -> None:
 def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
     """Background thread: subscribe to Redis 'task_rebuild' channel."""
 
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         logger.warning("Rebuild listener: no Redis client available")
         return
     try:
         pubsub = r.pubsub()
-        pubsub.subscribe("task_rebuild")
+        pubsub.subscribe(CHANNEL_TASK_REBUILD)
         logger.info("Subscribed to Redis 'task_rebuild' channel")
         while True:
             msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=60)

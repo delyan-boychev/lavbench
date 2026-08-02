@@ -24,7 +24,10 @@ def _mock_redis():
     def _mock_get_redis():
         return fredis
 
-    with patch("sse_utils.get_redis_client", _mock_get_redis):
+    with (
+        patch("sse_utils.get_coordination_client", _mock_get_redis),
+        patch("cache_utils.get_coordination_client", _mock_get_redis),
+    ):
         yield
 
 

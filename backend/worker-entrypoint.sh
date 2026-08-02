@@ -15,8 +15,8 @@ else
     PID_GPU=""
 fi
 
-echo "  → CPU worker: concurrency=$CPU_WORKER_CONCURRENCY (queues: cpu_queue,celery)"
-celery -A tasks.celery worker -Q cpu_queue,celery -c "$CPU_WORKER_CONCURRENCY" \
+echo "  → CPU worker: concurrency=$CPU_WORKER_CONCURRENCY (queue: cpu_queue)"
+celery -A tasks.celery worker -Q cpu_queue -c "$CPU_WORKER_CONCURRENCY" \
     --loglevel=info --hostname="cpu@${HOST}" &
 PID_CPU=$!
 

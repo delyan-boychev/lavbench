@@ -24,7 +24,7 @@ from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
 from auth_utils import jury_access_required, rate_limit, role_required
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from cache_utils import get_coordination_client, invalidate_leaderboard_cache, worker_spec_key
 from config import Config
 from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
@@ -63,6 +63,9 @@ from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
 from spec import api
 from sse_utils import (
+    CHANNEL_BACKUPS,
+    CHANNEL_QUEUE,
+    CHANNEL_WORKER_STATS,
     SSE_IDLE_TIMEOUT,
     clear_submission_logs,
     publish_queue_update,
@@ -794,10 +797,10 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             with current_app.app_context():
                 yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
-                pubsub.subscribe("backup_status")
+                pubsub.subscribe(CHANNEL_BACKUPS)
             start_time = time.time()
             try:
                 while True:
@@ -1459,10 +1462,10 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
                 res_data = _get_worker_stats_response()
                 yield f"data: {json.dumps(res_data)}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
-                pubsub.subscribe("worker_stats_update")
+                pubsub.subscribe(CHANNEL_WORKER_STATS)
             start_time = time.time()
 
             try:
@@ -1624,9 +1627,9 @@ def _get_worker_stats_response() -> dict[str, Any]:
 
         r = None
         try:
-            from cache_utils import get_redis_client
+            from cache_utils import get_coordination_client
 
-            r = get_redis_client()
+            r = get_coordination_client()
         except Exception:
             r = None
 
@@ -1659,7 +1662,7 @@ def _get_worker_stats_response() -> dict[str, Any]:
             spec = None
             if r:
                 try:
-                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    spec_data = r.get(worker_spec_key(worker_name))
                     if spec_data:
                         spec = json.loads(spec_data)
                 except Exception as e:
@@ -1731,7 +1734,7 @@ def _get_worker_stats_response() -> dict[str, Any]:
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=DeadLetterListResponse)
 )
 def get_dead_letters() -> tuple[DeadLetterListResponse, int]:
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return DeadLetterListResponse(items=[]), 200
     try:
@@ -1839,10 +1842,10 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
             with current_app.app_context():
                 yield f"data: {json.dumps({'items': _queue_snapshot(), 'event': 'snapshot'})}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
-                pubsub.subscribe("queue_updates")
+                pubsub.subscribe(CHANNEL_QUEUE)
             start_time = time.time()
             try:
                 while True:

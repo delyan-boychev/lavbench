@@ -28,7 +28,7 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 - **Live Telemetry & Leaderboards:** Server-Sent Events (SSE) push real-time score updates, container build status, and worker logs to connected clients.
 - **Multi-Stage Competitions:** Support for stage lifecycles with independent start/end times, grace periods, and visibility controls.
 - **Custom Evaluators:** Jury members can upload Python evaluation scripts (`evaluator.py`) with per-metric weighting, schema validation, and custom option schemas.
-- **Intelligent Worker Routing:** Celery queue routing separates GPU and CPU workloads across distinct evaluation worker pools.
+- **Intelligent Worker Routing:** Celery queue routing dispatches evaluation workloads to external evaluation workers on `cpu_queue`, while system tasks stay on the internal `celery` queue consumed only by the in-compose worker.
 - **Automated Backups:** Database dumps (`pg_dump`) and uploaded assets are backed up every 20 minutes during active competitions (every 6 hours when idle), retaining the 6 most recent auto-backups.
 - **Audit Logs:** Complete logging of administrative actions (creating/deleting challenges, resetting passwords, editing finalized scores) with mandatory justification prompts logged to `AuditLog`.
 - **i18n Support:** Full internationalization in English and Bulgarian across the web app and user guides.
@@ -62,17 +62,17 @@ See the [Admin Guide](guides/en/admin_guide.md) for prerequisites, TLS/HTTPS set
 ```mermaid
 flowchart TD
     %% Client & Gateway
-    Client([Browser<br>React SPA]) <-->|HTTP(S) / SSE| Nginx[Nginx<br>Port 80 / 443]
+    Client([Browser<br>React SPA]) <-->|HTTP / SSE| Nginx[Nginx<br>Port 80 / 443]
     Nginx <-->|Reverse Proxy| API[Flask API<br>Port 5001]
 
     %% Core Data & Message Broker
     subgraph Core [Backend Infrastructure — Docker Compose]
         direction TB
         API -->|Read/Write| DB[(PostgreSQL<br>Primary DB)]
-        API <-->|Queue / PubSub / Rate Limits / JWT Blacklist| Redis[(Redis<br>Broker)]
-        API <-->|Cache / Locks / SSE State| Cache[(Redis Cache<br>DB 1, noeviction)]
+        API <-->|Queue / PubSub / Coordination| Redis[(Redis<br>Broker + Coordination)]
+        API <-->|Cache / Locks / Rate Limits / JWT Blacklist| Cache[(Redis Cache<br>DB 1, noeviction, server-only)]
         Beat([Celery Beat<br>Scheduler]) -->|Triggers| Redis
-        Internal([Internal Celery Worker<br>System tasks only]) -->|Pulls Tasks| Redis
+        Internal([Internal Celery Worker<br>System tasks only<br>-Q celery,internal]) -->|Pulls Tasks| Redis
     end
 
     %% Remote Worker Nodes
@@ -97,12 +97,12 @@ flowchart TD
 | Service | Technology | Default Port | Role |
 | :--- | :--- | :--- | :--- |
 | **PostgreSQL** | PostgreSQL 15 | `5432` | Primary database for users, challenges, tasks, submissions, and audit logs. |
-| **Redis** | Redis 7 | `6379` | Celery message broker, SSE pub/sub channels, rate limits, and token revocation. |
-| **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `noeviction`, no persistence) for leaderboard caches, locks, and SSE state (`CACHE_REDIS_URL`). Internal only — no host port. |
+| **Redis** | Redis 7 | `6379` | Celery message broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry, dead-letter queue, build/GPU locks. |
+| **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `noeviction`, no persistence) for leaderboard caches, locks, rate-limit counters, and JWT revocation (`CACHE_REDIS_URL`). Server-only — external workers never receive this URL; no host port. |
 | **Flask API** | Flask 3.1 + Spectree | `5001` | REST API endpoints and Server-Sent Event (SSE) streaming server. |
 | **Celery Beat** | Celery Beat 5.4 | — | Periodic task scheduler (submission watchdog, automated backup schedule). |
-| **Celery Worker (Int)** | Celery 5.4 | — | System task worker (backups, watchdog, leaderboard recalculation) running inside Docker Compose. |
-| **Celery Worker (Ext)** | Celery 5.4 | — | Evaluation worker running on remote machines or dedicated containers, managing sibling sandboxes. |
+| **Celery Worker (Int)** | Celery 5.4 | — | System task worker (backups, watchdog, leaderboard recalculation) running inside Docker Compose (`-Q celery,internal`). |
+| **Celery Worker (Ext)** | Celery 5.4 | — | Evaluation-only worker running on remote machines or dedicated containers (`cpu_queue`), managing sibling sandboxes. |
 | **Nginx / Frontend** | Nginx + React 19 | `80` (`NGINX_PORT`, `443` for HTTPS deployments) | Reverse proxy and static Web SPA delivery. |
 
 ---
