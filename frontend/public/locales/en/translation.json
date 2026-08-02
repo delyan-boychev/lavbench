@@ -212,7 +212,9 @@
     "ERR_USERNAME_REQUIRED": "Username is required.",
     "ERR_USERNAME_TAKEN": "User with this username already exists.",
     "ERR_USER_NOT_FOUND": "User not found.",
-    "ERR_VALIDATION": "Request validation failed."
+    "ERR_VALIDATION": "Request validation failed.",
+    "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
+    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission."
   },
   "submissions": {
     "loading": "Loading submissions...",
@@ -257,6 +259,10 @@
     "connecting_live_logs": "Connecting to live logs...",
     "execution_log_live": "Execution Log (Live)",
     "best_submission": "Best Submission",
+    "kill": "Kill",
+    "kill_confirm": "Are you sure you want to kill this submission? It will be marked as failed.",
+    "kill_success": "Submission killed successfully.",
+    "kill_failed": "Failed to kill submission.",
     "select_competitor": "Select Competitor",
     "no_competitors_found": "No competitors found",
     "search_competitor_placeholder": "Search by alias, name, or school...",
@@ -621,6 +627,20 @@
       "vram": "VRAM:",
       "ram": "RAM:"
     },
+    "submission_queue": {
+      "title": "Submission Queue",
+      "clear_queue": "Clear Queue",
+      "clear_queue_confirm": "Are you sure you want to clear the entire submission queue? All queued and running submissions will be killed.",
+      "queue_empty": "Queue is empty.",
+      "kill": "Kill",
+      "kill_confirm": "Are you sure you want to kill this queued submission?",
+      "user_header": "User",
+      "task_header": "Task",
+      "status_header": "Status",
+      "created_header": "Created",
+      "actions_header": "Actions",
+      "queue_description": "{{count}} submission(s) in queue"
+    },
     "stages": {
       "stages_in_competition": "Stages in this Competition ({{count}})",
       "no_stages": "No stages configured yet.",
@@ -696,6 +716,8 @@
       "account_username": "Account Username:",
       "new_generated_password": "New Generated Password:",
       "generated_passwords_bulk_title": "Generated Passwords for {{count}} Competitors",
+      "bulk_reset_saved_title": "Passwords Reset Successfully",
+      "bulk_reset_saved_help": "The credentials file is saved on the server in the uploads/credentials directory and is included in automatic backups. Share the credentials with competitors, then delete the file.",
       "clear_list": "Clear List",
       "new_password_table_header": "New Password",
       "no_competitors_found": "No competitors found matching your search.",
@@ -956,7 +978,7 @@
       "network_error_reset_password": "Network error resetting password.",
       "no_eligible_competitions": "No eligible competitions available to reset passwords.",
       "invalid_competition_id": "Invalid Competition ID selected.",
-      "bulk_reset_success": "Successfully reset passwords for {{count}} competitors!",
+      "bulk_reset_success": "Successfully reset passwords for the competition!",
       "bulk_reset_failed": "Failed to reset passwords.",
       "network_error_bulk_reset": "Network error resetting passwords.",
       "imported_competitors_success": "Imported {{count}} competitors successfully!",
@@ -968,6 +990,9 @@
       "download_submissions_failed": "Failed to download submissions.",
       "submissions_zip_downloaded": "Submissions ZIP downloaded.",
       "invalid_email": "Please enter a valid email address",
+      "clear_queue_success": "Queue cleared successfully.",
+      "clear_queue_failed": "Failed to clear queue.",
+      "clear_queue_network_error": "Network error clearing queue.",
       "stage_results_hidden": "Stage results hidden.",
       "stage_results_revealed": "Stage results revealed."
     },

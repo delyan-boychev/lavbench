@@ -5,7 +5,8 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { renderWithProviders } from '../../test-utils';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import AdminPanel from '../AdminPanel';
@@ -15,6 +16,7 @@ vi.mock('../../context/AppContext', () => ({ useApp: vi.fn() }));
 
 vi.mock('../../services/ApiService', () => ({
   default: {
+    get: vi.fn(() => Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } })),
     fetch: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -81,7 +83,7 @@ describe('AdminPanel – tab navigation', () => {
   });
 
   it('renders default competition-mgmt tab', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -89,28 +91,28 @@ describe('AdminPanel – tab navigation', () => {
   });
 
   it('clicking "Competitor Registrations" tab stays navigable', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     const btn = screen.getByText('Competitor Registrations');
     await act(async () => fireEvent.click(btn));
     expect(btn).toBeInTheDocument();
   });
 
   it('clicking "Database Backup" tab shows backup section', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     const btn = screen.getByText('Database Backup');
     await act(async () => fireEvent.click(btn));
     expect(btn).toBeInTheDocument();
   });
 
   it('clicking "User Management" tab shows user section', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     const btn = screen.getByText('User Management');
     await act(async () => fireEvent.click(btn));
     expect(btn).toBeInTheDocument();
   });
 
   it('clicking "Audit Logs" tab renders audit panel', async () => {
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     const btn = screen.getByText('Audit Logs');
     await act(async () => fireEvent.click(btn));
     expect(btn).toBeInTheDocument();
@@ -124,7 +126,7 @@ describe('AdminPanel – tab navigation', () => {
         this.close = vi.fn();
       }
     };
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     const btn = screen.getByText('Workers & Resources');
     await act(async () => fireEvent.click(btn));
     expect(eventSourceCreated).toBe(true);
@@ -132,7 +134,7 @@ describe('AdminPanel – tab navigation', () => {
 
   it('jury role sees "Competitor Registrations" but NOT "User Management" or "Database Backup"', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 2, username: 'jury', role: 'jury' } });
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -160,7 +162,7 @@ describe('AdminPanel – challenge selection states', () => {
 
   it('shows no-competitions placeholder when list is empty', async () => {
     useApp.mockReturnValue({ ...baseAppContext, selectedChallenge: null, challenges: [] });
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -170,7 +172,7 @@ describe('AdminPanel – challenge selection states', () => {
 
   it('shows Create Competition section which is always visible in competition-mgmt tab', async () => {
     useApp.mockReturnValue({ ...baseAppContext });
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
@@ -220,7 +222,7 @@ describe('AdminPanel – workers tab SSE integration', () => {
       },
     };
     global.EventSource = makeEventSource(workerStats);
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
     await waitFor(
       () => {
@@ -232,7 +234,7 @@ describe('AdminPanel – workers tab SSE integration', () => {
 
   it('shows component without crash when SSE errors in workers tab', async () => {
     global.EventSource = makeEventSource({}, { useError: true });
-    render(<AdminPanel />);
+    renderWithProviders(<AdminPanel />);
     await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
     await waitFor(() => {
       expect(screen.getByText('Workers & Resources')).toBeInTheDocument();

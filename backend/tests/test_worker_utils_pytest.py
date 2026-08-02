@@ -86,7 +86,7 @@ class TestRunCommandStreaming:
             time_limit=0.01,
         )
         assert is_timeout
-        mock_container.kill.assert_called_once()
+        assert mock_container.kill.call_count >= 1
 
     def test_logs_populated(self, mocker):
         mock_client = mocker.MagicMock()

@@ -1,7 +1,12 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider, useApp } from '../AppContext';
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
 
 const mockGet = vi.fn();
 
@@ -72,15 +77,18 @@ function TestConsumer() {
 
 function renderWithProvider() {
   return render(
-    <AppProvider>
-      <TestConsumer />
-    </AppProvider>,
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <TestConsumer />
+      </AppProvider>
+    </QueryClientProvider>,
   );
 }
 
 describe('AppContext', () => {
   beforeEach(() => {
     mockGet.mockReset();
+    queryClient.clear();
     vi.stubGlobal('localStorage', {
       getItem: vi.fn(() => null),
       setItem: vi.fn(),
@@ -136,13 +144,21 @@ describe('AppContext', () => {
     });
   });
 
-  it('setSelectedTask selects task', async () => {
+  it('setSelectedTask selects task within current challenge', async () => {
     mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
     renderWithProvider();
     await act(async () => {});
     await waitFor(() => {
       expect(screen.getByTestId('challenges-count').textContent).toBe('2');
     });
+    // Switch to Challenge 2 first
+    act(() => {
+      screen.getByTestId('select-challenge').click();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-challenge').textContent).toBe('Challenge 2');
+    });
+    // Now select a task from Challenge 2
     act(() => {
       screen.getByTestId('select-task').click();
     });
@@ -208,9 +224,11 @@ describe('AppContext', () => {
     }
     mockGet.mockResolvedValue({ ok: true, data: emptyChallenges });
     render(
-      <AppProvider>
-        <Capture />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <Capture />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 
@@ -231,6 +249,7 @@ describe('AppContext', () => {
 describe('AppContext – additional branches', () => {
   beforeEach(() => {
     mockGet.mockReset();
+    queryClient.clear();
     vi.stubGlobal('localStorage', {
       getItem: vi.fn(() => null),
       setItem: vi.fn(),
@@ -261,9 +280,11 @@ describe('AppContext – additional branches', () => {
     }
 
     render(
-      <AppProvider>
-        <NullSelector />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <NullSelector />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 
@@ -304,9 +325,11 @@ describe('AppContext – additional branches', () => {
 
     mockGet.mockResolvedValue({ ok: true, data: [] });
     render(
-      <AppProvider>
-        <PromptConsumer />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <PromptConsumer />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 
@@ -346,9 +369,11 @@ describe('AppContext – additional branches', () => {
 
     mockGet.mockResolvedValue({ ok: true, data: [] });
     render(
-      <AppProvider>
-        <CancelPrompt />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <CancelPrompt />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 
@@ -381,9 +406,11 @@ describe('AppContext – additional branches', () => {
 
     mockGet.mockResolvedValue({ ok: true, data: [] });
     render(
-      <AppProvider>
-        <CancelConfirm />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <CancelConfirm />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 
@@ -414,9 +441,11 @@ describe('AppContext – additional branches', () => {
 
     mockGet.mockResolvedValue({ ok: true, data: [] });
     render(
-      <AppProvider>
-        <ConfirmConfirm />
-      </AppProvider>,
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <ConfirmConfirm />
+        </AppProvider>
+      </QueryClientProvider>,
     );
     await act(async () => {});
 

@@ -17,8 +17,9 @@ from services.submission_service import calculate_submission_priority
 
 class TestRouteLevelLogic:
     @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
+    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush, app):
         self.client = client
+        self.app = app
         self._auth = auth_headers
         self.csrf_headers = csrf_headers
         self.seed_basic_data()
@@ -483,13 +484,18 @@ class TestRouteLevelLogic:
 
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard/live",
+            f"/api/challenges/{self.challenge.id}/leaderboard/live",
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
-        assert b"data: " in first_chunk
-        assert b"challenge_title" in first_chunk
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)  # "connected" message
+        assert b"connected" in first_chunk
+        second_chunk = next(response_iter)  # leaderboard data
+        assert b"data: " in second_chunk
+        assert b"challenge_title" in second_chunk
+        # Close to prevent generator from lingering
+        res.close()
 
     @patch("redis.Redis.from_url")
     def test_sse_live_submissions_route(self, mock_redis_cls):
@@ -501,11 +507,14 @@ class TestRouteLevelLogic:
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
             f"/api/tasks/{self.task.id}/submissions/live",
+            buffered=False,
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)
         assert b"data: " in first_chunk
+        res.close()
 
     def test_blind_review_during_ongoing_competition(self):
         self.challenge.start_time = utcnow() - timedelta(hours=1)
@@ -1056,10 +1065,24 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
         data = json.loads(res.data)
         assert "reset_accounts" in data
-        assert len(data["reset_accounts"]) > 0
-        account = data["reset_accounts"][0]
-        assert "middle_name" in account
-        assert "birth_date" in account
+        assert len(data["reset_accounts"]) == 0
+
+        file_path = os.path.join(
+            self.app.config["UPLOAD_FOLDER"],
+            "credentials",
+            f"competitor_passwords_{self.challenge.id}.json",
+        )
+        try:
+            assert os.path.exists(file_path)
+            with open(file_path) as f:
+                accounts = json.load(f)
+            assert len(accounts) > 0
+            account = accounts[0]
+            assert "middle_name" in account
+            assert "birth_date" in account
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
         self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
@@ -1068,6 +1091,8 @@ class TestRouteLevelLogic:
             headers=self.get_auth_header(jury_token),
         )
         assert res.status_code == 200
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
         self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()

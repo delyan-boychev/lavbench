@@ -517,13 +517,11 @@ describe('TaskForm', () => {
       expect(screen.getByText('Save Changes')).toBeInTheDocument();
     });
 
-    it('cancel button resets editing state', () => {
-      const setIsCreatingTask = vi.fn();
-      const setEditingTask = vi.fn();
-      renderTaskForm({ setIsCreatingTask, setEditingTask, isCreatingTask: true });
+    it('cancel button calls onClose', () => {
+      const onClose = vi.fn();
+      renderTaskForm({ onClose, isCreatingTask: true });
       fireEvent.click(screen.getByText('Cancel'));
-      expect(setIsCreatingTask).toHaveBeenCalledWith(false);
-      expect(setEditingTask).toHaveBeenCalledWith(null);
+      expect(onClose).toHaveBeenCalledOnce();
     });
   });
 });

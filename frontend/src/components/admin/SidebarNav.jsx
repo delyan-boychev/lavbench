@@ -115,6 +115,18 @@ export default function SidebarNav({
           {t('admin.workers_resources')}
         </button>
       )}
+
+      {(currentUser.role === 'admin' || currentUser.role === 'jury') && (
+        <button
+          onClick={() => {
+            setAdminSubTab('submission-queue');
+            resetSubViews();
+          }}
+          className={btnClass('submission-queue')}
+        >
+          {t('admin.submission_queue.title')}
+        </button>
+      )}
     </div>
   );
 }

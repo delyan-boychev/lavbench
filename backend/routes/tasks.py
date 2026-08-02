@@ -52,6 +52,7 @@ from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
+    publish_queue_update,
     publish_submissions_update,
     sse_connection_limit,
 )
@@ -211,8 +212,9 @@ def queue_system_submission(
     db.session.add(submission)
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
 
     from tasks import evaluate_submission
 
@@ -483,6 +485,7 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -501,6 +504,7 @@ def create_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
 
     total_upload_size = 0
 
@@ -790,6 +794,7 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -803,6 +808,7 @@ def update_task(
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
 
     current_files = safe_json_loads(task.files, [])
 
@@ -832,6 +838,7 @@ def update_task(
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
+        task.baseline_notebook_size = None
 
     new_files_keys = [k for k in request.files if k.startswith("file")]
     if len(current_files) + len(new_files_keys) > 5:
@@ -1185,8 +1192,9 @@ def submit_task(
         )
         db.session.add(submission)
         db.session.commit()
-        publish_submissions_update(submission.task_id, submission.user_id)
-        publish_leaderboard_update(submission.task_id, submission.challenge_id)
+        publish_submissions_update(submission.task_id, submission.challenge_id)
+        publish_queue_update()
+        publish_leaderboard_update(submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
             200,
@@ -1210,8 +1218,9 @@ def submit_task(
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
     from tasks import evaluate_submission
 
     gpu_required = False
@@ -1382,67 +1391,6 @@ def get_task_leaderboard(
     )
 
 
-@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-)
-def stream_task_leaderboard(
-    task_id: Any,
-) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live task leaderboard updates via SSE."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
-            return err("ERR_NOT_AVAILABLE", 403)
-
-    def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
-            if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
-                return
-
-            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-
-            r = get_redis_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(f"task_{task_id}_leaderboard")
-            start_time = time.time()
-
-            try:
-                while True:
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-                            continue
-                    else:
-                        time.sleep(2.0)
-                    yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Leaderboard SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
 @jury_access_required
@@ -1459,9 +1407,14 @@ def stream_task_submissions(
     current_user_id = request.user["user_id"]
     page = request.args.get("page", type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
+
+    task = db.session.get(Task, task_id)
+    if not task:
+        return err("ERR_NOT_FOUND", 404)
+    challenge_id = task.challenge_id
+
     if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
+        if not check_task_started(task, user_role, current_user_id):
             return err("ERR_NOT_AVAILABLE", 403)
         if task.challenge and task.challenge.scores_finalized:
             return err(
@@ -1471,7 +1424,7 @@ def stream_task_submissions(
             )
 
     def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
+        with sse_connection_limit(user_id=current_user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1483,15 +1436,15 @@ def stream_task_submissions(
             pubsub = r.pubsub() if r else None
 
             if pubsub:
-                if user_role in ["admin", "jury"]:
-                    pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
-                else:
-                    pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+                pubsub.subscribe(f"challenge_{challenge_id}_submissions")
 
             start_time = time.time()
 
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1513,10 +1466,7 @@ def stream_task_submissions(
             finally:
                 if pubsub:
                     with contextlib.suppress(Exception):
-                        if user_role in ["admin", "jury"]:
-                            pubsub.punsubscribe()
-                        else:
-                            pubsub.unsubscribe()
+                        pubsub.unsubscribe()
                         pubsub.close()
 
     return sse_response(event_generator)
@@ -1542,7 +1492,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1559,6 +1509,9 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1706,16 +1659,23 @@ def report_worker_progress(
         submission.execution_time_ms = data["execution_time_ms"]
     if "metrics_payload_public" in data:
         submission.metrics_payload_public = data["metrics_payload_public"]
+    elif "metrics_payload_pub" in data:
+        submission.metrics_payload_public = data["metrics_payload_pub"]
     if "metrics_payload_private" in data:
         submission.metrics_payload_private = data["metrics_payload_private"]
+    elif "metrics_payload_priv" in data:
+        submission.metrics_payload_private = data["metrics_payload_priv"]
+    if "gpu_node" in data:
+        submission.gpu_node = data["gpu_node"]
     if "final_weighted_score_public" in data:
         submission.final_weighted_score_public = data["final_weighted_score_public"]
     if "final_weighted_score_private" in data:
         submission.final_weighted_score_private = data["final_weighted_score_private"]
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
 
     if submission.status in ("completed", "failed"):
         from sse_utils import publish_submission_status

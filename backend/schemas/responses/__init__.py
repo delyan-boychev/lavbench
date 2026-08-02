@@ -52,6 +52,7 @@ from schemas.responses.leaderboard import (
     TaskLeaderboardResponse,
 )
 from schemas.responses.submission import (
+    QueueItemResponse,
     SelectFinalResponse,
     SubmissionLightResponse,
     SubmissionResponse,
@@ -96,6 +97,7 @@ __all__ = [
     "MessageResponse",
     "PaginatedResponse",
     "ParseNotebookResponse",
+    "QueueItemResponse",
     "RegisterUserResponse",
     "ResetPasswordResponse",
     "RevealResultsResponse",

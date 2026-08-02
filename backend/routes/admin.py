@@ -31,6 +31,7 @@ from models import (
     AuditLog,
     Challenge,
     Submission,
+    Task,
     User,
     db,
     decrypt_field,
@@ -49,6 +50,7 @@ from schemas.responses import (
     ImportCompetitorsResponse,
     MessageResponse,
     PaginatedResponse,
+    QueueItemResponse,
     RegisterUserResponse,
     ResetPasswordResponse,
     UpdateUserResponse,
@@ -58,7 +60,14 @@ from schemas.responses import (
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
 from spec import api
-from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
+from sse_utils import (
+    SSE_IDLE_TIMEOUT,
+    clear_submission_logs,
+    publish_queue_update,
+    publish_submission_status,
+    publish_submissions_update,
+    sse_connection_limit,
+)
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
@@ -264,10 +273,6 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
         if challenge_id_filter is not None:
             query = query.filter_by(challenge_id=challenge_id_filter)
 
-    # Fetch all challenges to cache started status
-    challenges = Challenge.query.all()
-    started_challenge_ids = {c.id for c in challenges if c.is_started}
-
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return paginated_response(
@@ -291,7 +296,13 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     if not candidates:
         candidates = query.limit(Config.USER_SEARCH_LIMIT).all()
 
+    # Fetch challenges lazily only when needed for search results
     filtered_items = []
+    if candidates:
+        challenges = Challenge.query.all()
+        started_challenge_ids = {c.id for c in challenges if c.is_started}
+    else:
+        started_challenge_ids = set()
     for u in candidates:
         comp_started = u.challenge_id in started_challenge_ids if u.challenge_id else False
         alias_match = term in (u.alias_id or "").lower()
@@ -762,7 +773,7 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -777,6 +788,9 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1170,10 +1184,20 @@ def reset_all_challenge_passwords(
         "user",
         details={"challenge_id": challenge_id, "count": len(competitors)},
     )
-    return BulkResetPasswordResponse(
-        message=f"Reset passwords for {len(competitors)} competitors.",
-        reset_accounts=results,
+
+    credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
+    os.makedirs(credentials_dir, exist_ok=True)
+    file_name = f"competitor_passwords_{challenge_id}.json"
+    file_path = os.path.join(credentials_dir, file_name)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4)
+    os.chmod(file_path, 0o600)
+
+    message = (
+        f"Reset passwords for {len(competitors)} competitors. Credentials saved to "
+        f"{file_name} in the uploads/credentials directory (included in backups)."
     )
+    return BulkResetPasswordResponse(message=message, reset_accounts=[])
 
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])
@@ -1365,7 +1389,7 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
@@ -1382,6 +1406,9 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
             try:
                 while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1652,3 +1679,181 @@ def get_dead_letters() -> tuple[DeadLetterListResponse, int]:
         return DeadLetterListResponse(items=items), 200
     except Exception:
         return DeadLetterListResponse(items=[]), 200
+
+
+@admin_bp.route("/submissions/queue", methods=["GET"])
+@role_required(["admin", "jury"])
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=PaginatedResponse[QueueItemResponse], HTTP_403=ErrorResponse),
+)
+def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """Get paginated queue of queued and running submissions in execution order."""
+    page, per_page = extract_pagination(request, default_per_page=20, max_per_page=100)
+
+    query = (
+        Submission.query.filter(Submission.status.in_(["queued", "running"]))
+        .outerjoin(Task, Submission.task_id == Task.id)
+        .outerjoin(User, Submission.user_id == User.id)
+        .order_by(Submission.created_at.asc())
+    )
+
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    items = []
+    for sub in pagination.items:
+        task_title = None
+        if sub.task:
+            task_title = sub.task.title
+        user_alias = None
+        if sub.user:
+            user_alias = sub.user.alias_id
+
+        items.append(
+            QueueItemResponse(
+                id=sub.id,
+                status=sub.status,
+                detailed_status=sub.detailed_status,
+                user_id=sub.user_id,
+                user_alias=user_alias,
+                task_id=sub.task_id,
+                task_title=task_title,
+                challenge_id=sub.challenge_id,
+                created_at=sub.created_at.isoformat() if sub.created_at else None,
+                celery_task_id=sub.celery_task_id,
+            )
+        )
+
+    return paginated_response(items, pagination.total, pagination.page, pagination.pages)
+
+
+def _queue_snapshot() -> list[dict[str, Any]]:
+    """Return full unpaginated list of queued/running submissions."""
+    subs = (
+        Submission.query.filter(Submission.status.in_(["queued", "running"]))
+        .outerjoin(Task, Submission.task_id == Task.id)
+        .outerjoin(User, Submission.user_id == User.id)
+        .order_by(Submission.created_at.asc())
+        .all()
+    )
+    snapshot = []
+    for sub in subs:
+        task_title = sub.task.title if sub.task else None
+        user_alias = sub.user.alias_id if sub.user else None
+        snapshot.append(
+            {
+                "id": str(sub.id),
+                "status": sub.status,
+                "detailed_status": sub.detailed_status,
+                "user_id": str(sub.user_id) if sub.user_id else None,
+                "user_alias": user_alias,
+                "task_id": str(sub.task_id) if sub.task_id else None,
+                "task_title": task_title,
+                "challenge_id": str(sub.challenge_id) if sub.challenge_id else None,
+                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                "celery_task_id": sub.celery_task_id,
+            }
+        )
+    return snapshot
+
+
+@admin_bp.route("/submissions/queue/live", methods=["GET"])
+@role_required(["admin", "jury"])
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+)
+def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """SSE endpoint: stream real-time queue updates."""
+
+    def event_generator():
+        user_id = request.user["user_id"]
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
+            if not allowed:
+                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                return
+
+            with current_app.app_context():
+                yield f"data: {json.dumps({'items': _queue_snapshot(), 'event': 'snapshot'})}\n\n"
+
+            r = get_redis_client()
+            pubsub = r.pubsub() if r else None
+            if pubsub:
+                pubsub.subscribe("queue_updates")
+            start_time = time.time()
+            try:
+                while True:
+                    if member and r and r.zscore("sse:connections", member) is None:
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
+                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
+                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
+                        break
+                    if pubsub:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                        if message:
+                            with current_app.app_context():
+                                payload = json.dumps(
+                                    {
+                                        "items": _queue_snapshot(),
+                                        "event": "update",
+                                    }
+                                )
+                                yield f"data: {payload}\n\n"
+                                continue
+                    else:
+                        time.sleep(10.0)
+                        with current_app.app_context():
+                            payload = json.dumps(
+                                {
+                                    "items": _queue_snapshot(),
+                                    "event": "update",
+                                }
+                            )
+                            yield f"data: {payload}\n\n"
+                    yield ": keep-alive\n\n"
+            except GeneratorExit:
+                pass
+            finally:
+                if pubsub:
+                    with contextlib.suppress(Exception):
+                        pubsub.unsubscribe()
+                        pubsub.close()
+
+    return sse_response(event_generator)
+
+
+@admin_bp.route("/submissions/queue/clear", methods=["POST"])
+@role_required(["admin"])
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=MessageResponse, HTTP_403=ErrorResponse),
+)
+def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
+    """Kill all queued and running submissions (admin only)."""
+    from tasks import celery
+
+    subs = Submission.query.filter(Submission.status.in_(["queued", "running"])).all()
+    count = 0
+
+    for sub in subs:
+        if sub.celery_task_id:
+            with contextlib.suppress(Exception):
+                celery.control.revoke(sub.celery_task_id, terminate=True)
+        sub.status = "failed"
+        sub.detailed_status = "killed"
+        log_line = f"[{utcnow().isoformat()}] Submission killed by admin queue clear"
+        existing_logs = sub.logs or ""
+        sub.logs = f"{existing_logs}\n{log_line}".strip()
+        publish_submissions_update(sub.task_id, sub.challenge_id)
+        publish_queue_update()
+        publish_submission_status(sub.id, "failed")
+        clear_submission_logs(sub.id)
+        count += 1
+
+    db.session.commit()
+
+    return MessageResponse(message=f"Cleared {count} submission(s) from the queue.")

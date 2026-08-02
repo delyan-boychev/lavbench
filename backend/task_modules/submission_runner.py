@@ -477,6 +477,7 @@ def run_eval_submission(
             with app.app_context():
                 from sse_utils import (
                     publish_leaderboard_update,
+                    publish_queue_update,
                     publish_submissions_update,
                 )
 
@@ -511,8 +512,9 @@ def run_eval_submission(
                                 "Failed to invalidate leaderboard cache in submission runner"
                             )
 
-                    publish_submissions_update(sub.task_id, sub.user_id)
-                    publish_leaderboard_update(sub.task_id)
+                    publish_submissions_update(sub.task_id, sub.challenge_id)
+                    publish_queue_update()
+                    publish_leaderboard_update(sub.challenge_id)
 
     logs: StreamingLogList | None = None
     status: str = "queued"
@@ -521,6 +523,7 @@ def run_eval_submission(
     execution_time_ms: int = 0
     metrics_payload_pub: dict[str, Any] | None = None
     metrics_payload_priv: dict[str, Any] | None = None
+    host_labels_dir: str | None = None
 
     # 3. Start evaluation execution
     try:
@@ -1021,15 +1024,6 @@ def run_eval_submission(
                         logs.append(f"Error during parquet metric calculation: {eval_err!s}")
                         logs.append(f"Traceback: {traceback.format_exc()}")
 
-            # Clean up securely downloaded labels directory on host if created
-            if metadata and "host_labels_dir" in locals() and host_labels_dir:
-                try:
-                    import shutil
-
-                    shutil.rmtree(host_labels_dir, ignore_errors=True)
-                except OSError as e:
-                    logger.debug("Could not remove host labels dir %s: %s", host_labels_dir, e)
-
         try:
             import shutil
 
@@ -1074,6 +1068,10 @@ def run_eval_submission(
                 r = get_redis_client()
                 if r:
                     r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
+        if host_labels_dir:
+            import shutil
+
+            shutil.rmtree(host_labels_dir, ignore_errors=True)
         if "temp_dir" in locals() and temp_dir:
             import shutil
 

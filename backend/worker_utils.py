@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -108,6 +109,7 @@ def run_command_streaming(
 
     stdout_lines: list[str] = []
     process_timeout = False
+    exit_code = -1
 
     def stream_logs() -> None:
         try:
@@ -125,34 +127,37 @@ def run_command_streaming(
     t = threading.Thread(target=stream_logs, daemon=True)
     t.start()
 
-    start_wait = time.time()
     try:
-        while True:
-            container.reload()
-            if container.status in ("exited", "removing", "dead"):
-                break
-            if time_limit and (time.time() - start_wait > time_limit):
-                container.kill()
-                process_timeout = True
-                break
-            time.sleep(0.1)
-    except Exception as exc:
-        logs_list.append(f"Error during container execution: {exc}")
-        container.kill()
-        process_timeout = True
+        start_wait = time.time()
+        try:
+            while True:
+                container.reload()
+                if container.status in ("exited", "removing", "dead"):
+                    break
+                if time_limit and (time.time() - start_wait > time_limit):
+                    container.kill()
+                    process_timeout = True
+                    break
+                time.sleep(0.1)
+        except Exception as exc:
+            logs_list.append(f"Error during container execution: {exc}")
+            container.kill()
+            process_timeout = True
 
-    t.join(timeout=30.0)
+        t.join(timeout=30.0)
 
-    try:
-        result = container.wait()
-        exit_code = result.get("StatusCode", -1)
-    except Exception:
-        exit_code = -1
-
-    try:
-        container.remove(force=True)
-    except Exception:
-        logger.debug("Error removing container", exc_info=True)
+        try:
+            result = container.wait()
+            exit_code = result.get("StatusCode", -1)
+        except Exception:
+            exit_code = -1
+    finally:
+        with contextlib.suppress(Exception):
+            container.kill()
+        try:
+            container.remove(force=True)
+        except Exception:
+            logger.debug("Error removing container", exc_info=True)
 
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""

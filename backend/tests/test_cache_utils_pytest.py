@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import warnings
 
 import pytest
 
@@ -55,8 +56,8 @@ class TestDeadLetterQueue:
             r = get_redis_client()
             if r:
                 r.delete("dead_letter_queue")
-        except Exception:  # noqa: S110
-            pass
+        except Exception as e:
+            warnings.warn(f"Failed to clear queue: {e}", stacklevel=2)
 
     def test_logs_entry(self, redis_flush):
         log_dead_letter(42, task_id=7, challenge_id=3, error="test error")

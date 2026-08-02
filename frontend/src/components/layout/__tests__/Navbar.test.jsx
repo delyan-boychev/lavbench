@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
 import Navbar from '../Navbar';
@@ -62,7 +63,7 @@ describe('Navbar Component', () => {
       logout: mockLogout,
     });
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     expect(screen.getByTestId('logo')).toBeInTheDocument();
     expect(screen.getAllByText('John Doe').length).toBeGreaterThan(0);
@@ -86,7 +87,7 @@ describe('Navbar Component', () => {
       }
     };
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     expect(eventSourceInstance.url).toBe('/api/worker-status/live');
 
@@ -122,7 +123,7 @@ describe('Navbar Component', () => {
       }
     };
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     await vi.waitFor(() => {
       expect(screen.getByText('Cluster')).toBeInTheDocument();
@@ -145,7 +146,7 @@ describe('Navbar Component', () => {
       }
     };
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     // Simulate SSE with cluster data
     act(() => {
@@ -198,7 +199,7 @@ describe('Navbar Component', () => {
       logout: mockLogout,
     });
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const themeBtn = screen.getByTitle('Switch to light mode');
     fireEvent.click(themeBtn);
@@ -212,7 +213,7 @@ describe('Navbar Component', () => {
       logout: mockLogout,
     });
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const signoutBtn = screen.getByTitle('Sign out');
     fireEvent.click(signoutBtn);
@@ -247,7 +248,7 @@ describe('Navbar Component', () => {
       }),
     );
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const docsBtn = screen.getByText('Docs');
     fireEvent.click(docsBtn);
@@ -283,7 +284,7 @@ describe('Navbar Component', () => {
       }),
     );
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const docsBtn = screen.getByText('Docs');
     fireEvent.click(docsBtn);
@@ -324,7 +325,7 @@ describe('Navbar Component', () => {
     const mockSystemTime = new Date('2026-06-13T11:00:00Z').getTime();
     vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const timer = screen.getByTitle('Time remaining in Stage 1');
     expect(timer).toBeInTheDocument();
@@ -364,7 +365,7 @@ describe('Navbar Component', () => {
     const mockSystemTime = new Date('2026-06-13T11:40:00Z').getTime();
     vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const timer = screen.getByTitle('Time remaining in Stage 1');
     expect(timer).toBeInTheDocument();
@@ -404,7 +405,7 @@ describe('Navbar Component', () => {
     const mockSystemTime = new Date('2026-06-13T11:50:00Z').getTime();
     vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const timer = screen.getByTitle('Time remaining in Stage 1');
     expect(timer).toBeInTheDocument();
@@ -444,7 +445,7 @@ describe('Navbar Component', () => {
     const mockSystemTime = new Date('2026-06-13T11:57:00Z').getTime();
     vi.spyOn(Date, 'now').mockReturnValue(mockSystemTime);
 
-    render(<Navbar />);
+    renderWithProviders(<Navbar />);
 
     const timer = screen.getByTitle('Time remaining in Stage 1');
     expect(timer).toBeInTheDocument();

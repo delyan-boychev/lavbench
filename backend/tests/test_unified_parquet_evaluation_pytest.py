@@ -603,6 +603,32 @@ class TestEvalPredictionsAllMetricPaths:
         res = evaluate_predictions(df_s, df_l, {"pixel_accuracy": {"weight": 1.0}})
         assert res["pixel_accuracy"] == pytest.approx(0.0)
 
+    def _make_png_mask(self, width: int, height: int, pixel_value: int) -> bytes:
+        """Create a small PNG image with uniform pixel value."""
+        from PIL import Image
+
+        img = Image.new("L", (width, height), pixel_value)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_mean_iou_with_compressed_png(self):
+        """mean_iou must decode compressed PNG masks correctly."""
+        png_white = self._make_png_mask(4, 4, 255)
+        png_black = self._make_png_mask(4, 4, 0)
+        df_l = pd.DataFrame({"id": [1, 2], "label": [png_white, png_white]})
+        df_s = pd.DataFrame({"id": [1, 2], "prediction": [png_white, png_black]})
+        res = evaluate_predictions(df_s, df_l, {"mean_iou": {"weight": 1.0}})
+        assert res["mean_iou"] == pytest.approx(0.5, abs=1e-2)
+
+    def test_dice_with_compressed_png(self):
+        """dice must decode compressed PNG masks correctly."""
+        png_white = self._make_png_mask(4, 4, 255)
+        df_l = pd.DataFrame({"id": [1], "label": [png_white]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [png_white]})
+        res = evaluate_predictions(df_s, df_l, {"dice": {"weight": 1.0}})
+        assert res["dice"] == pytest.approx(1.0)
+
     # ── Keypoints ──────────────────────────────────────────────────────────────
 
     def test_oks_perfect_keypoints(self):

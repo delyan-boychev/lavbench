@@ -159,6 +159,9 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_PUBLIC_SCORE": "public_score must be numeric or null",
     "ERR_INVALID_PRIVATE_SCORE": "private_score must be numeric or null",
     "ERR_INVALID_FILENAME": "Invalid filename",
+    # submissions.py — kill / queue
+    "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
+    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
     # tasks.py — misc
     "ERR_FILE_NOT_FOUND": "File not found in task metadata.",
     "ERR_NOT_AVAILABLE": "Access denied or task not available yet.",

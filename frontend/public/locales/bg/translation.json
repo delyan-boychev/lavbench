@@ -212,7 +212,9 @@
     "ERR_USERNAME_REQUIRED": "Потребителското име е задължително.",
     "ERR_USERNAME_TAKEN": "Потребител с това потребителско име вече съществува.",
     "ERR_USER_NOT_FOUND": "Потребителят не е намерен.",
-    "ERR_VALIDATION": "Грешка при валидация на заявката."
+    "ERR_VALIDATION": "Грешка при валидация на заявката.",
+    "ERR_SUBMISSION_NOT_KILLABLE": "Решението не може да бъде спряно. Могат да се спират само чакащи или изпълняващи се решения.",
+    "ERR_SUBMISSION_KILL_DENIED": "Нямате разрешение да спрете това решение."
   },
   "submissions": {
     "loading": "Зареждане на решения...",
@@ -257,6 +259,10 @@
     "connecting_live_logs": "Свързване към логове на живо...",
     "execution_log_live": "Лог от изпълнение (На живо)",
     "best_submission": "Най-добро решение",
+    "kill": "Спри",
+    "kill_confirm": "Сигурни ли сте, че искате да спрете това решение? То ще бъде маркирано като неуспешно.",
+    "kill_success": "Решението е спряно успешно.",
+    "kill_failed": "Неуспешно спиране на решението.",
     "select_competitor": "Избор на участник",
     "no_competitors_found": "Няма намерени участници",
     "search_competitor_placeholder": "Търсене по псевдоним, име или училище...",
@@ -621,6 +627,20 @@
       "vram": "VRAM:",
       "ram": "RAM:"
     },
+    "submission_queue": {
+      "title": "Опашка от решения",
+      "clear_queue": "Изчисти опашката",
+      "clear_queue_confirm": "Сигурни ли сте, че искате да изчистите цялата опашка? Всички чакащи и изпълняващи се решения ще бъдат спрени.",
+      "queue_empty": "Опашката е празна.",
+      "kill": "Спри",
+      "kill_confirm": "Сигурни ли сте, че искате да спрете това решение от опашката?",
+      "user_header": "Потребител",
+      "task_header": "Задача",
+      "status_header": "Статус",
+      "created_header": "Създадено",
+      "actions_header": "Действия",
+      "queue_description": "{{count}} решение(я) в опашката"
+    },
     "stages": {
       "stages_in_competition": "Етапи в това състезание ({{count}})",
       "no_stages": "Все още няма конфигурирани етапи.",
@@ -696,6 +716,8 @@
       "account_username": "Потребителско име на акаунта:",
       "new_generated_password": "Нова генерирана парола:",
       "generated_passwords_bulk_title": "Генерирани пароли за {{count}} състезатели",
+      "bulk_reset_saved_title": "Паролите са нулирани успешно",
+      "bulk_reset_saved_help": "Файлът с пароли е записан на сървъра в директорията uploads/credentials и се включва в автоматичните архиви. Споделете паролите със състезателите, след което изтрийте файла.",
       "clear_list": "Изчисти списъка",
       "new_password_table_header": "Нова парола",
       "no_competitors_found": "Няма намерени състезатели, съвпадащи с търсенето.",
@@ -956,7 +978,7 @@
       "network_error_reset_password": "Мрежова грешка при нулиране на паролата.",
       "no_eligible_competitions": "Няма достъпни състезания за нулиране на пароли.",
       "invalid_competition_id": "Избран е невалиден ID на състезание.",
-      "bulk_reset_success": "Паролите за {{count}} състезатели са нулирани успешно!",
+      "bulk_reset_success": "Паролите за състезанието са нулирани успешно!",
       "bulk_reset_failed": "Неуспешно групово нулиране на пароли.",
       "network_error_bulk_reset": "Мрежова грешка при нулиране на пароли.",
       "imported_competitors_success": "Успешно импортирани {{count}} състезатели!",
@@ -968,6 +990,9 @@
       "download_submissions_failed": "Неуспешно изтегляне на решения.",
       "submissions_zip_downloaded": "Архивът с решения в ZIP формат е изтеглен.",
       "invalid_email": "Моля, въведете валиден имейл адрес",
+      "clear_queue_success": "Опашката е изчистена успешно.",
+      "clear_queue_failed": "Неуспешно изчистване на опашката.",
+      "clear_queue_network_error": "Мрежова грешка при изчистване на опашката.",
       "stage_results_hidden": "Резултатите за етапа са скрити.",
       "stage_results_revealed": "Резултатите за етапа са показани."
     },

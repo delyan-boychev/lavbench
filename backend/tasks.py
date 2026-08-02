@@ -143,6 +143,15 @@ def evaluate_submission(
                     from sse_utils import publish_submission_status
 
                     publish_submission_status(submission_id, "failed")
+        elif RUNNING_AS_WORKER and metadata:
+            from worker_utils import report_status_to_server
+
+            report_status_to_server(
+                metadata=metadata,
+                status="failed",
+                detailed_status="failed",
+                logs="[TIMEOUT] Celery soft time limit exceeded.",
+            )
         return
     except Exception as e:
         from cache_utils import log_dead_letter
@@ -221,12 +230,12 @@ def check_and_backup() -> dict[str, Any]:
 
         from models import Challenge
 
-        challenges = Challenge.query.filter(Challenge.is_active, ~Challenge.is_archived).all()
-
-        active_count = 0
-        for c in challenges:
-            if c.start_time and c.start_time <= now and (not c.end_time or c.end_time >= now):
-                active_count += 1
+        active_count = Challenge.query.filter(
+            Challenge.is_active,
+            ~Challenge.is_archived,
+            Challenge.start_time <= now,
+            (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
+        ).count()
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
@@ -288,7 +297,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         "evaluating",
                     ]
                 )
-            ).all()
+            ).yield_per(100)
             for sub in stuck:
                 fallback_key = f"submission:{sub.id}:fallback"
                 fallback_data = r.get(fallback_key)
@@ -460,14 +469,17 @@ celery.conf.beat_schedule = {
     "watchdog-every-5m": {
         "task": "tasks.watchdog_stuck_submissions",
         "schedule": 300.0,
+        "options": {"queue": "internal"},
     },
     "backup-check-every-20m": {
         "task": "tasks.check_and_backup",
         "schedule": 1200.0,
+        "options": {"queue": "internal"},
     },
     "recalculate-dirty-leaderboards-every-20s": {
         "task": "tasks.recalculate_dirty_leaderboards",
         "schedule": 20.0,
+        "options": {"queue": "internal"},
     },
     "docker-prune-weekly": {
         "task": "tasks.prune_docker_images",

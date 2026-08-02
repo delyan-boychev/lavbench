@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import ChallengeService from '../../services/ChallengeService';
@@ -16,8 +17,15 @@ export default function NotebookSubmit({ task, challenge }) {
   const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState([]);
   const [fileName, setFileName] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+
+  const parseMutation = useMutation({
+    mutationFn: (/** @type {any} */ variables) =>
+      ChallengeService.parseNotebook(variables.challengeId, variables.file),
+  });
+  const submitMutation = useMutation({
+    mutationFn: (/** @type {any} */ variables) =>
+      TaskService.submit(variables.taskId, variables.selected),
+  });
 
   const isCompetitor = currentUser?.role === 'competitor';
   const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
@@ -92,11 +100,10 @@ export default function NotebookSubmit({ task, challenge }) {
       showToast(t('challenge.only_ipynb_supported'), 'error');
       return;
     }
-    setUploading(true);
     setSelectedCellIds([]);
     setCells([]);
     try {
-      const res = await ChallengeService.parseNotebook(challenge.id, file);
+      const res = await parseMutation.mutateAsync({ challengeId: challenge.id, file });
       if (res.ok) {
         const parsedCells = res.data.cells || [];
         setCells(parsedCells);
@@ -130,8 +137,6 @@ export default function NotebookSubmit({ task, challenge }) {
       }
     } catch {
       showToast(t('challenge.network_error_parse'), 'error');
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -141,9 +146,8 @@ export default function NotebookSubmit({ task, challenge }) {
       return;
     }
     const selected = cells.filter((c) => selectedCellIds.includes(c.id));
-    setSubmitting(true);
     try {
-      const res = await TaskService.submit(task.id, selected);
+      const res = await submitMutation.mutateAsync({ taskId: task.id, selected });
       if (res.ok) {
         showToast(t('challenge.submission_queued'));
         setCells([]);
@@ -159,8 +163,6 @@ export default function NotebookSubmit({ task, challenge }) {
       }
     } catch {
       showToast(t('challenge.network_error_submit'), 'error');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -181,7 +183,7 @@ export default function NotebookSubmit({ task, challenge }) {
       {/* Upload zone */}
       <label className="file-drop-zone">
         <input type="file" accept=".ipynb" className="sr-only" onChange={handleUpload} />
-        {uploading ? (
+        {parseMutation.isPending ? (
           <div
             className="pointer-events-none"
             style={{
@@ -300,11 +302,11 @@ export default function NotebookSubmit({ task, challenge }) {
       {cells.length > 0 && (
         <Button
           onClick={handleSubmit}
-          disabled={submitting || selectedCellIds.length === 0}
+          disabled={submitMutation.isPending || selectedCellIds.length === 0}
           size="lg"
           className="w-full"
         >
-          {submitting ? (
+          {submitMutation.isPending ? (
             <>
               <div
                 className="animate-spin"
