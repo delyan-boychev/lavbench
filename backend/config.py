@@ -35,6 +35,8 @@ class Config:
     # Celery configuration
     CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+    # Dedicated cache instance (defaults to broker when unset, e.g. dev/tests)
+    CACHE_REDIS_URL = os.environ.get("CACHE_REDIS_URL", "")
     CELERY_RESULT_EXPIRES = int(os.environ.get("CELERY_RESULT_EXPIRES", 3600))
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
@@ -116,8 +118,10 @@ class Config:
     # Secure cookies (set True when behind HTTPS)
     SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() in ("1", "true", "yes")
 
-    # CORS origins
-    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
+    # CORS origins (explicit allow-list; dev defaults, override in production)
+    CORS_ORIGINS = os.environ.get(
+        "CORS_ORIGINS", "http://localhost:5173,http://localhost:5001,http://127.0.0.1:5173"
+    )
 
     # Directories
     BACKUPS_DIR = os.environ.get("BACKUPS_DIR", "/backups")

@@ -432,6 +432,54 @@ class TestRouteLevelLogic:
         assert res.status_code == 403
         assert "already started" in res.get_json()["error"]
 
+    def test_jury_cannot_escalate_role_or_password(self):
+        jury = User(
+            username="jury_escalation",
+            role="jury",
+            alias_id="Jury-Escalation",
+            password_hash="pbkdf2:sha256:...",
+        )
+        db.session.add(jury)
+        db.session.commit()
+        jury_token = generate_token(jury.id, jury.role)
+
+        target_user = User(
+            username="escalate_me",
+            role="competitor",
+            alias_id="Escalate-Me",
+            password_hash="pbkdf2:sha256:...",
+            challenge_id=self.challenge.id,
+        )
+        db.session.add(target_user)
+        db.session.commit()
+
+        self.challenge.start_time = utcnow() + timedelta(days=1)
+        db.session.commit()
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"role": "admin"},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"password": "hacked123"},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"jury_challenges": [str(self.challenge.id)]},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
     def test_download_scores_and_submissions_routes(self):
         jury = User(
             username="jury_downloader",
@@ -608,15 +656,27 @@ class TestRouteLevelLogic:
 
         mock_inspect.ping.return_value = {"celery@gpu-worker": {"ok": "pong"}}
         mock_inspect.registered.return_value = {"celery@gpu-worker": ["tasks.evaluate_submission"]}
+
+        # Competitors see general availability only, never cluster topology
         res = self.client.get(
             "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
         )
         assert res.status_code == 200
+        body = res.get_json()
+        assert body["status"] == "online"
+        assert body["online_workers"] == 1
+        assert body["clusters"] == []
+
+        res = self.client.get(
+            "/api/worker-status", headers=self.get_auth_header(self.admin_token)
+        )
+        assert res.status_code == 200
         assert res.get_json()["status"] == "online"
+        assert len(res.get_json()["clusters"]) == 1
 
         mock_inspect.ping.return_value = None
         res = self.client.get(
-            "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
+            "/api/worker-status", headers=self.get_auth_header(self.jury_token)
         )
         assert res.status_code == 200
         assert res.get_json()["status"] == "offline"
@@ -1686,6 +1746,20 @@ class TestRouteLevelLogic:
         assert len(logs) == 1
         assert logs[0].new_score == 60
         assert logs[0].reason == "Scoring correction post finalization"
+        assert logs[0].action_type == "update"
+        assert logs[0].target_type == "user"
+
+        # Regression: the audit-logs listing must render manual-points entries
+        res = self.client.get(
+            "/api/admin/audit-logs",
+            headers=self.get_auth_header(self.admin_token),
+        )
+        assert res.status_code == 200
+        listed = res.get_json()["logs"]
+        assert any(
+            log["target_user_id"] == str(self.competitor.id) and log["new_score"] == 60
+            for log in listed
+        )
 
     def test_results_export(self):
         res_comp = self.client.get(

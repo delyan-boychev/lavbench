@@ -18,7 +18,7 @@ from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
 from spec import api
-from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
+from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit, sse_heartbeat
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
 from utils.dates import utcnow
@@ -524,7 +524,7 @@ def stream_challenge_leaderboard(
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:
                             yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                             break
-                        if member and r.zscore("sse:connections", member) is None:
+                        if member and not sse_heartbeat(member, user_id):
                             yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                             break
                         message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
@@ -636,6 +636,8 @@ def save_manual_points(
         if old_score != pts:
             audit_entry = AuditLog(
                 admin_id=admin_id,
+                action_type="update",
+                target_type="user",
                 target_user_id=user.id,
                 task_id=task_id,
                 old_score=old_score,

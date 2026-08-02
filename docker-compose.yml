@@ -59,10 +59,9 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
-    # Exposed on all interfaces for remote workers — protected by REDIS_PASSWORD
-    # Override bind with: REDIS_BIND=127.0.0.1 in .env for local-only access
+    # Bound to loopback by default — remote workers must override REDIS_BIND=0.0.0.0
     ports:
-      - "${REDIS_BIND:-0.0.0.0}:6379:6379"
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
     volumes:
       - logs_data:/app/logs
     deploy:
@@ -70,6 +69,36 @@ services:
         limits:
           memory: 256M
           cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 2b. Dedicated Redis Cache (keys, SSE state, locks) — internal only, no host port
+  redis-cache:
+    image: redis:alpine
+    container_name: lavbench_redis_cache
+    restart: always
+    command: >
+      redis-server
+      --save ""
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: "0.25"
     logging:
       driver: json-file
       options:
@@ -91,8 +120,10 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
       - WORKER_PUBLIC_KEY=${WORKER_PUBLIC_KEY:?WORKER_PUBLIC_KEY must be set in .env}
@@ -110,6 +141,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     volumes:
       - hf_cache:/app/hf_cache
@@ -145,6 +178,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -157,6 +191,8 @@ services:
       redis:
         condition: service_healthy
       db:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
@@ -188,6 +224,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      - CACHE_REDIS_URL=${CACHE_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-cache:6379/1}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -202,6 +239,8 @@ services:
       redis:
         condition: service_healthy
       db:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads

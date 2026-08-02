@@ -13,6 +13,7 @@ from sse_utils import (
     publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
 )
 from tests.helpers.sse_test_utils import _FakeRedis, fake_redis
 
@@ -297,3 +298,51 @@ class TestSseConnectionLimit:
         with sse_connection_limit(user_id=1):
             pass
         assert fredis.zcard("sse:connections") == 0  # cleaned on exit
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# sse_heartbeat — keeps live SSE members from being pruned as stale
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestSseHeartbeat:
+    @patch("sse_utils.get_redis_client")
+    def test_refreshes_global_and_user_sets(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit(user_id=7) as (allowed, member):
+            assert allowed is True
+            old_global = fredis.zscore("sse:connections", member)
+            old_user = fredis.zscore("sse:user:7", member)
+
+            import time
+
+            time.sleep(0.01)
+            assert sse_heartbeat(member, user_id=7) is True
+
+            assert fredis.zscore("sse:connections", member) > old_global
+            assert fredis.zscore("sse:user:7", member) > old_user
+
+    @patch("sse_utils.get_redis_client")
+    def test_returns_false_for_evicted_member(self, mock_get_redis, fredis):
+        mock_get_redis.return_value = fredis
+        with sse_connection_limit(user_id=1) as (allowed, member):
+            assert allowed is True
+            fredis.zrem("sse:connections", member)
+            assert sse_heartbeat(member, user_id=1) is False
+
+    @patch("sse_utils.get_redis_client")
+    def test_empty_member_is_ok(self, mock_get_redis):
+        mock_get_redis.return_value = MagicMock()
+        assert sse_heartbeat("") is True
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_none_is_ok(self, mock_get_redis):
+        mock_get_redis.return_value = None
+        assert sse_heartbeat("member-1") is True
+
+    @patch("sse_utils.get_redis_client")
+    def test_redis_exception_is_ok(self, mock_get_redis):
+        bad_redis = MagicMock()
+        bad_redis.zscore.side_effect = Exception("Redis down")
+        mock_get_redis.return_value = bad_redis
+        assert sse_heartbeat("member-1") is True

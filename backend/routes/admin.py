@@ -67,6 +67,7 @@ from sse_utils import (
     publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
 )
 from utils.audit import log_audit
 from utils.cache_helpers import cached_or_compute_unless_testing
@@ -788,7 +789,7 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
-                    if member and r and r.zscore("sse:connections", member) is None:
+                    if member and r and not sse_heartbeat(member, user_id):
                         yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                         break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
@@ -938,6 +939,14 @@ def update_user(
     if current_role == "jury":
         if user.role in ("admin", "jury"):
             return err("ERR_JURY_CANNOT_EDIT_ADMIN", 403)
+
+        # Jury must not be able to escalate itself (or others) to admin
+        if json.role is not None or json.password or json.jury_challenges is not None:
+            return err(
+                "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD",
+                403,
+                message="Jury members cannot change roles, passwords, or jury assignments.",
+            )
 
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
@@ -1406,7 +1415,7 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
 
             try:
                 while True:
-                    if member and r and r.zscore("sse:connections", member) is None:
+                    if member and r and not sse_heartbeat(member, user_id):
                         yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                         break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
@@ -1785,7 +1794,7 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
             start_time = time.time()
             try:
                 while True:
-                    if member and r and r.zscore("sse:connections", member) is None:
+                    if member and r and not sse_heartbeat(member, user_id):
                         yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                         break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:

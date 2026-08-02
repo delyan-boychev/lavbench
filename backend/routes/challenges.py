@@ -539,6 +539,18 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     assigned_juries = JuryChallenge.query.filter_by(challenge_id=challenge_id).all()
     jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
 
+    # Collect on-disk paths before bulk delete — ORM after_delete hooks do not
+    # fire for synchronize_session=False bulk deletes, so cleanup happens here.
+    sub_paths = (
+        Submission.query.filter_by(challenge_id=challenge_id)
+        .with_entities(Submission.code_storage_path, Submission.log_storage_path)
+        .all()
+    )
+    task_upload_dirs = [
+        os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{row[0]}")
+        for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.id).all()
+    ]
+
     # Delete submissions first (child of users/tasks/challenge)
     Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
 
@@ -569,6 +581,15 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
             if jury_user and jury_user.role == "jury":
                 db.session.delete(jury_user)
     db.session.commit()
+
+    # Remove on-disk submission/task files only after the transaction succeeded
+    for code_path, log_path in sub_paths:
+        for p in (code_path, log_path):
+            if p and os.path.exists(p):
+                with contextlib.suppress(OSError):
+                    os.remove(p)
+    for task_dir in task_upload_dirs:
+        shutil.rmtree(task_dir, ignore_errors=True)
 
     log_audit(
         request.user["user_id"],

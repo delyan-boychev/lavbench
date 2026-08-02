@@ -55,6 +55,7 @@ from sse_utils import (
     publish_queue_update,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
@@ -736,16 +737,18 @@ def update_task(
             if old_stage.end_time and old_stage.end_time <= utcnow():
                 return err("ERR_CANNOT_MOVE_ENDED", 400)
 
-        if (
-            stage_id_val is not None
-            and stage_id_val != task.stage_id
-            and Submission.query.filter(
-                Submission.task_id == task.id,
-                Submission.manual_points.isnot(None),
-                Submission.manual_points != "{}",
-            ).first()
-        ):
-            return err("ERR_CANNOT_MOVE_HAS_MANUAL_POINTS", 400)
+        if stage_id_val is not None and stage_id_val != task.stage_id:
+            from models import User as _TaskUser
+
+            task_id_str = str(task.id)
+            has_manual_points = False
+            for u in _TaskUser.query.filter_by(challenge_id=task.challenge_id).all():
+                manual_pts = safe_json_loads(u.manual_points, {})
+                if task_id_str in manual_pts:
+                    has_manual_points = True
+                    break
+            if has_manual_points:
+                return err("ERR_CANNOT_MOVE_HAS_MANUAL_POINTS", 400)
 
         if stage_id_val:
             st = Stage.query.filter_by(id=stage_id_val, challenge_id=task.challenge_id).first()
@@ -970,9 +973,6 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
-    import shutil
-
-    shutil.rmtree(task_upload_dir, ignore_errors=True)
     # Collect file paths before bulk delete for cleanup
     subs = Submission.query.filter_by(task_id=task_id).all()
     from tasks import celery
@@ -983,6 +983,14 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
                 celery.control.revoke(s.celery_task_id, terminate=True)
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
+    db.session.delete(task)
+    db.session.commit()
+
+    # Remove on-disk files only after the transaction succeeded — a failed
+    # commit (e.g. FK constraint) must never leave a half-deleted task behind.
+    import shutil
+
+    shutil.rmtree(task_upload_dir, ignore_errors=True)
     for code_path, log_path in paths:
         if code_path and os.path.exists(code_path):
             with contextlib.suppress(OSError):
@@ -990,8 +998,6 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
         if log_path and os.path.exists(log_path):
             with contextlib.suppress(OSError):
                 os.remove(log_path)
-    db.session.delete(task)
-    db.session.commit()
 
     log_audit(
         request.user["user_id"],
@@ -1442,7 +1448,7 @@ def stream_task_submissions(
 
             try:
                 while True:
-                    if member and r and r.zscore("sse:connections", member) is None:
+                    if member and r and not sse_heartbeat(member, current_user_id):
                         yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                         break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
@@ -1480,24 +1486,25 @@ def stream_task_submissions(
     security=[{"cookieAuth": []}],
 )
 def get_worker_status() -> dict[str, Any]:
-    """Get current worker cluster health status with specs."""
-    return _get_worker_status_data()
+    """Get worker cluster health status with specs (details admin/jury only)."""
+    return _get_worker_status_data(request.user["role"])
 
 
 @tasks_bp.route("/worker-status/live", methods=["GET"])
 @login_required
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
 def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
-    """Stream worker cluster health status via SSE."""
+    """Stream worker cluster health status via SSE (details admin/jury only)."""
 
     def event_generator():
         user_id = request.user["user_id"]
+        user_role = request.user["role"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
                 yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
                 return
 
-            res_data = _get_worker_status_data()
+            res_data = _get_worker_status_data(user_role)
             yield f"data: {json.dumps(res_data)}\n\n"
 
             r = get_redis_client()
@@ -1509,7 +1516,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             start_time = time.time()
             try:
                 while True:
-                    if member and r and r.zscore("sse:connections", member) is None:
+                    if member and r and not sse_heartbeat(member, user_id):
                         yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                         break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
@@ -1523,7 +1530,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
                         time.sleep(5.0)
                     now = time.time()
                     if got_message or (now - last_sent) >= 10:
-                        res_data = _get_worker_status_data()
+                        res_data = _get_worker_status_data(user_role)
                         yield f"data: {json.dumps(res_data)}\n\n"
                         last_sent = now
                     else:
@@ -1539,7 +1546,12 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
     return sse_response(event_generator)
 
 
-def _get_worker_status_data() -> dict[str, Any]:
+def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
+    """Worker cluster summary.
+
+    Admin/jury receive full per-worker specs (hostnames, GPU/VRAM, resource
+    budgets). Other authenticated roles receive general availability only.
+    """
 
     def _compute():
         import json as json_lib
@@ -1595,9 +1607,17 @@ def _get_worker_status_data() -> dict[str, Any]:
             clusters.append(spec)
 
         is_online = len(clusters) > 0
-        return {"status": "online" if is_online else "offline", "clusters": clusters}
+        if view_role in ("admin", "jury"):
+            return {"status": "online" if is_online else "offline", "clusters": clusters}
+        return {
+            "status": "online" if is_online else "offline",
+            "online_workers": len(clusters),
+            "clusters": [],
+        }
 
-    return cached_or_compute_unless_testing("worker:status:summary", _compute, timeout=10)
+    return cached_or_compute_unless_testing(
+        f"worker:status:summary:{view_role or 'user'}", _compute, timeout=10
+    )
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
@@ -1617,7 +1637,11 @@ def report_worker_progress(
     """Worker callback to report submission status and scores."""
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce:
+        return err("ERR_UNAUTHORIZED", 401)
+    # Replay protection: the signed nonce must reference this exact submission
+    if nonce.get("submission_id") != str(submission_id):
         return err("ERR_UNAUTHORIZED", 401)
 
     if not request.is_json:
@@ -1692,6 +1716,22 @@ def report_worker_progress(
     return {"message": "Status updated successfully"}, 200
 
 
+def _worker_nonce_allowed_for_task(nonce: dict[str, str], task_id: Any) -> bool:
+    """Replay protection for task-scoped worker endpoints.
+
+    A signed nonce only grants access to the submission it was issued for
+    (the evaluation flow), or to any task during the image-build flow
+    (nonce submission id is the literal ``worker`` sentinel).
+    """
+    submission_id = nonce.get("submission_id")
+    if not submission_id:
+        return False
+    if submission_id == "worker":
+        return True
+    submission = Submission.query.filter_by(id=submission_id).first()
+    return bool(submission and str(submission.task_id) == str(task_id))
+
+
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
 @rate_limit(max_requests=10, window_seconds=60, per_user=False)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
@@ -1701,7 +1741,8 @@ def worker_download_task_file(
     """Worker endpoint to securely download task resource files."""
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
         return err("ERR_UNAUTHORIZED", 401)
 
     task = db.get_or_404(Task, task_id)
@@ -1862,7 +1903,8 @@ def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[Fl
 def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
         return err("ERR_UNAUTHORIZED", 401)
     task = db.session.get(Task, task_id)
     if not task:
@@ -1920,10 +1962,17 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     if not body:
         return err("ERR_INVALID_REQUEST_BODY", 400)
 
+    # Cap the decompressed payload to prevent disk fill from a compromised worker
+    if len(body) > 1024 * 1024:
+        return err("ERR_PAYLOAD_TOO_LARGE", 400)
+
     try:
         lines = gzip.decompress(body).decode()
     except Exception:
         return err("ERR_INVALID_REQUEST_BODY", 400)
+
+    if len(lines.encode()) > 1024 * 1024:
+        return err("ERR_PAYLOAD_TOO_LARGE", 400)
 
     log_dir = os.environ.get("LOG_DIR", "/app/logs")
     os.makedirs(log_dir, exist_ok=True)

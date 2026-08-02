@@ -384,7 +384,7 @@ def import_challenge_from_dict(
             submission_period_hours=t_data.get("submission_period_hours"),
         )
         if t_data.get("hf_api_key"):
-            task.hf_api_key = t_data.get("hf_api_key")
+            task.set_hf_api_key(t_data.get("hf_api_key"))
 
         db.session.add(task)
         db.session.flush()

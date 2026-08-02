@@ -37,6 +37,7 @@ from sse_utils import (
     publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
 )
 from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
@@ -193,10 +194,12 @@ def submit_code(
             return err("ERR_SUBMIT_LOCKED", 429)
 
         today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge_id,
             Submission.created_at >= today_start,
+            Submission.status != "failed",
         ).count()
 
         if submission_count >= challenge.max_eval_requests:
@@ -595,7 +598,7 @@ def stream_submission_logs(
                 last_db_check = time.time()
                 try:
                     while True:
-                        if member and r.zscore("sse:connections", member) is None:
+                        if member and not sse_heartbeat(member, user_id):
                             yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                             break
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:

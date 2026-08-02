@@ -26,7 +26,9 @@ def get_redis_client() -> redis_lib.Redis[Any] | None:
     global _pool, _pool_pid
     current_pid = os.getpid()
     if _pool is None or _pool_pid != current_pid:
-        broker_url = Config.CELERY_BROKER_URL
+        # Dedicated cache Redis instance when CACHE_REDIS_URL is set
+        # (second container, DB 1, noeviction); falls back to the broker.
+        broker_url = Config.CACHE_REDIS_URL or Config.CELERY_BROKER_URL
         ssl_kwargs: dict[str, Any] = {}
         if broker_url.startswith("rediss://"):
             import ssl

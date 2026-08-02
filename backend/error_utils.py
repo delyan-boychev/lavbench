@@ -44,6 +44,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_NO_AUTO_BACKUP_DELETE": "Auto-backups cannot be deleted manually.",
     # admin.py — user edit
     "ERR_JURY_CANNOT_EDIT_ADMIN": "Jury members cannot edit administrator or other jury accounts.",
+    "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD": "Jury members cannot change roles, passwords, or jury assignments.",
     "ERR_CANNOT_EDIT_STARTED": "Cannot edit user: The assigned competition has already started.",
     "ERR_CANNOT_CHANGE_ROLE_ADMIN": "Cannot change user role to Administrator.",
     "ERR_CANNOT_ASSIGN_STARTED": "Cannot assign user to a competition that has already started.",
@@ -155,6 +156,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_EVALUATOR_LOAD_FAILED": "Failed to load evaluator script.",
     "ERR_UNAUTHORIZED": "Unauthorized",
     "ERR_INVALID_REQUEST_BODY": "Request must be JSON",
+    "ERR_PAYLOAD_TOO_LARGE": "Request payload too large",
     "ERR_INVALID_STATUS": "Invalid status value.",
     "ERR_INVALID_PUBLIC_SCORE": "public_score must be numeric or null",
     "ERR_INVALID_PRIVATE_SCORE": "private_score must be numeric or null",
