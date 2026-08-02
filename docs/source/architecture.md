@@ -3,10 +3,11 @@
 ## 1. System Overview
 
 ```text
-Browser (React SPA) ──> Nginx (Port 443, HTTPS / SSE Reverse Proxy)
+Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             ├── Flask API Server (Port 5001, Gunicorn + gevent)
                             │     ├── PostgreSQL 15 (Primary Database)
                             │     ├── Redis (Celery Broker, SSE Pub/Sub, Rate Limits, Token Blacklist)
+                            │     ├── Redis Cache (Dedicated DB 1, noeviction — leaderboard caches, locks, SSE state)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
                             │     └── Internal Celery Worker (System tasks only, inside Docker Compose)
                             └── Remote Execution Workers (Celery evaluation workers: Docker container or host)
@@ -23,6 +24,7 @@ Browser (React SPA) ──> Nginx (Port 443, HTTPS / SSE Reverse Proxy)
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API endpoints, Pydantic v2 request/response validation, SSE event streaming. |
 | **Primary Database** | PostgreSQL 15 | Users, challenges, stages, tasks, submissions, audit logs (`AuditLog`). |
 | **Cache & Broker** | Redis | Celery task broker, SSE pub/sub channels, atomic rate limit counters, JWT token blacklist. |
+| **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Leaderboard caches, distributed locks, and SSE connection state (`CACHE_REDIS_URL`). Internal container — no host port. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
 | **Worker Nodes** | Celery Evaluation Worker | Runs competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
@@ -135,6 +137,8 @@ Pydantic v2 Schemas + spectree @api.validate Decorators
   tsc --noEmit (npm run check-types — validates JSDoc annotations & component props)
 ```
 
+The spec is reachable through nginx at `:80/apidoc/openapi.json` (no backend host port needed). The `docker-build` CI job regenerates `api.d.ts` from the live stack and fails on any drift; the committed spec snapshots in `docs/source/api/` are refreshed with `make -C docs fetch-spec`. End-to-end behavior (auth, role matrix, rate limits, backups, SSE) is exercised by `scripts/api_smoke_test.py` against the running compose stack in CI.
+
 ### Error Standardization (`err()` & `check_error_codes.py`)
 All backend API error responses use `err("ERR_CODE", status_code)` returning `{"error": "<message>", "code": "ERR_CODE"}`. The script `backend/scripts/check_error_codes.py` validates in CI that every error code is registered in `DEFAULT_ERROR_MESSAGES` and translated in both `en` and `bg` locale files.
 
@@ -147,12 +151,12 @@ All backend API error responses use `err("ERR_CODE", status_code)` returning `{"
 | Endpoint | Streamed Data | Trigger Event |
 | :--- | :--- | :--- |
 | `/api/challenges/<id>/leaderboard/live` | Live Challenge Leaderboard JSON | Submission score computed or manual score edited. |
-| `/api/tasks/<id>/leaderboard/live` | Live Task Leaderboard JSON | Submission status change or manual points entry. |
 | `/api/tasks/<id>/submissions/live` | Submission List Updates | New submission queued or state transition. |
 | `/api/submissions/<id>/logs/live` | Execution Log Lines | Live stdout/stderr log output from worker sandbox. |
 | `/api/admin/workers/stats/live` | Worker Cluster Telemetry | Worker connection/disconnection or slot update. |
-| `/api/worker-status/live` | Cluster Health (Navbar Badge) | Worker heartbeats and status changes. |
 | `/api/admin/backups/live` | Backup Archives List | Automated or manual backup completion. |
+| `/api/admin/submissions/queue/live` | Live Submission Queue State | Queue enqueue/acknowledge/reject events. |
+| `/api/worker-status/live` | Cluster Health (Navbar Badge) | Worker heartbeats and status changes. |
 
 ---
 

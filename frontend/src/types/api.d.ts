@@ -106,6 +106,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/challenges/{challenge_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One-time download of the encrypted bulk-reset password file.
+         * @description The file is deleted on successful download — the plaintext credentials must never sit on disk and never be included in backups.
+         */
+        get: operations["get__api_admin_challenges_{challenge_id}_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/challenges/{challenge_id}/download-scores-csv": {
         parameters: {
             query?: never;
@@ -883,7 +903,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health check for Docker and load balancer monitoring. */
+        /**
+         * Health check for Docker and load balancer monitoring.
+         * @description Probes the database, Redis (cache/SSE/broker) and disk space so a degraded stack never reports healthy.
+         */
         get: operations["get__api_health"];
         put?: never;
         post?: never;
@@ -1072,7 +1095,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current worker cluster health status with specs. */
+        /** Get worker cluster health status with specs (details admin/jury only). */
         get: operations["get__api_worker-status"];
         put?: never;
         post?: never;
@@ -1089,7 +1112,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream worker cluster health status via SSE. */
+        /** Stream worker cluster health status via SSE (details admin/jury only). */
         get: operations["get__api_worker-status_live"];
         put?: never;
         post?: never;
@@ -1545,13 +1568,16 @@ export interface components {
         };
         /** AuditLogResponse */
         "AuditLinkListResponse.febf810.AuditLogResponse": {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @default null
+             */
+            action_type: string | null;
             /**
              * Admin Id
-             * Format: uuid
+             * @default null
              */
-            admin_id: string;
+            admin_id: string | null;
             /**
              * Admin Username
              * @default null
@@ -1594,8 +1620,11 @@ export interface components {
              * @default null
              */
             target_id: string | null;
-            /** Target Type */
-            target_type: string;
+            /**
+             * Target Type
+             * @default null
+             */
+            target_type: string | null;
             /**
              * Target User Id
              * @default null
@@ -2677,6 +2706,13 @@ export interface components {
         };
         /** HealthResponse */
         "HealthResponse.c6e31f5": {
+            /**
+             * Checks
+             * @description Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk.
+             */
+            checks: {
+                [key: string]: string;
+            };
             /** Status */
             status: string;
             /** Version */
@@ -5830,6 +5866,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "get__api_admin_challenges_{challenge_id}_credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Not Found */
             404: {

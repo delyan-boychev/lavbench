@@ -102,6 +102,29 @@ def sse_connection_limit(
             logger.warning("SSE connection cleanup failed:", exc_info=True)
 
 
+def sse_heartbeat(member: str, user_id: Any = None) -> bool:
+    """Refresh a live SSE member's timestamp in the connection zsets.
+
+    Returns False when the member has been evicted/trimmed and the
+    stream should terminate, True otherwise (including Redis failures).
+    """
+    if not member:
+        return True
+    try:
+        r = _redis()
+        if not r:
+            return True
+        now = time.time()
+        if r.zscore(_CONNECTIONS_KEY, member) is None:
+            return False
+        r.zadd(_CONNECTIONS_KEY, {member: now})
+        if user_id is not None:
+            r.zadd(f"sse:user:{user_id}", {member: now})
+        return True
+    except Exception:
+        return True
+
+
 def publish_leaderboard_update(challenge_id: Any) -> None:
     """Publish a leaderboard-changed event to the challenge-level Redis channel for SSE."""
     if not challenge_id:

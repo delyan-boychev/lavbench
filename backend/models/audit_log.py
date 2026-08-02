@@ -1,6 +1,6 @@
 """AuditLog model."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
@@ -10,7 +10,9 @@ class AuditLog(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "audit_logs"
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
-    admin_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=False, index=True)
+    admin_id = db.Column(
+        GUID, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     action_type = db.Column(db.String(50), nullable=True, index=True)
     target_type = db.Column(db.String(50), nullable=True, index=True)
@@ -18,17 +20,21 @@ class AuditLog(db.Model):  # type: ignore[misc, name-defined]
     details = db.Column(db.JSON, nullable=True)
     ip_address = db.Column(db.String(45), nullable=True)
 
-    target_user_id = db.Column(GUID, db.ForeignKey("users.id"), nullable=True, index=True)
-    task_id = db.Column(GUID, db.ForeignKey("tasks.id"), nullable=True, index=True)
+    target_user_id = db.Column(
+        GUID, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    task_id = db.Column(
+        GUID, db.ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     old_score = db.Column(db.Integer, nullable=True)
     new_score = db.Column(db.Integer, nullable=True)
     reason = db.Column(db.Text, nullable=True)
 
     timestamp = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
 
-    admin = db.relationship("User", foreign_keys=[admin_id])
-    target_user = db.relationship("User", foreign_keys=[target_user_id])
-    task = db.relationship("Task")
+    admin: ClassVar[Any] = db.relationship("User", foreign_keys=[admin_id])
+    target_user: ClassVar[Any] = db.relationship("User", foreign_keys=[target_user_id])
+    task: ClassVar[Any] = db.relationship("Task")
 
     def to_dict(self) -> dict[str, Any]:
         result = {

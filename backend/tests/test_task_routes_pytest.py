@@ -13,6 +13,96 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from auth_utils import generate_token
 from models import Challenge, Stage, Submission, Task, User, db
+from routes.tasks import _worker_nonce_allowed_for_task
+
+
+class TestWorkerNonceBinding:
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session, client, redis_flush):
+        self.client = client
+        self.challenge = Challenge(
+            title="Nonce Binding Test",
+            description="Test",
+            max_eval_requests=5,
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
+            is_frozen=False,
+        )
+        db.session.add(self.challenge)
+        db.session.flush()
+        self.task_a = Task(
+            title="Task A",
+            challenge_id=self.challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            gpu_required=False,
+        )
+        db.session.add(self.task_a)
+        db.session.flush()
+        self.task_b = Task(
+            title="Task B",
+            challenge_id=self.challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            gpu_required=False,
+        )
+        db.session.add(self.task_b)
+        db.session.flush()
+        self.submission = Submission(
+            user_id="00000000-0000-0000-0000-000000000000",
+            challenge_id=self.challenge.id,
+            task_id=self.task_a.id,
+            status="running",
+            code_cells="[]",
+        )
+        db.session.add(self.submission)
+        db.session.commit()
+
+    def test_build_flow_nonce_allowed_for_any_task(self):
+        nonce = {"submission_id": "worker", "ts": "0"}
+        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is True
+        assert _worker_nonce_allowed_for_task(nonce, self.task_b.id) is True
+
+    def test_submission_nonce_allowed_only_for_its_task(self):
+        nonce = {"submission_id": str(self.submission.id), "ts": "0"}
+        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is True
+        assert _worker_nonce_allowed_for_task(nonce, self.task_b.id) is False
+
+    def test_nonce_for_unknown_submission_rejected(self):
+        nonce = {"submission_id": "99999999-9999-9999-9999-999999999999", "ts": "0"}
+        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is False
+
+    def test_empty_submission_id_rejected(self):
+        assert (
+            _worker_nonce_allowed_for_task({"submission_id": "", "ts": "0"}, self.task_a.id)
+            is False
+        )
+        assert _worker_nonce_allowed_for_task({}, self.task_a.id) is False
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_progress_report_rejects_unbound_nonce(self, mock_verify):
+        mock_verify.return_value = {
+            "submission_id": "99999999-9999-9999-9999-999999999999",
+            "ts": "0",
+        }
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "scores": {"accuracy": 0.9}},
+            headers={"X-Worker-Token": "valid-token"},
+        )
+        assert resp.status_code == 401
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_progress_report_accepts_bound_nonce(self, mock_verify):
+        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "scores": {"accuracy": 0.9}},
+            headers={"X-Worker-Token": "valid-token"},
+        )
+        assert resp.status_code == 200
 
 
 class TestCheckCompetitorAccess:
@@ -833,7 +923,7 @@ class TestWorkerDownloadTaskFile:
 
     @patch("routes.tasks.check_worker_auth")
     def test_downloads_file_with_valid_token(self, mock_verify):
-        mock_verify.return_value = True
+        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/test.txt",
             headers={"X-Worker-Token": "valid-token"},
@@ -851,7 +941,7 @@ class TestWorkerDownloadTaskFile:
 
     @patch("routes.tasks.check_worker_auth")
     def test_returns_404_for_nonexistent_file(self, mock_verify):
-        mock_verify.return_value = True
+        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/missing.txt",
             headers={"X-Worker-Token": "valid-token"},
@@ -940,7 +1030,7 @@ class TestGetTaskHfKey:
 
     @patch("routes.tasks.check_worker_auth")
     def test_returns_hf_key(self, mock_verify):
-        mock_verify.return_value = True
+        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
         with patch.object(Task, "get_hf_api_key", return_value="my-key"):
             resp = self.client.get(
                 f"/api/worker/tasks/{self.task.id}/hf-key",
@@ -961,7 +1051,7 @@ class TestGetTaskHfKey:
 
     @patch("routes.tasks.check_worker_auth")
     def test_returns_404_for_nonexistent_task(self, mock_verify):
-        mock_verify.return_value = True
+        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
         resp = self.client.get(
             "/api/worker/tasks/99999/hf-key", headers={"X-Worker-Token": "token"}
         )

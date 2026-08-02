@@ -4,6 +4,9 @@ services:
     image: postgres:15-alpine
     container_name: lavbench_db
     restart: always
+    # compose-v2 resource caps (deploy.resources.limits is Swarm-only and ignored by `docker compose up`)
+    mem_limit: 1g
+    cpus: "1.0"
     entrypoint: >
       sh -c '
         mkdir -p /app/logs && chmod 1777 /app/logs &&
@@ -20,11 +23,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - logs_data:/app/logs
     # No host port — accessible via Docker network (db:5432)
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1.0"
     logging:
       driver: json-file
       options:
@@ -43,9 +41,11 @@ services:
 
   # 2. Redis Message Broker for Celery Queue
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     container_name: lavbench_redis
     restart: always
+    mem_limit: 256m
+    cpus: "0.5"
     entrypoint: >
       sh -c '
         mkdir -p /app/logs && chmod 1777 /app/logs &&
@@ -55,21 +55,44 @@ services:
       redis-server
       --requirepass ${REDIS_PASSWORD}
       --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy noeviction
+      --appendonly yes
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
-    # Exposed on all interfaces for remote workers — protected by REDIS_PASSWORD
-    # Override bind with: REDIS_BIND=127.0.0.1 in .env for local-only access
+    # Bound to loopback by default — remote workers must override REDIS_BIND=0.0.0.0
     ports:
-      - "${REDIS_BIND:-0.0.0.0}:6379:6379"
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
     volumes:
+      - redis_data:/data
       - logs_data:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 2b. Dedicated Redis Cache (keys, SSE state, locks) — internal only, no host port
+  redis-cache:
+    image: redis:7.4-alpine
+    container_name: lavbench_redis_cache
+    restart: always
+    mem_limit: 192m
+    cpus: "0.25"
+    command: >
+      redis-server
+      --save ""
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     logging:
       driver: json-file
       options:
@@ -87,12 +110,18 @@ services:
     build: ./backend
     container_name: lavbench_backend
     restart: always
+    mem_limit: 1g
+    cpus: "1.0"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - HF_CACHE_DIR=/app/hf_cache
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
       - WORKER_PUBLIC_KEY=${WORKER_PUBLIC_KEY:?WORKER_PUBLIC_KEY must be set in .env}
@@ -111,6 +140,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     volumes:
       - hf_cache:/app/hf_cache
       - uploads_data:/app/uploads
@@ -118,11 +149,6 @@ services:
       - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
       - ./guides:/guides:ro
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1.0"
     logging:
       driver: json-file
       options:
@@ -142,9 +168,12 @@ services:
     restart: always
     command: celery -A tasks.celery beat --loglevel=info -s /app/run/celerybeat-schedule.db
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -157,6 +186,8 @@ services:
       redis:
         condition: service_healthy
       db:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
@@ -185,9 +216,12 @@ services:
     restart: always
     command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q celery,internal -c $${CELERY_WORKER_CONCURRENCY:-2}'
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      # In-network URLs only — .env's localhost URLs are for `make dev` and
+      # must never be interpolated into the compose network.
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - HF_CACHE_DIR=/app/hf_cache
@@ -203,6 +237,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/backups
@@ -217,18 +253,20 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pgrep -f 'celery.*worker' || exit 1",
+          "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
         ]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
 
   # 6. React Frontend & Nginx Router
   frontend:
     build: ./frontend
     container_name: lavbench_frontend
     restart: always
+    mem_limit: 256m
+    cpus: "0.5"
     ports:
       - "${NGINX_PORT:-80}:80"
     depends_on:
@@ -241,11 +279,6 @@ services:
       '
     volumes:
       - logs_data:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
     logging:
       driver: json-file
       options:
@@ -260,6 +293,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   hf_cache:
   uploads_data:
   backups_data:

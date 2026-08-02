@@ -1117,3 +1117,88 @@ def evaluate(df_sub, df_labels, options=None):
         assert res["my_acc"] == pytest.approx(0.9)
         assert res["my_f1"] == pytest.approx(0.85)
         assert res["my_loss"] == pytest.approx(0.1)
+
+
+class TestCustomEvaluatorSandbox:
+    """Custom evaluators must run inside a hardened container when an image
+    tag is provided — never via exec() on the worker host."""
+
+    EVAL_SCRIPT = "def evaluate(df_sub, df_labels, options=None):\n    return {'custom_f1': 1.0}\n"
+
+    @patch("docker.DockerClient")
+    @patch("worker_utils.run_command_streaming")
+    def test_sandbox_success(self, mock_run, mock_docker_cls):
+        def _fake_run(*args, **kwargs):
+            # Emulate the harness: write result.json into the mounted workdir
+            workdir = next(iter(kwargs["volumes"]))
+            with open(os.path.join(workdir, "result.json"), "w") as f:
+                json.dump({"custom_f1": 0.85}, f)
+            return (0, "", "", False)
+
+        mock_run.side_effect = _fake_run
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+            sandbox_image="lavbench_task_test",
+        )
+        assert res["custom_f1"] == pytest.approx(0.85)
+        # run_command_streaming must be invoked with hardened flags
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs["network_mode"] == "none"
+        assert call_kwargs["cap_drop"] == ["ALL"]
+        assert call_kwargs["user"] == "65534:65534"
+        assert call_kwargs["read_only"] is True
+        assert call_kwargs["pids_limit"] == 64
+
+    @patch("docker.DockerClient")
+    @patch("worker_utils.run_command_streaming")
+    def test_sandbox_image_missing_fails_closed(self, mock_run, mock_docker_cls):
+        mock_docker_cls.from_env.return_value.images.get.side_effect = Exception("not found")
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+            sandbox_image="lavbench_task_missing",
+        )
+        # Evaluator must NOT have run on the host (in-process exec) — 0.0
+        assert res == {"custom_f1": 0.0}
+        mock_run.assert_not_called()
+
+    @patch("docker.DockerClient")
+    @patch("worker_utils.run_command_streaming")
+    def test_sandbox_timeout_fails_closed(self, mock_run, mock_docker_cls):
+        mock_run.return_value = (1, "", "killed", True)
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+            sandbox_image="lavbench_task_test",
+        )
+        # Evaluator must NOT have run on the host (in-process exec) — 0.0
+        assert res == {"custom_f1": 0.0}
+
+    @patch("docker.DockerClient")
+    @patch("worker_utils.run_command_streaming")
+    def test_sandbox_crash_fails_closed(self, mock_run, mock_docker_cls):
+        mock_run.return_value = (2, "", "boom", False)
+        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
+        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+        res = evaluate_predictions(
+            df_s,
+            df_l,
+            {"custom_f1": {"weight": 1.0}},
+            custom_eval_code=self.EVAL_SCRIPT,
+            sandbox_image="lavbench_task_test",
+        )
+        # Evaluator must NOT have run on the host (in-process exec) — 0.0
+        assert res == {"custom_f1": 0.0}

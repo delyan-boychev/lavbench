@@ -299,7 +299,7 @@ def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
     return decorated
 
 
-def check_worker_auth(token: str) -> bool:
+def check_worker_auth(token: str) -> dict[str, str] | None:
     """Verify a worker request using Ed25519 asymmetric signature verification.
 
     The worker signs a nonce with its private key.  The server verifies the
@@ -312,7 +312,10 @@ def check_worker_auth(token: str) -> bool:
     The timestamp must be within 300 seconds (5 min) of server time to
     prevent replay attacks.
 
-    Returns True if the token is valid, False otherwise.
+    Returns a dict with the parsed nonce fields (``submission_id``, ``ts``)
+    when the token is valid, ``None`` otherwise. Callers with a submission or
+    task context MUST additionally verify the nonce ``submission_id`` is
+    bound to the target (replay protection).
     """
     import base64
     import time
@@ -323,14 +326,14 @@ def check_worker_auth(token: str) -> bool:
     pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY", "")
     if not pub_key_b64:
         logger.critical("WORKER_PUBLIC_KEY not set — all worker requests will be rejected")
-        return False
+        return None
     if not token:
-        return False
+        return None
 
     try:
         nonce, sig_b64 = token.split(".", 1)
     except ValueError:
-        return False
+        return None
 
     try:
         from cryptography.exceptions import InvalidSignature
@@ -340,19 +343,20 @@ def check_worker_auth(token: str) -> bool:
         pub_key.verify(base64.b64decode(_pad_b64(sig_b64)), nonce.encode())
     except (InvalidSignature, ValueError, Exception) as e:
         logger.warning("Worker auth failed: %s", e)
-        return False
+        return None
 
     # Replay protection: nonce must be within 5 minutes of server time
     try:
-        ts = int(nonce.rsplit(":", 1)[-1])
+        submission_id, ts_str = nonce.rsplit(":", 1)
+        ts = int(ts_str)
         delta = abs(time.time() - ts)
         if delta > 300:
             logger.warning("Worker token outside replay window: %ss old (limit 300s)", int(delta))
-            return False
+            return None
     except (ValueError, IndexError):
-        return False
+        return None
 
-    return True
+    return {"submission_id": submission_id, "ts": ts_str}
 
 
 def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:

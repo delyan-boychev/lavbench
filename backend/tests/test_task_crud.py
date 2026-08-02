@@ -1,6 +1,9 @@
 import io
 import json
+from datetime import timedelta
 from unittest.mock import patch
+
+from utils.dates import utcnow
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -613,6 +616,114 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
+    def test_update_move_stage_without_manual_points(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        tokens,
+        auth_headers,
+    ):
+        """Moving a task between stages must not 500 (regression: Submission.manual_points)."""
+        from models import Stage, Task
+
+        stage2 = Stage(
+            title="Stage 2",
+            challenge_id=sample_challenge.id,
+            stage_number=2,
+            start_time=utcnow() - timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=24),
+        )
+        db_session.add(stage2)
+        db_session.flush()
+
+        task = Task(
+            title="Staged Task",
+            challenge_id=sample_challenge.id,
+            stage_id=sample_stage.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        url = f"/api/tasks/{task.id}"
+        headers = auth_headers(tokens.admin)
+        resp = client.put(
+            url,
+            data={"stage_id": str(stage2.id)},
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["stage_id"] == str(stage2.id)
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_move_stage_blocked_with_manual_points(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        sample_stage,
+        sample_competitor,
+        tokens,
+        auth_headers,
+    ):
+        """Moving a task whose manual points were assigned must be blocked (not 500)."""
+        from models import Stage, Task, User
+
+        stage2 = Stage(
+            title="Stage 2",
+            challenge_id=sample_challenge.id,
+            stage_number=2,
+            start_time=utcnow() - timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=24),
+        )
+        db_session.add(stage2)
+        db_session.flush()
+
+        task = Task(
+            title="Staged Task",
+            challenge_id=sample_challenge.id,
+            stage_id=sample_stage.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        competitor = db_session.get(User, sample_competitor.id)
+        competitor.manual_points = {str(task.id): 50}
+        db_session.commit()
+
+        url = f"/api/tasks/{task.id}"
+        headers = auth_headers(tokens.admin)
+        resp = client.put(
+            url,
+            data={"stage_id": str(stage2.id)},
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_CANNOT_MOVE_HAS_MANUAL_POINTS"
+        assert db_session.get(Task, task.id).stage_id == sample_stage.id
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
     def test_update_replace_file(
         self,
         mock_log,
@@ -1082,7 +1193,9 @@ class TestReportBuildError:
         assert resp.status_code == 401
 
         # Valid token → set build_error
-        with patch("routes.tasks.check_worker_auth", return_value=True):
+        with patch(
+            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
+        ):
             resp = client.post(
                 f"/api/worker/tasks/{task_id}/report-build-error",
                 json={"error": "Docker pull failed: 404 Not Found"},
@@ -1103,7 +1216,9 @@ class TestReportBuildError:
             assert task.build_error is None
 
     def test_report_error_not_found(self, client, tokens):
-        with patch("routes.tasks.check_worker_auth", return_value=True):
+        with patch(
+            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
+        ):
             resp = client.post(
                 "/api/worker/tasks/00000000-0000-0000-0000-000000000000/report-build-error",
                 json={"error": "fail"},

@@ -12,7 +12,6 @@ import socket
 import subprocess
 import tempfile
 import time
-import traceback
 from collections.abc import Callable
 from typing import Any
 
@@ -796,7 +795,10 @@ def run_eval_submission(
             ram_limit = budget_mb
 
         environment = {
+            # Sandbox runs as nobody with a read-only rootfs — user-level pip
+            # installs (pip --user) land here on the writable tmpfs
             "HOME": "/tmp",  # noqa: S108
+            "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
             "HF_HOME": "/hf_cache",
             "HF_DATASETS_CACHE": "/hf_cache",
             "HF_DATASETS_OFFLINE": "1",
@@ -837,6 +839,10 @@ def run_eval_submission(
             environment=environment,
             gpu_required=gpu_required,
             gpu_id=gpu_id,
+            # Defense-in-depth: non-root + read-only rootfs (writes go to
+            # the /app mount and /tmp tmpfs)
+            user="65534:65534",
+            read_only=True,
         )
 
         end_wall_time = time.time()
@@ -990,6 +996,9 @@ def run_eval_submission(
                         eval_kwargs = {}
                         if task and getattr(task, "custom_eval_code", None):
                             eval_kwargs["custom_eval_code"] = task.custom_eval_code
+                            # Run the admin-supplied evaluator in its own hardened
+                            # container (already-built sandbox image, no privileges)
+                            eval_kwargs["sandbox_image"] = f"lavbench_task_{task.id}"
 
                         m_pub = (
                             evaluate_predictions(
@@ -1021,8 +1030,15 @@ def run_eval_submission(
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
                         status = "failed"
-                        logs.append(f"Error during parquet metric calculation: {eval_err!s}")
-                        logs.append(f"Traceback: {traceback.format_exc()}")
+                        # Full traceback goes to worker logs only — never into
+                        # submission logs visible to competitors (path leak)
+                        logger.exception(
+                            "Parquet metric calculation failed for submission %s", submission_id
+                        )
+                        logs.append(
+                            f"Error during parquet metric calculation: {eval_err!s} "
+                            "(contact administrator for details)"
+                        )
 
         try:
             import shutil
@@ -1052,12 +1068,11 @@ def run_eval_submission(
 
     except Exception as e:
         status = "failed"
+        logger.exception("[FATAL] Unhandled worker crash for submission %s", submission_id)
         if "logs" in locals() and logs is not None:
             logs.append(f"[FATAL] Unhandled worker crash: {e}")
-            logs.append(traceback.format_exc())
             logs_list = logs
         else:
-            logger.error(f"[FATAL] Unhandled worker crash: {e}\n{traceback.format_exc()}")
             logs_list = [f"[FATAL] Unhandled worker crash: {e}"]
         with contextlib.suppress(Exception):
             update_status("failed", "failed", logs_list=logs_list)

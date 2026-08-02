@@ -4,13 +4,18 @@ Welcome to the LavBench Platform Administrator Portal. This guide details every 
 
 ### Initial Setup
 
-After deploying the platform, initialize the admin account via the setup script:
+After deploying the platform, initialize the admin account via the Makefile target (recommended) or the script directly:
 
 ```bash
+make setup-admin            # docker compose exec backend + fetch credentials into admin_credentials.txt
+# or, on a bare deployment without the compose stack:
 python backend/setup-admin.py
 ```
 
 This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
+
+> [!TIP]
+> End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — 158 checks, exit code 0 on success.
 
 > [!IMPORTANT]
 > Run `setup-admin.py` only once on a fresh deployment. Re-running this script will reset system administrator access.
@@ -24,7 +29,7 @@ This generates an initial administrator account, creates master credentials, and
 3. [Hugging Face Pre-Fetching and Offline Assets](#3-hugging-face-pre-fetching-and-offline-assets)
 4. [AST Code Security and Dynamic Metrics Engine](#4-ast-code-security-and-dynamic-metrics-engine)
 5. [Custom Evaluator Scripts Logic and Baseline Verification](#5-custom-evaluator-scripts-logic-and-baseline-verification)
-6. [User Management, CSV Imports and Credential PDFs](#6-user-management-csv-imports-and-credential-pdfs)
+6. [User Management, CSV Imports and One-Time Credentials](#6-user-management-csv-imports-and-one-time-credentials)
 7. [Automated and Manual Backup Retention Rules](#7-automated-and-manual-backup-retention-rules)
 8. [Worker Authentication, CLI Setup and SSE Telemetry](#8-worker-authentication-cli-setup-and-sse-telemetry)
 9. [Audit Logging and Score Justification Trail](#9-audit-logging-and-score-justification-trail)
@@ -242,7 +247,7 @@ Administrators and organizers can submit baseline solutions to verify task integ
 
 ---
 
-## 6. User Management, CSV Imports and Credential PDFs
+## 6. User Management, CSV Imports and One-Time Credentials
 
 ### Bulk Competitor Onboarding via CSV
 
@@ -263,18 +268,21 @@ Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 ```
 
-### Printable PDF Credential Slips
+### One-Time Credential Slips
 
 To distribute credentials securely during on-site competitions:
 
 1. Navigate to **Admin Panel** → **Challenges**.
-2. Select the target challenge and click **Print Credentials PDF**.
-3. The server calls `/api/admin/challenges/<id>/credentials-pdf` to generate a multi-page PDF document.
-4. Each page contains formatted credential cut-out slips featuring:
+2. Select the target challenge and click **Reset Passwords** (bulk reset for all competitors).
+3. The server generates an encrypted credentials file and responds with a one-time download URL: `GET /api/admin/challenges/<id>/credentials`.
+4. Download the credentials archive once — the server **deletes the file on successful download**, so the plaintext never sits on disk and cannot be retrieved again (a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`).
+5. The archive contains JSON credential slips featuring:
    - Competitor Name & Alias
    - Auto-generated Username & Password
    - Platform Login URL & Scannable QR Code
    - Challenge Name & Stage Details
+
+The file is encrypted at rest with Fernet and never included in backups; a 404 means the file was already downloaded or was never generated.
 
 ---
 

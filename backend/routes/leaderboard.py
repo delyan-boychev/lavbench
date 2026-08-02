@@ -11,14 +11,14 @@ from flask import Response as FlaskResponse
 from spectree import Response
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from cache_utils import get_cached, get_redis_client, invalidate_leaderboard_cache, set_cached
 from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
 from spec import api
-from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit
+from sse_utils import SSE_IDLE_TIMEOUT, sse_connection_limit, sse_heartbeat
 from utils.access import ensure_registered
 from utils.cache_helpers import cached_or_compute
 from utils.dates import utcnow
@@ -501,7 +501,18 @@ def stream_challenge_leaderboard(
                     c = db.session.get(Challenge, challenge_id)
                     if not c:
                         return
-                    payload = _get_leaderboard_payload(c, user_role, user_id)
+                    # One computation per challenge per ~5s, shared by every
+                    # connected SSE client (prevents a thundering herd where
+                    # each client rebuilds the full payload per update)
+                    cache_key = (
+                        f"leaderboard:sse:{challenge_id}:{user_role}:{user_id}"
+                        if user_role == "competitor"
+                        else f"leaderboard:sse:{challenge_id}:{user_role}:shared"
+                    )
+                    payload = get_cached(cache_key)
+                    if payload is None:
+                        payload = _get_leaderboard_payload(c, user_role, user_id)
+                        set_cached(cache_key, payload, timeout=5)
                     yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
 
             for msg in get_and_yield_leaderboard():
@@ -524,7 +535,7 @@ def stream_challenge_leaderboard(
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:
                             yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                             break
-                        if member and r.zscore("sse:connections", member) is None:
+                        if member and not sse_heartbeat(member, user_id):
                             yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                             break
                         message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
@@ -636,6 +647,8 @@ def save_manual_points(
         if old_score != pts:
             audit_entry = AuditLog(
                 admin_id=admin_id,
+                action_type="update",
+                target_type="user",
                 target_user_id=user.id,
                 task_id=task_id,
                 old_score=old_score,

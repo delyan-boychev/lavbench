@@ -72,7 +72,9 @@ class TestAuthUtils:
         nonce = f"100:{int(time.time())}"
         sig = base64.b64encode(k.sign(nonce.encode())).decode()
         token = f"{nonce}.{sig}"
-        assert check_worker_auth(token) is True
+        result = check_worker_auth(token)
+        assert result is not None
+        assert result["submission_id"] == "100"
 
     def test_check_worker_auth_wrong_signature(self, monkeypatch):
         import base64
@@ -88,7 +90,7 @@ class TestAuthUtils:
         nonce = f"100:{int(time.time())}"
         sig = base64.b64encode(b"wrong" * 8).decode()
         token = f"{nonce}.{sig}"
-        assert check_worker_auth(token) is False
+        assert check_worker_auth(token) is None
 
     def test_check_worker_auth_expired_nonce(self, monkeypatch):
         import base64
@@ -105,14 +107,14 @@ class TestAuthUtils:
         nonce = f"100:{old_ts}"
         sig = base64.b64encode(k.sign(nonce.encode())).decode()
         token = f"{nonce}.{sig}"
-        assert check_worker_auth(token) is False
+        assert check_worker_auth(token) is None
 
     def test_check_worker_auth_missing_public_key(self):
-        assert check_worker_auth("anything") is False
+        assert check_worker_auth("anything") is None
 
     def test_check_worker_auth_empty_token(self):
-        assert check_worker_auth("") is False
-        assert check_worker_auth(None) is False
+        assert check_worker_auth("") is None
+        assert check_worker_auth(None) is None
 
     def test_login_required_blocks_unauthenticated(self):
         app = Flask(__name__)

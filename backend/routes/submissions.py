@@ -13,7 +13,13 @@ from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
+from cache_utils import (
+    cache_lock,
+    get_queue_depth,
+    get_redis_client,
+    invalidate_leaderboard_cache,
+)
+from config import Config
 from error_utils import err
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
@@ -37,6 +43,7 @@ from sse_utils import (
     publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
 )
 from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
@@ -148,8 +155,6 @@ def submit_code(
         from datetime import timedelta
 
         now = utcnow()
-        from config import Config
-
         grace_seconds = Config.DEADLINE_GRACE_PERIOD_SECONDS
 
         if task and task.stage_id:
@@ -186,6 +191,12 @@ def submit_code(
 
     # Atomic rate-limited submission creation via Redis lock
 
+    gpu_required = False
+    if task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+
     lock_key = f"submit_lock:user_{user_id}:challenge_{challenge_id}"
 
     with cache_lock(lock_key, ttl=10) as acquired:
@@ -193,10 +204,12 @@ def submit_code(
             return err("ERR_SUBMIT_LOCKED", 429)
 
         today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge_id,
             Submission.created_at >= today_start,
+            Submission.status != "failed",
         ).count()
 
         if submission_count >= challenge.max_eval_requests:
@@ -205,6 +218,17 @@ def submit_code(
                 429,
                 message=(
                     f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
+                ),
+            )
+
+        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+            return err(
+                "ERR_QUEUE_FULL",
+                429,
+                message=(
+                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                    "Please try again later."
                 ),
             )
 
@@ -230,12 +254,6 @@ def submit_code(
 
     task.get_hf_api_key() or ""
 
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
     metadata = build_submission_metadata(
         task,
         challenge,
@@ -254,6 +272,7 @@ def submit_code(
             priority=priority,
             queue=queue_name,
             countdown=1,
+            expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
@@ -595,7 +614,7 @@ def stream_submission_logs(
                 last_db_check = time.time()
                 try:
                     while True:
-                        if member and r.zscore("sse:connections", member) is None:
+                        if member and not sse_heartbeat(member, user_id):
                             yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
                             break
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:

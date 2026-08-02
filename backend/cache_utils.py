@@ -26,7 +26,9 @@ def get_redis_client() -> redis_lib.Redis[Any] | None:
     global _pool, _pool_pid
     current_pid = os.getpid()
     if _pool is None or _pool_pid != current_pid:
-        broker_url = Config.CELERY_BROKER_URL
+        # Dedicated cache Redis instance when CACHE_REDIS_URL is set
+        # (second container, DB 1, noeviction); falls back to the broker.
+        broker_url = Config.CACHE_REDIS_URL or Config.CELERY_BROKER_URL
         ssl_kwargs: dict[str, Any] = {}
         if broker_url.startswith("rediss://"):
             import ssl
@@ -113,6 +115,22 @@ def log_dead_letter(
         r.ltrim("dead_letter_queue", 0, 999)
     except Exception:
         logger.exception("log_dead_letter failed")
+
+
+def get_queue_depth(queue_name: str) -> int:
+    """Return the number of messages currently pending on a Celery queue.
+
+    Fails open (returns 0) when Redis is unavailable so submissions are never
+    rejected because of a monitoring hiccup.
+    """
+    r = get_redis_client()
+    if not r:
+        return 0
+    try:
+        return int(r.llen(queue_name) or 0)
+    except Exception:
+        logger.exception("Failed to read queue depth for %s", queue_name)
+        return 0
 
 
 def get_cached(key: str) -> Any:

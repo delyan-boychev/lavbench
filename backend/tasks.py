@@ -7,6 +7,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+from itertools import chain
 from typing import Any
 
 from celery import Celery
@@ -103,10 +104,12 @@ configure_celery_ssl(celery)
 celery.conf.update(
     worker_max_tasks_per_child=50,
     worker_concurrency=Config.CELERY_WORKER_CONCURRENCY,
+    worker_prefetch_multiplier=1,  # never hoard long-running evals per worker
     result_expires=Config.CELERY_RESULT_EXPIRES,
     broker_transport_options={
         "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
         "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
+        "visibility_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"],
     },
 )
 
@@ -344,15 +347,16 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 ["queued", "running", "building_env", "running_inference", "evaluating"]
             ),
             Submission.executed_at.is_(None),
-        ).all()
+        ).yield_per(500)
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
             Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
             Submission.executed_at.isnot(None),
-        ).all()
+        ).yield_per(500)
         now = utcnow()
         timeout_count = 0
-        for sub in timed_out_candidates + running_candidates:
+        # chain() streams both queries lazily (yield_per) without materializing
+        for sub in chain(timed_out_candidates, running_candidates):
             task_time_limit = 300
             if sub.task:
                 task_time_limit = sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300

@@ -101,6 +101,9 @@ class _FakeRedis:
             return [(m, s) for m, s in chunk]
         return [m for m, _ in chunk]
 
+    def zscore(self, key: str, member: str) -> float | None:
+        return self._sorted_sets.get(key, {}).get(member)
+
     def zremrangebyscore(self, key: str, _min: float | str, _max: float | str) -> int:
         ss = self._sorted_sets.get(key)
         if not ss:
