@@ -1232,7 +1232,7 @@ def submit_task(
         publish_leaderboard_update(submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
-            200,
+            400,
             message=err_msg,
             submission_id=submission.id,
             submission_status=submission.status,
@@ -1454,7 +1454,11 @@ def stream_task_submissions(
     def event_generator():
         with sse_connection_limit(user_id=current_user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
@@ -1523,7 +1527,11 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
         user_role = request.user["role"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             res_data = _get_worker_status_data(user_role)

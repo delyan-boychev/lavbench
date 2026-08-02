@@ -499,7 +499,11 @@ def stream_challenge_leaderboard(
     def event_generator():
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             r = get_coordination_client()

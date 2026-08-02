@@ -791,7 +791,11 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
         user_id = request.user["user_id"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             with current_app.app_context():
@@ -1455,7 +1459,11 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
         user_id = request.user["user_id"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             with current_app.app_context():
@@ -1836,7 +1844,11 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
         user_id = request.user["user_id"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             with current_app.app_context():
