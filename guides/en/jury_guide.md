@@ -8,7 +8,7 @@ Welcome to the LavBench Platform Jury Portal. As a member of the competition jur
 
 1. [Jury Role and Permission Matrix](#1-jury-role-and-permission-matrix)
 2. [Challenge Assignment and JuryChallenge Mapping](#2-challenge-assignment-and-jurychallenge-mapping)
-3. [Competitor Onboarding and PDF Credential Slips](#3-competitor-onboarding-and-pdf-credential-slips)
+3. [Competitor Onboarding and One-Time Credential Slips](#3-competitor-onboarding-and-one-time-credential-slips)
 4. [Live Submission Tracking and Baseline Verification](#4-live-submission-tracking-and-baseline-verification)
 5. [Task Environment Build Error Diagnostics](#5-task-environment-build-error-diagnostics)
 6. [Custom Evaluator Scoring and Leaderboard Inspection](#6-custom-evaluator-scoring-and-leaderboard-inspection)
@@ -27,7 +27,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | :--- | :--- | :--- |
 | View assigned competition submissions, code cells & execution logs | **Yes** | **Yes** |
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
-| Generate printable PDF credential slips (`/api/admin/.../credentials-pdf`) | **Yes** | **Yes** |
+| Download one-time credentials archive (`/api/admin/challenges/<id>/credentials`) | **No** | **Yes** |
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
 | Monitor live submission progress via SSE & inspect cluster telemetry | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
@@ -53,7 +53,7 @@ Access for jury members is strictly controlled by explicit challenge assignments
 
 ---
 
-## 3. Competitor Onboarding and PDF Credential Slips
+## 3. Competitor Onboarding and One-Time Credential Slips
 
 ### CSV Bulk Competitor Onboarding
 
@@ -74,14 +74,14 @@ Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 ```
 
-### Generating Printable Credential PDF Slips
+### Generating Printable Credential Slips
 
-For on-site live competitions, jury members can generate printable paper slips:
+For on-site live competitions, credential slips are generated after a bulk password reset:
 
-1. Open **Admin Panel** → **User Management** (or **Competitor Registration**).
-2. Select the target challenge and click **Print Credentials PDF**.
-3. The server invokes `/api/admin/challenges/<id>/credentials-pdf` and returns a formatted PDF document.
-4. Each printable slip includes the competitor's real name, assigned alias, username, auto-generated password, login URL, and QR code.
+1. Open **Admin Panel** → **Challenges** and select the target challenge.
+2. Click **Reset All Passwords** (jury may trigger this on assigned, not-yet-started challenges; 3 requests per 300 s rate limit).
+3. The server creates an encrypted credentials file; the **admin** then downloads it once via `GET /api/admin/challenges/<id>/credentials` (admin-only, 5 requests per 60 s).
+4. The file is **deleted on successful download** — a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`. Each slip includes the competitor's real name, assigned alias, username, auto-generated password, login URL, and QR code.
 
 ---
 

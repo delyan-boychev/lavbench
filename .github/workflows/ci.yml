@@ -184,7 +184,7 @@ jobs:
 
       - name: Wait for all services healthy
         run: |
-          for svc in lavbench_db lavbench_redis lavbench_backend lavbench_frontend; do
+          for svc in lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_frontend; do
             echo "Waiting for $svc..."
             for i in $(seq 1 45); do
               sleep 2
@@ -205,7 +205,7 @@ jobs:
           RUNNING=$(docker ps --format '{{.Names}} {{.Status}}')
           echo "Running containers:"
           echo "$RUNNING"
-          EXPECTED="lavbench_db lavbench_redis lavbench_backend lavbench_beat lavbench_worker lavbench_frontend"
+          EXPECTED="lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_frontend"
           for name in $EXPECTED; do
             echo "$RUNNING" | grep -q "^$name " || {
               echo "FAILED: $name is not running";
@@ -248,6 +248,19 @@ jobs:
 
       - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE)
         run: python3 scripts/api_smoke_test.py
+
+      # --- Regenerate api.d.ts from the live spec and fail if it drifts ---
+      - name: API type drift gate
+        run: |
+          cd frontend
+          npm ci
+          API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
+          if ! git diff --exit-code -- src/types/api.d.ts; then
+            echo "ERROR: api.d.ts drifted from the backend OpenAPI spec."
+            echo "Regenerate and commit it: cd frontend && API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types"
+            exit 1
+          fi
+          echo "api.d.ts is up to date"
 
       # --- Clean up ---
       - name: Clean up

@@ -9,7 +9,7 @@ Welcome to the LavBench platform technical documentation directory. This folder 
 | Resource | URL / Path | Target Audience | Description |
 | :--- | :--- | :--- | :--- |
 | **Swagger UI** | `http://localhost:5001/apidoc/swagger/` | All Developers | Interactive REST API & SSE endpoint documentation. |
-| **Architecture Specification** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Contributors & DevOps | System architecture, worker budgeting, SSE pipelines, and security layers. |
+| **Architecture Specification** | [`source/architecture.md`](source/architecture.md) | Contributors & DevOps | System architecture, worker budgeting, SSE pipelines, and security layers. |
 | **Custom Evaluator Guide** | [`custom-evaluators.md`](custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
 | **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Admins & Organizers | Challenge lifecycle, Docker build troubleshooting, worker setup, and backup rules. |
 | **Jury Portal Guide** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Competition Jury | Submission monitoring, build diagnostics, double-blind privacy, and manual scoring. |
@@ -29,9 +29,14 @@ cd frontend
 # 1. Ensure backend is running (port 5001), then fetch OpenAPI spec & generate types:
 npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
 
+# Over the compose stack the spec is also reachable through nginx (:80/apidoc/openapi.json):
+API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
+
 # 2. Validate all JSDoc types and React component props:
 npm run check-types              # tsc --noEmit (0 errors required)
 ```
+
+The `docker-build` CI job regenerates `api.d.ts` from the live stack and **fails on drift**, so the committed types always match the backend OpenAPI spec. The spec snapshots in `source/api/` are refreshed with `make -C docs fetch-spec`.
 
 ### Key Frontend Conventions:
 - **Authentication**: `httpOnly` cookie (`auth_token`). `ApiService` automatically handles cookie persistence.
