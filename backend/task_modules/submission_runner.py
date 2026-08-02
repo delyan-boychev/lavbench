@@ -990,6 +990,9 @@ def run_eval_submission(
                         eval_kwargs = {}
                         if task and getattr(task, "custom_eval_code", None):
                             eval_kwargs["custom_eval_code"] = task.custom_eval_code
+                            # Run the admin-supplied evaluator in its own hardened
+                            # container (already-built sandbox image, no privileges)
+                            eval_kwargs["sandbox_image"] = f"lavbench_task_{task.id}"
 
                         m_pub = (
                             evaluate_predictions(

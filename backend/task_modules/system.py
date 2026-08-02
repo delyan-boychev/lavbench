@@ -181,6 +181,8 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             "tar",
             "--exclude=backups",
             "--exclude=*.tar.gz",
+            # Never include plaintext-adjacent credential exports in backups
+            "--exclude=*/credentials",
             "-czf",
             target,
             "-C",

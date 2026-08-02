@@ -35,6 +35,7 @@ from models import (
     User,
     db,
     decrypt_field,
+    encrypt_field,
     generate_pseudonym,
     to_base36,
 )
@@ -1198,15 +1199,68 @@ def reset_all_challenge_passwords(
     os.makedirs(credentials_dir, exist_ok=True)
     file_name = f"competitor_passwords_{challenge_id}.json"
     file_path = os.path.join(credentials_dir, file_name)
+    # Encrypt at rest — the plaintext is only ever returned through the
+    # admin-only one-time download endpoint
     with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=4)
+        f.write(encrypt_field(json.dumps(results, indent=4)) or "")
     os.chmod(file_path, 0o600)
 
     message = (
-        f"Reset passwords for {len(competitors)} competitors. Credentials saved to "
-        f"{file_name} in the uploads/credentials directory (included in backups)."
+        f"Reset passwords for {len(competitors)} competitors. Download them once via "
+        f"GET /api/admin/challenges/{challenge_id}/credentials (admin only)."
     )
     return BulkResetPasswordResponse(message=message, reset_accounts=[])
+
+
+@admin_bp.route("/challenges/<uuid:challenge_id>/credentials", methods=["GET"])
+@role_required(["admin"])
+@rate_limit(max_requests=5, window_seconds=60)
+@api.validate(
+    tags=["Admin"],
+    security=[{"cookieAuth": []}],
+    resp=Response(HTTP_200=None, HTTP_404=ErrorResponse),
+)
+def download_challenge_credentials(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
+    """One-time download of the encrypted bulk-reset password file.
+
+    The file is deleted on successful download — the plaintext credentials
+    must never sit on disk and never be included in backups.
+    """
+    credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
+    file_name = f"competitor_passwords_{challenge_id}.json"
+    file_path = os.path.join(credentials_dir, file_name)
+    if not os.path.exists(file_path):
+        return err("ERR_CREDENTIALS_NOT_AVAILABLE", 404)
+
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            plaintext = decrypt_field(f.read())
+    except Exception as e:
+        logger.error("Failed to decrypt credentials file %s: %s", file_path, e)
+        return err("ERR_INTERNAL_SERVER_ERROR", 500)
+    if not plaintext:
+        return err("ERR_CREDENTIALS_NOT_AVAILABLE", 404)
+
+    # One-time delivery: remove the file before returning so the plaintext
+    # cannot be retrieved again
+    with contextlib.suppress(OSError):
+        os.remove(file_path)
+
+    log_audit(
+        request.user["user_id"],
+        "download_credentials",
+        "challenge",
+        target_id=challenge_id,
+        details={"challenge_id": challenge_id},
+    )
+    return FlaskResponse(
+        plaintext,
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])

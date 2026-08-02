@@ -67,6 +67,8 @@ def run_command_streaming(
     environment: dict[str, str] | None = None,
     gpu_required: bool = False,
     gpu_id: str | None = None,
+    user: str | None = None,
+    read_only: bool = False,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container and stream its output to *logs_list* in real-time.
 
@@ -102,6 +104,8 @@ def run_command_streaming(
             environment=environment,
             ulimits=ulimits,
             device_requests=device_requests,
+            user=user,
+            read_only=read_only,
         )
     except Exception as exc:
         logs_list.append(f"Failed to start container: {exc}")

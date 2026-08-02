@@ -1135,11 +1135,34 @@ class TestRouteLevelLogic:
         try:
             assert os.path.exists(file_path)
             with open(file_path) as f:
-                accounts = json.load(f)
+                stored = f.read()
+            # File is encrypted at rest — plaintext must never be on disk
+            assert "middle_name" not in stored
+            assert "birth_date" not in stored
+            from models import decrypt_field
+
+            accounts = json.loads(decrypt_field(stored) or "[]")
             assert len(accounts) > 0
             account = accounts[0]
             assert "middle_name" in account
             assert "birth_date" in account
+
+            # One-time admin-only download decrypts and consumes the file
+            res = self.client.get(
+                f"/api/admin/challenges/{self.challenge.id}/credentials",
+                headers=self.get_auth_header(self.admin_token),
+            )
+            assert res.status_code == 200
+            downloaded = json.loads(res.data)
+            assert len(downloaded) == len(accounts)
+            assert not os.path.exists(file_path)
+
+            # Second download → 404 (one-time delivery)
+            res = self.client.get(
+                f"/api/admin/challenges/{self.challenge.id}/credentials",
+                headers=self.get_auth_header(self.admin_token),
+            )
+            assert res.status_code == 404
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)

@@ -141,6 +141,7 @@
     "ERR_INVALID_ARCHIVE": "Invalid or corrupt ZIP archive.",
     "ERR_INVALID_CHALLENGE_ID": "Invalid challenge_id.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
+    "ERR_CREDENTIALS_NOT_AVAILABLE": "Credentials file not available or already downloaded.",
     "ERR_INVALID_DATE": "Invalid date.",
     "ERR_INVALID_DATE_FORMAT": "Invalid date format.",
     "ERR_INVALID_DATE_RANGE": "End time must be after start time.",

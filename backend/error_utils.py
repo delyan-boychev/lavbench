@@ -18,6 +18,7 @@ DEFAULT_ERROR_MESSAGES = {
     # auth.py
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again later.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
+    "ERR_CREDENTIALS_NOT_AVAILABLE": "Credentials file not available or already downloaded.",
     # TODO: planned feature — not yet wired
     "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered competitors are not allowed to log in.",
     "ERR_USER_NOT_FOUND": "User not found.",
