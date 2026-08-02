@@ -201,7 +201,6 @@ edit_worker() {
   set -a; source "$WORKER_FILE"; set +a
 
   while true; do
-    local wtype="${WORKER_TYPE:-}"
     local gpu="${WORKER_GPU_ID:-}"
     local gpu_cores="${GPU_CORES_PER_TASK:-}"
     local cpu_cores="${CPU_CORES_PER_TASK:-}"
@@ -217,17 +216,16 @@ edit_worker() {
     echo ""
     echo "  ── Edit Worker Config (worker.env) ──"
     echo "    1) Run mode              [${mode:-local}]"
-    echo "    2) Worker type           [${wtype:-not set}]"
-    echo "    3) GPU IDs               [${gpu:-none}]"
-    echo "    4) CPU cores per GPU task [${gpu_cores:-not set}]"
-    echo "    5) CPU cores per CPU task [${cpu_cores:-not set}]"
-    echo "    6) Worker concurrency    [${conc:-auto}]"
-    echo "    7) GPU RAM per task       [${gpu_ram} GB]"
-    echo "    8) CPU RAM per task       [${cpu_ram} GB]"
-    echo "    9) Reserved RAM (system)  [${res_ram} GB]"
-    echo "   10) Reserved CPU cores     [${res_cores}]"
-    echo "   11) Clamp factor           [${clamp}]"
-    echo "   12) Open in \$EDITOR"
+    echo "    2) GPU IDs               [${gpu:-none}]"
+    echo "    3) CPU cores per GPU task [${gpu_cores:-not set}]"
+    echo "    4) CPU cores per CPU task [${cpu_cores:-not set}]"
+    echo "    5) Worker concurrency    [${conc:-auto}]"
+    echo "    6) GPU RAM per task       [${gpu_ram} GB]"
+    echo "    7) CPU RAM per task       [${cpu_ram} GB]"
+    echo "    8) Reserved RAM (system)  [${res_ram} GB]"
+    echo "    9) Reserved CPU cores     [${res_cores}]"
+    echo "   10) Clamp factor           [${clamp}]"
+    echo "   11) Open in \$EDITOR"
     echo "    0) Save and exit"
     echo ""
     read -p "  Choose: " CHOICE
@@ -245,20 +243,6 @@ edit_worker() {
         echo "  ✔ Run mode updated"
         ;;
       2)
-        echo "  Worker type:"
-        echo "    1) Evaluation tasks only"
-        echo "    2) Internal tasks only"
-        echo "    3) Both"
-        read -p "  Choose: " WT_CHOICE
-        case "$WT_CHOICE" in
-          2) set_val "$WORKER_FILE" "WORKER_TYPE" "internal" ;;
-          3) set_val "$WORKER_FILE" "WORKER_TYPE" "both" ;;
-          1) set_val "$WORKER_FILE" "WORKER_TYPE" "eval" ;;
-          *) echo "  Invalid" ;;
-        esac
-        echo "  ✔ Worker type updated"
-        ;;
-      3)
         read -p "  GPU IDs (comma-separated, empty for none): " NEW_GPU
         if [ -n "$NEW_GPU" ]; then
           set_val "$WORKER_FILE" "WORKER_GPU_ID" "$NEW_GPU"
@@ -267,56 +251,56 @@ edit_worker() {
         fi
         echo "  ✔ GPU IDs updated"
         ;;
-      4)
+      3)
         read -p "  CPU cores per GPU task [${gpu_cores:-4}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "GPU_CORES_PER_TASK" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      5)
+      4)
         read -p "  CPU cores per CPU task [${cpu_cores:-2}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "CPU_CORES_PER_TASK" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      6)
+      5)
         read -p "  Worker concurrency [${conc:-4}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "CELERY_WORKER_CONCURRENCY" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      7)
+      6)
         read -p "  GPU RAM (GB) per task [${gpu_ram}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "GPU_RAM_PER_TASK_GB" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      8)
+      7)
         read -p "  CPU RAM (GB) per task [${cpu_ram}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "CPU_RAM_PER_TASK_GB" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      9)
+      8)
         read -p "  Reserved RAM (GB) for system [${res_ram}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "RESERVED_RAM_GB" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      10)
+      9)
         read -p "  Reserved CPU cores for system [${res_cores}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           set_val "$WORKER_FILE" "RESERVED_CPU_CORES" "$NEW_VAL"
           echo "  ✔ Updated"
         fi
         ;;
-      11)
+      10)
         read -p "  Clamp factor (1.0 < x ≤ 1.10) [${clamp}]: " NEW_VAL
         if [ -n "$NEW_VAL" ]; then
           if (( $(echo "$NEW_VAL > 1.10" | bc -l) )) || (( $(echo "$NEW_VAL <= 1.0" | bc -l) )); then
@@ -327,7 +311,7 @@ edit_worker() {
           fi
         fi
         ;;
-      12)
+      11)
         ${EDITOR:-vi} "$WORKER_FILE"
         echo "  ✔ Saved"
         ;;
@@ -335,7 +319,6 @@ edit_worker() {
         echo ""
         echo "  ──────────────────────────────────────────────"
         echo "    Mode:              ${mode:-local}"
-        echo "    Type:              ${wtype:-not set}"
         echo "    GPU IDs:           ${gpu:-none}"
         echo "    GPU cores/task:    ${gpu_cores:-not set}"
         echo "    GPU RAM/task:      ${gpu_ram} GB"
@@ -371,7 +354,7 @@ case "$MODE" in
   menu)
     echo "  Which config to edit?"
     echo "    1) Server (.env)       — address, HTTPS, Redis TLS, CORS"
-    echo "    2) Worker (worker.env)  — mode, type, GPU, cores, RAM"
+    echo "    2) Worker (worker.env)  — mode, GPU, cores, RAM"
     echo "    0) Exit"
     read -p "  Choose: " MODE_CHOICE
     case "$MODE_CHOICE" in

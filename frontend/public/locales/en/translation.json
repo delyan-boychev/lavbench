@@ -97,6 +97,7 @@
     "ERR_ADMIN_CLI_ONLY": "Administrator accounts can only be generated directly on the server command line (CLI).",
     "ERR_ALREADY_FINALIZED": "Already finalized.",
     "ERR_AST_RULE_FAILED": "AST and general execution rule validation failed.",
+    "ERR_SSE_SOCKET_LIMIT": "Too many active connections. Please try again.",
     "ERR_BASELINE_REQUIRED": "Baseline notebook is required.",
     "ERR_CANNOT_ASSIGN_STARTED": "Cannot assign user to a competition that has already started.",
     "ERR_CANNOT_CHANGE_ROLE_ADMIN": "Cannot change user role to Administrator.",

@@ -6,11 +6,11 @@
 Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             ├── Flask API Server (Port 5001, Gunicorn + gevent)
                             │     ├── PostgreSQL 15 (Primary Database)
-                            │     ├── Redis (Celery Broker, SSE Pub/Sub, Rate Limits, Token Blacklist)
-                            │     ├── Redis Cache (Dedicated DB 1, noeviction — leaderboard caches, locks, SSE state)
+                            │     ├── Redis (Celery Broker + Coordination: SSE pub/sub fan-out, worker_spec registry, submission fallback key, dirty-challenges set, dead-letter queue, GPU/build locks)
+                            │     ├── Redis Cache (Private, server-only: leaderboard caches, locks, rate-limit counters, JWT blacklist — CACHE_REDIS_URL never given to external workers)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
-                            │     └── Internal Celery Worker (System tasks only, inside Docker Compose)
-                            └── Remote Execution Workers (Celery evaluation workers: Docker container or host)
+                            │     └── Internal Celery Worker (System tasks only, inside Docker Compose, -Q celery,internal)
+                            └── Remote Execution Workers (Celery evaluation-only workers: Docker container or host, consume cpu_queue)
                                   └── Sibling Sandbox Containers (--network none, --read-only, --cap-drop ALL)
 ```
 
@@ -23,11 +23,11 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Frontend** | React 19 + Vite + Vanilla/Tailwind CSS | SPA with SSE live updates, i18n (en/bg), JSDoc `@type` validation (`tsc --noEmit`). |
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API endpoints, Pydantic v2 request/response validation, SSE event streaming. |
 | **Primary Database** | PostgreSQL 15 | Users, challenges, stages, tasks, submissions, audit logs (`AuditLog`). |
-| **Cache & Broker** | Redis | Celery task broker, SSE pub/sub channels, atomic rate limit counters, JWT token blacklist. |
-| **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Leaderboard caches, distributed locks, and SSE connection state (`CACHE_REDIS_URL`). Internal container — no host port. |
+| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, dirty-challenges set, dead-letter queue, GPU/build locks. |
+| **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Private, server-only cache: leaderboard caches, distributed locks, rate-limit counters, and JWT token blacklist (`CACHE_REDIS_URL`). Internal container — no host port; external workers never receive this URL. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
-| **Worker Nodes** | Celery Evaluation Worker | Runs competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
+| **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
 
 ---
 
@@ -158,6 +158,8 @@ All backend API error responses use `err("ERR_CODE", status_code)` returning `{"
 | `/api/admin/submissions/queue/live` | Live Submission Queue State | Queue enqueue/acknowledge/reject events. |
 | `/api/worker-status/live` | Cluster Health (Navbar Badge) | Worker heartbeats and status changes. |
 
+SSE capacity is governed by two environment variables: `SSE_MAX_GLOBAL` (default `2000` concurrent connections platform-wide) and `SSE_MAX_PER_USER` (default `15` per client), both overridable via `.env`.
+
 ---
 
 ## 9. Automated & Manual Backup Retention Architecture
@@ -187,4 +189,4 @@ else:
     reject task → Celery retry → dead-letter queue (/api/admin/dead-letters)
 ```
 
-Workers register their hardware specifications in Redis (`worker_spec:<hostname>`, 24h TTL), which are served via `/api/admin/workers/stats` and displayed in the Admin navbar.
+On the `worker_ready` signal, workers write their hardware specifications to the Redis coordination client (`worker_spec:<hostname>`, 24h TTL), which are served via `/api/admin/workers/stats` and displayed in the Admin navbar. Worker registration is fully signal-driven — no registration task exists anymore.

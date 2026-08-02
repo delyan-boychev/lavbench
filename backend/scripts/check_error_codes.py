@@ -75,6 +75,16 @@ def check_file(filepath, valid_codes):
     used_codes = set()
 
     for node in ast.walk(tree):
+        # ── Check 2d: dict payloads with a literal "code": "ERR_*" entry
+        # (e.g. SSE frames) count the code as used ──
+        if isinstance(node, ast.Dict) and any(_get_str_value(k) == "code" for k in node.keys):
+            for k, v in zip(node.keys, node.values, strict=True):
+                if _get_str_value(k) != "code":
+                    continue
+                code_val = _get_str_value(v)
+                if code_val is not None:
+                    used_codes.add(code_val)
+
         if not isinstance(node, ast.Call):
             continue
 
@@ -119,6 +129,26 @@ def check_file(filepath, valid_codes):
 
         # ── Check 2c: err() calls must have literal first arg ──
         if func_name == "err" and node.args:
+            status_val = (
+                node.args[1]
+                if len(node.args) > 1
+                else next(
+                    (kw.value for kw in node.keywords if kw.arg == "status"),
+                    None,
+                )
+            )
+            if (
+                isinstance(status_val, ast.Constant)
+                and isinstance(status_val.value, int)
+                and 200 <= status_val.value <= 299
+            ):
+                violations.append(
+                    (
+                        filepath,
+                        node.lineno,
+                        f"err() status must be a non-2xx error status, got {status_val.value}",
+                    )
+                )
             code_val = _get_str_value(node.args[0])
             if code_val is None:
                 # Allow dynamic code in schemas/__init__.py forwarding

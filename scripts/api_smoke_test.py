@@ -11,6 +11,9 @@ Usage:
     python3 scripts/api_smoke_test.py [--base http://localhost:80]
         [--admin-user NAME --admin-pass KEY | --admin-credentials admin_credentials.txt]
 
+Set SMOKE_EVALUATE=1 to enable the worker-backed evaluation section
+(requires an evaluation worker consuming cpu_queue on the broker).
+
 Exit code: 0 = all passed, 1 = at least one FAIL.
 """
 
@@ -120,6 +123,47 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"__error__": f"{type(e).__name__}: {e}"}
 
+    def sse_roundtrip(self, path: str, trigger, timeout: float = 40.0) -> tuple[bool, list[dict], str]:
+        """SSE publish→subscribe round-trip: open a stream, wait for the first
+        data payloads, then call *trigger* (zero-arg callable that publishes to
+        the stream's Redis channel) until a second leaderboard payload arrives.
+
+        Returns ``(ok, payloads, detail)``. Streams here carry no ``event:``
+        lines — updates arrive as full JSON ``data:`` payloads.
+        """
+        try:
+            with self.opener.open(self._req("GET", path), timeout=timeout) as r:
+                if r.headers.get("Content-Type", "") != "text/event-stream":
+                    return False, [], f"not SSE: Content-Type={r.headers.get('Content-Type', '')}"
+                deadline = time.time() + timeout
+                payloads: list[dict] = []
+                updates = 0
+                triggered = 0
+                last_trigger_at = 0.0
+                while time.time() < deadline:
+                    line = r.readline()
+                    if not line:
+                        return False, payloads, "stream EOF before update"
+                    if not line.startswith(b"data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if not raw:
+                        continue
+                    payload = json.loads(raw)
+                    payloads.append(payload)
+                    if "leaderboard" not in payload:
+                        continue
+                    updates += 1
+                    if updates >= 2:
+                        return True, payloads, f"update received (payloads={len(payloads)}, triggers={triggered})"
+                    if triggered < 5 and time.time() - last_trigger_at >= 5.0:
+                        trigger()
+                        triggered += 1
+                        last_trigger_at = time.time()
+                return False, payloads, f"timeout (payloads={len(payloads)}, updates={updates}, triggers={triggered})"
+        except Exception as e:  # noqa: BLE001
+            return False, [], f"{type(e).__name__}: {e}"
+
 
 def check(name: str, ok: bool, detail: str = "") -> None:
     (PASS if ok else FAIL).append(name)
@@ -133,6 +177,32 @@ def warn(name: str, detail: str = "") -> None:
 
 def expect_error(data, code: str) -> bool:
     return isinstance(data, dict) and data.get("code") == code
+
+
+def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, source: str,
+                    poll_timeout: float = 600.0, interval: float = 5.0) -> tuple[bool, dict]:
+    """Submit a single code cell and poll GET /api/submissions/<id> until a
+    terminal state (completed/failed). Returns (reached_terminal, payload).
+
+    The generous poll timeout covers the one-time per-task Docker image build
+    (pip_requirements pandas/pyarrow) the worker performs on first execution.
+    """
+    code, data = submit_client.send(
+        "POST", f"/api/challenges/{cid}/submit",
+        {"task_id": tid, "selected_cells": [{"id": 0, "type": "code", "source": source}]})
+    if code != 202 or not isinstance(data, dict) or not data.get("submission_id"):
+        return False, {"submit_status": code, **(data if isinstance(data, dict) else {})}
+    sid = data["submission_id"]
+    deadline = time.time() + poll_timeout
+    last: dict = {}
+    while time.time() < deadline:
+        time.sleep(interval)
+        code, data = poll_client.send("GET", f"/api/submissions/{sid}")
+        if code == 200 and isinstance(data, dict):
+            last = data
+            if data.get("status") in ("completed", "failed"):
+                return True, data
+    return False, last
 
 
 MIN_IPYNB = {
@@ -255,7 +325,8 @@ def main() -> int:
     print("\n== 5. Tasks ==")
     ipynb = json.dumps(MIN_IPYNB).encode()
     code, data = api.multipart("POST", f"/api/challenges/{cid}/tasks",
-                               {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false"},
+                               {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false",
+                                "base_docker_image": "python:3.12-slim"},
                                {"baseline_notebook": ("baseline.ipynb", ipynb)})
     if code == 201 and isinstance(data, dict) and data.get("id"):
         tid = data["id"]
@@ -299,6 +370,15 @@ def main() -> int:
                            {"task_id": tid, "selected_cells": [{}]})
     check("invalid selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
           code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
+    code, data = comp.send("POST", f"/api/challenges/{cid}/submit",
+                           {"task_id": tid, "selected_cells": ["print(1)"]})
+    check("non-dict selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
+          code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
+    code, data = comp.send("POST", f"/api/challenges/{cid}/submit",
+                           {"task_id": "00000000-0000-0000-0000-000000000000",
+                            "selected_cells": cells})
+    check("unknown task_id → 400 ERR_INVALID_TASK_ID",
+          code == 400 and expect_error(data, "ERR_INVALID_TASK_ID"))
     code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": cells})
     if code == 202 and isinstance(data, dict) and data.get("submission_id"):
         sid = data["submission_id"]
@@ -354,6 +434,22 @@ def main() -> int:
     check("GET /api/admin/submissions/queue 200", code == 200 and isinstance(data, dict) and isinstance(data.get("items"), list))
     code, data = api.send("GET", "/api/admin/workers/stats")
     check("GET /api/admin/workers/stats 200", code == 200 and isinstance(data, dict))
+    wstats = data if code == 200 and isinstance(data, dict) else {}
+    wlist = wstats.get("workers", [])
+    check("workers/stats shape (workers list + count)",
+          isinstance(wlist, list) and isinstance(wstats.get("connected_workers_count"), int),
+          f"keys={sorted(wstats.keys())[:6] if isinstance(wstats, dict) else wstats}")
+    spec_keys = ("name", "status", "type", "gpu_type", "ram_gb", "vram_gb")
+    if wlist:
+        check("worker entries carry worker_spec fields (hostname/type/gpu/ram)",
+              all(isinstance(w, dict) and all(k in w for k in spec_keys) for w in wlist),
+              f"workers={len(wlist)}")
+        check("a CPU worker type is registered (worker_spec registry)",
+              any(w.get("type") == "CPU" for w in wlist),
+              f"types={sorted({w.get('type') for w in wlist if isinstance(w, dict)})}")
+    else:
+        warn("worker_spec registration",
+             "no workers connected (external machines absent) — verified endpoint shape only")
     code, data = api.send("GET", "/api/admin/backups")
     known_backups = data.get("backups", []) if isinstance(data, dict) else []
     check("GET /api/admin/backups 200", code == 200 and isinstance(known_backups, list))
@@ -381,7 +477,7 @@ def main() -> int:
         ("task submissions/live (admin)", f"/api/tasks/{tid}/submissions/live", api, ("items", "info")),
         ("submission logs/live (admin)", f"/api/submissions/{sid}/logs/live", api, ("info", "log", "status")),
         ("admin backups/live", "/api/admin/backups/live", api, ("backups",)),
-        ("admin queue/live", "/api/admin/submissions/queue/live", api, ("items",)),
+        ("admin queue/live", "/api/admin/submissions/queue/live", api, ("items", "event")),
         ("admin workers/stats/live", "/api/admin/workers/stats/live", api, ()),
         ("worker-status/live", "/api/worker-status/live", api, ()),
         ("worker-status/live (competitor)", "/api/worker-status/live", comp, ()),
@@ -398,6 +494,31 @@ def main() -> int:
         else:
             ok = any(k in payload for k in keys) if keys else len(payload) > 0
             check(f"SSE {name}", ok, f"keys={sorted(payload.keys())[:6]}")
+
+    # ── 11b. SSE round-trips (coordination pub/sub over the broker Redis) ──
+    print("\n== 11b. SSE round-trips ==")
+    # queue_updates channel: initial payload only — no deterministic trigger
+    # exists (kill/clear only publish when submissions are still queued, which
+    # is worker-timing dependent), so assert snapshot + connection.
+    payload = api.sse_first_data("/api/admin/submissions/queue/live")
+    check("SSE queue/live snapshot event (queue_updates channel)",
+          isinstance(payload, dict) and payload.get("event") == "snapshot"
+          and isinstance(payload.get("items"), list),
+          f"keys={sorted(payload.keys())[:6] if isinstance(payload, dict) else payload}")
+    # leaderboard live round-trip: select-final always republishes
+    # publish_leaderboard_update → the stream must deliver a second payload.
+    if sid:
+        def _trigger_leaderboard_update() -> None:
+            api.send("POST", f"/api/submissions/{sid}/select-final")
+
+        ok, payloads, detail = api.sse_roundtrip(
+            f"/api/challenges/{cid}/leaderboard/live", _trigger_leaderboard_update)
+        check("SSE leaderboard/live round-trip (publish → update received)", ok, detail)
+        check("SSE leaderboard/live initial 'info: connected' event",
+              bool(payloads) and payloads[0].get("info") == "connected",
+              str(payloads[0])[:120] if payloads else "no payloads collected")
+    else:
+        warn("SSE leaderboard/live round-trip", "no submission id (prior submission checks failed)")
 
     # ── 12. Edge cases ─────────────────────────────────────────────────
     print("\n== 12. Edge cases ==")
@@ -594,8 +715,122 @@ def main() -> int:
     code, data = api.send("GET", "/api/docs/jury?lang=en")
     check("GET /api/docs/jury 200", code == 200 and isinstance(data, dict) and data.get("title"))
 
-    # ── 15. Cleanup ────────────────────────────────────────────────────
-    print("\n== 15. Cleanup ==")
+    # ── 15. Evaluation worker E2E (SMOKE_EVALUATE=1) ──────────────────
+    if os.environ.get("SMOKE_EVALUATE") == "1":
+        print("\n== 15. Evaluation (worker) ==")
+        try:
+            import pandas as pd
+            import pyarrow  # noqa: F401
+
+            have_parquet = True
+        except ImportError as e:
+            have_parquet = False
+            warn("eval worker E2E",
+                 f"pandas/pyarrow not importable on smoke host ({e}) — skipped")
+        if have_parquet:
+            code, data = api.send("GET", "/api/admin/workers/stats")
+            wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
+            worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
+            check("eval: CPU worker connected (worker_spec)",
+                  worker_ok,
+                  f"types={sorted({w.get('type') for w in wlist if isinstance(w, dict)})}")
+            if not worker_ok:
+                warn("eval worker E2E",
+                     "no CPU worker registered — submission E2E skipped (SMOKE_EVALUATE=1 requires one)")
+            else:
+                code, data = api.send("POST", "/api/admin/register-competitor",
+                                      {"name": "Eval", "surname": "Probe", "middle_name": "M",
+                                       "birth_date": "2006-02-02", "grade": "10",
+                                       "school": "Eval HS", "city": "Plovdiv", "challenge_id": cid})
+                ecomp_user = data.get("generated_username", "") if code == 201 and isinstance(data, dict) else ""
+                ecomp_pass = data.get("generated_password", "") if code == 201 and isinstance(data, dict) else ""
+                ecomp_id = data.get("user", {}).get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("eval: register fresh competitor 201", code == 201 and bool(ecomp_user))
+                ecomp = Api(args.base)
+                code, data = ecomp.send("POST", "/api/auth/login",
+                                        {"username": ecomp_user, "password": ecomp_pass})
+                check("eval: competitor login 200", code == 200 and isinstance(data, dict)
+                      and data.get("user", {}).get("role") == "competitor")
+                code, data = ecomp.send("GET", "/api/auth/csrf-token")
+                ecomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+
+                labels_df = pd.DataFrame({"id": [1, 2, 3, 4, 5], "label": [0, 1, 0, 1, 0]})
+                labels_buf = io.BytesIO()
+                labels_df.to_parquet(labels_buf, index=False)
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{cid}/tasks",
+                    {"title": "smoke-eval-task", "stage_id": stage_id, "gpu_required": "false",
+                     "ram_limit_mb": "512", "time_limit_sec": "60",
+                     "base_docker_image": "python:3.12-slim",
+                     "pip_requirements": "pandas\npyarrow",
+                     "metrics_config": json.dumps(
+                         {"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+                     "public_eval_percentage": "50"},
+                    {"baseline_notebook": ("baseline.ipynb", ipynb),
+                     "file0": ("labels.parquet", labels_buf.getvalue())})
+                eval_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("eval: create task with labels.parquet 201", code == 201 and bool(eval_tid))
+                code, data = ecomp.send("GET", f"/api/tasks/{eval_tid}/download/labels.parquet")
+                check("eval: competitor labels.parquet download → 403 ERR_ACCESS_DENIED",
+                      code == 403 and expect_error(data, "ERR_ACCESS_DENIED"))
+                # boom-ci: raises before writing parquet → failed; the stderr
+                # traceback is merged into the submission logs.
+                reached, sub = submit_and_poll(ecomp, api, cid, eval_tid,
+                                               'raise RuntimeError("boom-ci")')
+                check("eval: boom-ci submission failed",
+                      reached and sub.get("status") == "failed", f"status={sub.get('status')}")
+                check("eval: boom-ci traceback in logs",
+                      reached and "boom-ci" in str(sub.get("logs", "")),
+                      f"logs={str(sub.get('logs', ''))[:200]}")
+                # Good submission: writes submission.parquet (labels match ground truth).
+                good_code = ("import pandas as pd\n"
+                             "pd.DataFrame({'id': [1, 2, 3, 4, 5], 'label': [0, 1, 0, 1, 0]})"
+                             ".to_parquet('submission.parquet')\n")
+                reached, sub = submit_and_poll(ecomp, api, cid, eval_tid, good_code)
+                check("eval: good submission completed",
+                      reached and sub.get("status") == "completed", f"status={sub.get('status')}")
+                score = sub.get("public_score")
+                check("eval: public_score == 1.0 (accuracy)",
+                      isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                      f"score={score}")
+                mpub = sub.get("metrics_payload_public")
+                check("eval: metrics_payload_public accuracy 1.0",
+                      isinstance(mpub, dict) and abs(float(mpub.get("accuracy", -1)) - 1.0) < 1e-6,
+                      f"payload={mpub}")
+                # No-parquet: runs fine but never writes submission.parquet.
+                reached, sub = submit_and_poll(ecomp, api, cid, eval_tid, "print('no parquet')")
+                check("eval: no-parquet submission failed",
+                      reached and sub.get("status") == "failed", f"status={sub.get('status')}")
+                check("eval: no-parquet error in logs",
+                      reached and "submission.parquet" in str(sub.get("logs", "")),
+                      f"logs={str(sub.get('logs', ''))[:200]}")
+                # Leaderboard: the completed eval submission scores 1.0.
+                # The raw leaderboard is cached and only rebuilt by the
+                # recalculate-dirty-leaderboards beat task (every 20 s), so poll
+                # briefly for the fresh entry instead of asserting immediately.
+                ts_score = ts = None
+                for _ in range(12):
+                    code, data = api.send("GET", f"/api/challenges/{cid}/leaderboard")
+                    lb = data.get("leaderboard", []) if code == 200 and isinstance(data, dict) else []
+                    entry = {}
+                    for e in lb:
+                        if isinstance(e, dict) and isinstance(e.get("user"), dict) \
+                                and e["user"].get("id") == ecomp_id:
+                            entry = e
+                            break
+                    ts = entry.get("task_scores", {}).get(str(eval_tid), {}) if isinstance(entry, dict) else {}
+                    ts_score = ts.get("public_score") if isinstance(ts, dict) else None
+                    if isinstance(ts_score, (int, float)) and abs(float(ts_score) - 1.0) < 1e-6:
+                        break
+                    time.sleep(5)
+                check("eval: leaderboard task_score 1.0 (fresh competitor)",
+                      isinstance(ts_score, (int, float)) and abs(float(ts_score) - 1.0) < 1e-6,
+                      f"task_scores={ts}")
+                code, data = api.send("DELETE", f"/api/tasks/{eval_tid}")
+                check("eval: delete task 200", code == 200 and isinstance(data, dict))
+
+    # ── 16. Cleanup ────────────────────────────────────────────────────
+    print("\n== 16. Cleanup ==")
     if cid:
         code, data = api.send("DELETE", f"/api/challenges/{cid}")
         check("DELETE challenge 200", code == 200)

@@ -110,18 +110,25 @@ def redis_flush():
 
     Never flushes Celery infrastructure keys (celery*, _kombu*, unacked*)
     to avoid interfering with a concurrently running dev server.
+    Both the cache and coordination clients are flushed.
     """
     try:
-        from cache_utils import get_redis_client
+        from cache_utils import get_coordination_client, get_redis_client
 
-        r = get_redis_client()
-        if r:
+        clients = [get_redis_client(), get_coordination_client()]
+        seen = set()
+        for r in clients:
+            if not r:
+                continue
             worker_id = os.environ.get("PYTEST_XDIST_WORKER")
             pattern = f"*{worker_id}*" if worker_id else "*"
             for key in r.scan_iter(pattern):
                 key_str = key.decode() if isinstance(key, bytes) else key
                 if key_str.startswith(("celery", "_kombu", "unacked")):
                     continue
+                if key_str in seen:
+                    continue
+                seen.add(key_str)
                 r.delete(key)
     except Exception:  # noqa: S110
         pass

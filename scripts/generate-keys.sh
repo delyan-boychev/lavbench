@@ -223,7 +223,6 @@ WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 SECRET_KEY=${SECRET_KEY}
 ${CERTS_SECTION}
 # Worker role and resources — set by 'make setup-worker' on the worker machine
-# WORKER_TYPE=eval
 # WORKER_GPU_ID=0
 # CELERY_WORKER_CONCURRENCY=4
 WORKEREOF

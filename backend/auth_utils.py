@@ -216,9 +216,16 @@ def role_required(allowed_roles: list[str]) -> Callable[[Callable[..., Any]], Ca
 
 
 def rate_limit(
-    max_requests: int = 60, window_seconds: int = 60, per_user: bool = True
+    max_requests: int = 60,
+    window_seconds: int = 60,
+    per_user: bool = True,
+    identity: Callable[[], str] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters."""
+    """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters.
+
+    When identity is provided, it is invoked at request time and takes
+    precedence over per_user / per-IP key construction.
+    """
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(f)
@@ -227,11 +234,13 @@ def rate_limit(
             if not r:
                 return f(*args, **kwargs)
             # Build key: rate:user_id:endpoint or rate:ip:endpoint
-            if per_user and hasattr(request, "user") and request.user:
-                identity = str(request.user["user_id"])
+            if identity is not None:
+                key_identity = identity()
+            elif per_user and hasattr(request, "user") and request.user:
+                key_identity = str(request.user["user_id"])
             else:
-                identity = request.remote_addr or "127.0.0.1"
-            key = f"rate:{identity}:{request.endpoint}"
+                key_identity = request.remote_addr or "127.0.0.1"
+            key = f"rate:{key_identity}:{request.endpoint}"
             try:
                 lua_script = """
                 local current = redis.call('incr', KEYS[1])

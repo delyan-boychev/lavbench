@@ -134,10 +134,32 @@ class _FakeRedis:
         self.published_messages.append((channel, message))
         return 1
 
+    def pubsub(self) -> _FakePubSub:
+        return _FakePubSub()
+
     # ── Pipeline ──────────────────────────────────────────────────────
 
     def pipeline(self) -> _FakePipeline:
         return _FakePipeline(self)
+
+
+class _FakePubSub:
+    def __init__(self) -> None:
+        self._channels: list[str] = []
+
+    def subscribe(self, *channels: str) -> None:
+        self._channels.extend(channels)
+
+    def get_message(
+        self, ignore_subscribe_messages: bool = True, timeout: float | None = None
+    ) -> None:
+        return None
+
+    def unsubscribe(self) -> None:
+        self._channels = []
+
+    def close(self) -> None:
+        self._channels = []
 
 
 class _FakePipeline:

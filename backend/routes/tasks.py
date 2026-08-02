@@ -22,7 +22,12 @@ from auth_utils import (
     rate_limit,
     role_required,
 )
-from cache_utils import get_queue_depth, get_redis_client, invalidate_leaderboard_cache
+from cache_utils import (
+    get_coordination_client,
+    get_queue_depth,
+    invalidate_leaderboard_cache,
+    worker_spec_key,
+)
 from config import Config
 from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
@@ -52,12 +57,15 @@ from services.submission_service import (
 )
 from spec import api
 from sse_utils import (
+    CHANNEL_TASK_REBUILD,
+    CHANNEL_WORKER_STATUS,
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
     publish_queue_update,
     publish_submissions_update,
     sse_connection_limit,
     sse_heartbeat,
+    submissions_channel,
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
@@ -73,6 +81,13 @@ from utils.streaming import stream_file_response
 tasks_bp = Blueprint("tasks", __name__)
 
 logger = logging.getLogger(__name__)
+
+
+def _worker_token_identity() -> str:
+    import hashlib
+
+    token = request.headers.get("X-Worker-Token", "")
+    return hashlib.sha256(token.encode()).hexdigest()[:32]
 
 
 def _validate_evaluator_script(code: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -624,11 +639,9 @@ def create_task(
     # Notify workers to rebuild Docker image for this task
     try:
         if not current_app.config.get("TESTING"):
-            from cache_utils import get_redis_client
-
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
-                r.publish("task_rebuild", str(task.id))
+                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
@@ -952,11 +965,9 @@ def update_task(
     # Notify workers to rebuild Docker image for this task
     try:
         if not current_app.config.get("TESTING"):
-            from cache_utils import get_redis_client
-
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
-                r.publish("task_rebuild", str(task.id))
+                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
@@ -1221,7 +1232,7 @@ def submit_task(
         publish_leaderboard_update(submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
-            200,
+            400,
             message=err_msg,
             submission_id=submission.id,
             submission_status=submission.status,
@@ -1443,17 +1454,21 @@ def stream_task_submissions(
     def event_generator():
         with sse_connection_limit(user_id=current_user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
             yield f"data: {json.dumps(data)}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
 
             if pubsub:
-                pubsub.subscribe(f"challenge_{challenge_id}_submissions")
+                pubsub.subscribe(submissions_channel(task_id, challenge_id))
 
             start_time = time.time()
 
@@ -1512,16 +1527,20 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
         user_role = request.user["role"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             res_data = _get_worker_status_data(user_role)
             yield f"data: {json.dumps(res_data)}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
-                pubsub.subscribe("worker_status_live")
+                pubsub.subscribe(CHANNEL_WORKER_STATUS)
 
             last_sent = time.time()
             start_time = time.time()
@@ -1576,9 +1595,9 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
 
         r = None
         try:
-            from cache_utils import get_redis_client
+            from cache_utils import get_coordination_client
 
-            r = get_redis_client()
+            r = get_coordination_client()
         except Exception as e:
             logger.warning("Failed to get Redis client for worker status: %s", e)
             r = None
@@ -1592,7 +1611,7 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
             spec = None
             if r:
                 try:
-                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    spec_data = r.get(worker_spec_key(worker_name))
                     if spec_data:
                         spec = json_lib.loads(spec_data)
                 except Exception as e:
@@ -1632,7 +1651,7 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
-@rate_limit(max_requests=120, window_seconds=60, per_user=False)
+@rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
     resp=Response(
         HTTP_200=WorkerReportResponse,
@@ -1744,7 +1763,7 @@ def _worker_nonce_allowed_for_task(nonce: dict[str, str], task_id: Any) -> bool:
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
-@rate_limit(max_requests=10, window_seconds=60, per_user=False)
+@rate_limit(max_requests=10, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
 def worker_download_task_file(
     task_id: Any, filename: str
@@ -1919,7 +1938,7 @@ def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[Fla
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/report-build-error", methods=["POST"])
-@rate_limit(max_requests=30, window_seconds=60, per_user=False)
+@rate_limit(max_requests=30, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
     resp=Response(
         HTTP_200=MessageResponse,
@@ -1946,7 +1965,7 @@ def report_build_error(
 
 
 @tasks_bp.route("/workers/logs", methods=["POST"])
-@rate_limit(max_requests=12, window_seconds=60, per_user=False)
+@rate_limit(max_requests=12, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
     resp=Response(
         HTTP_200=WorkerLogsResponse,

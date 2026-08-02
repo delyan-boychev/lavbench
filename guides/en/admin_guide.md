@@ -318,12 +318,13 @@ scp user@server:~/lavbench/worker.env .
 make setup-worker
 ```
 
+External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Evaluation workers consume only the `cpu_queue`; the internal `celery` queue is no longer used by eval workers, and the weekly Docker image prune (`docker-prune-weekly`) runs on `cpu_queue`.
+
 The `make setup-worker` wizard guides you through:
 1. **Execution Engine Mode**: Docker sandbox container (recommended) or local environment.
-2. **Worker Node Type**: `evaluation` (runs competitor code), `internal` (handles system tasks/backups), or `both`.
-3. **GPU Configuration**: Select GPU IDs detected via `nvidia-smi`.
-4. **CPU Core Allocation**: Set CPU core limits per task container.
-5. **Worker Concurrency**: Auto-calculates optimal worker concurrency based on GPU and CPU availability.
+2. **GPU Configuration**: Select GPU IDs detected via `nvidia-smi`.
+3. **CPU Core Allocation**: Set CPU core limits per task container.
+4. **Worker Concurrency**: Auto-calculates optimal worker concurrency based on GPU and CPU availability.
 
 #### Deploying and Editing Workers:
 

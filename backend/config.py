@@ -60,7 +60,7 @@ class Config:
 
     # SSE (Server-Sent Events) connection limits
     SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
-    SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 50))
+    SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 2000))
     SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", 1800))
     SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 86400))
     SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 10000))
