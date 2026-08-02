@@ -364,13 +364,14 @@ def main() -> int:
     check("POST backups/force 202", code == 202 and isinstance(data, dict) and data.get("status") == "started")
     deadline = time.time() + 150
     created = False
-    while time.time() < deadline:
-        time.sleep(10)
-        code, data = api.send("GET", "/api/admin/backups")
-        backups = data.get("backups", []) if isinstance(data, dict) else []
-        if len(backups) > len(known_backups):
-            created = True
-            break
+    if code == 202:
+        while time.time() < deadline:
+            time.sleep(10)
+            code, data = api.send("GET", "/api/admin/backups")
+            backups = data.get("backups", []) if isinstance(data, dict) else []
+            if len(backups) > len(known_backups):
+                created = True
+                break
     check("backup appears within 150s", created, "see celery_worker logs if failing")
 
     # ── 11. SSE streams through nginx ──────────────────────────────────
