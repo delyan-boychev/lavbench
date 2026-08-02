@@ -353,7 +353,8 @@ describe('useSSE', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('ignores non-JSON messages silently', () => {
+  it('warns on non-JSON messages without setting data', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { result } = renderHook(() => useSSE('/api/test'));
     act(() => {
       triggerOpen();
@@ -361,7 +362,33 @@ describe('useSSE', () => {
     act(() => {
       if (onMessageCallback) onMessageCallback({ data: 'not-json' });
     });
+    expect(warnSpy).toHaveBeenCalled();
     expect(result.current.data).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it('calls onMessage but does not store data when storeData=false', () => {
+    const onMessage = vi.fn();
+    const { result } = renderHook(() => useSSE('/api/test', { onMessage, storeData: false }));
+    act(() => {
+      triggerOpen();
+    });
+    act(() => {
+      triggerMessage({ foo: 'bar' });
+    });
+    expect(onMessage).toHaveBeenCalledWith({ foo: 'bar' });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('stores data by default', () => {
+    const { result } = renderHook(() => useSSE('/api/test'));
+    act(() => {
+      triggerOpen();
+    });
+    act(() => {
+      triggerMessage({ foo: 'bar' });
+    });
+    expect(result.current.data).toEqual({ foo: 'bar' });
   });
 
   it('ignores messages after unmount', () => {

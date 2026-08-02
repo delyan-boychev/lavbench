@@ -431,15 +431,10 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
                 if now > t_final_select:
                     return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
-    # Atomically set final selection: lock all submissions for this user+task
-    locked_subs = (
-        Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id)
-        .with_for_update()
-        .all()
-    )
-
-    for s in locked_subs:
-        s.is_final_selection = s.id == submission.id
+    Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id).filter(
+        Submission.id != submission.id
+    ).update({"is_final_selection": False}, synchronize_session=False)
+    submission.is_final_selection = True
     db.session.commit()
 
     invalidate_leaderboard_cache(submission.challenge_id)

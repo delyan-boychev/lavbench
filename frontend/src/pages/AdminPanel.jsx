@@ -124,7 +124,7 @@ export default function AdminPanel() {
   });
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [resetCredentials, setResetCredentials] = useState(null);
-  const [bulkResetCredentials, setBulkResetCredentials] = useState([]);
+  const [bulkResetMessage, setBulkResetMessage] = useState('');
 
   // User Management State
   const [userSearch, setUserSearch] = useState('');
@@ -200,6 +200,7 @@ export default function AdminPanel() {
 
   // Worker stats via SSE
   useSSE(adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '', {
+    storeData: false,
     onMessage: (data) => {
       if (data && !data.error) {
         setWorkerStats(data);
@@ -492,7 +493,7 @@ export default function AdminPanel() {
       if (result.ok) {
         showToast(t('admin.notifications.password_reset_success'));
         setResetCredentials({ username: result.data.username, password: result.data.password });
-        setBulkResetCredentials([]);
+        setBulkResetMessage('');
       } else {
         showApiError(result.data, 'admin.notifications.password_reset_failed');
       }
@@ -535,12 +536,8 @@ export default function AdminPanel() {
     try {
       const result = await handleBulkResetAction(challenge.id);
       if (result.ok) {
-        showToast(
-          t('admin.notifications.bulk_reset_success', {
-            count: result.data.reset_accounts?.length,
-          }),
-        );
-        setBulkResetCredentials(result.data.reset_accounts || []);
+        showToast(t('admin.notifications.bulk_reset_success'));
+        setBulkResetMessage(result.data.message || '');
         setResetCredentials(null);
       } else {
         showApiError(result.data, 'admin.notifications.bulk_reset_failed');
@@ -631,8 +628,8 @@ export default function AdminPanel() {
               importedCompetitors={importedCompetitors}
               resetCredentials={resetCredentials}
               setResetCredentials={setResetCredentials}
-              bulkResetCredentials={bulkResetCredentials}
-              setBulkResetCredentials={setBulkResetCredentials}
+              bulkResetMessage={bulkResetMessage}
+              setBulkResetMessage={setBulkResetMessage}
               competitorsList={competitorsList}
               competitorSearch={competitorSearch}
               setCompetitorSearch={setCompetitorSearch}

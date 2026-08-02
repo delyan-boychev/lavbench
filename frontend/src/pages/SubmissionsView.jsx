@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import useSSE from '../hooks/useSSE';
+import useDebounce from '../hooks/useDebounce';
 import { useApiError } from '../hooks/useApiError';
 import { useSubmissionsQuery } from '../hooks/useSubmissionsQuery';
 import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
@@ -46,6 +47,7 @@ export default function SubmissionsView() {
   const isAdminOrJury = !isCompetitor;
 
   const [competitorSearch, setCompetitorSearch] = useState('');
+  const debouncedCompetitorSearch = useDebounce(competitorSearch, 300);
   const [competitorPage, setCompetitorPage] = useState(1);
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
 
@@ -71,7 +73,7 @@ export default function SubmissionsView() {
 
   const { data: competitorData, isLoading: searching } = useCompetitorSearchQuery(
     selectedChallenge?.id,
-    competitorSearch,
+    debouncedCompetitorSearch,
     competitorPage,
   );
   const competitorResults = competitorData?.items || [];
@@ -174,12 +176,26 @@ export default function SubmissionsView() {
   const taskId = selectedTask?.id;
   const page = submissionsPage;
 
+  const throttleTimerRef = useRef(null);
   useSSE(taskId ? `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10` : '', {
+    storeData: false,
     onMessage: () => {
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      if (throttleTimerRef.current) return;
+      throttleTimerRef.current = setTimeout(() => {
+        throttleTimerRef.current = null;
+        queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      }, 1500);
     },
     onError: () => {},
   });
+  useEffect(() => {
+    return () => {
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+        throttleTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSelectFinal = async (submissionId) => {
     try {

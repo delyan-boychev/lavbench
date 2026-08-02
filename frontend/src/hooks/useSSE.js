@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export default function useSSE(url, opts = {}) {
-  const { reconnect = false, reconnectDelay = 5000, maxReconnects = 0, onMessage, onError } = opts;
+  const {
+    reconnect = false,
+    reconnectDelay = 5000,
+    maxReconnects = 0,
+    onMessage,
+    onError,
+    storeData = true,
+  } = opts;
 
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -59,9 +66,11 @@ export default function useSSE(url, opts = {}) {
         if (onMessageRef.current) {
           onMessageRef.current(parsed);
         }
-        setData(parsed);
-      } catch {
-        // Non-JSON data — just ignore
+        if (storeData) {
+          setData(parsed);
+        }
+      } catch (err) {
+        console.warn('Failed to parse SSE JSON payload:', err, event.data);
       }
     };
 
@@ -82,7 +91,7 @@ export default function useSSE(url, opts = {}) {
         }
       }
     };
-  }, [clearConnection, reconnect, reconnectDelay, maxReconnects]);
+  }, [clearConnection, reconnect, reconnectDelay, maxReconnects, storeData]);
 
   useEffect(() => {
     connectRef.current = connect;

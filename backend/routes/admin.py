@@ -1184,10 +1184,20 @@ def reset_all_challenge_passwords(
         "user",
         details={"challenge_id": challenge_id, "count": len(competitors)},
     )
-    return BulkResetPasswordResponse(
-        message=f"Reset passwords for {len(competitors)} competitors.",
-        reset_accounts=results,
+
+    credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
+    os.makedirs(credentials_dir, exist_ok=True)
+    file_name = f"competitor_passwords_{challenge_id}.json"
+    file_path = os.path.join(credentials_dir, file_name)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4)
+    os.chmod(file_path, 0o600)
+
+    message = (
+        f"Reset passwords for {len(competitors)} competitors. Credentials saved to "
+        f"{file_name} in the uploads/credentials directory (included in backups)."
     )
+    return BulkResetPasswordResponse(message=message, reset_accounts=[])
 
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/download-scores-csv", methods=["GET"])

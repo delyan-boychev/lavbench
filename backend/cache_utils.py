@@ -94,27 +94,6 @@ def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
                 logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
 
 
-def acquire_cache_lock(lock_key: str, ttl: int = 30) -> bool:
-    """Legacy compat — use `with cache_lock(key, ttl)` instead."""
-    r = get_redis_client()
-    if not r:
-        return False
-    try:
-        return bool(r.set(lock_key, "1", nx=True, ex=ttl))
-    except Exception:
-        logger.exception("acquire_cache_lock failed for %s", lock_key)
-        return False
-
-
-def release_cache_lock(lock_key: str) -> None:
-    """Legacy compat — automatically handled by cache_lock context manager."""
-    r = get_redis_client()
-    if not r:
-        return
-    with suppress(Exception):
-        r.delete(lock_key)
-
-
 def log_dead_letter(
     submission_id: Any, task_id: Any = None, challenge_id: Any = None, error: Any = None
 ) -> None:

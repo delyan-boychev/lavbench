@@ -19,6 +19,7 @@ export default function LeaderboardView() {
   const { data, isLoading, refetch } = useLeaderboardQuery(activeId);
 
   useSSE(useSse && hasSse && activeId ? `/api/challenges/${activeId}/leaderboard/live` : '', {
+    storeData: false,
     onMessage: (msg) => {
       if (msg.info === 'connected') return;
       refetch();

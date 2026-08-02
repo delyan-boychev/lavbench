@@ -230,12 +230,12 @@ def check_and_backup() -> dict[str, Any]:
 
         from models import Challenge
 
-        challenges = Challenge.query.filter(Challenge.is_active, ~Challenge.is_archived).all()
-
-        active_count = 0
-        for c in challenges:
-            if c.start_time and c.start_time <= now and (not c.end_time or c.end_time >= now):
-                active_count += 1
+        active_count = Challenge.query.filter(
+            Challenge.is_active,
+            ~Challenge.is_archived,
+            Challenge.start_time <= now,
+            (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
+        ).count()
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
@@ -297,7 +297,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         "evaluating",
                     ]
                 )
-            ).all()
+            ).yield_per(100)
             for sub in stuck:
                 fallback_key = f"submission:{sub.id}:fallback"
                 fallback_data = r.get(fallback_key)

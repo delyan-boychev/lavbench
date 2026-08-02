@@ -20,6 +20,7 @@ export default function BackupManager() {
   const downloadBase = '/api/admin/backups';
 
   useSSE('/api/admin/backups/live', {
+    storeData: false,
     onMessage: (msg) => {
       if (msg.event?.status === 'completed') {
         refetch();

@@ -10,6 +10,7 @@ class _FakeRedis:
         self._data: dict[str, Any] = {}
         self._sorted_sets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[Any]] = {}
+        self.published_messages: list[tuple[str, str]] = []
 
     # ── Generic key-value ─────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ class _FakeRedis:
     # ── Pub/Sub ───────────────────────────────────────────────────────
 
     def publish(self, channel: str, message: str) -> int:
+        self.published_messages.append((channel, message))
         return 1
 
     # ── Pipeline ──────────────────────────────────────────────────────

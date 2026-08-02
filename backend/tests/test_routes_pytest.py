@@ -17,8 +17,9 @@ from services.submission_service import calculate_submission_priority
 
 class TestRouteLevelLogic:
     @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
+    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush, app):
         self.client = client
+        self.app = app
         self._auth = auth_headers
         self.csrf_headers = csrf_headers
         self.seed_basic_data()
@@ -1064,10 +1065,24 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
         data = json.loads(res.data)
         assert "reset_accounts" in data
-        assert len(data["reset_accounts"]) > 0
-        account = data["reset_accounts"][0]
-        assert "middle_name" in account
-        assert "birth_date" in account
+        assert len(data["reset_accounts"]) == 0
+
+        file_path = os.path.join(
+            self.app.config["UPLOAD_FOLDER"],
+            "credentials",
+            f"competitor_passwords_{self.challenge.id}.json",
+        )
+        try:
+            assert os.path.exists(file_path)
+            with open(file_path) as f:
+                accounts = json.load(f)
+            assert len(accounts) > 0
+            account = accounts[0]
+            assert "middle_name" in account
+            assert "birth_date" in account
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
         self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
@@ -1076,6 +1091,8 @@ class TestRouteLevelLogic:
             headers=self.get_auth_header(jury_token),
         )
         assert res.status_code == 200
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
         self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()

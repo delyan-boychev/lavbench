@@ -69,6 +69,7 @@ export default function Navbar() {
   };
 
   useSSE('/api/worker-status/live', {
+    storeData: false,
     reconnect: true,
     reconnectDelay: 10000,
     maxReconnects: Infinity,

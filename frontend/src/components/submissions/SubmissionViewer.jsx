@@ -51,6 +51,7 @@ export default function SubmissionViewer({
   }, [submission?.id]);
 
   useSSE(submission ? `/api/submissions/${submission.id}/logs/live` : '', {
+    storeData: false,
     onMessage: (data) => {
       if (data.log) {
         setLiveLogs((prev) => prev + data.log + '\n');

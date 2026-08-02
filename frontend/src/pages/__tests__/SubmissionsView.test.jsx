@@ -704,6 +704,38 @@ describe('SubmissionsView Page', () => {
       });
     });
 
+    it('debounces competitor search so rapid keystrokes fire a single request', async () => {
+      useApp.mockReturnValue({
+        selectedChallenge: mockChallenge,
+        selectedTask: null,
+        setSelectedChallengeById: mockSetSelectedChallengeById,
+        setSelectedTask: mockSetSelectedTask,
+        confirm: mockConfirm,
+      });
+
+      api.get.mockResolvedValue({
+        ok: true,
+        data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+      });
+
+      renderWithProviders(<SubmissionsView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('C1')).toBeInTheDocument();
+      });
+
+      const searchInput = screen.getByPlaceholderText(/Search by alias, name, or school/i);
+      fireEvent.change(searchInput, { target: { value: 'Jo' } });
+      fireEvent.change(searchInput, { target: { value: 'Joh' } });
+
+      await waitFor(() => {
+        expect(api.get).toHaveBeenCalledWith(expect.stringContaining('search=Joh'));
+      });
+
+      const searchCalls = api.get.mock.calls.filter(([url]) => String(url).includes('search='));
+      expect(searchCalls).toHaveLength(1);
+    });
+
     it('selects a competitor and fetches their submissions', async () => {
       useApp.mockReturnValue({
         selectedChallenge: mockChallenge,

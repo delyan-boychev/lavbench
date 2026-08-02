@@ -27,6 +27,7 @@ export default function SubmissionQueue() {
   const killMutation = useKillSubmission();
 
   useSSE('/api/admin/submissions/queue/live', {
+    storeData: false,
     onMessage: () => {
       refetch();
     },
