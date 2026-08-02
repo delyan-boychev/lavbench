@@ -169,3 +169,24 @@ class TestWatchdogStuckSubmissions:
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 2
+
+    def test_revokes_celery_task_for_timed_out_submission(self, mocker):
+        import tasks
+
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
+        sub.celery_task_id = "celery-task-abc"
+        db.session.commit()
+        mock_revoke = mocker.patch.object(tasks.celery.control, "revoke")
+        result = watchdog_stuck_submissions()
+        assert result.get("timed_out", 0) >= 1
+        mock_revoke.assert_called_once_with("celery-task-abc", terminate=True)
+
+    def test_revoke_failure_is_swallowed(self, mocker):
+        import tasks
+
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
+        sub.celery_task_id = "celery-task-def"
+        db.session.commit()
+        mocker.patch.object(tasks.celery.control, "revoke", side_effect=Exception("broker down"))
+        result = watchdog_stuck_submissions()
+        assert result.get("timed_out", 0) >= 1

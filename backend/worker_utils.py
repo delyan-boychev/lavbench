@@ -76,7 +76,6 @@ def run_command_streaming(
     """
     ulimits = [
         Ulimit(name="nofile", soft=256, hard=256),
-        Ulimit(name="nproc", soft=64, hard=64),
     ]
 
     device_requests = None

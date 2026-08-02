@@ -162,9 +162,9 @@ jobs:
       REDIS_PASSWORD: ci-redis-pass
       SECRET_KEY: ci-secret-key-0000000000000000000000
       ENCRYPTION_KEY: tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis=
-      WORKER_PUBLIC_KEY: unused-in-ci-worker-public-key-placeholder
+      WORKER_PUBLIC_KEY: gwEOQ7vkepTvOxbVFGy/iayILrRTEsYbw54+I5BF7RY=
       SERVER_ADDRESS: localhost
-      MAIN_SERVER_URL: http://localhost:5001
+      MAIN_SERVER_URL: http://backend:5001
       SECURE_COOKIES: "false"
     steps:
       - uses: actions/checkout@v7
@@ -210,6 +210,11 @@ jobs:
         run: |
           NETWORK=$(docker inspect -f '{{.HostConfig.NetworkMode}}' lavbench_backend)
           echo "Joining compose network: $NETWORK"
+          # The worker creates submission sandboxes by talking to the host Docker
+          # daemon through /var/run/docker.sock, so any bind-mounted dir (e.g.
+          # temp_dir -> /app for the sandbox) must exist on the HOST. Bind the
+          # workspace dir at the same absolute path inside the container.
+          mkdir -p "${GITHUB_WORKSPACE}/.lavbench_workspace"
           docker run -d --name lavbench_eval_worker \
             --network "$NETWORK" \
             -e CELERY_BROKER_URL="redis://:${REDIS_PASSWORD}@redis:6379/0" \
@@ -217,15 +222,17 @@ jobs:
             -e CACHE_REDIS_URL="redis://:${REDIS_PASSWORD}@redis-cache:6379/1" \
             -e SECRET_KEY="${SECRET_KEY}" \
             -e ENCRYPTION_KEY="${ENCRYPTION_KEY}" \
-            -e WORKER_PRIVATE_KEY="ci-worker-private-key-placeholder" \
+            -e WORKER_PRIVATE_KEY="NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU=" \
             -e MAIN_SERVER_URL="http://backend:5001" \
             -e RUNNING_AS_WORKER="true" \
             -e EVALUATION_ONLY_WORKER="true" \
             -e INTERNAL_ONLY_WORKER="false" \
             -e HF_CACHE_DIR="/app/hf_cache" \
             -e TASK_IMAGES_DIR="/app/task_images" \
+            -e LAVBENCH_WORKSPACE_DIR="${GITHUB_WORKSPACE}/.lavbench_workspace" \
             -e CPU_WORKER_CONCURRENCY="1" \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}/.lavbench_workspace:${GITHUB_WORKSPACE}/.lavbench_workspace" \
             lavbench-worker
 
       # --- Wait until the eval worker registered worker_spec:{hostname} in the broker Redis ---
@@ -292,8 +299,12 @@ jobs:
           docker compose exec -T backend python3 /app/setup-admin.py
           docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt
 
-      - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE)
-        run: python3 scripts/api_smoke_test.py
+      - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE, eval worker)
+        run: |
+          python3 -m pip install --user --break-system-packages --quiet pandas pyarrow
+          python3 scripts/api_smoke_test.py
+        env:
+          SMOKE_EVALUATE: "1"
 
       # --- Remove the evaluation worker (not part of the compose stack) ---
       - name: Remove evaluation worker
