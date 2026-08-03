@@ -1,69 +1,46 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
-import api from '../../services/ApiService';
 import { useApp } from '../../context/AppContext';
 import useSSE from '../../hooks/useSSE';
+import { useBackupsQuery } from '../../hooks/useBackupsQuery';
+import { useDeleteBackup, useForceBackup } from '../../hooks/useBackupMutations';
 import { formatDateTime } from '../../utils/formatDate';
 
 export default function BackupManager() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
-  const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [forcing, setForcing] = useState(false);
+  const { data, isLoading, refetch } = useBackupsQuery();
 
-  const listUrl = '/admin/backups';
+  const deleteBackupMutation = useDeleteBackup();
+  const forceBackupMutation = useForceBackup();
+
+  const backups = data?.backups || [];
   const downloadBase = '/api/admin/backups';
 
-  const loadBackups = useCallback(async () => {
-    try {
-      const { ok, data } = await api.get(listUrl);
-      if (ok) setBackups(data.backups || []);
-    } catch {
-      /* noop */
-    }
-    setLoading(false);
-  }, [listUrl]);
-
-  useEffect(() => {
-    loadBackups();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useSSE('/api/admin/backups/live', {
-    onMessage: (data) => {
-      if (data.backups) {
-        const filtered = data.backups.filter(
-          (b) =>
-            !b.filename.includes('submission_ended') &&
-            !b.filename.includes('grace_ended') &&
-            !b.filename.includes('finalized'),
-        );
-        setBackups(filtered);
-        setLoading(false);
+    storeData: false,
+    onMessage: (msg) => {
+      if (msg.event?.status === 'completed') {
+        refetch();
       }
-      if (data.event?.status === 'completed') {
-        setForcing(false);
-        loadBackups();
-      }
+      refetch();
     },
   });
 
   const handleForce = async () => {
-    setForcing(true);
     try {
-      await api.post('/admin/backups/force');
+      await forceBackupMutation.mutateAsync();
     } catch {
-      setForcing(false);
+      /* noop */
     }
   };
 
   const handleDelete = async (filename) => {
     try {
-      await api.delete(`/admin/backups/${filename}`);
-      loadBackups();
+      await deleteBackupMutation.mutateAsync(filename);
+      refetch();
     } catch {
       /* noop */
     }
@@ -82,12 +59,19 @@ export default function BackupManager() {
         <h2 className="text-xl font-bold text-white">
           {t('admin.backups.database_backups_security')}
         </h2>
-        <Button variant="accent" onClick={handleForce} disabled={forcing}>
-          {forcing ? t('admin.backups.forcing') : t('admin.backups.force_now')}
+        <Button
+          variant="accent"
+          onClick={handleForce}
+          disabled={forceBackupMutation.isPending}
+          isLoading={forceBackupMutation.isPending}
+        >
+          {forceBackupMutation.isPending
+            ? t('admin.backups.forcing')
+            : t('admin.backups.force_now')}
         </Button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="text-center py-8 text-slate-500 text-sm">{t('common.loading')}</div>
       ) : backups.length === 0 ? (
         <EmptyState message={t('admin.backups.no_backups')} />
@@ -110,7 +94,13 @@ export default function BackupManager() {
                   {t('admin.backups.download')}
                 </Button>
                 {b.type === 'manual' && (
-                  <Button variant="danger" size="sm" onClick={() => handleDelete(b.filename)}>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleDelete(b.filename)}
+                    disabled={deleteBackupMutation.isPending}
+                    isLoading={deleteBackupMutation.isPending}
+                  >
                     ✕
                   </Button>
                 )}

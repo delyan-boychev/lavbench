@@ -408,6 +408,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         dest_baseline = os.path.join(task_upload_dir, baseline_filename)
         shutil.copy(src_baseline, dest_baseline)
         test_task.baseline_notebook_path = dest_baseline
+        test_task.baseline_notebook_size = os.path.getsize(dest_baseline)
 
         # Copy labels.parquet
         labels_filename = "labels.parquet"
@@ -538,6 +539,18 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     assigned_juries = JuryChallenge.query.filter_by(challenge_id=challenge_id).all()
     jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
 
+    # Collect on-disk paths before bulk delete — ORM after_delete hooks do not
+    # fire for synchronize_session=False bulk deletes, so cleanup happens here.
+    sub_paths = (
+        Submission.query.filter_by(challenge_id=challenge_id)
+        .with_entities(Submission.code_storage_path, Submission.log_storage_path)
+        .all()
+    )
+    task_upload_dirs = [
+        os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{row[0]}")
+        for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.id).all()
+    ]
+
     # Delete submissions first (child of users/tasks/challenge)
     Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
 
@@ -568,6 +581,15 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
             if jury_user and jury_user.role == "jury":
                 db.session.delete(jury_user)
     db.session.commit()
+
+    # Remove on-disk submission/task files only after the transaction succeeded
+    for code_path, log_path in sub_paths:
+        for p in (code_path, log_path):
+            if p and os.path.exists(p):
+                with contextlib.suppress(OSError):
+                    os.remove(p)
+    for task_dir in task_upload_dirs:
+        shutil.rmtree(task_dir, ignore_errors=True)
 
     log_audit(
         request.user["user_id"],
@@ -619,13 +641,21 @@ def finalize_challenge(
         )
     tasks = challenge.tasks
 
+    # Precompute (competitor, task) pairs with submissions in a single query
+    # (avoids the N x M per-row COUNT queries on large competitions)
+    submitted_pairs = {
+        (r[0], r[1])
+        for r in Submission.query.with_entities(Submission.user_id, Submission.task_id)
+        .filter(Submission.challenge_id == challenge_id)
+        .all()
+    }
+
     for comp in competitors:
         manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in tasks:
             # Check if this competitor has any submissions for this task
-            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
-            if total_subs > 0:
+            if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
                     return err(
@@ -943,13 +973,24 @@ def finalize_stage(
         )
     stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
 
+    # Precompute (competitor, task) pairs with submissions in a single query
+    # (avoids the N x M per-row COUNT queries on large stages)
+    stage_task_ids = [t.id for t in stage_tasks]
+    submitted_pairs: set[tuple[Any, Any]] = set()
+    if stage_task_ids:
+        submitted_pairs = {
+            (r[0], r[1])
+            for r in Submission.query.with_entities(Submission.user_id, Submission.task_id)
+            .filter(Submission.task_id.in_(stage_task_ids))
+            .all()
+        }
+
     for comp in competitors:
         manual_points_dict = safe_json_loads(comp.manual_points, {})
 
         for task in stage_tasks:
             # Check if this competitor has any submissions for this task
-            total_subs = Submission.query.filter_by(user_id=comp.id, task_id=task.id).count()
-            if total_subs > 0:
+            if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
                     name_str = comp.username

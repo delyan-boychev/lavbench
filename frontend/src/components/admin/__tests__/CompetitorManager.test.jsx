@@ -131,8 +131,8 @@ const baseProps = {
   importedCompetitors: [],
   resetCredentials: null,
   setResetCredentials: vi.fn(),
-  bulkResetCredentials: [],
-  setBulkResetCredentials: vi.fn(),
+  bulkResetMessage: '',
+  setBulkResetMessage: vi.fn(),
   competitorsList: [],
   competitorSearch: '',
   setCompetitorSearch: vi.fn(),
@@ -249,21 +249,14 @@ describe('CompetitorManager', () => {
     expect(screen.getByText('new_pass')).toBeInTheDocument();
   });
 
-  it('does not show bulk reset credentials in the document (privacy constraint) but shows download button', () => {
-    const bulk = [
-      {
-        name: 'User1',
-        middle_name: 'Jane',
-        surname: 'Test',
-        birth_date: '2010-05-15',
-        username: 'u1',
-        password: 'p1',
-      },
-    ];
-    render(<CompetitorManager {...baseProps} bulkResetCredentials={bulk} />);
+  it('shows bulk reset success banner without exposing credentials', () => {
+    const message =
+      'Reset passwords for 1 competitors. Credentials saved to competitor_passwords_1.json in the uploads/credentials directory (included in backups).';
+    render(<CompetitorManager {...baseProps} bulkResetMessage={message} />);
+    expect(screen.getByText('Passwords Reset Successfully')).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/User1/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Test/)).not.toBeInTheDocument();
-    expect(screen.getByText('Download Credentials (CSV)')).toBeInTheDocument();
   });
 
   it('renders pagination info for competitors list', () => {
@@ -363,22 +356,17 @@ describe('CompetitorManager', () => {
     clickSpy.mockRestore();
   });
 
-  it('allows downloading bulk reset credentials CSV', () => {
-    const mockReset = [{ id: '2', username: 'Test', password: 'pwd' }];
-    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:mock-url');
-    window.URL.createObjectURL = mockCreateObjectURL;
-    const clickSpy = vi
-      .spyOn(window.HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => {});
-
-    render(<CompetitorManager {...baseProps} bulkResetCredentials={mockReset} />);
-    const downloadBtn = screen.getByText('Download Credentials (CSV)');
-    fireEvent.click(downloadBtn);
-
-    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-
-    clickSpy.mockRestore();
+  it('dismisses bulk reset success banner', () => {
+    const setBulkResetMessage = vi.fn();
+    render(
+      <CompetitorManager
+        {...baseProps}
+        bulkResetMessage="Credentials saved to competitor_passwords_1.json"
+        setBulkResetMessage={setBulkResetMessage}
+      />,
+    );
+    fireEvent.click(screen.getByText('Clear List'));
+    expect(setBulkResetMessage).toHaveBeenCalledWith('');
   });
 
   it('triggers table actions (Edit and Reset Password)', () => {

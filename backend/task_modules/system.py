@@ -14,47 +14,12 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-import requests
 from flask import Flask
 
 from config import Config
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
-
-
-def run_register_worker_specs(celery_app: Any) -> None:
-    from config import Config
-
-    gpu_id = Config.WORKER_GPU_ID or None
-    machine_id = os.environ.get("HOSTNAME", "local-worker")
-    if gpu_id is not None:
-        machine_id = f"gpu-worker-device-{gpu_id}"
-
-    try:
-        import psutil  # type: ignore[import-untyped]
-
-        ram_gb = round(psutil.virtual_memory().total / (1024**3), 2)
-    except ImportError:
-        ram_gb = 16.0
-
-    gpu_count = 0
-    if gpu_id:
-        gpu_count = len([g for g in gpu_id.split(",") if g.strip()])
-
-    try:
-        requests.post(
-            f"{Config.MAIN_SERVER_URL.rstrip('/')}/api/admin/workers/register",
-            json={
-                "worker_id": machine_id,
-                "ram_gb": ram_gb,
-                "gpu_count": gpu_count,
-                "status": "idle",
-            },
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning("Worker registration failed for ID %s: %s", machine_id, str(e))
 
 
 def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
@@ -74,13 +39,14 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
     target = os.path.join(backup_dir, filename)
 
     # Pre-flight disk space check
+    min_free_gb = Config.MIN_BACKUP_DISK_GB
     try:
         disk_usage = shutil.disk_usage(backup_dir)
         free_gb = disk_usage.free / (1024**3)
-        if free_gb < 1.0:
+        if free_gb < min_free_gb:
             raise RuntimeError(
                 f"Insufficient disk space for backup: {free_gb:.1f}GB free "
-                f"in {backup_dir} (min 1GB required)"
+                f"in {backup_dir} (min {min_free_gb}GB required)"
             )
     except FileNotFoundError:
         os.makedirs(backup_dir, exist_ok=True)
@@ -126,7 +92,7 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             env=env,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=Config.BACKUP_TIMEOUT,
         )
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
@@ -181,6 +147,8 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             "tar",
             "--exclude=backups",
             "--exclude=*.tar.gz",
+            # Never include plaintext-adjacent credential exports in backups
+            "--exclude=*/credentials",
             "-czf",
             target,
             "-C",
@@ -196,7 +164,9 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
         if auto:
             tar_args = ["nice", "-n", "19", *tar_args]
 
-        result = subprocess.run(tar_args, env=env, capture_output=True, text=True, timeout=600)  # noqa: S603 — args from trusted config
+        result = subprocess.run(  # noqa: S603 — args from trusted config
+            tar_args, env=env, capture_output=True, text=True, timeout=Config.BACKUP_TIMEOUT
+        )
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")
 
@@ -236,9 +206,10 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
 
 def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, state: Any) -> None:
     try:
-        from cache_utils import get_redis_client
+        from cache_utils import get_coordination_client
+        from sse_utils import CHANNEL_BACKUPS
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             payload = {
                 "filename": filename,
@@ -247,7 +218,7 @@ def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, sta
                 "challenge_id": challenge_id,
                 "state": state,
             }
-            r.publish("backup_status", json.dumps(payload))
+            r.publish(CHANNEL_BACKUPS, json.dumps(payload))
     except Exception as e:
         logger.warning("Failed to publish backup event: %s", e)
 

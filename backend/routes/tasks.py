@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
 
@@ -21,7 +22,13 @@ from auth_utils import (
     rate_limit,
     role_required,
 )
-from cache_utils import get_redis_client, invalidate_leaderboard_cache
+from cache_utils import (
+    get_coordination_client,
+    get_queue_depth,
+    invalidate_leaderboard_cache,
+    worker_spec_key,
+)
+from config import Config
 from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
 from schemas.responses import (
@@ -50,10 +57,15 @@ from services.submission_service import (
 )
 from spec import api
 from sse_utils import (
+    CHANNEL_TASK_REBUILD,
+    CHANNEL_WORKER_STATUS,
     SSE_IDLE_TIMEOUT,
     publish_leaderboard_update,
+    publish_queue_update,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
+    submissions_channel,
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
@@ -64,10 +76,18 @@ from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.sse import sse_response
+from utils.streaming import stream_file_response
 
 tasks_bp = Blueprint("tasks", __name__)
 
 logger = logging.getLogger(__name__)
+
+
+def _worker_token_identity() -> str:
+    import hashlib
+
+    token = request.headers.get("X-Worker-Token", "")
+    return hashlib.sha256(token.encode()).hexdigest()[:32]
 
 
 def _validate_evaluator_script(code: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -152,7 +172,8 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB limit per file
+MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB limit per file
+MAX_TOTAL_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB limit per task
 
 VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
@@ -210,8 +231,9 @@ def queue_system_submission(
     db.session.add(submission)
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
 
     from tasks import evaluate_submission
 
@@ -478,10 +500,11 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "baseline_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -496,10 +519,13 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "solution_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
+
+    total_upload_size = 0
 
     for key in files_keys:
         uploaded_file = request.files[key]
@@ -522,6 +548,19 @@ def create_task(
             size = uploaded_file.tell()
             uploaded_file.seek(0)
 
+            total_upload_size += size
+            if total_upload_size > MAX_TOTAL_UPLOAD_BYTES:
+                db.session.delete(task)
+                db.session.commit()
+                import shutil
+
+                shutil.rmtree(task_upload_dir, ignore_errors=True)
+                return err(
+                    "ERR_TOTAL_SIZE_EXCEEDED",
+                    400,
+                    message="Total file size exceeds the 2 GB limit for a single task.",
+                )
+
             if size > MAX_FILE_SIZE_BYTES:
                 db.session.delete(task)
                 db.session.commit()
@@ -529,9 +568,9 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
-                    "ERR_FILE_TOO_LARGE_25MB",
+                    "ERR_TASK_FILE_TOO_LARGE",
                     400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 25MB size limit.",
+                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
             safe_name = secure_filename(uploaded_file.filename)
@@ -600,11 +639,9 @@ def create_task(
     # Notify workers to rebuild Docker image for this task
     try:
         if not current_app.config.get("TESTING"):
-            from cache_utils import get_redis_client
-
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
-                r.publish("task_rebuild", str(task.id))
+                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
@@ -656,6 +693,20 @@ def update_task(
     if "pip_requirements" in fields:
         task.pip_requirements = form.pip_requirements
 
+    # Clear build_error when environment config is changed
+    if task.build_error:
+        env_fields = {
+            "base_docker_image",
+            "apt_packages",
+            "pip_requirements",
+            "hf_datasets",
+            "hf_models",
+        }
+        if (fields & env_fields) or (
+            "hf_api_key" in request.form and request.form.get("hf_api_key", "").strip()
+        ):
+            task.build_error = None
+
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
     if "gpu_required" in fields:
@@ -702,16 +753,18 @@ def update_task(
             if old_stage.end_time and old_stage.end_time <= utcnow():
                 return err("ERR_CANNOT_MOVE_ENDED", 400)
 
-        if (
-            stage_id_val is not None
-            and stage_id_val != task.stage_id
-            and Submission.query.filter(
-                Submission.task_id == task.id,
-                Submission.manual_points.isnot(None),
-                Submission.manual_points != "{}",
-            ).first()
-        ):
-            return err("ERR_CANNOT_MOVE_HAS_MANUAL_POINTS", 400)
+        if stage_id_val is not None and stage_id_val != task.stage_id:
+            from models import User as _TaskUser
+
+            task_id_str = str(task.id)
+            has_manual_points = False
+            for u in _TaskUser.query.filter_by(challenge_id=task.challenge_id).all():
+                manual_pts = safe_json_loads(u.manual_points, {})
+                if task_id_str in manual_pts:
+                    has_manual_points = True
+                    break
+            if has_manual_points:
+                return err("ERR_CANNOT_MOVE_HAS_MANUAL_POINTS", 400)
 
         if stage_id_val:
             st = Stage.query.filter_by(id=stage_id_val, challenge_id=task.challenge_id).first()
@@ -756,10 +809,11 @@ def update_task(
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "baseline_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.baseline_notebook_path = save_path
+            task.baseline_notebook_size = os.path.getsize(save_path)
 
     if "solution_notebook" in request.files:
         f = request.files["solution_notebook"]
@@ -769,10 +823,11 @@ def update_task(
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = "solution_" + secure_filename(f.filename)
+            safe_name = secure_filename(f.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             f.save(save_path)
             task.solution_notebook_path = save_path
+            task.solution_notebook_size = os.path.getsize(save_path)
 
     current_files = safe_json_loads(task.files, [])
 
@@ -802,12 +857,14 @@ def update_task(
         if os.path.exists(task.baseline_notebook_path):
             os.remove(task.baseline_notebook_path)
         task.baseline_notebook_path = None
+        task.baseline_notebook_size = None
 
     new_files_keys = [k for k in request.files if k.startswith("file")]
     if len(current_files) + len(new_files_keys) > 5:
         return err("ERR_TOO_MANY_FILES", 400)
 
     newly_saved_paths: list[str] = []
+    total_update_size = 0
 
     for key in new_files_keys:
         uploaded_file = request.files[key]
@@ -828,14 +885,25 @@ def update_task(
             size = uploaded_file.tell()
             uploaded_file.seek(0)
 
+            total_update_size += size
+            if total_update_size > MAX_TOTAL_UPLOAD_BYTES:
+                for p in newly_saved_paths:
+                    if os.path.exists(p):
+                        os.remove(p)
+                return err(
+                    "ERR_TOTAL_SIZE_EXCEEDED",
+                    400,
+                    message="Total file size exceeds the 2 GB limit for a single task.",
+                )
+
             if size > MAX_FILE_SIZE_BYTES:
                 for p in newly_saved_paths:
                     if os.path.exists(p):
                         os.remove(p)
                 return err(
-                    "ERR_FILE_TOO_LARGE_25MB",
+                    "ERR_TASK_FILE_TOO_LARGE",
                     400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 25MB size limit.",
+                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
             safe_name = secure_filename(uploaded_file.filename)
@@ -897,11 +965,9 @@ def update_task(
     # Notify workers to rebuild Docker image for this task
     try:
         if not current_app.config.get("TESTING"):
-            from cache_utils import get_redis_client
-
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
-                r.publish("task_rebuild", str(task.id))
+                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
     except Exception as e:
         logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
 
@@ -921,9 +987,6 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     task = db.get_or_404(Task, task_id)
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
-    import shutil
-
-    shutil.rmtree(task_upload_dir, ignore_errors=True)
     # Collect file paths before bulk delete for cleanup
     subs = Submission.query.filter_by(task_id=task_id).all()
     from tasks import celery
@@ -934,6 +997,14 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
                 celery.control.revoke(s.celery_task_id, terminate=True)
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
+    db.session.delete(task)
+    db.session.commit()
+
+    # Remove on-disk files only after the transaction succeeded — a failed
+    # commit (e.g. FK constraint) must never leave a half-deleted task behind.
+    import shutil
+
+    shutil.rmtree(task_upload_dir, ignore_errors=True)
     for code_path, log_path in paths:
         if code_path and os.path.exists(code_path):
             with contextlib.suppress(OSError):
@@ -941,8 +1012,6 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
         if log_path and os.path.exists(log_path):
             with contextlib.suppress(OSError):
                 os.remove(log_path)
-    db.session.delete(task)
-    db.session.commit()
 
     log_audit(
         request.user["user_id"],
@@ -963,7 +1032,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
 @tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
 @jury_access_required
-@rate_limit(max_requests=20, window_seconds=60)
+@rate_limit(max_requests=5, window_seconds=60)
 @api.validate(
     resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
     tags=["Tasks"],
@@ -971,7 +1040,11 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
 )
 def download_task_file(
     task_id: Any, filename: str
-) -> FlaskResponse | tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> (
+    FlaskResponse
+    | tuple[Generator[bytes, None, None], int, dict[str, str]]
+    | tuple[FlaskResponse, int]
+):
     """Download a resource file attached to a task."""
     task = db.get_or_404(Task, task_id)
     user_role = request.user["role"]
@@ -982,6 +1055,15 @@ def download_task_file(
             return err("ERR_ACCESS_DENIED", 403)
         if not check_task_started(task, user_role, user_id):
             return err("ERR_NOT_AVAILABLE", 403)
+
+    # Ground-truth labels are the core secret of a competition: jury members
+    # (already assignment-gated by jury_access_required) may only fetch them
+    # after the competition has started.
+    if user_role == "jury" and filename == "labels.parquet":
+        challenge = task.challenge
+        now = utcnow()
+        if challenge is None or challenge.start_time is None or now < challenge.start_time:
+            return err("ERR_LABELS_NOT_AVAILABLE", 403)
 
     try:
         files_meta = json.loads(task.files)
@@ -999,31 +1081,16 @@ def download_task_file(
         file_path = os.path.join(task_upload_dir, saved_name)
         if not os.path.isfile(file_path):
             return err("ERR_NOT_FOUND", 404)
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        # Stream from disk (files can be up to 500 MB — never buffer in RAM)
         safe_filename = sanitize_filename_part(filename)
-        return (
-            file_data,
-            200,
-            {
-                "Content-Type": "application/octet-stream",
-                "Content-Disposition": f'attachment; filename="{safe_filename}"',
-            },
-        )
+        return stream_file_response(file_path, "application/octet-stream", safe_filename)
 
     if task.baseline_notebook_path:
         baseline_basename = os.path.basename(task.baseline_notebook_path)
         if filename == baseline_basename:
-            with open(task.baseline_notebook_path, "rb") as fh:
-                baseline_bytes = fh.read()
             safe_filename = sanitize_filename_part(filename)
-            return (
-                baseline_bytes,
-                200,
-                {
-                    "Content-Type": "application/octet-stream",
-                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
-                },
+            return stream_file_response(
+                task.baseline_notebook_path, "application/octet-stream", safe_filename
             )
 
     return err("ERR_FILE_NOT_FOUND", 404)
@@ -1112,6 +1179,23 @@ def submit_task(
             ),
         )
 
+    gpu_required = False
+    if task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+    if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+        return err(
+            "ERR_QUEUE_FULL",
+            429,
+            message=(
+                f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                "Please try again later."
+            ),
+        )
+
     if task.max_submissions_per_period and task.submission_period_hours:
         period_start = utcnow() - timedelta(hours=task.submission_period_hours)
         sub_count = Submission.query.filter(
@@ -1143,11 +1227,12 @@ def submit_task(
         )
         db.session.add(submission)
         db.session.commit()
-        publish_submissions_update(submission.task_id, submission.user_id)
-        publish_leaderboard_update(submission.task_id, submission.challenge_id)
+        publish_submissions_update(submission.task_id, submission.challenge_id)
+        publish_queue_update()
+        publish_leaderboard_update(submission.challenge_id)
         return err(
             "ERR_AST_RULE_FAILED",
-            200,
+            400,
             message=err_msg,
             submission_id=submission.id,
             submission_status=submission.status,
@@ -1168,17 +1253,10 @@ def submit_task(
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
     from tasks import evaluate_submission
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
     task_files_list = safe_json_loads(task.files, [])
@@ -1212,6 +1290,7 @@ def submit_task(
             priority=priority,
             queue=queue_name,
             countdown=1,
+            expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
@@ -1340,67 +1419,6 @@ def get_task_leaderboard(
     )
 
 
-@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard/live", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-)
-def stream_task_leaderboard(
-    task_id: Any,
-) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live task leaderboard updates via SSE."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
-            return err("ERR_NOT_AVAILABLE", 403)
-
-    def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
-            if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
-                return
-
-            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-
-            r = get_redis_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(f"task_{task_id}_leaderboard")
-            start_time = time.time()
-
-            try:
-                while True:
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-                            yield f"data: {json.dumps(data, cls=UUIDEncoder)}\n\n"
-                            continue
-                    else:
-                        time.sleep(2.0)
-                    yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Leaderboard SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
 @login_required
 @jury_access_required
@@ -1417,9 +1435,14 @@ def stream_task_submissions(
     current_user_id = request.user["user_id"]
     page = request.args.get("page", type=int)
     per_page = min(request.args.get("per_page", 10, type=int), 100)
+
+    task = db.session.get(Task, task_id)
+    if not task:
+        return err("ERR_NOT_FOUND", 404)
+    challenge_id = task.challenge_id
+
     if user_role == "competitor":
-        task = db.session.get(Task, task_id)
-        if not task or not check_task_started(task, user_role, current_user_id):
+        if not check_task_started(task, user_role, current_user_id):
             return err("ERR_NOT_AVAILABLE", 403)
         if task.challenge and task.challenge.scores_finalized:
             return err(
@@ -1429,27 +1452,31 @@ def stream_task_submissions(
             )
 
     def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as allowed:
+        with sse_connection_limit(user_id=current_user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
             yield f"data: {json.dumps(data)}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
 
             if pubsub:
-                if user_role in ["admin", "jury"]:
-                    pubsub.psubscribe(f"task_{task_id}_user_*_submissions")
-                else:
-                    pubsub.subscribe(f"task_{task_id}_user_{current_user_id}_submissions")
+                pubsub.subscribe(submissions_channel(task_id, challenge_id))
 
             start_time = time.time()
 
             try:
                 while True:
+                    if member and r and not sse_heartbeat(member, current_user_id):
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1471,10 +1498,7 @@ def stream_task_submissions(
             finally:
                 if pubsub:
                     with contextlib.suppress(Exception):
-                        if user_role in ["admin", "jury"]:
-                            pubsub.punsubscribe()
-                        else:
-                            pubsub.unsubscribe()
+                        pubsub.unsubscribe()
                         pubsub.close()
 
     return sse_response(event_generator)
@@ -1488,35 +1512,43 @@ def stream_task_submissions(
     security=[{"cookieAuth": []}],
 )
 def get_worker_status() -> dict[str, Any]:
-    """Get current worker cluster health status with specs."""
-    return _get_worker_status_data()
+    """Get worker cluster health status with specs (details admin/jury only)."""
+    return _get_worker_status_data(request.user["role"])
 
 
 @tasks_bp.route("/worker-status/live", methods=["GET"])
 @login_required
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
 def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
-    """Stream worker cluster health status via SSE."""
+    """Stream worker cluster health status via SSE (details admin/jury only)."""
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        user_role = request.user["role"]
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
-            res_data = _get_worker_status_data()
+            res_data = _get_worker_status_data(user_role)
             yield f"data: {json.dumps(res_data)}\n\n"
 
-            r = get_redis_client()
+            r = get_coordination_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
-                pubsub.subscribe("worker_status_live")
+                pubsub.subscribe(CHANNEL_WORKER_STATUS)
 
             last_sent = time.time()
             start_time = time.time()
             try:
                 while True:
+                    if member and r and not sse_heartbeat(member, user_id):
+                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                        break
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
@@ -1528,7 +1560,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
                         time.sleep(5.0)
                     now = time.time()
                     if got_message or (now - last_sent) >= 10:
-                        res_data = _get_worker_status_data()
+                        res_data = _get_worker_status_data(user_role)
                         yield f"data: {json.dumps(res_data)}\n\n"
                         last_sent = now
                     else:
@@ -1544,7 +1576,12 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
     return sse_response(event_generator)
 
 
-def _get_worker_status_data() -> dict[str, Any]:
+def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
+    """Worker cluster summary.
+
+    Admin/jury receive full per-worker specs (hostnames, GPU/VRAM, resource
+    budgets). Other authenticated roles receive general availability only.
+    """
 
     def _compute():
         import json as json_lib
@@ -1558,9 +1595,9 @@ def _get_worker_status_data() -> dict[str, Any]:
 
         r = None
         try:
-            from cache_utils import get_redis_client
+            from cache_utils import get_coordination_client
 
-            r = get_redis_client()
+            r = get_coordination_client()
         except Exception as e:
             logger.warning("Failed to get Redis client for worker status: %s", e)
             r = None
@@ -1574,7 +1611,7 @@ def _get_worker_status_data() -> dict[str, Any]:
             spec = None
             if r:
                 try:
-                    spec_data = r.get(f"worker_spec:{worker_name}")
+                    spec_data = r.get(worker_spec_key(worker_name))
                     if spec_data:
                         spec = json_lib.loads(spec_data)
                 except Exception as e:
@@ -1600,13 +1637,21 @@ def _get_worker_status_data() -> dict[str, Any]:
             clusters.append(spec)
 
         is_online = len(clusters) > 0
-        return {"status": "online" if is_online else "offline", "clusters": clusters}
+        if view_role in ("admin", "jury"):
+            return {"status": "online" if is_online else "offline", "clusters": clusters}
+        return {
+            "status": "online" if is_online else "offline",
+            "online_workers": len(clusters),
+            "clusters": [],
+        }
 
-    return cached_or_compute_unless_testing("worker:status:summary", _compute, timeout=10)
+    return cached_or_compute_unless_testing(
+        f"worker:status:summary:{view_role or 'user'}", _compute, timeout=10
+    )
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
-@rate_limit(max_requests=120, window_seconds=60, per_user=False)
+@rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
     resp=Response(
         HTTP_200=WorkerReportResponse,
@@ -1622,7 +1667,11 @@ def report_worker_progress(
     """Worker callback to report submission status and scores."""
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce:
+        return err("ERR_UNAUTHORIZED", 401)
+    # Replay protection: the signed nonce must reference this exact submission
+    if nonce.get("submission_id") != str(submission_id):
         return err("ERR_UNAUTHORIZED", 401)
 
     if not request.is_json:
@@ -1664,16 +1713,23 @@ def report_worker_progress(
         submission.execution_time_ms = data["execution_time_ms"]
     if "metrics_payload_public" in data:
         submission.metrics_payload_public = data["metrics_payload_public"]
+    elif "metrics_payload_pub" in data:
+        submission.metrics_payload_public = data["metrics_payload_pub"]
     if "metrics_payload_private" in data:
         submission.metrics_payload_private = data["metrics_payload_private"]
+    elif "metrics_payload_priv" in data:
+        submission.metrics_payload_private = data["metrics_payload_priv"]
+    if "gpu_node" in data:
+        submission.gpu_node = data["gpu_node"]
     if "final_weighted_score_public" in data:
         submission.final_weighted_score_public = data["final_weighted_score_public"]
     if "final_weighted_score_private" in data:
         submission.final_weighted_score_private = data["final_weighted_score_private"]
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_leaderboard_update(submission.challenge_id)
 
     if submission.status in ("completed", "failed"):
         from sse_utils import publish_submission_status
@@ -1690,15 +1746,33 @@ def report_worker_progress(
     return {"message": "Status updated successfully"}, 200
 
 
+def _worker_nonce_allowed_for_task(nonce: dict[str, str], task_id: Any) -> bool:
+    """Replay protection for task-scoped worker endpoints.
+
+    A signed nonce only grants access to the submission it was issued for
+    (the evaluation flow), or to any task during the image-build flow
+    (nonce submission id is the literal ``worker`` sentinel).
+    """
+    submission_id = nonce.get("submission_id")
+    if not submission_id:
+        return False
+    if submission_id == "worker":
+        return True
+    submission = Submission.query.filter_by(id=submission_id).first()
+    return bool(submission and str(submission.task_id) == str(task_id))
+
+
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
 def worker_download_task_file(
     task_id: Any, filename: str
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Worker endpoint to securely download task resource files."""
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
         return err("ERR_UNAUTHORIZED", 401)
 
     task = db.get_or_404(Task, task_id)
@@ -1722,16 +1796,8 @@ def worker_download_task_file(
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     file_path = os.path.join(task_upload_dir, saved_name)
     safe_filename = sanitize_filename_part(filename)
-    with open(file_path, "rb") as fh:
-        file_bytes = fh.read()
-    return (
-        file_bytes,
-        200,
-        {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": f'attachment; filename="{safe_filename}"',
-        },
-    )
+    # Stream from disk (files can be up to 500 MB — never buffer in RAM)
+    return stream_file_response(file_path, "application/octet-stream", safe_filename)
 
 
 @tasks_bp.route("/worker/active-tasks", methods=["GET"])
@@ -1777,6 +1843,8 @@ def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskRes
                     "hf_datasets": hf_datasets_list,
                     "hf_models": hf_models_list,
                     "hf_api_key": task.get_hf_api_key() if task.hf_api_key else "",
+                    "task_files": safe_json_loads(task.files, []),
+                    "custom_eval_code": task.custom_eval_code or "",
                 }
             )
 
@@ -1857,7 +1925,8 @@ def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[Fl
 def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[FlaskResponse, int]:
     token = request.headers.get("X-Worker-Token")
 
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
         return err("ERR_UNAUTHORIZED", 401)
     task = db.session.get(Task, task_id)
     if not task:
@@ -1868,8 +1937,35 @@ def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[Fla
     return {"hf_key": hf_key}, 200
 
 
+@tasks_bp.route("/worker/tasks/<uuid:task_id>/report-build-error", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60, per_user=False, identity=_worker_token_identity)
+@api.validate(
+    resp=Response(
+        HTTP_200=MessageResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def report_build_error(
+    task_id: Any,
+) -> tuple[FlaskResponse, int] | tuple[dict[str, str], int]:
+    token = request.headers.get("X-Worker-Token")
+    if not check_worker_auth(token):
+        return err("ERR_UNAUTHORIZED", 401)
+    data = request.get_json(silent=True) or {}
+    error_msg = (data.get("error") or "").strip()
+    task = db.session.get(Task, task_id)
+    if not task:
+        return err("ERR_TASK_NOT_FOUND", 404)
+    task.build_error = error_msg if error_msg else None
+    db.session.commit()
+    return {"message": "ok"}, 200
+
+
 @tasks_bp.route("/workers/logs", methods=["POST"])
-@rate_limit(max_requests=12, window_seconds=60, per_user=False)
+@rate_limit(max_requests=12, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
     resp=Response(
         HTTP_200=WorkerLogsResponse,
@@ -1888,10 +1984,17 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     if not body:
         return err("ERR_INVALID_REQUEST_BODY", 400)
 
+    # Cap the decompressed payload to prevent disk fill from a compromised worker
+    if len(body) > 1024 * 1024:
+        return err("ERR_PAYLOAD_TOO_LARGE", 400)
+
     try:
         lines = gzip.decompress(body).decode()
     except Exception:
         return err("ERR_INVALID_REQUEST_BODY", 400)
+
+    if len(lines.encode()) > 1024 * 1024:
+        return err("ERR_PAYLOAD_TOO_LARGE", 400)
 
     log_dir = os.environ.get("LOG_DIR", "/app/logs")
     os.makedirs(log_dir, exist_ok=True)

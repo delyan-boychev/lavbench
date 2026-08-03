@@ -706,13 +706,29 @@
       "AuditLinkListResponse.febf810.AuditLogResponse": {
         "properties": {
           "action_type": {
-            "title": "Action Type",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Action Type"
           },
           "admin_id": {
-            "format": "uuid",
-            "title": "Admin Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admin Id"
           },
           "admin_username": {
             "anyOf": [
@@ -728,7 +744,10 @@
           },
           "details": {
             "anyOf": [
-              {},
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
               {
                 "type": "null"
               }
@@ -802,8 +821,16 @@
             "title": "Target Id"
           },
           "target_type": {
-            "title": "Target Type",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Type"
           },
           "target_user_id": {
             "anyOf": [
@@ -869,10 +896,7 @@
           }
         },
         "required": [
-          "id",
-          "admin_id",
-          "action_type",
-          "target_type"
+          "id"
         ],
         "title": "AuditLogResponse",
         "type": "object"
@@ -3191,6 +3215,14 @@
       },
       "HealthResponse.c6e31f5": {
         "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk.",
+            "title": "Checks",
+            "type": "object"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -3202,7 +3234,8 @@
         },
         "required": [
           "status",
-          "version"
+          "version",
+          "checks"
         ],
         "title": "HealthResponse",
         "type": "object"
@@ -4723,6 +4756,141 @@
           "title"
         ],
         "title": "TaskResponse",
+        "type": "object"
+      },
+      "PaginatedResponse[QueueItemResponse].c6e31f5": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages"
+        ],
+        "title": "PaginatedResponse[QueueItemResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse": {
+        "properties": {
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Celery Task Id"
+          },
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Created At"
+          },
+          "detailed_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detailed Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Id"
+          },
+          "task_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Title"
+          },
+          "user_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User Alias"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "user_id",
+          "challenge_id"
+        ],
+        "title": "QueueItemResponse",
         "type": "object"
       },
       "PaginatedResponse[SubmissionLightResponse].c6e31f5": {
@@ -8355,6 +8523,18 @@
             "default": null,
             "title": "Baseline Notebook Path"
           },
+          "build_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Build Error"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -10024,6 +10204,58 @@
         ]
       }
     },
+    "/api/admin/challenges/{challenge_id}/credentials": {
+      "get": {
+        "description": "The file is deleted on successful download \u2014 the plaintext credentials must never sit on disk and never be included in backups.",
+        "operationId": "get__api_admin_challenges_{challenge_id}_credentials",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "One-time download of the encrypted bulk-reset password file.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/admin/challenges/{challenge_id}/download-scores-csv": {
       "get": {
         "description": "",
@@ -10382,6 +10614,143 @@
           }
         ],
         "summary": "register_user <POST>",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/submissions/queue": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_admin_submissions_queue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].c6e31f5"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Get paginated queue of queued and running submissions in execution order.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/submissions/queue/clear": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_admin_submissions_queue_clear",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Kill all queued and running submissions (admin only).",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/submissions/queue/live": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_admin_submissions_queue_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "SSE endpoint: stream real-time queue updates.",
         "tags": [
           "Admin"
         ]
@@ -12505,7 +12874,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "",
+        "description": "Probes the database, Redis (cache/SSE/broker) and disk space so a degraded stack never reports healthy.",
         "operationId": "get__api_health",
         "parameters": [],
         "responses": {
@@ -12590,6 +12959,85 @@
           }
         ],
         "summary": "Get details of a specific submission.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/kill": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_submissions_{submission_id}_kill",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Kill a queued or running submission. Admins/jury can kill any; competitors can only kill their own.",
         "tags": [
           "Submissions"
         ]
@@ -13019,58 +13467,6 @@
         ]
       }
     },
-    "/api/tasks/{task_id}/leaderboard/live": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_tasks_{task_id}_leaderboard_live",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Stream live task leaderboard updates via SSE.",
-        "tags": [
-          "SSE Streaming"
-        ]
-      }
-    },
     "/api/tasks/{task_id}/submissions": {
       "get": {
         "description": "",
@@ -13313,7 +13709,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Get current worker cluster health status with specs.",
+        "summary": "Get worker cluster health status with specs (details admin/jury only).",
         "tags": [
           "Tasks"
         ]
@@ -13344,7 +13740,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Stream worker cluster health status via SSE.",
+        "summary": "Stream worker cluster health status via SSE (details admin/jury only).",
         "tags": [
           "SSE Streaming"
         ]
@@ -13625,6 +14021,80 @@
           }
         },
         "summary": "get_task_hf_key <GET>",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/tasks/{task_id}/report-build-error": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_worker_tasks_{task_id}_report-build-error",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "report_build_error <POST>",
         "tags": [
           "Tasks"
         ]

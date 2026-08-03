@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderWithProviders } from '../test-utils';
 
 vi.mock('../context/AppContext', () => ({
   AppProvider: ({ children }) => <div>{children}</div>,
@@ -13,6 +14,8 @@ vi.mock('../AuthContext', () => ({
     authLoading: false,
   })),
 }));
+
+vi.mock('../components/AppProviders', () => ({ default: ({ children }) => <div>{children}</div> }));
 
 vi.mock('../components/ErrorBoundary', () => ({
   default: ({ children }) => <div>{children}</div>,
@@ -66,13 +69,13 @@ describe('App', () => {
 
   it('renders without crashing', () => {
     vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
-    render(<App />);
+    renderWithProviders(<App />);
     expect(screen.getByTestId('protected-layout')).toBeTruthy();
   });
 
   it('does not render toast when toast.show is false', () => {
     vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
-    render(<App />);
+    renderWithProviders(<App />);
     expect(screen.queryByText(/toast/i)).toBeNull();
   });
 
@@ -80,7 +83,7 @@ describe('App', () => {
     vi.mocked(useApp).mockReturnValue({
       toast: { show: true, message: 'Operation successful', type: 'success' },
     });
-    render(<App />);
+    renderWithProviders(<App />);
     expect(screen.getByText('Operation successful')).toBeTruthy();
   });
 
@@ -88,7 +91,7 @@ describe('App', () => {
     vi.mocked(useApp).mockReturnValue({
       toast: { show: true, message: 'Something went wrong', type: 'rose' },
     });
-    render(<App />);
+    renderWithProviders(<App />);
     expect(screen.getByText('Something went wrong')).toBeTruthy();
   });
 
@@ -96,13 +99,13 @@ describe('App', () => {
     vi.mocked(useApp).mockReturnValue({
       toast: { show: true, message: 'Error occurred', type: 'error' },
     });
-    render(<App />);
+    renderWithProviders(<App />);
     expect(screen.getByText('Error occurred')).toBeTruthy();
   });
 
   it('contains the Navigate to /challenges as a protected route', () => {
     vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
-    render(<App />);
+    renderWithProviders(<App />);
     const navigates = screen.getAllByTestId('navigate');
     expect(navigates.some((n) => n.textContent === '/challenges')).toBe(true);
   });

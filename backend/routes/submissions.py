@@ -13,11 +13,19 @@ from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import cache_lock, get_redis_client, invalidate_leaderboard_cache
+from cache_utils import (
+    cache_lock,
+    get_coordination_client,
+    get_queue_depth,
+    invalidate_leaderboard_cache,
+    submission_logs_key,
+)
+from config import Config
 from error_utils import err
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     ErrorResponse,
+    MessageResponse,
     ParseNotebookResponse,
     SelectFinalResponse,
     SubmissionResponse,
@@ -30,9 +38,14 @@ from services.submission_service import check_execution_rules
 from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
+    clear_submission_logs,
     publish_leaderboard_update,
+    publish_queue_update,
+    publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
+    sse_heartbeat,
+    submission_logs_channel,
 )
 from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
@@ -137,12 +150,13 @@ def submit_code(
 
     task = db.session.get(Task, task_id)
 
+    if task and task.build_error:
+        return err("ERR_TASK_BUILD_ERROR", 400)
+
     if user_role == "competitor":
         from datetime import timedelta
 
         now = utcnow()
-        from config import Config
-
         grace_seconds = Config.DEADLINE_GRACE_PERIOD_SECONDS
 
         if task and task.stage_id:
@@ -179,6 +193,12 @@ def submit_code(
 
     # Atomic rate-limited submission creation via Redis lock
 
+    gpu_required = False
+    if task.gpu_required is not None:
+        gpu_required = task.gpu_required
+    elif challenge.gpu_required is not None:
+        gpu_required = challenge.gpu_required
+
     lock_key = f"submit_lock:user_{user_id}:challenge_{challenge_id}"
 
     with cache_lock(lock_key, ttl=10) as acquired:
@@ -186,10 +206,12 @@ def submit_code(
             return err("ERR_SUBMIT_LOCKED", 429)
 
         today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge_id,
             Submission.created_at >= today_start,
+            Submission.status != "failed",
         ).count()
 
         if submission_count >= challenge.max_eval_requests:
@@ -198,6 +220,17 @@ def submit_code(
                 429,
                 message=(
                     f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
+                ),
+            )
+
+        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+            return err(
+                "ERR_QUEUE_FULL",
+                429,
+                message=(
+                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                    "Please try again later."
                 ),
             )
 
@@ -223,12 +256,6 @@ def submit_code(
 
     task.get_hf_api_key() or ""
 
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
     metadata = build_submission_metadata(
         task,
         challenge,
@@ -247,6 +274,7 @@ def submit_code(
             priority=priority,
             queue=queue_name,
             countdown=1,
+            expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
         )
         if result is not None:
@@ -424,21 +452,16 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
                 if now > t_final_select:
                     return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
-    # Atomically set final selection: lock all submissions for this user+task
-    locked_subs = (
-        Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id)
-        .with_for_update()
-        .all()
-    )
-
-    for s in locked_subs:
-        s.is_final_selection = s.id == submission.id
+    Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id).filter(
+        Submission.id != submission.id
+    ).update({"is_final_selection": False}, synchronize_session=False)
+    submission.is_final_selection = True
     db.session.commit()
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
-    publish_submissions_update(submission.task_id, submission.user_id)
-    publish_leaderboard_update(submission.task_id, submission.challenge_id)
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_leaderboard_update(submission.challenge_id)
 
     return SelectFinalResponse(
         message="Submission selected as final.",
@@ -446,6 +469,58 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
             **submission.to_dict(view_role=user_role, current_user_id=user_id)
         ),
     )
+
+
+@submissions_bp.route("/submissions/<uuid:submission_id>/kill", methods=["POST"])
+@login_required
+@api.validate(
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+    resp=Response(
+        HTTP_200=MessageResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+)
+def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
+    """Kill a queued or running submission. Admins/jury can kill any;
+    competitors can only kill their own."""
+    user_id = request.user["user_id"]
+    user_role = request.user["role"]
+
+    submission = db.session.get(Submission, submission_id)
+    if not submission:
+        return err("ERR_NOT_FOUND", 404)
+
+    if user_role == "competitor" and submission.user_id != user_id:
+        return err("ERR_SUBMISSION_KILL_DENIED", 403)
+
+    if submission.status not in ("queued", "running"):
+        return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
+
+    # Revoke Celery task if present
+    if submission.celery_task_id:
+        with contextlib.suppress(Exception):
+            from tasks import celery
+
+            celery.control.revoke(submission.celery_task_id, terminate=True)
+
+    submission.status = "failed"
+    submission.detailed_status = "killed"
+
+    log_line = f"[{utcnow().isoformat()}] Submission killed by {user_role} ({user_id})"
+    existing_logs = submission.logs or ""
+    submission.logs = f"{existing_logs}\n{log_line}".strip()
+
+    db.session.commit()
+
+    publish_submissions_update(submission.task_id, submission.challenge_id)
+    publish_queue_update()
+    publish_submission_status(submission.id, "failed")
+    clear_submission_logs(submission.id)
+
+    return MessageResponse(message="Submission killed successfully.")
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
@@ -488,18 +563,22 @@ def stream_submission_logs(
 
     def event_generator():
         user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as allowed:
+        with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                yield f"data: {json.dumps({'error': 'too many connections'})}\n\n"
+                sse_error_payload = {
+                    "error": "too many connections",
+                    "code": "ERR_SSE_SOCKET_LIMIT",
+                }
+                yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
-            r = get_redis_client()
+            r = get_coordination_client()
 
             yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
             if r:
                 try:
-                    log_key = f"submission:{submission_id}:logs"
+                    log_key = submission_logs_key(submission_id)
                     existing_logs = r.lrange(log_key, 0, -1)
                     if existing_logs:
                         for log_bin in existing_logs:
@@ -531,7 +610,7 @@ def stream_submission_logs(
             if r:
                 try:
                     pubsub = r.pubsub()
-                    pubsub.subscribe(f"submission_{submission_id}_logs")
+                    pubsub.subscribe(submission_logs_channel(submission_id))
                 except Exception:
                     r = None
 
@@ -541,6 +620,9 @@ def stream_submission_logs(
                 last_db_check = time.time()
                 try:
                     while True:
+                        if member and not sse_heartbeat(member, user_id):
+                            yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
+                            break
                         if time.time() - start_time > SSE_IDLE_TIMEOUT:
                             yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                             break

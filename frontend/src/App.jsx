@@ -1,6 +1,9 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AppProvider, useApp } from './context/AppContext';
+import { useApp } from './context/AppContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { NotificationsProvider } from './context/NotificationsContext';
+import { ChallengesProvider } from './context/ChallengesContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedLayout from './components/layout/ProtectedLayout';
 import Login from './pages/Login';
@@ -37,55 +40,58 @@ function ToastContainer() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <BrowserRouter>
-        <ErrorBoundary>
-          <Routes>
-            {/* Protected Routes */}
-            <Route element={<ProtectedLayout />}>
-              <Route path="/" element={<Navigate to="/challenges" replace />} />
-              <Route path="/challenges" element={<Home />} />
-              <Route path="/challenges/:challengeId" element={<Home />} />
-              <Route path="/leaderboard" element={<LeaderboardView />} />
-              <Route path="/challenges/:challengeId/leaderboard" element={<LeaderboardView />} />
-              <Route
-                path="/submissions"
-                element={
-                  <Suspense fallback={<LoadingFallback />}>
-                    <SubmissionsView />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/challenges/:challengeId/submissions"
-                element={
-                  <Suspense fallback={<LoadingFallback />}>
-                    <SubmissionsView />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/admin"
-                element={
-                  <Suspense fallback={<LoadingFallback />}>
-                    <AdminPanel />
-                  </Suspense>
-                }
-              />
-            </Route>
+    <ThemeProvider>
+      <NotificationsProvider>
+        <ChallengesProvider>
+          <BrowserRouter>
+            <ErrorBoundary>
+              <Routes>
+                <Route element={<ProtectedLayout />}>
+                  <Route path="/" element={<Navigate to="/challenges" replace />} />
+                  <Route path="/challenges" element={<Home />} />
+                  <Route path="/challenges/:challengeId" element={<Home />} />
+                  <Route path="/leaderboard" element={<LeaderboardView />} />
+                  <Route
+                    path="/challenges/:challengeId/leaderboard"
+                    element={<LeaderboardView />}
+                  />
+                  <Route
+                    path="/submissions"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <SubmissionsView />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/challenges/:challengeId/submissions"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <SubmissionsView />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <AdminPanel />
+                      </Suspense>
+                    }
+                  />
+                </Route>
 
-            {/* Public Login Route */}
-            <Route path="/login" element={<Login />} />
+                <Route path="/login" element={<Login />} />
 
-            {/* Demo */}
-            <Route path="/demo/leaderboard" element={<LeaderboardDemo />} />
+                <Route path="/demo/leaderboard" element={<LeaderboardDemo />} />
 
-            {/* Fallback Catch-all Route */}
-            <Route path="*" element={<Navigate to="/challenges" replace />} />
-          </Routes>
-        </ErrorBoundary>
-        <ToastContainer />
-      </BrowserRouter>
-    </AppProvider>
+                <Route path="*" element={<Navigate to="/challenges" replace />} />
+              </Routes>
+            </ErrorBoundary>
+            <ToastContainer />
+          </BrowserRouter>
+        </ChallengesProvider>
+      </NotificationsProvider>
+    </ThemeProvider>
   );
 }

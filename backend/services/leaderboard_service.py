@@ -63,7 +63,7 @@ def build_and_cache_leaderboard(
                             task_lower = True
                             break
                 except Exception as e:
-                    logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
+                    logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
             task_metrics[task.id] = task_lower
 
         challenge_finalized = challenge.scores_finalized
@@ -214,7 +214,9 @@ def build_and_cache_leaderboard(
                     try:
                         manual_points_dict = json.loads(comp.manual_points)
                     except Exception as e:
-                        logger.warning("Failed to parse manual_points for user %s: %s", comp.id, e)
+                        logger.exception(
+                            "Failed to parse manual_points for user %s: %s", comp.id, e
+                        )
                         manual_points_dict = {}
 
             total_points = sum(manual_points_dict.get(str(t.id), 0) for t in tasks)
@@ -437,9 +439,8 @@ def get_task_leaderboard_data(
                     m_info.get("higher_is_better") is False or is_metric_lower_better(m_name)
                 ):
                     is_lower_better = True
-                break
         except Exception as e:
-            logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
+            logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
 
     competitors = User.query.filter_by(role="competitor", challenge_id=task.challenge_id).all()
     challenge_cache = {challenge.id: challenge}
@@ -591,7 +592,7 @@ def get_task_leaderboard_data(
                     metric_name = m_name.replace("_", " ").title()
                     is_normalized = is_metric_lower_better(m_name)
         except Exception as e:
-            logger.warning("Failed to parse metrics_config for task %s: %s", task.id, e)
+            logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
 
     return {
         "challenge_title": challenge.title,

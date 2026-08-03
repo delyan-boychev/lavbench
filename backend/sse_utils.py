@@ -15,7 +15,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from cache_utils import get_redis_client
+from cache_utils import get_coordination_client, submission_logs_key
 from config import Config
 from models.base import uuid7
 
@@ -28,9 +28,27 @@ SSE_IDLE_TIMEOUT = Config.SSE_IDLE_TIMEOUT
 _CONNECTIONS_KEY = "sse:connections"
 _STALE_TTL = 120
 
+CHANNEL_TASK_REBUILD = "task_rebuild"
+CHANNEL_BACKUPS = "backup_status"
+CHANNEL_WORKER_STATS = "worker_stats_update"
+CHANNEL_QUEUE = "queue_updates"
+CHANNEL_WORKER_STATUS = "worker_status_live"
+
+
+def leaderboard_channel(challenge_id: Any) -> str:
+    return f"leaderboard_{challenge_id}"
+
+
+def submissions_channel(task_id: Any, challenge_id: Any) -> str:
+    return f"task_{task_id}_challenge_{challenge_id}_submissions"
+
+
+def submission_logs_channel(submission_id: Any) -> str:
+    return f"submission_{submission_id}_logs"
+
 
 def _redis() -> Any:
-    return get_redis_client()
+    return get_coordination_client()
 
 
 def _member_for(user_id: Any = None) -> tuple[str, str | None]:
@@ -58,18 +76,19 @@ def sse_connection_limit(
     remote_addr: Any = None,
     max_global: int | None = None,
     max_per_user: int | None = None,
-) -> Generator[bool, None, None]:
+) -> Generator[tuple[bool, str], None, None]:
     """Context manager that caps concurrent SSE connections via Redis Sorted Sets.
 
     New connections are **always** allowed. If the per-user or global limit
     is exceeded, the **oldest** connection in that set is dropped instead.
     Stale connections (no heartbeat for 120s) are pruned on every check.
 
-    Yields ``True`` always — the caller does not need to handle rejection.
+    Yields ``(allowed, member)`` — ``allowed`` is always True. The caller
+    should check ``zscore(member)`` inside polling loops to detect eviction.
     """
-    r = get_redis_client()
+    r = _redis()
     if not r:
-        yield True
+        yield True, ""
         return
 
     member, user_key = _member_for(user_id)
@@ -88,10 +107,10 @@ def sse_connection_limit(
             _cleanup_stale(r, user_key)
             _trim_oldest(r, user_key, effective_max_per_user)
 
-        yield True
+        yield True, member
     except Exception:
         logger.warning("SSE connection limit check failed (allowing):", exc_info=True)
-        yield True
+        yield True, ""
     finally:
         try:
             r.zrem(_CONNECTIONS_KEY, member)
@@ -101,39 +120,60 @@ def sse_connection_limit(
             logger.warning("SSE connection cleanup failed:", exc_info=True)
 
 
-def publish_leaderboard_update(task_id: Any, challenge_id: Any = None) -> None:
-    """Publish a leaderboard-changed event to Redis channels for SSE consumers."""
-    if not task_id:
-        return
+def sse_heartbeat(member: str, user_id: Any = None) -> bool:
+    """Refresh a live SSE member's timestamp in the connection zsets.
+
+    Returns False when the member has been evicted/trimmed and the
+    stream should terminate, True otherwise (including Redis failures).
+    """
+    if not member:
+        return True
     try:
         r = _redis()
-        if r:
-            r.publish(f"task_{task_id}_leaderboard", json.dumps({"event": "update"}))
-            if challenge_id:
-                r.publish(
-                    f"challenge_{challenge_id}_leaderboard",
-                    json.dumps({"event": "update"}),
-                )
+        if not r:
+            return True
+        now = time.time()
+        if r.zscore(_CONNECTIONS_KEY, member) is None:
+            return False
+        r.zadd(_CONNECTIONS_KEY, {member: now})
+        if user_id is not None:
+            r.zadd(f"sse:user:{user_id}", {member: now})
+        return True
     except Exception:
-        logger.exception("Redis publish leaderboard update error for task %s", task_id)
+        return True
 
 
-def publish_submissions_update(task_id: Any, user_id: Any) -> None:
-    """Publish a submission-list-changed event for a specific task+user."""
-    if not task_id or not user_id:
+def publish_leaderboard_update(challenge_id: Any) -> None:
+    """Publish a leaderboard-changed event to the challenge-level Redis channel for SSE."""
+    if not challenge_id:
         return
     try:
         r = _redis()
         if r:
             r.publish(
-                f"task_{task_id}_user_{user_id}_submissions",
+                leaderboard_channel(challenge_id),
+                json.dumps({"event": "update"}),
+            )
+    except Exception:
+        logger.exception("Redis publish leaderboard update error for challenge %s", challenge_id)
+
+
+def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
+    """Publish a submission-list-changed event to the challenge-level Redis channel."""
+    if not task_id or not challenge_id:
+        return
+    try:
+        r = _redis()
+        if r:
+            r.publish(
+                submissions_channel(task_id, challenge_id),
                 json.dumps({"event": "update"}),
             )
     except Exception:
         logger.exception(
-            "Redis publish submissions update error for task %s user %s",
+            "Redis publish submissions update error for task %s challenge %s",
             task_id,
-            user_id,
+            challenge_id,
         )
 
 
@@ -144,11 +184,11 @@ def publish_submission_log(submission_id: Any, log_line: str) -> None:
     try:
         r = _redis()
         if r:
-            log_key = f"submission:{submission_id}:logs"
+            log_key = submission_logs_key(submission_id)
             r.rpush(log_key, log_line)
             r.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
             r.expire(log_key, Config.SSE_LOG_TTL)
-            r.publish(f"submission_{submission_id}_logs", json.dumps({"log": log_line}))
+            r.publish(submission_logs_channel(submission_id), json.dumps({"log": log_line}))
     except Exception:
         logger.exception("Redis publish submission log error for submission %s", submission_id)
 
@@ -160,7 +200,7 @@ def clear_submission_logs(submission_id: Any) -> None:
     try:
         r = _redis()
         if r:
-            r.delete(f"submission:{submission_id}:logs")
+            r.delete(submission_logs_key(submission_id))
     except Exception:
         logger.exception("Redis clear submission logs error for submission %s", submission_id)
 
@@ -172,6 +212,16 @@ def publish_submission_status(submission_id: Any, status: str) -> None:
     try:
         r = _redis()
         if r:
-            r.publish(f"submission_{submission_id}_logs", json.dumps({"status": status}))
+            r.publish(submission_logs_channel(submission_id), json.dumps({"status": status}))
     except Exception:
         logger.exception("Redis publish submission status error for submission %s", submission_id)
+
+
+def publish_queue_update() -> None:
+    """Notify queue listeners that the submission queue may have changed."""
+    try:
+        r = _redis()
+        if r:
+            r.publish(CHANNEL_QUEUE, json.dumps({"event": "update"}))
+    except Exception:
+        logger.exception("Redis publish queue update error")

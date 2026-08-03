@@ -19,7 +19,7 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
 
 
 def generate_scores_csv(challenge: Challenge) -> str:
@@ -157,8 +157,15 @@ def generate_exported_results_csv(challenge: Challenge, view_role: str = "admin"
 
     task_ids = [t.id for t in tasks]
     if task_ids:
+        from sqlalchemy.orm import joinedload
+
         audit_logs = (
             AuditLog.query.filter(AuditLog.task_id.in_(task_ids))
+            .options(
+                joinedload(AuditLog.admin),
+                joinedload(AuditLog.target_user),
+                joinedload(AuditLog.task),
+            )
             .order_by(AuditLog.timestamp.asc())
             .all()
         )
@@ -384,7 +391,7 @@ def import_challenge_from_dict(
             submission_period_hours=t_data.get("submission_period_hours"),
         )
         if t_data.get("hf_api_key"):
-            task.hf_api_key = t_data.get("hf_api_key")
+            task.set_hf_api_key(t_data.get("hf_api_key"))
 
         db.session.add(task)
         db.session.flush()
@@ -458,12 +465,14 @@ def import_challenge_from_dict(
                     base_path = os.path.join(task_dir, secure_filename(base_base))
                     if os.path.isfile(base_path):
                         task.baseline_notebook_path = base_path
+                        task.baseline_notebook_size = os.path.getsize(base_path)
 
                 if t_data.get("solution_notebook_path"):
                     sol_base = os.path.basename(t_data["solution_notebook_path"])
                     sol_path = os.path.join(task_dir, secure_filename(sol_base))
                     if os.path.isfile(sol_path):
                         task.solution_notebook_path = sol_path
+                        task.solution_notebook_size = os.path.getsize(sol_path)
 
     db.session.commit()
     return challenge

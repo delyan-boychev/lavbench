@@ -57,6 +57,21 @@ class SubmissionsListResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
+class QueueItemResponse(BaseModel):
+    id: UUID
+    status: str
+    detailed_status: str | None = None
+    user_id: UUID
+    user_alias: str | None = None
+    task_id: UUID | None = None
+    task_title: str | None = None
+    challenge_id: UUID
+    created_at: str | None = None
+    celery_task_id: str | None = None
+
+    model_config = RESPONSE_CONFIG
+
+
 class SelectFinalResponse(BaseModel):
     message: str
     submission: SubmissionResponse

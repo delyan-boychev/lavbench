@@ -104,6 +104,7 @@ vi.mock('lucide-react', () => ({
   Zap: () => <span data-testid="icon-zap" />,
   ChevronDown: () => <span data-testid="icon-chevron-down" />,
   Check: () => <span data-testid="icon-check" />,
+  AlertTriangle: () => <span data-testid="icon-alert-triangle" />,
 }));
 
 describe('TaskForm', () => {
@@ -379,6 +380,16 @@ describe('TaskForm', () => {
       fireEvent.click(screen.getByText('Environment'));
       expect(screen.getByText('HF API Key Token (Securely Encrypted)')).toBeInTheDocument();
     });
+
+    it('shows build error banner when build_error is set', () => {
+      const propsWithError = {
+        taskForm: { ...defaultTaskForm, build_error: 'Docker pull failed: 404' },
+      };
+      renderTaskForm(propsWithError);
+      fireEvent.click(screen.getByText('Environment'));
+      expect(screen.getByText('Build Error')).toBeInTheDocument();
+      expect(screen.getByText('Docker pull failed: 404')).toBeInTheDocument();
+    });
   });
 
   describe('Files Tab', () => {
@@ -506,13 +517,11 @@ describe('TaskForm', () => {
       expect(screen.getByText('Save Changes')).toBeInTheDocument();
     });
 
-    it('cancel button resets editing state', () => {
-      const setIsCreatingTask = vi.fn();
-      const setEditingTask = vi.fn();
-      renderTaskForm({ setIsCreatingTask, setEditingTask, isCreatingTask: true });
+    it('cancel button calls onClose', () => {
+      const onClose = vi.fn();
+      renderTaskForm({ onClose, isCreatingTask: true });
       fireEvent.click(screen.getByText('Cancel'));
-      expect(setIsCreatingTask).toHaveBeenCalledWith(false);
-      expect(setEditingTask).toHaveBeenCalledWith(null);
+      expect(onClose).toHaveBeenCalledOnce();
     });
   });
 });

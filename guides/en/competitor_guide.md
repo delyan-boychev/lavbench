@@ -1,249 +1,243 @@
-# Competitor Guide
+# Competitor Complete Guide
 
-Welcome to the LavBench Platform! This guide walks you through everything you need to compete — from logging in to submitting your final notebook.
+Welcome to the LavBench Platform! This guide walks you through everything you need to compete — from logging in to navigating competition stages, submitting Jupyter notebooks, monitoring real-time execution logs, and marking your final selected submission.
 
 ---
 
-## 1. Getting Started
+## Table of Contents
+
+1. [Getting Started and Interface Navigation](#1-getting-started-and-interface-navigation)
+2. [Stage and Task Overview](#2-stage-and-task-overview)
+3. [Baseline Notebooks and Output Schema](#3-baseline-notebooks-and-output-schema)
+4. [Notebook Submission Workflow and AST Pre-Validation](#4-notebook-submission-workflow-and-ast-pre-validation)
+5. [Submission Pipeline and Live Streaming Logs](#5-submission-pipeline-and-live-streaming-logs)
+6. [Leaderboard, Double-Blind Privacy and Final Selection](#6-leaderboard-double-blind-privacy-and-final-selection)
+7. [Troubleshooting and Error Matrix](#7-troubleshooting-and-error-matrix)
+
+---
+
+## 1. Getting Started and Interface Navigation
 
 ### Logging In
 
-1. Open the LavBench web app in your browser
-2. Enter the username and password provided by your competition organizer
-3. After logging in, you'll see the main dashboard with tabs in the competition bar: **Challenge**, **Leaderboard**, and **Submissions**
+1. Open the LavBench web application in your browser.
+2. Enter the account username and password provided by your competition organizer or jury.
+3. Upon authentication, you will be redirected to the main competition dashboard.
 
 ### The Competition Bar
 
-Below the navbar, you'll find a bar with:
+The top competition bar provides primary navigation across competition sections:
 
-- **Competition selector** — shows which competition you're registered for. If it says "No competition", contact your organizer
-- **Navigation tabs** — Challenge (tasks and submission), Leaderboard (rankings), Submissions (your submission history)
+- **Competition Selector**: Displays your assigned competition.
+- **Stage Selector Bar**: Switch between multi-stage phases (e.g., *Qualification*, *Finals*).
+- **Navigation Tabs**:
+  - **Challenge**: View stage task descriptions, dataset assets, baseline notebooks, and submission upload controls.
+  - **Leaderboard**: View anonymized scores, ranking, and task breakdowns.
+  - **Submissions**: Track your submission history, execution logs, and final selection stars.
 
 ### The Countdown Timer
 
-In the navbar, a timer shows how much time is left in the current competition or stage. When it turns:
+The countdown timer in the navbar displays remaining competition or stage time:
 
-- **Green** — plenty of time remaining (>30 minutes)
-- **Yellow** — getting close (≤30 minutes)
-- **Red** — almost over (≤15 minutes)
-- **Flashing Red** — final minutes (≤5 minutes)
-- **Orange** — grace period active (last-second submissions still accepted)
+| Timer Color State | Remaining Time / Status | Behavior & Guidelines |
+| :--- | :--- | :--- |
+| **Green** | > 30 minutes | Competition phase actively open; plenty of remaining execution window. |
+| **Yellow** | 15 to 30 minutes | Closing phase approaching; finish model training and test inference scripts. |
+| **Red** | ≤ 15 minutes | Final submission window; submit candidate notebooks. |
+| **Flashing Red** | ≤ 5 minutes | Deadline imminent; upload final notebooks immediately. |
+| **Orange** | **Grace Period Active** | Official deadline passed. Last-second pending submissions accepted during buffer. |
 
-### Finding Your Task
-
-1. Click the **Challenge** tab in the competition bar
-2. The left sidebar lists all available tasks. If the list is empty, the competition hasn't started yet
-3. Click a task to see its description, rules, and attached files
-
----
-
-## 2. Understanding Your Task
-
-Each task shows:
-
-- **Title and Description** — explains the ML problem you need to solve
-- **Rules & Configuration** — resource limits (RAM, time, GPU), banned imports, and rate limits
-- **Files** — downloadable datasets and helper files. Click the **Download** button next to any file and save it locally
-
-### Key Files
-
-- **Dataset files** (`.csv`, `.parquet`, `.json`) — the test set you'll run inference on with your model
-- **Helper files** (`.py`, `.pkl`) — pre-trained models or utility code provided by the organizer
-- **Labels.parquet is NOT provided** — this file contains the ground truth (labels) and stays on the server. Your code will be automatically evaluated against it
-
-### Checking Your Limits
-
-Look at the "Execution Rules" section to see:
-
-- **RAM Limit** — maximum memory your code can use
-- **Time Limit** — maximum runtime in seconds
-- **GPU Required** — whether your code will run on a hardware accelerator or CPU
-- **Banned Imports** — libraries you cannot use (if any)
-- **Daily Submissions** — how many times you can submit per day
-- **Task Rate Limit** — some tasks have per-hour submission limits
+> [!WARNING]
+> Once the Grace Period buffer expires, the submission pipeline closes completely and incoming notebook uploads will be rejected.
 
 ---
 
-## 3. How Evaluation Works
+## 2. Stage and Task Overview
 
-Your code runs in a hardened Docker container (sandbox) with the datasets you downloaded. The sandbox is fully isolated: no network access, no Linux capabilities, no privilege escalation, and a read-only filesystem (only `/app/` and `/tmp/` are writable). The platform calculates your metrics by **comparing the file with your predictions against the hidden ground truth file**.
+### Stage Selector Navigation
 
-### What You Need to Do
+Competitions on LavBench can feature multiple stages (e.g., *Stage 1 - Feature Engineering*, *Stage 2 - Fine-Tuning*). 
+- Use the **Stage Selector** tab bar on the **Challenge** page to navigate between active stages.
+- Each stage exposes its own start/end countdown deadlines and assigned machine learning tasks.
 
-1. Read the task description to understand the target variable
-2. Download the task files (datasets) **and the baseline notebook** to your computer
-3. The baseline notebook contains starter code, including the cell that creates and saves `submission.parquet`. **Build your model around this cell — do not modify it**
-4. Upload your completed notebook and select all cells containing your code
+### Task Specifications and Rules
 
-### The Output File: `submission.parquet`
+Clicking a task displays full details:
+- **Problem Description & Rules**: Target objectives, input formats, evaluation metric weighting.
+- **Resource Allocations**: Container memory cap (RAM), wall-clock time limit, GPU hardware accelerator requirement, CPU core allocation.
+- **Security & Import Rules**: Banned modules (e.g., `os, sys, subprocess, requests`) or strict whitelisted libraries.
+- **Submission Limits**: Maximum daily submissions per user and hourly task rate limits.
+- **Downloadable Assets**: Training/test datasets and starter baseline notebooks.
 
-Your code must create a file named exactly **`submission.parquet`** in the current working directory. This file must contain your predictions in a specific format.
+> [!NOTE]
+> `labels.parquet` contains hidden ground-truth target values and is strictly kept server-side inside evaluation nodes.
 
-### Required Columns
+---
 
-Your `submission.parquet` **must** include:
+## 3. Baseline Notebooks and Output Schema
 
-- An **`id`** column — integer IDs that match the test set rows
-- One or more **prediction columns** — your model's output (usually named `prediction`, `label`, or a name specified in the task description)
+### Baseline Notebook Usage
 
-The system calculates your score by comparing your `submission.parquet` against the hidden `labels.parquet` row by row, joining them on the `id` column.
+Each task includes an official **Baseline Notebook** downloadable directly from the task assets panel (`baseline_task_X.ipynb`).
 
-### Example — Binary Classification
+- The baseline notebook provides starter code for loading test data, initializing standard baselines, and building the required output format.
+- The cell generating `submission.parquet` is pre-configured with the exact required schema. **Do not modify the schema generation structure in this cell.**
 
+### Output File Schema (`submission.parquet`)
+
+Your submitted code must write a file named exactly **`submission.parquet`** into the current working directory.
+
+#### Required Columns:
+1. **`id`**: Integer identifiers exactly matching row order and keys of the test dataset.
+2. **Prediction Column(s)**: Model predictions matching target column names specified in task details (e.g., `prediction`, `label`, class probabilities).
+
+### Python Schema Code Examples
+
+#### Single Target Classification / Regression:
 ```python
 import pandas as pd
 
-# 1. Load the test set (from the files you downloaded)
-test_data = pd.read_csv("test.csv")
+# Load test dataset
+test_df = pd.read_csv("test.csv")
 
-# 2. Inference: your model generates predictions
-predictions = my_model.predict(test_data)
+# Run inference with your trained model
+predictions = model.predict(test_df)
 
-# 3. Save as submission.parquet
+# Construct submission DataFrame
 submission = pd.DataFrame({
-    "id": test_data["id"],
+    "id": test_df["id"],
     "prediction": predictions
 })
+
+# Save to parquet (must disable index)
 submission.to_parquet("submission.parquet", index=False)
 ```
 
-### Example — Multi-Column Output
-
-If your task requires multiple prediction columns (e.g., class probabilities):
-
+#### Multi-Column / Probabilistic Output:
 ```python
+# Multi-class probability predictions
+prob_scores = model.predict_proba(test_df)
+
 submission = pd.DataFrame({
-    "id": test_ids,
-    "score": probability_scores,
-    "class": predicted_classes
+    "id": test_df["id"],
+    "prob_class_0": prob_scores[:, 0],
+    "prob_class_1": prob_scores[:, 1],
+    "prob_class_2": prob_scores[:, 2]
 })
+
 submission.to_parquet("submission.parquet", index=False)
 ```
 
-**Check your task description** for the exact column names and schema required by your specific task.
+---
+
+## 4. Notebook Submission Workflow and AST Pre-Validation
+
+### Step-by-Step Submission Process
+
+1. Download task datasets and the starter baseline notebook.
+2. Develop your ML pipeline locally or in your Jupyter environment.
+3. Click **Upload Notebook** in the **Challenge** view and select your `.ipynb` file (max 5 MB).
+4. **Cell Selection Workflow**:
+   - The cell parser modal lists all code cells detected in your notebook.
+   - Check the selection boxes next to the cells required for model execution and `submission.parquet` export.
+   - Omit exploratory visualization cells, print statements, or unneeded training scratchpad cells.
+5. Click **Submit Selected Cells**.
+
+```
+[ Upload .ipynb ] ➔ [ Parse Cells ] ➔ [ Select Code Cells ] ➔ [ AST Check ] ➔ [ Queue Job ]
+```
+
+### AST Pre-Validation & Quota Preservation
+
+Before your code is dispatched to execution workers, it undergoes server-side Static Application Security Testing (AST):
+
+- **IPython Magic Stripping**: Shell commands (`!pip install`, `%matplotlib inline`, `%timeit`) are automatically stripped.
+- **Security Inspection**: Validates syntax and checks against `banned_imports` or `whitelisted_imports`.
+
+> [!IMPORTANT]
+> **Quota Preservation**: If a submission fails AST pre-validation (e.g., syntax error or forbidden import), the upload is rejected immediately with error feedback, and **your daily/hourly submission quota is NOT consumed**.
 
 ---
 
-## 4. Submitting Your Notebook
+## 5. Submission Pipeline and Live Streaming Logs
 
-### What to Include
+### Submission Status Lifecycle
 
-Your Jupyter notebook should contain:
+Track your submission progress on the **Submissions** tab:
 
-- All necessary dependencies (pandas, scikit-learn, torch, etc.)
-- Your model definition and training loop **OR** code that loads pre-trained model weights
-- The code that generates and saves `submission.parquet` (**must come from the baseline notebook — do not change this cell to maintain the correct schema**)
+```
+┌──────────┐     ┌──────────┐     ┌────────────┐     ┌───────────┐
+│  Queued  │ ──► │  Running │ ──► │ Evaluating │ ──► │ Completed │
+└──────────┘     └──────────┘     └────────────┘     └───────────┘
+                                                           │
+                                                           ▼
+                                                     ┌───────────┐
+                                                     │  Failed   │
+                                                     └───────────┘
+```
 
-### What NOT to Include
+| Status | Meaning |
+| :--- | :--- |
+| **Queued** | Job waiting for an available evaluation worker node slot. |
+| **Running** | Code executing inside the isolated Docker sandbox environment. |
+| **Evaluating** | `submission.parquet` generated; server evaluating public & private metrics against ground-truth labels. |
+| **Completed** | Pipeline finished successfully; public score calculated and displayed. |
+| **Failed** | Execution error or missing output; click entry to inspect full log traceback. |
 
-- **Exploratory Data Analysis (EDA) cells** — charts, print statements, head() calls
-- **pip install commands** — the Docker environment already has the required dependencies
-- **Large output tables** — keep notebooks under 5 MB
+### Live Streaming Logs
 
-### Step-by-Step
-
-1. **Download the files** for your task: datasets and the baseline notebook
-2. Open the baseline notebook and build your model code in new cells above or below the existing ones
-3. **Do not edit the cell that creates and saves `submission.parquet`** — the evaluation system depends on it producing the correct output schema
-4. Click **Upload Notebook** in the Challenge tab and select your `.ipynb` file
-5. The interface parses your notebook and shows all cells. **Check the boxes** next to all cells that contain your model code AND the `submission.parquet` output cell
-6. Review the selected cells — they will be concatenated and run as a single Python script (AST validation)
-7. Click **Submit**
-
-### File Requirements
-
-- Only `.ipynb` files are accepted
-- Maximum file size: **5 MB**
-- Supported cell types: code cells only (markdown cells are ignored)
-
-### Tracking Your Submission
-
-After submitting, check the **Submissions** tab for your status:
-
-| Status         | Meaning                                                                                       |
-| -------------- | --------------------------------------------------------------------------------------------- |
-| **Queued**     | Waiting for an available worker node                                                          |
-| **Running**    | Your code is executing in the isolated environment (sandbox)                                  |
-| **Evaluating** | Your `submission.parquet` metrics are being calculated against `labels.parquet`               |
-| **Completed**  | Evaluation finished — check your score on the leaderboard                                     |
-| **Failed**     | Something went wrong — click the submission to expand and read the full error log (traceback) |
-
-You can also see **live logs** by clicking on a running submission — the standard output (stdout/stderr) from your code streams in real-time.
+Click on any active (`Running` / `Evaluating`) or finished submission to open the log viewer:
+- Real-time stdout and stderr execution output streams directly from the Docker container.
+- Use live logs to monitor batch iteration progress, memory allocation warnings, and debugging prints.
 
 ---
 
-## 5. Understanding the Leaderboard
+## 6. Leaderboard, Double-Blind Privacy and Final Selection
 
-### Anonymity
+### Pseudonyms & Double-Blind Privacy
 
-During the competition, you see only **pseudonyms** (like `Quantum-Falcon-402`). Your real name is hidden from other competitors. Identities are de-anonymized for everyone only after the competition is finalized.
+- During active competitions, competitors appear on leaderboards under auto-generated pseudonyms (e.g., `Quantum-Falcon-402`).
+- Real competitor names and institutional affiliations remain hidden from peer competitors to maintain double-blind fairness.
+- Real identities are revealed on public leaderboards only after official competition **Finalization**.
 
-### Reading the Leaderboard
+### Public vs Private Scores
 
-- Each row shows a competitor's rank, alias, and scores per task
-- Click on a row to expand and see detailed scores per task
-- **Public Score** — calculated from the public split of the test set. Visible to all during the competition.
-- **Private Score** — calculated from the private split of the test set. Used for the final ranking and visible after finalization.
+- **Public Score**: Calculated on a subset split of test labels (`public_eval_percentage`). Visible on the live leaderboard during the competition.
+- **Private Score**: Calculated on the remaining hidden test split. Kept hidden until competition finalization and determines final official rankings.
 
-### Tie-Breaking
+### Star Icon Final Submission Selection (☆ ➔ ★)
 
-If two competitors have the same score:
+You can submit multiple solutions during a competition stage. To designate which completed submission should be evaluated for final private standings:
 
-1. The one with **faster execution time** (more efficient inference) ranks higher
-2. If execution times also match, the **earlier submission** wins
+1. Open the **Submissions** tab.
+2. Find your desired submission entry.
+3. Click the **Star Icon** (☆) next to the submission.
+4. The icon highlights to solid (★), marking it as your active **Final Selection**.
 
-### Selecting Your Final Submission
+> [!IMPORTANT]
+> **Automatic Default**: If you do not manually star a final submission before the selection window closes, the platform **automatically selects your latest completed submission** as your default final entry.
 
-You can submit multiple times. When you're satisfied with a result:
+### Tie-Breaking Rules
 
-1. Go to the **Submissions** tab
-2. Find your best submission
-3. Click the **star icon** (☆) to mark it as your **Final Selection**. This prevents overfitting to the public score.
-4. The star turns solid (★) — only this submission counts toward your final ranking.
-
-**Important**: Make your final selection before the window closes. The selection window ends shortly after the deadline — check the countdown timer. If you don't select a final submission, your last submission is used automatically.
-
----
-
-## 6. Rules and Restrictions
-
-### Banned Imports
-
-Some tasks restrict certain libraries (like `os`, `sys`, `subprocess`, `requests`) for security. These restrictions are **per-task** — not all tasks have the same rules. Check your task details to see what's banned.
-
-### Magic Commands
-
-Jupyter magic commands (`!pip install`, `%timeit`, `%matplotlib inline`) are **automatically stripped** before execution. You can leave them in your notebook, but they will have no effect inside the sandbox — do not rely on `!pip install` to add packages; all required libraries must already be in the Docker environment.
-
-### Submission Limits
-
-- **Daily limit**: Maximum submissions per calendar day across all tasks in your competition
-- **Task-specific limit**: Some tasks have per-hour rate limits (check task details)
-
-If you hit a limit, wait until the next day (or next window) and try again. Failed submissions that are rejected during the preliminary AST check (rule violations, banned imports) do NOT count toward your limit.
+When two competitors achieve identical score values:
+1. **Inference Wall-Clock Runtime**: The submission with the shorter execution runtime in the sandbox ranks higher.
+2. **Submission Timestamp**: If execution times are identical, the earlier submission timestamp wins.
 
 ---
 
-## 7. Troubleshooting
+## 7. Troubleshooting and Error Matrix
 
-If your submission fails, click on it in the **Submissions** tab to expand and read the full error log. Common issues:
+| Error Message / Failure State | Root Cause | Solution & Troubleshooting |
+| :--- | :--- | :--- |
+| `submission.parquet not found` | Notebook executed without error, but failed to create `submission.parquet` in root. | Ensure `submission.to_parquet("submission.parquet", index=False)` executes at the end of your selected cells. |
+| `Submission schema validation failed` | Output file exists but has incorrect columns, missing `id` column, or bad dtypes. | Compare your output DataFrame schema against task description specifications and baseline starter code. |
+| `TIMEOUT EXPIRED` | Wall-clock execution exceeded task time limit. | Optimize inference code, reduce batch overhead, or switch to lighter pre-trained backbone models. |
+| `Out of Memory (OOM)` | Memory footprint exceeded container RAM cap. | Free intermediate tensors, invoke `gc.collect()`, or process test data in smaller batches. |
+| `Banned import detected: module` | Code imported a restricted library (e.g., `os`, `subprocess`). | Remove forbidden module calls. Use standard scientific Python libraries (numpy, pandas, torch, scikit-learn). |
+| `ImportError: No module named 'X'` | Library requested is not pre-installed in container image. | Check task description for available image libraries. Package installation inside container is disabled (`--network none`). |
+| `AST Syntax Error / Parsing Error` | Selected notebook cells contain invalid Python syntax. | Verify notebook executes cleanly locally before uploading. |
+| `Submission quota exceeded` | Reached daily limit or hourly rate limit for task. | Wait for quota window reset before submitting additional notebooks. |
 
-| Error                                 | Likely Cause                                             | Fix                                                                                             |
-| ------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `submission.parquet not found`        | Your code didn't create the output file                  | Add `submission.to_parquet("submission.parquet")` at the end of your pipeline                   |
-| `Submission schema validation failed` | Missing `id` column or wrong format (dtype)              | Ensure your DataFrame has an `id` column with integer values                                    |
-| `TIMEOUT EXPIRED`                     | Your code ran longer than the time limit                 | Optimize your algorithm, use larger batch sizes for inference (if on GPU), or a lighter model   |
-| `Out of Memory (OOM)`                 | Your process exceeded the allocated RAM/VRAM             | Reduce batch sizes, free up memory (garbage collection), or use a quantized model               |
-| `ImportError: No module named 'X'`    | You're trying to import a library not in the environment | Check which libraries are available in the Docker environment according to the task description |
-| `Banned import detected: os`          | You imported a restricted library                        | Remove the import; the system uses a static analyzer to catch banned modules                    |
-| `AttributeError / ValueError`         | Bug in your code logic                                   | Read the full traceback in the logs; validate your pipeline locally before submitting           |
+---
 
-### The Grace Period
 
-After the official deadline, the countdown timer turns **orange** and shows a grace period. During this brief window, submissions are still accepted. Once the grace period expires, the submission pipeline closes — plan to submit your solutions well before the deadline to avoid issues with long inference times at the last minute.
-
-### Need Help?
-
-- Check the task description for the expected schema of the output file and column definitions.
-- Review the error log — it contains the full Python traceback.
-- If you have a system issue, contact the jury.

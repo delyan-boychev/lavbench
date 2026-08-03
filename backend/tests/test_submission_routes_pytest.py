@@ -466,6 +466,16 @@ class TestSubmitCode:
         assert "submission_id" in body
         assert body["status"] == "queued"
 
+    @patch("routes.submissions.get_queue_depth", return_value=999)
+    def test_submit_rejected_when_queue_full(self, mock_depth):
+        resp = self.client.post(
+            f"/api/challenges/{self.challenge.id}/submit",
+            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 429
+        assert resp.get_json()["code"] == "ERR_QUEUE_FULL"
+
     def test_not_registered_competitor(self):
         other = User(
             username="other_submit",
@@ -687,6 +697,17 @@ class TestSubmitCode:
         assert resp.status_code == 503
         body = resp.get_json()
         assert "submission_id" in body
+
+    def test_submit_blocked_by_build_error(self):
+        self.task.build_error = "Docker image not found"
+        db.session.flush()
+        resp = self.client.post(
+            f"/api/challenges/{self.challenge.id}/submit",
+            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_TASK_BUILD_ERROR"
 
 
 class TestGetSubmissions:

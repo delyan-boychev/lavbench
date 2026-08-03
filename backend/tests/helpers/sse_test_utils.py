@@ -10,6 +10,7 @@ class _FakeRedis:
         self._data: dict[str, Any] = {}
         self._sorted_sets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[Any]] = {}
+        self.published_messages: list[tuple[str, str]] = []
 
     # ── Generic key-value ─────────────────────────────────────────────
 
@@ -100,6 +101,9 @@ class _FakeRedis:
             return [(m, s) for m, s in chunk]
         return [m for m, _ in chunk]
 
+    def zscore(self, key: str, member: str) -> float | None:
+        return self._sorted_sets.get(key, {}).get(member)
+
     def zremrangebyscore(self, key: str, _min: float | str, _max: float | str) -> int:
         ss = self._sorted_sets.get(key)
         if not ss:
@@ -127,12 +131,35 @@ class _FakeRedis:
     # ── Pub/Sub ───────────────────────────────────────────────────────
 
     def publish(self, channel: str, message: str) -> int:
+        self.published_messages.append((channel, message))
         return 1
+
+    def pubsub(self) -> _FakePubSub:
+        return _FakePubSub()
 
     # ── Pipeline ──────────────────────────────────────────────────────
 
     def pipeline(self) -> _FakePipeline:
         return _FakePipeline(self)
+
+
+class _FakePubSub:
+    def __init__(self) -> None:
+        self._channels: list[str] = []
+
+    def subscribe(self, *channels: str) -> None:
+        self._channels.extend(channels)
+
+    def get_message(
+        self, ignore_subscribe_messages: bool = True, timeout: float | None = None
+    ) -> None:
+        return None
+
+    def unsubscribe(self) -> None:
+        self._channels = []
+
+    def close(self) -> None:
+        self._channels = []
 
 
 class _FakePipeline:

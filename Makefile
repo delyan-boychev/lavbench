@@ -1,15 +1,23 @@
-.PHONY: help setup-server setup-worker deploy-server deploy-worker dev \
-        generate-keys setup-admin docs check-error-codes lint
+.PHONY: help setup setup-server setup-worker deploy-server deploy-worker dev \
+        generate-keys setup-admin docs check-error-codes lint edit edit-worker
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?# "}; {printf "  \033[1;34m%-20s\033[0m %s\n", $$1, $$2}'
+
+setup: setup-server   # Alias for setup-server
 
 setup-server:   # Server: prerequisites, micromamba env, pip, npm ci, keys
 	@scripts/setup.sh server
 
 setup-worker:   # Worker: prerequisites, local env setup (if needed), interactive config
 	@scripts/setup-worker.sh
+
+edit:           # Menu-based configuration editor (server)
+	@scripts/edit-config.sh server
+
+edit-worker:    # Menu-based configuration editor (worker)
+	@scripts/edit-config.sh worker
 
 deploy-server:  # Deploy server with Docker Compose (build + up -d)
 	@scripts/deploy-server.sh

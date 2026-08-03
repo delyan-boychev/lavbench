@@ -17,53 +17,89 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
-_pool: redis_lib.ConnectionPool | None = None
-_pool_pid: int | None = None
+_pools: dict[str, redis_lib.ConnectionPool] = {}
+_pools_pid: int | None = None
+
+DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 
 
-def get_redis_client() -> redis_lib.Redis[Any] | None:
-    """Returns a Redis client from a shared ConnectionPool (auto-reconnect, greenlet-safe)."""
-    global _pool, _pool_pid
+def worker_spec_key(hostname: str) -> str:
+    return f"worker_spec:{hostname}"
+
+
+def submission_fallback_key(submission_id: Any) -> str:
+    return f"submission:{submission_id}:fallback"
+
+
+def submission_logs_key(submission_id: Any) -> str:
+    return f"submission:{submission_id}:logs"
+
+
+def _build_ssl_kwargs(url: str) -> dict[str, Any]:
+    ssl_kwargs: dict[str, Any] = {}
+    if url.startswith("rediss://"):
+        import ssl
+
+        ssl_ca_certs = Config.REDIS_SSL_CA_CERTS or None
+        ssl_certfile = Config.REDIS_SSL_CERTFILE or None
+        ssl_keyfile = Config.REDIS_SSL_KEYFILE or None
+        ssl_cert_reqs_str = Config.REDIS_SSL_CERT_REQS
+
+        ssl_cert_reqs = ssl.CERT_REQUIRED
+        if ssl_cert_reqs_str == "none":
+            ssl_cert_reqs = ssl.CERT_NONE
+        elif ssl_cert_reqs_str == "optional":
+            ssl_cert_reqs = ssl.CERT_OPTIONAL
+
+        ssl_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
+        if ssl_ca_certs:
+            ssl_kwargs["ssl_ca_certs"] = ssl_ca_certs
+        if ssl_certfile:
+            ssl_kwargs["ssl_certfile"] = ssl_certfile
+        if ssl_keyfile:
+            ssl_kwargs["ssl_keyfile"] = ssl_keyfile
+    return ssl_kwargs
+
+
+def _get_pool(url: str) -> redis_lib.ConnectionPool | None:
+    global _pools_pid
     current_pid = os.getpid()
-    if _pool is None or _pool_pid != current_pid:
-        broker_url = Config.CELERY_BROKER_URL
-        ssl_kwargs: dict[str, Any] = {}
-        if broker_url.startswith("rediss://"):
-            import ssl
-
-            ssl_ca_certs = Config.REDIS_SSL_CA_CERTS or None
-            ssl_certfile = Config.REDIS_SSL_CERTFILE or None
-            ssl_keyfile = Config.REDIS_SSL_KEYFILE or None
-            ssl_cert_reqs_str = Config.REDIS_SSL_CERT_REQS
-
-            ssl_cert_reqs = ssl.CERT_REQUIRED
-            if ssl_cert_reqs_str == "none":
-                ssl_cert_reqs = ssl.CERT_NONE
-            elif ssl_cert_reqs_str == "optional":
-                ssl_cert_reqs = ssl.CERT_OPTIONAL
-
-            ssl_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
-            if ssl_ca_certs:
-                ssl_kwargs["ssl_ca_certs"] = ssl_ca_certs
-            if ssl_certfile:
-                ssl_kwargs["ssl_certfile"] = ssl_certfile
-            if ssl_keyfile:
-                ssl_kwargs["ssl_keyfile"] = ssl_keyfile
-
+    if _pools_pid != current_pid:
+        _pools.clear()
+        _pools_pid = current_pid
+    pool = _pools.get(url)
+    if pool is None:
         try:
-            _pool = redis_lib.ConnectionPool.from_url(
-                broker_url,
+            pool = redis_lib.ConnectionPool.from_url(
+                url,
                 max_connections=100,
                 socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
                 socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
                 retry_on_timeout=True,
-                **ssl_kwargs,
+                **_build_ssl_kwargs(url),
             )
-            _pool_pid = current_pid
+            _pools[url] = pool
         except Exception:
-            logger.exception("Failed to create Redis connection pool")
+            logger.exception("Failed to create Redis connection pool for %s", url)
             return None
-    return redis_lib.Redis(connection_pool=_pool)
+    return pool
+
+
+def _client_for(url: str) -> redis_lib.Redis[Any] | None:
+    pool = _get_pool(url)
+    if pool is None:
+        return None
+    return redis_lib.Redis(connection_pool=pool)
+
+
+def get_redis_client() -> redis_lib.Redis[Any] | None:
+    """Returns a Redis client from a shared ConnectionPool (auto-reconnect, greenlet-safe)."""
+    return _client_for(Config.CACHE_REDIS_URL or Config.CELERY_BROKER_URL)
+
+
+def get_coordination_client() -> redis_lib.Redis[Any] | None:
+    """Returns a Redis client bound to the Celery broker (shared across machines)."""
+    return _client_for(Config.CELERY_BROKER_URL or "redis://localhost:6379/0")
 
 
 @contextmanager
@@ -94,32 +130,11 @@ def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
                 logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
 
 
-def acquire_cache_lock(lock_key: str, ttl: int = 30) -> bool:
-    """Legacy compat — use `with cache_lock(key, ttl)` instead."""
-    r = get_redis_client()
-    if not r:
-        return False
-    try:
-        return bool(r.set(lock_key, "1", nx=True, ex=ttl))
-    except Exception:
-        logger.exception("acquire_cache_lock failed for %s", lock_key)
-        return False
-
-
-def release_cache_lock(lock_key: str) -> None:
-    """Legacy compat — automatically handled by cache_lock context manager."""
-    r = get_redis_client()
-    if not r:
-        return
-    with suppress(Exception):
-        r.delete(lock_key)
-
-
 def log_dead_letter(
     submission_id: Any, task_id: Any = None, challenge_id: Any = None, error: Any = None
 ) -> None:
     """Logs a permanently failed Celery task to Redis for inspection."""
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return
     try:
@@ -134,6 +149,22 @@ def log_dead_letter(
         r.ltrim("dead_letter_queue", 0, 999)
     except Exception:
         logger.exception("log_dead_letter failed")
+
+
+def get_queue_depth(queue_name: str) -> int:
+    """Return the number of messages currently pending on a Celery queue.
+
+    Fails open (returns 0) when Redis is unavailable so submissions are never
+    rejected because of a monitoring hiccup.
+    """
+    r = get_coordination_client()
+    if not r:
+        return 0
+    try:
+        return int(r.llen(queue_name) or 0)
+    except Exception:
+        logger.exception("Failed to read queue depth for %s", queue_name)
+        return 0
 
 
 def get_cached(key: str) -> Any:
@@ -195,16 +226,16 @@ def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -
         delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
         delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
         delete_cached(f"leaderboard:pending:{challenge_id}")
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             with suppress(Exception):
-                r.srem("leaderboard:dirty_challenges", challenge_id)
+                r.srem(DIRTY_CHALLENGES_SET, challenge_id)
         return
 
-    r = get_redis_client()
+    r = get_coordination_client()
     if r:
         try:
-            r.sadd("leaderboard:dirty_challenges", challenge_id)
+            r.sadd(DIRTY_CHALLENGES_SET, challenge_id)
             return
         except Exception as e:
             logger.warning("Failed to mark challenge %s as dirty in Redis: %s", challenge_id, e)

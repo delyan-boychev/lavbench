@@ -18,6 +18,7 @@ import {
   Trash2,
   Package,
   Zap,
+  AlertTriangle,
 } from 'lucide-react';
 import CodeHighlight from '../ui/CodeHighlight';
 
@@ -27,7 +28,7 @@ export default function TaskForm({
   isCreatingTask,
   editingTask,
   setEditingTask,
-  setIsCreatingTask,
+  onClose,
   handleSaveCreateTask,
   handleSaveUpdateTask,
   challenges,
@@ -989,6 +990,21 @@ export default function TaskForm({
         {/* TAB: ENVIRONMENT */}
         {activeTab === 'environment' && (
           <div className="animate-fadein flex flex-col gap-8">
+            {taskForm.build_error && (
+              <div className="bg-red-900/30 border border-red-500/40 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-300 uppercase tracking-wider">
+                      {t('admin.build_error_title')}
+                    </p>
+                    <p className="text-sm text-red-200 mt-1 whitespace-pre-wrap">
+                      {taskForm.build_error}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col gap-4 bg-slate-900/30 p-6 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3 mb-2">
                 <div className="bg-blue-500/20 p-2 rounded-lg">
@@ -1349,14 +1365,7 @@ export default function TaskForm({
         )}
 
         <div className="flex justify-end gap-4 border-t border-white/10 pt-6 mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setIsCreatingTask(false);
-              setEditingTask(null);
-            }}
-            className="px-8 py-2.5"
-          >
+          <Button variant="secondary" onClick={() => onClose?.()} className="px-8 py-2.5">
             {t('common.cancel')}
           </Button>
           <Button

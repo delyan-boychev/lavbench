@@ -37,6 +37,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     base_docker_image = db.Column(db.String(255), nullable=True)
     apt_packages = db.Column(db.Text, nullable=True)
     pip_requirements = db.Column(db.Text, nullable=True)
+    build_error = db.Column(db.Text, nullable=True)
 
     ban_magic_commands = db.Column(db.Boolean, default=False)
     banned_imports = db.Column(db.String(512), nullable=True)
@@ -49,6 +50,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     evaluator_script_path = db.Column(db.String(512), nullable=True)
     baseline_notebook_path = db.Column(db.String(512), nullable=True)
     solution_notebook_path = db.Column(db.String(512), nullable=True)
+    baseline_notebook_size = db.Column(db.Integer, nullable=True)
+    solution_notebook_size = db.Column(db.Integer, nullable=True)
 
     hf_api_key = db.Column(db.Text, nullable=True)
     public_eval_percentage = db.Column(db.Integer, default=30)
@@ -79,8 +82,26 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
                     {
                         "filename": baseline_filename,
                         "saved_name": baseline_filename,
-                        "size_bytes": os.path.getsize(self.baseline_notebook_path),
+                        "size_bytes": (
+                            self.baseline_notebook_size
+                            or os.path.getsize(self.baseline_notebook_path)
+                        ),
                         "type": "baseline",
+                    }
+                )
+
+        if self.solution_notebook_path and os.path.exists(self.solution_notebook_path):
+            solution_filename = os.path.basename(self.solution_notebook_path)
+            if not any(f.get("filename") == solution_filename for f in files_list):
+                files_list.append(
+                    {
+                        "filename": solution_filename,
+                        "saved_name": solution_filename,
+                        "size_bytes": (
+                            self.solution_notebook_size
+                            or os.path.getsize(self.solution_notebook_path)
+                        ),
+                        "type": "solution",
                     }
                 )
 
@@ -147,5 +168,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
+            "build_error": self.build_error if show_internal else None,
             "stage_id": self.stage_id,
         }

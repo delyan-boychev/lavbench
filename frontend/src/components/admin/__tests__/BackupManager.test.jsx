@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderWithProviders } from '../../../test-utils';
 
 vi.mock('../../../services/ApiService', () => ({
   default: {
@@ -42,13 +43,13 @@ describe('BackupManager', () => {
 
   it('renders loading state initially', () => {
     api.get.mockReturnValue(new Promise(() => {}));
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
   it('renders empty state when no backups', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await waitFor(() => {
       expect(screen.getByText('No backups found.')).toBeInTheDocument();
     });
@@ -56,14 +57,14 @@ describe('BackupManager', () => {
 
   it('renders database backups title without challengeId', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await act(async () => {});
     expect(screen.getByText('Database Backups & Security')).toBeInTheDocument();
   });
 
   it('shows force backup button', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await act(async () => {});
     expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
   });
@@ -82,7 +83,7 @@ describe('BackupManager', () => {
         ],
       },
     });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await waitFor(() => {
       expect(screen.getByText('backup_2024_01.db')).toBeInTheDocument();
     });
@@ -91,12 +92,16 @@ describe('BackupManager', () => {
   it('calls handleForce when force button clicked', async () => {
     api.get.mockResolvedValue({ ok: true, data: { backups: [] } });
     api.post.mockResolvedValue({ ok: true, data: {} });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await waitFor(() => {
       expect(screen.getByText('Force Backup Now')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Force Backup Now'));
-    expect(api.post).toHaveBeenCalledWith('/admin/backups/force');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Force Backup Now'));
+    });
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/admin/backups/force');
+    });
   });
 
   it('calls download when download button clicked', async () => {
@@ -109,7 +114,7 @@ describe('BackupManager', () => {
         ],
       },
     });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await waitFor(() => {
       expect(screen.getByText('Download')).toBeInTheDocument();
     });
@@ -137,7 +142,7 @@ describe('BackupManager', () => {
       },
     });
     api.delete.mockResolvedValue({ ok: true, data: {} });
-    render(<BackupManager />);
+    renderWithProviders(<BackupManager />);
     await act(async () => {});
     await waitFor(() => {
       expect(screen.getByText('✕')).toBeInTheDocument();

@@ -25,8 +25,8 @@ export default function CompetitorManager({
   importedCompetitors,
   resetCredentials,
   setResetCredentials,
-  bulkResetCredentials,
-  setBulkResetCredentials,
+  bulkResetMessage,
+  setBulkResetMessage,
   competitorsList,
   competitorSearch,
   setCompetitorSearch,
@@ -57,51 +57,6 @@ export default function CompetitorManager({
       c.birth_date || '',
       c.generated_username || '',
       c.generated_password || '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-
-    const compName = selectedChallenge?.title
-      ? selectedChallenge.title
-          .toLowerCase()
-          .replace(/[^a-z0-9а-яё\s-_]+/gi, '')
-          .trim()
-          .replace(/\s+/g, '_')
-      : 'competition';
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-    const fileName = `${compName}_competitors_credentials_${dateStr}.csv`;
-
-    link.setAttribute('download', fileName);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleDownloadResetCSV = () => {
-    if (!bulkResetCredentials || bulkResetCredentials.length === 0) return;
-
-    const headers = ['ID', 'Name', 'Middle Name', 'Surname', 'Birth Date', 'Alias ID', 'Password'];
-    const rows = bulkResetCredentials.map((c) => [
-      c.id || '',
-      c.name || '',
-      c.middle_name || '',
-      c.surname || '',
-      c.birth_date || '',
-      c.username || '',
-      c.password || '',
     ]);
 
     const csvContent = [
@@ -404,36 +359,25 @@ export default function CompetitorManager({
           </div>
         )}
 
-        {bulkResetCredentials.length > 0 && (
+        {bulkResetMessage && (
           <div className="mb-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3 animate-fadein">
             <div className="flex justify-between items-center gap-2">
               <div>
                 <h3 className="font-bold text-sm text-emerald-400 font-sans">
-                  {t('admin.competitor_reg.generated_passwords_bulk_title', {
-                    count: bulkResetCredentials.length,
-                  })}
+                  {t('admin.competitor_reg.bulk_reset_saved_title')}
                 </h3>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">{bulkResetMessage}</p>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  {t(
-                    'admin.competitor_reg.download_reset_credentials_help',
-                    'Passwords reset successfully. Click below to download their updated credentials securely.',
-                  )}
+                  {t('admin.competitor_reg.bulk_reset_saved_help')}
                 </p>
               </div>
               <button
-                onClick={() => setBulkResetCredentials([])}
-                className="text-xs font-bold text-emerald-400 hover:underline bg-transparent border-0 cursor-pointer"
+                onClick={() => setBulkResetMessage('')}
+                className="text-xs font-bold text-emerald-400 hover:underline bg-transparent border-0 cursor-pointer flex-shrink-0"
               >
                 {t('admin.competitor_reg.clear_list')}
               </button>
             </div>
-            <Button
-              variant="accent"
-              className="w-full py-2 text-xs font-semibold"
-              onClick={handleDownloadResetCSV}
-            >
-              {t('admin.competitor_reg.download_credentials_csv', 'Download Credentials (CSV)')}
-            </Button>
           </div>
         )}
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import shutil
 import threading
 import time
 from typing import Any
@@ -65,6 +67,8 @@ def run_command_streaming(
     environment: dict[str, str] | None = None,
     gpu_required: bool = False,
     gpu_id: str | None = None,
+    user: str | None = None,
+    read_only: bool = False,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container and stream its output to *logs_list* in real-time.
 
@@ -72,7 +76,6 @@ def run_command_streaming(
     """
     ulimits = [
         Ulimit(name="nofile", soft=256, hard=256),
-        Ulimit(name="nproc", soft=64, hard=64),
     ]
 
     device_requests = None
@@ -100,6 +103,8 @@ def run_command_streaming(
             environment=environment,
             ulimits=ulimits,
             device_requests=device_requests,
+            user=user,
+            read_only=read_only,
         )
     except Exception as exc:
         logs_list.append(f"Failed to start container: {exc}")
@@ -107,6 +112,7 @@ def run_command_streaming(
 
     stdout_lines: list[str] = []
     process_timeout = False
+    exit_code = -1
 
     def stream_logs() -> None:
         try:
@@ -124,34 +130,37 @@ def run_command_streaming(
     t = threading.Thread(target=stream_logs, daemon=True)
     t.start()
 
-    start_wait = time.time()
     try:
-        while True:
-            container.reload()
-            if container.status in ("exited", "removing", "dead"):
-                break
-            if time_limit and (time.time() - start_wait > time_limit):
-                container.kill()
-                process_timeout = True
-                break
-            time.sleep(0.1)
-    except Exception as exc:
-        logs_list.append(f"Error during container execution: {exc}")
-        container.kill()
-        process_timeout = True
+        start_wait = time.time()
+        try:
+            while True:
+                container.reload()
+                if container.status in ("exited", "removing", "dead"):
+                    break
+                if time_limit and (time.time() - start_wait > time_limit):
+                    container.kill()
+                    process_timeout = True
+                    break
+                time.sleep(0.1)
+        except Exception as exc:
+            logs_list.append(f"Error during container execution: {exc}")
+            container.kill()
+            process_timeout = True
 
-    t.join(timeout=30.0)
+        t.join(timeout=30.0)
 
-    try:
-        result = container.wait()
-        exit_code = result.get("StatusCode", -1)
-    except Exception:
-        exit_code = -1
-
-    try:
-        container.remove(force=True)
-    except Exception:
-        logger.debug("Error removing container", exc_info=True)
+        try:
+            result = container.wait()
+            exit_code = result.get("StatusCode", -1)
+        except Exception:
+            exit_code = -1
+    finally:
+        with contextlib.suppress(Exception):
+            container.kill()
+        try:
+            container.remove(force=True)
+        except Exception:
+            logger.debug("Error removing container", exc_info=True)
 
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""
@@ -284,14 +293,37 @@ def download_task_files_to_dir(
         return
 
     task_id = metadata.get("task_id")
+
+    # Fast path: copy from pre-fetched build cache
+    build_cache = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
+    if os.path.isdir(build_cache):
+        copied = 0
+        for f in files_list:
+            fn = f["filename"]
+            if fn == "labels.parquet":
+                continue
+            src = os.path.join(build_cache, fn)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(temp_dir, fn))
+                copied += 1
+        non_parquet_files = [ff for ff in files_list if ff.get("filename") != "labels.parquet"]
+        if copied == len(non_parquet_files):
+            logs.append(f"Copied {copied} task file(s) from build cache")
+            return
+        elif copied > 0:
+            logs.append(
+                f"Partially copied {copied}/{len(non_parquet_files)} file(s)"
+                " from build cache, downloading rest"
+            )
+
     submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
     token = _sign_worker_token(submission_id)
     headers = {"X-Worker-Token": token}
-    is_unified = True
+
     for f in files_list:
         filename = f["filename"]
-        if is_unified and filename == "labels.parquet":
+        if filename == "labels.parquet":
             continue  # Do NOT download labels.parquet to sandbox temp_dir!
 
         url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"

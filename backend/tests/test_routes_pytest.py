@@ -17,8 +17,9 @@ from services.submission_service import calculate_submission_priority
 
 class TestRouteLevelLogic:
     @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush):
+    def setup(self, db_session, client, auth_headers, csrf_headers, redis_flush, app):
         self.client = client
+        self.app = app
         self._auth = auth_headers
         self.csrf_headers = csrf_headers
         self.seed_basic_data()
@@ -431,6 +432,54 @@ class TestRouteLevelLogic:
         assert res.status_code == 403
         assert "already started" in res.get_json()["error"]
 
+    def test_jury_cannot_escalate_role_or_password(self):
+        jury = User(
+            username="jury_escalation",
+            role="jury",
+            alias_id="Jury-Escalation",
+            password_hash="pbkdf2:sha256:...",
+        )
+        db.session.add(jury)
+        db.session.commit()
+        jury_token = generate_token(jury.id, jury.role)
+
+        target_user = User(
+            username="escalate_me",
+            role="competitor",
+            alias_id="Escalate-Me",
+            password_hash="pbkdf2:sha256:...",
+            challenge_id=self.challenge.id,
+        )
+        db.session.add(target_user)
+        db.session.commit()
+
+        self.challenge.start_time = utcnow() + timedelta(days=1)
+        db.session.commit()
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"role": "admin"},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"password": "hacked123"},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
+        res = self.client.put(
+            f"/api/admin/users/{target_user.id}",
+            headers={"Authorization": f"Bearer {jury_token}"},
+            json={"jury_challenges": [str(self.challenge.id)]},
+        )
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD"
+
     def test_download_scores_and_submissions_routes(self):
         jury = User(
             username="jury_downloader",
@@ -483,13 +532,18 @@ class TestRouteLevelLogic:
 
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard/live",
+            f"/api/challenges/{self.challenge.id}/leaderboard/live",
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
-        assert b"data: " in first_chunk
-        assert b"challenge_title" in first_chunk
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)  # "connected" message
+        assert b"connected" in first_chunk
+        second_chunk = next(response_iter)  # leaderboard data
+        assert b"data: " in second_chunk
+        assert b"challenge_title" in second_chunk
+        # Close to prevent generator from lingering
+        res.close()
 
     @patch("redis.Redis.from_url")
     def test_sse_live_submissions_route(self, mock_redis_cls):
@@ -501,11 +555,14 @@ class TestRouteLevelLogic:
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
             f"/api/tasks/{self.task.id}/submissions/live",
+            buffered=False,
         )
         assert res.status_code == 200
         assert res.mimetype == "text/event-stream"
-        first_chunk = next(res.response)
+        response_iter = iter(res.response)
+        first_chunk = next(response_iter)
         assert b"data: " in first_chunk
+        res.close()
 
     def test_blind_review_during_ongoing_competition(self):
         self.challenge.start_time = utcnow() - timedelta(hours=1)
@@ -599,16 +656,24 @@ class TestRouteLevelLogic:
 
         mock_inspect.ping.return_value = {"celery@gpu-worker": {"ok": "pong"}}
         mock_inspect.registered.return_value = {"celery@gpu-worker": ["tasks.evaluate_submission"]}
+
+        # Competitors see general availability only, never cluster topology
         res = self.client.get(
             "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
         )
         assert res.status_code == 200
+        body = res.get_json()
+        assert body["status"] == "online"
+        assert body["online_workers"] == 1
+        assert body["clusters"] == []
+
+        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.admin_token))
+        assert res.status_code == 200
         assert res.get_json()["status"] == "online"
+        assert len(res.get_json()["clusters"]) == 1
 
         mock_inspect.ping.return_value = None
-        res = self.client.get(
-            "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
-        )
+        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.jury_token))
         assert res.status_code == 200
         assert res.get_json()["status"] == "offline"
 
@@ -1056,10 +1121,47 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
         data = json.loads(res.data)
         assert "reset_accounts" in data
-        assert len(data["reset_accounts"]) > 0
-        account = data["reset_accounts"][0]
-        assert "middle_name" in account
-        assert "birth_date" in account
+        assert len(data["reset_accounts"]) == 0
+
+        file_path = os.path.join(
+            self.app.config["UPLOAD_FOLDER"],
+            "credentials",
+            f"competitor_passwords_{self.challenge.id}.json",
+        )
+        try:
+            assert os.path.exists(file_path)
+            with open(file_path) as f:
+                stored = f.read()
+            # File is encrypted at rest — plaintext must never be on disk
+            assert "middle_name" not in stored
+            assert "birth_date" not in stored
+            from models import decrypt_field
+
+            accounts = json.loads(decrypt_field(stored) or "[]")
+            assert len(accounts) > 0
+            account = accounts[0]
+            assert "middle_name" in account
+            assert "birth_date" in account
+
+            # One-time admin-only download decrypts and consumes the file
+            res = self.client.get(
+                f"/api/admin/challenges/{self.challenge.id}/credentials",
+                headers=self.get_auth_header(self.admin_token),
+            )
+            assert res.status_code == 200
+            downloaded = json.loads(res.data)
+            assert len(downloaded) == len(accounts)
+            assert not os.path.exists(file_path)
+
+            # Second download → 404 (one-time delivery)
+            res = self.client.get(
+                f"/api/admin/challenges/{self.challenge.id}/credentials",
+                headers=self.get_auth_header(self.admin_token),
+            )
+            assert res.status_code == 404
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
         self.challenge.start_time = utcnow() + timedelta(hours=1)
         db.session.commit()
@@ -1068,6 +1170,8 @@ class TestRouteLevelLogic:
             headers=self.get_auth_header(jury_token),
         )
         assert res.status_code == 200
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
         self.challenge.start_time = utcnow() - timedelta(hours=1)
         db.session.commit()
@@ -1661,6 +1765,20 @@ class TestRouteLevelLogic:
         assert len(logs) == 1
         assert logs[0].new_score == 60
         assert logs[0].reason == "Scoring correction post finalization"
+        assert logs[0].action_type == "update"
+        assert logs[0].target_type == "user"
+
+        # Regression: the audit-logs listing must render manual-points entries
+        res = self.client.get(
+            "/api/admin/audit-logs",
+            headers=self.get_auth_header(self.admin_token),
+        )
+        assert res.status_code == 200
+        listed = res.get_json()["logs"]
+        assert any(
+            log["target_user_id"] == str(self.competitor.id) and log["new_score"] == 60
+            for log in listed
+        )
 
     def test_results_export(self):
         res_comp = self.client.get(

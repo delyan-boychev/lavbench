@@ -7,6 +7,7 @@ import ToggleField from '../ui/ToggleField';
 import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
+import api from '../../services/ApiService';
 export default function SubmissionViewer({
   submission,
   currentUser,
@@ -15,6 +16,8 @@ export default function SubmissionViewer({
   isSelectionDisabled = false,
   isSubmissionAfterDeadline = false,
   onSubmissionUpdate,
+  onKill,
+  killing = false,
 }) {
   const { t } = useTranslation();
   const [liveLogs, setLiveLogs] = useState('');
@@ -48,14 +51,14 @@ export default function SubmissionViewer({
   }, [submission?.id]);
 
   useSSE(submission ? `/api/submissions/${submission.id}/logs/live` : '', {
+    storeData: false,
     onMessage: (data) => {
       if (data.log) {
         setLiveLogs((prev) => prev + data.log + '\n');
       } else if (data.status) {
         if (data.status === 'completed' || data.status === 'failed') {
-          fetch(`/api/submissions/${submission.id}`, {
-            headers: { Accept: 'application/json' },
-          })
+          api
+            .fetch(`/api/submissions/${submission.id}`)
             .then((r) => {
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               return r.json();
@@ -127,6 +130,22 @@ export default function SubmissionViewer({
                   {t('submissions.final_selection_star')}
                 </span>
               )}
+              {(displaySubmission.status === 'queued' || displaySubmission.status === 'running') &&
+                (currentUser?.role === 'admin' ||
+                  currentUser?.role === 'jury' ||
+                  (currentUser?.role === 'competitor' &&
+                    displaySubmission.user?.id === currentUser?.id)) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onKill && onKill(displaySubmission.id);
+                    }}
+                    disabled={killing}
+                    className="text-xs font-semibold px-3 py-1 rounded-lg border border-rose-600 bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {killing ? '...' : t('submissions.kill')}
+                  </button>
+                )}
             </div>
 
             {displaySubmission.user?.alias_id && (

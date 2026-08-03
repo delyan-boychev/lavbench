@@ -34,6 +34,28 @@ from sklearn.metrics import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------
+# 0. DECOMPRESSION HELPERS
+# ---------------------------------------------------------
+
+
+def decode_mask_bytes(b: bytes) -> Any:
+    """Decode mask bytes to raw pixel array, handling compressed image formats."""
+    if not b:
+        return np.array([], dtype=np.uint8)
+    if b[:4] == b"\x89PNG" or b[:2] == b"\xff\xd8":
+        try:
+            import io
+
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(b)).convert("L")
+            return np.array(img, dtype=np.uint8)
+        except Exception:
+            logger.debug("Failed to decode image with PIL, falling back to raw bytes")
+    return np.frombuffer(b, dtype=np.uint8)
+
+
+# ---------------------------------------------------------
 # 1. TASK TYPE SCHEMAS & METRICS CONFIG
 # ---------------------------------------------------------
 
@@ -190,7 +212,7 @@ def compute_meteor(ref: str, hyp: str) -> float:
 
         # nltk meteor_score expects token lists
         return float(meteor_score([ref.split()], hyp.split()))
-    except ImportError:
+    except Exception:
         # Fallback to Jaccard similarity
         r = set(ref.split())
         h = set(hyp.split())
@@ -456,8 +478,8 @@ def compute_segmentation_iou(y_true: list[bytes], y_pred: list[bytes]) -> float:
         if not t or not p:
             iou_scores.append(0.0)
             continue
-        arr_t = np.frombuffer(t, dtype=np.uint8)
-        arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+        arr_t = decode_mask_bytes(t)
+        arr_p = decode_mask_bytes(p)
         if len(arr_p) < len(arr_t):
             arr_t = arr_t[: len(arr_p)]
         intersection = np.logical_and(arr_t > 0, arr_p > 0).sum()
@@ -473,8 +495,8 @@ def compute_segmentation_dice(y_true: list[bytes], y_pred: list[bytes]) -> float
         if not t or not p:
             dice_scores.append(0.0)
             continue
-        arr_t = np.frombuffer(t, dtype=np.uint8)
-        arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+        arr_t = decode_mask_bytes(t)
+        arr_p = decode_mask_bytes(p)
         if len(arr_p) < len(arr_t):
             arr_t = arr_t[: len(arr_p)]
         intersection = np.logical_and(arr_t > 0, arr_p > 0).sum()
@@ -592,19 +614,179 @@ def compute_retrieval_metrics(
 # 4. CUSTOM EVALUATOR EXECUTION
 # ---------------------------------------------------------
 
+# Trusted harness run INSIDE the sandbox container. The untrusted
+# evaluator code is exec'd here — isolated from the worker host by
+# --network none --cap-drop ALL --user 65534 --read-only --pids-limit.
+_CUSTOM_EVAL_HARNESS = '''\
+"""Trusted harness: loads an admin-provided evaluator and applies it to data."""
+import json
+import sys
+
+
+def main() -> int:
+    eval_path, sub_path, labels_path, opts_path, result_path = sys.argv[1:6]
+    ns: dict = {}
+    with open(eval_path, encoding="utf-8") as f:
+        code = f.read()
+    exec(compile(code, eval_path, "exec"), ns)  # noqa: S102
+    evaluate = ns.get("evaluate")
+    if not callable(evaluate):
+        sys.stderr.write("Custom evaluator missing 'evaluate' function\\n")
+        return 1
+    import pandas as pd
+
+    df_sub = pd.read_parquet(sub_path)
+    df_labels = pd.read_parquet(labels_path)
+    with open(opts_path, encoding="utf-8") as f:
+        options = json.load(f)
+    result = evaluate(df_sub, df_labels, options or {})
+    if not isinstance(result, dict):
+        sys.stderr.write(
+            "evaluate() must return a dict of metric -> float, got "
+            + type(result).__name__
+            + "\\n"
+        )
+        return 1
+    clean = {}
+    for key, val in result.items():
+        try:
+            clean[str(key)] = float(val)
+        except (TypeError, ValueError):
+            sys.stderr.write(f"Non-numeric metric value for {key!r}: {val!r}\\n")
+            return 1
+    with open(result_path, "w", encoding="utf-8") as f:
+        json.dump(clean, f)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+def _run_custom_evaluator_sandbox(
+    code: str,
+    df_sub: pd.DataFrame,
+    df_labels: pd.DataFrame,
+    options: dict[str, Any] | None,
+    image_tag: str,
+) -> dict[str, float] | None:
+    """Run the custom evaluator inside a hardened container.
+
+    Returns the metrics dict on success; returns ``None`` when the sandbox
+    could not be used (no docker, image missing) so callers can fall back.
+    Failures inside the container (timeout, crash, bad result shape) are
+    logged and returned as ``None`` — never execute the code on the host.
+    """
+    import json
+    import os
+    import shutil
+    import tempfile
+
+    from worker_utils import run_command_streaming
+
+    workdir = tempfile.mkdtemp(prefix="custom_eval_")
+    try:
+        eval_path = os.path.join(workdir, "evaluator.py")
+        sub_path = os.path.join(workdir, "predictions.parquet")
+        labels_path = os.path.join(workdir, "labels.parquet")
+        opts_path = os.path.join(workdir, "options.json")
+        harness_path = os.path.join(workdir, "harness.py")
+        result_path = os.path.join(workdir, "result.json")
+
+        with open(eval_path, "w", encoding="utf-8") as f:
+            f.write(code)
+        df_sub.to_parquet(sub_path, index=False)
+        df_labels.to_parquet(labels_path, index=False)
+        with open(opts_path, "w", encoding="utf-8") as f:
+            json.dump(options or {}, f)
+        with open(harness_path, "w", encoding="utf-8") as f:
+            f.write(_CUSTOM_EVAL_HARNESS)
+        # Container runs as nobody (65534) — the temp dir is host-owned.
+        # 0o777 is required for the sandboxed (non-root) process to write
+        # result.json; the dir is a private mkdtemp under the worker's /tmp.
+        os.chmod(workdir, 0o777)  # noqa: S103
+
+        from docker import DockerClient
+
+        docker_client = DockerClient.from_env()
+        try:
+            docker_client.images.get(image_tag)
+        except Exception:
+            logger.warning("Custom evaluator image %s not present — skipping sandbox", image_tag)
+            return None
+
+        logs: list[str] = []
+        retcode, _stdout, stderr, is_timeout = run_command_streaming(
+            docker_client,
+            image_tag,
+            [
+                "python",
+                "/work/harness.py",
+                "/work/evaluator.py",
+                "/work/predictions.parquet",
+                "/work/labels.parquet",
+                "/work/options.json",
+                "/work/result.json",
+            ],
+            logs,
+            time_limit=300,
+            mem_limit="1g",
+            cpu_count=1,
+            network_mode="none",
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            pids_limit=64,
+            tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+            volumes={workdir: {"bind": "/work", "mode": "rw"}},
+            working_dir="/work",
+            user="65534:65534",
+            read_only=True,
+        )
+        if is_timeout:
+            logger.warning("Custom evaluator timed out in sandbox (300s cap)")
+            return None
+        if retcode != 0 or not os.path.exists(result_path):
+            logger.warning(
+                "Custom evaluator failed in sandbox (rc=%s, timeout=%s): %s",
+                retcode,
+                is_timeout,
+                stderr.strip() or (logs[-1] if logs else ""),
+            )
+            return None
+        with open(result_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("Custom evaluator sandbox unavailable, using fallback: %s", e)
+        return None
+    finally:
+        import shutil
+
+        shutil.rmtree(workdir, ignore_errors=True)
+
 
 def _run_custom_evaluator(
     code: str,
     df_sub: pd.DataFrame,
     df_labels: pd.DataFrame,
     options: dict[str, Any] | None = None,
+    sandbox_image: str | None = None,
 ) -> dict[str, float]:
     """Executes a custom evaluator script and returns its metric results.
 
     The script must define:
         METRIC_NAME (str)
         evaluate(df_sub, df_labels, options) -> dict[str, float]
+
+    When *sandbox_image* is provided, the code runs inside a hardened
+    container; otherwise it runs in-process (test/dev only).
     """
+    if sandbox_image:
+        result = _run_custom_evaluator_sandbox(code, df_sub, df_labels, options, sandbox_image)
+        if result is not None:
+            return result
+        logger.warning("Sandboxed custom evaluator failed — returning {} (fail closed)")
+        return {}
     try:
         local_ns: dict[str, Any] = {}
         exec(code, local_ns)  # noqa: S102
@@ -627,11 +809,13 @@ def evaluate_predictions(
     df_labels: pd.DataFrame,
     metrics_cfg: dict[str, Any] | None,
     custom_eval_code: str | None = None,
+    sandbox_image: str | None = None,
 ) -> dict[str, Any]:
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
     metrics_cfg: dict of {metric_name: {weight: float, higher_is_better: bool}}
     custom_eval_code: optional Python code defining a custom evaluator
+    sandbox_image: docker image tag to run the custom evaluator in (hardened container)
     """
     if not metrics_cfg:
         metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
@@ -995,8 +1179,8 @@ def evaluate_predictions(
                 if not t or not p:
                     accs.append(0.0)
                     continue
-                arr_t = np.frombuffer(t, dtype=np.uint8)
-                arr_p = np.frombuffer(p[: len(t)], dtype=np.uint8)
+                arr_t = decode_mask_bytes(t)
+                arr_p = decode_mask_bytes(p)
                 if len(arr_p) < len(arr_t):
                     arr_t = arr_t[: len(arr_p)]
                 accs.append(accuracy_score(arr_t, arr_p))
@@ -1036,7 +1220,9 @@ def evaluate_predictions(
         # 13. Custom evaluator dispatch
         elif custom_eval_code:
             try:
-                result = _run_custom_evaluator(custom_eval_code, df_sub, df_labels, m_opts)
+                result = _run_custom_evaluator(
+                    custom_eval_code, df_sub, df_labels, m_opts, sandbox_image
+                )
                 val = float(result[m_name_clean]) if m_name_clean in result else 0.0
             except Exception as e:
                 logger.warning(

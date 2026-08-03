@@ -12,7 +12,6 @@ import socket
 import subprocess
 import tempfile
 import time
-import traceback
 from collections.abc import Callable
 from typing import Any
 
@@ -20,7 +19,7 @@ import redis
 import requests
 from celery.signals import task_prerun, worker_ready
 
-from cache_utils import get_redis_client
+from cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from config import Config
 from task_modules.docker_utils import _get_client, check_docker_available
 from task_modules.docker_utils import image_exists as _image_exists_docker
@@ -52,11 +51,11 @@ def _recreate_spec_on_reconnect() -> None:
     _spec_reconnect_needed = False
     if not _cached_worker_spec or not _cached_worker_name:
         return
-    r = get_redis_client()
+    r = get_coordination_client()
     if not r:
         return
     try:
-        key = f"worker_spec:{_cached_worker_name}"
+        key = worker_spec_key(_cached_worker_name)
         _cached_worker_spec["last_seen"] = time.time()
         r.set(key, json.dumps(_cached_worker_spec), ex=604800)
         logger.info("Recreated worker spec for %s after Redis reconnect", _cached_worker_name)
@@ -426,7 +425,7 @@ def run_eval_submission(
                 if status_val in ("completed", "failed"):
                     # Final status: critical — must persist via Redis fallback
                     try:
-                        r = get_redis_client()
+                        r = get_coordination_client()
                         fallback = {
                             "submission_id": submission_id,
                             "status": status_val,
@@ -439,7 +438,7 @@ def run_eval_submission(
                             "metrics_payload_priv": m_priv,
                         }
                         r.set(
-                            f"submission:{submission_id}:fallback",
+                            submission_fallback_key(submission_id),
                             json.dumps(fallback, default=str),
                             ex=7200,
                         )
@@ -477,6 +476,7 @@ def run_eval_submission(
             with app.app_context():
                 from sse_utils import (
                     publish_leaderboard_update,
+                    publish_queue_update,
                     publish_submissions_update,
                 )
 
@@ -511,8 +511,9 @@ def run_eval_submission(
                                 "Failed to invalidate leaderboard cache in submission runner"
                             )
 
-                    publish_submissions_update(sub.task_id, sub.user_id)
-                    publish_leaderboard_update(sub.task_id)
+                    publish_submissions_update(sub.task_id, sub.challenge_id)
+                    publish_queue_update()
+                    publish_leaderboard_update(sub.challenge_id)
 
     logs: StreamingLogList | None = None
     status: str = "queued"
@@ -521,6 +522,7 @@ def run_eval_submission(
     execution_time_ms: int = 0
     metrics_payload_pub: dict[str, Any] | None = None
     metrics_payload_priv: dict[str, Any] | None = None
+    host_labels_dir: str | None = None
 
     # 3. Start evaluation execution
     try:
@@ -561,6 +563,8 @@ def run_eval_submission(
         workspace_root = Config.LAVBENCH_WORKSPACE_DIR
         temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
         os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
+        data_dir = os.path.join(temp_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
 
         # Create logs holder
         logs = StreamingLogList(submission_id)
@@ -585,7 +589,7 @@ def run_eval_submission(
                             if is_unified_parquet and f["filename"] == "labels.parquet":
                                 continue  # Do NOT copy labels.parquet to sandbox
                             src_file = os.path.join(task_files_dir, f["saved_name"])
-                            dest_file = os.path.join(temp_dir, f["filename"])
+                            dest_file = os.path.join(data_dir, f["filename"])
                             if os.path.exists(src_file):
                                 shutil.copy(src_file, dest_file)
                 except Exception as copy_err:
@@ -606,7 +610,7 @@ def run_eval_submission(
             gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
             acquired_gpu = None
             if gpus:
-                r = get_redis_client()
+                r = get_coordination_client()
                 if r:
                     logs.append("Waiting for an available GPU device...")
                     while acquired_gpu is None:
@@ -690,6 +694,14 @@ def run_eval_submission(
                 )
                 if metadata and metadata.get("main_server_url")
                 else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
+            ),
+            "task_files": metadata.get("task_files", []) if metadata else [],
+            "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
+            "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
+            "_worker_token": (
+                _sign_worker_token(metadata.get("submission_id", "unknown"))
+                if metadata and metadata.get("main_server_url")
+                else ""
             ),
         }
 
@@ -783,7 +795,10 @@ def run_eval_submission(
             ram_limit = budget_mb
 
         environment = {
+            # Sandbox runs as nobody with a read-only rootfs — user-level pip
+            # installs (pip --user) land here on the writable tmpfs
             "HOME": "/tmp",  # noqa: S108
+            "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
             "HF_HOME": "/hf_cache",
             "HF_DATASETS_CACHE": "/hf_cache",
             "HF_DATASETS_OFFLINE": "1",
@@ -824,6 +839,10 @@ def run_eval_submission(
             environment=environment,
             gpu_required=gpu_required,
             gpu_id=gpu_id,
+            # Defense-in-depth: non-root + read-only rootfs (writes go to
+            # the /app mount and /tmp tmpfs)
+            user="65534:65534",
+            read_only=True,
         )
 
         end_wall_time = time.time()
@@ -977,6 +996,9 @@ def run_eval_submission(
                         eval_kwargs = {}
                         if task and getattr(task, "custom_eval_code", None):
                             eval_kwargs["custom_eval_code"] = task.custom_eval_code
+                            # Run the admin-supplied evaluator in its own hardened
+                            # container (already-built sandbox image, no privileges)
+                            eval_kwargs["sandbox_image"] = f"lavbench_task_{task.id}"
 
                         m_pub = (
                             evaluate_predictions(
@@ -1008,17 +1030,15 @@ def run_eval_submission(
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
                         status = "failed"
-                        logs.append(f"Error during parquet metric calculation: {eval_err!s}")
-                        logs.append(f"Traceback: {traceback.format_exc()}")
-
-            # Clean up securely downloaded labels directory on host if created
-            if metadata and "host_labels_dir" in locals() and host_labels_dir:
-                try:
-                    import shutil
-
-                    shutil.rmtree(host_labels_dir, ignore_errors=True)
-                except OSError as e:
-                    logger.debug("Could not remove host labels dir %s: %s", host_labels_dir, e)
+                        # Full traceback goes to worker logs only — never into
+                        # submission logs visible to competitors (path leak)
+                        logger.exception(
+                            "Parquet metric calculation failed for submission %s", submission_id
+                        )
+                        logs.append(
+                            f"Error during parquet metric calculation: {eval_err!s} "
+                            "(contact administrator for details)"
+                        )
 
         try:
             import shutil
@@ -1048,12 +1068,11 @@ def run_eval_submission(
 
     except Exception as e:
         status = "failed"
+        logger.exception("[FATAL] Unhandled worker crash for submission %s", submission_id)
         if "logs" in locals() and logs is not None:
             logs.append(f"[FATAL] Unhandled worker crash: {e}")
-            logs.append(traceback.format_exc())
             logs_list = logs
         else:
-            logger.error(f"[FATAL] Unhandled worker crash: {e}\n{traceback.format_exc()}")
             logs_list = [f"[FATAL] Unhandled worker crash: {e}"]
         with contextlib.suppress(Exception):
             update_status("failed", "failed", logs_list=logs_list)
@@ -1061,9 +1080,13 @@ def run_eval_submission(
     finally:
         if "acquired_gpu" in locals() and acquired_gpu is not None:
             with contextlib.suppress(Exception):
-                r = get_redis_client()
+                r = get_coordination_client()
                 if r:
                     r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
+        if host_labels_dir:
+            import shutil
+
+            shutil.rmtree(host_labels_dir, ignore_errors=True)
         if "temp_dir" in locals() and temp_dir:
             import shutil
 
@@ -1077,7 +1100,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
     try:
         import platform
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
 
@@ -1165,7 +1188,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "last_seen": time.time(),
         }
-        r.set(f"worker_spec:{worker_name}", json.dumps(spec), ex=604800)
+        r.set(worker_spec_key(worker_name), json.dumps(spec), ex=604800)
         global _cached_worker_spec, _cached_worker_name, _spec_reconnect_needed
         _cached_worker_spec = spec
         _cached_worker_name = worker_name
@@ -1199,10 +1222,10 @@ def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
         worker_name = task_request.hostname
         if not worker_name:
             return
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
-        key = f"worker_spec:{worker_name}"
+        key = worker_spec_key(worker_name)
         if r.exists(key):
             spec_data = r.get(key)
             if spec_data:

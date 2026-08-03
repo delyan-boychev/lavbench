@@ -18,6 +18,7 @@ DEFAULT_ERROR_MESSAGES = {
     # auth.py
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again later.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
+    "ERR_CREDENTIALS_NOT_AVAILABLE": "Credentials file not available or already downloaded.",
     # TODO: planned feature — not yet wired
     "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered competitors are not allowed to log in.",
     "ERR_USER_NOT_FOUND": "User not found.",
@@ -44,6 +45,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_NO_AUTO_BACKUP_DELETE": "Auto-backups cannot be deleted manually.",
     # admin.py — user edit
     "ERR_JURY_CANNOT_EDIT_ADMIN": "Jury members cannot edit administrator or other jury accounts.",
+    "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD": "Jury members cannot change roles, passwords, or jury assignments.",
     "ERR_CANNOT_EDIT_STARTED": "Cannot edit user: The assigned competition has already started.",
     "ERR_CANNOT_CHANGE_ROLE_ADMIN": "Cannot change user role to Administrator.",
     "ERR_CANNOT_ASSIGN_STARTED": "Cannot assign user to a competition that has already started.",
@@ -120,9 +122,11 @@ DEFAULT_ERROR_MESSAGES = {
     # TODO: planned feature — not yet wired
     "ERR_DAILY_LIMIT_REACHED": "Daily limit reached.",
     "ERR_QUEUE_UNAVAILABLE": "Submission queue is temporarily unavailable. Please try again.",
+    "ERR_QUEUE_FULL": "The evaluation queue is full. Please wait for pending evaluations to finish.",
     "ERR_SUBMISSIONS_LOCKED": "Access denied. Submissions are locked.",
     "ERR_SELECTION_WINDOW_CLOSED": "The final selection window for this stage has closed.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",
+    "ERR_SSE_SOCKET_LIMIT": "Too many active connections. Please try again.",
     "ERR_NO_COMPLETED_SUBMISSIONS": "No completed submissions found for this user/task.",
     # tasks.py — create / update task
     "ERR_BASELINE_REQUIRED": "Baseline notebook is required.",
@@ -140,10 +144,11 @@ DEFAULT_ERROR_MESSAGES = {
     # TODO: planned feature — not yet wired
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_TOO_MANY_FILES": "You can upload a maximum of 5 files per task.",
-    # TODO: planned feature — not yet wired
-    "ERR_FILE_TOO_LARGE_25MB": "File exceeds the maximum allowed size of 25MB.",
+    "ERR_TASK_FILE_TOO_LARGE": "File exceeds the maximum allowed size of 500MB.",
+    "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     # TODO: planned feature — not yet wired
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
+    "ERR_LABELS_NOT_AVAILABLE": "Labels are not available yet for this challenge.",
     # TODO: planned feature — not yet wired
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     # tasks.py — move
@@ -155,15 +160,20 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_EVALUATOR_LOAD_FAILED": "Failed to load evaluator script.",
     "ERR_UNAUTHORIZED": "Unauthorized",
     "ERR_INVALID_REQUEST_BODY": "Request must be JSON",
+    "ERR_PAYLOAD_TOO_LARGE": "Request payload too large",
     "ERR_INVALID_STATUS": "Invalid status value.",
     "ERR_INVALID_PUBLIC_SCORE": "public_score must be numeric or null",
     "ERR_INVALID_PRIVATE_SCORE": "private_score must be numeric or null",
     "ERR_INVALID_FILENAME": "Invalid filename",
+    # submissions.py — kill / queue
+    "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
+    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
     # tasks.py — misc
     "ERR_FILE_NOT_FOUND": "File not found in task metadata.",
     "ERR_NOT_AVAILABLE": "Access denied or task not available yet.",
     "ERR_FORBIDDEN": "Only administrators are allowed to configure custom environments.",
     "ERR_TASK_NOT_FOUND": "Task not found.",
+    "ERR_TASK_BUILD_ERROR": "This task is temporarily unavailable due to an environment configuration issue.",
     # TODO: planned feature — not yet wired
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",
     # app.py

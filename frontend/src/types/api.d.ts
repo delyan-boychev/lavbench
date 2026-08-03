@@ -106,6 +106,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/challenges/{challenge_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One-time download of the encrypted bulk-reset password file.
+         * @description The file is deleted on successful download — the plaintext credentials must never sit on disk and never be included in backups.
+         */
+        get: operations["get__api_admin_challenges_{challenge_id}_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/challenges/{challenge_id}/download-scores-csv": {
         parameters: {
             query?: never;
@@ -236,6 +256,57 @@ export interface paths {
         put?: never;
         /** register_user <POST> */
         post: operations["post__api_admin_register-user"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/submissions/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get paginated queue of queued and running submissions in execution order. */
+        get: operations["get__api_admin_submissions_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/submissions/queue/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kill all queued and running submissions (admin only). */
+        post: operations["post__api_admin_submissions_queue_clear"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/submissions/queue/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** SSE endpoint: stream real-time queue updates. */
+        get: operations["get__api_admin_submissions_queue_live"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -832,7 +903,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health check for Docker and load balancer monitoring. */
+        /**
+         * Health check for Docker and load balancer monitoring.
+         * @description Probes the database, Redis (cache/SSE/broker) and disk space so a degraded stack never reports healthy.
+         */
         get: operations["get__api_health"];
         put?: never;
         post?: never;
@@ -853,6 +927,23 @@ export interface paths {
         get: operations["get__api_submissions_{submission_id}"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submissions/{submission_id}/kill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kill a queued or running submission. Admins/jury can kill any; competitors can only kill their own. */
+        post: operations["post__api_submissions_{submission_id}_kill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -946,23 +1037,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{task_id}/leaderboard/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream live task leaderboard updates via SSE. */
-        get: operations["get__api_tasks_{task_id}_leaderboard_live"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/tasks/{task_id}/submissions": {
         parameters: {
             query?: never;
@@ -1021,7 +1095,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current worker cluster health status with specs. */
+        /** Get worker cluster health status with specs (details admin/jury only). */
         get: operations["get__api_worker-status"];
         put?: never;
         post?: never;
@@ -1038,7 +1112,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream worker cluster health status via SSE. */
+        /** Stream worker cluster health status via SSE (details admin/jury only). */
         get: operations["get__api_worker-status_live"];
         put?: never;
         post?: never;
@@ -1127,6 +1201,23 @@ export interface paths {
         get: operations["get__api_worker_tasks_{task_id}_hf-key"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worker/tasks/{task_id}/report-build-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** report_build_error <POST> */
+        post: operations["post__api_worker_tasks_{task_id}_report-build-error"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1477,13 +1568,16 @@ export interface components {
         };
         /** AuditLogResponse */
         "AuditLinkListResponse.febf810.AuditLogResponse": {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @default null
+             */
+            action_type: string | null;
             /**
              * Admin Id
-             * Format: uuid
+             * @default null
              */
-            admin_id: string;
+            admin_id: string | null;
             /**
              * Admin Username
              * @default null
@@ -1493,7 +1587,9 @@ export interface components {
              * Details
              * @default null
              */
-            details: unknown | null;
+            details: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -1524,8 +1620,11 @@ export interface components {
              * @default null
              */
             target_id: string | null;
-            /** Target Type */
-            target_type: string;
+            /**
+             * Target Type
+             * @default null
+             */
+            target_type: string | null;
             /**
              * Target User Id
              * @default null
@@ -2607,6 +2706,13 @@ export interface components {
         };
         /** HealthResponse */
         "HealthResponse.c6e31f5": {
+            /**
+             * Checks
+             * @description Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk.
+             */
+            checks: {
+                [key: string]: string;
+            };
             /** Status */
             status: string;
             /** Version */
@@ -3304,6 +3410,67 @@ export interface components {
              * @default null
              */
             whitelisted_imports: string | null;
+        };
+        /** PaginatedResponse[QueueItemResponse] */
+        "PaginatedResponse[QueueItemResponse].c6e31f5": {
+            /** Items */
+            items: components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /** QueueItemResponse */
+        "PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User Alias
+             * @default null
+             */
+            user_alias: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
         };
         /** PaginatedResponse[SubmissionLightResponse] */
         "PaginatedResponse[SubmissionLightResponse].c6e31f5": {
@@ -4920,6 +5087,11 @@ export interface components {
              */
             baseline_notebook_path: string | null;
             /**
+             * Build Error
+             * @default null
+             */
+            build_error: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -5715,6 +5887,44 @@ export interface operations {
             };
         };
     };
+    "get__api_admin_challenges_{challenge_id}_credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
     "get__api_admin_challenges_{challenge_id}_download-scores-csv": {
         parameters: {
             query?: never;
@@ -5971,6 +6181,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    get__api_admin_submissions_queue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    post__api_admin_submissions_queue_clear: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    get__api_admin_submissions_queue_live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
                 };
             };
         };
@@ -7475,6 +7797,64 @@ export interface operations {
             };
         };
     };
+    "post__api_submissions_{submission_id}_kill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
     "get__api_submissions_{submission_id}_logs_live": {
         parameters: {
             query?: never;
@@ -7744,44 +8124,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TaskLeaderboardResponse.cc8acb7"];
                 };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
-                };
-            };
-        };
-    };
-    "get__api_tasks_{task_id}_leaderboard_live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Forbidden */
             403: {
@@ -8199,6 +8541,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkerHfKeyResponse.6bc6f68"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                };
+            };
+        };
+    };
+    "post__api_worker_tasks_{task_id}_report-build-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Unauthorized */
