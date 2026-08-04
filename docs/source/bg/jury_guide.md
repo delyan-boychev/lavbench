@@ -1,0 +1,1 @@
+../../../guides/bg/jury_guide.md

@@ -1,0 +1,1 @@
+../../../guides/bg/admin_guide.md
