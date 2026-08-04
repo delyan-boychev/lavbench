@@ -1,10 +1,12 @@
 import base64
 import os
 import tempfile
+import time
 from unittest.mock import patch
 
 import pytest
 
+from config import Config
 from worker_utils import (
     MockModel,
     StreamingLogList,
@@ -13,7 +15,123 @@ from worker_utils import (
     download_task_files_to_dir,
     report_status_to_server,
     run_command_streaming,
+    run_stale_dir_sweep,
+    sync_labels_parquet_to_cache,
+    sync_task_files_to_assets_cache,
 )
+
+
+class TestAssetsCache:
+    def _metadata(self, **overrides):
+        metadata = {
+            "main_server_url": "http://test:5001",
+            "submission_id": "sub_1",
+            "task_id": 42,
+            "task_files": [{"filename": "data.csv", "saved_name": "abc.csv"}],
+        }
+        metadata.update(overrides)
+        return metadata
+
+    @pytest.fixture
+    def cache_env(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("worker_utils.Config.TASK_IMAGES_DIR", str(tmp_path))
+        return tmp_path
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_first_run_downloads_and_writes_manifest(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is True
+        dest = cache_env / "task_42" / "data" / "data.csv"
+        assert dest.read_bytes() == b"file content"
+        manifest = (cache_env / "task_42" / ".assets.json").read_text()
+        assert '"saved_name": "abc.csv"' in manifest
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        sync_task_files_to_assets_cache(self._metadata(), [])
+        mock_get.reset_mock()
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is True
+        mock_get.assert_not_called()
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_changed_saved_name_redownloads(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"new content"
+        sync_task_files_to_assets_cache(self._metadata(), [])
+        sync_task_files_to_assets_cache(
+            self._metadata(task_files=[{"filename": "data.csv", "saved_name": "xyz.csv"}]),
+            [],
+        )
+        assert mock_get.call_count == 2
+        dest = cache_env / "task_42" / "data" / "data.csv"
+        assert dest.read_bytes() == b"new content"
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        metadata = self._metadata(
+            task_files=[
+                {"filename": "data.csv", "saved_name": "abc.csv"},
+                {"filename": "labels.parquet", "saved_name": "labels_1.parquet"},
+            ]
+        )
+        ok = sync_task_files_to_assets_cache(metadata, [])
+        assert ok is True
+        assert not (cache_env / "task_42" / "data" / "labels.parquet").exists()
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_download_failure_returns_false(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 404
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is False
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_labels_0600_and_0700_dir(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"labels data"
+        path = sync_labels_parquet_to_cache(
+            self._metadata(task_files=[{"filename": "labels.parquet", "saved_name": "l1.parquet"}]),
+            [],
+        )
+        assert path is not None
+        assert (cache_env / "task_42" / "labels" / "labels.parquet").read_bytes() == b"labels data"
+        assert os.stat(path).st_mode & 0o777 == 0o600
+        assert os.stat(cache_env / "task_42" / "labels").st_mode & 0o777 == 0o700
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    def test_labels_unchanged_reuses_cache(self, _tk, cache_env):
+        import json as _json
+
+        metadata = {
+            "main_server_url": "http://test:5001",
+            "submission_id": "sub_1",
+            "task_id": 42,
+            "task_files": [{"filename": "labels.parquet", "saved_name": "l1.parquet"}],
+        }
+        labels_dir = cache_env / "task_42" / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        (labels_dir / "labels.parquet").write_bytes(b"cached")
+        os.chmod(labels_dir, 0o700)
+        (cache_env / "task_42" / ".assets.json").write_text(
+            _json.dumps({"labels": {"saved_name": "l1.parquet", "size": 6}})
+        )
+
+        with patch("worker_utils.requests.get") as mock_get:
+            path = sync_labels_parquet_to_cache(metadata, [])
+            assert path is not None
+            mock_get.assert_not_called()
 
 
 class TestRunCommandStreaming:
@@ -398,3 +516,37 @@ class TestDownloadLabelsParquetToDir:
         with tempfile.TemporaryDirectory() as tmp:
             result = download_labels_parquet_to_dir({}, tmp, [])
             assert result is None
+
+
+class TestRunStaleDirSweep:
+    def test_removes_old_dirs_keeps_fresh(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path))
+        old_dir = tmp_path / "task_old"
+        old_dir.mkdir()
+        old = time.time() - 30 * 3600
+        os.utime(old_dir, (old, old))
+        fresh_dir = tmp_path / "task_fresh"
+        fresh_dir.mkdir()
+        loose_file = tmp_path / "loose.txt"
+        loose_file.write_text("keep me")
+
+        logs = []
+        removed = run_stale_dir_sweep(max_age_hours=24, logs=logs)
+
+        assert removed == 1
+        assert not old_dir.exists()
+        assert fresh_dir.exists()
+        assert loose_file.exists()
+        assert any("task_old" in line for line in logs)
+
+    def test_missing_workspace_returns_zero(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path / "does-not-exist"))
+        assert run_stale_dir_sweep() == 0
+
+    def test_recent_dir_not_removed(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path))
+        recent_dir = tmp_path / "task_recent"
+        recent_dir.mkdir()
+        os.utime(recent_dir, (time.time() - 3600, time.time() - 3600))
+        assert run_stale_dir_sweep(max_age_hours=24) == 0
+        assert recent_dir.exists()

@@ -22,14 +22,18 @@ def build_submission_metadata(
     gpu_required: bool,
     main_server_url: str | None = None,
 ) -> dict[str, Any]:
+    time_limit = (
+        task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
+    )
+    # Persist the dispatch-time limit so the server watchdog and the runner
+    # enforce the same limit even if the task config changes mid-run.
+    submission.time_limit_snapshot = time_limit
     return {
         "submission_id": submission.id,
         "task_id": task.id,
         "challenge_id": challenge.id,
         "user_code": user_code,
-        "time_limit": (
-            task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
-        ),
+        "time_limit": time_limit,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or Config.DEFAULT_RAM_LIMIT_MB,
         "gpu_required": gpu_required,
         "base_docker_image": task.base_docker_image,
@@ -57,6 +61,9 @@ def build_submission_metadata(
             else Config.DEFAULT_PUBLIC_EVAL_PERCENTAGE
         ),
         "task_files": task_files_list,
+        "is_unified_parquet": any(
+            isinstance(f, dict) and f.get("filename") == "labels.parquet" for f in task_files_list
+        ),
         "main_server_url": (main_server_url or Config.MAIN_SERVER_URL),
         "celery_broker_url": Config.CELERY_BROKER_URL,
     }

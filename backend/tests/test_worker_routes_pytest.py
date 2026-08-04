@@ -164,10 +164,21 @@ class TestWorkerEndpoints:
         )
         assert resp.status_code == 401
 
-    def test_report_progress_sets_executed_at(self):
+    def test_report_progress_building_env_does_not_stamp_executed_at(self):
+        # Pre-execution phase (image build / GPU acquisition) must not start the
+        # watchdog clock.
         self.client.post(
             f"/api/worker/report/{self.submission.id}",
-            json={"status": "completed", "detailed_status": "done"},
+            json={"status": "running", "detailed_status": "building_env"},
+            headers=self._worker_headers(),
+        )
+        sub = db.session.get(Submission, self.submission.id)
+        assert sub.executed_at is None
+
+    def test_report_progress_running_inference_stamps_executed_at(self):
+        self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "running", "detailed_status": "running_inference"},
             headers=self._worker_headers(),
         )
         sub = db.session.get(Submission, self.submission.id)

@@ -70,6 +70,7 @@ export default function TaskManager({
             editingTask.stage_id !== null && editingTask.stage_id !== undefined
               ? editingTask.stage_id.toString()
               : '',
+          problem_codes: editingTask.problem_codes || [],
         }
       : {
           title: '',
@@ -91,6 +92,7 @@ export default function TaskManager({
           max_submissions_per_period: '',
           submission_period_hours: '',
           stage_id: '',
+          problem_codes: [],
         },
   );
 

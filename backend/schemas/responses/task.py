@@ -47,6 +47,6 @@ class TaskResponse(BaseModel):
 class TaskAdminResponse(TaskResponse):
     """All fields — visible to admin/jury only."""
 
-    build_error: str | None = None
+    problem_codes: list[str] | None = None
 
     model_config = RESPONSE_CONFIG

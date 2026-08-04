@@ -28,10 +28,10 @@ from worker_utils import (
     MockModel,
     StreamingLogList,
     _sign_worker_token,
-    download_labels_parquet_to_dir,
-    download_task_files_to_dir,
     report_status_to_server,
     run_command_streaming,
+    sync_labels_parquet_to_cache,
+    sync_task_files_to_assets_cache,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,28 @@ _spec_reconnect_needed = False
 
 _WORKER_HOSTNAME = socket.gethostname()
 GPU_LOCK_TTL = 2700  # 45 minutes — longer than max task timeout
+
+
+def _report_runtime_sync_failure(
+    task_id: int | str, metadata: dict[str, Any] | None, problem_codes: list[str]
+) -> None:
+    """Arm task problem codes when a runtime asset/labels sync fails (worker mode).
+
+    Mirrors the build-time reporting in ``image_builder`` so a broken task
+    becomes "not ready" (403) instead of silently failing every submission.
+    No-op in local (non-worker) runs, which have no server to report to.
+    """
+    if not metadata or not metadata.get("main_server_url"):
+        return
+    from task_modules.image_builder import _report_build_error
+
+    _report_build_error(
+        str(task_id),
+        "Task resource synchronization failed; submissions are blocked until the task is fixed.",
+        str(metadata.get("main_server_url", "")),
+        _sign_worker_token(str(metadata.get("submission_id", "unknown"))),
+        problem_codes=problem_codes,
+    )
 
 
 def _recreate_spec_on_reconnect() -> None:
@@ -261,6 +283,15 @@ def run_eval_submission(
     running_as_worker = app is None
     # 1. Setup mock/real models
     if metadata:
+        # Submission callbacks (progress report, file/label fetch, HF-key fetch)
+        # read metadata["main_server_url"], which the server bakes in from ITS OWN
+        # MAIN_SERVER_URL. On external workers that value may be a container-internal
+        # hostname (e.g. "frontend:80") unreachable from the worker network. If the
+        # worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
+        # it; otherwise keep the server-provided URL.
+        _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
+        if _worker_main_url:
+            metadata["main_server_url"] = _worker_main_url
         task = MockModel(
             id=metadata.get("task_id"),
             time_limit_sec=metadata.get("time_limit"),
@@ -287,7 +318,6 @@ def run_eval_submission(
             ram_limit_mb=metadata.get("ram_limit"),
             gpu_required=metadata.get("gpu_required"),
             metric_name=metadata.get("metric_name", "accuracy"),
-            hf_dataset_split=metadata.get("hf_dataset_split", "test"),
         )
         submission = MockModel(
             id=submission_id,
@@ -355,7 +385,6 @@ def run_eval_submission(
                     db_submission.challenge.gpu_required if db_submission.challenge else None
                 ),
                 metric_name="accuracy",
-                hf_dataset_split="test",
             )
             # Log file sizes before accessing file-backed properties
             for _field, path, label, limit_key in [
@@ -522,11 +551,13 @@ def run_eval_submission(
     execution_time_ms: int = 0
     metrics_payload_pub: dict[str, Any] | None = None
     metrics_payload_priv: dict[str, Any] | None = None
-    host_labels_dir: str | None = None
 
     # 3. Start evaluation execution
     try:
-        update_status("running", "running")
+        # Pre-execution phase (image build / GPU acquisition). The server only
+        # stamps executed_at once the container actually starts, so the watchdog
+        # clock excludes build/GPU wait time.
+        update_status("running", "building_env")
 
         # Extract user code
         try:
@@ -549,9 +580,12 @@ def run_eval_submission(
             update_status("failed", "failed", logs_list=[err_msg])
             return
 
-        # Determine resource limits
+        # Determine resource limits — always enforce the dispatch-time limit so
+        # both the runner and the server watchdog share one clock.
         time_limit = 300
-        if task and task.time_limit_sec is not None:
+        if metadata and metadata.get("time_limit"):
+            time_limit = int(metadata["time_limit"])
+        elif task and task.time_limit_sec is not None:
             time_limit = task.time_limit_sec
         elif challenge and challenge.time_limit_sec is not None:
             time_limit = challenge.time_limit_sec
@@ -573,7 +607,18 @@ def run_eval_submission(
 
         # Retrieve task files
         if metadata:
-            download_task_files_to_dir(metadata, temp_dir, logs)
+            sync_ok = sync_task_files_to_assets_cache(metadata, logs)
+            if not sync_ok:
+                err_msg = (
+                    "Error: Could not fetch task resource files for execution."
+                    " The submission was blocked."
+                )
+                logs.append(err_msg)
+                update_status("failed", "failed", logs_list=logs)
+                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                if task is not None:
+                    _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
+                return
         else:
             if task and task.files:
                 try:
@@ -612,8 +657,11 @@ def run_eval_submission(
             if gpus:
                 r = get_coordination_client()
                 if r:
+                    gpu_wait_deadline = time.time() + Config.GPU_ACQUISITION_TIMEOUT
                     logs.append("Waiting for an available GPU device...")
                     while acquired_gpu is None:
+                        if time.time() > gpu_wait_deadline:
+                            break
                         for g_id in gpus:
                             lock_key = f"gpu:lock:{_WORKER_HOSTNAME}:{g_id}"
                             result = r.set(lock_key, str(submission.id), nx=True, ex=GPU_LOCK_TTL)
@@ -622,6 +670,15 @@ def run_eval_submission(
                                 break
                         if acquired_gpu is None:
                             time.sleep(1)
+                    if acquired_gpu is None:
+                        err_msg = (
+                            "No GPU device became available within "
+                            f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
+                        )
+                        logs.append(err_msg)
+                        update_status("failed", "failed", logs_list=logs)
+                        report_status_to_server(metadata, "failed", "failed", logs=logs)
+                        return
                 else:
                     logs.append("WARNING: Redis unavailable — falling back to count=-1 (all GPUs)")
             if acquired_gpu:
@@ -662,7 +719,10 @@ def run_eval_submission(
         import secrets
 
         results_key = secrets.token_hex(16)
-        with open(os.path.join(temp_dir, "competitor_actual.py"), "w") as f:
+        # The executed module is named after the submission UUID (run by path,
+        # not import, so the deterministic name is collision-proof per task).
+        exec_filename = f"submission_{submission_id}.py"
+        with open(os.path.join(temp_dir, exec_filename), "w") as f:
             f.write(user_code)
             os.fchmod(f.fileno(), 0o644)
 
@@ -756,7 +816,7 @@ def run_eval_submission(
         # Update status: Running Inference
         update_status("running", "running_inference", logs_list=logs)
 
-        exec_file = "competitor_actual.py"
+        exec_file = f"submission_{submission_id}.py"
         start_wall_time = time.time()
         stdout, stderr = "", ""
         process_timeout = False
@@ -821,6 +881,20 @@ def run_eval_submission(
             f"command=python -u {exec_file}, "
             f"ram={ram_limit}M, cpus={cpu_limit}"
         )
+        volumes: dict[str, dict[str, str]] = {temp_dir: {"bind": "/app", "mode": "rw"}}
+        task_id = metadata.get("task_id") if metadata else None
+        if task_id:
+            # Read-only mount of the worker-side asset cache: task resource
+            # files are served from here, never writable by the sandbox.
+            assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
+            try:
+                if os.path.isdir(assets_dir) and any(
+                    os.path.isfile(os.path.join(assets_dir, p)) for p in os.listdir(assets_dir)
+                ):
+                    volumes[assets_dir] = {"bind": "/app/data", "mode": "ro"}
+            except OSError:
+                logger.warning("Could not inspect asset cache dir %s", assets_dir)
+
         retcode, stdout, stderr, process_timeout = run_command_streaming(
             docker_client,
             image_tag,
@@ -834,7 +908,7 @@ def run_eval_submission(
             security_opt=["no-new-privileges:true"],
             pids_limit=64,
             tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
-            volumes={temp_dir: {"bind": "/app", "mode": "rw"}},
+            volumes=volumes,
             working_dir="/app",
             environment=environment,
             gpu_required=gpu_required,
@@ -873,9 +947,9 @@ def run_eval_submission(
                 # Locate labels.parquet on the host
                 labels_path = None
                 if metadata:
-                    # Running on worker: download labels.parquet securely to a host-only directory
-                    host_labels_dir = tempfile.mkdtemp()
-                    labels_path = download_labels_parquet_to_dir(metadata, host_labels_dir, logs)
+                    # Running on worker: use the host-only labels cache (never
+                    # mounted into the sandbox)
+                    labels_path = sync_labels_parquet_to_cache(metadata, logs)
                 else:
                     # Running locally with DB: find in task files folder
                     if task and task.files:
@@ -897,6 +971,10 @@ def run_eval_submission(
                         "Error: The task ground-truth "
                         "'labels.parquet' file could not be found or loaded."
                     )
+                    if task is not None and metadata:
+                        _report_runtime_sync_failure(
+                            task.id, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"]
+                        )
                 else:
                     try:
                         import pandas as pd
@@ -941,6 +1019,10 @@ def run_eval_submission(
                             unique_queries = sorted(df_labels["query_id"].unique())
                             num_public = int(len(unique_queries) * (pub_pct / 100.0))
                             num_public = max(0, min(num_public, len(unique_queries)))
+                            # Tiny datasets must keep at least one row public so a
+                            # non-zero public score is always computed (>=1 row).
+                            if num_public == 0 and len(unique_queries) > 0 and pub_pct > 0:
+                                num_public = 1
                             public_queries = set(unique_queries[:num_public])
 
                             df_labels_pub = (
@@ -969,6 +1051,8 @@ def run_eval_submission(
                             n_total = len(df_labels)
                             num_public = int(n_total * (pub_pct / 100.0))
                             num_public = max(0, min(num_public, n_total))
+                            if num_public == 0 and n_total > 0 and pub_pct > 0:
+                                num_public = 1
 
                             df_labels_pub = (
                                 df_labels.iloc[:num_public]
@@ -1083,10 +1167,6 @@ def run_eval_submission(
                 r = get_coordination_client()
                 if r:
                     r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
-        if host_labels_dir:
-            import shutil
-
-            shutil.rmtree(host_labels_dir, ignore_errors=True)
         if "temp_dir" in locals() and temp_dir:
             import shutil
 

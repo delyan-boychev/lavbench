@@ -118,6 +118,43 @@ def _configure_worker_logging(sender: str, conf: Any, **kwargs: Any) -> None:
     conf.worker_task_log_format = logfmt
 
 
+@celeryd_init.connect
+def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
+    """Sweep abandoned task execution dirs once at worker startup.
+
+    Complements the daily ``task-dir-sweep-daily`` beat task: a worker boot is
+    the likeliest moment a previous instance was killed and left plaintext in
+    its workspace root (see ``worker_utils.run_stale_dir_sweep``). Serialized
+    with a file lock so concurrent worker starts don't sweep twice.
+    """
+    from worker_utils import run_stale_dir_sweep
+
+    lock_path = os.path.join(Config.LAVBENCH_WORKSPACE_DIR or "", ".stale_sweep.lock")
+    if not Config.LAVBENCH_WORKSPACE_DIR:
+        return
+    try:
+        import fcntl
+
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        return
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return
+        try:
+            removed = run_stale_dir_sweep()
+            if removed:
+                logger.info("[%s] removed %s stale task dir(s) on startup", sender, removed)
+        finally:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 @celery.task(
     bind=True,
     soft_time_limit=1200,
@@ -343,9 +380,12 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         timeout_count = 0
         # chain() streams both queries lazily (yield_per) without materializing
         for sub in chain(timed_out_candidates, running_candidates):
-            task_time_limit = 300
-            if sub.task:
-                task_time_limit = sub.task.time_limit_sec or sub.challenge.time_limit_sec or 300
+            task_time_limit = (
+                sub.time_limit_snapshot
+                or (sub.task.time_limit_sec if sub.task else None)
+                or (sub.challenge.time_limit_sec if sub.challenge else None)
+                or 300
+            )
             if sub.executed_at:
                 max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
                 if now - sub.executed_at <= max_runtime:
@@ -454,6 +494,15 @@ def prune_docker_images() -> dict[str, str]:
     return run_docker_prune()
 
 
+@celery.task
+def sweep_stale_task_dirs() -> dict[str, Any]:
+    """Celery task: remove abandoned task execution dirs left behind by
+    killed/restarted workers (see ``worker_utils.run_stale_dir_sweep``)."""
+    from worker_utils import run_stale_dir_sweep
+
+    return {"removed": run_stale_dir_sweep()}
+
+
 celery.conf.beat_schedule = {
     "watchdog-every-5m": {
         "task": "tasks.watchdog_stuck_submissions",
@@ -473,6 +522,11 @@ celery.conf.beat_schedule = {
     "docker-prune-weekly": {
         "task": "tasks.prune_docker_images",
         "schedule": 604800.0,  # once a week (7 days)
+        "options": {"queue": "cpu_queue"},
+    },
+    "task-dir-sweep-daily": {
+        "task": "tasks.sweep_stale_task_dirs",
+        "schedule": 86400.0,  # once a day
         "options": {"queue": "cpu_queue"},
     },
 }

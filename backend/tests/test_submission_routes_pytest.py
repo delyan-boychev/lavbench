@@ -698,16 +698,21 @@ class TestSubmitCode:
         body = resp.get_json()
         assert "submission_id" in body
 
-    def test_submit_blocked_by_build_error(self):
-        self.task.build_error = "Docker image not found"
+    def test_submit_blocked_by_problem_codes(self):
+        self.task.problem_codes = ["ERR_HF_DOWNLOAD_FAILED", "ERR_BASELINE_FAILED"]
         db.session.flush()
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/submit",
             json={"task_id": self.task.id, "selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 400
-        assert resp.get_json()["code"] == "ERR_TASK_BUILD_ERROR"
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["code"] == "ERR_TASK_NOT_READY"
+        assert sorted(p["code"] for p in body["problems"]) == [
+            "ERR_BASELINE_FAILED",
+            "ERR_HF_DOWNLOAD_FAILED",
+        ]
 
 
 class TestGetSubmissions:

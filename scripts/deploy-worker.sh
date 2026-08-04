@@ -111,6 +111,11 @@ deploy_docker() {
   TASK_IMAGES_DIR="$(pwd)/task_images"
   mkdir -p "$TASK_IMAGES_DIR"
   rm -rf "$TASK_IMAGES_DIR"/*
+  # NOTE: LAVBENCH_WORKSPACE_DIR and TASK_IMAGES_DIR are mounted at the SAME
+  # host path inside the container. The worker launches sandboxes through the
+  # mounted Docker socket, so bind-mount sources are resolved by the HOST
+  # daemon — container-internal paths like /app/task_images would fail with
+  # "mounts denied".
 
   # ── Run container ──────────────────────────────────────────────
   echo "  → Starting container..."
@@ -127,7 +132,7 @@ deploy_docker() {
     -e WORKER_TYPE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
-    -e TASK_IMAGES_DIR=/app/task_images \
+    -e TASK_IMAGES_DIR="${TASK_IMAGES_DIR}" \
     -e GPU_CORES_PER_TASK \
     -e CPU_CORES_PER_TASK \
     -e GPU_RAM_PER_TASK_GB \
@@ -147,7 +152,7 @@ deploy_docker() {
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
     -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
-    -v "${TASK_IMAGES_DIR}:/app/task_images" \
+    -v "${TASK_IMAGES_DIR}:${TASK_IMAGES_DIR}" \
     $( [ -n "${REDIS_SSL_CA_CERTS:-}" ] && echo "-v $(pwd)/certs:/etc/ssl/certs/redis:ro" || true ) \
     $( [ -n "$GPU_ID" ] && echo "--gpus all" || true ) \
     "$WORKER_IMAGE"

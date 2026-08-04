@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
@@ -81,6 +82,18 @@ from utils.streaming import stream_file_response
 tasks_bp = Blueprint("tasks", __name__)
 
 logger = logging.getLogger(__name__)
+
+
+def _unique_saved_name(original_name: str) -> str:
+    """Produce a unique on-disk name for an uploaded task file.
+
+    The worker-side asset cache (``worker_utils.sync_task_files_to_assets_cache``)
+    detects replaced files by comparing ``saved_name`` — a re-upload of the same
+    filename must therefore yield a new name, otherwise the changed content would
+    never reach students (stale cache / stale baked image). The original
+    extension is preserved so mime/detection logic keeps working.
+    """
+    return f"{uuid.uuid4().hex}-{secure_filename(original_name) or 'file'}"
 
 
 def _worker_token_identity() -> str:
@@ -573,7 +586,7 @@ def create_task(
                     message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
-            safe_name = secure_filename(uploaded_file.filename)
+            safe_name = _unique_saved_name(uploaded_file.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             uploaded_file.save(save_path)
 
@@ -664,6 +677,19 @@ def update_task(
     task = db.get_or_404(Task, task_id)
     fields = form.model_fields_set
 
+    # Snapshot semantic inputs so we can decide whether the rebuild/baseline
+    # actually needs to run (title changes must not rebuild the image).
+    semantic_before = {
+        "base_docker_image": task.base_docker_image,
+        "apt_packages": task.apt_packages,
+        "pip_requirements": task.pip_requirements,
+        "hf_datasets": task.hf_datasets,
+        "hf_models": task.hf_models,
+        "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
+        "files": task.files,
+        "custom_eval_code": task.custom_eval_code,
+    }
+
     if request.user.get("role") != "admin":
         for field in ["base_docker_image", "apt_packages", "pip_requirements"]:
             if field in fields:
@@ -693,19 +719,9 @@ def update_task(
     if "pip_requirements" in fields:
         task.pip_requirements = form.pip_requirements
 
-    # Clear build_error when environment config is changed
-    if task.build_error:
-        env_fields = {
-            "base_docker_image",
-            "apt_packages",
-            "pip_requirements",
-            "hf_datasets",
-            "hf_models",
-        }
-        if (fields & env_fields) or (
-            "hf_api_key" in request.form and request.form.get("hf_api_key", "").strip()
-        ):
-            task.build_error = None
+    # NOTE: build-family problem codes are NOT cleared here. The gate stays
+    # closed until the worker reports a successful rebuild (report-build-error
+    # with empty error), so a broken env cannot silently re-open submissions.
 
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
@@ -864,6 +880,7 @@ def update_task(
         return err("ERR_TOO_MANY_FILES", 400)
 
     newly_saved_paths: list[str] = []
+    replaced_paths: list[str] = []
     total_update_size = 0
 
     for key in new_files_keys:
@@ -906,7 +923,7 @@ def update_task(
                     message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
                 )
 
-            safe_name = secure_filename(uploaded_file.filename)
+            safe_name = _unique_saved_name(uploaded_file.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
             uploaded_file.save(save_path)
             newly_saved_paths.append(save_path)
@@ -941,6 +958,19 @@ def update_task(
                         message=f"Failed to parse labels.parquet: {e!s}",
                     )
 
+            # A re-uploaded file replaces any previous entry with the same
+            # filename: keep exactly one manifest entry (consumers match on the
+            # first entry per filename) and defer removal of the replaced file
+            # on disk until the whole update commits successfully.
+            replaced_paths.extend(
+                os.path.join(task_upload_dir, prev["saved_name"])
+                for prev in current_files
+                if prev.get("filename") == uploaded_file.filename
+                and prev.get("saved_name") != safe_name
+            )
+            current_files = [
+                f for f in current_files if f.get("filename") != uploaded_file.filename
+            ]
             current_files.append(
                 {
                     "filename": uploaded_file.filename,
@@ -951,6 +981,10 @@ def update_task(
     task.files = json.dumps(current_files)
     db.session.commit()
 
+    for old_path in replaced_paths:
+        with contextlib.suppress(OSError):
+            os.remove(old_path)
+
     log_audit(
         request.user["user_id"],
         "update",
@@ -960,16 +994,46 @@ def update_task(
     )
 
     invalidate_entity_cache(task.challenge_id)
-    _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
 
-    # Notify workers to rebuild Docker image for this task
-    try:
-        if not current_app.config.get("TESTING"):
-            r = get_coordination_client()
-            if r:
-                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
-    except Exception as e:
-        logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
+    # Only recompute the baseline and notify workers to rebuild when the
+    # image-affecting (semantic) or scoring inputs actually changed — title,
+    # description, periods, limits etc. must not churn images or baselines.
+    semantic_now = {
+        "base_docker_image": task.base_docker_image,
+        "apt_packages": task.apt_packages,
+        "pip_requirements": task.pip_requirements,
+        "hf_datasets": task.hf_datasets,
+        "hf_models": task.hf_models,
+        "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
+        "files": task.files,
+        "custom_eval_code": task.custom_eval_code,
+    }
+    semantic_changed = any(semantic_before[k] != semantic_now[k] for k in semantic_before)
+    scoring_fields = {
+        "metrics_config",
+        "public_eval_percentage",
+        "ram_limit_mb",
+        "time_limit_sec",
+        "gpu_required",
+        "ban_magic_commands",
+        "banned_imports",
+        "whitelisted_imports",
+    }
+
+    if semantic_changed or (fields & scoring_fields):
+        _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
+
+    # Notify workers to rebuild Docker image for this task (semantic changes only)
+    if semantic_changed:
+        try:
+            if not current_app.config.get("TESTING"):
+                r = get_coordination_client()
+                if r:
+                    r.publish(CHANNEL_TASK_REBUILD, str(task.id))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish task_rebuild notification for task %s: %s", task.id, e
+            )
 
     return task.to_dict(view_role=request.user["role"])
 
@@ -1686,10 +1750,17 @@ def report_worker_progress(
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
         submission.status = status_val
-    if submission.executed_at is None:
-        submission.executed_at = utcnow()
     if "detailed_status" in data:
         submission.detailed_status = data["detailed_status"]
+    # executed_at anchors the watchdog clock; it must reflect actual container
+    # execution, not pre-execution phases (image build, GPU acquisition) that the
+    # runner reports under detailed_status="building_env" while status="running".
+    detailed_val = data.get("detailed_status") or submission.detailed_status
+    if submission.executed_at is None and status_val == "running" and detailed_val not in (
+        "building_env",
+        "queued",
+    ):
+        submission.executed_at = utcnow()
     if "logs" in data:
         logs_val = data["logs"]
         if isinstance(logs_val, list):
@@ -1725,6 +1796,20 @@ def report_worker_progress(
         submission.final_weighted_score_public = data["final_weighted_score_public"]
     if "final_weighted_score_private" in data:
         submission.final_weighted_score_private = data["final_weighted_score_private"]
+
+    # Baseline lifecycle: a failed baseline makes the task not-ready; a
+    # completed baseline clears the problem (submissions are gated on
+    # task.problem_codes).
+    if submission.is_baseline and submission.task_id and "status" in data:
+        baseline_task = db.session.get(Task, submission.task_id)
+        if baseline_task:
+            baseline_codes = set(baseline_task.problem_codes or [])
+            if data["status"] == "failed":
+                baseline_codes.add("ERR_BASELINE_FAILED")
+            elif data["status"] == "completed":
+                baseline_codes.discard("ERR_BASELINE_FAILED")
+            baseline_task.problem_codes = sorted(baseline_codes) or None
+
     db.session.commit()
 
     publish_submissions_update(submission.task_id, submission.challenge_id)
@@ -1952,14 +2037,31 @@ def report_build_error(
     task_id: Any,
 ) -> tuple[FlaskResponse, int] | tuple[dict[str, str], int]:
     token = request.headers.get("X-Worker-Token")
-    if not check_worker_auth(token):
+    nonce = check_worker_auth(token)
+    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
         return err("ERR_UNAUTHORIZED", 401)
     data = request.get_json(silent=True) or {}
     error_msg = (data.get("error") or "").strip()
     task = db.session.get(Task, task_id)
     if not task:
         return err("ERR_TASK_NOT_FOUND", 404)
-    task.build_error = error_msg if error_msg else None
+    if error_msg:
+        # Record every reported root cause; if none were reported, fall back
+        # to the generic build-failed code.
+        reported = [c for c in data.get("problem_codes", []) if isinstance(c, str)]
+        merged = set(task.problem_codes or [])
+        merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
+        task.problem_codes = sorted(merged) or None
+    else:
+        # Successful build clears all build-related problems (baseline state
+        # is managed separately by report_worker_progress).
+        build_codes = {
+            "ERR_TASK_FILE_SYNC_FAILED",
+            "ERR_TASK_LABELS_SYNC_FAILED",
+            "ERR_HF_DOWNLOAD_FAILED",
+            "ERR_TASK_BUILD_FAILED",
+        }
+        task.problem_codes = [c for c in (task.problem_codes or []) if c not in build_codes] or None
     db.session.commit()
     return {"message": "ok"}, 200
 

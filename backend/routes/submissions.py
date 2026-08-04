@@ -21,7 +21,7 @@ from cache_utils import (
     submission_logs_key,
 )
 from config import Config
-from error_utils import err
+from error_utils import DEFAULT_ERROR_MESSAGES, err
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     ErrorResponse,
@@ -150,8 +150,15 @@ def submit_code(
 
     task = db.session.get(Task, task_id)
 
-    if task and task.build_error:
-        return err("ERR_TASK_BUILD_ERROR", 400)
+    if task and task.problem_codes:
+        # Strict readiness gate: any build/labels/HF/baseline problem blocks
+        # submissions and reports every root cause (translated client-side).
+        codes = {c for c in task.problem_codes if isinstance(c, str)}
+        problems = [
+            {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}
+            for code in sorted(codes)
+        ]
+        return err("ERR_TASK_NOT_READY", 403, problems=problems)
 
     if user_role == "competitor":
         from datetime import timedelta

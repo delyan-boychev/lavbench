@@ -71,6 +71,18 @@ Competitor code runs inside a zero-trust Docker container with strict Linux kern
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
 | `--cpus` | Restricts CPU core allocation per container (`CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`). |
 
+> **Known non-blocker:** the `/app` bind mount (rw) has **no disk quota** of its own — a
+> competitor can fill it until host disk pressure is hit. It is a deliberate trade-off accepted
+> because memory, CPU, pid count, and wall-clock time are all capped, and `TASK_IMAGES_DIR`
+> free-space (`MIN_BUILD_DISK_GB`) is monitored at build time.
+
+### Stale-Dir Sweep
+Submission workspace dirs (`LAVBENCH_WORKSPACE_DIR`) are normally removed in a `finally` block,
+but a killed/restarted worker can leave plaintext behind. Two complementary sweeps delete any
+workspace subdirectory not modified in 24h:
+1. **Worker startup** (tasks.py `_stale_dir_sweep_on_start`, `celeryd_init`, fcntl-serialized);
+2. **Daily beat** (`task-dir-sweep-daily`).
+
 ---
 
 ## 5. Task Image Build Pipeline & Build Error Taxonomy
@@ -90,9 +102,19 @@ Each task maintains a persistent build directory at `TASK_IMAGES_DIR/task_{id}/`
 5. **Disk Space Exhaustion**: Host free disk space below `MIN_BUILD_DISK_GB` (5 GB limit).
 
 ### Build Error Recovery & Troubleshooting:
-- Build errors are written to `task.build_error` and displayed in the Admin Panel and task overview.
-- If a build lock is stuck due to worker interruption, admins can execute `clear_build_lock(task_id)` or click **Force Clear Build Lock** in the UI.
-- Saving task edits or clicking **Rebuild Container Image** publishes a Redis `task_rebuild` notification, clearing stale image caches and triggering a fresh container build.
+- Build/environment failures are recorded as a **problem registry** — a list of machine-readable codes on `task.problem_codes` (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Any non-empty registry blocks new submissions with `ERR_TASK_NOT_READY` (403) and every root cause is translated client-side.
+- The registry is lifecycle-managed: worker-reported build failures add codes, a successful build clears the build-family codes, baseline completion removes `ERR_BASELINE_FAILED`, and environment config changes (base image, apt/pip/HF settings) clear stale build-family problems.
+- If a build lock is stuck due to worker interruption, an admin can clear it on the worker host with the worker-side `clear_build_lock(task_id)` helper (`task_modules/image_builder.py`) — e.g. from a worker shell. There is no UI button or admin HTTP route for this.
+- Saving semantic task edits (base image, apt/pip/HF settings, task files, evaluator code) publishes a Redis `task_rebuild` notification; the worker's rebuild listener (`_rebuild_listener`) re-fetches the task config and rebuilds with `force_rebuild=True`, bypassing the config-hash fast path. HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only) and the image is rebuilt from the fresh data.
+
+### Task File & Label Replacement (unique `saved_name`)
+Uploaded task resource files (including `labels.parquet`) are stored under a UUID-prefixed
+`saved_name` (extension preserved). Because re-uploading a file with the *same* public filename
+rotates the `saved_name`, the worker-side asset cache — which uses `saved_name` as its change
+marker — detects the replacement and re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data`
+(and the host-only `labels/` cache), and image builds re-bake the fresh data. `update_task` keeps
+exactly one manifest entry per public filename and reclaims the replaced on-disk file after a
+successful commit.
 
 ---
 

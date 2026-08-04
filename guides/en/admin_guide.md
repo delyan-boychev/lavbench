@@ -103,9 +103,10 @@ Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` 
 
 #### Inspecting & Resolving Build Errors:
 1. Open **Admin Panel** → **Tasks** → select the failing task.
-2. The UI highlights the `build_error` banner containing the exact Docker build stderr log traceback.
+2. The UI highlights a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
 3. Fix the base image, APT package string, or Pip requirements in the task edit modal.
-4. Saving the task re-triggers worker notification over Redis pub/sub (`rebuild_task_image`), clearing the error and building a fresh container.
+4. Saving the task re-triggers worker notification over Redis pub/sub (`task_rebuild`). The rebuild listener bypasses the config-hash fast path (`force_rebuild=True`), so the image is rebuilt and HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only). A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
+5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (mounted read-only at `/app/data` in the sandbox) and re-bakes the image — students always see the current file, never a stale copy.
 
 ---
 

@@ -1,4 +1,5 @@
 import math
+import os
 from unittest.mock import patch
 
 import pytest
@@ -155,6 +156,57 @@ class TestSubmissionRunnerDocker:
         assert captured_run_kwargs.get("working_dir") == "/app"
         assert captured_run_kwargs.get("gpu_required") is False
         assert captured_run_kwargs.get("gpu_id") is None
+        assert captured_run_kwargs.get("command") == ["python", "-u", "submission_sub_123.py"]
+        assert captured_run_kwargs.get("read_only") is True
+        assert captured_run_kwargs.get("user") == "65534:65534"
+        volumes = captured_run_kwargs.get("volumes", {})
+        assert len(volumes) == 1
+        temp_dir, mount = next(iter(volumes.items()))
+        assert mount == {"bind": "/app", "mode": "rw"}
+        assert os.path.basename(temp_dir).startswith("tmp") or os.path.isdir(temp_dir)
+
+    def test_asset_cache_mounted_read_only(self, mocker, tmp_path):
+        from task_modules.submission_runner import run_eval_submission
+
+        mocker.patch.object(Config, "TASK_IMAGES_DIR", str(tmp_path))
+        data_dir = tmp_path / "task_456" / "data"
+        data_dir.mkdir(parents=True)
+        (data_dir / "features.csv").write_text("x,y\n1,2\n")
+
+        metadata = {
+            "task_id": 456,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 100,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": "print('hello')",
+            "challenge_id": 789,
+            "metric_name": "accuracy",
+            "user_code": "print('user code')",
+            "submission_id": "sub_mount",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        with pytest.raises(CommandInterruptedError):
+            run_eval_submission(
+                self_task=None,
+                submission_id="sub_mount",
+                metadata=metadata,
+                app=None,
+                db=None,
+                submission_cls=None,
+                challenge_cls=None,
+            )
+
+        volumes = captured_run_kwargs.get("volumes", {})
+        assert str(data_dir) in volumes
+        assert volumes[str(data_dir)] == {"bind": "/app/data", "mode": "ro"}
 
     def test_ram_limit_2048(self):
         from task_modules.submission_runner import run_eval_submission
@@ -666,8 +718,8 @@ class TestDockerNotAvailable:
             return_value=mocker.MagicMock(),
         )
         mocker.patch(
-            "task_modules.submission_runner.download_task_files_to_dir",
-            return_value=None,
+            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            return_value=True,
         )
 
     def test_docker_not_available_returns_early(self, mocker):
@@ -717,8 +769,8 @@ class TestCodeCellsParseError:
             return_value=mocker.MagicMock(),
         )
         mocker.patch(
-            "task_modules.submission_runner.download_task_files_to_dir",
-            return_value=None,
+            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            return_value=True,
         )
 
         # Patch json.loads so the first call (code_cells parse) raises
@@ -777,3 +829,88 @@ class TestEvaluationEngineImport:
         assert "accuracy" in AVAILABLE_METRICS
         assert "f1" in AVAILABLE_METRICS
         assert "rmse" in AVAILABLE_METRICS
+
+
+class TestReportRuntimeSyncFailure:
+    def test_noop_without_metadata(self, mocker):
+        from task_modules.submission_runner import _report_runtime_sync_failure
+
+        mock_sign = mocker.patch("task_modules.submission_runner._sign_worker_token")
+        _report_runtime_sync_failure(1, None, ["ERR_TASK_FILE_SYNC_FAILED"])
+        _report_runtime_sync_failure(1, {}, ["ERR_TASK_FILE_SYNC_FAILED"])
+        mock_sign.assert_not_called()
+
+    def test_reports_problem_codes_via_build_error(self, mocker):
+        from task_modules.submission_runner import _report_runtime_sync_failure
+
+        mock_report = mocker.patch("task_modules.image_builder._report_build_error")
+        mocker.patch(
+            "task_modules.submission_runner._sign_worker_token", return_value="signed-token"
+        )
+        metadata = {"main_server_url": "http://server:5000", "submission_id": "sub-9"}
+        _report_runtime_sync_failure(7, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"])
+        block_msg = (
+            "Task resource synchronization failed; submissions are blocked until the task is fixed."
+        )
+        mock_report.assert_called_once_with(
+            "7",
+            block_msg,
+            "http://server:5000",
+            "signed-token",
+            problem_codes=["ERR_TASK_LABELS_SYNC_FAILED"],
+        )
+
+    def test_file_sync_failure_arms_code_through_run(self, mocker):
+        from task_modules.submission_runner import run_eval_submission
+
+        mocker.patch("task_modules.submission_runner.check_docker_available", return_value=True)
+        mocker.patch(
+            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            return_value=False,
+        )
+        mock_report_status = mocker.patch(
+            "task_modules.submission_runner.report_status_to_server", return_value=True
+        )
+        mock_runtime_report = mocker.patch(
+            "task_modules.submission_runner._report_runtime_sync_failure"
+        )
+        mocker.patch(
+            "task_modules.submission_runner.get_coordination_client",
+            return_value=mocker.MagicMock(),
+        )
+
+        metadata = {
+            "task_id": 1,
+            "time_limit": 30,
+            "ram_limit": 4096,
+            "gpu_required": False,
+            "base_docker_image": "python:3.10-slim",
+            "apt_packages": "",
+            "pip_requirements": "",
+            "metrics_config": {},
+            "public_eval_percentage": 50,
+            "hf_datasets": "[]",
+            "hf_models": "[]",
+            "custom_eval_code": None,
+            "challenge_id": 1,
+            "metric_name": "accuracy",
+            "user_code": "print('hi')",
+            "submission_id": "sub_sync_fail",
+            "main_server_url": "http://localhost:5000",
+        }
+
+        result = run_eval_submission(
+            self_task=None,
+            submission_id="sub_sync_fail",
+            metadata=metadata,
+            app=None,
+            db=None,
+            submission_cls=None,
+            challenge_cls=None,
+        )
+        assert result is None
+        failed_reports = [
+            c for c in mock_report_status.call_args_list if c.kwargs.get("status") == "failed"
+        ]
+        assert failed_reports
+        mock_runtime_report.assert_called_once_with(1, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])

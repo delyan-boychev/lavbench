@@ -179,6 +179,21 @@ def expect_error(data, code: str) -> bool:
     return isinstance(data, dict) and data.get("code") == code
 
 
+def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
+                    interval: float = 5.0) -> tuple[bool, dict]:
+    """Poll an EXISTING submission id until a terminal state (completed/failed)."""
+    deadline = time.time() + poll_timeout
+    last: dict = {}
+    while time.time() < deadline:
+        time.sleep(interval)
+        code, data = poll_client.send("GET", f"/api/submissions/{sid}")
+        if code == 200 and isinstance(data, dict):
+            last = data
+            if data.get("status") in ("completed", "failed"):
+                return True, data
+    return False, last
+
+
 def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, source: str,
                     poll_timeout: float = 600.0, interval: float = 5.0) -> tuple[bool, dict]:
     """Submit a single code cell and poll GET /api/submissions/<id> until a
@@ -268,6 +283,7 @@ def main() -> int:
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     future = "2027-12-31T00:00:00Z"
     cid = tid = sid = stage_id = comp_user = comp_pass = jury_user = jury_pass = jury_id = comp_id = ""
+    pipe_cid = pipe_uid = ""
 
     # ── 1. Health, docs, swagger (no auth) ──────────────────────────────
     print("\n== 1. Health / docs ==")
@@ -757,6 +773,21 @@ def main() -> int:
                 labels_df = pd.DataFrame({"id": [1, 2, 3, 4, 5], "label": [0, 1, 0, 1, 0]})
                 labels_buf = io.BytesIO()
                 labels_df.to_parquet(labels_buf, index=False)
+                # The auto-baseline must WRITE submission.parquet matching the
+                # labels, otherwise it fails and arms ERR_BASELINE_FAILED, which
+                # gates the whole task (strict readiness gate) and blocks the
+                # competitor submissions below.
+                eval_baseline_nb = {
+                    "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+                               "outputs": [],
+                               "source": ["import pandas as pd\n",
+                                          "pd.DataFrame({'id': [1, 2, 3, 4, 5], "
+                                          "'label': [0, 1, 0, 1, 0]})"
+                                          ".to_parquet('submission.parquet')\n"]}],
+                    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                                "name": "python3"}},
+                    "nbformat": 4, "nbformat_minor": 5,
+                }
                 code, data = api.multipart(
                     "POST", f"/api/challenges/{cid}/tasks",
                     {"title": "smoke-eval-task", "stage_id": stage_id, "gpu_required": "false",
@@ -766,7 +797,7 @@ def main() -> int:
                      "metrics_config": json.dumps(
                          {"accuracy": {"weight": 1.0, "higher_is_better": True}}),
                      "public_eval_percentage": "50"},
-                    {"baseline_notebook": ("baseline.ipynb", ipynb),
+                    {"baseline_notebook": ("baseline.ipynb", json.dumps(eval_baseline_nb).encode()),
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 eval_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("eval: create task with labels.parquet 201", code == 201 and bool(eval_tid))
@@ -829,11 +860,283 @@ def main() -> int:
                 code, data = api.send("DELETE", f"/api/tasks/{eval_tid}")
                 check("eval: delete task 200", code == 200 and isinstance(data, dict))
 
+                # ── 15b. Asset pipeline (cache, problem registry, rebuild) ──
+                print("\n== 15b. Asset pipeline (worker-backed) ==")
+                code, data = api.send("POST", "/api/challenges",
+                                      {"title": "smoke-asset-pipeline",
+                                       "description": "asset pipeline smoke",
+                                       "start_time": now, "end_time": future,
+                                       "gpu_required": False, "max_eval_requests": 50})
+                pipe_cid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: create pipeline challenge 201", code == 201 and bool(pipe_cid))
+                code, data = api.send("POST", "/api/admin/register-competitor",
+                                      {"name": "Pipe", "surname": "Probe", "middle_name": "M",
+                                       "birth_date": "2006-03-03", "grade": "10",
+                                       "school": "Pipe HS", "city": "Varna", "challenge_id": pipe_cid})
+                pipe_user = data.get("generated_username", "") if code == 201 and isinstance(data, dict) else ""
+                pipe_pass = data.get("generated_password", "") if code == 201 and isinstance(data, dict) else ""
+                pipe_uid = data.get("user", {}).get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: register pipeline competitor 201", code == 201 and bool(pipe_user))
+                pipe = Api(args.base)
+                code, data = pipe.send("POST", "/api/auth/login",
+                                       {"username": pipe_user, "password": pipe_pass})
+                check("15b: pipeline competitor login 200", code == 200 and isinstance(data, dict))
+                code, data = pipe.send("GET", "/api/auth/csrf-token")
+                pipe.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+
+                pipe_labels = pd.DataFrame({"id": [1], "value": [7]})
+                labels_buf = io.BytesIO()
+                pipe_labels.to_parquet(labels_buf, index=False)
+                pipe_nb = {
+                    "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+                               "outputs": [],
+                               "source": ["import pandas as pd\n",
+                                          "pd.DataFrame({'id': [1], 'value': [7]})"
+                                          ".to_parquet('submission.parquet')\n"]}],
+                    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                                "name": "python3"}},
+                    "nbformat": 4,
+                    "nbformat_minor": 5,
+                }
+                nb_bytes = json.dumps(pipe_nb).encode()
+                pipe_fields = {"gpu_required": "false", "ram_limit_mb": "512",
+                               "time_limit_sec": "60", "base_docker_image": "python:3.12-slim",
+                               "pip_requirements": "pandas\npyarrow",
+                               "metrics_config": json.dumps(
+                                   {"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+                               "public_eval_percentage": "50", "max_submissions_per_period": "50"}
+                # The baseline notebook above WRITES submission.parquet so the
+                # auto-baseline completes and never arms ERR_BASELINE_FAILED.
+                read_code = ("import pandas as pd\n"
+                             "with open('/app/data/data.txt') as _f:\n"
+                             "    _v = int(_f.read().strip())\n"
+                             "pd.DataFrame({'id': [1], 'value': [_v]})"
+                             ".to_parquet('submission.parquet')\n")
+
+                # (a) asset cache: fresh data via the RO /app/data mount, then
+                # changed-file relsync (same filename, new saved_name).
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{pipe_cid}/tasks",
+                    {"title": "smoke-cache-task", **pipe_fields},
+                    {"baseline_notebook": ("baseline.ipynb", nb_bytes),
+                     "file0": ("labels.parquet", labels_buf.getvalue()),
+                     "file1": ("data.txt", b"7")})
+                cache_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: create cache task 201", code == 201 and bool(cache_tid))
+                prev_saved = ""
+                if code == 201 and isinstance(data, dict):
+                    for f in data.get("files", []):
+                        if isinstance(f, dict) and f.get("filename") == "data.txt":
+                            prev_saved = f.get("saved_name", "")
+                reached, sub = submit_and_poll(pipe, api, pipe_cid, cache_tid, read_code,
+                                               poll_timeout=900.0)
+                score = sub.get("public_score") if isinstance(sub, dict) else None
+                check("15b: cache first run — /app/data served fresh file (score 1.0)",
+                      reached and sub.get("status") == "completed"
+                      and isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                      f"status={sub.get('status')} score={score}")
+                code, data = api.multipart(
+                    "PUT", f"/api/tasks/{cache_tid}",
+                    {"title": "smoke-cache-task"},
+                    {"file1": ("data.txt", b"9")})
+                new_saved = ""
+                data_entries = 0
+                if code == 200 and isinstance(data, dict):
+                    for f in data.get("files", []):
+                        if isinstance(f, dict) and f.get("filename") == "data.txt":
+                            data_entries += 1
+                            new_saved = f.get("saved_name", "")
+                check("15b: re-upload rotates saved_name (cache change marker)",
+                      code == 200 and data_entries == 1 and bool(prev_saved)
+                      and new_saved != prev_saved,
+                      f"prev={prev_saved} new={new_saved}")
+                reached, sub = submit_and_poll(pipe, api, pipe_cid, cache_tid, read_code,
+                                               poll_timeout=900.0)
+                score = sub.get("public_score") if isinstance(sub, dict) else None
+                check("15b: relsync — re-uploaded file served on next run (score 0.0)",
+                      reached and sub.get("status") == "completed"
+                      and isinstance(score, (int, float)) and abs(float(score) - 0.0) < 1e-6,
+                      f"status={sub.get('status')} score={score}")
+
+                # (c) rebuild published mid-execution must not kill/poison the
+                # in-flight run; it completes with the data it read at start.
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{pipe_cid}/tasks",
+                    {"title": "smoke-midrun-task", **pipe_fields},
+                    {"baseline_notebook": ("baseline.ipynb", nb_bytes),
+                     "file0": ("labels.parquet", labels_buf.getvalue()),
+                     "file1": ("data.txt", b"7")})
+                mid_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: create midrun task 201", code == 201 and bool(mid_tid))
+                mid_code = ("import pandas as pd\n"
+                            "import time\n"
+                            "with open('/app/data/data.txt') as _f:\n"
+                            "    _v = int(_f.read().strip())\n"
+                            "time.sleep(12)\n"
+                            "pd.DataFrame({'id': [1], 'value': [_v]})"
+                            ".to_parquet('submission.parquet')\n")
+                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
+                                       {"task_id": mid_tid,
+                                        "selected_cells": [{"id": 0, "type": "code",
+                                                            "source": mid_code}]})
+                mid_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                check("15b: midrun submission 202 queued", code == 202 and bool(mid_sid))
+                running = False
+                for _ in range(60):
+                    time.sleep(2)
+                    c2, d2 = api.send("GET", f"/api/submissions/{mid_sid}")
+                    if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
+                        running = True
+                        break
+                check("15b: submission reaches running (container executing)",
+                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2}")
+                code, data = api.multipart(
+                    "PUT", f"/api/tasks/{mid_tid}",
+                    {"title": "smoke-midrun-task"},
+                    {"file1": ("data.txt", b"9")})
+                check("15b: rebuild-trigger PUT mid-run 200",
+                      code == 200 and isinstance(data, dict))
+                reached, sub = poll_submission(api, mid_sid, poll_timeout=900.0)
+                score = sub.get("public_score") if isinstance(sub, dict) else None
+                check("15b: in-flight run survives rebuild (completed, score 1.0)",
+                      reached and sub.get("status") == "completed"
+                      and isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                      f"status={sub.get('status')} score={score}")
+
+                # (b) problem registry: bogus HF repo → build failure → strict
+                # 403 gate with problems; fix config → registry clears → allowed.
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{pipe_cid}/tasks",
+                    {"title": "smoke-hf-task", **pipe_fields,
+                     "hf_datasets": json.dumps(["definitely-not-a-real-hf-repo-xyz/boom"])},
+                    {"baseline_notebook": ("baseline.ipynb", nb_bytes),
+                     "file0": ("labels.parquet", labels_buf.getvalue())})
+                hf_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: create bogus-HF task 201", code == 201 and bool(hf_tid))
+                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
+                                       {"task_id": hf_tid,
+                                        "selected_cells": [{"id": 0, "type": "code",
+                                                            "source": "print(1)"}]})
+                if code == 403 and expect_error(data, "ERR_TASK_NOT_READY"):
+                    check("15b: bogus-HF task already gated (auto-baseline failed first)",
+                          True)
+                else:
+                    hf_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                    check("15b: first bogus-HF submit 202 (build attempted)",
+                          code == 202 and bool(hf_sid))
+                    if hf_sid:
+                        reached, sub = poll_submission(api, hf_sid, poll_timeout=900.0)
+                        check("15b: bogus-HF submission failed (build error)",
+                              reached and sub.get("status") == "failed",
+                              f"status={sub.get('status')}")
+                        logs_l = str(sub.get("logs", "")).lower() if isinstance(sub, dict) else ""
+                        check("15b: HF download failure visible in logs",
+                              "definitely-not-a-real-hf-repo-xyz" in logs_l
+                              or "download" in logs_l, logs_l[:160])
+                problems = None
+                for _ in range(30):
+                    time.sleep(5)
+                    code, data = api.send("GET", f"/api/tasks/{hf_tid}")
+                    problems = data.get("problem_codes") if code == 200 and isinstance(data, dict) else None
+                    if problems:
+                        break
+                check("15b: problem registry populated after failed build",
+                      isinstance(problems, list) and len(problems) > 0,
+                      f"problem_codes={problems}")
+                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
+                                       {"task_id": hf_tid,
+                                        "selected_cells": [{"id": 0, "type": "code",
+                                                            "source": "print(1)"}]})
+                prob_list = data.get("problems", []) if isinstance(data, dict) else []
+                prob_codes = [p.get("code") for p in prob_list] if isinstance(prob_list, list) else []
+                check("15b: strict gate — 403 ERR_TASK_NOT_READY + ERR_HF_DOWNLOAD_FAILED",
+                      code == 403 and expect_error(data, "ERR_TASK_NOT_READY")
+                      and "ERR_HF_DOWNLOAD_FAILED" in prob_codes,
+                      f"problems={prob_list}")
+                code, data = api.multipart("PUT", f"/api/tasks/{hf_tid}",
+                                           {"title": "smoke-hf-task", "hf_datasets": "[]"}, {})
+                check("15b: fix HF config 200", code == 200 and isinstance(data, dict))
+                hf_fixed_code = (
+                    "import pandas as pd\n"
+                    "pd.DataFrame({'id': [1], 'value': [7]})"
+                    ".to_parquet('submission.parquet')\n"
+                )
+                cleared = False
+                for _ in range(120):
+                    time.sleep(5)
+                    code, data = api.send("GET", f"/api/tasks/{hf_tid}")
+                    problems = data.get("problem_codes") if code == 200 and isinstance(data, dict) else None
+                    if not problems:
+                        cleared = True
+                        break
+                check("15b: registry cleared after fix rebuild",
+                      cleared, f"problem_codes={problems}")
+                reached, sub = submit_and_poll(pipe, api, pipe_cid, hf_tid, hf_fixed_code,
+                                               poll_timeout=900.0)
+                score = sub.get("public_score") if isinstance(sub, dict) else None
+                check("15b: fixed task accepts submissions again (score 1.0)",
+                      reached and sub.get("status") == "completed"
+                      and isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                      f"status={sub.get('status')} score={score}")
+
+                # (d) verdict replay + enforced run cleanup:
+                # unchanged task re-runs identically (no-transfer parity) …
+                reached, sub = submit_and_poll(pipe, api, pipe_cid, cache_tid, read_code,
+                                               poll_timeout=900.0)
+                score = sub.get("public_score") if isinstance(sub, dict) else None
+                check("15b: verdict replay — unchanged task re-runs identically (score 0.0)",
+                      reached and sub.get("status") == "completed"
+                      and isinstance(score, (int, float)) and abs(float(score) - 0.0) < 1e-6,
+                      f"status={sub.get('status')} score={score}")
+                code, data = api.send("GET", f"/api/tasks/{cache_tid}")
+                problems = data.get("problem_codes") if code == 200 and isinstance(data, dict) else None
+                check("15b: replay run left the task healthy (no problem codes)",
+                      code == 200 and not problems, f"problem_codes={problems}")
+                # … and an over-time run is reclaimed by the enforced time
+                # limit (watchdog analog), then vanishes from the admin queue.
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{pipe_cid}/tasks",
+                    {"title": "smoke-timeout-task", **pipe_fields, "time_limit_sec": "4"},
+                    {"baseline_notebook": ("baseline.ipynb", nb_bytes),
+                     "file0": ("labels.parquet", labels_buf.getvalue())})
+                to_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15b: create tiny-time-limit task 201", code == 201 and bool(to_tid))
+                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
+                                       {"task_id": to_tid,
+                                        "selected_cells": [{"id": 0, "type": "code",
+                                                            "source": "import time\n"
+                                                                      "time.sleep(120)\n"}]})
+                to_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                check("15b: over-time submission 202 queued", code == 202 and bool(to_sid))
+                reached, sub = poll_submission(api, to_sid, poll_timeout=900.0)
+                check("15b: over-time run reclaimed (failed at enforced limit)",
+                      reached and sub.get("status") == "failed",
+                      f"status={sub.get('status')}")
+                logs_l = str(sub.get("logs", "")).lower() if isinstance(sub, dict) else ""
+                check("15b: time-limit kill logged",
+                      "timeout" in logs_l or "limit" in logs_l, logs_l[:160])
+                code, data = api.send("GET", "/api/admin/submissions/queue")
+                items = data.get("items", []) if code == 200 and isinstance(data, dict) else []
+                queue_ids = [str(i.get("id", "")) for i in items if isinstance(i, dict)]
+                check("15b: reclaimed run absent from the admin queue",
+                      code == 200 and to_sid not in queue_ids,
+                      f"queue_len={len(queue_ids)}")
+                for tdel in (cache_tid, mid_tid, hf_tid, to_tid):
+                    if tdel:
+                        api.send("DELETE", f"/api/tasks/{tdel}")
+
     # ── 16. Cleanup ────────────────────────────────────────────────────
     print("\n== 16. Cleanup ==")
     if cid:
         code, data = api.send("DELETE", f"/api/challenges/{cid}")
         check("DELETE challenge 200", code == 200)
+    if pipe_cid:
+        code, data = api.send("DELETE", f"/api/challenges/{pipe_cid}")
+        check("15b: DELETE pipeline challenge 200", code == 200)
+    if pipe_uid:
+        code, data = api.send("DELETE", f"/api/admin/users/{pipe_uid}")
+        check("15b: DELETE pipeline competitor → 404 ERR_USER_NOT_FOUND (challenge cascade)",
+              code == 404 and expect_error(data, "ERR_USER_NOT_FOUND"))
     code, data = api.send("DELETE", f"/api/admin/users/{jury_id}")
     check("DELETE jury user → 404 ERR_USER_NOT_FOUND (challenge cascade)",
           code == 404 and expect_error(data, "ERR_USER_NOT_FOUND"))

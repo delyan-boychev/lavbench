@@ -81,6 +81,7 @@ certs/
 .hf_token
 backend/backups/
 backend/backend/task_images/
+dump.rdb
 
 docs/source/_static/demo/
 
