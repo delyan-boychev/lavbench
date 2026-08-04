@@ -36,7 +36,10 @@
     vertical-align: middle;
 }
 
-.wy-lang-btn {
+/* The theme's `.wy-side-nav-search > a { color: #fcfcfc }` would otherwise
+   override the text color here (higher specificity), making the label
+   invisible on the light button until hover. */
+.wy-side-nav-search .wy-lang-btn {
     display: block;
     margin: 8px 0 0 0;
     padding: 5px 0;
@@ -52,7 +55,7 @@
     transition: background 0.15s ease, color 0.15s ease;
 }
 
-.wy-lang-btn:hover {
+.wy-side-nav-search .wy-lang-btn:hover {
     background: #2980b9;
     color: #fff;
     border-color: #2980b9;

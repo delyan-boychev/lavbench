@@ -7,6 +7,12 @@ build:
   jobs:
     pre_build:
       - env API_SPEC_SKIP_FETCH=true make -C docs fetch-spec
+    # The BG docs are a separate Sphinx build (source/bg + -D language=bg);
+    # deploy them under /bg/ so the language switcher links resolve.
+    post_build:
+      - make -C docs html-bg
+      - rm -rf _readthedocs/html/bg
+      - cp -r docs/build/html-bg _readthedocs/html/bg
 
 python:
   install:
