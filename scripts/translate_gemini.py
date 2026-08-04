@@ -5,16 +5,18 @@ Translates:
   - frontend/public/locales/en/translation.json -> bg/translation.json
     (all UI strings and api.ERR_* messages; keys and structure preserved)
   - guides/en/*.md -> guides/bg/*.md
-  - docs/source/*.md -> docs/source/bg/*.md          (only with --docs)
+  - docs/README.md -> docs/README.bg.md
+  - docs/source/*.md -> docs/source/bg/*.md          (only with --docs;
+    guide symlinks are mirrored, only real files are translated)
 
 The API key is read from the .gemini-api-key file in the repo root
 (the value after '=', e.g. `GEMINI-API-KEY=AQ...`), which is then
 exported as GEMINI_API_KEY for the API call.
 
 Usage:
-  python3 scripts/translate_gemini.py                # frontend + guides
-  python3 scripts/translate_gemini.py --docs         # + docs
-  python3 scripts/translate_gemini.py --only guides  # just guides
+  python3 scripts/translate_gemini.py                # frontend + guides + docs README
+  python3 scripts/translate_gemini.py --docs         # + docs/source
+  python3 scripts/translate_gemini.py --only readme  # just the docs README
   python3 scripts/translate_gemini.py --dry-run      # preview only
   python3 scripts/translate_gemini.py --model gemini-3.6-flash
 """
@@ -39,6 +41,8 @@ GUIDES_EN = ROOT / "guides/en"
 GUIDES_BG = ROOT / "guides/bg"
 DOCS_EN = ROOT / "docs/source"
 DOCS_BG = ROOT / "docs/source/bg"
+README_EN = ROOT / "docs/README.md"
+README_BG = ROOT / "docs/README.bg.md"
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_BATCH_CHARS = 3000
@@ -91,6 +95,13 @@ ROLE_CONTEXT = {
         "navigate stages and tasks, use baseline notebooks, produce the "
         "submission.parquet output schema and submit Jupyter notebooks. Write "
         "for a data-science competitor participating in the competition."
+    ),
+    "README.md": (
+        "This is the README of the docs/ folder of the LavBench repository: a "
+        "developer & documentation guide with quick-access sitemap, frontend "
+        "developer guidelines (API type pipeline, i18n parity), backend "
+        "endpoint patterns, custom evaluator templates and Sphinx build "
+        "instructions. Write for a developer contributing to the project."
     ),
 }
 
@@ -365,7 +376,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Translate LavBench content EN -> BG with Gemini")
     parser.add_argument("--docs", action="store_true", help="also translate docs/source/*.md")
     parser.add_argument("--dry-run", action="store_true", help="preview only, don't write files")
-    parser.add_argument("--only", choices=["locales", "guides", "docs"], help="translate only this target")
+    parser.add_argument(
+        "--only", choices=["locales", "guides", "docs", "readme"], help="translate only this target"
+    )
     parser.add_argument("--model", default="gemini-3.6-flash", help="Gemini model id")
     parser.add_argument("--key-file", default=str(KEY_FILE), help="path to the API key file")
     args = parser.parse_args()
@@ -378,6 +391,15 @@ def main() -> None:
     if not args.only or args.only == "guides":
         print("== guides ==")
         translate_dir(args.model, GUIDES_EN, GUIDES_BG, args.dry_run)
+    if not args.only or args.only == "readme":
+        print("== docs/README ==")
+        out = README_BG
+        if README_EN.exists():
+            translated = translate_markdown(args.model, README_EN.read_text(encoding="utf-8"), args.dry_run, filename="README.md")
+            if not args.dry_run:
+                out.write_text(translated + "\n", encoding="utf-8")
+            print(f"  {README_EN.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
+        time.sleep(SLEEP_BETWEEN_CALLS)
     if args.only == "docs" or (args.docs and not args.only):
         print("== docs ==")
         translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run)

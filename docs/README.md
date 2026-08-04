@@ -115,4 +115,13 @@ pip install -r requirements.txt
 make html
 
 # Output is generated in docs/build/html/ (open index.html in browser)
+
+# 3. Bulgarian build (sources: docs/source/bg/ — guides symlinked from
+#    guides/bg/, architecture.md translated via scripts/translate_gemini.py):
+make html-bg
+# Output is generated in docs/build/html-bg/
 ```
+
+### Translation workflow
+
+Bulgarian translations are generated with [`../scripts/translate_gemini.py`](../scripts/translate_gemini.py) (Gemini API, key in `.gemini-api-key` at the repo root — gitignored). It translates `frontend/public/locales`, `guides/en/` → `guides/bg/`, `docs/README.md` → `docs/README.bg.md`, and with `--docs` the `docs/source/*.md` files into `docs/source/bg/`. Guides symlinked from `guides/` are mirrored into `docs/source/bg/` (never retranslated); the bg docs build entry point is `docs/source/bg/index.rst`. Run `python3 scripts/translate_gemini.py --dry-run` to preview, and verify with `python3 frontend/scripts/check_translations.py` and `make html-bg`. See CONTRIBUTING.md → "Translating UI strings and docs".
