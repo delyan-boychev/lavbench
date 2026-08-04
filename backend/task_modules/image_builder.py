@@ -140,7 +140,7 @@ def _download_task_file_for_build(
             raise RuntimeError(
                 f"Failed to download task file '{filename}' for build: HTTP {res.status_code}"
             )
-        dest = os.path.join(dest_dir, filename)
+        dest = os.path.join(dest_dir, os.path.basename(filename))
         with open(dest, "wb") as f:
             f.write(res.content)
         os.chmod(dest, 0o644)
@@ -512,7 +512,7 @@ def _do_build(
                 os.path.join(upload_folder, f"task_{task_id}", tf_saved) if upload_folder else ""
             )
             if src_local and os.path.exists(src_local):
-                shutil.copy2(src_local, os.path.join(task_data_dir, tf_filename))
+                shutil.copy2(src_local, os.path.join(task_data_dir, os.path.basename(tf_filename)))
                 logger.debug("Copied task file '%s' from local storage", tf_filename)
             else:
                 _download_task_file_for_build(
@@ -748,18 +748,36 @@ def start_rebuild_listener(main_server_url: str, worker_token: str) -> None:
 
 
 def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
-    """Background thread: subscribe to Redis 'task_rebuild' channel."""
+    """Background thread: subscribe to Redis 'task_rebuild' channel.
 
+    Never exits permanently: a Redis hiccup is retried after a short sleep
+    (BP-M10) so a transient failure does not silently kill rebuild handling.
+    """
+
+    while True:
+        try:
+            _rebuild_listener_once(main_server_url, worker_token)
+        except Exception as e:
+            logger.warning("Rebuild listener crashed, retrying in 10s: %s", e)
+        time.sleep(10)
+
+
+def _rebuild_listener_once(main_server_url: str, worker_token: str) -> None:
     r = get_coordination_client()
     if not r:
         logger.warning("Rebuild listener: no Redis client available")
+        time.sleep(10)
         return
     try:
         pubsub = r.pubsub()
         pubsub.subscribe(CHANNEL_TASK_REBUILD)
         logger.info("Subscribed to Redis 'task_rebuild' channel")
         while True:
-            msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=60)
+            try:
+                msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=60)
+            except Exception as e:
+                logger.warning("Rebuild listener: pubsub connection lost, reconnecting: %s", e)
+                break
             if msg and msg.get("type") == "message":
                 try:
                     raw_data = msg.get("data")
@@ -798,8 +816,6 @@ def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
                                 break
                 except Exception as e:
                     logger.warning("Error handling rebuild notification: %s", e)
-    except Exception as e:
-        logger.warning("Rebuild listener crashed: %s", e)
     finally:
         try:
             pubsub.unsubscribe()

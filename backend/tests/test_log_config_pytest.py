@@ -117,7 +117,10 @@ class TestRemoteShipHandler:
     def _handler(self):
         self.ship_url = "http://server:5000/api/workers/logs"
         self.token = "test-token"
-        with patch("log_config.requests.post") as self.mock_post:
+        with (
+            patch("log_config.requests.post") as self.mock_post,
+            patch("worker_utils._sign_worker_token", return_value="worker-token"),
+        ):
             self.mock_post.return_value.ok = True
             from log_config import RemoteShipHandler
 
@@ -164,10 +167,14 @@ class TestRemoteShipHandler:
 
     def test_flush_headers(self):
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
-        self.handler.emit(record)
-        self.handler.flush()
+        with patch("worker_utils._sign_worker_token", return_value="fresh-token") as mock_sign:
+            self.handler.emit(record)
+            self.handler.flush()
+            mock_sign.assert_called_once_with("worker")
         headers = self.mock_post.call_args[1]["headers"]
-        assert headers["X-Worker-Token"] == self.token
+        # NEW-1: the token is re-minted on every flush so a 5-min replay window
+        # can never invalidate the worker's staleness-bounded log shipping.
+        assert headers["X-Worker-Token"] == "fresh-token"
         assert headers["Content-Encoding"] == "gzip"
         assert headers["Content-Type"] == "application/octet-stream"
         assert "X-Worker-Service" in headers
@@ -306,6 +313,26 @@ class TestReceiveWorkerLogs:
             content = f.read()
         assert "first" in content
         assert "second" in content
+
+    def test_rotates_once_over_limit(self):
+        from config import Config
+
+        original = Config.MAX_WORKER_LOG_BYTES
+        Config.MAX_WORKER_LOG_BYTES = 32
+        try:
+            log_path = os.path.join(self.log_dir, "worker_remote.log")
+            with open(log_path, "w") as f:
+                f.write("old log line " * 20)
+            self._post_logs(["new line"])
+            backup = f"{log_path}.1"
+            assert os.path.exists(backup)
+            with open(backup) as f:
+                assert "old log line" in f.read()
+            with open(log_path) as f:
+                assert "new line" in f.read()
+                assert "old log line" not in f.read()
+        finally:
+            Config.MAX_WORKER_LOG_BYTES = original
 
     def test_invalid_token_returns_401(self):
         resp = self._post_logs(["msg"], token="bad.token.here")

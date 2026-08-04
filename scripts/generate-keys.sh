@@ -61,6 +61,13 @@ print(Fernet.generate_key().decode())
 " 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 set_if_missing "ENCRYPTION_KEY" "$ENCRYPTION_KEY"
 
+# Independent Fernet key for remote workers — never the server JWT key.
+WORKER_ENCRYPTION_KEY=$(python3 -c "
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+" 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+set_if_missing "WORKER_ENCRYPTION_KEY" "$WORKER_ENCRYPTION_KEY"
+
 POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
 set_if_missing "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
 
@@ -117,6 +124,19 @@ if [ "$HTTP_CHOICE" = "2" ]; then
   read -p "  Generate now? (Y/n): " GEN_HTTPS_CHOICE
   if [ "$GEN_HTTPS_CHOICE" != "n" ] && [ "$GEN_HTTPS_CHOICE" != "N" ]; then
     GENERATE_HTTPS_CERTS=true
+  fi
+  if [ "$GENERATE_HTTPS_CERTS" = "true" ]; then
+    mkdir -p certs/web
+    openssl req -x509 -newkey rsa:2048 -nodes \
+      -keyout certs/web/lavbench.key -out certs/web/lavbench.crt \
+      -days 825 -subj "/CN=${SERVER_ADDR}" \
+      -addext "subjectAltName=DNS:${SERVER_ADDR},IP:${SERVER_ADDR}" 2>/dev/null || \
+      openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout certs/web/lavbench.key -out certs/web/lavbench.crt \
+        -days 825 -subj "/CN=${SERVER_ADDR}"
+    set_env "HTTPS_PORT" "443"
+    echo "  ✔ Self-signed TLS certs written to certs/web/ (lavbench.crt + lavbench.key)"
+    echo "    The frontend nginx will enable its 443 listener automatically."
   fi
 else
   PROTOCOL="http"
@@ -219,8 +239,10 @@ MAIN_SERVER_URL=${SERVER_URL}
 # Worker authentication (auto-generated Ed25519 private key)
 WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 
-# Server secret key — needed by models/ package for field encryption
-SECRET_KEY=${SECRET_KEY}
+# Worker encryption key — independent Fernet key for models/ field encryption.
+# Deliberately NOT the server SECRET_KEY (a compromised worker must not be able
+# to mint JWTs or decrypt server-side PII).
+WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY}
 ${CERTS_SECTION}
 # Worker role and resources — set by 'make setup-worker' on the worker machine
 # WORKER_GPU_ID=0

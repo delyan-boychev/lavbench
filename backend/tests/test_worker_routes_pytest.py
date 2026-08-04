@@ -164,6 +164,59 @@ class TestWorkerEndpoints:
         )
         assert resp.status_code == 401
 
+    def test_report_progress_rejects_nan_score(self):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "public_score": float("nan")},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_INVALID_PUBLIC_SCORE"
+
+    def test_report_progress_rejects_non_numeric_execution_time(self):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "execution_time_ms": "not-a-number"},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_INVALID_EXECUTION_TIME"
+
+    def test_report_progress_rejects_negative_execution_time(self):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "execution_time_ms": -5},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_INVALID_EXECUTION_TIME"
+
+    def test_report_progress_rejected_for_killed_submission(self):
+        killed = Submission(
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            user_id=self.competitor.id,
+            status="failed",
+            detailed_status="killed",
+            code_cells="[]",
+        )
+        db.session.add(killed)
+        db.session.commit()
+        nonce = f"{killed.id}:{int(time.time())}"
+        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
+        headers = {"X-Worker-Token": f"{nonce}.{sig}", "Content-Type": "application/json"}
+        resp = self.client.post(
+            f"/api/worker/report/{killed.id}",
+            json={"status": "completed", "detailed_status": "done", "public_score": 0.9},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+        assert resp.get_json()["code"] == "ERR_SUBMISSION_KILLED"
+        db.session.expire_all()
+        sub = db.session.get(Submission, killed.id)
+        assert sub.detailed_status == "killed"
+        assert sub.public_score is None
+
     def test_report_progress_building_env_does_not_stamp_executed_at(self):
         # Pre-execution phase (image build / GPU acquisition) must not start the
         # watchdog clock.

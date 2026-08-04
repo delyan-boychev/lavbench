@@ -168,6 +168,14 @@ class TestRegisterWorkerSpecs:
         register_worker_specs(MagicMock(hostname="worker-3"))
         mock_build.assert_not_called()
 
+    def test_internal_only_worker_skips_image_prebuilding(self, mocker):
+        mock_r, mock_build, mock_listener, sender = self._setup(mocker)
+        mocker.patch.object(sr.Config, "INTERNAL_ONLY_WORKER", True)
+        register_worker_specs(sender)
+        mock_r.set.assert_called_once()
+        mock_build.assert_not_called()
+        mock_listener.assert_not_called()
+
     def test_build_failure_does_not_block_spec_registration(self, mocker):
         mock_r, mock_build, _mock_listener, sender = self._setup(mocker)
         mock_build.side_effect = Exception("build boom")

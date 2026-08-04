@@ -232,7 +232,10 @@ class TestRouteLevelLogic:
         assert len(args) == 2
         meta_dict = args[1]
         assert meta_dict.get("is_custom_eval")
-        assert meta_dict.get("custom_eval_code") == "print('custom evaluation code')"
+        # M-P7: evaluator code is no longer shipped in the Celery message;
+        # the worker fetches it on demand via the signed run-content endpoint.
+        assert "custom_eval_code" not in meta_dict
+        assert "user_code" not in meta_dict
 
     def test_leaderboard_sorting_and_tie_breaking(self):
         u1 = User(
@@ -310,12 +313,15 @@ class TestRouteLevelLogic:
         self.task.metrics_config = json.dumps({"mse": {"weight": 1.0}})
         db.session.commit()
 
+        # The runner stores lower-better metrics already normalized to
+        # higher-is-better (mse 0.10 -> 1/1.10, mse 0.15 -> 1/1.15), so the
+        # leaderboard must sort purely descending (H-C1).
         s1 = Submission(
             user_id=u1.id,
             challenge_id=self.challenge.id,
             task_id=self.task.id,
             status="completed",
-            public_score=0.15,
+            public_score=1.0 / 1.15,
             execution_time_ms=100,
             is_final_selection=True,
             code_cells="[]",
@@ -325,7 +331,7 @@ class TestRouteLevelLogic:
             challenge_id=self.challenge.id,
             task_id=self.task.id,
             status="completed",
-            public_score=0.10,
+            public_score=1.0 / 1.10,
             execution_time_ms=200,
             is_final_selection=True,
             code_cells="[]",
@@ -335,7 +341,7 @@ class TestRouteLevelLogic:
             challenge_id=self.challenge.id,
             task_id=self.task.id,
             status="completed",
-            public_score=0.10,
+            public_score=1.0 / 1.10,
             execution_time_ms=150,
             is_final_selection=True,
             code_cells="[]",
@@ -714,6 +720,24 @@ class TestRouteLevelLogic:
         assert data["workers"][0]["name"] == "celery@gpu-worker-0"
         assert data["workers"][0]["pool_size"] == 4
         assert data["workers"][0]["active_tasks_count"] == 1
+
+    @patch("tasks.celery.control.inspect")
+    def test_detailed_worker_stats_surfaces_partial_failures(self, mock_inspect_cls):
+        mock_inspect = mock_inspect_cls.return_value
+
+        mock_inspect.ping.return_value = {"celery@gpu-worker-0": {"ok": "pong"}}
+        mock_inspect.stats.side_effect = RuntimeError("broker unreachable")
+        mock_inspect.active.return_value = {}
+        mock_inspect.reserved.return_value = {}
+        mock_inspect.registered.return_value = {}
+
+        res = self.client.get(
+            "/api/admin/workers/stats", headers=self.get_auth_header(self.admin_token)
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["connected_workers_count"] == 1
+        assert any("celery.stats failed" in msg for msg in data["partial_failures"])
 
     def test_leaderboard_late_processed_submission_override(self):
         self.challenge.end_time = utcnow() - timedelta(minutes=15)

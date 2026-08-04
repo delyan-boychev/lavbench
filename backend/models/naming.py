@@ -2,6 +2,7 @@
 
 import secrets
 import time
+from typing import Any
 
 ADJECTIVES = [
     "Quantum",
@@ -107,6 +108,22 @@ def is_metric_lower_better(metric_name: str) -> bool:
     if not metric_name:
         return False
     return METRIC_LOWER_IS_BETTER.get(metric_name.lower().strip(), False)
+
+
+def metric_direction_from_config(metric_name: str, cfg: Any) -> bool:
+    """Return True when a metric is lower-better, honoring per-metric config.
+
+    Priority: the task's ``metrics_config`` entry ``higher_is_better`` wins when
+    explicitly set; otherwise fall back to the static METRIC_LOWER_IS_BETTER
+    map. The runner (score normalization) and the leaderboards (sort direction)
+    must call this same function so stored scores are ALWAYS normalized to
+    higher-is-better and every leaderboard can sort descending.
+    """
+    if isinstance(cfg, dict):
+        flag = cfg.get("higher_is_better")
+        if isinstance(flag, bool):
+            return not flag
+    return is_metric_lower_better(metric_name)
 
 
 def to_base36(num: int) -> str:

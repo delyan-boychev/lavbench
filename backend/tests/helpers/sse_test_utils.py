@@ -128,6 +128,10 @@ class _FakeRedis:
         if lst is not None:
             self._lists[key] = lst[start : end + 1 if end >= 0 else None]
 
+    def lrange(self, key: str, start: int, end: int) -> list[Any]:
+        lst = self._lists.get(key, [])
+        return lst[start : end + 1 if end >= 0 else None]
+
     # ── Pub/Sub ───────────────────────────────────────────────────────
 
     def publish(self, channel: str, message: str) -> int:
@@ -139,7 +143,7 @@ class _FakeRedis:
 
     # ── Pipeline ──────────────────────────────────────────────────────
 
-    def pipeline(self) -> _FakePipeline:
+    def pipeline(self, transaction: bool = True) -> _FakePipeline:
         return _FakePipeline(self)
 
 
@@ -169,6 +173,18 @@ class _FakePipeline:
 
     def incr(self, key: str) -> _FakePipeline:
         self._commands.append(("incr", (key,), {}))
+        return self
+
+    def rpush(self, key: str, *values: Any) -> _FakePipeline:
+        self._commands.append(("rpush", (key, *values), {}))
+        return self
+
+    def ltrim(self, key: str, start: int, end: int) -> _FakePipeline:
+        self._commands.append(("ltrim", (key, start, end), {}))
+        return self
+
+    def expire(self, key: str, seconds: int) -> _FakePipeline:
+        self._commands.append(("expire", (key, seconds), {}))
         return self
 
     def execute(self) -> list[Any]:

@@ -6,17 +6,10 @@ import logging
 import uuid
 from typing import Any
 
-from flask import request
-
 from models import AuditLog, db
+from utils.client_ip import get_client_ip
 
 logger = logging.getLogger(__name__)
-
-
-def get_client_ip() -> str:
-    if request.headers.getlist("X-Forwarded-For"):
-        return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
-    return request.remote_addr or "127.0.0.1"
 
 
 def _clean_details(val: Any) -> Any:
@@ -71,7 +64,10 @@ def log_action(
             reason=reason,
         )
         db.session.add(entry)
-        db.session.commit()
+        # Deliberately NO commit here: committing mid-request would flush the
+        # caller's pending transaction (H-C3). The audit row is committed by
+        # the caller alongside the action it describes, so the audit log can
+        # never claim an action that was rolled back.
     except Exception:
         logger.exception(
             "Failed to write audit log for action_type=%s target_type=%s target_id=%s",

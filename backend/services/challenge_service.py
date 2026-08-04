@@ -306,15 +306,22 @@ def import_challenge_from_dict(
     if not title:
         raise ValueError("Challenge title is required.")
 
-    def _parse_dt(val: Any) -> datetime | None:
+    def _parse_dt(val: Any, field: str) -> datetime | None:
         if not val:
             return None
         try:
             if isinstance(val, str):
                 return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
-            return val  # type: ignore[no-any-return]
+            if isinstance(val, datetime):
+                return val.replace(tzinfo=None)
+            raise ValueError
         except Exception:
-            return None
+            raise ValueError(f"Invalid {field} in import: {val!r}") from None
+
+    start_time = _parse_dt(data.get("start_time"), "start_time") or utcnow()
+    end_time = _parse_dt(data.get("end_time"), "end_time") or utcnow()
+    if end_time <= start_time:
+        raise ValueError("end_time must be after start_time in imported challenge data.")
 
     challenge = Challenge(
         title=title,
@@ -326,8 +333,8 @@ def import_challenge_from_dict(
         is_active=bool(data.get("is_active", True)),
         is_archived=False,
         scores_finalized=False,
-        start_time=_parse_dt(data.get("start_time")) or utcnow(),
-        end_time=_parse_dt(data.get("end_time")) or utcnow(),
+        start_time=start_time,
+        end_time=end_time,
         is_frozen=bool(data.get("is_frozen", False)),
         double_blind=bool(data.get("double_blind", True)),
         reveal_results=bool(data.get("reveal_results", True)),
@@ -343,8 +350,8 @@ def import_challenge_from_dict(
             challenge_id=challenge.id,
             stage_number=int(s_data.get("stage_number", 1)),
             title=s_data.get("title", "Stage"),
-            start_time=_parse_dt(s_data.get("start_time")) or utcnow(),
-            end_time=_parse_dt(s_data.get("end_time")) or utcnow(),
+            start_time=_parse_dt(s_data.get("start_time"), "start_time") or utcnow(),
+            end_time=_parse_dt(s_data.get("end_time"), "end_time") or utcnow(),
             is_finalized=False,
             reveal_results=bool(s_data.get("reveal_results", False)),
         )

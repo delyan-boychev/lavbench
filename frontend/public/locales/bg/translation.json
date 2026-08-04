@@ -159,6 +159,8 @@
     "ERR_INVALID_PATH": "Невалиден път",
     "ERR_INVALID_PIP_REQUIREMENT": "Невалидно pip изискване.",
     "ERR_INVALID_PRIVATE_SCORE": "private_score трябва да бъде числово значение или null",
+    "ERR_INVALID_EXECUTION_TIME": "execution_time_ms трябва да бъде крайно неотрицателно число",
+    "ERR_SUBMISSION_KILLED": "Изпълнението е прекратено и вече не може да бъде обновявано от worker отчети.",
     "ERR_INVALID_PUBLIC_SCORE": "public_score трябва да бъде числово значение или null",
     "ERR_INVALID_REQUEST_BODY": "Заявката трябва да бъде в JSON формат",
     "ERR_PAYLOAD_TOO_LARGE": "Данните на заявката са твърде големи",

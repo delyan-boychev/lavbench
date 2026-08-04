@@ -1,18 +1,20 @@
-gzip on;
-gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
-gzip_min_length 256;
-
+# TLS server fragment — activated only when certificates are present.
+# The frontend entrypoint copies this file to ssl.conf (enabling the 443
+# listener) iff /etc/nginx/ssl/lavbench.crt exists. Otherwise HTTP-only.
 server {
-    listen 80;
+    listen 443 ssl;
     server_name localhost;
     client_max_body_size 50M;
+
+    ssl_certificate     /etc/nginx/ssl/lavbench.crt;
+    ssl_certificate_key /etc/nginx/ssl/lavbench.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
 
     access_log /dev/stdout;
     access_log /app/logs/nginx_access.log;
     error_log /dev/stderr;
     error_log /app/logs/nginx_error.log;
 
-    # Security headers
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'" always;
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -20,58 +22,38 @@ server {
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # Serve built static React files
     location / {
         root /usr/share/nginx/html;
         index index.html index.htm;
         try_files $uri $uri/ /index.html;
     }
 
-    # Cache hashed assets aggressively
     location /assets/ {
         root /usr/share/nginx/html;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
-    # Proxy API calls directly to the Flask Backend container
     location /api {
         proxy_pass http://backend:5001/api;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        # Overwrite (not append) so a client-supplied X-Forwarded-For cannot
-        # spoof the IP used for rate limiting / audit logs. Backend trusts the
-        # first XFF entry (see ProxyFix x_for=1) and X-Real-IP.
         proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # HTTP/1.1 and persistent connection configuration for SSE (Server-Sent Events)
+        proxy_set_header X-Forwarded-Proto https;
         proxy_http_version 1.1;
         proxy_set_header Connection '';
         chunked_transfer_encoding off;
-        
-        # Disable buffering and caching to allow real-time streaming of events and logs
         proxy_buffering off;
         proxy_cache off;
-        
-        # Increase timeouts to prevent dropping active SSE streams
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
 
-    # Expose the spectree OpenAPI endpoint so api.d.ts and docs can be
-    # regenerated from the reachable :80 address (no backend host port).
     location /apidoc {
         proxy_pass http://backend:5001/apidoc;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Custom error handling page
-    error_page 500 502 503 504 /50x.html;
-    location = /50x.html {
-        root /usr/share/nginx/html;
+        proxy_set_header X-Forwarded-Proto https;
     }
 }

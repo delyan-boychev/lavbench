@@ -89,6 +89,8 @@ Competitor code runs within a hardened, zero-trust Docker container enforcing th
 | `--memory-swap` = RAM Limit | Disables disk swap — prevents memory footprint evasion. |
 | `--pids-limit 64` | Restricts total process count to mitigate fork bombs. |
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
+| `--storage-opt size` | Per-sandbox writable-layer size cap (default `8g`, `WORKER_SANDBOX_STORAGE_OPT`). **Best-effort**: applied only when the storage driver supports per-container quotas (e.g. XFS with `pquota`); on ext4/overlay2 hosts the sandbox is created without a size cap instead of failing. |
+| Output collection caps | `MAX_COLLECT_BUFFER_BYTES` / `MAX_EXTRACT_MEMBER_BYTES` (default 512 MB) cap how much output is pulled back from the sandbox. Oversized archives and individual members are skipped and logged rather than buffered unbounded on the host — protects the worker from decompression bombs. |
 
 ### Docker Image Build Pipeline & Error Troubleshooting
 
@@ -326,6 +328,21 @@ The `make setup-worker` wizard guides you through:
 2. **GPU Configuration**: Select GPU IDs detected via `nvidia-smi`.
 3. **CPU Core Allocation**: Set CPU core limits per task container.
 4. **Worker Concurrency**: Auto-calculates optimal worker concurrency based on GPU and CPU availability.
+
+#### Per-Worker Hardening Knobs
+
+Workers are configured **individually** in `worker.env` — there is no server-side inheritance. The wizard and `deploy-worker.sh` recognize the following extra settings:
+
+| Variable | Purpose |
+| :--- | :--- |
+| `WORKER_GPU_IDS` | Comma-separated GPU IDs (e.g. `0,1,3`) enabled for **round-robin pinning** of GPU sandboxes (`DeviceRequest(device_ids=[...])`). When unset, a task uses its pinned `WORKER_GPU_ID`; if neither is set the sandbox falls back to `count=-1` (requests all GPUs) with a warning. |
+| `WORKER_SANDBOX_STORAGE_OPT`, `MAX_COLLECT_BUFFER_BYTES`, `MAX_EXTRACT_MEMBER_BYTES` | Per-worker task-execution caps mirroring the server defaults in §2 (storage-opt is best-effort; archive caps are hard limits). |
+| `MAX_WORKER_LOG_BYTES` | Rotation threshold for the worker remote log (`worker_remote.log` shipped to the server via `/api/workers/logs`). Default 10 MB. |
+
+The compose `celery_worker` service (system tasks only) runs with `init`, `cap-drop: ALL` plus the minimal `CHOWN`/`SETUID`/`SETGID` capabilities needed to drop privileges to `nobody`, `no-new-privileges`, and memory/CPU caps set via `WORKER_MEM_LIMIT`/`WORKER_CPU_LIMIT`. It never executes untrusted submission code — evaluation runs in the separate eval-worker sandboxes.
+
+> [!IMPORTANT]
+> Hugging Face **API keys are fetched on demand from the server** and never stored on the worker. Workers must point `MAIN_SERVER_URL` at an **HTTPS** endpoint when used for Hugging Face-gated assets: key requests over plain HTTP to a non-localhost host are refused (`M-S4`).
 
 #### Deploying and Editing Workers:
 

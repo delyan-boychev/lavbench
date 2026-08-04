@@ -72,8 +72,14 @@ def test_register_worker_specs_removed():
     assert not hasattr(tasks, "register_worker_specs")
 
 
-def test_beat_schedule_docker_prune_on_cpu_queue():
+def test_beat_schedule_prune_and_sweep_on_evaluation_queues():
     import tasks
 
-    entry = tasks.celery.conf.beat_schedule["docker-prune-weekly"]
-    assert entry["options"] == {"queue": "cpu_queue"}
+    schedule = tasks.celery.conf.beat_schedule
+    # Prune/sweep are host-side Docker ops that must run on evaluation worker
+    # nodes (they own the Docker socket). Emit on both cpu_queue and gpu_queue
+    # since either may be the deployed worker pool.
+    assert schedule["docker-prune-weekly-cpu"]["options"] == {"queue": "cpu_queue"}
+    assert schedule["docker-prune-weekly-gpu"]["options"] == {"queue": "gpu_queue"}
+    assert schedule["task-dir-sweep-daily-cpu"]["options"] == {"queue": "cpu_queue"}
+    assert schedule["task-dir-sweep-daily-gpu"]["options"] == {"queue": "gpu_queue"}

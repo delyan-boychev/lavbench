@@ -15,7 +15,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from cache_utils import get_coordination_client, submission_logs_key
+from cache_utils import get_coordination_client, get_redis_client, submission_logs_key
 from config import Config
 from models.base import uuid7
 
@@ -178,27 +178,63 @@ def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
 
 
 def publish_submission_log(submission_id: Any, log_line: str) -> None:
-    """Append a log line to the submission's Redis list and publish to its SSE channel."""
+    """Append a log line to the submission's Redis list and publish to its SSE channel.
+
+    Log storage lives on the redis-cache instance (H-P2) so the broker's
+    small noeviction quota is never consumed by user-triggerable log volume;
+    the SSE publish itself goes over the coordination (broker) channel.
+    """
     if not submission_id:
         return
     try:
-        r = _redis()
-        if r:
+        cache_r = get_redis_client()
+        if cache_r:
             log_key = submission_logs_key(submission_id)
-            r.rpush(log_key, log_line)
-            r.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
-            r.expire(log_key, Config.SSE_LOG_TTL)
+            cache_r.rpush(log_key, log_line)
+            cache_r.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
+            cache_r.expire(log_key, Config.SSE_LOG_TTL)
+        r = get_coordination_client()
+        if r:
             r.publish(submission_logs_channel(submission_id), json.dumps({"log": log_line}))
     except Exception:
         logger.exception("Redis publish submission log error for submission %s", submission_id)
 
 
+def publish_submission_log_batch(submission_id: Any, log_lines: list[str]) -> None:
+    """Append a batch of log lines and publish them in a single Redis round trip.
+
+    Storage ops are pipelined on the redis-cache instance and the SSE publish
+    carries the whole batch as ``{"logs": [...]}`` (M-P3: ~1 op per 50 lines
+    instead of 4 ops per line). Subscribers split the batch into per-line
+    events, so the frontend contract is unchanged.
+    """
+    if not submission_id or not log_lines:
+        return
+    try:
+        cache_r = get_redis_client()
+        if cache_r:
+            log_key = submission_logs_key(submission_id)
+            pipe = cache_r.pipeline(transaction=False)
+            for line in log_lines:
+                pipe.rpush(log_key, line)
+            pipe.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
+            pipe.expire(log_key, Config.SSE_LOG_TTL)
+            pipe.execute()
+        r = get_coordination_client()
+        if r:
+            r.publish(submission_logs_channel(submission_id), json.dumps({"logs": log_lines}))
+    except Exception:
+        logger.exception(
+            "Redis publish submission log batch error for submission %s", submission_id
+        )
+
+
 def clear_submission_logs(submission_id: Any) -> None:
-    """Delete the Redis log list for a submission."""
+    """Delete the Redis log list for a submission (stored on the cache instance)."""
     if not submission_id:
         return
     try:
-        r = _redis()
+        r = get_redis_client()
         if r:
             r.delete(submission_logs_key(submission_id))
     except Exception:

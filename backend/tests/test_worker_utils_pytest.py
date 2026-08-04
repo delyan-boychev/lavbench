@@ -15,6 +15,7 @@ from worker_utils import (
     _sign_worker_token,
     download_labels_parquet_to_dir,
     download_task_files_to_dir,
+    fetch_submission_run_content,
     report_status_to_server,
     run_command_streaming,
     run_sandbox,
@@ -22,6 +23,50 @@ from worker_utils import (
     sync_labels_parquet_to_cache,
     sync_task_files_to_assets_cache,
 )
+
+
+def _mock_response_body(mock_obj, body: bytes, chunk_size: int = 8) -> None:
+    """Configure a mocked requests.get response to stream *body* via
+    iter_content (matching worker_utils streaming downloads, NEW-5)."""
+    mock_obj.status_code = 200
+    mock_obj.content = body
+
+    def _iter_content(chunk_size: int = 1024):
+        for i in range(0, len(body), min(chunk_size, len(body) or 1)):
+            yield body[i : i + chunk_size]
+
+    mock_obj.iter_content.side_effect = _iter_content
+
+
+class TestFetchSubmissionRunContent:
+    @patch("worker_utils.requests.get")
+    @patch("worker_utils._sign_worker_token", return_value="signed-token")
+    def test_returns_content_from_server(self, mock_sign, mock_get):
+        mock_resp = mock_get.return_value
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "user_code": "print(1)",
+            "custom_eval_code": "def evaluate(): pass",
+        }
+        metadata = {"submission_id": "sub-1", "main_server_url": "http://server:5000"}
+        user_code, eval_code = fetch_submission_run_content(metadata)
+        assert (user_code, eval_code) == ("print(1)", "def evaluate(): pass")
+        url = mock_get.call_args[0][0]
+        assert url == "http://server:5000/api/worker/submission-run-content/sub-1"
+        assert mock_get.call_args[1]["headers"]["X-Worker-Token"] == "signed-token"
+
+    @patch("worker_utils.requests.get")
+    @patch("worker_utils._sign_worker_token", return_value="signed-token")
+    def test_raises_on_non_200(self, mock_sign, mock_get):
+        mock_get.return_value.status_code = 404
+        with pytest.raises(RuntimeError, match="404"):
+            fetch_submission_run_content(
+                {"submission_id": "sub-1", "main_server_url": "http://server:5000"}
+            )
+
+    def test_raises_without_server_url(self):
+        with pytest.raises(RuntimeError, match="no main_server_url"):
+            fetch_submission_run_content({"submission_id": "sub-1"})
 
 
 class TestAssetsCache:
@@ -43,8 +88,7 @@ class TestAssetsCache:
     @patch("worker_utils._sign_worker_token", return_value="tok")
     @patch("worker_utils.requests.get")
     def test_first_run_downloads_and_writes_manifest(self, mock_get, _tk, cache_env):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"file content"
+        _mock_response_body(mock_get.return_value, b"file content")
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
         assert ok is True
         dest = cache_env / "task_42" / "data" / "data.csv"
@@ -55,8 +99,7 @@ class TestAssetsCache:
     @patch("worker_utils._sign_worker_token", return_value="tok")
     @patch("worker_utils.requests.get")
     def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"file content"
+        _mock_response_body(mock_get.return_value, b"file content")
         sync_task_files_to_assets_cache(self._metadata(), [])
         mock_get.reset_mock()
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
@@ -66,8 +109,7 @@ class TestAssetsCache:
     @patch("worker_utils._sign_worker_token", return_value="tok")
     @patch("worker_utils.requests.get")
     def test_changed_saved_name_redownloads(self, mock_get, _tk, cache_env):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"new content"
+        _mock_response_body(mock_get.return_value, b"new content")
         sync_task_files_to_assets_cache(self._metadata(), [])
         sync_task_files_to_assets_cache(
             self._metadata(task_files=[{"filename": "data.csv", "saved_name": "xyz.csv"}]),
@@ -80,8 +122,7 @@ class TestAssetsCache:
     @patch("worker_utils._sign_worker_token", return_value="tok")
     @patch("worker_utils.requests.get")
     def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"file content"
+        _mock_response_body(mock_get.return_value, b"file content")
         metadata = self._metadata(
             task_files=[
                 {"filename": "data.csv", "saved_name": "abc.csv"},
@@ -102,8 +143,7 @@ class TestAssetsCache:
     @patch("worker_utils._sign_worker_token", return_value="tok")
     @patch("worker_utils.requests.get")
     def test_labels_0600_and_0700_dir(self, mock_get, _tk, cache_env):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"labels data"
+        _mock_response_body(mock_get.return_value, b"labels data")
         path = sync_labels_parquet_to_cache(
             self._metadata(task_files=[{"filename": "labels.parquet", "saved_name": "l1.parquet"}]),
             [],
@@ -221,6 +261,41 @@ class TestRunCommandStreaming:
         assert retcode == -1
         assert "failed to create container" in stderr
 
+    def test_storage_opt_falls_back_to_plain_create_on_unsupported_driver(
+        self, mocker, tmp_path, caplog
+    ):
+        """M-S2 best-effort: when the daemon rejects --storage-opt (ext4/overlay2),
+        retry create without the size cap instead of hard-failing the sandbox."""
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, mock_container = self._make_mock_client(mocker, exit_code=0)
+        call_count = {"n": 0}
+
+        def flaky_create(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1 and kwargs.get("storage_opt"):
+                raise Exception("Backing Filesystem: extfs is not supported for storage_opt")
+            return mock_container
+
+        mock_client.containers.create.side_effect = flaky_create
+        logs = []
+        with caplog.at_level("WARNING", logger="worker_utils"):
+            retcode, _stdout, _stderr, _is_timeout = run_sandbox(
+                mock_client,
+                "test:latest",
+                ["echo", "hello"],
+                seed_dir=str(seed),
+                collect_files=[],
+                logs_list=logs,
+            )
+        assert retcode == 0
+        assert call_count["n"] == 2
+        first_kwargs = mock_client.containers.create.call_args_list[0][1]
+        second_kwargs = mock_client.containers.create.call_args_list[1][1]
+        assert "storage_opt" in first_kwargs
+        assert "storage_opt" not in second_kwargs
+        assert any("storage_opt" in record.message for record in caplog.records)
+
     def test_timeout_exceeded(self, mocker, tmp_path):
         seed = tmp_path / "seed"
         seed.mkdir()
@@ -283,6 +358,55 @@ class TestRunCommandStreaming:
         dr = call_kwargs["device_requests"][0]
         assert dr.device_ids == ["1"]
         assert ["gpu"] in dr.capabilities
+
+    def test_gpu_ids_not_configured_falls_back_to_all(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
+        run_sandbox(
+            mock_client,
+            "test:latest",
+            ["cmd"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=[],
+            gpu_required=True,
+        )
+        dr = mock_client.containers.create.call_args[1]["device_requests"][0]
+        assert dr.device_ids == []
+        assert dr.count == -1
+
+    def test_gpu_ids_configured_pins_round_robin(self, mocker, tmp_path):
+        import worker_utils as wu
+        from worker_utils import _GPU_ID_CYCLE, _next_gpu_id
+
+        saved = Config.WORKER_GPU_IDS
+        saved_cycle = _GPU_ID_CYCLE
+        try:
+            Config.WORKER_GPU_IDS = ["7", "9"]
+            wu._GPU_ID_CYCLE = None
+            assert _next_gpu_id() == "7"
+            assert _next_gpu_id() == "9"
+            assert _next_gpu_id() == "7"
+            wu._GPU_ID_CYCLE = None
+
+            seed = tmp_path / "seed"
+            seed.mkdir()
+            mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
+            run_sandbox(
+                mock_client,
+                "test:latest",
+                ["cmd"],
+                seed_dir=str(seed),
+                collect_files=[],
+                logs_list=[],
+                gpu_required=True,
+            )
+            dr = mock_client.containers.create.call_args[1]["device_requests"][0]
+            assert dr.device_ids == ["7"]
+        finally:
+            Config.WORKER_GPU_IDS = saved
+            wu._GPU_ID_CYCLE = saved_cycle
 
 
 class TestSeedTarNormalization:
@@ -388,6 +512,65 @@ class TestSeededRunCommandStreaming:
         mock_container.remove.assert_called()
         mock_volume.remove.assert_called()
 
+    def test_collect_archive_exceeding_buffer_cap_is_skipped(self, mocker, tmp_path):
+        from config import Config
+
+        original = Config.MAX_COLLECT_BUFFER_BYTES
+        Config.MAX_COLLECT_BUFFER_BYTES = 64
+        try:
+            seed = tmp_path / "seed"
+            seed.mkdir()
+            mock_client = mocker.MagicMock()
+            mock_container = self._make_mock_container(
+                mocker, files={"submission.parquet": b"parquet"}
+            )
+            mock_client.containers.create.return_value = mock_container
+            mock_volume = mocker.MagicMock()
+            mock_volume.name = "lavbench_seed_vol"
+            mock_client.volumes.create.return_value = mock_volume
+
+            retcode, _stdout, _stderr, _ = run_command_streaming(
+                mock_client,
+                "test:latest",
+                ["python", "-u", "script.py"],
+                [],
+                seed_dir=str(seed),
+                collect_files=[("/app/submission.parquet", str(tmp_path / "out.parquet"))],
+            )
+            assert retcode == 0
+            assert not (tmp_path / "out.parquet").exists()
+        finally:
+            Config.MAX_COLLECT_BUFFER_BYTES = original
+
+    def test_collect_oversized_member_is_skipped(self, mocker, tmp_path):
+        from config import Config
+
+        original = Config.MAX_EXTRACT_MEMBER_BYTES
+        Config.MAX_EXTRACT_MEMBER_BYTES = 2
+        try:
+            seed = tmp_path / "seed"
+            seed.mkdir()
+            mock_client = mocker.MagicMock()
+            mock_container = self._make_mock_container(
+                mocker, files={"submission.parquet": b"parquet"}
+            )
+            mock_client.containers.create.return_value = mock_container
+            mock_volume = mocker.MagicMock()
+            mock_volume.name = "lavbench_seed_vol"
+            mock_client.volumes.create.return_value = mock_volume
+
+            run_command_streaming(
+                mock_client,
+                "test:latest",
+                ["python", "-u", "script.py"],
+                [],
+                seed_dir=str(seed),
+                collect_files=[("/app/submission.parquet", str(tmp_path / "out.parquet"))],
+            )
+            assert not (tmp_path / "out.parquet").exists()
+        finally:
+            Config.MAX_EXTRACT_MEMBER_BYTES = original
+
     def test_seed_tar_has_writable_root_entry(self, mocker, tmp_path):
         """put_archive ignores '.' root metadata, so a leading '/' entry must
         chown/chmod the /app mount point itself (writable by the sandbox user)."""
@@ -484,24 +667,36 @@ class TestSeededRunCommandStreaming:
 
 
 class TestStreamingLogList:
-    @patch("sse_utils.publish_submission_log")
-    def test_append_publishes_log(self, mock_publish):
-        stream = StreamingLogList(submission_id=123)
-        stream.append("test line")
-        mock_publish.assert_called_once_with(123, "test line")
+    def test_append_immediately_flushes_single_line(self):
+        with patch("sse_utils.publish_submission_log_batch") as mock_publish:
+            stream = StreamingLogList(submission_id=123)
+            stream.append("test line")
+            mock_publish.assert_called_once_with(123, ["test line"])
 
-    @patch("sse_utils.publish_submission_log")
-    def test_max_length_trims(self, mock_publish):
-        stream = StreamingLogList(submission_id=1)
-        for i in range(10001):
-            stream.append(f"line {i}")
+    def test_append_batches_many_lines(self):
+        with patch("sse_utils.publish_submission_log_batch") as mock_publish:
+            stream = StreamingLogList(submission_id=123)
+            for i in range(100):
+                stream.append(f"line {i}")
+            stream.flush()
+            batches = [call.args[1] for call in mock_publish.call_args_list]
+            assert len(mock_publish.call_args_list) >= 2
+            assert all(len(b) <= 50 for b in batches)
+            assert [line for batch in batches for line in batch] == [
+                f"line {i}" for i in range(100)
+            ]
+
+    def test_max_length_trims(self):
+        with patch("sse_utils.publish_submission_log_batch"):
+            stream = StreamingLogList(submission_id=1)
+            for i in range(10001):
+                stream.append(f"line {i}")
         assert len(stream) <= 10000
 
-    @patch("sse_utils.publish_submission_log")
-    def test_publish_exception_caught(self, mock_publish):
-        mock_publish.side_effect = Exception("SSE error")
-        stream = StreamingLogList(submission_id=1)
-        stream.append("test")
+    def test_publish_exception_caught(self):
+        with patch("sse_utils.publish_submission_log_batch", side_effect=Exception("SSE error")):
+            stream = StreamingLogList(submission_id=1)
+            stream.append("test")
 
     def test_inherits_from_list(self):
         stream = StreamingLogList(submission_id=1)
@@ -673,8 +868,7 @@ class TestReportStatusToServer:
 class TestDownloadTaskFilesToDir:
     @patch("worker_utils.requests.get")
     def test_downloads_files(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"file content"
+        _mock_response_body(mock_get.return_value, b"file content")
         metadata = {
             "main_server_url": "http://test:5001",
             "task_files": [{"filename": "data.csv"}],
@@ -732,8 +926,7 @@ class TestDownloadTaskFilesToDir:
 class TestDownloadLabelsParquetToDir:
     @patch("worker_utils.requests.get")
     def test_downloads_labels_parquet(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.content = b"labels data"
+        _mock_response_body(mock_get.return_value, b"labels data")
         metadata = {
             "main_server_url": "http://test:5001",
             "task_files": [{"filename": "labels.parquet"}],

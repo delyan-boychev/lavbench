@@ -1,7 +1,5 @@
 """SQLAlchemy ORM base — db, GUID, uuid7, encryption helpers."""
 
-import base64
-import hashlib
 import logging
 import os
 import sys
@@ -89,28 +87,34 @@ logger = logging.getLogger(__name__)
 
 db = SQLAlchemy()
 
-# Derive a stable symmetric encryption key from SECRET_KEY or ENCRYPTION_KEY
+# Symmetric encryption key for PII fields. Must be explicitly configured.
+# Server: ENCRYPTION_KEY. Workers: WORKER_ENCRYPTION_KEY (via config.py).
+# We deliberately never derive it from SECRET_KEY so a worker leak of the
+# JWT key never compromises encrypted-at-rest data.
 ENCRYPTION_KEY_BASE64 = Config.ENCRYPTION_KEY
-if ENCRYPTION_KEY_BASE64:
-    cipher_suite = Fernet(ENCRYPTION_KEY_BASE64.encode())
-else:
-    SECRET_KEY = Config.SECRET_KEY
-    if not SECRET_KEY:
-        logger.critical("SECRET_KEY environment variable is not set")
-        sys.exit(1)
-    DERIVED_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
-    cipher_suite = Fernet(DERIVED_KEY)
+if not ENCRYPTION_KEY_BASE64:
+    logger.critical(
+        "ENCRYPTION_KEY (server) or WORKER_ENCRYPTION_KEY (worker) is not set — "
+        "refusing to start without an explicit encryption key."
+    )
+    sys.exit(1)
+cipher_suite = Fernet(ENCRYPTION_KEY_BASE64.encode())
 
 
 def encrypt_field(text: str | None) -> str | None:
-    """Encrypt a plaintext string using Fernet symmetric encryption."""
+    """Encrypt a plaintext string using Fernet symmetric encryption.
+
+    Raises on failure instead of returning None so PII is never silently
+    dropped (M-A6) — a failed write surfaces as a visible error, not a lost
+    field.
+    """
     if not text:
         return None
     try:
         return cipher_suite.encrypt(text.encode()).decode()
     except Exception:
-        logger.exception("encrypt_field failed")
-        return None
+        logger.exception("encrypt_field failed — re-raising to avoid silent data loss")
+        raise
 
 
 def decrypt_field(cipher_text: str | None) -> str | None:

@@ -13,6 +13,24 @@ from datetime import datetime, timedelta
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db
 
 
+class TestEncryptFieldRaisesOnFailure:
+    def test_re_raises_instead_of_silent_none(self, monkeypatch):
+        from models.base import cipher_suite, encrypt_field
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("crypto unavailable")
+
+        monkeypatch.setattr(cipher_suite, "encrypt", boom)
+        with pytest.raises(RuntimeError, match="crypto unavailable"):
+            encrypt_field("sensitive-pii")
+
+    def test_empty_input_returns_none(self):
+        from models.base import encrypt_field
+
+        assert encrypt_field(None) is None
+        assert encrypt_field("") is None
+
+
 class TestSubmissionFileCleanup:
     @pytest.fixture(autouse=True)
     def setup(self, app, db_session):

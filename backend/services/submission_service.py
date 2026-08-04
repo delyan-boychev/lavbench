@@ -5,9 +5,62 @@ from __future__ import annotations
 import ast
 import json
 import uuid
+from datetime import timedelta
 from typing import Any
 
-from models import Challenge, Submission, Task
+from flask import Response
+
+from config import Config
+from error_utils import err
+from models import Challenge, Stage, Submission, Task, db
+from utils.dates import utcnow
+
+
+def validate_submission_allowed(
+    user_id: str, user_role: str, task: Task, challenge: Challenge
+) -> tuple[Response, int] | None:
+    """Shared gate for both submit endpoints (challenge-scoped and task-scoped).
+
+    Enforces, in order: active, not archived, not frozen, not finalized
+    (competitors), and stage/challenge deadlines with grace period. Returns an
+    ``err()`` response when blocked, otherwise ``None``. Registration and quota
+    checks stay in the endpoints (they differ in locking and ordering).
+    """
+    if not challenge.is_active:
+        return err("ERR_CHALLENGE_INACTIVE", 400)
+    if challenge.is_archived:
+        return err("ERR_CHALLENGE_ARCHIVED", 400)
+    if challenge.is_frozen:
+        return err("ERR_COMPETITION_FROZEN", 403)
+
+    if user_role == "competitor":
+        if challenge.scores_finalized:
+            return err("ERR_COMPETITION_FINALIZED", 403)
+
+        now = utcnow()
+        grace = timedelta(seconds=int(Config.DEADLINE_GRACE_PERIOD_SECONDS))
+        if task and task.stage_id:
+            stage = db.session.get(Stage, task.stage_id)
+            if stage:
+                if now < stage.start_time:
+                    return err(
+                        "ERR_STAGE_NOT_STARTED",
+                        400,
+                        message=f"The stage '{stage.title}' has not started yet.",
+                    )
+                if stage.end_time and now > (stage.end_time + grace):
+                    return err(
+                        "ERR_STAGE_DEADLINE_PASSED",
+                        400,
+                        message=f"The deadline for the stage '{stage.title}' has passed.",
+                    )
+        else:
+            if challenge.start_time and now < challenge.start_time:
+                return err("ERR_COMPETITION_NOT_STARTED", 400)
+            if challenge.end_time and now > (challenge.end_time + grace):
+                return err("ERR_COMPETITION_ENDED", 400)
+
+    return None
 
 
 def extract_code_from_cells(cells_list: list[Any]) -> list[str]:
@@ -231,10 +284,7 @@ def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
 
 
 def get_best_submission(
-    task: Task,
-    user_subs: list[Submission],
-    challenge: Challenge,
-    is_lower_better: bool | None = None,
+    task: Task, user_subs: list[Submission], challenge: Challenge
 ) -> Submission | None:
     """
     Given a task, a list of completed submissions for a single user, and the challenge,

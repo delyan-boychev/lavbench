@@ -59,6 +59,21 @@ class TestQueueDepth:
             if before == 0:
                 r.delete("celery")
 
+    def test_counts_priority_subqueues(self, redis_flush):
+        """Celery stores priority>0 messages under `{queue}@N` keys (M-C1)."""
+        r = _coordination()
+        base = r.llen("mtest_queue")
+        svc_keys = [k.decode() for k in r.keys("mtest_queue@*")] if r.keys("mtest_queue@*") else []
+        try:
+            r.rpush("mtest_queue", "base-msg")
+            r.rpush("mtest_queue@8", "prio-msg-1")
+            r.rpush("mtest_queue@0", "prio-msg-2")
+            assert get_queue_depth("mtest_queue") == base + 3
+        finally:
+            r.delete("mtest_queue")
+            for k in svc_keys:
+                r.delete(k)
+
 
 class TestInvalidateLeaderboardCache:
     def test_marks_challenge_dirty(self, redis_flush):

@@ -14,6 +14,27 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 _IS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
 
 
+def _warn_insecure_redis(url: str, what: str) -> None:
+    """Warn when Redis is reached over plaintext to a non-loopback host
+    (M-A7). Internal compose service names like ``redis`` are intentionally
+    loopback-free, so this is a warning, not a fail-fast."""
+    if not url:
+        return
+    try:
+        parsed = url.split("://", 1)[1].split("/", 1)[0]
+        host = parsed.rsplit("@", 1)[-1]
+        if ":" in host and not host.startswith("["):
+            host = host.rsplit(":", 1)[0]
+        host = host.strip("[]")
+        if url.startswith("redis://") and host not in ("localhost", "127.0.0.1", "::1"):
+            sys.stderr.write(
+                f"WARNING: {what} uses plaintext redis:// to {host!r} over the network. "
+                "Prefer rediss:// + TLS when the broker is reachable outside the host.\n"
+            )
+    except Exception:  # noqa: S110
+        pass
+
+
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
@@ -24,7 +45,10 @@ def _require_env(key: str, message: str | None = None) -> str:
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY") or _require_env("SECRET_KEY")
+    # JWT signing key. Required for the API server, but NEVER shipped to
+    # workers (a compromised eval worker must not be able to mint tokens).
+    # Workers run without SECRET_KEY (they authenticate via Ed25519 nonces).
+    SECRET_KEY = os.environ.get("SECRET_KEY") or ("" if _IS_WORKER else _require_env("SECRET_KEY"))
 
     # Database configuration - PostgreSQL strictly enforced
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or (
@@ -37,6 +61,8 @@ class Config:
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     # Dedicated cache instance (defaults to broker when unset, e.g. dev/tests)
     CACHE_REDIS_URL = os.environ.get("CACHE_REDIS_URL", "")
+    _warn_insecure_redis(CELERY_BROKER_URL, "CELERY_BROKER_URL")
+    _warn_insecure_redis(CACHE_REDIS_URL, "CACHE_REDIS_URL")
     CELERY_RESULT_EXPIRES = int(os.environ.get("CELERY_RESULT_EXPIRES", 3600))
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
@@ -113,21 +139,48 @@ class Config:
 
     # Fallback defaults for task/challenge metadata
     DEFAULT_TIME_LIMIT_SEC = int(os.environ.get("DEFAULT_TIME_LIMIT_SEC", 300))
+
+    # Upper bound for a worker-reported execution_time_ms. Generous ceiling for
+    # long-running evaluations; anything above is a corrupt/adversarial report
+    # (M-C3).
+    MAX_EXECUTION_TIME_MS = int(os.environ.get("MAX_EXECUTION_TIME_MS", 30 * 24 * 3600 * 1000))
     DEFAULT_RAM_LIMIT_MB = int(os.environ.get("DEFAULT_RAM_LIMIT_MB", 8192))
     DEFAULT_PUBLIC_EVAL_PERCENTAGE = int(os.environ.get("DEFAULT_PUBLIC_EVAL_PERCENTAGE", 30))
 
     # Worker utils
     WORKER_MAX_LOG_LINES = int(os.environ.get("WORKER_MAX_LOG_LINES", 10000))
+    # Cumulative size cap for the server-side worker_remote.log; the file is
+    # rotated (kept as .1) once it would exceed this bound (BP-M11).
+    MAX_WORKER_LOG_BYTES = int(os.environ.get("MAX_WORKER_LOG_BYTES", 10 * 1024 * 1024))
     WORKER_REPORT_MAX_RETRIES = int(os.environ.get("WORKER_REPORT_MAX_RETRIES", 3))
     WORKER_REPORT_TIMEOUT = int(os.environ.get("WORKER_REPORT_TIMEOUT", 10))
     WORKER_DOWNLOAD_TIMEOUT = int(os.environ.get("WORKER_DOWNLOAD_TIMEOUT", 30))
+    # Comma-separated GPU device ids exposed to sandboxes (NEW-4). When set, the
+    # worker pins a specific device per run instead of requesting every GPU.
+    WORKER_GPU_IDS: ClassVar[list[str]] = [
+        id_.strip() for id_ in os.environ.get("WORKER_GPU_IDS", "").split(",") if id_.strip()
+    ]
+
+    # Caps for sandbox output collection (BP-M4 / M-S2 / NEW-6): never buffer
+    # more than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
+    # extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES.
+    MAX_COLLECT_BUFFER_BYTES = int(os.environ.get("MAX_COLLECT_BUFFER_BYTES", 512 * 1024 * 1024))
+    MAX_EXTRACT_MEMBER_BYTES = int(os.environ.get("MAX_EXTRACT_MEMBER_BYTES", 512 * 1024 * 1024))
+    # Best-effort --storage-opt size cap for sandbox containers (ignored by
+    # storage drivers without quota support).
+    WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline
     DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
 
-    # Encryption key for PII fields
-    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY") or (
-        "" if _IS_WORKER else _require_env("ENCRYPTION_KEY")
+    # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
+    # use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
+    # so the server JWT key never leaves the server host.
+    WORKER_ENCRYPTION_KEY = os.environ.get("WORKER_ENCRYPTION_KEY", "")
+    ENCRYPTION_KEY = (
+        os.environ.get("ENCRYPTION_KEY")
+        or os.environ.get("WORKER_ENCRYPTION_KEY")
+        or ("" if _IS_WORKER else _require_env("ENCRYPTION_KEY"))
     )
 
     # Secure cookies (set True when behind HTTPS)

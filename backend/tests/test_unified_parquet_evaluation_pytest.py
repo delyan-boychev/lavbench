@@ -268,8 +268,8 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 2]})
         df_s = pd.DataFrame({"id": [1, 2, 3], "prediction": [0.1, 0.5, 0.9]})
         res = evaluate_predictions(df_s, df_l, {"auc_roc": {"weight": 1.0}})
-        # Exception is caught → fallback 0.5
-        assert res["auc_roc"] == pytest.approx(0.5)
+        # ValueError is caught → metric is excluded (None)
+        assert res["auc_roc"] is None
 
     def test_logloss_metric(self):
         df_l = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]})
@@ -283,7 +283,7 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2], "label": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
         res = evaluate_predictions(df_s, df_l, {"logloss": {"weight": 1.0}})
-        assert res["logloss"] == pytest.approx(10.0)
+        assert res["logloss"] is None
 
     def test_brier_score_metric(self):
         df_l = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]})
@@ -297,7 +297,7 @@ class TestEvalPredictionsAllMetricPaths:
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
         res = evaluate_predictions(df_s, df_l, {"brier_score": {"weight": 1.0}})
-        assert res["brier_score"] == pytest.approx(1.0)
+        assert res["brier_score"] is None
 
     # ── Regression ────────────────────────────────────────────────────────────
 
@@ -378,34 +378,53 @@ class TestEvalPredictionsAllMetricPaths:
             df_s, df_l, {"rmse": {"weight": 1.0, "options": {"shape": "9999,9999"}}}
         )
         assert "rmse" in res
-        assert res["rmse"] == 999.0
+        assert res["rmse"] is None
 
     def test_regression_string_inputs_returns_fallback(self):
         """String labels passed to MSE → fallback 999.0."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["cat", "dog"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["cat", "mouse"]})
         res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
-        assert res["mse"] == 999.0
+        assert res["mse"] is None
 
     def test_r_squared_invalid_inputs_returns_fallback(self):
         """Non-numeric inputs to r2_score → fallback 0.0."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["a", "b"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "c"]})
         res = evaluate_predictions(df_s, df_l, {"r_squared": {"weight": 1.0}})
-        assert res["r_squared"] == pytest.approx(0.0)
+        assert res["r_squared"] is None
 
     def test_mape_zero_in_denominator_returns_fallback(self):
         """Zero true values causes MAPE division by zero → fallback 999.0."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["x", "y"]})
         res = evaluate_predictions(df_s, df_l, {"mape": {"weight": 1.0}})
-        assert res["mape"] == pytest.approx(999.0)
+        assert res["mape"] is None
 
     def test_median_ae_invalid_inputs_returns_fallback(self):
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
         res = evaluate_predictions(df_s, df_l, {"median_ae": {"weight": 1.0}})
-        assert res["median_ae"] == pytest.approx(999.0)
+        assert res["median_ae"] is None
+
+    def test_empty_prediction_bytes_regression_excluded(self):
+        """Empty byte-array predictions for a regression must NOT score 1.0
+        (BP-H4) — the metric is excluded instead."""
+        data = np.array([10, 20, 30, 40], dtype=np.uint8).tobytes()
+        df_l = pd.DataFrame({"id": [1], "label": [data]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
+        res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
+        assert "mse" in res
+        assert res["mse"] is None
+
+    def test_partial_empty_prediction_bytes_regression(self):
+        """Mixing empty and valid byte pairs still yields a real score."""
+        d1 = np.array([10, 20, 30, 40], dtype=np.uint8).tobytes()
+        d2 = np.array([10, 20, 30, 44], dtype=np.uint8).tobytes()
+        df_l = pd.DataFrame({"id": [1, 2], "label": [d1, d1]})
+        df_s = pd.DataFrame({"id": [1, 2], "prediction": [b"", d2]})
+        res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
+        assert res["mse"] is not None
 
     # ── NER / Tagging (seqeval fallback) ────────────────────────────────────
 
@@ -612,6 +631,35 @@ class TestEvalPredictionsAllMetricPaths:
         img.save(buf, format="PNG")
         return buf.getvalue()
 
+    def test_decode_mask_rejects_oversized_image(self):
+        """NEW-3: masks exceeding per-axis/pixel caps must be rejected rather
+        than decoded (which would risk a decompression-bomb allocation)."""
+        from evaluation_engine import (
+            MAX_MASK_IMAGE_DIM,
+            decode_mask_bytes,
+        )
+
+        assert MAX_MASK_IMAGE_DIM < 5_000_000  # sanity: cap is tight
+        oversized = self._make_png_mask(128, 128, 1)
+        # A 128x128 image is fine; only assert dimension logic via a cap that
+        # is provably below the fixture dimensions.
+        import evaluation_engine as ee
+
+        saved_pixels = ee.MAX_MASK_IMAGE_PIXELS
+        saved_dim = ee.MAX_MASK_IMAGE_DIM
+        try:
+            ee.MAX_MASK_IMAGE_PIXELS = 100  # below 128*128
+            assert decode_mask_bytes(oversized).size == 0
+            ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
+            ee.MAX_MASK_IMAGE_DIM = 16  # below 128
+            assert decode_mask_bytes(oversized).size == 0
+        finally:
+            ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
+            ee.MAX_MASK_IMAGE_DIM = saved_dim
+        # Normal decode still works under default caps.
+        restored = decode_mask_bytes(oversized)
+        assert restored.size == 128 * 128
+
     def test_mean_iou_with_compressed_png(self):
         """mean_iou must decode compressed PNG masks correctly."""
         png_white = self._make_png_mask(4, 4, 255)
@@ -711,13 +759,32 @@ class TestEvalPredictionsAllMetricPaths:
         assert "mel_lsd" in res
 
     def test_si_sdr_metric(self):
-        """si_sdr is computed as compute_audio_snr + 1.2."""
+        """si_sdr uses true scale-invariant SDR."""
         data = np.array([1000, 2000, 1000, 2000], dtype=np.int16).tobytes()
         df_l = pd.DataFrame({"id": [1], "label": [data]})
         df_s = pd.DataFrame({"id": [1], "prediction": [data]})
         res = evaluate_predictions(df_s, df_l, {"si_sdr": {"weight": 1.0}})
         assert "si_sdr" in res
-        assert res["si_sdr"] > 50.0  # SNR 100 + 1.2
+        assert res["si_sdr"] == pytest.approx(100.0)  # identical -> no residual
+
+    def test_si_sdr_scale_invariant(self):
+        """A constant-scaled estimate is a perfect SI-SDR score."""
+        data = np.array([1000, 2000, 1000, 2000], dtype=np.int16).tobytes()
+        doubled = np.array([2000, 4000, 2000, 4000], dtype=np.int16).tobytes()
+        df_l = pd.DataFrame({"id": [1], "label": [data]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [doubled]})
+        res = evaluate_predictions(df_s, df_l, {"si_sdr": {"weight": 1.0}})
+        assert res["si_sdr"] == pytest.approx(100.0)
+
+    def test_si_sdr_imperfect_estimate_bounded(self):
+        """A noisy estimate yields a finite, better-than-silence SI-SDR."""
+        noise = np.random.default_rng(0).normal(scale=50, size=200)
+        data = np.array([1000, 2000] * 100, dtype=np.int16)
+        noisy = np.array(data, dtype=np.int64) + noise.astype(np.int64)
+        df_l = pd.DataFrame({"id": [1], "label": [data.astype(np.int16).tobytes()]})
+        df_s = pd.DataFrame({"id": [1], "prediction": [noisy.astype(np.int16).tobytes()]})
+        res = evaluate_predictions(df_s, df_l, {"si_sdr": {"weight": 1.0}})
+        assert 0.0 < res["si_sdr"] < 100.0
 
     # ── Clustering ─────────────────────────────────────────────────────────────
 
@@ -807,7 +874,7 @@ class TestEvalPredictionsAllMetricPaths:
     # ── Custom column logic ────────────────────────────────────────────────────
 
     def test_custom_column_missing_from_submission_returns_zero(self):
-        """Specified column not in submission df → value 0.0, no crash."""
+        """Specified column not in submission df → metric excluded (None)."""
         df_l = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
         res = evaluate_predictions(
@@ -815,10 +882,10 @@ class TestEvalPredictionsAllMetricPaths:
             df_l,
             {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
         )
-        assert res["accuracy"] == pytest.approx(0.0)
+        assert res["accuracy"] is None
 
     def test_custom_column_missing_from_labels_returns_zero(self):
-        """Specified column not in labels df → value 0.0, no crash."""
+        """Specified column not in labels df → metric excluded (None)."""
         df_l = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
         res = evaluate_predictions(
@@ -826,7 +893,7 @@ class TestEvalPredictionsAllMetricPaths:
             df_l,
             {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
         )
-        assert res["accuracy"] == pytest.approx(0.0)
+        assert res["accuracy"] is None
 
     def test_custom_column_correctly_selected(self):
         df_l = pd.DataFrame({"id": [1, 2], "special_col": [0, 1]})
@@ -993,7 +1060,7 @@ class TestMetricsCalculationEdgeCases:
 
         res = evaluate_predictions(df_sub, df_labels, {"mse": {"weight": 1.0}})
         assert "mse" in res
-        assert res["mse"] == 999.0
+        assert res["mse"] is None
 
     def test_evaluate_predictions_type_mismatch_resilience(self):
         # Classification metric receiving continuous values
@@ -1006,14 +1073,14 @@ class TestMetricsCalculationEdgeCases:
             df_sub, df_labels, {"f1": {"weight": 1.0, "options": {"average": "binary"}}}
         )
         assert "f1" in res
-        assert res["f1"] == 0.0
+        assert res["f1"] is None
 
         # String targets passed to regression metrics
         df_labels_reg = pd.DataFrame({"id": [1, 2], "label": ["cat", "dog"]})
         df_sub_reg = pd.DataFrame({"id": [1, 2], "prediction": ["cat", "mouse"]})
         res_reg = evaluate_predictions(df_sub_reg, df_labels_reg, {"mse": {"weight": 1.0}})
         assert "mse" in res_reg
-        assert res_reg["mse"] == 999.0
+        assert res_reg["mse"] is None
 
 
 class TestCustomEvaluator:

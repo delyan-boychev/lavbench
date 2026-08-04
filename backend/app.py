@@ -55,11 +55,35 @@ class _LavBenchJSONProvider(DefaultJSONProvider):
         return super().default(obj)
 
 
+def _warn_insecure_cookie_deployment() -> None:
+    """Surface an insecure deployment loudly at startup.
+
+    When SECURE_COOKIES=false the 24h JWT auth cookie + CSRF cookie are sent in
+    cleartext and can be sniffed on shared networks (a real risk for the
+    school-LAN audience). This is a loud warning, not a hard failure —
+    operators may legitimately run HTTP on an isolated LAN — but it must not be
+    silent. nginx terminates TLS in front of this container; the compose
+    default is SECURE_COOKIES=true.
+    """
+    if Config.RUNNING_AS_WORKER or Config.SECURE_COOKIES:
+        return
+    main_host = Config.MAIN_SERVER_URL.split("://")[-1].split("/")[0].split(":")[0]
+    if main_host in ("localhost", "127.0.0.1", "::1"):
+        return
+    logger.warning(
+        "SECURE_COOKIES is disabled while MAIN_SERVER_URL=%s is not localhost. "
+        "Auth cookies are transmitted in cleartext. Set SECURE_COOKIES=true and "
+        "terminate TLS at nginx for production deployments.",
+        Config.MAIN_SERVER_URL,
+    )
+
+
 def create_app() -> Flask:
     setup_logging("backend")
+    _warn_insecure_cookie_deployment()
     app = Flask(__name__)
     app.json = _LavBenchJSONProvider(app)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[method-assign]
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)  # type: ignore[method-assign]
     app.config.from_object(Config)
 
     # Enable CORS - restrict origins in production

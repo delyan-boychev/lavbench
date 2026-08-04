@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 _pools: dict[str, redis_lib.ConnectionPool] = {}
 _pools_pid: int | None = None
 
+_sse_pools: dict[str, redis_lib.ConnectionPool] = {}
+_sse_pools_pid: int | None = None
+
 DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 
 
@@ -102,6 +105,48 @@ def get_coordination_client() -> redis_lib.Redis[Any] | None:
     return _client_for(Config.CELERY_BROKER_URL or "redis://localhost:6379/0")
 
 
+def _get_sse_pool(url: str) -> redis_lib.ConnectionPool | None:
+    """Connection pool for blocking pubsub subscriptions, sized to SSE_MAX_GLOBAL.
+
+    Kept separate from the general pool so that long-lived pubsub connections
+    held by SSE streams can never exhaust the connections used by cache and
+    coordination operations (see H-P1).
+    """
+    global _sse_pools_pid
+    current_pid = os.getpid()
+    if _sse_pools_pid != current_pid:
+        _sse_pools.clear()
+        _sse_pools_pid = current_pid
+    pool = _sse_pools.get(url)
+    if pool is None:
+        try:
+            pool = redis_lib.ConnectionPool.from_url(
+                url,
+                max_connections=max(Config.SSE_MAX_GLOBAL, 100),
+                socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
+                socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
+                retry_on_timeout=True,
+                **_build_ssl_kwargs(url),
+            )
+            _sse_pools[url] = pool
+        except Exception:
+            logger.exception("Failed to create SSE Redis connection pool for %s", url)
+            return None
+    return pool
+
+
+def get_sse_client() -> redis_lib.Redis[Any] | None:
+    """Returns a Redis client for blocking pubsub SSE subscriptions.
+
+    Uses a dedicated pool (sized >= SSE_MAX_GLOBAL) so up to SSE_MAX_GLOBAL
+    concurrent streams never starve the shared pools.
+    """
+    pool = _get_sse_pool(Config.CELERY_BROKER_URL or "redis://localhost:6379/0")
+    if pool is None:
+        return None
+    return redis_lib.Redis(connection_pool=pool)
+
+
 @contextmanager
 def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     """Context manager: acquires a Redis lock (SET NX), releases on exit.
@@ -154,14 +199,25 @@ def log_dead_letter(
 def get_queue_depth(queue_name: str) -> int:
     """Return the number of messages currently pending on a Celery queue.
 
-    Fails open (returns 0) when Redis is unavailable so submissions are never
-    rejected because of a monitoring hiccup.
+    Includes priority sub-queues (Celery stores messages with ``priority=N``
+    under ``{queue}@{N}`` keys, e.g. ``cpu_queue@0`` / ``cpu_queue@8``, so the
+    bare key alone would undercount). Fails open (returns 0) when Redis is
+    unavailable so submissions are never rejected because of a monitoring
+    hiccup.
     """
     r = get_coordination_client()
     if not r:
         return 0
     try:
-        return int(r.llen(queue_name) or 0)
+        total = int(r.llen(queue_name) or 0)
+        cursor = 0
+        while True:
+            cursor, keys = r.scan(cursor=cursor, match=f"{queue_name}@*", count=500)
+            for k in keys:
+                total += int(r.llen(k) or 0)
+            if cursor == 0:
+                break
+        return total
     except Exception:
         logger.exception("Failed to read queue depth for %s", queue_name)
         return 0

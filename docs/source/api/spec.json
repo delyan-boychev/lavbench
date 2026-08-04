@@ -9923,6 +9923,36 @@
         "title": "WorkerReportResponse",
         "type": "object"
       },
+      "WorkerRunContentResponse.6bc6f68": {
+        "properties": {
+          "custom_eval_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Custom Eval Code"
+          },
+          "user_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User Code"
+          }
+        },
+        "title": "WorkerRunContentResponse",
+        "type": "object"
+      },
       "WorkerStatsResponse.febf810": {
         "description": "Free-form worker stats dict.",
         "properties": {},
@@ -13904,6 +13934,80 @@
           }
         },
         "summary": "Worker callback to report submission status and scores.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/submission-run-content/{submission_id}": {
+      "get": {
+        "description": "The submission's code and evaluator script are fetched on demand with a signed worker token bound to this exact submission_id \u2014 they are never embedded in the Celery message. ``user_code`` is reconstructed from the stored ``code_cells`` exactly as the submission runner consumes it.",
+        "operationId": "get__api_worker_submission-run-content_{submission_id}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerRunContentResponse.6bc6f68"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Return the code a worker must execute for a submission (M-P7).",
         "tags": [
           "Tasks"
         ]

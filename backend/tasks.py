@@ -50,6 +50,9 @@ if RUNNING_AS_WORKER:
         "tasks",
         broker=Config.CELERY_BROKER_URL,
         backend=Config.CELERY_RESULT_BACKEND,
+        task_serializer="json",
+        result_serializer="json",
+        accept_content=["json"],
     )
     app = None
     db = None
@@ -64,6 +67,9 @@ else:
         "tasks",
         broker=app.config["CELERY_BROKER_URL"],
         backend=app.config["CELERY_RESULT_BACKEND"],
+        task_serializer="json",
+        result_serializer="json",
+        accept_content=["json"],
     )
 
 
@@ -519,15 +525,25 @@ celery.conf.beat_schedule = {
         "schedule": 20.0,
         "options": {"queue": "internal"},
     },
-    "docker-prune-weekly": {
+    "docker-prune-weekly-cpu": {
         "task": "tasks.prune_docker_images",
         "schedule": 604800.0,  # once a week (7 days)
         "options": {"queue": "cpu_queue"},
     },
-    "task-dir-sweep-daily": {
+    "docker-prune-weekly-gpu": {
+        "task": "tasks.prune_docker_images",
+        "schedule": 604800.0,  # once a week (7 days)
+        "options": {"queue": "gpu_queue"},
+    },
+    "task-dir-sweep-daily-cpu": {
         "task": "tasks.sweep_stale_task_dirs",
         "schedule": 86400.0,  # once a day
         "options": {"queue": "cpu_queue"},
+    },
+    "task-dir-sweep-daily-gpu": {
+        "task": "tasks.sweep_stale_task_dirs",
+        "schedule": 86400.0,  # once a day
+        "options": {"queue": "gpu_queue"},
     },
 }
 

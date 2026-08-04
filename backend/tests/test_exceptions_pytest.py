@@ -374,6 +374,10 @@ class TestBackendExceptionAndErrorCases:
         assert not success
         assert mock_post.call_count == 3
 
+    @patch(
+        "worker_utils.fetch_submission_run_content",
+        return_value=("def predict(x): return 1", None),
+    )
     @patch("time.sleep")
     @patch("requests.post")
     @patch("worker_utils.download_task_files_to_dir")
@@ -392,6 +396,7 @@ class TestBackendExceptionAndErrorCases:
         mock_get_client,
         mock_docker_check,
         mock_sleep,
+        mock_fetch,
     ):
         mock_docker_check.return_value = True
         mock_img_exists.return_value = True

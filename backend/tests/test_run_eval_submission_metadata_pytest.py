@@ -34,6 +34,17 @@ def _base_metadata(**overrides):
     return metadata
 
 
+@pytest.fixture(autouse=True)
+def _mock_run_content_fetch(mocker):
+    mocker.patch(
+        "worker_utils.fetch_submission_run_content",
+        side_effect=lambda metadata: (
+            metadata.get("user_code"),
+            metadata.get("custom_eval_code"),
+        ),
+    )
+
+
 class TestRunEvalSubmissionMetadataMode:
     def _setup_happy(self, mocker, tmp_path, write_submission_parquet=True):
         labels_dir = tmp_path / "labels"
@@ -91,6 +102,34 @@ class TestRunEvalSubmissionMetadataMode:
         assert kwargs["metrics_payload_priv"] == {}
         statuses = {c.kwargs.get("status") for c in mock_report.call_args_list}
         assert "running" in statuses
+
+    def test_metadata_mode_fetches_run_content_unconditionally(self, mocker, tmp_path):
+        self._setup_happy(mocker, tmp_path)
+        mock_fetch = mocker.patch(
+            "worker_utils.fetch_submission_run_content",
+            return_value=("print('fresh')", "def evaluate(): pass"),
+        )
+        metadata = _base_metadata(
+            user_code="print('stale')",
+            custom_eval_code="print('stale-eval')",
+        )
+        result = self._run(metadata)
+        assert result == "Submission sub_meta_1 evaluated with status completed"
+        mock_fetch.assert_called_once()
+        assert metadata["user_code"] == "print('fresh')"
+        assert metadata["custom_eval_code"] == "def evaluate(): pass"
+
+    def test_metadata_mode_fails_when_run_content_fetch_fails(self, mocker, tmp_path):
+        self._setup_happy(mocker, tmp_path)
+        mocker.patch(
+            "worker_utils.fetch_submission_run_content",
+            side_effect=RuntimeError("server unreachable"),
+        )
+        metadata = _base_metadata()
+        del metadata["user_code"]
+        del metadata["custom_eval_code"]
+        result = self._run(metadata)
+        assert result.startswith("Failed to fetch submission run content")
 
     def test_fallback_key_written_when_report_fails(self, mocker, tmp_path):
         mock_report = self._setup_happy(mocker, tmp_path)

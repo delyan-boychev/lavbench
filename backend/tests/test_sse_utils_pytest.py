@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from sse_utils import (
     publish_leaderboard_update,
     publish_queue_update,
     publish_submission_log,
+    publish_submission_log_batch,
     publish_submission_status,
     publish_submissions_update,
     sse_connection_limit,
@@ -159,37 +161,82 @@ class TestPublishSubmissionsUpdate:
 
 class TestPublishSubmissionLog:
     @patch("sse_utils.get_coordination_client")
-    def test_rpush_ltrim_expire_publish(self, mock_get_redis):
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
+    @patch("sse_utils.get_redis_client")
+    def test_storage_on_cache_publish_on_coordination(self, mock_cache, mock_coord):
+        cache_redis = MagicMock()
+        mock_cache.return_value = cache_redis
+        coord_redis = MagicMock()
+        mock_coord.return_value = coord_redis
         publish_submission_log(submission_id=99, log_line="starting eval")
 
-        mock_redis.rpush.assert_called_once()
-        mock_redis.ltrim.assert_called_once()
-        mock_redis.expire.assert_called_once_with("submission:99:logs", 86400)
-        mock_redis.publish.assert_called_once()
+        cache_redis.rpush.assert_called_once()
+        cache_redis.ltrim.assert_called_once()
+        cache_redis.expire.assert_called_once_with("submission:99:logs", 86400)
+        cache_redis.publish.assert_not_called()
 
-        rpush_args = mock_redis.rpush.call_args[0]
+        rpush_args = cache_redis.rpush.call_args[0]
         assert rpush_args[0] == "submission:99:logs"
         assert rpush_args[1] == "starting eval"
 
-        publish_args = mock_redis.publish.call_args[0]
+        coord_redis.publish.assert_called_once()
+        publish_args = coord_redis.publish.call_args[0]
         assert publish_args[0] == "submission_99_logs"
 
-    @patch("sse_utils.get_coordination_client")
-    def test_none_submission_id_does_nothing(self, mock_get_redis):
+    @patch("sse_utils.get_redis_client")
+    def test_none_submission_id_does_nothing(self, mock_cache):
         publish_submission_log(submission_id=None, log_line="test")
-        mock_get_redis.return_value.rpush.assert_not_called()
+        mock_cache.return_value.rpush.assert_not_called()
 
     @patch("sse_utils.get_coordination_client")
-    def test_redis_none_no_error(self, mock_get_redis):
-        mock_get_redis.return_value = None
+    @patch("sse_utils.get_redis_client")
+    def test_redis_none_no_error(self, mock_cache, mock_coord):
+        mock_cache.return_value = None
+        mock_coord.return_value = None
         publish_submission_log(submission_id=1, log_line="test")
 
     def test_publishes_to_fakeredis_channel(self, fredis):
-        with patch("sse_utils.get_coordination_client", return_value=fredis):
+        with (
+            patch("sse_utils.get_coordination_client", return_value=fredis),
+            patch("sse_utils.get_redis_client", return_value=fredis),
+        ):
             publish_submission_log(submission_id=99, log_line="starting eval")
         assert fredis.published_messages == [("submission_99_logs", '{"log": "starting eval"}')]
+
+
+class TestPublishSubmissionLogBatch:
+    @patch("sse_utils.get_coordination_client")
+    @patch("sse_utils.get_redis_client")
+    def test_pipelines_storage_and_single_publish(self, mock_cache, mock_coord):
+        pipeline = MagicMock()
+        mock_cache.return_value.pipeline.return_value = pipeline
+        coord_redis = MagicMock()
+        mock_coord.return_value = coord_redis
+
+        publish_submission_log_batch(submission_id=99, log_lines=["a", "b", "c"])
+
+        assert pipeline.rpush.call_count == 3
+        pipeline.ltrim.assert_called_once_with("submission:99:logs", -10000, -1)
+        dispatch = mock_cache.return_value.pipeline.call_args[1]["transaction"]
+        assert dispatch is False
+        coord_redis.publish.assert_called_once()
+        publish_args = coord_redis.publish.call_args[0]
+        assert publish_args[0] == "submission_99_logs"
+        assert json.loads(publish_args[1]) == {"logs": ["a", "b", "c"]}
+
+    @patch("sse_utils.get_redis_client")
+    def test_no_lines_does_nothing(self, mock_cache):
+        publish_submission_log_batch(submission_id=99, log_lines=[])
+        mock_cache.return_value.rpush.assert_not_called()
+        mock_cache.return_value.pipeline.assert_not_called()
+
+    def test_publishes_batch_to_fakeredis_channel(self, fredis):
+        with (
+            patch("sse_utils.get_coordination_client", return_value=fredis),
+            patch("sse_utils.get_redis_client", return_value=fredis),
+        ):
+            publish_submission_log_batch(submission_id=99, log_lines=["a", "b"])
+        assert fredis.published_messages == [("submission_99_logs", '{"logs": ["a", "b"]}')]
+        assert fredis.lrange("submission:99:logs", 0, -1) == ["a", "b"]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -198,21 +245,21 @@ class TestPublishSubmissionLog:
 
 
 class TestClearSubmissionLogs:
-    @patch("sse_utils.get_coordination_client")
-    def test_deletes_correct_key(self, mock_get_redis):
+    @patch("sse_utils.get_redis_client")
+    def test_deletes_correct_key(self, mock_cache):
         mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
+        mock_cache.return_value = mock_redis
         clear_submission_logs(submission_id=55)
         mock_redis.delete.assert_called_once_with("submission:55:logs")
 
-    @patch("sse_utils.get_coordination_client")
-    def test_none_submission_id_does_nothing(self, mock_get_redis):
+    @patch("sse_utils.get_redis_client")
+    def test_none_submission_id_does_nothing(self, mock_cache):
         clear_submission_logs(submission_id=None)
-        mock_get_redis.return_value.delete.assert_not_called()
+        mock_cache.return_value.delete.assert_not_called()
 
-    @patch("sse_utils.get_coordination_client")
-    def test_redis_none_no_error(self, mock_get_redis):
-        mock_get_redis.return_value = None
+    @patch("sse_utils.get_redis_client")
+    def test_redis_none_no_error(self, mock_cache):
+        mock_cache.return_value = None
         clear_submission_logs(submission_id=1)
 
 
