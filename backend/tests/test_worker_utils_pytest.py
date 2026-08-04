@@ -1,7 +1,9 @@
 import base64
+import io
 import os
 import tempfile
 import time
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
@@ -273,6 +275,7 @@ class TestSeededRunCommandStreaming:
     """Sandboxes seeded via put_archive instead of host-path bind mounts."""
 
     def _tar_stream(self, files: dict[str, bytes]):
+        """docker-py returns get_archive streams as byte-chunk generators."""
         import io
         import tarfile
 
@@ -282,8 +285,13 @@ class TestSeededRunCommandStreaming:
                 info = tarfile.TarInfo(name=name)
                 info.size = len(content)
                 tar.addfile(info, io.BytesIO(content))
-        buf.seek(0)
-        return buf
+        data = buf.getvalue()
+
+        def _chunks() -> Iterator[bytes]:
+            for i in range(0, len(data), 4096):
+                yield data[i : i + 4096]
+
+        return _chunks()
 
     def _make_mock_container(self, mocker, exit_code=0, files: dict[str, bytes] | None = None):
         mock_container = mocker.MagicMock()
@@ -332,6 +340,48 @@ class TestSeededRunCommandStreaming:
         assert (tmp_path / "out.parquet").read_bytes() == b"parquet"
         mock_container.remove.assert_called()
         mock_volume.remove.assert_called()
+
+    def test_seed_tar_has_writable_root_entry(self, mocker, tmp_path):
+        """put_archive ignores '.' root metadata, so a leading '/' entry must
+        chown/chmod the /app mount point itself (writable by the sandbox user)."""
+        import tarfile
+
+        from worker_utils import SANDBOX_GID, SANDBOX_UID
+
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "script.py").write_text("print(1)\n")
+
+        mock_client = mocker.MagicMock()
+        mock_container = self._make_mock_container(mocker)
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+
+        captured: dict[str, bytes] = {}
+
+        def _capture(_path: str, fileobj) -> None:
+            captured["tar"] = fileobj.read()
+
+        mock_container.put_archive.side_effect = _capture
+
+        run_command_streaming(
+            mock_client,
+            "test:latest",
+            ["python", "-u", "script.py"],
+            [],
+            seed_dir=str(seed),
+        )
+
+        with tarfile.open(fileobj=io.BytesIO(captured["tar"]), mode="r") as tar:
+            members = tar.getmembers()
+        assert members[0].name in ("", "/")  # tarfile normalizes "/" to ""
+        assert members[0].type == tarfile.DIRTYPE
+        assert members[0].type == tarfile.DIRTYPE
+        assert members[0].mode == 0o777
+        assert members[0].uid == SANDBOX_UID
+        assert members[0].gid == SANDBOX_GID
 
     def test_put_archive_failure_removes_container(self, mocker, tmp_path):
         seed = tmp_path / "seed"

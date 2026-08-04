@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import logging
 import os
@@ -157,6 +158,17 @@ def run_command_streaming(
             with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
                 tar_path = os.path.join(td, "seed.tar")
                 with tarfile.open(tar_path, "w") as tar:
+                    # put_archive ignores metadata on the '.' root entry, so
+                    # /app would keep the daemon's root-owned 0o755 mount point
+                    # and the non-root sandbox user could not write outputs.
+                    # A leading '/' entry makes the daemon chown/chmod the
+                    # volume root (/app) itself before the seed contents.
+                    root_entry = tarfile.TarInfo("/")
+                    root_entry.type = tarfile.DIRTYPE
+                    root_entry.mode = 0o777
+                    root_entry.uid = SANDBOX_UID
+                    root_entry.gid = SANDBOX_GID
+                    tar.addfile(root_entry)
                     tar.add(seed_dir, arcname=".", filter=_normalize_seed_tar_member)
                 with open(tar_path, "rb") as tf:
                     container.put_archive(working_dir, tf)
@@ -223,7 +235,9 @@ def run_command_streaming(
             for container_path, host_path in collect_files:
                 try:
                     stream, _stat = container.get_archive(container_path)
-                    with tarfile.open(fileobj=stream, mode="r|") as tar:
+                    # docker-py returns the archive as a byte-chunk generator,
+                    # not a file object — materialize it for tarfile.
+                    with tarfile.open(fileobj=io.BytesIO(b"".join(stream)), mode="r:") as tar:
                         for member in tar:
                             if member.isfile():
                                 extracted = tar.extractfile(member)
@@ -232,7 +246,7 @@ def run_command_streaming(
                                     with open(host_path, "wb") as f:
                                         shutil.copyfileobj(extracted, f)
                 except Exception as exc:
-                    logger.debug("Could not collect %s from container: %s", container_path, exc)
+                    logger.warning("Could not collect %s from container: %s", container_path, exc)
     finally:
         with contextlib.suppress(Exception):
             container.kill()

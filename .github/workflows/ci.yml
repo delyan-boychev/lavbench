@@ -307,7 +307,7 @@ jobs:
       - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE, eval worker)
         run: |
           python3 -m pip install --user --break-system-packages --quiet pandas pyarrow
-          python3 scripts/api_smoke_test.py
+          python3 -u scripts/api_smoke_test.py
         env:
           SMOKE_EVALUATE: "1"
 
