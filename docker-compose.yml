@@ -175,7 +175,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY:-${ENCRYPTION_KEY}}
-      - RUNNING_AS_WORKER=true
+      - WORKER_ROLE=scheduler
       - HF_CACHE_DIR=/app/hf_cache
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
@@ -241,8 +241,7 @@ services:
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
       - BACKUPS_DIR=/backups
-      - INTERNAL_ONLY_WORKER=true
-      - RUNNING_AS_WORKER=true
+      - WORKER_ROLE=internal
       - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
     depends_on:

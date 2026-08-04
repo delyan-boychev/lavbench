@@ -1519,7 +1519,7 @@ def stream_task_submissions(
                         time.sleep(2.0)
                     if message:
                         pending_update = True
-                    # M-P11: debounce the DB re-query so a burst of channel
+                    # debounce the DB re-query so a burst of channel
                     # messages coalesces into at most one query per 2s instead
                     # of re-reading all submissions per message. Any update
                     # suppressed while in the window is delivered after it.
@@ -1693,7 +1693,7 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
     cached = get_cached(cache_key)
     if cached is not None:
         return cached
-    # M-P2: single-flight recompute — each expiry triggers exactly one
+    # single-flight recompute — each expiry triggers exactly one
     # cluster-wide inspect.ping/stats/registered instead of one per SSE
     # client; every concurrent reader shares the freshly cached result.
     with cache_lock(f"lock:{cache_key}", ttl=30):
@@ -1736,7 +1736,7 @@ def report_worker_progress(
     if not submission:
         return err("ERR_NOT_FOUND", 404)
 
-    # M-C3/L18: a killed submission is terminal (status=failed,
+    # a killed submission is terminal (status=failed,
     # detailed_status=killed). A stale in-flight worker report must not
     # resurrect it — reject the report outright.
     if submission.detailed_status == "killed":
@@ -2117,7 +2117,7 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     log_path = os.path.join(log_dir, "worker_remote.log")
     try:
         # Rotate before appending so a churny worker cannot grow the log file
-        # without bound (BP-M11).
+        # without bound.
         if os.path.exists(log_path) and os.path.getsize(log_path) > Config.MAX_WORKER_LOG_BYTES:
             backup = f"{log_path}.1"
             if os.path.exists(backup):
@@ -2143,7 +2143,7 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     tags=["Tasks"],
 )
 def get_submission_run_content(submission_id: Any) -> tuple[WorkerRunContentResponse, int]:
-    """Return the code a worker must execute for a submission (M-P7).
+    """Return the code a worker must execute for a submission.
 
     The submission's code and evaluator script are fetched on demand with a
     signed worker token bound to this exact submission_id — they are never

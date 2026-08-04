@@ -14007,7 +14007,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Return the code a worker must execute for a submission (M-P7).",
+        "summary": "Return the code a worker must execute for a submission.",
         "tags": [
           "Tasks"
         ]

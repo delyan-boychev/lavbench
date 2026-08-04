@@ -346,7 +346,7 @@ class TestQueueSystemSubmission:
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
-        # M-P7: the evaluator script is fetched by the worker via the signed
+        # the evaluator script is fetched by the worker via the signed
         # run-content endpoint; it is no longer embedded in the message.
         assert "custom_eval_code" not in metadata
 

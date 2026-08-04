@@ -11,12 +11,47 @@ from dotenv import load_dotenv
 # Load environment variables from .env in workspace root
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-_IS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
+
+def _worker_role() -> str:
+    """Resolve the unified worker role from ``WORKER_ROLE`` (default ``server``).
+
+    Roles:
+      - ``server``    main Flask server. Full app, all tasks.
+      - ``scheduler`` Celery beat only: schedules tasks, executes nothing.
+                      No app, no server secrets.
+      - ``internal``  system-tasks worker (backups, leaderboard recalc, watchdog).
+                      Boots the app (DB/Redis) for system tasks; never runs
+                      submission/evaluation code.
+      - ``eval``      remote evaluation worker. No DB access; reports results over
+                      HTTP; runs only evaluation/image-build tasks.
+    """
+    role = os.environ.get("WORKER_ROLE", "").strip().lower()
+    return role if role in ("server", "scheduler", "internal", "eval") else "server"
+
+
+_WORKER_ROLE = _worker_role()
+
+
+def _role_required_env(role: str) -> set[str]:
+    """Env vars a role needs to boot (everything else is left empty).
+
+    - server: full API server — all secrets + the database.
+    - internal: app boots for system tasks — the database only.
+    - scheduler / eval: no app — no server secrets.
+    """
+    if role == "server":
+        return {"SECRET_KEY", "DATABASE_URL", "ENCRYPTION_KEY"}
+    if role == "internal":
+        return {"DATABASE_URL"}
+    return set()
+
+
+_WORKER_REQUIRED_ENV = _role_required_env(_WORKER_ROLE)
 
 
 def _warn_insecure_redis(url: str, what: str) -> None:
-    """Warn when Redis is reached over plaintext to a non-loopback host
-    (M-A7). Internal compose service names like ``redis`` are intentionally
+    """Warn when Redis is reached over plaintext to a non-loopback host.
+    Internal compose service names like ``redis`` are intentionally
     loopback-free, so this is a warning, not a fail-fast."""
     if not url:
         return
@@ -48,11 +83,13 @@ class Config:
     # JWT signing key. Required for the API server, but NEVER shipped to
     # workers (a compromised eval worker must not be able to mint tokens).
     # Workers run without SECRET_KEY (they authenticate via Ed25519 nonces).
-    SECRET_KEY = os.environ.get("SECRET_KEY") or ("" if _IS_WORKER else _require_env("SECRET_KEY"))
+    SECRET_KEY = os.environ.get("SECRET_KEY") or (
+        "" if "SECRET_KEY" not in _WORKER_REQUIRED_ENV else _require_env("SECRET_KEY")
+    )
 
     # Database configuration - PostgreSQL strictly enforced
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or (
-        "" if _IS_WORKER else _require_env("DATABASE_URL")
+        "" if "DATABASE_URL" not in _WORKER_REQUIRED_ENV else _require_env("DATABASE_URL")
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -141,8 +178,7 @@ class Config:
     DEFAULT_TIME_LIMIT_SEC = int(os.environ.get("DEFAULT_TIME_LIMIT_SEC", 300))
 
     # Upper bound for a worker-reported execution_time_ms. Generous ceiling for
-    # long-running evaluations; anything above is a corrupt/adversarial report
-    # (M-C3).
+    # long-running evaluations; anything above is a corrupt/adversarial report.
     MAX_EXECUTION_TIME_MS = int(os.environ.get("MAX_EXECUTION_TIME_MS", 30 * 24 * 3600 * 1000))
     DEFAULT_RAM_LIMIT_MB = int(os.environ.get("DEFAULT_RAM_LIMIT_MB", 8192))
     DEFAULT_PUBLIC_EVAL_PERCENTAGE = int(os.environ.get("DEFAULT_PUBLIC_EVAL_PERCENTAGE", 30))
@@ -150,18 +186,18 @@ class Config:
     # Worker utils
     WORKER_MAX_LOG_LINES = int(os.environ.get("WORKER_MAX_LOG_LINES", 10000))
     # Cumulative size cap for the server-side worker_remote.log; the file is
-    # rotated (kept as .1) once it would exceed this bound (BP-M11).
+    # rotated (kept as .1) once it would exceed this bound.
     MAX_WORKER_LOG_BYTES = int(os.environ.get("MAX_WORKER_LOG_BYTES", 10 * 1024 * 1024))
     WORKER_REPORT_MAX_RETRIES = int(os.environ.get("WORKER_REPORT_MAX_RETRIES", 3))
     WORKER_REPORT_TIMEOUT = int(os.environ.get("WORKER_REPORT_TIMEOUT", 10))
     WORKER_DOWNLOAD_TIMEOUT = int(os.environ.get("WORKER_DOWNLOAD_TIMEOUT", 30))
-    # Comma-separated GPU device ids exposed to sandboxes (NEW-4). When set, the
+    # Comma-separated GPU device ids exposed to sandboxes. When set, the
     # worker pins a specific device per run instead of requesting every GPU.
     WORKER_GPU_IDS: ClassVar[list[str]] = [
         id_.strip() for id_ in os.environ.get("WORKER_GPU_IDS", "").split(",") if id_.strip()
     ]
 
-    # Caps for sandbox output collection (BP-M4 / M-S2 / NEW-6): never buffer
+    # Caps for sandbox output collection: never buffer
     # more than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
     # extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES.
     MAX_COLLECT_BUFFER_BYTES = int(os.environ.get("MAX_COLLECT_BUFFER_BYTES", 512 * 1024 * 1024))
@@ -180,7 +216,7 @@ class Config:
     ENCRYPTION_KEY = (
         os.environ.get("ENCRYPTION_KEY")
         or os.environ.get("WORKER_ENCRYPTION_KEY")
-        or ("" if _IS_WORKER else _require_env("ENCRYPTION_KEY"))
+        or ("" if "ENCRYPTION_KEY" not in _WORKER_REQUIRED_ENV else _require_env("ENCRYPTION_KEY"))
     )
 
     # Secure cookies (set True when behind HTTPS)
@@ -205,19 +241,13 @@ class Config:
     # Main server URL (for worker callbacks)
     MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
-    # Worker identity / tokens
-    RUNNING_AS_WORKER = os.environ.get("RUNNING_AS_WORKER", "").lower() in ("1", "true", "yes")
+    # Unified worker role + derived capabilities (see _worker_role).
+    WORKER_ROLE = _WORKER_ROLE
+    HAS_APP = WORKER_ROLE in ("server", "internal")
+    IS_EVAL_WORKER = WORKER_ROLE == "eval"
+    RUNS_EVALUATION = WORKER_ROLE in ("server", "eval")
+    RUNS_INTERNAL = WORKER_ROLE in ("server", "internal")
     CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", 2))
-    INTERNAL_ONLY_WORKER = os.environ.get("INTERNAL_ONLY_WORKER", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    EVALUATION_ONLY_WORKER = os.environ.get("EVALUATION_ONLY_WORKER", "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
     WORKER_GPU_ID = os.environ.get("WORKER_GPU_ID", "")
     GPU_ACQUISITION_TIMEOUT = int(os.environ.get("GPU_ACQUISITION_TIMEOUT", 600))
     WORKER_PUBLIC_KEY = os.environ.get("WORKER_PUBLIC_KEY", "")

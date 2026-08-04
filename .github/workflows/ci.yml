@@ -227,9 +227,7 @@ jobs:
             -e ENCRYPTION_KEY="${ENCRYPTION_KEY}" \
             -e WORKER_PRIVATE_KEY="NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU=" \
             -e MAIN_SERVER_URL="http://backend:5001" \
-            -e RUNNING_AS_WORKER="true" \
-            -e EVALUATION_ONLY_WORKER="true" \
-            -e INTERNAL_ONLY_WORKER="false" \
+            -e WORKER_ROLE="eval" \
             -e HF_CACHE_DIR="/var/lib/lavbench/hf_cache" \
             -e TASK_IMAGES_DIR="/var/lib/lavbench/task_images" \
             -e LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace" \

@@ -80,7 +80,7 @@ certs/
 .lavbench_workspace/
 .hf_token
 backend/backups/
-backend/backend/task_images/
+backend/task_images/
 dump.rdb
 
 docs/source/_static/demo/

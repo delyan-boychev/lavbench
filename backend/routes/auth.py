@@ -80,7 +80,7 @@ _LOCAL_LOGIN_FAILURES: dict[str, list[float]] = {}
 
 
 def _local_failure_exceeded(username: str, ip: str) -> bool:
-    """In-process fallback: prune + count records from this process (M-A3)."""
+    """In-process fallback: prune + count records from this process."""
     now = time.time()
     for key in (f"user:{username}", f"ip:{ip}"):
         kept = [t for t in _LOCAL_LOGIN_FAILURES.get(key, []) if t > now - _LOCAL_LOGIN_WINDOW]

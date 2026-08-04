@@ -110,7 +110,7 @@ def _get_sse_pool(url: str) -> redis_lib.ConnectionPool | None:
 
     Kept separate from the general pool so that long-lived pubsub connections
     held by SSE streams can never exhaust the connections used by cache and
-    coordination operations (see H-P1).
+    coordination operations.
     """
     global _sse_pools_pid
     current_pid = os.getpid()

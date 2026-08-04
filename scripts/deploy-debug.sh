@@ -114,7 +114,7 @@ echo ""
 echo "  → Starting Celery worker..."
 cd backend
 CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-2}"
-INTERNAL_ONLY_WORKER="true" celery -A tasks.celery worker --loglevel=info -c "$CONCURRENCY" -Q celery > celery.log 2>&1 &
+WORKER_ROLE="internal" celery -A tasks.celery worker --loglevel=info -c "$CONCURRENCY" -Q celery > celery.log 2>&1 &
 cd ..
 echo "    Logs: backend/celery.log"
 echo ""

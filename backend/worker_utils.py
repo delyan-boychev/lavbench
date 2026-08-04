@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_submission_run_content(metadata: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Fetch user code + evaluator script for a submission from the server (M-P7).
+    """Fetch user code + evaluator script for a submission from the server.
 
     Messages no longer embed the (potentially large) user code and evaluator
     script; the worker fetches them on demand with a signed token bound to the
@@ -108,7 +108,7 @@ def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
 
 def _write_response_stream(res: Any, fileobj: Any) -> None:
     """Stream a requests response body to an open binary file object without
-    buffering it fully in memory (NEW-5)."""
+    buffering it fully in memory."""
     for chunk in res.iter_content(chunk_size=1024 * 1024):
         if chunk:
             fileobj.write(chunk)
@@ -118,7 +118,7 @@ _GPU_ID_CYCLE: Iterator[str] | None = None
 
 
 def _next_gpu_id() -> str:
-    """Round-robin pick the next configured GPU device id (NEW-4)."""
+    """Round-robin pick the next configured GPU device id."""
     global _GPU_ID_CYCLE
     if _GPU_ID_CYCLE is None:
         _GPU_ID_CYCLE = itertools.cycle(Config.WORKER_GPU_IDS)
@@ -171,7 +171,7 @@ def run_command_streaming(
         if gpu_id is not None:
             device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
         elif Config.WORKER_GPU_IDS:
-            # NEW-4: pin a device from the configured pool instead of grabbing
+            # pin a device from the configured pool instead of grabbing
             # every GPU with count=-1.
             device_requests = [DeviceRequest(device_ids=[_next_gpu_id()], capabilities=[["gpu"]])]
         else:
@@ -214,7 +214,7 @@ def run_command_streaming(
         # mkdtemp) and the container runs as non-root nobody.
         seed_volume = docker_client.volumes.create()
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
-        # M-S2 best-effort size cap: --storage-opt needs quota support from the
+        # best-effort size cap: --storage-opt needs quota support from the
         # storage driver (e.g. XFS with pquota). ext4/overlay2 and other common
         # daemons reject the option at create time, so fall back to a plain
         # create (no size cap) instead of hard-failing every sandbox there.
@@ -225,7 +225,7 @@ def run_command_streaming(
                 raise
             logger.warning(
                 "storage_opt %s rejected by this daemon's storage driver — "
-                "creating sandbox without a size cap (best-effort, M-S2)",
+                "creating sandbox without a size cap (best-effort)",
                 run_kwargs["storage_opt"],
             )
             run_kwargs.pop("storage_opt", None)
@@ -289,7 +289,7 @@ def run_command_streaming(
                     container.kill()
                     process_timeout = True
                     break
-                # M-P9: poll exit status at 1Hz instead of 10Hz — detecting a
+                # poll exit status at 1Hz instead of 10Hz — detecting a
                 # finished container a second late is irrelevant vs. the load
                 # this loop placed on the Docker daemon.
                 time.sleep(1.0)
@@ -314,7 +314,7 @@ def run_command_streaming(
                     stream, _stat = container.get_archive(container_path)
                     # Cap the in-memory buffer while assembling the tar stream
                     # so a hostile container cannot balloon host RAM via the
-                    # collect path (BP-M4 / NEW-6).
+                    # collect path.
                     raw = bytearray()
                     for chunk in stream:
                         if len(raw) + len(chunk) > Config.MAX_COLLECT_BUFFER_BYTES:
@@ -328,7 +328,7 @@ def run_command_streaming(
                             if not member.isfile():
                                 continue
                             # Per-member cap, enforced from the tar header size
-                            # before any extraction (M-S2 / NEW-6).
+                            # before any extraction.
                             if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
                                 logger.warning(
                                     "Skipping oversized member %s (%d bytes) in %s",
@@ -433,7 +433,7 @@ class StreamingLogList(list[str]):
     """A list subclass that batches appended log lines and publishes them via SSE.
 
     Lines are buffered and flushed as a single pipelined batch (>=50 lines or
-    100ms since the last flush) instead of one Redis round trip per line (M-P3).
+    100ms since the last flush) instead of one Redis round trip per line.
     """
 
     _BATCH_LINES = 50

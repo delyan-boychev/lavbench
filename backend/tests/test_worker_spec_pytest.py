@@ -170,7 +170,7 @@ class TestRegisterWorkerSpecs:
 
     def test_internal_only_worker_skips_image_prebuilding(self, mocker):
         mock_r, mock_build, mock_listener, sender = self._setup(mocker)
-        mocker.patch.object(sr.Config, "INTERNAL_ONLY_WORKER", True)
+        mocker.patch.object(sr.Config, "RUNS_EVALUATION", False)
         register_worker_specs(sender)
         mock_r.set.assert_called_once()
         mock_build.assert_not_called()

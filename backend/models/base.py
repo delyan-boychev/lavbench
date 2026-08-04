@@ -105,7 +105,7 @@ def encrypt_field(text: str | None) -> str | None:
     """Encrypt a plaintext string using Fernet symmetric encryption.
 
     Raises on failure instead of returning None so PII is never silently
-    dropped (M-A6) — a failed write surfaces as a visible error, not a lost
+    dropped — a failed write surfaces as a visible error, not a lost
     field.
     """
     if not text:

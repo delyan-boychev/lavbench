@@ -751,7 +751,7 @@ def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
     """Background thread: subscribe to Redis 'task_rebuild' channel.
 
     Never exits permanently: a Redis hiccup is retried after a short sleep
-    (BP-M10) so a transient failure does not silently kill rebuild handling.
+    so a transient failure does not silently kill rebuild handling.
     """
 
     while True:

@@ -232,7 +232,7 @@ class TestRouteLevelLogic:
         assert len(args) == 2
         meta_dict = args[1]
         assert meta_dict.get("is_custom_eval")
-        # M-P7: evaluator code is no longer shipped in the Celery message;
+        # evaluator code is no longer shipped in the Celery message;
         # the worker fetches it on demand via the signed run-content endpoint.
         assert "custom_eval_code" not in meta_dict
         assert "user_code" not in meta_dict

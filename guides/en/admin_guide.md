@@ -342,7 +342,7 @@ Workers are configured **individually** in `worker.env` — there is no server-s
 The compose `celery_worker` service (system tasks only) runs with `init`, `cap-drop: ALL` plus the minimal `CHOWN`/`SETUID`/`SETGID` capabilities needed to drop privileges to `nobody`, `no-new-privileges`, and memory/CPU caps set via `WORKER_MEM_LIMIT`/`WORKER_CPU_LIMIT`. It never executes untrusted submission code — evaluation runs in the separate eval-worker sandboxes.
 
 > [!IMPORTANT]
-> Hugging Face **API keys are fetched on demand from the server** and never stored on the worker. Workers must point `MAIN_SERVER_URL` at an **HTTPS** endpoint when used for Hugging Face-gated assets: key requests over plain HTTP to a non-localhost host are refused (`M-S4`).
+> Hugging Face **API keys are fetched on demand from the server** and never stored on the worker. Workers must point `MAIN_SERVER_URL` at an **HTTPS** endpoint when used for Hugging Face-gated assets: key requests over plain HTTP to a non-localhost host are refused.
 
 #### Deploying and Editing Workers:
 

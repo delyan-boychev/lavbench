@@ -33,10 +33,15 @@ time.tzset()
 
 setup_logging("celery")
 
-# Check if running as remote worker to bypass Flask/SQLAlchemy database connection setup
-RUNNING_AS_WORKER = Config.RUNNING_AS_WORKER
+# Worker role capabilities (see Config._worker_role). Only 'server' and
+# 'internal' boot a full app; 'eval' and 'scheduler' run a bare Celery
+# instance (eval publishes results over HTTP, scheduler only dispatches).
+HAS_APP = Config.HAS_APP
+IS_EVAL_WORKER = Config.IS_EVAL_WORKER
+RUNS_EVALUATION = Config.RUNS_EVALUATION
+RUNS_INTERNAL = Config.RUNS_INTERNAL
 
-if RUNNING_AS_WORKER and Config.WORKER_LOG_SHIP_URL:
+if IS_EVAL_WORKER and Config.WORKER_LOG_SHIP_URL:
     ship_url = Config.WORKER_LOG_SHIP_URL
     from worker_utils import _sign_worker_token
 
@@ -45,7 +50,7 @@ if RUNNING_AS_WORKER and Config.WORKER_LOG_SHIP_URL:
         root = logging.getLogger()
         root.addHandler(RemoteShipHandler(ship_url, token))
 
-if RUNNING_AS_WORKER:
+if not HAS_APP:
     celery = Celery(
         "tasks",
         broker=Config.CELERY_BROKER_URL,
@@ -175,7 +180,7 @@ def evaluate_submission(
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except SoftTimeLimitExceeded:
-        if not RUNNING_AS_WORKER and app:
+        if HAS_APP and app:
             with app.app_context():
                 sub = db.session.get(Submission, submission_id)
                 if sub and sub.status not in ("completed", "failed"):
@@ -186,7 +191,7 @@ def evaluate_submission(
                     from sse_utils import publish_submission_status
 
                     publish_submission_status(submission_id, "failed")
-        elif RUNNING_AS_WORKER and metadata:
+        elif IS_EVAL_WORKER and metadata:
             from worker_utils import report_status_to_server
 
             report_status_to_server(
@@ -211,7 +216,7 @@ def evaluate_submission(
 @celery.task
 def recalculate_all_leaderboards() -> None:
     """Celery task: rebuild leaderboard cache for all active challenges."""
-    if RUNNING_AS_WORKER:
+    if not RUNS_INTERNAL:
         return
     from task_modules.leaderboard import run_recalculate_all_leaderboards
 
@@ -221,7 +226,7 @@ def recalculate_all_leaderboards() -> None:
 @celery.task
 def recalculate_leaderboard(challenge_id: Any) -> None:
     """Celery task: rebuild leaderboard cache for a specific challenge."""
-    if RUNNING_AS_WORKER:
+    if not RUNS_INTERNAL:
         return
     if not app:
         return
@@ -243,8 +248,8 @@ def recalculate_leaderboard(challenge_id: Any) -> None:
 @celery.task
 def run_backup(auto: bool = True, db_only: bool = False) -> Any:
     """Celery task: create a pg_dump+uploads tarball backup."""
-    if RUNNING_AS_WORKER:
-        return {"skipped": "remote_worker"}
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
     if not app:
         return {"error": "no_app"}
     return _do_backup(app, auto=auto, db_only=db_only)
@@ -253,8 +258,8 @@ def run_backup(auto: bool = True, db_only: bool = False) -> Any:
 @celery.task
 def check_and_backup() -> dict[str, Any]:
     """Celery beat task: check deadlines and trigger backups (20min active / 6h idle)."""
-    if RUNNING_AS_WORKER:
-        return {"skipped": "remote_worker"}
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
     if not app:
         return {"error": "no_app"}
     with app.app_context():
@@ -303,8 +308,8 @@ def check_and_backup() -> dict[str, Any]:
 @celery.task
 def watchdog_stuck_submissions() -> dict[str, Any]:
     """Celery beat task: recover fallback results and time-out stuck submissions."""
-    if RUNNING_AS_WORKER:
-        return {"skipped": "running_as_remote_worker"}
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
     if not app:
         return {"skipped": "no_app_context"}
     with app.app_context():
@@ -440,8 +445,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 @celery.task
 def recalculate_dirty_leaderboards() -> dict[str, Any]:
     """Celery beat task: rebuild leaderboard cache for challenges marked as dirty."""
-    if RUNNING_AS_WORKER:
-        return {"skipped": "running_as_remote_worker"}
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
     if not app:
         return {"skipped": "no_app_context"}
 
@@ -547,10 +552,8 @@ celery.conf.beat_schedule = {
     },
 }
 
-# Unregister tasks conditionally based on environment variables
-INTERNAL_ONLY_WORKER = Config.INTERNAL_ONLY_WORKER
-EVALUATION_ONLY_WORKER = Config.EVALUATION_ONLY_WORKER
-
+# Role-gated task registration. 'internal' workers handle only system tasks;
+# 'eval' workers handle only evaluation/image tasks; the main server runs all.
 INTERNAL_TASKS = {
     "tasks.check_and_backup",
     "tasks.recalculate_all_leaderboards",
@@ -564,11 +567,11 @@ EVALUATION_TASKS = {
     "tasks.prune_docker_images",
 }
 
-if INTERNAL_ONLY_WORKER:
+if not RUNS_EVALUATION:
     for tname in EVALUATION_TASKS:
         with contextlib.suppress(KeyError):
             celery.tasks.unregister(tname)
-if EVALUATION_ONLY_WORKER:
+if not RUNS_INTERNAL:
     for tname in INTERNAL_TASKS:
         with contextlib.suppress(KeyError):
             celery.tasks.unregister(tname)

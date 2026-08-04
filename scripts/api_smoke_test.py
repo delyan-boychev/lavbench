@@ -832,7 +832,7 @@ def main() -> int:
             code, data = api.send("GET", "/api/admin/workers/stats")
             wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
             partial_failures = data.get("partial_failures") if code == 200 and isinstance(data, dict) else None
-            check("eval: worker stats expose partial_failures list (BP-M12)",
+            check("eval: worker stats expose partial_failures list",
                   isinstance(partial_failures, list), f"partial_failures={partial_failures}")
             worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
             check("eval: CPU worker connected (worker_spec)",
@@ -1354,7 +1354,7 @@ def main() -> int:
                 # Upload-time rejection edge cases (fatal shape errors).
                 # The route validates METRIC_NAME / SUBMISSION_COLUMNS /
                 # LABELS_COLUMNS and rejects BEFORE a task is created.
-                code, data = ce_create("smoke-ce-syntax", ce_meta + "def evaluate(df_sub, df_labels, options):\n    this is not python\n")
+                code, data = ce_create("smoke-ce-syntax", ce_meta + "def evaluate(df_sub, df_labels, options):\n    this is !!! not python\n")
                 check("15g: syntax-error evaluator rejected at upload",
                       code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
                 code, data = ce_create("smoke-ce-nometric",
@@ -1461,10 +1461,16 @@ def main() -> int:
         check("worker-contract: competitor login 200", code == 200 and isinstance(data, dict))
         code, data = wcomp.send("GET", "/api/auth/csrf-token")
         wcomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
-        if wc_cid and wcomp.csrf:
+        wc_sid = ""
+        if wc_cid:
+            code, data = api.send("POST", f"/api/challenges/{wc_cid}/stages",
+                                  {"title": "Contract stage", "start_time": now, "end_time": future})
+            wc_sid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+            check("worker-contract: create stage 201", code == 201 and bool(wc_sid))
+        if wc_cid and wcomp.csrf and wc_sid:
             code, data = api.multipart(
                 "POST", f"/api/challenges/{wc_cid}/tasks",
-                {"title": "smoke-contract-task", "stage_id": stage_id, "gpu_required": "false",
+                {"title": "smoke-contract-task", "stage_id": wc_sid, "gpu_required": "false",
                  "ram_limit_mb": "512", "time_limit_sec": "600",
                  "base_docker_image": "python:3.12-slim"},
                 {"baseline_notebook": ("baseline.ipynb", json.dumps(MIN_IPYNB).encode())})
@@ -1483,35 +1489,35 @@ def main() -> int:
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
                                       headers={"X-Worker-Token": tok})
                 uc = data.get("user_code") if code == 200 and isinstance(data, dict) else None
-                check("M-P7: run-content fetch returns user_code",
+                check("run-content fetch returns user_code",
                       code == 200 and isinstance(uc, str) and "time.sleep" in uc,
                       f"code={str(uc)[:120]}")
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
                                       headers={"X-Worker-Token": other})
-                check("M-P7: run-content rejects foreign-submission token",
+                check("run-content rejects foreign-submission token",
                       code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}")
-                check("M-P7: run-content rejects missing token",
+                check("run-content rejects missing token",
                       code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "execution_time_ms": -5},
                                       headers={"X-Worker-Token": tok})
-                check("M-C5: negative execution_time_ms rejected",
+                check("negative execution_time_ms rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_EXECUTION_TIME"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "public_score": "abc"},
                                       headers={"X-Worker-Token": tok})
-                check("M-C5: non-numeric public_score rejected",
+                check("non-numeric public_score rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_PUBLIC_SCORE"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "not-a-status"},
                                       headers={"X-Worker-Token": tok})
-                check("M-C5: unknown status rejected",
+                check("unknown status rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_STATUS"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running"},
                                       headers={"X-Worker-Token": other})
-                check("M-C3: foreign-submission report rejected",
+                check("foreign-submission report rejected",
                       code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "execution_time_ms": 123,
@@ -1524,25 +1530,25 @@ def main() -> int:
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "public_score": 1.0},
                                       headers={"X-Worker-Token": tok})
-                check("L18: stale report on killed submission → 409 ERR_SUBMISSION_KILLED",
+                check("stale report on killed submission → 409 ERR_SUBMISSION_KILLED",
                       code == 409 and expect_error(data, "ERR_SUBMISSION_KILLED"), f"got {code}")
                 code, data = api.send("POST", f"/api/submissions/{ksid}/kill")
-                check("M-C3: re-kill → 400 ERR_SUBMISSION_NOT_KILLABLE",
+                check("re-kill → 400 ERR_SUBMISSION_NOT_KILLABLE",
                       code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_KILLABLE"), f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
                                       gzip.compress(json.dumps(["line1", "line2"]).encode()),
                                       headers={"X-Worker-Token": tok})
-                check("BP-M11: worker logs gzip payload accepted",
+                check("worker logs gzip payload accepted",
                       code == 200, f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
                                       gzip.compress(b"junk lines"),
                                       headers={"X-Worker-Token": "not.a.valid.signature"})
-                check("BP-M11: worker logs bad signature rejected 401",
+                check("worker logs bad signature rejected 401",
                       code == 401, f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
                                       gzip.compress(os.urandom(1_100_000)),
                                       headers={"X-Worker-Token": tok})
-                check("BP-M11: oversized log payload rejected (ERR_PAYLOAD_TOO_LARGE)",
+                check("oversized log payload rejected (ERR_PAYLOAD_TOO_LARGE)",
                       code == 400 and expect_error(data, "ERR_PAYLOAD_TOO_LARGE"), f"got {code}")
 
     # ── 15f. Oversized-archive resilience (opt-in SMOKE_GUARD_CAPS=1) ──

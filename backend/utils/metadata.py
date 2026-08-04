@@ -39,7 +39,7 @@ def build_submission_metadata(
             task.custom_eval_code
             or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
-        # M-P7: user_code and custom_eval_code are NOT embedded here — the
+        # user_code and custom_eval_code are NOT embedded here — the
         # worker fetches them on demand via a signed request right before
         # execution, keeping Celery messages small.
         "metrics_config": task.metrics_config,

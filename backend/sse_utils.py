@@ -180,7 +180,7 @@ def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
 def publish_submission_log(submission_id: Any, log_line: str) -> None:
     """Append a log line to the submission's Redis list and publish to its SSE channel.
 
-    Log storage lives on the redis-cache instance (H-P2) so the broker's
+    Log storage lives on the redis-cache instance so the broker's
     small noeviction quota is never consumed by user-triggerable log volume;
     the SSE publish itself goes over the coordination (broker) channel.
     """
@@ -204,7 +204,7 @@ def publish_submission_log_batch(submission_id: Any, log_lines: list[str]) -> No
     """Append a batch of log lines and publish them in a single Redis round trip.
 
     Storage ops are pipelined on the redis-cache instance and the SSE publish
-    carries the whole batch as ``{"logs": [...]}`` (M-P3: ~1 op per 50 lines
+    carries the whole batch as ``{"logs": [...]}`` (~1 op per 50 lines
     instead of 4 ops per line). Subscribers split the batch into per-line
     events, so the frontend contract is unchanged.
     """

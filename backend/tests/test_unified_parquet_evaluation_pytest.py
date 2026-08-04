@@ -632,7 +632,7 @@ class TestEvalPredictionsAllMetricPaths:
         return buf.getvalue()
 
     def test_decode_mask_rejects_oversized_image(self):
-        """NEW-3: masks exceeding per-axis/pixel caps must be rejected rather
+        """masks exceeding per-axis/pixel caps must be rejected rather
         than decoded (which would risk a decompression-bomb allocation)."""
         from evaluation_engine import (
             MAX_MASK_IMAGE_DIM,

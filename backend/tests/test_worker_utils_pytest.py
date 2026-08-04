@@ -27,7 +27,7 @@ from worker_utils import (
 
 def _mock_response_body(mock_obj, body: bytes, chunk_size: int = 8) -> None:
     """Configure a mocked requests.get response to stream *body* via
-    iter_content (matching worker_utils streaming downloads, NEW-5)."""
+    iter_content (matching worker_utils streaming downloads)."""
     mock_obj.status_code = 200
     mock_obj.content = body
 
@@ -264,7 +264,7 @@ class TestRunCommandStreaming:
     def test_storage_opt_falls_back_to_plain_create_on_unsupported_driver(
         self, mocker, tmp_path, caplog
     ):
-        """M-S2 best-effort: when the daemon rejects --storage-opt (ext4/overlay2),
+        """best-effort: when the daemon rejects --storage-opt (ext4/overlay2),
         retry create without the size cap instead of hard-failing the sandbox."""
         seed = tmp_path / "seed"
         seed.mkdir()

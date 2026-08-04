@@ -138,7 +138,7 @@ fi
 RESERVED_CORES=1
 RESERVED_RAM=4
 
-WORKER_KEYS_RE='^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|WORKER_GPU_IDS|WORKER_SANDBOX_STORAGE_OPT|MAX_WORKER_LOG_BYTES|MAX_COLLECT_BUFFER_BYTES|MAX_EXTRACT_MEMBER_BYTES|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)='
+WORKER_KEYS_RE='^(WORKER_ROLE|WORKER_ENCRYPTION_KEY|WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|WORKER_GPU_IDS|WORKER_SANDBOX_STORAGE_OPT|MAX_WORKER_LOG_BYTES|MAX_COLLECT_BUFFER_BYTES|MAX_EXTRACT_MEMBER_BYTES|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)='
 
 # ── Interactive configuration ─────────────────────────────────────
 if [ -f "worker.env" ]; then
@@ -342,9 +342,25 @@ while [ "$CONFIG_OK" = "false" ]; do
 done
 
 # Save to worker.env
+# Worker encryption key — independent Fernet key for models/ field encryption.
+# generate-keys.sh ships one; mirror it here so 'make setup-worker' leaves
+# the worker bootable without the server's ENCRYPTION_KEY.
+if [ -z "${WORKER_ENCRYPTION_KEY:-}" ]; then
+  WORKER_ENCRYPTION_KEY=$(python3 - <<'WEMWKY'
+import base64, os
+try:
+    from cryptography.fernet import Fernet
+    print(Fernet.generate_key().decode())
+except Exception:
+    print(base64.urlsafe_b64encode(os.urandom(32)).decode())
+WEMWKY
+)
+fi
 {
   echo ""
   echo "# Worker config — set by make setup-worker"
+  echo "WORKER_ROLE=eval"
+  echo "WORKER_ENCRYPTION_KEY=$WORKER_ENCRYPTION_KEY"
   echo "WORKER_MODE=$WORKER_MODE"
   echo "WORKER_TYPE=$WORKER_TYPE"
   if [ -n "${WORKER_GPU_ID:-}" ]; then

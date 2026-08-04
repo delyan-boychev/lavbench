@@ -65,7 +65,7 @@ def _warn_insecure_cookie_deployment() -> None:
     silent. nginx terminates TLS in front of this container; the compose
     default is SECURE_COOKIES=true.
     """
-    if Config.RUNNING_AS_WORKER or Config.SECURE_COOKIES:
+    if Config.IS_EVAL_WORKER or Config.SECURE_COOKIES:
         return
     main_host = Config.MAIN_SERVER_URL.split("://")[-1].split("/")[0].split(":")[0]
     if main_host in ("localhost", "127.0.0.1", "::1"):

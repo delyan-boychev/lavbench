@@ -65,7 +65,7 @@ CPU_CONCURRENCY=$(( CONCURRENCY - GPU_COUNT ))
 # ── Common env vars ────────────────────────────────────────────────
 export CELERY_BROKER_URL="$REDIS_URL"
 export CELERY_RESULT_BACKEND="$REDIS_URL"
-export RUNNING_AS_WORKER="true"
+export WORKER_ROLE="eval"
 export PYTHONPATH=".:backend:${PYTHONPATH:-}"
 export HF_CACHE_DIR="${HF_CACHE_DIR:-$(pwd)/hf_cache}"
 
@@ -133,6 +133,7 @@ deploy_docker() {
     -e MAX_COLLECT_BUFFER_BYTES \
     -e MAX_EXTRACT_MEMBER_BYTES \
     -e WORKER_TYPE \
+    -e WORKER_ROLE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
     -e TASK_IMAGES_DIR="${TASK_IMAGES_DIR}" \
@@ -145,8 +146,6 @@ deploy_docker() {
     -e RAM_CLAMP_FACTOR \
     -e GPU_WORKER_CONCURRENCY="$GPU_COUNT" \
     -e CPU_WORKER_CONCURRENCY="$CPU_CONCURRENCY" \
-    -e RUNNING_AS_WORKER=true \
-    -e EVALUATION_ONLY_WORKER=true \
     $( [ -n "${REDIS_SSL_CA_CERTS:-}" ] && echo "-e REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS}" || true ) \
     $( [ -n "${REDIS_SSL_CERTFILE:-}" ] && echo "-e REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE}" || true ) \
     $( [ -n "${REDIS_SSL_KEYFILE:-}" ] && echo "-e REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE}" || true ) \
@@ -207,12 +206,12 @@ deploy_local() {
   if [ -n "$GPU_ID" ]; then
     echo "  → GPU worker: concurrency=${GPU_COUNT} (queue: gpu_queue)"
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
-    export EVALUATION_ONLY_WORKER="true"
+    export WORKER_ROLE="eval"
     celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" &
     exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY"
   else
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
-    export EVALUATION_ONLY_WORKER="true"
+    export WORKER_ROLE="eval"
     exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY"
   fi
 }

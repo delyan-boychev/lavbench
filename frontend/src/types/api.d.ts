@@ -1181,7 +1181,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Return the code a worker must execute for a submission (M-P7).
+         * Return the code a worker must execute for a submission.
          * @description The submission's code and evaluator script are fetched on demand with a signed worker token bound to this exact submission_id — they are never embedded in the Celery message. ``user_code`` is reconstructed from the stored ``code_cells`` exactly as the submission runner consumes it.
          */
         get: operations["get__api_worker_submission-run-content_{submission_id}"];

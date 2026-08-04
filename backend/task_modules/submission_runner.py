@@ -119,11 +119,11 @@ def _fetch_hf_key_from_server(
             bool(worker_token),
         )
         return ""
-    # M-S4: never ship an HF secret over plain HTTP to a non-localhost origin.
+    # never ship an HF secret over plain HTTP to a non-localhost origin.
     parsed = urlparse(main_server_url)
     if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
         logger.warning(
-            "Refusing to fetch HF key from insecure %s (M-S4). Configure nginx TLS and "
+            "Refusing to fetch HF key from insecure %s. Configure nginx TLS and "
             "point MAIN_SERVER_URL at https.",
             main_server_url,
         )
@@ -315,7 +315,7 @@ def run_eval_submission(
         _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
         if _worker_main_url:
             metadata["main_server_url"] = _worker_main_url
-        # M-P7: user_code and custom_eval_code are no longer embedded in the
+        # user_code and custom_eval_code are no longer embedded in the
         # Celery message — fetch them from the server on demand.
         try:
             from worker_utils import fetch_submission_run_content
@@ -1309,9 +1309,9 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         logger.info("Worker specs registered: %s", spec)
 
         # Build Docker images for all active tasks + start rebuild listener.
-        # Internal/system workers (INTERNAL_ONLY_WORKER) never run submission
+        # Internal/system workers (role 'internal') never run submission
         # code and must not touch the Docker image pipeline at all.
-        if not Config.INTERNAL_ONLY_WORKER:
+        if Config.RUNS_EVALUATION:
             try:
                 from task_modules.image_builder import (
                     build_all_active_tasks,

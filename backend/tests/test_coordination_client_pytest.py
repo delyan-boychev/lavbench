@@ -60,7 +60,7 @@ class TestQueueDepth:
                 r.delete("celery")
 
     def test_counts_priority_subqueues(self, redis_flush):
-        """Celery stores priority>0 messages under `{queue}@N` keys (M-C1)."""
+        """Celery stores priority>0 messages under `{queue}@N` keys."""
         r = _coordination()
         base = r.llen("mtest_queue")
         svc_keys = [k.decode() for k in r.keys("mtest_queue@*")] if r.keys("mtest_queue@*") else []

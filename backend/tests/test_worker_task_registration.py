@@ -27,8 +27,7 @@ def _registered_tasks(env):
 
 def test_internal_only_worker_registration():
     env = os.environ.copy()
-    env["INTERNAL_ONLY_WORKER"] = "true"
-    env["EVALUATION_ONLY_WORKER"] = "false"
+    env["WORKER_ROLE"] = "internal"
     res = _registered_tasks(env)
 
     for tname in EVALUATION_TASKS:
@@ -39,8 +38,7 @@ def test_internal_only_worker_registration():
 
 def test_evaluation_only_worker_registration():
     env = os.environ.copy()
-    env["INTERNAL_ONLY_WORKER"] = "false"
-    env["EVALUATION_ONLY_WORKER"] = "true"
+    env["WORKER_ROLE"] = "eval"
     res = _registered_tasks(env)
 
     for tname in EVALUATION_TASKS:
@@ -49,10 +47,18 @@ def test_evaluation_only_worker_registration():
         assert tname not in res
 
 
+def test_scheduler_registration():
+    env = os.environ.copy()
+    env["WORKER_ROLE"] = "scheduler"
+    res = _registered_tasks(env)
+
+    for tname in INTERNAL_TASKS | EVALUATION_TASKS:
+        assert tname not in res
+
+
 def test_default_registration():
     env = os.environ.copy()
-    env.pop("INTERNAL_ONLY_WORKER", None)
-    env.pop("EVALUATION_ONLY_WORKER", None)
+    env.pop("WORKER_ROLE", None)
     res = _registered_tasks(env)
 
     for tname in INTERNAL_TASKS | EVALUATION_TASKS:
