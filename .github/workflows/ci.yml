@@ -20,7 +20,12 @@ env:
 jobs:
   backend-tests:
     name: Backend tests + coverage
-    runs-on: ubuntu-latest
+    # Larger runner: 8 vCPUs (free on public repos). pytest-xdist's `-n auto`
+    # scales workers to the runner's core count automatically, so the 1280+
+    # test suite finishes much faster than the default 4-core ubuntu-latest.
+    # Requires "ubuntu-24.04-8core" to be enabled in repo settings
+    # (Settings → Actions → General → Larger runners).
+    runs-on: ubuntu-24.04-8core
     services:
       redis:
         image: redis:7-alpine
