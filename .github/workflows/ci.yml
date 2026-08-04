@@ -213,8 +213,10 @@ jobs:
           # The worker creates submission sandboxes by talking to the host Docker
           # daemon through /var/run/docker.sock, so any bind-mounted dir (e.g.
           # temp_dir -> /app for the sandbox) must exist on the HOST. Bind the
-          # workspace dir at the same absolute path inside the container.
+          # workspace and task-images dirs at the same absolute path inside the
+          # container (sandboxes bind-mount task_images/task_<id>/data as /app/data).
           mkdir -p "${GITHUB_WORKSPACE}/.lavbench_workspace"
+          mkdir -p "${GITHUB_WORKSPACE}/.lavbench_task_images"
           docker run -d --name lavbench_eval_worker \
             --network "$NETWORK" \
             -e CELERY_BROKER_URL="redis://:${REDIS_PASSWORD}@redis:6379/0" \
@@ -228,11 +230,12 @@ jobs:
             -e EVALUATION_ONLY_WORKER="true" \
             -e INTERNAL_ONLY_WORKER="false" \
             -e HF_CACHE_DIR="/app/hf_cache" \
-            -e TASK_IMAGES_DIR="/app/task_images" \
+            -e TASK_IMAGES_DIR="${GITHUB_WORKSPACE}/.lavbench_task_images" \
             -e LAVBENCH_WORKSPACE_DIR="${GITHUB_WORKSPACE}/.lavbench_workspace" \
             -e CPU_WORKER_CONCURRENCY="1" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${GITHUB_WORKSPACE}/.lavbench_workspace:${GITHUB_WORKSPACE}/.lavbench_workspace" \
+            -v "${GITHUB_WORKSPACE}/.lavbench_task_images:${GITHUB_WORKSPACE}/.lavbench_task_images" \
             lavbench-worker
 
       # --- Wait until the eval worker registered worker_spec:{hostname} in the broker Redis ---
