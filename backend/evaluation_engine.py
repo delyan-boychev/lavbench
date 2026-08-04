@@ -702,10 +702,6 @@ def _run_custom_evaluator_sandbox(
             json.dump(options or {}, f)
         with open(harness_path, "w", encoding="utf-8") as f:
             f.write(_CUSTOM_EVAL_HARNESS)
-        # Container runs as nobody (65534) — the temp dir is host-owned.
-        # 0o777 is required for the sandboxed (non-root) process to write
-        # result.json; the dir is a private mkdtemp under the worker's /tmp.
-        os.chmod(workdir, 0o777)  # noqa: S103
 
         from docker import DockerClient
 
@@ -738,10 +734,13 @@ def _run_custom_evaluator_sandbox(
             security_opt=["no-new-privileges:true"],
             pids_limit=64,
             tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
-            volumes={workdir: {"bind": "/work", "mode": "rw"}},
             working_dir="/work",
             user="65534:65534",
             read_only=True,
+            # Seed /work via put_archive and collect result.json back — no
+            # host-path bind mounts, works in docker/local/micromamba modes
+            seed_dir=workdir,
+            collect_files=[("/work/result.json", result_path)],
         )
         if is_timeout:
             logger.warning("Custom evaluator timed out in sandbox (300s cap)")

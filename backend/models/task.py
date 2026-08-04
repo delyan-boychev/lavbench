@@ -37,7 +37,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     base_docker_image = db.Column(db.String(255), nullable=True)
     apt_packages = db.Column(db.Text, nullable=True)
     pip_requirements = db.Column(db.Text, nullable=True)
-    build_error = db.Column(db.Text, nullable=True)
+    problem_codes = db.Column(db.JSON, nullable=True)
 
     ban_magic_commands = db.Column(db.Boolean, default=False)
     banned_imports = db.Column(db.String(512), nullable=True)
@@ -168,6 +168,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
-            "build_error": self.build_error if show_internal else None,
+            "problem_codes": (self.problem_codes or []) if show_internal else None,
             "stage_id": self.stage_id,
         }

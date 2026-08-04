@@ -5087,11 +5087,6 @@ export interface components {
              */
             baseline_notebook_path: string | null;
             /**
-             * Build Error
-             * @default null
-             */
-            build_error: string | null;
-            /**
              * Challenge Id
              * Format: uuid
              */
@@ -5158,6 +5153,11 @@ export interface components {
              * @default null
              */
             pip_requirements: string | null;
+            /**
+             * Problem Codes
+             * @default null
+             */
+            problem_codes: string[] | null;
             /**
              * Public Eval Percentage
              * @default null

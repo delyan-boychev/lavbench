@@ -85,6 +85,41 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 - Both English and Bulgarian locale files must always have matching keys
 - Backend error code translations live under `api.ERR_*` (not the legacy `error.ERR_*` namespace). When adding a new `ERR_*` code, add an `api.ERR_*` key to both locale files — the linter (`check_error_codes.py`) enforces parity
 
+### Translating UI strings and docs (EN → BG)
+
+Bulgarian translations are generated from the English sources with `scripts/translate_gemini.py` (Gemini API). The script covers:
+
+| Target | Source → Output |
+| :--- | :--- |
+| Frontend UI + error messages | `frontend/public/locales/en/translation.json` → `bg/translation.json` |
+| Role guides | `guides/en/*.md` → `guides/bg/*.md` |
+| Docs README | `docs/README.md` → `docs/README.bg.md` |
+| Sphinx docs | `docs/source/*.md` → `docs/source/bg/*.md` (only with `--docs`; guide files are symlinked, not retranslated) |
+
+Procedure:
+
+1. The API key lives in `.gemini-api-key` at the repo root (gitignored) as `GEMINI-API-KEY=...`. The script reads it and exports it as `GEMINI_API_KEY`. An exported `GEMINI_API_KEY` env var takes precedence over the file.
+2. Run the script:
+   ```bash
+   # Everything (frontend + guides + docs README):
+   python3 scripts/translate_gemini.py
+   # Include docs/source:
+   python3 scripts/translate_gemini.py --docs
+   # Single target:
+   python3 scripts/translate_gemini.py --only locales|guides|docs|readme
+   # Preview without writing:
+   python3 scripts/translate_gemini.py --dry-run
+   ```
+   Options: `--model` (default `gemini-3.6-flash`), `--key-file`, `--docs`, `--dry-run`.
+3. The system prompt embeds LavBench context + a fixed EN→BG glossary (e.g. challenge→състезание, stage→етап, sandbox→пясъчна среда) and a role-specific context per guide, so translations stay consistent across files. Markdown anchors are re-linked to the translated headings automatically; guides symlinked into `docs/source` are mirrored into `docs/source/bg` instead of being retranslated.
+4. Verify:
+   ```bash
+   python3 frontend/scripts/check_translations.py   # 0 symmetry/missing issues
+   make -C docs html-bg                              # bg Sphinx build
+   ```
+5. Never hand-edit `docs/source/bg/*` guide files — they are symlinks to `guides/bg/*`. Translate via the script (or edit `guides/bg/` directly).
+6. Never commit `.gemini-api-key`.
+
 ## Pre-commit Hooks
 
 Formatting is enforced automatically via pre-commit hooks. Install once:

@@ -117,12 +117,12 @@ During competition monitoring, jury members must quickly identify whether submis
 
 ### Distinguishing Build Errors from Competitor Submission Errors
 
-| Diagnostic Parameter | Competitor Submission Error | Task Environment Build Error (`ERR_IMAGE_BUILD_FAILED`) |
+| Diagnostic Parameter | Competitor Submission Error | Task Environment Build Error (problem registry) |
 | :--- | :--- | :--- |
 | **Failure Scope** | Isolated to a single competitor submission or notebook file. | Affects **all** competitor submissions for the target task. |
-| **Status Indicator** | Marked as `Failed` on the submission list view. | Task environment badge displays red pill **`ERR_IMAGE_BUILD_FAILED`**. |
+| **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
 | **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
-| **Log Locations** | **Submission Execution Logs** tab (notebook stdout/stderr output inside container). | **Task Overview Build Logs** or worker log feed (`[build lavbench_task_<id>]`). |
+| **Log Locations** | **Submission Execution Logs** tab (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
 | **Quota Impact** | Competitor submission quota is decremented (unless AST syntax validation caught it pre-execution). | Competitor submission quota **is NOT decremented** or should be manually restored if affected. |
 
 ---
@@ -133,7 +133,7 @@ When troubleshooting a failed submission or blocked task queue:
 
 1. **Check Task Environment Status**:
    - Open **Task Overview** or **Submissions** tab.
-   - Look for the environment indicator pill. If it reads **`ERR_IMAGE_BUILD_FAILED`**, the task image failed to compile on the worker.
+   - Look for the environment warning indicator. If the problem registry lists codes such as **`ERR_TASK_BUILD_FAILED`** or **`ERR_BASELINE_FAILED`**, the task image failed to compile on the worker.
 2. **Inspect Submission Logs**:
    - Click the failed submission row to open the submission detail modal.
    - Select **Execution Logs** to examine stdout/stderr output produced during container execution.

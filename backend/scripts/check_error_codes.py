@@ -85,6 +85,14 @@ def check_file(filepath, valid_codes):
                 if code_val is not None:
                     used_codes.add(code_val)
 
+        # ── Check 2g: string literals inside set literals (e.g. the problem
+        # codes cleared on config change) count as used ──
+        if isinstance(node, ast.Set):
+            for elt in node.elts:
+                cv = _get_str_value(elt)
+                if cv is not None:
+                    used_codes.add(cv)
+
         if not isinstance(node, ast.Call):
             continue
 
@@ -126,6 +134,22 @@ def check_file(filepath, valid_codes):
                     cv = _get_str_value(kw.value)
                     if cv is not None:
                         used_codes.add(cv)
+
+        # ── Check 2e: problem_codes=[...] list literals (e.g. worker build
+        # failures reported to the problem registry) count as used ──
+        if node.keywords:
+            for kw in node.keywords:
+                if kw.arg == "problem_codes" and isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        cv = _get_str_value(elt)
+                        if cv is not None:
+                            used_codes.add(cv)
+
+        # ── Check 2f: set membership mutations like codes.add("ERR_*") count ──
+        if isinstance(func, ast.Attribute) and func.attr == "add" and node.args:
+            cv = _get_str_value(node.args[0])
+            if cv is not None:
+                used_codes.add(cv)
 
         # ── Check 2c: err() calls must have literal first arg ──
         if func_name == "err" and node.args:
@@ -198,6 +222,9 @@ def main():
         files.extend(sorted(services_dir.glob("*.py")))
         utils_dir = root / "utils"
         files.extend(sorted(utils_dir.glob("*.py")))
+        task_modules_dir = root / "task_modules"
+        if task_modules_dir.exists():
+            files.extend(sorted(task_modules_dir.glob("*.py")))
         for extra in [
             "auth_utils.py",
             "app.py",

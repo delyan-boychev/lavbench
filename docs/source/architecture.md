@@ -49,10 +49,10 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/challenges/<id>/submit
 3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check) → rate limit check → creates Submission → dispatches Celery evaluation job
-4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → mounts submission.parquet & hidden labels.parquet
+4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
-6. Competitor Code: executes inside container → writes submission.parquet output
-7. Worker Evaluation Engine: evaluates submission.parquet against labels.parquet (or runs evaluator.py) → updates Submission status & scores → publishes SSE event → invalidates leaderboard cache
+6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)
+7. Worker Evaluation Engine: evaluates submission.parquet against labels.parquet server-side (or runs evaluator.py) → updates Submission status & scores → publishes SSE event → invalidates leaderboard cache
 ```
 
 ### Sandbox Container Isolation Parameters
@@ -70,6 +70,43 @@ Competitor code runs inside a zero-trust Docker container with strict Linux kern
 | `--pids-limit 64` | Restricts total process count to mitigate fork bombs. |
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
 | `--cpus` | Restricts CPU core allocation per container (`CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`). |
+
+> **Known non-blocker:** the per-run anonymous volume mounted at `/app` (rw) has **no disk quota**
+> of its own — a competitor can fill it until host disk pressure is hit. It is a deliberate
+> trade-off accepted because memory, CPU, pid count, and wall-clock time are all capped, and
+> `TASK_IMAGES_DIR` free-space (`MIN_BUILD_DISK_GB`) is monitored at build time.
+
+### Persistent Storage Layout
+
+No host paths are bind-mounted into workers or sandboxes. Task images, the HF cache and the
+worker workspace live in Docker **named volumes**, mounted at fixed container paths
+(`/var/lib/lavbench/task_images`, `/var/lib/lavbench/hf_cache`, `/var/lib/lavbench/workspace`):
+
+- **Docker mode** (`scripts/deploy-worker.sh`): named volumes `lavbench_task_images`,
+  `lavbench_hf_cache`, `lavbench_workspace`, created automatically on deploy.
+- **Compose** (`docker-compose.yml`): `task_images_data`, `workspace_data` plus the shared
+  `hf_cache` volume, mounted at the same container paths.
+- **CI**: the eval worker uses job-local named volumes with the same layout.
+- **Local micromamba mode**: the worker runs as a host process and uses plain host directories
+  (`TASK_IMAGES_DIR`, `HF_CACHE_DIR`, `LAVBENCH_WORKSPACE_DIR`) — no Docker volumes involved.
+
+### Sandbox `/app`: per-run anonymous volume
+
+Each submission gets a disposable anonymous Docker volume mounted at `/app` (rw). The worker
+streams the run directory into it with `put_archive` before the container starts and pulls the
+output back with `get_archive` afterwards; the volume is removed together with the container.
+Tar metadata is normalized to the sandbox user (uid/gid 65534, dirs 0777, files 0644 + exec bits)
+so the non-root process can read and write `/app`. This removes the host-path bind-mount
+requirement entirely — the host daemon never needs to resolve a worker-side path, so the same
+runner code works in docker, compose, CI and micromamba setups. Labels (`labels.parquet`) are
+never written into the sandbox; they stay server-side.
+
+### Stale-Dir Sweep
+Submission workspace dirs (`LAVBENCH_WORKSPACE_DIR`) are normally removed in a `finally` block,
+but a killed/restarted worker can leave plaintext behind. Two complementary sweeps delete any
+workspace subdirectory not modified in 24h:
+1. **Worker startup** (tasks.py `_stale_dir_sweep_on_start`, `celeryd_init`, fcntl-serialized);
+2. **Daily beat** (`task-dir-sweep-daily`).
 
 ---
 
@@ -90,9 +127,19 @@ Each task maintains a persistent build directory at `TASK_IMAGES_DIR/task_{id}/`
 5. **Disk Space Exhaustion**: Host free disk space below `MIN_BUILD_DISK_GB` (5 GB limit).
 
 ### Build Error Recovery & Troubleshooting:
-- Build errors are written to `task.build_error` and displayed in the Admin Panel and task overview.
-- If a build lock is stuck due to worker interruption, admins can execute `clear_build_lock(task_id)` or click **Force Clear Build Lock** in the UI.
-- Saving task edits or clicking **Rebuild Container Image** publishes a Redis `task_rebuild` notification, clearing stale image caches and triggering a fresh container build.
+- Build/environment failures are recorded as a **problem registry** — a list of machine-readable codes on `task.problem_codes` (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Any non-empty registry blocks new submissions with `ERR_TASK_NOT_READY` (403) and every root cause is translated client-side.
+- The registry is lifecycle-managed: worker-reported build failures add codes, a successful build clears the build-family codes, baseline completion removes `ERR_BASELINE_FAILED`, and environment config changes (base image, apt/pip/HF settings) clear stale build-family problems.
+- If a build lock is stuck due to worker interruption, an admin can clear it on the worker host with the worker-side `clear_build_lock(task_id)` helper (`task_modules/image_builder.py`) — e.g. from a worker shell. There is no UI button or admin HTTP route for this.
+- Saving semantic task edits (base image, apt/pip/HF settings, task files, evaluator code) publishes a Redis `task_rebuild` notification; the worker's rebuild listener (`_rebuild_listener`) re-fetches the task config and rebuilds with `force_rebuild=True`, bypassing the config-hash fast path. HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only) and the image is rebuilt from the fresh data.
+
+### Task File & Label Replacement (unique `saved_name`)
+Uploaded task resource files (including `labels.parquet`) are stored under a UUID-prefixed
+`saved_name` (extension preserved). Because re-uploading a file with the *same* public filename
+rotates the `saved_name`, the worker-side asset cache — which uses `saved_name` as its change
+marker — detects the replacement and re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data`
+(and the host-only `labels/` cache), and image builds re-bake the fresh data. `update_task` keeps
+exactly one manifest entry per public filename and reclaims the replaced on-disk file after a
+successful commit.
 
 ---
 

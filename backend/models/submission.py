@@ -41,6 +41,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     status = db.Column(db.String(50), default="queued", index=True)
     is_baseline = db.Column(db.Boolean, default=False)
     detailed_status = db.Column(db.String(100), default="queued")
+    time_limit_snapshot = db.Column(db.Integer, nullable=True)
 
     code_storage_path = db.Column(db.String(512), nullable=True)
     log_storage_path = db.Column(db.String(512), nullable=True)

@@ -224,7 +224,9 @@ services:
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
-      - HF_CACHE_DIR=/app/hf_cache
+      - HF_CACHE_DIR=/var/lib/lavbench/hf_cache
+      - TASK_IMAGES_DIR=/var/lib/lavbench/task_images
+      - LAVBENCH_WORKSPACE_DIR=/var/lib/lavbench/workspace
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
@@ -244,6 +246,9 @@ services:
       - uploads_data:/app/uploads
       - backups_data:/backups
       - logs_data:/app/logs
+      - hf_cache:/var/lib/lavbench/hf_cache
+      - task_images_data:/var/lib/lavbench/task_images
+      - workspace_data:/var/lib/lavbench/workspace
       - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
@@ -299,3 +304,5 @@ volumes:
   uploads_data:
   backups_data:
   logs_data:
+  task_images_data:
+  workspace_data:

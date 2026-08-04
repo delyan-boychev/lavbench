@@ -81,6 +81,7 @@ certs/
 .hf_token
 backend/backups/
 backend/backend/task_images/
+dump.rdb
 
 docs/source/_static/demo/
 
@@ -92,3 +93,6 @@ backend/uploads/
 backend/hf_cache/
 mock_docker_run.log
 backend/examples/
+
+#Gemini key for translations
+.gemini-api-key

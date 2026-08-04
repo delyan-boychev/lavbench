@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import io
+import json
 import logging
 import os
 import shutil
+import tarfile
+import tempfile
 import threading
 import time
 from typing import Any
@@ -49,6 +53,29 @@ def _sign_worker_token(submission_id: str) -> str:
         return ""
 
 
+SANDBOX_UID = 65534
+SANDBOX_GID = 65534
+
+
+def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Normalize seed tar metadata for a non-root sandbox user.
+
+    The seed dir lives on the host (e.g. a 0o700 mkdtemp owned by the worker
+    user). When extracted via put_archive by the root daemon, host ownership
+    and modes would make /app unreadable/unwritable by the container's
+    ``nobody`` (65534) user, so rewrite uid/gid and expose world access.
+    """
+    member.uid = SANDBOX_UID
+    member.gid = SANDBOX_GID
+    if member.isdir():
+        member.mode = 0o777
+    elif member.isfile():
+        # Preserve exec bits (submission scripts are run directly) but ensure
+        # read access for the sandbox user regardless of host file modes.
+        member.mode = 0o644 | (member.mode & 0o111)
+    return member
+
+
 def run_command_streaming(
     docker_client: DockerClient,
     image_tag: str,
@@ -69,8 +96,18 @@ def run_command_streaming(
     gpu_id: str | None = None,
     user: str | None = None,
     read_only: bool = False,
+    seed_dir: str | None = None,
+    collect_files: list[tuple[str, str]] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container and stream its output to *logs_list* in real-time.
+
+    When *seed_dir* is set, the container is created (not started) and the
+    directory contents are streamed into *working_dir* via ``put_archive``
+    before starting — no host-path bind mount is required, so the sandbox
+    works regardless of where the daemon runs. After the run, each
+    ``(container_path, host_path)`` pair in *collect_files* is pulled back
+    with ``get_archive`` and written to *host_path* (used to retrieve the
+    submission output from a tmpfs-backed /app).
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
@@ -85,28 +122,67 @@ def run_command_streaming(
         else:
             device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]
 
+    run_kwargs = {
+        "image": image_tag,
+        "command": command,
+        "detach": True,
+        "network_mode": network_mode,
+        "cap_drop": cap_drop or ["ALL"],
+        "security_opt": security_opt or ["no-new-privileges:true"],
+        "pids_limit": pids_limit,
+        "nano_cpus": int(cpu_count * 1e9),
+        "mem_limit": mem_limit,
+        "memswap_limit": mem_limit,
+        "tmpfs": tmpfs or {"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+        "working_dir": working_dir,
+        "environment": environment,
+        "ulimits": ulimits,
+        "device_requests": device_requests,
+        "user": user,
+        "read_only": read_only,
+    }
+
+    container: Any | None = None
+    seed_volume: Any | None = None
     try:
-        container = docker_client.containers.run(
-            image_tag,
-            command,
-            detach=True,
-            network_mode=network_mode,
-            cap_drop=cap_drop or ["ALL"],
-            security_opt=security_opt or ["no-new-privileges:true"],
-            pids_limit=pids_limit,
-            nano_cpus=int(cpu_count * 1e9),
-            mem_limit=mem_limit,
-            memswap_limit=mem_limit,
-            tmpfs=tmpfs or {"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
-            volumes=volumes,
-            working_dir=working_dir,
-            environment=environment,
-            ulimits=ulimits,
-            device_requests=device_requests,
-            user=user,
-            read_only=read_only,
-        )
+        if seed_dir:
+            # Seed the sandbox through a per-run anonymous volume: the daemon
+            # can't put_archive into a tmpfs on a not-yet-started container, so
+            # /app is a disposable volume that is removed after the run.
+            # Tar metadata is normalized to the sandbox user (65534) with
+            # world-accessible modes — the seed dir is host-owned (e.g. 0o700
+            # mkdtemp) and the container runs as non-root nobody.
+            seed_volume = docker_client.volumes.create()
+            run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
+            container = docker_client.containers.create(**run_kwargs)
+            with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
+                tar_path = os.path.join(td, "seed.tar")
+                with tarfile.open(tar_path, "w") as tar:
+                    # put_archive ignores metadata on the '.' root entry, so
+                    # /app would keep the daemon's root-owned 0o755 mount point
+                    # and the non-root sandbox user could not write outputs.
+                    # A leading '/' entry makes the daemon chown/chmod the
+                    # volume root (/app) itself before the seed contents.
+                    root_entry = tarfile.TarInfo("/")
+                    root_entry.type = tarfile.DIRTYPE
+                    root_entry.mode = 0o777
+                    root_entry.uid = SANDBOX_UID
+                    root_entry.gid = SANDBOX_GID
+                    tar.addfile(root_entry)
+                    tar.add(seed_dir, arcname=".", filter=_normalize_seed_tar_member)
+                with open(tar_path, "rb") as tf:
+                    container.put_archive(working_dir, tf)
+            container.start()
+        else:
+            run_kwargs["volumes"] = volumes
+            container = docker_client.containers.run(**run_kwargs)
     except Exception as exc:
+        if container is not None:
+            with contextlib.suppress(Exception):
+                container.remove(force=True)
+        if seed_volume is not None:
+            with contextlib.suppress(Exception):
+                seed_volume.remove()
         logs_list.append(f"Failed to start container: {exc}")
         return -1, "", str(exc), False
 
@@ -154,6 +230,23 @@ def run_command_streaming(
             exit_code = result.get("StatusCode", -1)
         except Exception:
             exit_code = -1
+
+        if collect_files:
+            for container_path, host_path in collect_files:
+                try:
+                    stream, _stat = container.get_archive(container_path)
+                    # docker-py returns the archive as a byte-chunk generator,
+                    # not a file object — materialize it for tarfile.
+                    with tarfile.open(fileobj=io.BytesIO(b"".join(stream)), mode="r:") as tar:
+                        for member in tar:
+                            if member.isfile():
+                                extracted = tar.extractfile(member)
+                                if extracted is not None:
+                                    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+                                    with open(host_path, "wb") as f:
+                                        shutil.copyfileobj(extracted, f)
+                except Exception as exc:
+                    logger.warning("Could not collect %s from container: %s", container_path, exc)
     finally:
         with contextlib.suppress(Exception):
             container.kill()
@@ -161,6 +254,9 @@ def run_command_streaming(
             container.remove(force=True)
         except Exception:
             logger.debug("Error removing container", exc_info=True)
+        if seed_volume is not None:
+            with contextlib.suppress(Exception):
+                seed_volume.remove()
 
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""
@@ -282,6 +378,182 @@ def report_status_to_server(
     return False
 
 
+def _assets_manifest_path(task_id: Any) -> str:
+    """Path of the per-task asset manifest, kept OUTSIDE the data dir so it is
+    never baked into the image (COPY data/ /app/data/ would leak dotfiles)."""
+    return os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", ".assets.json")
+
+
+def _read_assets_manifest(task_id: Any) -> dict[str, Any]:
+    try:
+        with open(_assets_manifest_path(task_id)) as f:
+            data: dict[str, Any] = json.load(f)
+            return data
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_assets_manifest(task_id: Any, manifest: dict[str, Any]) -> None:
+    """Atomically persist the asset manifest (temp file + os.replace)."""
+    path = _assets_manifest_path(task_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(manifest, f)
+    os.replace(tmp_path, path)
+
+
+def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[str]) -> bool:
+    """Synchronize task resource files into the persistent host-side cache.
+
+    The cache lives at ``TASK_IMAGES_DIR/task_{id}/data``; the runner snapshots
+    it into each sandbox (``/app/data``) at launch, so in-flight runs keep the
+    files they started with even when a rebuild re-syncs the cache mid-run.
+    Files are only transferred when the server-side ``saved_name`` differs from
+    the cached one (uploads are stored under unique saved names, so a replaced
+    file has a new saved name).
+
+    Returns True when the cache is current; False when any download failed.
+    """
+    if not metadata or not metadata.get("main_server_url"):
+        return True
+    task_id = metadata.get("task_id")
+    if not task_id:
+        return True
+    files_list = metadata.get("task_files", []) or []
+    expected = [f for f in files_list if f.get("filename") != "labels.parquet"]
+    expected_map = {f.get("filename", ""): f for f in expected}
+
+    cache_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    manifest = _read_assets_manifest(task_id)
+    cached = manifest.get("files", {})
+
+    # Prune cache entries no longer part of the task (deleted uploads must not
+    # keep being served to students until the image is rebuilt)
+    for fn in [fn for fn in cached if fn not in expected_map]:
+        with contextlib.suppress(OSError):
+            os.remove(os.path.join(cache_dir, fn))
+        cached.pop(fn, None)
+
+    to_download: list[dict[str, Any]] = []
+    for fn, ent in expected_map.items():
+        path = os.path.join(cache_dir, fn)
+        meta = cached.get(fn)
+        if meta and meta.get("saved_name") == ent.get("saved_name", fn) and os.path.isfile(path):
+            continue
+        to_download.append(ent)
+
+    if to_download:
+        logs.append(f"Syncing {len(to_download)} task file(s) into the asset cache...")
+        main_server_url = metadata["main_server_url"]
+        token = _sign_worker_token(metadata.get("submission_id", "unknown"))
+        headers = {"X-Worker-Token": token}
+        all_ok = True
+        for ent in to_download:
+            filename = ent.get("filename", "")
+            saved_name = ent.get("saved_name", filename)
+            url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
+            dest_file = os.path.join(cache_dir, filename)
+            try:
+                logs.append(f"Downloading task file '{filename}' from server...")
+                res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
+                if res.status_code != 200:
+                    logs.append(
+                        f"Failed to download task file '{filename}': Status code {res.status_code}"
+                    )
+                    all_ok = False
+                    continue
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=cache_dir, prefix=f".{filename}.", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(fd, "wb") as df:
+                        df.write(res.content)
+                    os.chmod(tmp_path, 0o644)
+                    os.replace(tmp_path, dest_file)
+                finally:
+                    with contextlib.suppress(OSError):
+                        os.remove(tmp_path)
+                cached[filename] = {
+                    "saved_name": saved_name,
+                    "size": os.path.getsize(dest_file),
+                }
+                logs.append(f"Downloaded task file '{filename}' successfully.")
+            except Exception as e:
+                logs.append(f"Error downloading task file '{filename}': {e!s}")
+                all_ok = False
+        manifest["files"] = cached
+        _write_assets_manifest(task_id, manifest)
+        return all_ok
+
+    logs.append(f"Task files up-to-date in cache (task_{task_id}: {len(expected)} file(s))")
+    return True
+
+
+def sync_labels_parquet_to_cache(metadata: dict[str, Any] | None, logs: list[str]) -> str | None:
+    """Ensure the host-only labels.parquet cache is present and current.
+
+    Returns the path of the cached labels file, or None when the task has no
+    labels file or the download failed. The cache dir is chmod 0700 and the
+    file 0600 — it is never mounted into the sandbox.
+    """
+    if not metadata or not metadata.get("main_server_url"):
+        return None
+    task_id = metadata.get("task_id")
+    if not task_id:
+        return None
+    label_meta = next(
+        (f for f in metadata.get("task_files", []) if f.get("filename") == "labels.parquet"),
+        None,
+    )
+    if not label_meta:
+        return None
+
+    labels_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "labels")
+    os.makedirs(labels_dir, exist_ok=True)
+    os.chmod(labels_dir, 0o700)
+    dest_file = os.path.join(labels_dir, "labels.parquet")
+
+    saved_name = label_meta.get("saved_name", "labels.parquet")
+    manifest = _read_assets_manifest(task_id)
+    if manifest.get("labels", {}).get("saved_name") == saved_name and os.path.isfile(dest_file):
+        logs.append("Labels.parquet up-to-date in host-only cache.")
+        return dest_file
+
+    main_server_url = metadata["main_server_url"]
+    token = _sign_worker_token(metadata.get("submission_id", "unknown"))
+    headers = {"X-Worker-Token": token}
+    url = f"{main_server_url}/api/worker/tasks/{task_id}/files/labels.parquet"
+    try:
+        logs.append("Downloading labels.parquet securely (host-only cache)...")
+        res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
+        if res.status_code != 200:
+            logs.append(f"Failed to download labels.parquet: Status code {res.status_code}")
+            return None
+        fd, tmp_path = tempfile.mkstemp(dir=labels_dir, prefix=".labels.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as df:
+                df.write(res.content)
+            os.chmod(tmp_path, 0o600)
+            os.replace(tmp_path, dest_file)
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(tmp_path)
+        os.chmod(labels_dir, 0o700)
+        manifest["labels"] = {
+            "saved_name": saved_name,
+            "size": os.path.getsize(dest_file),
+        }
+        _write_assets_manifest(task_id, manifest)
+        logs.append("Downloaded labels.parquet securely.")
+        return dest_file
+    except Exception as e:
+        logs.append(f"Error downloading labels.parquet: {e!s}")
+        return None
+
+
 def download_task_files_to_dir(
     metadata: dict[str, Any] | None, temp_dir: str, logs: list[str]
 ) -> None:
@@ -377,3 +649,36 @@ def download_labels_parquet_to_dir(
             except Exception as e:
                 logs.append(f"Error downloading labels.parquet: {e!s}")
     return None
+
+
+def run_stale_dir_sweep(max_age_hours: int = 24, logs: list[str] | None = None) -> int:
+    """Remove abandoned task execution directories under the workspace root.
+
+    Submission temp dirs are normally removed in a ``finally`` block, but a
+    killed/restarted worker can leave them behind. Directories not modified in
+    the last ``max_age_hours`` are considered abandoned and removed. Only
+    directory entries are considered — loose files are left alone.
+
+    Returns the number of directories removed.
+    """
+    workspace_root = Config.LAVBENCH_WORKSPACE_DIR
+    if not workspace_root or not os.path.isdir(workspace_root):
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for entry in os.scandir(workspace_root):
+        if not entry.is_dir():
+            continue
+        try:
+            st = entry.stat()
+        except OSError:
+            continue
+        if st.st_mtime <= cutoff:
+            if logs is not None:
+                stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(st.st_mtime))
+                logs.append(f"Removing stale task dir {entry.name} (last modified {stamp})")
+            shutil.rmtree(entry.path, ignore_errors=True)
+            removed += 1
+    if removed and logs is not None:
+        logs.append(f"Swept {removed} stale directory(ies) from workspace.")
+    return removed

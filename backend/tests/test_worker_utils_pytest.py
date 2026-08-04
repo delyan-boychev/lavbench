@@ -1,10 +1,14 @@
 import base64
+import io
 import os
 import tempfile
+import time
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
 
+from config import Config
 from worker_utils import (
     MockModel,
     StreamingLogList,
@@ -13,7 +17,123 @@ from worker_utils import (
     download_task_files_to_dir,
     report_status_to_server,
     run_command_streaming,
+    run_stale_dir_sweep,
+    sync_labels_parquet_to_cache,
+    sync_task_files_to_assets_cache,
 )
+
+
+class TestAssetsCache:
+    def _metadata(self, **overrides):
+        metadata = {
+            "main_server_url": "http://test:5001",
+            "submission_id": "sub_1",
+            "task_id": 42,
+            "task_files": [{"filename": "data.csv", "saved_name": "abc.csv"}],
+        }
+        metadata.update(overrides)
+        return metadata
+
+    @pytest.fixture
+    def cache_env(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("worker_utils.Config.TASK_IMAGES_DIR", str(tmp_path))
+        return tmp_path
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_first_run_downloads_and_writes_manifest(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is True
+        dest = cache_env / "task_42" / "data" / "data.csv"
+        assert dest.read_bytes() == b"file content"
+        manifest = (cache_env / "task_42" / ".assets.json").read_text()
+        assert '"saved_name": "abc.csv"' in manifest
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        sync_task_files_to_assets_cache(self._metadata(), [])
+        mock_get.reset_mock()
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is True
+        mock_get.assert_not_called()
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_changed_saved_name_redownloads(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"new content"
+        sync_task_files_to_assets_cache(self._metadata(), [])
+        sync_task_files_to_assets_cache(
+            self._metadata(task_files=[{"filename": "data.csv", "saved_name": "xyz.csv"}]),
+            [],
+        )
+        assert mock_get.call_count == 2
+        dest = cache_env / "task_42" / "data" / "data.csv"
+        assert dest.read_bytes() == b"new content"
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"file content"
+        metadata = self._metadata(
+            task_files=[
+                {"filename": "data.csv", "saved_name": "abc.csv"},
+                {"filename": "labels.parquet", "saved_name": "labels_1.parquet"},
+            ]
+        )
+        ok = sync_task_files_to_assets_cache(metadata, [])
+        assert ok is True
+        assert not (cache_env / "task_42" / "data" / "labels.parquet").exists()
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_download_failure_returns_false(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 404
+        ok = sync_task_files_to_assets_cache(self._metadata(), [])
+        assert ok is False
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("worker_utils.requests.get")
+    def test_labels_0600_and_0700_dir(self, mock_get, _tk, cache_env):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"labels data"
+        path = sync_labels_parquet_to_cache(
+            self._metadata(task_files=[{"filename": "labels.parquet", "saved_name": "l1.parquet"}]),
+            [],
+        )
+        assert path is not None
+        assert (cache_env / "task_42" / "labels" / "labels.parquet").read_bytes() == b"labels data"
+        assert os.stat(path).st_mode & 0o777 == 0o600
+        assert os.stat(cache_env / "task_42" / "labels").st_mode & 0o777 == 0o700
+
+    @patch("worker_utils._sign_worker_token", return_value="tok")
+    def test_labels_unchanged_reuses_cache(self, _tk, cache_env):
+        import json as _json
+
+        metadata = {
+            "main_server_url": "http://test:5001",
+            "submission_id": "sub_1",
+            "task_id": 42,
+            "task_files": [{"filename": "labels.parquet", "saved_name": "l1.parquet"}],
+        }
+        labels_dir = cache_env / "task_42" / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        (labels_dir / "labels.parquet").write_bytes(b"cached")
+        os.chmod(labels_dir, 0o700)
+        (cache_env / "task_42" / ".assets.json").write_text(
+            _json.dumps({"labels": {"saved_name": "l1.parquet", "size": 6}})
+        )
+
+        with patch("worker_utils.requests.get") as mock_get:
+            path = sync_labels_parquet_to_cache(metadata, [])
+            assert path is not None
+            mock_get.assert_not_called()
 
 
 class TestRunCommandStreaming:
@@ -116,6 +236,204 @@ class TestRunCommandStreaming:
         dr = call_kwargs["device_requests"][0]
         assert dr.device_ids == ["1"]
         assert ["gpu"] in dr.capabilities
+
+
+class TestSeedTarNormalization:
+    def test_normalizes_ownership_and_modes(self):
+        import tarfile
+
+        from worker_utils import SANDBOX_GID, SANDBOX_UID, _normalize_seed_tar_member
+
+        dir_member = tarfile.TarInfo(name=".")
+        dir_member.type = tarfile.DIRTYPE
+        dir_member.mode = 0o700
+        dir_member.uid = 501
+        dir_member.gid = 20
+        normalized_dir = _normalize_seed_tar_member(dir_member)
+        assert normalized_dir.uid == SANDBOX_UID
+        assert normalized_dir.gid == SANDBOX_GID
+        assert normalized_dir.mode == 0o777
+
+        file_member = tarfile.TarInfo(name="script.py")
+        file_member.type = tarfile.REGTYPE
+        file_member.mode = 0o600
+        file_member.uid = 501
+        file_member.gid = 20
+        normalized_file = _normalize_seed_tar_member(file_member)
+        assert normalized_file.uid == SANDBOX_UID
+        assert normalized_file.gid == SANDBOX_GID
+        assert normalized_file.mode == 0o644
+
+        exec_member = tarfile.TarInfo(name="harness.py")
+        exec_member.type = tarfile.REGTYPE
+        exec_member.mode = 0o755
+        normalized_exec = _normalize_seed_tar_member(exec_member)
+        assert normalized_exec.mode == 0o755
+
+
+class TestSeededRunCommandStreaming:
+    """Sandboxes seeded via put_archive instead of host-path bind mounts."""
+
+    def _tar_stream(self, files: dict[str, bytes]):
+        """docker-py returns get_archive streams as byte-chunk generators."""
+        import io
+        import tarfile
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for name, content in files.items():
+                info = tarfile.TarInfo(name=name)
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
+        data = buf.getvalue()
+
+        def _chunks() -> Iterator[bytes]:
+            for i in range(0, len(data), 4096):
+                yield data[i : i + 4096]
+
+        return _chunks()
+
+    def _make_mock_container(self, mocker, exit_code=0, files: dict[str, bytes] | None = None):
+        mock_container = mocker.MagicMock()
+        mock_container.status = "exited"
+        mock_container.wait.return_value = {"StatusCode": exit_code}
+        mock_container.logs.return_value = [b"seeded run\n"]
+        if files:
+            mock_container.get_archive.return_value = (self._tar_stream(files), None)
+        else:
+            mock_container.get_archive.side_effect = Exception("not found")
+        return mock_container
+
+    def test_seed_dir_streams_via_put_archive(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "submission_sub_1.py").write_text("print(1)\n")
+        (seed / "data").mkdir()
+        (seed / "data" / "features.csv").write_text("x,y\n")
+
+        mock_client = mocker.MagicMock()
+        mock_container = self._make_mock_container(mocker, files={"submission.parquet": b"parquet"})
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+
+        retcode, _stdout, _stderr, is_timeout = run_command_streaming(
+            mock_client,
+            "test:latest",
+            ["python", "-u", "submission_sub_1.py"],
+            [],
+            seed_dir=str(seed),
+            collect_files=[("/app/submission.parquet", str(tmp_path / "out.parquet"))],
+        )
+
+        assert retcode == 0
+        assert is_timeout is False
+        mock_client.containers.run.assert_not_called()
+        mock_client.containers.create.assert_called_once()
+        create_kwargs = mock_client.containers.create.call_args[1]
+        assert create_kwargs["volumes"] == {"lavbench_seed_vol": {"bind": "/app", "mode": "rw"}}
+        mock_container.put_archive.assert_called_once()
+        call = mock_container.put_archive.call_args
+        assert call.args[0] == "/app"
+        mock_container.start.assert_called_once()
+        assert (tmp_path / "out.parquet").read_bytes() == b"parquet"
+        mock_container.remove.assert_called()
+        mock_volume.remove.assert_called()
+
+    def test_seed_tar_has_writable_root_entry(self, mocker, tmp_path):
+        """put_archive ignores '.' root metadata, so a leading '/' entry must
+        chown/chmod the /app mount point itself (writable by the sandbox user)."""
+        import tarfile
+
+        from worker_utils import SANDBOX_GID, SANDBOX_UID
+
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "script.py").write_text("print(1)\n")
+
+        mock_client = mocker.MagicMock()
+        mock_container = self._make_mock_container(mocker)
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+
+        captured: dict[str, bytes] = {}
+
+        def _capture(_path: str, fileobj) -> None:
+            captured["tar"] = fileobj.read()
+
+        mock_container.put_archive.side_effect = _capture
+
+        run_command_streaming(
+            mock_client,
+            "test:latest",
+            ["python", "-u", "script.py"],
+            [],
+            seed_dir=str(seed),
+        )
+
+        with tarfile.open(fileobj=io.BytesIO(captured["tar"]), mode="r") as tar:
+            members = tar.getmembers()
+        assert members[0].name in ("", "/")  # tarfile normalizes "/" to ""
+        assert members[0].type == tarfile.DIRTYPE
+        assert members[0].type == tarfile.DIRTYPE
+        assert members[0].mode == 0o777
+        assert members[0].uid == SANDBOX_UID
+        assert members[0].gid == SANDBOX_GID
+
+    def test_put_archive_failure_removes_container(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "script.py").write_text("print(1)\n")
+
+        mock_client = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_container.put_archive.side_effect = Exception("archive failed")
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+
+        retcode, _stdout, stderr, _is_timeout = run_command_streaming(
+            mock_client,
+            "test:latest",
+            ["python", "-u", "script.py"],
+            [],
+            seed_dir=str(seed),
+        )
+
+        assert retcode == -1
+        assert "archive failed" in stderr
+        mock_container.remove.assert_called_once_with(force=True)
+        mock_volume.remove.assert_called_once()
+
+    def test_collect_missing_file_is_ignored(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "script.py").write_text("print(1)\n")
+
+        mock_client = mocker.MagicMock()
+        mock_container = self._make_mock_container(mocker)
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+
+        retcode, _stdout, _stderr, _is_timeout = run_command_streaming(
+            mock_client,
+            "test:latest",
+            ["python", "-u", "script.py"],
+            [],
+            seed_dir=str(seed),
+            collect_files=[("/app/submission.parquet", str(tmp_path / "none.parquet"))],
+        )
+
+        assert retcode == 0
+        assert not (tmp_path / "none.parquet").exists()
+        mock_container.remove.assert_called()
+        mock_volume.remove.assert_called()
 
 
 class TestStreamingLogList:
@@ -398,3 +716,37 @@ class TestDownloadLabelsParquetToDir:
         with tempfile.TemporaryDirectory() as tmp:
             result = download_labels_parquet_to_dir({}, tmp, [])
             assert result is None
+
+
+class TestRunStaleDirSweep:
+    def test_removes_old_dirs_keeps_fresh(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path))
+        old_dir = tmp_path / "task_old"
+        old_dir.mkdir()
+        old = time.time() - 30 * 3600
+        os.utime(old_dir, (old, old))
+        fresh_dir = tmp_path / "task_fresh"
+        fresh_dir.mkdir()
+        loose_file = tmp_path / "loose.txt"
+        loose_file.write_text("keep me")
+
+        logs = []
+        removed = run_stale_dir_sweep(max_age_hours=24, logs=logs)
+
+        assert removed == 1
+        assert not old_dir.exists()
+        assert fresh_dir.exists()
+        assert loose_file.exists()
+        assert any("task_old" in line for line in logs)
+
+    def test_missing_workspace_returns_zero(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path / "does-not-exist"))
+        assert run_stale_dir_sweep() == 0
+
+    def test_recent_dir_not_removed(self, mocker, tmp_path):
+        mocker.patch.object(Config, "LAVBENCH_WORKSPACE_DIR", str(tmp_path))
+        recent_dir = tmp_path / "task_recent"
+        recent_dir.mkdir()
+        os.utime(recent_dir, (time.time() - 3600, time.time() - 3600))
+        assert run_stale_dir_sweep(max_age_hours=24) == 0
+        assert recent_dir.exists()

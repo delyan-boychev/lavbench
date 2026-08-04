@@ -15,7 +15,7 @@ ifeq (, $(shell which micromamba 2>/dev/null))
   PYCMD = python3
 endif
 
-.PHONY: help clean html livehtml fetch-spec
+.PHONY: help clean html html-bg livehtml fetch-spec
 
 help:
 	@$(LBCMD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
@@ -28,6 +28,11 @@ fetch-spec:
 
 html: fetch-spec
 	@$(LBCMD) -b html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+
+# Bulgarian docs build — sources live in source/bg (guides symlinked from
+# guides/bg, architecture.md translated by scripts/translate_gemini.py).
+html-bg:
+	@$(LBCMD) -b html -c "$(SOURCEDIR)" "$(SOURCEDIR)/bg" "$(BUILDDIR)/html-bg" $(SPHINXOPTS) -D language=bg
 
 livehtml: fetch-spec
 	@$(LBCMD) -b html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) -a -E --watch "$(SOURCEDIR)"

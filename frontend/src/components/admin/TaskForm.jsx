@@ -990,17 +990,22 @@ export default function TaskForm({
         {/* TAB: ENVIRONMENT */}
         {activeTab === 'environment' && (
           <div className="animate-fadein flex flex-col gap-8">
-            {taskForm.build_error && (
-              <div className="bg-red-900/30 border border-red-500/40 rounded-lg p-3">
+            {Array.isArray(taskForm.problem_codes) && taskForm.problem_codes.length > 0 && (
+              <div className="bg-amber-900/30 border border-amber-500/40 rounded-lg p-3">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-xs font-semibold text-red-300 uppercase tracking-wider">
-                      {t('admin.build_error_title')}
+                    <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                      {t('admin.task_problems_title')}
                     </p>
-                    <p className="text-sm text-red-200 mt-1 whitespace-pre-wrap">
-                      {taskForm.build_error}
-                    </p>
+                    <ul className="text-sm text-amber-200 mt-1 space-y-1">
+                      {taskForm.problem_codes.map((code) => (
+                        <li key={code} className="flex items-start gap-2">
+                          <span className="text-amber-400 mt-0.5">•</span>
+                          <span>{t(`api.${code}`, { defaultValue: code })}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               </div>

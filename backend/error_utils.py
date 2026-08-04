@@ -173,7 +173,13 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_NOT_AVAILABLE": "Access denied or task not available yet.",
     "ERR_FORBIDDEN": "Only administrators are allowed to configure custom environments.",
     "ERR_TASK_NOT_FOUND": "Task not found.",
-    "ERR_TASK_BUILD_ERROR": "This task is temporarily unavailable due to an environment configuration issue.",
+    # tasks.py — problem registry (strict evaluation-readiness blocking)
+    "ERR_TASK_FILE_SYNC_FAILED": "Task resource files could not be synchronized to the evaluation worker.",
+    "ERR_TASK_LABELS_SYNC_FAILED": "Task ground-truth labels could not be synchronized to the evaluation worker.",
+    "ERR_HF_DOWNLOAD_FAILED": "Hugging Face dataset or model download failed.",
+    "ERR_TASK_BUILD_FAILED": "The task execution environment could not be built.",
+    "ERR_BASELINE_FAILED": "The baseline evaluation failed. The task is not ready.",
+    "ERR_TASK_NOT_READY": "This task is not ready for submissions yet.",
     # TODO: planned feature — not yet wired
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",
     # app.py

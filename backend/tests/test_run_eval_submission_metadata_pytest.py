@@ -57,8 +57,8 @@ class TestRunEvalSubmissionMetadataMode:
         mocker.patch.object(sr, "_get_client", return_value=MagicMock())
         mocker.patch.object(sr, "_image_exists_docker", return_value=True)
         mocker.patch.object(sr, "run_command_streaming", return_value=(0, "", "", False))
-        mocker.patch.object(sr, "download_task_files_to_dir", return_value=None)
-        mocker.patch.object(sr, "download_labels_parquet_to_dir", return_value=labels_path)
+        mocker.patch.object(sr, "sync_task_files_to_assets_cache", return_value=True)
+        mocker.patch.object(sr, "sync_labels_parquet_to_cache", return_value=labels_path)
         mocker.patch.object(sr, "_fetch_hf_key_from_server", return_value="hf_key_test")
         mock_report = mocker.patch.object(sr, "report_status_to_server", return_value=True)
         return mock_report

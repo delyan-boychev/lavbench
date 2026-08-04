@@ -166,6 +166,7 @@ class Config:
         "yes",
     )
     WORKER_GPU_ID = os.environ.get("WORKER_GPU_ID", "")
+    GPU_ACQUISITION_TIMEOUT = int(os.environ.get("GPU_ACQUISITION_TIMEOUT", 600))
     WORKER_PUBLIC_KEY = os.environ.get("WORKER_PUBLIC_KEY", "")
     WORKER_PRIVATE_KEY = os.environ.get("WORKER_PRIVATE_KEY", "")
 

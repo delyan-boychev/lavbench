@@ -1,8 +1,24 @@
 {% extends "!layout.html" %}
 
+{% macro lang_switch_link() %}
+  {% if language == "bg" %}
+    <a class="wy-lang-btn" href="../{{ pathto(pagename, 1) }}"
+       title="Switch to English" aria-label="Switch to English">EN</a>
+  {% else %}
+    <a class="wy-lang-btn" href="bg/{{ pathto(pagename, 1) }}"
+       title="Преминете към български" aria-label="Преминете към български">BG</a>
+  {% endif %}
+{% endmacro %}
+
 {% block mobile_nav %}
   <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
   <a href="{{ pathto(master_doc) }}">
     <img src="{{ pathto('_static/brand_logo_dark.svg', 1) }}" class="logo" alt="{{ _('LavBench') }}"/>
   </a>
+  {{ lang_switch_link() }}
+{% endblock %}
+
+{% block sidebartitle %}
+  {{ super() }}
+  {{ lang_switch_link() }}
 {% endblock %}

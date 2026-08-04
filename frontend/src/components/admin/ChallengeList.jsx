@@ -832,7 +832,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                             <div className="flex justify-between items-center gap-4">
                               <div className="min-w-0 flex-1">
                                 <span className="font-bold text-slate-200">
-                                  {task.build_error && (
+                                  {task.problem_codes?.length > 0 && (
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -852,11 +852,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                     percentage: task.public_eval_percentage || 30,
                                   })}
                                 </span>
-                                {expandedErrorTask === task.id && task.build_error && (
-                                  <div className="mt-2 p-2 bg-red-900/20 border border-red-500/30 rounded text-[11px] text-red-300 whitespace-pre-wrap break-words">
-                                    {task.build_error}
-                                  </div>
-                                )}
+                                {expandedErrorTask === task.id &&
+                                  task.problem_codes?.length > 0 && (
+                                    <div className="mt-2 p-2 bg-amber-900/20 border border-amber-500/30 rounded text-[11px] text-amber-300 whitespace-pre-wrap break-words">
+                                      {task.problem_codes.map((code) => (
+                                        <div key={code}>
+                                          {t(`api.${code}`, { defaultValue: code })}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                               </div>
                               <div className="flex gap-2">
                                 <Button

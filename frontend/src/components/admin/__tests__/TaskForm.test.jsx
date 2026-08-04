@@ -381,14 +381,16 @@ describe('TaskForm', () => {
       expect(screen.getByText('HF API Key Token (Securely Encrypted)')).toBeInTheDocument();
     });
 
-    it('shows build error banner when build_error is set', () => {
-      const propsWithError = {
-        taskForm: { ...defaultTaskForm, build_error: 'Docker pull failed: 404' },
+    it('shows problem codes banner when problem_codes is set', () => {
+      const propsWithProblems = {
+        taskForm: { ...defaultTaskForm, problem_codes: ['ERR_HF_DOWNLOAD_FAILED'] },
       };
-      renderTaskForm(propsWithError);
+      renderTaskForm(propsWithProblems);
       fireEvent.click(screen.getByText('Environment'));
-      expect(screen.getByText('Build Error')).toBeInTheDocument();
-      expect(screen.getByText('Docker pull failed: 404')).toBeInTheDocument();
+      expect(screen.getByText('Task Problems')).toBeInTheDocument();
+      expect(
+        screen.getByText('Hugging Face dataset or model download failed.'),
+      ).toBeInTheDocument();
     });
   });
 

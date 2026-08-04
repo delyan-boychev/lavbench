@@ -8523,18 +8523,6 @@
             "default": null,
             "title": "Baseline Notebook Path"
           },
-          "build_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Build Error"
-          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -8665,6 +8653,21 @@
             ],
             "default": null,
             "title": "Pip Requirements"
+          },
+          "problem_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Problem Codes"
           },
           "public_eval_percentage": {
             "anyOf": [

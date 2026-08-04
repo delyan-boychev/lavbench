@@ -37,27 +37,33 @@ def _metadata(**overrides):
 
 class TestHashes:
     def test_config_hash_deterministic(self):
-        h1 = _config_hash("img", "pip", ["ds"], ["m"], "tfh", "ech")
-        h2 = _config_hash("img", "pip", ["ds"], ["m"], "tfh", "ech")
+        h1 = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
+        h2 = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
         assert h1 == h2
 
     def test_config_hash_sensitive_to_each_input(self):
-        base = ("img", "pip", ["ds"], ["m"], "tfh", "ech")
+        base = ("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
         base_hash = _config_hash(*base)
         variations = (
-            ("img2", "pip", ["ds"], ["m"], "tfh", "ech"),
-            ("img", "pip2", ["ds"], ["m"], "tfh", "ech"),
-            ("img", "pip", ["ds2"], ["m"], "tfh", "ech"),
-            ("img", "pip", ["ds"], ["m2"], "tfh", "ech"),
-            ("img", "pip", ["ds"], ["m"], "tfh2", "ech"),
-            ("img", "pip", ["ds"], ["m"], "tfh", "ech2"),
+            ("img2", "pip", "apt", ["ds"], ["m"], "tfh", "ech"),
+            ("img", "pip2", "apt", ["ds"], ["m"], "tfh", "ech"),
+            ("img", "pip", "apt2", ["ds"], ["m"], "tfh", "ech"),
+            ("img", "pip", "apt", ["ds2"], ["m"], "tfh", "ech"),
+            ("img", "pip", "apt", ["ds"], ["m2"], "tfh", "ech"),
+            ("img", "pip", "apt", ["ds"], ["m"], "tfh2", "ech"),
+            ("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech2"),
         )
         for variation in variations:
             assert _config_hash(*variation) != base_hash
 
+    def test_config_hash_sensitive_to_hf_key_presence(self):
+        base_hash = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
+        keyed = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech", hf_key_present=True)
+        assert keyed != base_hash
+
     def test_config_hash_ignores_dataset_order(self):
-        h1 = _config_hash("img", "pip", ["a", "b"], [], "", "")
-        h2 = _config_hash("img", "pip", ["b", "a"], [], "", "")
+        h1 = _config_hash("img", "pip", "apt", ["a", "b"], [], "", "")
+        h2 = _config_hash("img", "pip", "apt", ["b", "a"], [], "", "")
         assert h1 == h2
 
     def test_task_files_hash_empty(self):
@@ -165,7 +171,7 @@ class TestBuildTaskImage:
     def test_cache_hit_skips_build(self, mocker, _tmp_images_dir):
         metadata = _metadata()
         expected = _config_hash(
-            "python:3.10-slim", "", [], [], _task_files_hash([]), _eval_code_hash("")
+            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
         )
         task_dir = _tmp_images_dir / "task_42"
         task_dir.mkdir()
@@ -187,7 +193,38 @@ class TestBuildTaskImage:
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
         assert build_task_image(metadata) is True
         mock_acquire.assert_called_once_with(42, timeout=ib.BUILD_LOCK_MAX_WAIT)
-        mock_do_build.assert_called_once_with(metadata, log_callback=None)
+        mock_do_build.assert_called_once_with(metadata, log_callback=None, force_rebuild=False)
+
+    def test_force_rebuild_bypasses_fast_path(self, mocker, _tmp_images_dir):
+        metadata = _metadata()
+        expected = _config_hash(
+            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
+        )
+        task_dir = _tmp_images_dir / "task_42"
+        task_dir.mkdir()
+        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": expected}))
+        mocker.patch.object(ib, "_image_exists", return_value=True)
+        mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
+        mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
+        assert build_task_image(metadata, force_rebuild=True) is True
+        mock_acquire.assert_called_once_with(42, timeout=ib.BUILD_LOCK_MAX_WAIT)
+        mock_do_build.assert_called_once_with(metadata, log_callback=None, force_rebuild=True)
+
+    def test_do_build_force_rebuild_skips_hash_short_circuit(self, mocker, _tmp_images_dir):
+        metadata = _metadata()
+        expected = _config_hash(
+            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
+        )
+        task_dir = _tmp_images_dir / "task_42"
+        task_dir.mkdir()
+        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": expected}))
+        mocker.patch.object(ib, "_image_exists", return_value=True)
+        mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
+        mock_build = mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
+        mock_report = mocker.patch.object(ib, "_report_build_error")
+        assert ib._do_build(metadata, force_rebuild=True) is True
+        mock_build.assert_called_once()
+        mock_report.assert_any_call(42, "", "", "")
 
     def test_image_missing_triggers_build(self, mocker, _tmp_images_dir):
         metadata = _metadata()

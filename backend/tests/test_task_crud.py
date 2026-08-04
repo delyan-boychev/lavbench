@@ -577,6 +577,49 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
+    def test_update_env_change_keeps_problem_codes(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        # The build gate must stay closed until the worker reports a successful
+        # rebuild — a PUT alone must never clear build-family problem codes.
+        from models import Task
+
+        task = Task(
+            title="Gate Task",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+            problem_codes=["ERR_HF_DOWNLOAD_FAILED"],
+        )
+        db_session.add(task)
+        db_session.commit()
+        task_id = task.id
+
+        url = f"/api/tasks/{task_id}"
+        headers = auth_headers(tokens.admin)
+        resp = client.put(
+            url,
+            data={"title": "Gate Task", "pip_requirements": "pandas"},
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+        db_session.refresh(task)
+        assert task.problem_codes == ["ERR_HF_DOWNLOAD_FAILED"]
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
     def test_update_clear_limits(
         self,
         mock_log,
@@ -778,6 +821,120 @@ class TestUpdateTask:
         filenames = [f["filename"] for f in files]
         assert "old.csv" not in filenames
         assert "new.csv" in filenames
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_create_task_files_have_unique_saved_names(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        """Uploaded task files must be stored under unique saved names so the
+        worker asset cache can detect replacements by saved_name."""
+        url = f"/api/challenges/{sample_challenge.id}/tasks"
+        headers = auth_headers(tokens.admin)
+        nb = _make_notebook()
+        data = {
+            "title": "Unique Saved Names",
+            "baseline_notebook": (nb, "baseline.ipynb"),
+            "file0": (_make_csv(), "train.csv"),
+        }
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        assert resp.status_code == 201
+        files = resp.get_json()["files"]
+        entry = next(f for f in files if f["filename"] == "train.csv")
+        assert entry["saved_name"] != "train.csv"
+        assert entry["saved_name"].endswith("-train.csv")
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
+    def test_update_reupload_same_file_new_saved_name(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        """Re-uploading a file under the SAME public filename must yield a NEW
+        unique saved_name (the cache syncing uses it as the change marker),
+        keep exactly one manifest entry, reclaim the replaced on-disk file, and
+        serve the new content through the download route."""
+        import os
+        import tempfile
+
+        from models import Task
+
+        task = Task(
+            title="Same Filename Reupload",
+            challenge_id=sample_challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            max_submissions_per_period=10,
+            files=json.dumps(
+                [{"filename": "data.txt", "saved_name": "v0-data.txt", "size_bytes": 2}]
+            ),
+        )
+        db_session.add(task)
+        db_session.flush()
+
+        upload_dir = os.path.join(tempfile.gettempdir(), f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        v0_path = os.path.join(upload_dir, "v0-data.txt")
+        with open(v0_path, "w") as f:
+            f.write("v0")
+
+        url = f"/api/tasks/{task.id}"
+        headers = auth_headers(tokens.admin)
+        with patch.dict(
+            client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
+        ):
+            resp = client.put(
+                url,
+                data={
+                    "title": "Same Filename Reupload",
+                    "file0": (io.BytesIO(b"v1"), "data.txt"),
+                },
+                headers=headers,
+                content_type="multipart/form-data",
+            )
+            assert resp.status_code == 200
+            files = resp.get_json()["files"]
+            data_entries = [f for f in files if f["filename"] == "data.txt"]
+            assert len(data_entries) == 1, f"expected exactly one data.txt entry, got {files}"
+            new_saved = data_entries[0]["saved_name"]
+            assert new_saved != "v0-data.txt"
+            assert new_saved.endswith("data.txt")
+            assert not os.path.exists(v0_path), "replaced on-disk file should be reclaimed"
+            code = client.get(f"/api/tasks/{task.id}/download/data.txt", headers=headers)
+            assert code.status_code == 200
+            assert code.data == b"v1"
+
+            resp2 = client.put(
+                url,
+                data={
+                    "title": "Same Filename Reupload",
+                    "file0": (io.BytesIO(b"v2"), "data.txt"),
+                },
+                headers=headers,
+                content_type="multipart/form-data",
+            )
+        assert resp2.status_code == 200
+        data_entries2 = [f for f in resp2.get_json()["files"] if f["filename"] == "data.txt"]
+        assert len(data_entries2) == 1
+        assert data_entries2[0]["saved_name"] != new_saved, "each re-upload gets a new saved_name"
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("cache_utils.invalidate_challenge_cache")
@@ -1192,7 +1349,7 @@ class TestReportBuildError:
         )
         assert resp.status_code == 401
 
-        # Valid token → set build_error
+        # Valid token → set problem_codes
         with patch(
             "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
         ):
@@ -1203,9 +1360,9 @@ class TestReportBuildError:
             )
             assert resp.status_code == 200
             db_session.refresh(task)
-            assert task.build_error == "Docker pull failed: 404 Not Found"
+            assert task.problem_codes == ["ERR_TASK_BUILD_FAILED"]
 
-            # Clear error with empty string
+            # Clear problems with empty string
             resp = client.post(
                 f"/api/worker/tasks/{task_id}/report-build-error",
                 json={"error": ""},
@@ -1213,7 +1370,7 @@ class TestReportBuildError:
             )
             assert resp.status_code == 200
             db_session.refresh(task)
-            assert task.build_error is None
+            assert task.problem_codes is None
 
     def test_report_error_not_found(self, client, tokens):
         with patch(

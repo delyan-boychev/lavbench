@@ -97,7 +97,7 @@ def run_evaluation():
         # Load Hugging Face dataset
         public_pct = [[public_eval_percentage]]
 
-        dataset = load_dataset("default", split="[[hf_dataset_split]]")
+        dataset = load_dataset("default")
 
         total_len = len(dataset)
         if total_len == 0:

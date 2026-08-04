@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Ensure persistent storage dirs exist (named volumes are auto-created by
+# Docker, but keep this defensive for bind/local setups)
+mkdir -p /var/lib/lavbench/task_images /var/lib/lavbench/workspace /var/lib/lavbench/hf_cache
+
 GPU_WORKER_CONCURRENCY="${GPU_WORKER_CONCURRENCY:-0}"
 CPU_WORKER_CONCURRENCY="${CPU_WORKER_CONCURRENCY:-1}"
 HOST=$(hostname)
