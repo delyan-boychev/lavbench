@@ -1,11 +1,14 @@
 {% extends "!layout.html" %}
 
+{# The BG build publishes only the guide pages below (docs/source/bg/*);
+   api/genindex/search pages are EN-only, so those fall back to the BG index. #}
 {% macro lang_switch_link() %}
+  {% set bg_pages = ["index", "admin_guide", "architecture", "competitor_guide", "jury_guide"] %}
   {% if language == "bg" %}
-    <a class="wy-lang-btn" href="../{{ pathto(pagename, 1) }}"
+    <a class="wy-lang-btn" href="../{{ pagename }}.html"
        title="Switch to English" aria-label="Switch to English">EN</a>
   {% else %}
-    <a class="wy-lang-btn" href="bg/{{ pathto(pagename, 1) }}"
+    <a class="wy-lang-btn" href="{% if pagename in bg_pages %}bg/{{ pagename }}.html{% else %}bg/index.html{% endif %}"
        title="Преминете към български" aria-label="Преминете към български">BG</a>
   {% endif %}
 {% endmacro %}
