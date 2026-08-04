@@ -20,15 +20,7 @@ env:
 jobs:
   backend-tests:
     name: Backend tests + coverage
-    # Runner is configurable via the repo variable BACKEND_RUNNER (no workflow
-    # edit needed). Defaults to the standard 4-core runner; to use more cores:
-    #   1. Enable the larger runner in the web UI:
-    #      repo Settings → Actions → General → Larger runners → Ubuntu 24.04
-    #      (8 core), then expose label "ubuntu-24.04-8core" (free on public repos).
-    #   2. Set repo variable BACKEND_RUNNER = ubuntu-24.04-8core.
-    # pytest-xdist's `-n auto` scales workers to the runner's core count, so the
-    # 1280+ test suite runs ~2x faster on 8 cores.
-    runs-on: ${{ vars.BACKEND_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     services:
       redis:
         image: redis:7-alpine
