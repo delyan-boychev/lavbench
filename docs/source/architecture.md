@@ -49,10 +49,10 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/challenges/<id>/submit
 3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check) → rate limit check → creates Submission → dispatches Celery evaluation job
-4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → mounts submission.parquet & hidden labels.parquet
+4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
-6. Competitor Code: executes inside container → writes submission.parquet output
-7. Worker Evaluation Engine: evaluates submission.parquet against labels.parquet (or runs evaluator.py) → updates Submission status & scores → publishes SSE event → invalidates leaderboard cache
+6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)
+7. Worker Evaluation Engine: evaluates submission.parquet against labels.parquet server-side (or runs evaluator.py) → updates Submission status & scores → publishes SSE event → invalidates leaderboard cache
 ```
 
 ### Sandbox Container Isolation Parameters
@@ -71,10 +71,35 @@ Competitor code runs inside a zero-trust Docker container with strict Linux kern
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
 | `--cpus` | Restricts CPU core allocation per container (`CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`). |
 
-> **Known non-blocker:** the `/app` bind mount (rw) has **no disk quota** of its own — a
-> competitor can fill it until host disk pressure is hit. It is a deliberate trade-off accepted
-> because memory, CPU, pid count, and wall-clock time are all capped, and `TASK_IMAGES_DIR`
-> free-space (`MIN_BUILD_DISK_GB`) is monitored at build time.
+> **Known non-blocker:** the per-run anonymous volume mounted at `/app` (rw) has **no disk quota**
+> of its own — a competitor can fill it until host disk pressure is hit. It is a deliberate
+> trade-off accepted because memory, CPU, pid count, and wall-clock time are all capped, and
+> `TASK_IMAGES_DIR` free-space (`MIN_BUILD_DISK_GB`) is monitored at build time.
+
+### Persistent Storage Layout
+
+No host paths are bind-mounted into workers or sandboxes. Task images, the HF cache and the
+worker workspace live in Docker **named volumes**, mounted at fixed container paths
+(`/var/lib/lavbench/task_images`, `/var/lib/lavbench/hf_cache`, `/var/lib/lavbench/workspace`):
+
+- **Docker mode** (`scripts/deploy-worker.sh`): named volumes `lavbench_task_images`,
+  `lavbench_hf_cache`, `lavbench_workspace`, created automatically on deploy.
+- **Compose** (`docker-compose.yml`): `task_images_data`, `workspace_data` plus the shared
+  `hf_cache` volume, mounted at the same container paths.
+- **CI**: the eval worker uses job-local named volumes with the same layout.
+- **Local micromamba mode**: the worker runs as a host process and uses plain host directories
+  (`TASK_IMAGES_DIR`, `HF_CACHE_DIR`, `LAVBENCH_WORKSPACE_DIR`) — no Docker volumes involved.
+
+### Sandbox `/app`: per-run anonymous volume
+
+Each submission gets a disposable anonymous Docker volume mounted at `/app` (rw). The worker
+streams the run directory into it with `put_archive` before the container starts and pulls the
+output back with `get_archive` afterwards; the volume is removed together with the container.
+Tar metadata is normalized to the sandbox user (uid/gid 65534, dirs 0777, files 0644 + exec bits)
+so the non-root process can read and write `/app`. This removes the host-path bind-mount
+requirement entirely — the host daemon never needs to resolve a worker-side path, so the same
+runner code works in docker, compose, CI and micromamba setups. Labels (`labels.parquet`) are
+never written into the sandbox; they stay server-side.
 
 ### Stale-Dir Sweep
 Submission workspace dirs (`LAVBENCH_WORKSPACE_DIR`) are normally removed in a `finally` block,

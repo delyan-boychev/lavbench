@@ -13,6 +13,10 @@ The API key is read from the .gemini-api-key file in the repo root
 (the value after '=', e.g. `GEMINI-API-KEY=AQ...`), which is then
 exported as GEMINI_API_KEY for the API call.
 
+Only changed sources are translated: git compares the working-tree EN
+file against the EN version at the last commit that touched the BG
+output, so untouched files are skipped (no state file needed).
+
 Usage:
   python3 scripts/translate_gemini.py                # frontend + guides + docs README
   python3 scripts/translate_gemini.py --docs         # + docs/source
@@ -27,6 +31,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -35,6 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY_FILE = ROOT / ".gemini-api-key"
+STATE_FILE = ROOT / ".translation_state.json"
 LOCALES_EN = ROOT / "frontend/public/locales/en/translation.json"
 LOCALES_BG = ROOT / "frontend/public/locales/bg/translation.json"
 GUIDES_EN = ROOT / "guides/en"
@@ -47,6 +53,46 @@ README_BG = ROOT / "docs/README.bg.md"
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_BATCH_CHARS = 3000
 SLEEP_BETWEEN_CALLS = 0.5
+
+
+def _repo_path(path: Path) -> str:
+    """Repo-root-relative path with forward slashes (for git arguments)."""
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
+
+
+def source_changed_since_last_translation(src: Path, out: Path) -> bool:
+    """True when *src* differs from the EN version that produced *out*.
+
+    Git-based change detection: compares the working-tree *src* against the
+    version of *src* at the last commit that touched *out* (the commit where
+    the current translation was recorded). When *out* is missing or not yet
+    committed, or git is unavailable, the file is translated.
+    """
+    if not out.exists():
+        return True
+    try:
+        last = subprocess.run(
+            ["git", "rev-list", "-1", "HEAD", "--", _repo_path(out)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return True
+    if not last:
+        return True
+    try:
+        en_at_last = subprocess.run(
+            ["git", "show", f"{last}:{_repo_path(src)}"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, OSError):
+        return True
+    return en_at_last != src.read_text(encoding="utf-8")
 
 APP_CONTEXT = """
 CONTEXT — LavBench (ЛавБенч) is a machine-learning competition platform.
@@ -216,6 +262,9 @@ def translate_flat_batch(
 
 def translate_locales(model: str, dry_run: bool) -> None:
     print("== frontend/public/locales ==")
+    if not source_changed_since_last_translation(LOCALES_EN, LOCALES_BG):
+        print(f"  {LOCALES_EN.relative_to(ROOT)}: unchanged since last translation — skip")
+        return
     en = json.loads(LOCALES_EN.read_text(encoding="utf-8"))
     bg = json.loads(LOCALES_BG.read_text(encoding="utf-8"))
 
@@ -356,12 +405,22 @@ def translate_dir(
             if not bg_target.exists():
                 print(f"  !! {f.relative_to(ROOT)}: bg target missing: {bg_target}")
                 continue
+            if (
+                out.is_symlink()
+                and os.path.normpath(os.path.join(out.parent, os.readlink(out)))
+                == os.path.normpath(bg_target)
+            ):
+                print(f"  {f.name}: symlink ok (unchanged)")
+                continue
             if not dry_run:
                 out.parent.mkdir(parents=True, exist_ok=True)
                 if out.exists() or out.is_symlink():
                     out.unlink()
                 out.symlink_to(os.path.relpath(bg_target, out.parent))
             print(f"  {f.name}: symlinked -> {bg_target.relative_to(ROOT)}")
+            continue
+        if not source_changed_since_last_translation(f, out):
+            print(f"  {f.relative_to(ROOT)}: unchanged since last translation — skip")
             continue
         print(f"  {f.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
         content = f.read_text(encoding="utf-8")
@@ -395,11 +454,14 @@ def main() -> None:
         print("== docs/README ==")
         out = README_BG
         if README_EN.exists():
-            translated = translate_markdown(args.model, README_EN.read_text(encoding="utf-8"), args.dry_run, filename="README.md")
-            if not args.dry_run:
-                out.write_text(translated + "\n", encoding="utf-8")
-            print(f"  {README_EN.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
-        time.sleep(SLEEP_BETWEEN_CALLS)
+            if not source_changed_since_last_translation(README_EN, out):
+                print(f"  {README_EN.relative_to(ROOT)}: unchanged since last translation — skip")
+            else:
+                translated = translate_markdown(args.model, README_EN.read_text(encoding="utf-8"), args.dry_run, filename="README.md")
+                if not args.dry_run:
+                    out.write_text(translated + "\n", encoding="utf-8")
+                print(f"  {README_EN.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
+            time.sleep(SLEEP_BETWEEN_CALLS)
     if args.only == "docs" or (args.docs and not args.only):
         print("== docs ==")
         translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run)
