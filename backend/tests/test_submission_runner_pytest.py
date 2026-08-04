@@ -110,7 +110,7 @@ class TestSubmissionRunnerDocker:
             raise CommandInterruptedError("docker run")
 
         mocker.patch(
-            "task_modules.submission_runner.run_command_streaming",
+            "task_modules.submission_runner.run_sandbox",
             side_effect=mock_stream,
         )
 
@@ -149,17 +149,14 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
-        assert captured_run_kwargs.get("network_mode") == "none"
-        assert captured_run_kwargs.get("cap_drop") == ["ALL"]
-        assert captured_run_kwargs.get("security_opt") == ["no-new-privileges:true"]
-        assert captured_run_kwargs.get("pids_limit") == 64
+        # Hardened policy flags are applied inside run_sandbox (asserted in
+        # test_worker_utils_pytest.TestRunCommandStreaming); the runner only
+        # passes the per-submission contract
         assert captured_run_kwargs.get("mem_limit") == "4096m"
         assert captured_run_kwargs.get("working_dir") == "/app"
         assert captured_run_kwargs.get("gpu_required") is False
         assert captured_run_kwargs.get("gpu_id") is None
         assert captured_run_kwargs.get("command") == ["python", "-u", "submission_sub_123.py"]
-        assert captured_run_kwargs.get("read_only") is True
-        assert captured_run_kwargs.get("user") == "65534:65534"
         seed_dir = captured_run_kwargs.get("seed_dir")
         assert seed_dir and (
             os.path.basename(seed_dir).startswith("tmp") or os.path.isdir(seed_dir)

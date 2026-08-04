@@ -81,6 +81,7 @@ def run_command_streaming(
     image_tag: str,
     command: list[str],
     logs_list: list[str],
+    *,
     time_limit: int | None = None,
     mem_limit: str | None = None,
     cpu_count: int = 2,
@@ -89,25 +90,25 @@ def run_command_streaming(
     security_opt: list[str] | None = None,
     pids_limit: int = 64,
     tmpfs: dict[str, str] | None = None,
-    volumes: dict[str, dict[str, str]] | None = None,
     working_dir: str = "/app",
     environment: dict[str, str] | None = None,
     gpu_required: bool = False,
     gpu_id: str | None = None,
+    seed_dir: str,
     user: str | None = None,
     read_only: bool = False,
-    seed_dir: str | None = None,
     collect_files: list[tuple[str, str]] | None = None,
 ) -> tuple[int, str, str, bool]:
-    """Run a Docker container and stream its output to *logs_list* in real-time.
+    """Run a Docker container seeded from a host directory and stream its
+    output to *logs_list* in real-time.
 
-    When *seed_dir* is set, the container is created (not started) and the
-    directory contents are streamed into *working_dir* via ``put_archive``
-    before starting — no host-path bind mount is required, so the sandbox
-    works regardless of where the daemon runs. After the run, each
-    ``(container_path, host_path)`` pair in *collect_files* is pulled back
-    with ``get_archive`` and written to *host_path* (used to retrieve the
-    submission output from a tmpfs-backed /app).
+    The container is created (not started) and *seed_dir* is streamed into
+    *working_dir* via ``put_archive`` before starting — no host-path bind
+    mount is required, so the sandbox works regardless of where the daemon
+    runs. After the run, each ``(container_path, host_path)`` pair in
+    *collect_files* is pulled back with ``get_archive`` and written to
+    *host_path* (used to retrieve the submission output from a tmpfs-backed
+    /app). Use :func:`run_sandbox` for the hardened entry point.
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
@@ -145,37 +146,33 @@ def run_command_streaming(
     container: Any | None = None
     seed_volume: Any | None = None
     try:
-        if seed_dir:
-            # Seed the sandbox through a per-run anonymous volume: the daemon
-            # can't put_archive into a tmpfs on a not-yet-started container, so
-            # /app is a disposable volume that is removed after the run.
-            # Tar metadata is normalized to the sandbox user (65534) with
-            # world-accessible modes — the seed dir is host-owned (e.g. 0o700
-            # mkdtemp) and the container runs as non-root nobody.
-            seed_volume = docker_client.volumes.create()
-            run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
-            container = docker_client.containers.create(**run_kwargs)
-            with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
-                tar_path = os.path.join(td, "seed.tar")
-                with tarfile.open(tar_path, "w") as tar:
-                    # put_archive ignores metadata on the '.' root entry, so
-                    # /app would keep the daemon's root-owned 0o755 mount point
-                    # and the non-root sandbox user could not write outputs.
-                    # A leading '/' entry makes the daemon chown/chmod the
-                    # volume root (/app) itself before the seed contents.
-                    root_entry = tarfile.TarInfo("/")
-                    root_entry.type = tarfile.DIRTYPE
-                    root_entry.mode = 0o777
-                    root_entry.uid = SANDBOX_UID
-                    root_entry.gid = SANDBOX_GID
-                    tar.addfile(root_entry)
-                    tar.add(seed_dir, arcname=".", filter=_normalize_seed_tar_member)
-                with open(tar_path, "rb") as tf:
-                    container.put_archive(working_dir, tf)
-            container.start()
-        else:
-            run_kwargs["volumes"] = volumes
-            container = docker_client.containers.run(**run_kwargs)
+        # Seed the sandbox through a per-run anonymous volume: the daemon
+        # can't put_archive into a tmpfs on a not-yet-started container, so
+        # /app is a disposable volume that is removed after the run.
+        # Tar metadata is normalized to the sandbox user (65534) with
+        # world-accessible modes — the seed dir is host-owned (e.g. 0o700
+        # mkdtemp) and the container runs as non-root nobody.
+        seed_volume = docker_client.volumes.create()
+        run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
+        container = docker_client.containers.create(**run_kwargs)
+        with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
+            tar_path = os.path.join(td, "seed.tar")
+            with tarfile.open(tar_path, "w") as tar:
+                # put_archive ignores metadata on the '.' root entry, so
+                # /app would keep the daemon's root-owned 0o755 mount point
+                # and the non-root sandbox user could not write outputs.
+                # A leading '/' entry makes the daemon chown/chmod the
+                # volume root (/app) itself before the seed contents.
+                root_entry = tarfile.TarInfo("/")
+                root_entry.type = tarfile.DIRTYPE
+                root_entry.mode = 0o777
+                root_entry.uid = SANDBOX_UID
+                root_entry.gid = SANDBOX_GID
+                tar.addfile(root_entry)
+                tar.add(seed_dir, arcname=".", filter=_normalize_seed_tar_member)
+            with open(tar_path, "rb") as tf:
+                container.put_archive(working_dir, tf)
+        container.start()
     except Exception as exc:
         if container is not None:
             with contextlib.suppress(Exception):
@@ -261,6 +258,58 @@ def run_command_streaming(
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""
     return exit_code, stdout_str, stderr_str, process_timeout
+
+
+def run_sandbox(
+    docker_client: DockerClient,
+    image_tag: str,
+    command: list[str],
+    *,
+    seed_dir: str,
+    collect_files: list[tuple[str, str]],
+    logs_list: list[str],
+    time_limit: int | None = None,
+    mem_limit: str | None = None,
+    cpu_count: int = 2,
+    working_dir: str = "/app",
+    environment: dict[str, str] | None = None,
+    gpu_required: bool = False,
+    gpu_id: str | None = None,
+) -> tuple[int, str, str, bool]:
+    """Run a command in a hardened sandbox seeded from a host directory.
+
+    The single sanctioned entry point for sandboxed execution: applies the
+    full security policy (no network, all capabilities dropped,
+    no-new-privileges, pids limit, tmpfs-backed /tmp, non-root ``nobody``
+    user, read-only rootfs) on top of :func:`run_command_streaming`.
+    *seed_dir* is streamed into *working_dir* via ``put_archive`` and each
+    ``(container_path, host_path)`` pair in *collect_files* is pulled back
+    afterwards — no host-path bind mounts.
+
+    Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
+    """
+    return run_command_streaming(
+        docker_client,
+        image_tag,
+        command,
+        logs_list,
+        time_limit=time_limit,
+        mem_limit=mem_limit,
+        cpu_count=cpu_count,
+        network_mode="none",
+        cap_drop=["ALL"],
+        security_opt=["no-new-privileges:true"],
+        pids_limit=64,
+        tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+        working_dir=working_dir,
+        environment=environment,
+        gpu_required=gpu_required,
+        gpu_id=gpu_id,
+        user=f"{SANDBOX_UID}:{SANDBOX_GID}",
+        read_only=True,
+        seed_dir=seed_dir,
+        collect_files=collect_files,
+    )
 
 
 MAX_LOG_LINES = Config.WORKER_MAX_LOG_LINES
