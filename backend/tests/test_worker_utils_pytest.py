@@ -17,6 +17,7 @@ from worker_utils import (
     download_task_files_to_dir,
     report_status_to_server,
     run_command_streaming,
+    run_sandbox,
     run_stale_dir_sweep,
     sync_labels_parquet_to_cache,
     sync_task_files_to_assets_cache,
@@ -137,7 +138,7 @@ class TestAssetsCache:
 
 
 class TestRunCommandStreaming:
-    """Tests for docker-py-based run_command_streaming."""
+    """Tests for the hardened run_sandbox entry point."""
 
     def _make_mock_container(self, mocker, exit_code=0):
         mock_container = mocker.MagicMock()
@@ -146,92 +147,138 @@ class TestRunCommandStreaming:
         mock_container.logs.return_value = [b"line 1\n", b"line 2\n"]
         return mock_container
 
-    def test_successful_run(self, mocker):
+    def _make_mock_client(self, mocker, exit_code=0):
         mock_client = mocker.MagicMock()
-        mock_container = self._make_mock_container(mocker, exit_code=0)
-        mock_client.containers.run.return_value = mock_container
+        mock_container = self._make_mock_container(mocker, exit_code=exit_code)
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
+        return mock_client, mock_container
+
+    def test_successful_run_applies_hardened_policy(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        (seed / "script.py").write_text("print(1)\n")
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
         logs = []
-        retcode, stdout, _stderr, is_timeout = run_command_streaming(
+        retcode, stdout, _stderr, is_timeout = run_sandbox(
             mock_client,
             "test:latest",
             ["echo", "hello"],
-            logs,
+            seed_dir=str(seed),
+            collect_files=[("/app/submission.parquet", str(tmp_path / "out.parquet"))],
+            logs_list=logs,
         )
         assert retcode == 0
         assert is_timeout is False
         assert "line 1" in stdout
         assert "line 1" in logs
+        create_kwargs = mock_client.containers.create.call_args[1]
+        assert create_kwargs["network_mode"] == "none"
+        assert create_kwargs["cap_drop"] == ["ALL"]
+        assert create_kwargs["security_opt"] == ["no-new-privileges:true"]
+        assert create_kwargs["pids_limit"] == 64
+        assert create_kwargs["tmpfs"] == {"/tmp": "noexec,nosuid,size=128m"}
+        assert create_kwargs["user"] == "65534:65534"
+        assert create_kwargs["read_only"] is True
+        # Per-run anonymous volume, never a host-path bind
+        assert create_kwargs["volumes"] == {"lavbench_seed_vol": {"bind": "/app", "mode": "rw"}}
 
-    def test_failing_run(self, mocker):
-        mock_client = mocker.MagicMock()
-        mock_container = self._make_mock_container(mocker, exit_code=1)
-        mock_client.containers.run.return_value = mock_container
+    def test_failing_run(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=1)
         logs = []
-        retcode, _stdout, _stderr, is_timeout = run_command_streaming(
+        retcode, _stdout, _stderr, is_timeout = run_sandbox(
             mock_client,
             "test:latest",
             ["bash", "-c", "exit 1"],
-            logs,
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
         )
         assert retcode == 1
         assert is_timeout is False
 
-    def test_container_start_failure(self, mocker):
+    def test_container_start_failure(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
         mock_client = mocker.MagicMock()
-        mock_client.containers.run.side_effect = Exception("failed to create container")
+        mock_client.containers.create.side_effect = Exception("failed to create container")
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
         logs = []
-        retcode, _stdout, stderr, _is_timeout = run_command_streaming(
+        retcode, _stdout, stderr, _is_timeout = run_sandbox(
             mock_client,
             "bad:latest",
             ["cmd"],
-            logs,
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
         )
         assert retcode == -1
         assert "failed to create container" in stderr
 
-    def test_timeout_exceeded(self, mocker):
+    def test_timeout_exceeded(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
         mock_client = mocker.MagicMock()
         mock_container = mocker.MagicMock()
         # Simulate the container still running until we kill it
         mock_container.status = "running"
         mock_container.wait.return_value = {"StatusCode": -1}
         mock_container.logs.return_value = []
-        mock_client.containers.run.return_value = mock_container
+        mock_client.containers.create.return_value = mock_container
+        mock_volume = mocker.MagicMock()
+        mock_volume.name = "lavbench_seed_vol"
+        mock_client.volumes.create.return_value = mock_volume
         logs = []
-        _retcode, _stdout, _stderr, is_timeout = run_command_streaming(
+        _retcode, _stdout, _stderr, is_timeout = run_sandbox(
             mock_client,
             "test:latest",
             ["sleep", "10"],
-            logs,
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
             time_limit=0.01,
         )
         assert is_timeout
         assert mock_container.kill.call_count >= 1
 
-    def test_logs_populated(self, mocker):
-        mock_client = mocker.MagicMock()
-        mock_container = self._make_mock_container(mocker, exit_code=0)
-        mock_client.containers.run.return_value = mock_container
+    def test_logs_populated(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
         logs = []
-        run_command_streaming(mock_client, "test:latest", ["echo", "hi"], logs)
+        run_sandbox(
+            mock_client,
+            "test:latest",
+            ["echo", "hi"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
+        )
         assert any("line 1" in log for log in logs)
         assert any("line 2" in log for log in logs)
 
-    def test_gpu_device_request(self, mocker):
-
-        mock_client = mocker.MagicMock()
-        mock_container = self._make_mock_container(mocker, exit_code=0)
-        mock_client.containers.run.return_value = mock_container
+    def test_gpu_device_request(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
         logs = []
-        run_command_streaming(
+        run_sandbox(
             mock_client,
             "test:latest",
             ["cmd"],
-            logs,
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
             gpu_required=True,
             gpu_id="1",
         )
-        call_kwargs = mock_client.containers.run.call_args[1]
+        call_kwargs = mock_client.containers.create.call_args[1]
         assert call_kwargs["device_requests"] is not None
         dr = call_kwargs["device_requests"][0]
         assert dr.device_ids == ["1"]

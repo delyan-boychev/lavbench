@@ -683,7 +683,8 @@ def _run_custom_evaluator_sandbox(
     import shutil
     import tempfile
 
-    from worker_utils import run_command_streaming
+    from task_modules.docker_utils import _get_client, image_exists
+    from worker_utils import run_sandbox
 
     workdir = tempfile.mkdtemp(prefix="custom_eval_")
     try:
@@ -703,17 +704,13 @@ def _run_custom_evaluator_sandbox(
         with open(harness_path, "w", encoding="utf-8") as f:
             f.write(_CUSTOM_EVAL_HARNESS)
 
-        from docker import DockerClient
-
-        docker_client = DockerClient.from_env()
-        try:
-            docker_client.images.get(image_tag)
-        except Exception:
+        if not image_exists(image_tag):
             logger.warning("Custom evaluator image %s not present — skipping sandbox", image_tag)
             return None
+        docker_client = _get_client()
 
         logs: list[str] = []
-        retcode, _stdout, stderr, is_timeout = run_command_streaming(
+        retcode, _stdout, stderr, is_timeout = run_sandbox(
             docker_client,
             image_tag,
             [
@@ -725,22 +722,13 @@ def _run_custom_evaluator_sandbox(
                 "/work/options.json",
                 "/work/result.json",
             ],
-            logs,
+            seed_dir=workdir,
+            collect_files=[("/work/result.json", result_path)],
+            logs_list=logs,
             time_limit=300,
             mem_limit="1g",
             cpu_count=1,
-            network_mode="none",
-            cap_drop=["ALL"],
-            security_opt=["no-new-privileges:true"],
-            pids_limit=64,
-            tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
             working_dir="/work",
-            user="65534:65534",
-            read_only=True,
-            # Seed /work via put_archive and collect result.json back — no
-            # host-path bind mounts, works in docker/local/micromamba modes
-            seed_dir=workdir,
-            collect_files=[("/work/result.json", result_path)],
         )
         if is_timeout:
             logger.warning("Custom evaluator timed out in sandbox (300s cap)")

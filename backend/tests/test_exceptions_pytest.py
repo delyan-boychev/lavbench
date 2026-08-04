@@ -377,7 +377,7 @@ class TestBackendExceptionAndErrorCases:
     @patch("time.sleep")
     @patch("requests.post")
     @patch("worker_utils.download_task_files_to_dir")
-    @patch("task_modules.submission_runner.run_command_streaming")
+    @patch("task_modules.submission_runner.run_sandbox")
     @patch("task_modules.submission_runner._get_client")
     @patch("task_modules.submission_runner.check_docker_available")
     @patch("task_modules.submission_runner._image_exists_docker")

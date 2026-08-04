@@ -56,7 +56,7 @@ class TestRunEvalSubmissionMetadataMode:
         mocker.patch.object(sr, "check_docker_available", return_value=True)
         mocker.patch.object(sr, "_get_client", return_value=MagicMock())
         mocker.patch.object(sr, "_image_exists_docker", return_value=True)
-        mocker.patch.object(sr, "run_command_streaming", return_value=(0, "", "", False))
+        mocker.patch.object(sr, "run_sandbox", return_value=(0, "", "", False))
         mocker.patch.object(sr, "sync_task_files_to_assets_cache", return_value=True)
         mocker.patch.object(sr, "sync_labels_parquet_to_cache", return_value=labels_path)
         mocker.patch.object(sr, "_fetch_hf_key_from_server", return_value="hf_key_test")
@@ -110,9 +110,7 @@ class TestRunEvalSubmissionMetadataMode:
 
     def test_container_run_exception_reraises_and_reports_failed(self, mocker, tmp_path):
         mock_report = self._setup_happy(mocker, tmp_path)
-        mocker.patch.object(
-            sr, "run_command_streaming", side_effect=Exception("docker daemon unreachable")
-        )
+        mocker.patch.object(sr, "run_sandbox", side_effect=Exception("docker daemon unreachable"))
         with pytest.raises(Exception, match="docker daemon unreachable"):
             self._run(_base_metadata())
         failed = self._reports_with_status(mock_report, "failed")
@@ -120,7 +118,7 @@ class TestRunEvalSubmissionMetadataMode:
 
     def test_time_limit_exceeded_marks_failed(self, mocker, tmp_path):
         mock_report = self._setup_happy(mocker, tmp_path)
-        mocker.patch.object(sr, "run_command_streaming", return_value=(0, "", "", True))
+        mocker.patch.object(sr, "run_sandbox", return_value=(0, "", "", True))
         result = self._run(_base_metadata())
         assert "evaluated with status failed" in result
         failed = self._reports_with_status(mock_report, "failed")

@@ -30,7 +30,7 @@ from worker_utils import (
     StreamingLogList,
     _sign_worker_token,
     report_status_to_server,
-    run_command_streaming,
+    run_sandbox,
     sync_labels_parquet_to_cache,
     sync_task_files_to_assets_cache,
 )
@@ -897,31 +897,20 @@ def run_eval_submission(
             except OSError:
                 logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 
-        retcode, stdout, stderr, process_timeout = run_command_streaming(
+        retcode, stdout, stderr, process_timeout = run_sandbox(
             docker_client,
             image_tag,
             command=["python", "-u", exec_file],
+            seed_dir=temp_dir,
+            collect_files=[("/app/submission.parquet", sub_parquet_path)],
             logs_list=logs,
             time_limit=time_limit,
             mem_limit=f"{ram_limit}m",
             cpu_count=cpu_limit,
-            network_mode="none",
-            cap_drop=["ALL"],
-            security_opt=["no-new-privileges:true"],
-            pids_limit=64,
-            tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
             working_dir="/app",
             environment=environment,
             gpu_required=gpu_required,
             gpu_id=gpu_id,
-            # Defense-in-depth: non-root + read-only rootfs (writes go to the
-            # per-run seed volume mounted at /app and /tmp tmpfs)
-            user="65534:65534",
-            read_only=True,
-            # Seed the sandbox from the run dir and collect the output back —
-            # no host-path bind mounts, works with named volumes everywhere
-            seed_dir=temp_dir,
-            collect_files=[("/app/submission.parquet", sub_parquet_path)],
         )
 
         end_wall_time = time.time()

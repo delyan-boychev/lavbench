@@ -146,7 +146,7 @@ class TestUnifiedParquetEvaluation:
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner.run_command_streaming",
+                "task_modules.submission_runner.run_sandbox",
                 return_value=(0, "", "", False),
             ),
             patch("tasks.app", self.app),
@@ -190,7 +190,7 @@ class TestUnifiedParquetEvaluation:
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner.run_command_streaming",
+                "task_modules.submission_runner.run_sandbox",
                 return_value=(0, "", "", False),
             ),
             patch("tasks.app", self.app),
@@ -1125,9 +1125,10 @@ class TestCustomEvaluatorSandbox:
 
     EVAL_SCRIPT = "def evaluate(df_sub, df_labels, options=None):\n    return {'custom_f1': 1.0}\n"
 
-    @patch("docker.DockerClient")
+    @patch("task_modules.docker_utils.image_exists", return_value=True)
+    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
-    def test_sandbox_success(self, mock_run, mock_docker_cls):
+    def test_sandbox_success(self, mock_run, _mock_get_client, _mock_image_exists):
         def _fake_run(*args, **kwargs):
             # Emulate the harness: write result.json into the seed dir (the
             # collect_files extraction target on the worker side)
@@ -1147,21 +1148,21 @@ class TestCustomEvaluatorSandbox:
             sandbox_image="lavbench_task_test",
         )
         assert res["custom_f1"] == pytest.approx(0.85)
-        # run_command_streaming must be invoked with hardened flags
+        # run_sandbox must apply the hardened flags on the inner primitive
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["network_mode"] == "none"
         assert call_kwargs["cap_drop"] == ["ALL"]
+        assert call_kwargs["security_opt"] == ["no-new-privileges:true"]
         assert call_kwargs["user"] == "65534:65534"
         assert call_kwargs["read_only"] is True
         assert call_kwargs["pids_limit"] == 64
         # No host-path bind mounts — seed/collect instead
-        assert "volumes" not in call_kwargs or call_kwargs["volumes"] is None
+        assert "volumes" not in call_kwargs
         assert call_kwargs["seed_dir"] == os.path.dirname(call_kwargs["collect_files"][0][1])
 
-    @patch("docker.DockerClient")
+    @patch("task_modules.docker_utils.image_exists", return_value=False)
     @patch("worker_utils.run_command_streaming")
-    def test_sandbox_image_missing_fails_closed(self, mock_run, mock_docker_cls):
-        mock_docker_cls.from_env.return_value.images.get.side_effect = Exception("not found")
+    def test_sandbox_image_missing_fails_closed(self, mock_run, _mock_image_exists):
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
         res = evaluate_predictions(
@@ -1175,9 +1176,10 @@ class TestCustomEvaluatorSandbox:
         assert res == {"custom_f1": 0.0}
         mock_run.assert_not_called()
 
-    @patch("docker.DockerClient")
+    @patch("task_modules.docker_utils.image_exists", return_value=True)
+    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
-    def test_sandbox_timeout_fails_closed(self, mock_run, mock_docker_cls):
+    def test_sandbox_timeout_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (1, "", "killed", True)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
@@ -1191,9 +1193,10 @@ class TestCustomEvaluatorSandbox:
         # Evaluator must NOT have run on the host (in-process exec) — 0.0
         assert res == {"custom_f1": 0.0}
 
-    @patch("docker.DockerClient")
+    @patch("task_modules.docker_utils.image_exists", return_value=True)
+    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
-    def test_sandbox_crash_fails_closed(self, mock_run, mock_docker_cls):
+    def test_sandbox_crash_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (2, "", "boom", False)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
