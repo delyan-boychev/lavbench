@@ -1129,9 +1129,10 @@ class TestCustomEvaluatorSandbox:
     @patch("worker_utils.run_command_streaming")
     def test_sandbox_success(self, mock_run, mock_docker_cls):
         def _fake_run(*args, **kwargs):
-            # Emulate the harness: write result.json into the mounted workdir
-            workdir = next(iter(kwargs["volumes"]))
-            with open(os.path.join(workdir, "result.json"), "w") as f:
+            # Emulate the harness: write result.json into the seed dir (the
+            # collect_files extraction target on the worker side)
+            seed_dir = kwargs["seed_dir"]
+            with open(os.path.join(seed_dir, "result.json"), "w") as f:
                 json.dump({"custom_f1": 0.85}, f)
             return (0, "", "", False)
 
@@ -1153,6 +1154,9 @@ class TestCustomEvaluatorSandbox:
         assert call_kwargs["user"] == "65534:65534"
         assert call_kwargs["read_only"] is True
         assert call_kwargs["pids_limit"] == 64
+        # No host-path bind mounts — seed/collect instead
+        assert "volumes" not in call_kwargs or call_kwargs["volumes"] is None
+        assert call_kwargs["seed_dir"] == os.path.dirname(call_kwargs["collect_files"][0][1])
 
     @patch("docker.DockerClient")
     @patch("worker_utils.run_command_streaming")

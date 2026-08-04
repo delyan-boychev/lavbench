@@ -597,7 +597,6 @@ def run_eval_submission(
         # Write user code to temporary file / directory
         workspace_root = Config.LAVBENCH_WORKSPACE_DIR
         temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
-        os.chmod(temp_dir, 0o777)  # noqa: S103 — temp dir for Docker mount, deleted after
         data_dir = os.path.join(temp_dir, "data")
         os.makedirs(data_dir, exist_ok=True)
 
@@ -880,7 +879,7 @@ def run_eval_submission(
             f"command=python -u {exec_file}, "
             f"ram={ram_limit}M, cpus={cpu_limit}"
         )
-        volumes: dict[str, dict[str, str]] = {temp_dir: {"bind": "/app", "mode": "rw"}}
+        sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
         task_id = metadata.get("task_id") if metadata else None
         if task_id:
             # Snapshot the asset cache into the per-run sandbox dir instead of
@@ -911,15 +910,18 @@ def run_eval_submission(
             security_opt=["no-new-privileges:true"],
             pids_limit=64,
             tmpfs={"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
-            volumes=volumes,
             working_dir="/app",
             environment=environment,
             gpu_required=gpu_required,
             gpu_id=gpu_id,
-            # Defense-in-depth: non-root + read-only rootfs (writes go to
-            # the /app mount and /tmp tmpfs)
+            # Defense-in-depth: non-root + read-only rootfs (writes go to the
+            # per-run seed volume mounted at /app and /tmp tmpfs)
             user="65534:65534",
             read_only=True,
+            # Seed the sandbox from the run dir and collect the output back —
+            # no host-path bind mounts, works with named volumes everywhere
+            seed_dir=temp_dir,
+            collect_files=[("/app/submission.parquet", sub_parquet_path)],
         )
 
         end_wall_time = time.time()
@@ -939,7 +941,6 @@ def run_eval_submission(
             logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
         elif is_unified_parquet:
             # Secure scoring for unified parquet
-            sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
             if not os.path.exists(sub_parquet_path):
                 status = "failed"
                 logs.append(

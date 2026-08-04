@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import tarfile
 import tempfile
 import threading
 import time
@@ -51,6 +52,29 @@ def _sign_worker_token(submission_id: str) -> str:
         return ""
 
 
+SANDBOX_UID = 65534
+SANDBOX_GID = 65534
+
+
+def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Normalize seed tar metadata for a non-root sandbox user.
+
+    The seed dir lives on the host (e.g. a 0o700 mkdtemp owned by the worker
+    user). When extracted via put_archive by the root daemon, host ownership
+    and modes would make /app unreadable/unwritable by the container's
+    ``nobody`` (65534) user, so rewrite uid/gid and expose world access.
+    """
+    member.uid = SANDBOX_UID
+    member.gid = SANDBOX_GID
+    if member.isdir():
+        member.mode = 0o777
+    elif member.isfile():
+        # Preserve exec bits (submission scripts are run directly) but ensure
+        # read access for the sandbox user regardless of host file modes.
+        member.mode = 0o644 | (member.mode & 0o111)
+    return member
+
+
 def run_command_streaming(
     docker_client: DockerClient,
     image_tag: str,
@@ -71,8 +95,18 @@ def run_command_streaming(
     gpu_id: str | None = None,
     user: str | None = None,
     read_only: bool = False,
+    seed_dir: str | None = None,
+    collect_files: list[tuple[str, str]] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container and stream its output to *logs_list* in real-time.
+
+    When *seed_dir* is set, the container is created (not started) and the
+    directory contents are streamed into *working_dir* via ``put_archive``
+    before starting — no host-path bind mount is required, so the sandbox
+    works regardless of where the daemon runs. After the run, each
+    ``(container_path, host_path)`` pair in *collect_files* is pulled back
+    with ``get_archive`` and written to *host_path* (used to retrieve the
+    submission output from a tmpfs-backed /app).
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
@@ -87,28 +121,56 @@ def run_command_streaming(
         else:
             device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]
 
+    run_kwargs = {
+        "image": image_tag,
+        "command": command,
+        "detach": True,
+        "network_mode": network_mode,
+        "cap_drop": cap_drop or ["ALL"],
+        "security_opt": security_opt or ["no-new-privileges:true"],
+        "pids_limit": pids_limit,
+        "nano_cpus": int(cpu_count * 1e9),
+        "mem_limit": mem_limit,
+        "memswap_limit": mem_limit,
+        "tmpfs": tmpfs or {"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
+        "working_dir": working_dir,
+        "environment": environment,
+        "ulimits": ulimits,
+        "device_requests": device_requests,
+        "user": user,
+        "read_only": read_only,
+    }
+
+    container: Any | None = None
+    seed_volume: Any | None = None
     try:
-        container = docker_client.containers.run(
-            image_tag,
-            command,
-            detach=True,
-            network_mode=network_mode,
-            cap_drop=cap_drop or ["ALL"],
-            security_opt=security_opt or ["no-new-privileges:true"],
-            pids_limit=pids_limit,
-            nano_cpus=int(cpu_count * 1e9),
-            mem_limit=mem_limit,
-            memswap_limit=mem_limit,
-            tmpfs=tmpfs or {"/tmp": "noexec,nosuid,size=128m"},  # noqa: S108
-            volumes=volumes,
-            working_dir=working_dir,
-            environment=environment,
-            ulimits=ulimits,
-            device_requests=device_requests,
-            user=user,
-            read_only=read_only,
-        )
+        if seed_dir:
+            # Seed the sandbox through a per-run anonymous volume: the daemon
+            # can't put_archive into a tmpfs on a not-yet-started container, so
+            # /app is a disposable volume that is removed after the run.
+            # Tar metadata is normalized to the sandbox user (65534) with
+            # world-accessible modes — the seed dir is host-owned (e.g. 0o700
+            # mkdtemp) and the container runs as non-root nobody.
+            seed_volume = docker_client.volumes.create()
+            run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
+            container = docker_client.containers.create(**run_kwargs)
+            with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
+                tar_path = os.path.join(td, "seed.tar")
+                with tarfile.open(tar_path, "w") as tar:
+                    tar.add(seed_dir, arcname=".", filter=_normalize_seed_tar_member)
+                with open(tar_path, "rb") as tf:
+                    container.put_archive(working_dir, tf)
+            container.start()
+        else:
+            run_kwargs["volumes"] = volumes
+            container = docker_client.containers.run(**run_kwargs)
     except Exception as exc:
+        if container is not None:
+            with contextlib.suppress(Exception):
+                container.remove(force=True)
+        if seed_volume is not None:
+            with contextlib.suppress(Exception):
+                seed_volume.remove()
         logs_list.append(f"Failed to start container: {exc}")
         return -1, "", str(exc), False
 
@@ -156,6 +218,21 @@ def run_command_streaming(
             exit_code = result.get("StatusCode", -1)
         except Exception:
             exit_code = -1
+
+        if collect_files:
+            for container_path, host_path in collect_files:
+                try:
+                    stream, _stat = container.get_archive(container_path)
+                    with tarfile.open(fileobj=stream, mode="r|") as tar:
+                        for member in tar:
+                            if member.isfile():
+                                extracted = tar.extractfile(member)
+                                if extracted is not None:
+                                    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+                                    with open(host_path, "wb") as f:
+                                        shutil.copyfileobj(extracted, f)
+                except Exception as exc:
+                    logger.debug("Could not collect %s from container: %s", container_path, exc)
     finally:
         with contextlib.suppress(Exception):
             container.kill()
@@ -163,6 +240,9 @@ def run_command_streaming(
             container.remove(force=True)
         except Exception:
             logger.debug("Error removing container", exc_info=True)
+        if seed_volume is not None:
+            with contextlib.suppress(Exception):
+                seed_volume.remove()
 
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""

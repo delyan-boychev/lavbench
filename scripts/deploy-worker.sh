@@ -103,19 +103,17 @@ deploy_docker() {
     done
   fi
 
-  # ── Prepare volumes ────────────────────────────────────────────
-  mkdir -p "${HF_CACHE_DIR}"
-  LAVBENCH_WORKSPACE_DIR="$(pwd)/.lavbench_workspace"
-  mkdir -p "$LAVBENCH_WORKSPACE_DIR"
-  rm -rf "$LAVBENCH_WORKSPACE_DIR"/*
-  TASK_IMAGES_DIR="$(pwd)/task_images"
-  mkdir -p "$TASK_IMAGES_DIR"
-  rm -rf "$TASK_IMAGES_DIR"/*
-  # NOTE: LAVBENCH_WORKSPACE_DIR and TASK_IMAGES_DIR are mounted at the SAME
-  # host path inside the container. The worker launches sandboxes through the
-  # mounted Docker socket, so bind-mount sources are resolved by the HOST
-  # daemon — container-internal paths like /app/task_images would fail with
-  # "mounts denied".
+  # ── Prepare persistent volumes ────────────────────────────────
+  # Task images, HF cache and the workspace live in Docker named volumes
+  # (persistent, managed by Docker) instead of host-path binds. Sandboxes
+  # are seeded via put_archive/get_archive (see run_command_streaming), so
+  # no path needs to be visible to the host daemon.
+  docker volume create lavbench_task_images >/dev/null 2>&1 || true
+  docker volume create lavbench_hf_cache >/dev/null 2>&1 || true
+  docker volume create lavbench_workspace >/dev/null 2>&1 || true
+  TASK_IMAGES_DIR="/var/lib/lavbench/task_images"
+  LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace"
+  HF_CACHE_DIR="/var/lib/lavbench/hf_cache"
 
   # ── Run container ──────────────────────────────────────────────
   echo "  → Starting container..."
@@ -150,9 +148,9 @@ deploy_docker() {
     $( [ -n "${REDIS_SSL_CERT_REQS:-}" ] && echo "-e REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS}" || true ) \
     -e PYTHONPATH=/app \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "${HF_CACHE_DIR}:${HF_CACHE_DIR}" \
-    -v "${LAVBENCH_WORKSPACE_DIR}:${LAVBENCH_WORKSPACE_DIR}" \
-    -v "${TASK_IMAGES_DIR}:${TASK_IMAGES_DIR}" \
+    -v lavbench_task_images:/var/lib/lavbench/task_images \
+    -v lavbench_hf_cache:/var/lib/lavbench/hf_cache \
+    -v lavbench_workspace:/var/lib/lavbench/workspace \
     $( [ -n "${REDIS_SSL_CA_CERTS:-}" ] && echo "-v $(pwd)/certs:/etc/ssl/certs/redis:ro" || true ) \
     $( [ -n "$GPU_ID" ] && echo "--gpus all" || true ) \
     "$WORKER_IMAGE"

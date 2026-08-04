@@ -160,11 +160,14 @@ class TestSubmissionRunnerDocker:
         assert captured_run_kwargs.get("command") == ["python", "-u", "submission_sub_123.py"]
         assert captured_run_kwargs.get("read_only") is True
         assert captured_run_kwargs.get("user") == "65534:65534"
-        volumes = captured_run_kwargs.get("volumes", {})
-        assert len(volumes) == 1
-        temp_dir, mount = next(iter(volumes.items()))
-        assert mount == {"bind": "/app", "mode": "rw"}
-        assert os.path.basename(temp_dir).startswith("tmp") or os.path.isdir(temp_dir)
+        seed_dir = captured_run_kwargs.get("seed_dir")
+        assert seed_dir and (
+            os.path.basename(seed_dir).startswith("tmp") or os.path.isdir(seed_dir)
+        )
+        collect_files = captured_run_kwargs.get("collect_files") or []
+        assert ("/app/submission.parquet", os.path.join(seed_dir, "submission.parquet")) in (
+            collect_files
+        )
 
     def test_asset_cache_snapshotted_into_sandbox(self, mocker, tmp_path):
         from task_modules.submission_runner import run_eval_submission
@@ -209,17 +212,17 @@ class TestSubmissionRunnerDocker:
         # The asset cache must be snapshotted into the sandbox dir, not
         # bind-mounted: a rebuild re-sync can swap cache files mid-run and a
         # live mount would expose the new content to the in-flight container.
-        volumes = captured_run_kwargs.get("volumes", {})
-        assert len(volumes) == 1
-        sandbox_dir, mount = next(iter(volumes.items()))
-        assert mount == {"bind": "/app", "mode": "rw"}
+        seed_dir = captured_run_kwargs.get("seed_dir")
+        assert seed_dir and (
+            os.path.basename(seed_dir).startswith("tmp") or os.path.isdir(seed_dir)
+        )
         copy_calls = [c for c in copy2_mock.call_args_list if c.args or c.kwargs]
         assert copy_calls, "asset cache files were not snapshotted into the sandbox"
         for call in copy_calls:
             src = call.args[0] if call.args else call.kwargs["src"]
             dst = call.args[1] if len(call.args) > 1 else call.kwargs["dst"]
             assert src == str(data_dir / "features.csv")
-            assert dst.startswith(sandbox_dir)
+            assert dst.startswith(seed_dir)
             assert dst.endswith(os.path.join("data", "features.csv"))
 
     def test_ram_limit_2048(self):

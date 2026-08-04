@@ -211,12 +211,13 @@ jobs:
           NETWORK=$(docker inspect -f '{{.HostConfig.NetworkMode}}' lavbench_backend)
           echo "Joining compose network: $NETWORK"
           # The worker creates submission sandboxes by talking to the host Docker
-          # daemon through /var/run/docker.sock, so any bind-mounted dir (e.g.
-          # temp_dir -> /app for the sandbox) must exist on the HOST. Bind the
-          # workspace and task-images dirs at the same absolute path inside the
-          # container (sandboxes bind-mount task_images/task_<id>/data as /app/data).
-          mkdir -p "${GITHUB_WORKSPACE}/.lavbench_workspace"
-          mkdir -p "${GITHUB_WORKSPACE}/.lavbench_task_images"
+          # daemon through /var/run/docker.sock. Sandboxes are seeded via
+          # put_archive/get_archive (no host-path binds), so the task images, HF
+          # cache and workspace live in job-local Docker named volumes — persistent
+          # within the job, no host paths required.
+          docker volume create lavbench_task_images >/dev/null
+          docker volume create lavbench_hf_cache >/dev/null
+          docker volume create lavbench_workspace >/dev/null
           docker run -d --name lavbench_eval_worker \
             --network "$NETWORK" \
             -e CELERY_BROKER_URL="redis://:${REDIS_PASSWORD}@redis:6379/0" \
@@ -229,13 +230,14 @@ jobs:
             -e RUNNING_AS_WORKER="true" \
             -e EVALUATION_ONLY_WORKER="true" \
             -e INTERNAL_ONLY_WORKER="false" \
-            -e HF_CACHE_DIR="/app/hf_cache" \
-            -e TASK_IMAGES_DIR="${GITHUB_WORKSPACE}/.lavbench_task_images" \
-            -e LAVBENCH_WORKSPACE_DIR="${GITHUB_WORKSPACE}/.lavbench_workspace" \
+            -e HF_CACHE_DIR="/var/lib/lavbench/hf_cache" \
+            -e TASK_IMAGES_DIR="/var/lib/lavbench/task_images" \
+            -e LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace" \
             -e CPU_WORKER_CONCURRENCY="1" \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "${GITHUB_WORKSPACE}/.lavbench_workspace:${GITHUB_WORKSPACE}/.lavbench_workspace" \
-            -v "${GITHUB_WORKSPACE}/.lavbench_task_images:${GITHUB_WORKSPACE}/.lavbench_task_images" \
+            -v lavbench_task_images:/var/lib/lavbench/task_images \
+            -v lavbench_hf_cache:/var/lib/lavbench/hf_cache \
+            -v lavbench_workspace:/var/lib/lavbench/workspace \
             lavbench-worker
 
       # --- Wait until the eval worker registered worker_spec:{hostname} in the broker Redis ---
