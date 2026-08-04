@@ -106,18 +106,14 @@ class TestWatchdogStuckSubmissions:
         # > 1000s elapsed, so the run must NOT be killed.
         self.task.time_limit_sec = 60
         db.session.commit()
-        sub = self._create_submission(
-            "running", executed_at=utcnow() - timedelta(seconds=1000)
-        )
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
         sub.time_limit_snapshot = 900
         db.session.commit()
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) == 0
 
     def test_respects_snapshot_when_shrunk_below_runtime(self):
-        sub = self._create_submission(
-            "running", executed_at=utcnow() - timedelta(seconds=1000)
-        )
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
         sub.time_limit_snapshot = 60
         db.session.commit()
         result = watchdog_stuck_submissions()

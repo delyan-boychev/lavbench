@@ -1756,9 +1756,14 @@ def report_worker_progress(
     # execution, not pre-execution phases (image build, GPU acquisition) that the
     # runner reports under detailed_status="building_env" while status="running".
     detailed_val = data.get("detailed_status") or submission.detailed_status
-    if submission.executed_at is None and status_val == "running" and detailed_val not in (
-        "building_env",
-        "queued",
+    if (
+        submission.executed_at is None
+        and status_val == "running"
+        and detailed_val
+        not in (
+            "building_env",
+            "queued",
+        )
     ):
         submission.executed_at = utcnow()
     if "logs" in data:

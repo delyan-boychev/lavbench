@@ -22,9 +22,7 @@ def build_submission_metadata(
     gpu_required: bool,
     main_server_url: str | None = None,
 ) -> dict[str, Any]:
-    time_limit = (
-        task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
-    )
+    time_limit = task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
     # Persist the dispatch-time limit so the server watchdog and the runner
     # enforce the same limit even if the task config changes mid-run.
     submission.time_limit_snapshot = time_limit
