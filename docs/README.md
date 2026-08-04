@@ -36,7 +36,12 @@ API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
 npm run check-types              # tsc --noEmit (0 errors required)
 ```
 
-The `docker-build` CI job regenerates `api.d.ts` from the live stack and **fails on drift**, so the committed types always match the backend OpenAPI spec. The spec snapshots in `source/api/` are refreshed with `make -C docs fetch-spec`.
+The `docker-build` CI job regenerates `api.d.ts` **and** the spec snapshots in `docs/source/api/` (+ `docs/source/api_spec.rst`) from the live stack and **fails on drift**, so the committed types and snapshots always match the backend OpenAPI spec. Refresh them locally with:
+
+```
+cd frontend && API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
+API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec
+```
 
 ### Key Frontend Conventions:
 - **Authentication**: `httpOnly` cookie (`auth_token`). `ApiService` automatically handles cookie persistence.

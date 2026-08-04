@@ -324,6 +324,17 @@ jobs:
           fi
           echo "api.d.ts is up to date"
 
+      # --- Regenerate docs/source/api spec snapshots from the live spec and fail if they drift ---
+      - name: Docs API spec drift gate
+        run: |
+          API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec
+          if ! git diff --exit-code -- docs/source/api docs/source/api_spec.rst; then
+            echo "ERROR: docs API spec snapshots drifted from the backend OpenAPI spec."
+            echo "Regenerate and commit them: API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec"
+            exit 1
+          fi
+          echo "docs/source/api spec snapshots are up to date"
+
       # --- Clean up ---
       - name: Clean up
         if: always()
