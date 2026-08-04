@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -628,8 +629,6 @@ def run_eval_submission(
                         f"task_{task.id}",
                     )
                     if os.path.exists(task_files_dir):
-                        import shutil
-
                         for f in files_meta:
                             if is_unified_parquet and f["filename"] == "labels.parquet":
                                 continue  # Do NOT copy labels.parquet to sandbox
@@ -884,16 +883,20 @@ def run_eval_submission(
         volumes: dict[str, dict[str, str]] = {temp_dir: {"bind": "/app", "mode": "rw"}}
         task_id = metadata.get("task_id") if metadata else None
         if task_id:
-            # Read-only mount of the worker-side asset cache: task resource
-            # files are served from here, never writable by the sandbox.
+            # Snapshot the asset cache into the per-run sandbox dir instead of
+            # bind-mounting the live cache: the cache is shared and a rebuild
+            # re-sync can swap files under a running container. Copying at
+            # launch keeps the in-flight run reading the files it started
+            # with. Labels are never in this cache (see sync function).
             assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
             try:
-                if os.path.isdir(assets_dir) and any(
-                    os.path.isfile(os.path.join(assets_dir, p)) for p in os.listdir(assets_dir)
-                ):
-                    volumes[assets_dir] = {"bind": "/app/data", "mode": "ro"}
+                if os.path.isdir(assets_dir):
+                    for entry in os.listdir(assets_dir):
+                        src = os.path.join(assets_dir, entry)
+                        if os.path.isfile(src):
+                            shutil.copy2(src, os.path.join(data_dir, entry))
             except OSError:
-                logger.warning("Could not inspect asset cache dir %s", assets_dir)
+                logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 
         retcode, stdout, stderr, process_timeout = run_command_streaming(
             docker_client,
@@ -1125,8 +1128,6 @@ def run_eval_submission(
                         )
 
         try:
-            import shutil
-
             shutil.rmtree(temp_dir, ignore_errors=True)
         except OSError as e:
             logger.debug("Could not remove temp dir %s: %s", temp_dir, e)
@@ -1168,8 +1169,6 @@ def run_eval_submission(
                 if r:
                     r.delete(f"gpu:lock:{_WORKER_HOSTNAME}:{acquired_gpu}")
         if "temp_dir" in locals() and temp_dir:
-            import shutil
-
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     return f"Submission {submission_id} evaluated with status {status}"

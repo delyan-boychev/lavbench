@@ -312,10 +312,12 @@ def _write_assets_manifest(task_id: Any, manifest: dict[str, Any]) -> None:
 def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[str]) -> bool:
     """Synchronize task resource files into the persistent host-side cache.
 
-    The cache lives at ``TASK_IMAGES_DIR/task_{id}/data`` and is bind-mounted
-    read-only at ``/app/data`` in the sandbox. Files are only transferred when
-    the server-side ``saved_name`` differs from the cached one (uploads are
-    stored under unique saved names, so a replaced file has a new saved name).
+    The cache lives at ``TASK_IMAGES_DIR/task_{id}/data``; the runner snapshots
+    it into each sandbox (``/app/data``) at launch, so in-flight runs keep the
+    files they started with even when a rebuild re-syncs the cache mid-run.
+    Files are only transferred when the server-side ``saved_name`` differs from
+    the cached one (uploads are stored under unique saved names, so a replaced
+    file has a new saved name).
 
     Returns True when the cache is current; False when any download failed.
     """

@@ -1,5 +1,6 @@
 import math
 import os
+import shutil
 from unittest.mock import patch
 
 import pytest
@@ -165,10 +166,11 @@ class TestSubmissionRunnerDocker:
         assert mount == {"bind": "/app", "mode": "rw"}
         assert os.path.basename(temp_dir).startswith("tmp") or os.path.isdir(temp_dir)
 
-    def test_asset_cache_mounted_read_only(self, mocker, tmp_path):
+    def test_asset_cache_snapshotted_into_sandbox(self, mocker, tmp_path):
         from task_modules.submission_runner import run_eval_submission
 
         mocker.patch.object(Config, "TASK_IMAGES_DIR", str(tmp_path))
+        copy2_mock = mocker.patch("shutil.copy2", wraps=shutil.copy2)
         data_dir = tmp_path / "task_456" / "data"
         data_dir.mkdir(parents=True)
         (data_dir / "features.csv").write_text("x,y\n1,2\n")
@@ -204,9 +206,21 @@ class TestSubmissionRunnerDocker:
                 challenge_cls=None,
             )
 
+        # The asset cache must be snapshotted into the sandbox dir, not
+        # bind-mounted: a rebuild re-sync can swap cache files mid-run and a
+        # live mount would expose the new content to the in-flight container.
         volumes = captured_run_kwargs.get("volumes", {})
-        assert str(data_dir) in volumes
-        assert volumes[str(data_dir)] == {"bind": "/app/data", "mode": "ro"}
+        assert len(volumes) == 1
+        sandbox_dir, mount = next(iter(volumes.items()))
+        assert mount == {"bind": "/app", "mode": "rw"}
+        copy_calls = [c for c in copy2_mock.call_args_list if c.args or c.kwargs]
+        assert copy_calls, "asset cache files were not snapshotted into the sandbox"
+        for call in copy_calls:
+            src = call.args[0] if call.args else call.kwargs["src"]
+            dst = call.args[1] if len(call.args) > 1 else call.kwargs["dst"]
+            assert src == str(data_dir / "features.csv")
+            assert dst.startswith(sandbox_dir)
+            assert dst.endswith(os.path.join("data", "features.csv"))
 
     def test_ram_limit_2048(self):
         from task_modules.submission_runner import run_eval_submission
