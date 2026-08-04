@@ -122,6 +122,21 @@ make html-bg
 # Output is generated in docs/build/html-bg/
 ```
 
+### Language switcher (EN ↔ BG)
+
+A language button is rendered on every page (sidebar + mobile top bar) and links
+to the **same page** in the other build. It assumes the bg build is deployed
+under `bg/` relative to the en build root — e.g.:
+
+```bash
+# Serve docs/build/ at /docs/ and docs/build/html-bg/ as /docs/bg/
+python3 -m http.server 8080 --directory docs/build
+# open http://localhost:8080/ -> EN docs, button links to /bg/competitor_guide
+```
+
+The switcher lives in `docs/source/_templates/layout.html`
+(`lang_switch_link` macro, styled in `_static/css/custom.css`).
+
 ### Translation workflow
 
 Bulgarian translations are generated with [`../scripts/translate_gemini.py`](../scripts/translate_gemini.py) (Gemini API, key in `.gemini-api-key` at the repo root — gitignored). It translates `frontend/public/locales`, `guides/en/` → `guides/bg/`, `docs/README.md` → `docs/README.bg.md`, and with `--docs` the `docs/source/*.md` files into `docs/source/bg/`. Guides symlinked from `guides/` are mirrored into `docs/source/bg/` (never retranslated); the bg docs build entry point is `docs/source/bg/index.rst`. Run `python3 scripts/translate_gemini.py --dry-run` to preview, and verify with `python3 frontend/scripts/check_translations.py` and `make html-bg`. See CONTRIBUTING.md → "Translating UI strings and docs".
