@@ -9,10 +9,8 @@ import pytest
 
 from utils.dates import utcnow
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Finalize endpoint:  POST /challenges/<id>/finalize
+# ── Finalize endpoint:  POST /challenges/<id>/finalize ──
 # Requires role: jury
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestFinalizeChallenge:
@@ -35,7 +33,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -78,7 +76,7 @@ class TestFinalizeChallenge:
 
     def test_finalize_challenge_not_found(self, client, create_user):
         jury = create_user(username="finalize-jury-nf", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -114,7 +112,7 @@ class TestFinalizeChallenge:
         db_session.commit()
 
         jury = create_user(username="finalize-jury-mp", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -141,7 +139,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury-rf", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -176,7 +174,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury-ro", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -248,7 +246,7 @@ class TestFinalizeChallenge:
         db_session.commit()
 
         jury = create_user(username="finalize-jury-be", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -263,10 +261,8 @@ class TestFinalizeChallenge:
         assert "before its end time" in res.get_json()["error"].lower()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Test-Stage endpoint:  POST /challenges/<id>/test-stage
+# ── Test-Stage endpoint:  POST /challenges/<id>/test-stage ──
 # Requires role: admin or jury
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestCreateTestStage:
@@ -352,7 +348,7 @@ class TestCreateTestStage:
         self, client, db_session, sample_future_challenge, create_user
     ):
         jury = create_user(username="teststage-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -476,10 +472,8 @@ class TestCreateTestStage:
         assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Archive endpoint:  POST /challenges/<id>/archive
+# ── Archive endpoint:  POST /challenges/<id>/archive ──
 # (Basic toggle tested in TestArchiveChallenge — pytest-style coverage here)
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestArchiveChallengePytest:
@@ -487,7 +481,7 @@ class TestArchiveChallengePytest:
 
     def test_archive_jury_can_toggle(self, client, db_session, sample_challenge, create_user):
         jury = create_user(username="archive-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -535,9 +529,7 @@ class TestArchiveChallengePytest:
         assert sample_challenge.is_archived is False
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Test-Stage creation via competition create/update
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Test-Stage creation via competition create/update ──
 
 
 class TestTestStageViaCompetitionCreate:
@@ -639,9 +631,7 @@ class TestTestStageViaCompetitionCreate:
         assert len(remaining) == 0
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Test-Stage scoring exclusion: test stage subs excluded from leaderboard
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Test-Stage scoring exclusion: test stage subs excluded from leaderboard ──
 
 
 class TestTestStageScoring:
@@ -739,9 +729,7 @@ class TestTestStageScoring:
         assert found, "Regular stage submission should appear in leaderboard"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Task stage assignment validation
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Task stage assignment validation ──
 
 
 class TestTaskStageAssignment:

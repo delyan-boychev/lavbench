@@ -16,9 +16,7 @@ import pytest
 from models import Challenge, Stage, Task, User
 from utils.dates import utcnow
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Fixtures
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Fixtures ──
 
 
 @pytest.fixture
@@ -61,9 +59,7 @@ def challenge_with_stages_and_tasks(db_session, sample_challenge):
     return ch
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Export challenge (GET /api/challenges/<id>/export)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Export challenge (GET /api/challenges/<id>/export) ──
 
 
 class TestExportChallenge:
@@ -109,7 +105,7 @@ class TestExportChallenge:
 
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
@@ -144,9 +140,7 @@ class TestExportChallenge:
         assert res.status_code == 404
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Import challenge (POST /api/challenges/import)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Import challenge (POST /api/challenges/import) ──
 
 
 class TestImportChallenge:
@@ -360,7 +354,7 @@ class TestImportChallenge:
         self, client, db_session, challenge_with_stages_and_tasks, create_user
     ):
         jury = create_user(username="jury_noimport", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         headers = {
@@ -472,9 +466,7 @@ class TestImportChallenge:
         assert new_task.baseline_notebook_path == baseline_local
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Export results CSV (GET /api/challenges/<id>/export-results)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Export results CSV (GET /api/challenges/<id>/export-results) ──
 
 
 class TestExportResultsCsv:
@@ -502,7 +494,7 @@ class TestExportResultsCsv:
     ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export_csv", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
@@ -541,9 +533,7 @@ class TestExportResultsCsv:
         assert "SCORE CORRECTION AUDIT LOG" in csv_text
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Import competitors CSV (POST /api/admin/import-competitors-csv)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Import competitors CSV (POST /api/admin/import-competitors-csv) ──
 
 
 class TestImportCompetitorsCsv:
@@ -577,7 +567,7 @@ class TestImportCompetitorsCsv:
         self, client, db_session, sample_future_challenge, create_user
     ):
         jury = create_user(username="jury_csv", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = self._upload_csv(client, sample_future_challenge.id, jury_token)

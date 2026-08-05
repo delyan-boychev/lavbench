@@ -1,3 +1,5 @@
+"""Tests for the backup task."""
+
 import os
 import sys
 from datetime import timedelta
@@ -9,10 +11,10 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, User, db
-from task_modules.system import run_backup
 from tasks import check_and_backup
+from tasks.task_modules.system import run_backup
+from utils.auth_utils import generate_token
 
 
 class TestRunBackup:
@@ -26,9 +28,9 @@ class TestRunBackup:
     def _ctx(self):
         return self.app.app_context()
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
-    @patch("task_modules.system.os.path.getsize")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.makedirs")
+    @patch("tasks.task_modules.system.os.path.getsize")
     def test_run_backup_auto(self, mock_getsize, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -47,9 +49,9 @@ class TestRunBackup:
         assert tar_args[0:4] == ["nice", "-n", "19", "tar"]
         assert "audit_logs.json" in tar_args
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
-    @patch("task_modules.system.os.path.getsize")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.makedirs")
+    @patch("tasks.task_modules.system.os.path.getsize")
     def test_run_backup_manual(self, mock_getsize, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 0
         mock_getsize.return_value = 1024
@@ -66,8 +68,8 @@ class TestRunBackup:
         assert tar_args[0] == "tar"
         assert "audit_logs.json" in tar_args
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.makedirs")
     def test_run_backup_pg_dump_failure(self, mock_makedirs, mock_run):
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "connection refused"
@@ -75,8 +77,8 @@ class TestRunBackup:
             run_backup(self.app)
         assert "pg_dump failed" in str(ctx.value)
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.makedirs")
     def test_run_backup_tar_failure(self, mock_makedirs, mock_run):
         def side_effect(*args, **kwargs):
             if "pg_dump" in args[0]:
@@ -93,12 +95,12 @@ class TestRunBackup:
             run_backup(self.app)
         assert "tar failed" in str(ctx.value)
 
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.makedirs")
-    @patch("task_modules.system.os.path.getsize")
-    @patch("task_modules.system.glob.glob")
-    @patch("task_modules.system.os.remove")
-    @patch("task_modules.system.os.path.getctime")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.makedirs")
+    @patch("tasks.task_modules.system.os.path.getsize")
+    @patch("tasks.task_modules.system.glob.glob")
+    @patch("tasks.task_modules.system.os.remove")
+    @patch("tasks.task_modules.system.os.path.getctime")
     def test_run_backup_rotation_respects_custom_dir(
         self,
         mock_getctime,
@@ -130,7 +132,7 @@ class TestRunBackup:
             "/custom_backups/auto_7.tar.gz": 7,
             "/custom_backups/auto_8.tar.gz": 8,
         }.get(path, 0)
-        with patch("task_modules.system.Config.BACKUPS_DIR", "/custom_backups"), self._ctx():
+        with patch("tasks.task_modules.system.Config.BACKUPS_DIR", "/custom_backups"), self._ctx():
             run_backup(self.app, auto=True)
         mock_glob.assert_called_with("/custom_backups/auto_*.tar.gz")
         assert mock_remove.call_count == 5

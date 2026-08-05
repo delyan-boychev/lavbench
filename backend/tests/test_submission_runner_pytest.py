@@ -1,3 +1,5 @@
+"""Tests for the submission runner."""
+
 import math
 import os
 import shutil
@@ -11,14 +13,14 @@ from evaluation_engine import (
     evaluate_predictions,
     validate_parquet_schema,
 )
-from task_modules import submission_runner as task_modules
-from task_modules.submission_runner import calculate_weighted_score
+from tasks.task_modules import submission_runner as task_modules
+from tasks.task_modules.submission_runner import calculate_weighted_score
 
 
 @pytest.fixture(autouse=True)
 def _mock_run_content_fetch(mocker):
     mocker.patch(
-        "worker_utils.fetch_submission_run_content",
+        "utils.worker_utils.fetch_submission_run_content",
         side_effect=lambda metadata: (
             metadata.get("user_code"),
             metadata.get("custom_eval_code"),
@@ -144,23 +146,23 @@ class TestSubmissionRunnerDocker:
         mock_docker_client = mocker.MagicMock()
 
         mocker.patch(
-            "task_modules.submission_runner.check_docker_available",
+            "tasks.task_modules.submission_runner.check_docker_available",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner._get_client",
+            "tasks.task_modules.submission_runner._get_client",
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.submission_runner._image_exists_docker",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.report_status_to_server",
+            "tasks.task_modules.submission_runner.report_status_to_server",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_coordination_client",
+            "tasks.task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
 
@@ -171,12 +173,12 @@ class TestSubmissionRunnerDocker:
             raise CommandInterruptedError("docker run")
 
         mocker.patch(
-            "task_modules.submission_runner.run_sandbox",
+            "tasks.task_modules.submission_runner.run_sandbox",
             side_effect=mock_stream,
         )
 
     def test_unconditional_sandbox_args(self):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         metadata = {
             "task_id": 456,
@@ -212,7 +214,7 @@ class TestSubmissionRunnerDocker:
 
         # Hardened policy flags are applied inside run_sandbox (asserted in
         # test_worker_utils_pytest.TestRunCommandStreaming); the runner only
-        # passes the per-submission contract
+        # Passes the per-submission contract
         assert captured_run_kwargs.get("mem_limit") == "4096m"
         assert captured_run_kwargs.get("working_dir") == "/app"
         assert captured_run_kwargs.get("gpu_required") is False
@@ -228,7 +230,7 @@ class TestSubmissionRunnerDocker:
         )
 
     def test_asset_cache_snapshotted_into_sandbox(self, mocker, tmp_path):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         mocker.patch.object(Config, "TASK_IMAGES_DIR", str(tmp_path))
         copy2_mock = mocker.patch("shutil.copy2", wraps=shutil.copy2)
@@ -268,8 +270,8 @@ class TestSubmissionRunnerDocker:
             )
 
         # The asset cache must be snapshotted into the sandbox dir, not
-        # bind-mounted: a rebuild re-sync can swap cache files mid-run and a
-        # live mount would expose the new content to the in-flight container.
+        # Bind-mounted: a rebuild re-sync can swap cache files mid-run and a
+        # Live mount would expose the new content to the in-flight container
         seed_dir = captured_run_kwargs.get("seed_dir")
         assert seed_dir and (
             os.path.basename(seed_dir).startswith("tmp") or os.path.isdir(seed_dir)
@@ -284,7 +286,7 @@ class TestSubmissionRunnerDocker:
             assert dst.endswith(os.path.join("data", "features.csv"))
 
     def test_ram_limit_2048(self):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         metadata = {
             "task_id": 456,
@@ -321,7 +323,7 @@ class TestSubmissionRunnerDocker:
         assert captured_run_kwargs.get("mem_limit") == "2048m"
 
     def test_gpu_routing_all(self):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         # Config.WORKER_GPU_ID defaults to "" (falsy), so gpu_id = None
 
@@ -362,7 +364,7 @@ class TestSubmissionRunnerDocker:
         assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
     def test_gpu_routing_specific_device(self):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         metadata = {
             "task_id": 456,
@@ -401,7 +403,7 @@ class TestSubmissionRunnerDocker:
         assert "CUDA_VISIBLE_DEVICES" not in captured_run_kwargs.get("environment", {})
 
     def test_gpu_routing_none(self):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         metadata = {
             "task_id": 456,
@@ -486,60 +488,60 @@ class TestFetchHFKeyFromServer:
     """Unit tests for _fetch_hf_key_from_server."""
 
     def test_missing_task_id_returns_empty(self):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         assert _fetch_hf_key_from_server(None, "http://server", "token") == ""
 
     def test_missing_server_url_returns_empty(self):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         assert _fetch_hf_key_from_server("task_1", None, "token") == ""
 
     def test_missing_token_returns_empty(self):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         assert _fetch_hf_key_from_server("task_1", "http://server", None) == ""
 
     def test_refuses_insecure_non_localhost_url(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
-        mocker.patch("task_modules.submission_runner.requests.get")
+        mocker.patch("tasks.task_modules.submission_runner.requests.get")
         result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
         assert result == ""
         task_modules.requests.get.assert_not_called()
 
     def test_all_params_missing_returns_empty(self):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         assert _fetch_hf_key_from_server(None, None, None) == ""
 
     def test_successful_200_response(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"hf_key": "hf_secret_token"}
-        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+        mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_1", "https://server:5000", "worker_token")
         assert result == "hf_secret_token"
 
     def test_http_403_returns_empty(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 403
-        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+        mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_1", "https://server:5000", "bad_token")
         assert result == ""
 
     def test_http_404_returns_empty(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 404
-        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+        mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_999", "https://server:5000", "token")
         assert result == ""
@@ -547,10 +549,10 @@ class TestFetchHFKeyFromServer:
     def test_connection_error_returns_empty(self, mocker):
         import requests as req
 
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(
-            "task_modules.submission_runner.requests.get",
+            "tasks.task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.ConnectionError("refused"),
         )
         result = _fetch_hf_key_from_server("task_1", "https://badhost:9999", "token")
@@ -559,22 +561,22 @@ class TestFetchHFKeyFromServer:
     def test_timeout_exception_returns_empty(self, mocker):
         import requests as req
 
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch(
-            "task_modules.submission_runner.requests.get",
+            "tasks.task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.Timeout("timeout"),
         )
         result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
         assert result == ""
 
     def test_200_but_missing_hf_key_field_returns_empty_string(self, mocker):
-        from task_modules.submission_runner import _fetch_hf_key_from_server
+        from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mock_resp = mocker.MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {}  # No "hf_key" field
-        mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
+        mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
         result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
         assert result == ""
@@ -586,8 +588,8 @@ class TestImageExists:
     def test_image_found_returns_true(self, mocker):
         mock_client = mocker.MagicMock()
         mock_client.images.get.return_value = "image_obj"
-        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
-        from task_modules.docker_utils import image_exists
+        mocker.patch("tasks.task_modules.docker_utils._get_client", return_value=mock_client)
+        from tasks.task_modules.docker_utils import image_exists
 
         assert image_exists("lavbench_task_42") is True
 
@@ -596,16 +598,16 @@ class TestImageExists:
 
         mock_client = mocker.MagicMock()
         mock_client.images.get.side_effect = ImageNotFound("not found")
-        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
-        from task_modules.docker_utils import image_exists
+        mocker.patch("tasks.task_modules.docker_utils._get_client", return_value=mock_client)
+        from tasks.task_modules.docker_utils import image_exists
 
         assert image_exists("nonexistent_image:v1") is False
 
     def test_image_exception_returns_false(self, mocker):
         mock_client = mocker.MagicMock()
         mock_client.images.get.side_effect = Exception("connection error")
-        mocker.patch("task_modules.docker_utils._get_client", return_value=mock_client)
-        from task_modules.docker_utils import image_exists
+        mocker.patch("tasks.task_modules.docker_utils._get_client", return_value=mock_client)
+        from tasks.task_modules.docker_utils import image_exists
 
         assert image_exists("any_image") is False
 
@@ -614,7 +616,7 @@ class TestPreloadSubmissionDatasets:
     """Unit tests for preload_submission_datasets."""
 
     def _make_task(self, datasets=None, models=None):
-        from worker_utils import MockModel
+        from utils.worker_utils import MockModel
 
         return MockModel(
             hf_datasets=datasets,
@@ -622,7 +624,7 @@ class TestPreloadSubmissionDatasets:
         )
 
     def test_no_hf_datasets_no_hf_models_noop(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=None, models=None)
         logs = []
@@ -630,7 +632,7 @@ class TestPreloadSubmissionDatasets:
         assert not any("Preloading" in log for log in logs)
 
     def test_malformed_datasets_json_is_ignored(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets="{malformed", models=None)
         logs = []
@@ -638,7 +640,7 @@ class TestPreloadSubmissionDatasets:
         assert not any("Preloading datasets" in log for log in logs)
 
     def test_malformed_models_json_is_ignored(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=None, models="[not valid json")
         logs = []
@@ -646,7 +648,7 @@ class TestPreloadSubmissionDatasets:
         assert not any("Preloading" in log for log in logs)
 
     def test_datasets_list_without_cache_dir_skips(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets='["dataset1"]', models=None)
         logs = []
@@ -655,7 +657,7 @@ class TestPreloadSubmissionDatasets:
         assert not any("Preloading datasets" in log for log in logs)
 
     def test_models_list_without_cache_dir_skips(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=None, models='["bert-base-uncased"]')
         logs = []
@@ -664,7 +666,7 @@ class TestPreloadSubmissionDatasets:
 
     def test_datasets_with_cache_dir_attempts_preload(self, mocker, tmp_path):
         """When cache_dir and datasets are set, preload is attempted."""
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets='["stanfordnlp/imdb"]', models=None)
         logs = []
@@ -679,7 +681,7 @@ class TestPreloadSubmissionDatasets:
 
     def test_datasets_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
         """Even if preload fails, it should log a warning and continue without crashing."""
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets='["failing/dataset"]', models=None)
         logs = []
@@ -693,7 +695,7 @@ class TestPreloadSubmissionDatasets:
         assert any("Warning" in log for log in logs)
 
     def test_models_with_cache_dir_attempts_preload(self, mocker, tmp_path):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=None, models='["bert-base-uncased"]')
         logs = []
@@ -707,7 +709,7 @@ class TestPreloadSubmissionDatasets:
         assert any("Preloading HF models" in log for log in logs)
 
     def test_model_preload_failure_is_logged_as_warning(self, mocker, tmp_path):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=None, models='["failing/model"]')
         logs = []
@@ -722,7 +724,7 @@ class TestPreloadSubmissionDatasets:
 
     def test_empty_dataset_names_are_filtered(self):
         """Empty strings in the dataset list should not be added to datasets_to_load."""
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets='["", ""]', models=None)
         logs = []
@@ -730,7 +732,7 @@ class TestPreloadSubmissionDatasets:
         assert not any("Preloading datasets" in log for log in logs)
 
     def test_task_is_none_handled_gracefully(self):
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         logs = []
         preload_submission_datasets(None, None, "/tmp", None, logs)
@@ -738,7 +740,7 @@ class TestPreloadSubmissionDatasets:
 
     def test_list_datasets_directly_set(self, mocker, tmp_path):
         """Task with hf_datasets already as a Python list (not JSON string)."""
-        from task_modules.submission_runner import preload_submission_datasets
+        from tasks.task_modules.submission_runner import preload_submission_datasets
 
         task = self._make_task(datasets=["my_dataset"], models=None)
         logs = []
@@ -781,32 +783,32 @@ class TestDockerNotAvailable:
         mock_docker_client = mocker.MagicMock()
 
         mocker.patch(
-            "task_modules.submission_runner.check_docker_available",
+            "tasks.task_modules.submission_runner.check_docker_available",
             return_value=docker_available,
         )
         mocker.patch(
-            "task_modules.submission_runner._get_client",
+            "tasks.task_modules.submission_runner._get_client",
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.submission_runner._image_exists_docker",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.report_status_to_server",
+            "tasks.task_modules.submission_runner.report_status_to_server",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_coordination_client",
+            "tasks.task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
         mocker.patch(
-            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            "tasks.task_modules.submission_runner.sync_task_files_to_assets_cache",
             return_value=True,
         )
 
     def test_docker_not_available_returns_early(self, mocker):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         self._setup_mocks(mocker, docker_available=False)
         result = run_eval_submission(
@@ -827,32 +829,32 @@ class TestCodeCellsParseError:
     def test_malformed_code_cells_json_returns_none(self, mocker):
         import json as _json
 
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
         mock_docker_client = mocker.MagicMock()
 
         mocker.patch(
-            "task_modules.submission_runner.check_docker_available",
+            "tasks.task_modules.submission_runner.check_docker_available",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner._get_client",
+            "tasks.task_modules.submission_runner._get_client",
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.submission_runner._image_exists_docker",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.report_status_to_server",
+            "tasks.task_modules.submission_runner.report_status_to_server",
             return_value=True,
         )
         mocker.patch(
-            "task_modules.submission_runner.get_coordination_client",
+            "tasks.task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
         mocker.patch(
-            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            "tasks.task_modules.submission_runner.sync_task_files_to_assets_cache",
             return_value=True,
         )
 
@@ -866,7 +868,7 @@ class TestCodeCellsParseError:
                 raise ValueError("Simulated malformed code_cells JSON")
             return original_loads(s, *a, **kw)
 
-        mocker.patch("task_modules.submission_runner.json.loads", side_effect=patched_loads)
+        mocker.patch("tasks.task_modules.submission_runner.json.loads", side_effect=patched_loads)
 
         metadata = {
             "task_id": 1,
@@ -916,19 +918,19 @@ class TestEvaluationEngineImport:
 
 class TestReportRuntimeSyncFailure:
     def test_noop_without_metadata(self, mocker):
-        from task_modules.submission_runner import _report_runtime_sync_failure
+        from tasks.task_modules.submission_runner import _report_runtime_sync_failure
 
-        mock_sign = mocker.patch("task_modules.submission_runner._sign_worker_token")
+        mock_sign = mocker.patch("tasks.task_modules.submission_runner._sign_worker_token")
         _report_runtime_sync_failure(1, None, ["ERR_TASK_FILE_SYNC_FAILED"])
         _report_runtime_sync_failure(1, {}, ["ERR_TASK_FILE_SYNC_FAILED"])
         mock_sign.assert_not_called()
 
     def test_reports_problem_codes_via_build_error(self, mocker):
-        from task_modules.submission_runner import _report_runtime_sync_failure
+        from tasks.task_modules.submission_runner import _report_runtime_sync_failure
 
-        mock_report = mocker.patch("task_modules.image_builder._report_build_error")
+        mock_report = mocker.patch("tasks.task_modules.image_builder._report_build_error")
         mocker.patch(
-            "task_modules.submission_runner._sign_worker_token", return_value="signed-token"
+            "tasks.task_modules.submission_runner._sign_worker_token", return_value="signed-token"
         )
         metadata = {"main_server_url": "http://server:5000", "submission_id": "sub-9"}
         _report_runtime_sync_failure(7, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"])
@@ -944,21 +946,23 @@ class TestReportRuntimeSyncFailure:
         )
 
     def test_file_sync_failure_arms_code_through_run(self, mocker):
-        from task_modules.submission_runner import run_eval_submission
+        from tasks.task_modules.submission_runner import run_eval_submission
 
-        mocker.patch("task_modules.submission_runner.check_docker_available", return_value=True)
         mocker.patch(
-            "task_modules.submission_runner.sync_task_files_to_assets_cache",
+            "tasks.task_modules.submission_runner.check_docker_available", return_value=True
+        )
+        mocker.patch(
+            "tasks.task_modules.submission_runner.sync_task_files_to_assets_cache",
             return_value=False,
         )
         mock_report_status = mocker.patch(
-            "task_modules.submission_runner.report_status_to_server", return_value=True
+            "tasks.task_modules.submission_runner.report_status_to_server", return_value=True
         )
         mock_runtime_report = mocker.patch(
-            "task_modules.submission_runner._report_runtime_sync_failure"
+            "tasks.task_modules.submission_runner._report_runtime_sync_failure"
         )
         mocker.patch(
-            "task_modules.submission_runner.get_coordination_client",
+            "tasks.task_modules.submission_runner.get_coordination_client",
             return_value=mocker.MagicMock(),
         )
 

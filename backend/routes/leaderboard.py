@@ -1,3 +1,5 @@
+"""Route handlers for the leaderboard blueprint."""
+
 from __future__ import annotations
 
 import contextlib
@@ -10,30 +12,30 @@ from flask import Blueprint, request
 from flask import Response as FlaskResponse
 from spectree import Response
 
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
-from cache_utils import (
-    get_cached,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    set_cached,
-)
-from error_utils import err
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
 from spec import api
-from sse_utils import (
+from utils.access import ensure_registered
+from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
+from utils.cache_helpers import cached_or_compute
+from utils.cache_utils import (
+    get_cached,
+    get_sse_client,
+    invalidate_leaderboard_cache,
+    set_cached,
+)
+from utils.dates import utcnow
+from utils.error_utils import err
+from utils.json_utils import safe_json_loads
+from utils.sse import sse_response
+from utils.sse_utils import (
     SSE_IDLE_TIMEOUT,
     leaderboard_channel,
     sse_connection_limit,
     sse_heartbeat,
 )
-from utils.access import ensure_registered
-from utils.cache_helpers import cached_or_compute
-from utils.dates import utcnow
-from utils.json_utils import safe_json_loads
-from utils.sse import sse_response
 
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
@@ -516,8 +518,8 @@ def stream_challenge_leaderboard(
                     if not c:
                         return
                     # One computation per challenge per ~5s, shared by every
-                    # connected SSE client (prevents a thundering herd where
-                    # each client rebuilds the full payload per update)
+                    # Connected SSE client (prevents a thundering herd where
+                    # Each client rebuilds the full payload per update)
                     cache_key = (
                         f"leaderboard:sse:{challenge_id}:{user_role}:{user_id}"
                         if user_role == "competitor"

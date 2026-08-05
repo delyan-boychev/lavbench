@@ -38,14 +38,8 @@ lavbench/
 ├── scripts/                           # Deployment & setup scripts
 ├── backend/
 │   ├── app.py                         # Flask factory, blueprint registration, error handlers
-│   ├── config.py                      # Config from env vars
-│   ├── error_utils.py                 # err() helper + DEFAULT_ERROR_MESSAGES dict
-│   ├── auth_utils.py                  # JWT auth, rate limiting, token revocation
-│   ├── cache_utils.py                 # Redis caching, locks
 │   ├── evaluation_engine.py           # Parquet-based evaluation
-│   ├── sse_utils.py                   # SSE pub/sub
-│   ├── worker_utils.py                # Docker sandbox management
-│   ├── tasks.py                       # Celery tasks + beat schedule
+│   ├── config/                        # Config (__init__), logging (log_config), pytest fixtures (conftest)
 │   ├── models/                        # SQLAlchemy models (challenge, task, submission, user, stage...)
 │   ├── schemas/                       # Pydantic v2 validation schemas
 │   │   ├── __init__.py                # _format_validation_error_for_response (spectree before-handler)
@@ -55,10 +49,11 @@ lavbench/
 │   │   └── admin.py, auth.py, challenge.py, task.py, submission.py, leaderboard.py, stage.py
 │   ├── routes/                        # Flask blueprints
 │   ├── services/                      # Business logic
-│   ├── utils/
-│   ├── task_modules/                  # Submission runner, image builder
-│   ├── scripts/check_error_codes.py   # Lint: err() + SchemaError usage + translation parity
-│   └── tests/                         # pytest (conftest.py: client, auth, model fixtures)
+│   ├── tasks/                         # Celery app (__init__) + beat schedule
+│   │   └── task_modules/              # Submission runner, image builder, system
+│   ├── utils/                         # Helpers (error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi...)
+│   ├── scripts/                       # Lint & maintenance (check_error_codes.py, check_comments.py, setup-admin.py)
+│   └── tests/                         # pytest (config/conftest.py: client, auth, model fixtures)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/, pages/, services/, context/, hooks/
@@ -69,6 +64,68 @@ lavbench/
 ├── docs/                              # Sphinx documentation
 ├── .github/workflows/ci.yml
 └── CONTRIBUTING.md
+```
+
+---
+
+## Backend Layout & Canonical Imports
+
+The backend is packaged: **no top-level `*_utils.py`, `config.py`, or `task_modules/`**. Every helper lives in a package, and there is exactly one canonical import form for each module.
+
+### Canonical module map
+
+| Concern | Path | Import form |
+|---|---|---|
+| Flask app factory | `backend/app.py` | `from app import create_app` |
+| Config (env vars) | `backend/config/__init__.py` | `from config import Config` |
+| Logging setup | `backend/config/log_config.py` | `from config.log_config import setup_logging` |
+| Pytest fixtures | `backend/config/conftest.py` | — (auto-loaded; root `backend/conftest.py` shim bootstraps env vars first) |
+| Celery app + beat | `backend/tasks/__init__.py` | `from tasks import celery` (task names `tasks.evaluate_submission`, ...) |
+| Runner / image builder / system | `backend/tasks/task_modules/` | `from tasks.task_modules.X import ...` |
+| API errors | `backend/utils/error_utils.py` | `from utils.error_utils import err` |
+| Auth (JWT, cookies, roles) | `backend/utils/auth_utils.py` | `from utils.auth_utils import login_required, role_required` |
+| Worker / sandbox helpers | `backend/utils/worker_utils.py` | `from utils.worker_utils import ...` |
+| SSE pub/sub | `backend/utils/sse_utils.py` | `from utils.sse_utils import publish_submission_log_batch` |
+| Redis cache / locks | `backend/utils/cache_utils.py` | `from utils.cache_utils import ...` |
+| WSGI entrypoint | `backend/utils/wsgi.py` | gunicorn target `utils.wsgi:app` |
+| Admin bootstrap | `backend/scripts/setup-admin.py` | `python scripts/setup-admin.py` (or `/app/scripts/setup-admin.py` in Docker) |
+
+`backend/utils/` also holds small helpers: `access.py`, `audit.py`, `cache.py`, `cache_helpers.py`, `client_ip.py`, `competitor.py`, `dates.py`, `files.py`, `ipynb.py`, `json_utils.py`, `metadata.py`, `pagination.py`, `request_helpers.py`, `sse.py`, `streaming.py`, `version.py`.
+
+### Forbidden legacy patterns
+
+Never reintroduce these (they broke the packaging twice):
+
+- ❌ `backend/error_utils.py` / top-level `*_utils.py` → ✅ `backend/utils/*.py`
+- ❌ `from error_utils import err` → ✅ `from utils.error_utils import err`
+- ❌ `backend/config.py` / `from config import ...` at top level → ✅ `backend/config/__init__.py` (import stays `from config import Config`)
+- ❌ `backend/log_config.py` / `from log_config import ...` → ✅ `from config.log_config import ...`
+- ❌ `backend/setup-admin.py` / `python setup-admin.py` → ✅ `python scripts/setup-admin.py`
+- ❌ `backend/wsgi.py` / gunicorn `wsgi:app` → ✅ `utils.wsgi:app`
+- ❌ `backend/tasks.py` / `tasks.py` at top level → ✅ `backend/tasks/__init__.py`
+- ❌ `backend/task_modules/` → ✅ `backend/tasks/task_modules/`
+- ❌ test patch targets like `patch("worker_utils.…")` / `patch("sse_utils.…")` → ✅ `patch("utils.worker_utils.…")`, `patch("utils.sse_utils.…")`
+- ❌ `import worker_utils as wu` → ✅ `import utils.worker_utils as wu`
+- ❌ old paths in CI/Docker: `/app/setup-admin.py`, `wsgi:app` → `/app/scripts/setup-admin.py`, `utils.wsgi:app`
+
+**Straggler sweep** before committing backend changes:
+
+```bash
+cd backend && rg -n "from (error_utils|worker_utils|sse_utils|cache_utils|log_config|version) import|patch\(\"(error_utils|worker_utils|sse_utils|cache_utils|log_config|version)\." --glob '*.py' .
+```
+
+### No migrations policy
+
+- **No Alembic.** Schema changes are expressed in `backend/models/`; `db.create_all()` runs in `create_app()` under a PostgreSQL advisory lock so multiple workers boot safely.
+- Never create migration files or alter `models/` in a way that requires them.
+
+### Running the app
+
+```bash
+flask run (via app.py)                 # API server
+celery -A tasks.celery worker          # worker
+celery -A tasks.celery beat            # beat scheduler
+gunicorn "utils.wsgi:app" ...          # production (see backend/Dockerfile)
 ```
 
 ---
@@ -90,6 +147,7 @@ cd backend
 ruff check .
 ruff format --check .
 python scripts/check_error_codes.py
+python scripts/check_comments.py
 mypy . --no-incremental
 micromamba run -n lavbench_backend pytest tests -n auto -q
 
@@ -107,6 +165,8 @@ python scripts/check_translations.py
 |---|---|
 | `backend-tests` | `pytest -n auto --timeout=120 --cov` (≥70%) |
 | `backend-lint` | `ruff check`, `ruff format --check`, `check_error_codes.py` |
+| `comment-style` | `check_comments.py` (advisory — never a required check) |
+| `frontend-comment-style` | `npm run lint:comments` (advisory — never a required check) |
 | `backend-types` | `mypy backend/ --no-incremental` |
 | `frontend-lint` | `npm run lint` |
 | `frontend-format` | `npm run format:check` |
@@ -221,7 +281,7 @@ def handler(json: SomeSchema): ...
 
 ### Route Errors — use `err()`
 ```python
-from error_utils import err
+from utils.error_utils import err
 return err("ERR_SOME_CODE", 400)                        # Default message
 return err("ERR_SOME_CODE", 403, message="Custom msg")  # Override
 ```
@@ -235,7 +295,7 @@ raise SchemaError("ERR_SPECIFIC_CODE", "Human-readable message")
 This produces the same `{"error": "...", "code": "ERR_SPECIFIC_CODE"}` response shape via `_validation_error`.
 
 ### Error Code Rules (enforced by `check_error_codes.py`)
-1. Every `ERR_*` must be defined in `DEFAULT_ERROR_MESSAGES` in `error_utils.py`
+1. Every `ERR_*` must be defined in `DEFAULT_ERROR_MESSAGES` in `utils/error_utils.py`
 2. Every code must be referenced by ≥1 `err()` or `SchemaError()` call
 3. Every code must have `api.ERR_*` translation key in both `en` and `bg` locale files
 4. No orphaned `api.ERR_*` keys in translation files
@@ -288,7 +348,46 @@ Per-file: tests/* → S101, T201, PERF; admin.py → RUF001 (intentional Cyrilli
 npm run format          # Prettier write
 npm run format:check    # Prettier check
 npm run lint            # ESLint
+npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.js)
 ```
+
+### Comment style (`check_comments.py`)
+`backend/scripts/check_comments.py` enforces the comment conventions below (exit 1 on violations, warnings exit 0):
+- Module docstring required in every `.py` module (first statement, one-line summary)
+- `# ` space after the hash; no decorative divider banners (`# ===`, `# ═══`, ...) — use `# ── Title ──`
+- No commented-out code; no bare `# noqa` (always `# noqa: CODE`); `# TODO: <imperative> ...` format
+- Warnings: comments should start with a capital letter and not end with a period
+- Run: `python scripts/check_comments.py` (defaults to the whole backend, or pass explicit files)
+
+---
+
+## Code Style & Conventions
+
+### Comments & docstrings
+- **Every module needs a one-line summary docstring** as its first statement (`"""Describe the module."""`); skip only for empty `__init__.py` files
+- Function docstrings: optional one-liner (`"""Short summary."""`); no argument lists unless they add value
+- Inline comments explain **why**, not what — `# ` + capitalized sentence, no trailing period
+- Section dividers: `# ── Title ──` (U+2500 `─`, at least 3 dashes on each side). Forbidden styles: `# ===`, `# ---`, `# ═══`, `# ░░`, `# ██`, `# ****`, and box banners
+- Never leave commented-out code in the tree
+- Lint pragmas keep their codes: `# noqa: CODE`, `# type: ignore[code]`; bare `# noqa` is forbidden
+- TODOs must be actionable: `# TODO: <imperative> ...` (e.g. `# TODO: add pagination to this endpoint`)
+- Security comments (e.g. about key derivation, sandbox flags) stay — they document intent
+- Never duplicate translation keys/values in comments
+
+### Naming
+- Python: `snake_case` functions/vars, `PascalCase` classes, `UPPER_SNAKE_CASE` constants, `_private` for internals
+- Modules `snake_case`; test files `test_<module>_pytest.py`
+- SQLAlchemy models: singular `PascalCase` (in `backend/models/`)
+- Blueprints: `<name>_bp`; Pydantic schemas: `<Verb>Schema` for requests, `<Domain>Response` for responses
+
+### General
+- `from __future__ import annotations` at the top of every file **except** `backend/models/*` (PEP 563 breaks Annotated Declarative Table)
+- Full type annotations — `mypy --strict` must pass with 0 errors (81 source files)
+- No bare `except:`; no `print()` in source (use `logger`; tests/scripts add `# noqa: T201`)
+- f-strings over `%`; timestamps via `utils.dates.utcnow()`
+- Errors only via `err()` or `SchemaError` (see Error Handling); import sorting per ruff `I` rules
+- Formatting: line length 100, double quotes, 4-space indent (ruff format enforces)
+- Logging: `logger.info("... %s", value)` — never f-strings in log format strings
 
 ---
 
@@ -302,7 +401,7 @@ npm run lint            # ESLint
 
 ### Adding a New Translation Key
 1. Add key + value to **both** `en/translation.json` and `bg/translation.json`
-2. If it's an `ERR_*` code, also add to `DEFAULT_ERROR_MESSAGES` in `backend/error_utils.py`
+2. If it's an `ERR_*` code, also add to `DEFAULT_ERROR_MESSAGES` in `backend/utils/error_utils.py`
 3. Run both checkers: `python backend/scripts/check_error_codes.py && python frontend/scripts/check_translations.py`
 
 ---
@@ -313,7 +412,7 @@ npm run lint            # ESLint
 1. Create Pydantic schema in `backend/schemas/` (if validation needed)
 2. Add route to appropriate `backend/routes/*.py`, decorate with `@role_required` + `@api.validate`
 3. Register blueprint in `backend/app.py` (if new file)
-4. Add `err()` code to `DEFAULT_ERROR_MESSAGES` in `error_utils.py` (or raise `SchemaError` in validators)
+4. Add `err()` code to `DEFAULT_ERROR_MESSAGES` in `utils/error_utils.py` (or raise `SchemaError` in validators)
 5. Add `api.ERR_*` translation keys to both locale files
 6. Write tests in `backend/tests/`
 7. Update API types: `cd frontend && npm run generate-api-types`
@@ -398,7 +497,7 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 - **Form data arrives as strings** — use `mode="before"` validators with `_coerce_bool`/`_coerce_int`
 - **spectree `@api.validate` shadows `json` stdlib** — use `import json as jsonlib` in route bodies
 - **NEVER `jsonify({"error": ...})`** — use `err()` or raise `SchemaError`
-- **Removing error codes** requires cleanup in 3 places: `error_utils.py`, `en/translation.json`, `bg/translation.json`
+- **Removing error codes** requires cleanup in 3 places: `utils/error_utils.py`, `en/translation.json`, `bg/translation.json`
 - **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
 - **Pre-commit hook broken** with ruff v0.15.19 (S101/S106 false positives on tests) — use `--no-verify`
 - **Docker not needed for tests** — uses `sqlite:///:memory:`

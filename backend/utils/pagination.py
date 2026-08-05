@@ -1,3 +1,5 @@
+"""Pagination extraction and response shaping."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,10 +1,12 @@
+"""Tests for the auth helpers."""
+
 from datetime import datetime
 from unittest.mock import patch
 
 import pytest
 from flask import Flask, jsonify, request
 
-from auth_utils import (
+from utils.auth_utils import (
     SECRET_KEY,
     check_worker_auth,
     generate_token,
@@ -41,8 +43,8 @@ class TestAuthUtils:
 
     def test_verify_token_returns_none_for_expired_token(self):
         with (
-            patch("auth_utils.SECRET_KEY", SECRET_KEY),
-            patch("auth_utils.utcnow") as mock_utcnow,
+            patch("utils.auth_utils.SECRET_KEY", SECRET_KEY),
+            patch("utils.auth_utils.utcnow") as mock_utcnow,
         ):
             mock_utcnow.return_value = datetime(2020, 1, 1, 12, 0, 0)
             token = generate_token(1, "competitor")
@@ -230,7 +232,7 @@ class TestRateLimit:
         """Create a fresh Flask app with rate-limited routes for each test."""
         from flask import Flask, jsonify, request
 
-        from auth_utils import login_required
+        from utils.auth_utils import login_required
 
         app = Flask(__name__)
         app.config["TESTING"] = True
@@ -271,7 +273,7 @@ class TestRateLimit:
 
     # Added db_session here so SQLAlchemy creates the tables for the @login_required check
     # Keys are unique per test, so no global rate:* flush is needed (avoids races
-    # between xdist workers sharing the same Redis).
+    # Between xdist workers sharing the same Redis)
     @pytest.fixture(autouse=True)
     def setup_method_state(self, db_session):
         # Reset the static tracker attributes before every test
@@ -337,7 +339,7 @@ class TestRateLimit:
         res = rate_limit_client.get("/test-rl-identity", headers={"X-Test-Identity": ident})
         assert res.status_code == 200
 
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:

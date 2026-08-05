@@ -11,9 +11,9 @@ from typing import Any
 from flask import Response
 
 from config import Config
-from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
 from utils.dates import utcnow
+from utils.error_utils import err
 
 
 def validate_submission_allowed(
@@ -181,7 +181,7 @@ def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple
                         return False, get_violation_message(alias.name)
     except SyntaxError:
         # Fallback for code with syntax errors: check if any of
-        # the banned names appear as whole words not preceded by a dot
+        # The banned names appear as whole words not preceded by a dot
 
         import re
 
@@ -305,7 +305,7 @@ def get_best_submission(
 
     # 2. Tie-breaking sorting logic
     # Since all database scores (public_score, private_score) are normalized to higher-is-better,
-    # we always sort descending by score and ascending by execution time (faster is better).
+    # We always sort descending by score and ascending by execution time (faster is better)
     subs_sorted = sorted(
         user_subs,
         key=lambda x: (

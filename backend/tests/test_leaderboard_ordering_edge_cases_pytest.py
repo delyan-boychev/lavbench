@@ -1,3 +1,5 @@
+"""Tests for leaderboard ordering edge cases."""
+
 import json
 import os
 import sys
@@ -11,8 +13,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User
+from utils.auth_utils import generate_token
 
 
 class TestLeaderboardOrderingAndFinalizationConstraints:
@@ -178,7 +180,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         assert res.status_code == 200
 
         # Now finalize should succeed (other users have no
-        # submissions, so they default to 0 and don't block finalization)
+        # Submissions, so they default to 0 and don't block finalization)
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",
@@ -281,11 +283,11 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         # Expire all to clear the session cache
         db_session.expire_all()
 
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id, delete_only=True)
 
-        # Fetch leaderboard again.
+        # Fetch leaderboard again
         # Now, it must sort based on manual points (total_points):
         # 1. Low score competitor: 95 points
         # 2. High score competitor: 5 points
@@ -308,7 +310,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         assert leaderboard[1]["total_points"] == 5
         assert leaderboard[1]["rank"] == 2
 
-        # The third and fourth place are both 0 points.
+        # The third and fourth place are both 0 points
         # Ranks should share/be tied or determined appropriately
         assert leaderboard[2]["total_points"] == 0
         assert leaderboard[3]["total_points"] == 0

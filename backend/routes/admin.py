@@ -1,3 +1,5 @@
+"""Route handlers for the admin blueprint."""
+
 from __future__ import annotations
 
 import contextlib
@@ -23,15 +25,7 @@ from spectree import Response
 from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
-from auth_utils import jury_access_required, rate_limit, role_required
-from cache_utils import (
-    get_coordination_client,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    worker_spec_key,
-)
 from config import Config
-from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
 from models import (
     AuditLog,
@@ -67,7 +61,22 @@ from schemas.responses import (
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
 from spec import api
-from sse_utils import (
+from utils.audit import log_audit
+from utils.auth_utils import jury_access_required, rate_limit, role_required
+from utils.cache_helpers import cached_or_compute_unless_testing
+from utils.cache_utils import (
+    get_coordination_client,
+    get_sse_client,
+    invalidate_leaderboard_cache,
+    worker_spec_key,
+)
+from utils.competitor import check_duplicate_demographics, demographics_tuple
+from utils.dates import utcnow
+from utils.error_utils import err
+from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
+from utils.pagination import extract_pagination, paginated_response
+from utils.sse import sse_response
+from utils.sse_utils import (
     CHANNEL_BACKUPS,
     CHANNEL_QUEUE,
     CHANNEL_WORKER_STATS,
@@ -79,13 +88,6 @@ from sse_utils import (
     sse_connection_limit,
     sse_heartbeat,
 )
-from utils.audit import log_audit
-from utils.cache_helpers import cached_or_compute_unless_testing
-from utils.competitor import check_duplicate_demographics, demographics_tuple
-from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
-from utils.pagination import extract_pagination, paginated_response
-from utils.sse import sse_response
 from utils.streaming import stream_file_response, stream_open_handle_response
 
 logger = logging.getLogger(__name__)
@@ -167,9 +169,7 @@ def generate_random_password(length: int = 12) -> str:
     return "".join(secrets.choice(chars) for _ in range(length))
 
 
-# --- ENDPOINTS ---
-
-
+# ── ENDPOINTS ──
 @admin_bp.route("/register-competitor", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
@@ -396,7 +396,7 @@ def delete_user(user_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     db.session.commit()
 
     if user.challenge_id:
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(user.challenge_id)
 
@@ -1223,7 +1223,7 @@ def reset_all_challenge_passwords(
     file_name = f"competitor_passwords_{challenge_id}.json"
     file_path = os.path.join(credentials_dir, file_name)
     # Encrypt at rest — the plaintext is only ever returned through the
-    # admin-only one-time download endpoint
+    # Admin-only one-time download endpoint
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(encrypt_field(json.dumps(results, indent=4)) or "")
     os.chmod(file_path, 0o600)
@@ -1265,7 +1265,7 @@ def download_challenge_credentials(challenge_id: Any) -> FlaskResponse | tuple[F
         return err("ERR_CREDENTIALS_NOT_AVAILABLE", 404)
 
     # One-time delivery: remove the file before returning so the plaintext
-    # cannot be retrieved again
+    # Cannot be retrieved again
     with contextlib.suppress(OSError):
         os.remove(file_path)
 
@@ -1348,7 +1348,7 @@ def download_submissions_zip(
 
     # 2. Check if download is allowed
     # Allowed if finalized OR (if stage_id provided,
-    # stage has ended) OR (if no stage_id, challenge has ended)
+    # Stage has ended) OR (if no stage_id, challenge has ended)
 
     is_allowed = False
     if (
@@ -1448,9 +1448,9 @@ def download_submissions_zip(
             os.unlink(zip_tmp.name)
         return response
 
-    # Stream the ZIP from disk instead of buffering the whole archive in RAM.
+    # Stream the ZIP from disk instead of buffering the whole archive in RAM
     # The handle stays open until the body is streamed (unlink only removes the
-    # name — the inode lives on POSIX), then closes after the stream ends.
+    # Name — the inode lives on POSIX), then closes after the stream ends
     zip_handle = open(zip_tmp.name, "rb")  # noqa: SIM115 — closed by the generator
     return stream_open_handle_response(zip_handle, "application/zip", zip_filename)
 
@@ -1675,7 +1675,7 @@ def _get_worker_stats_response() -> dict[str, Any]:
 
         r = None
         try:
-            from cache_utils import get_coordination_client
+            from utils.cache_utils import get_coordination_client
 
             r = get_coordination_client()
         except Exception:

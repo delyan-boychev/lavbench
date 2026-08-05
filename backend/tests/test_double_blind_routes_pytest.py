@@ -1,3 +1,5 @@
+"""Tests for the double-blind evaluation routes."""
+
 import csv
 import io
 import os
@@ -13,8 +15,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import AuditLog, Challenge, Task, User
+from utils.auth_utils import generate_token
 
 
 class TestDoubleBlindAndLeaderboardRules:
@@ -47,7 +49,7 @@ class TestDoubleBlindAndLeaderboardRules:
             end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             double_blind=True,
-            reveal_results=False,  # hidden initially
+            reveal_results=False,  # Hidden initially
             scores_finalized=False,
         )
         db_session.add(self.challenge)

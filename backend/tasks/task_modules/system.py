@@ -206,8 +206,8 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
 
 def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, state: Any) -> None:
     try:
-        from cache_utils import get_coordination_client
-        from sse_utils import CHANNEL_BACKUPS
+        from utils.cache_utils import get_coordination_client
+        from utils.sse_utils import CHANNEL_BACKUPS
 
         r = get_coordination_client()
         if r:
@@ -225,6 +225,6 @@ def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, sta
 
 def run_docker_prune() -> dict[str, str]:
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
-    from task_modules.docker_utils import prune_images
+    from .docker_utils import prune_images
 
     return prune_images()

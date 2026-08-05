@@ -1,3 +1,5 @@
+"""Tests for worker task registration."""
+
 import os
 import subprocess
 import sys
@@ -83,8 +85,8 @@ def test_beat_schedule_prune_and_sweep_on_evaluation_queues():
 
     schedule = tasks.celery.conf.beat_schedule
     # Prune/sweep are host-side Docker ops that must run on evaluation worker
-    # nodes (they own the Docker socket). Emit on both cpu_queue and gpu_queue
-    # since either may be the deployed worker pool.
+    # Nodes (they own the Docker socket). Emit on both cpu_queue and gpu_queue
+    # Since either may be the deployed worker pool
     assert schedule["docker-prune-weekly-cpu"]["options"] == {"queue": "cpu_queue"}
     assert schedule["docker-prune-weekly-gpu"]["options"] == {"queue": "gpu_queue"}
     assert schedule["task-dir-sweep-daily-cpu"]["options"] == {"queue": "cpu_queue"}

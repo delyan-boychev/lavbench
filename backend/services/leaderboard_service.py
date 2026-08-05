@@ -12,9 +12,9 @@ from typing import Any
 
 from sqlalchemy.orm import joinedload
 
-from cache_utils import cache_lock, get_cached, set_cached
 from models import Challenge, Stage, Submission, Task, User, db, metric_direction_from_config
 from services.submission_service import get_best_submission
+from utils.cache_utils import cache_lock, get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
@@ -392,7 +392,7 @@ def get_task_leaderboard_data(
         return {"error": "Access denied or task not available yet."}
 
     # Competitor views are anonymized while staff views expose real names and
-    # scores, so cached payloads are bucketed per role and never shared.
+    # Scores, so cached payloads are bucketed per role and never shared
     role_kind = "competitor" if user_role == "competitor" else "staff"
     cache_key = f"task_leaderboard:{task_id}:{role_kind}"
     lock_key = f"lock:{cache_key}"
@@ -530,7 +530,7 @@ def _compute_task_leaderboard(
             return -1
         elif score_a != score_b:
             # Stored scores are always normalized to higher-is-better by the
-            # submission runner, so a plain descending sort is always correct.
+            # Submission runner, so a plain descending sort is always correct
             return -1 if score_a > score_b else 1
 
         ta = a["execution_time_ms"] if a["execution_time_ms"] is not None else 999999

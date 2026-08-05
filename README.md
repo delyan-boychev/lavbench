@@ -113,21 +113,15 @@ flowchart TD
 lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
-│   ├── config.py                # Config class reading environment variables
-│   ├── models/                  # SQLAlchemy models (User, Challenge, Stage, Task, Submission)
-│   ├── auth_utils.py            # JWT auth, httpOnly cookies, rate limiting, token revocation
-│   ├── cache_utils.py           # Redis caching, connection pool, locks
-│   ├── error_utils.py           # err() helper & DEFAULT_ERROR_MESSAGES
 │   ├── evaluation_engine.py     # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
-│   ├── sse_utils.py             # SSE pub/sub helpers
-│   ├── worker_utils.py          # Worker runtime & Docker sandbox status reporting
-│   ├── tasks.py                 # Celery task definitions + beat schedule
-│   ├── setup-admin.py           # Account creation script for master admin
-│   ├── scripts/                 # Maintenance scripts (check_error_codes.py)
+│   ├── config/                  # Config class (__init__), logging setup, pytest fixtures
+│   ├── models/                  # SQLAlchemy models (User, Challenge, Stage, Task, Submission)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, tasks, leaderboard, etc.)
+│   ├── scripts/                 # Maintenance scripts (setup-admin.py, check_error_codes.py, check_comments.py)
 │   ├── services/                # Business logic
-│   ├── task_modules/            # Submission runner, image builder, execution templates
-│   └── tests/                   # Backend Pytest test suite (1280 tests)
+│   ├── tasks/                   # Celery app (__init__) + task_modules/ (runner, image builder, templates)
+│   ├── tests/                   # Backend Pytest test suite (1282 tests)
+│   └── utils/                   # Helpers (auth_utils, error_utils, worker_utils, sse_utils, cache_utils, wsgi, ...)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # React components (admin, challenge, leaderboard, submissions, ui)
@@ -219,7 +213,7 @@ Includes 1280 unit and integration tests covering routes, authentication, AST se
 After `make setup-admin`, verify the entire platform end-to-end against the running compose stack (auth/CSRF, role matrix for admin/jury/competitor/anonymous, rate limits, backups, SSE, edge cases — no task evaluation):
 
 ```bash
-python3 scripts/api_smoke_test.py            # 128 checks, exit 0 on success
+python3 scripts/api_smoke_test.py            # 265 checks, exit 0 on success
 ```
 
 ### Frontend Tests & Type Checking

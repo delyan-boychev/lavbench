@@ -9,13 +9,13 @@
 ```bash
 make setup-admin            # docker compose exec backend + fetch credentials into admin_credentials.txt
 # or, on a bare deployment without the compose stack:
-python backend/setup-admin.py
+python backend/scripts/setup-admin.py
 ```
 
 Това генерира първоначален администраторски акаунт, създава главни учетни данни (credentials) и ги записва във файла `admin_credentials.txt` в основната директория. Влезте в системата през главния уеб интерфейс с активиран превключвател **"Sign In as Administrator"**.
 
 > [!TIP]
-> Цялостна проверка (end-to-end) на работещата платформа (автентификация/CSRF, матрица на ролите, лимити на заявките, архивни копия, SSE) е налична чрез `python3 scripts/api_smoke_test.py` — 158 проверки, код за край 0 при успех.
+> Цялостна проверка (end-to-end) на работещата платформа (автентификация/CSRF, матрица на ролите, лимити на заявките, архивни копия, SSE) е налична чрез `python3 scripts/api_smoke_test.py` — 265 проверки, код за край 0 при успех.
 
 > [!IMPORTANT]
 > Изпълнете `setup-admin.py` само веднъж при нова инсталация. Повторното изпълнение на този скрипт ще нулира достъпа на системния администратор.

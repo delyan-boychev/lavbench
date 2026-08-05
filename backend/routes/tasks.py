@@ -1,3 +1,5 @@
+"""Route handlers for the tasks blueprint."""
+
 from __future__ import annotations
 
 import contextlib
@@ -17,25 +19,7 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.utils import secure_filename
 
-from auth_utils import (
-    check_worker_auth,
-    jury_access_required,
-    login_required,
-    rate_limit,
-    role_required,
-)
-from cache_utils import (
-    cache_lock,
-    get_cached,
-    get_coordination_client,
-    get_queue_depth,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    set_cached,
-    worker_spec_key,
-)
 from config import Config
-from error_utils import err
 from models import Challenge, Stage, Submission, Task, db
 from schemas.responses import (
     ErrorResponse,
@@ -64,7 +48,33 @@ from services.submission_service import (
     validate_submission_allowed,
 )
 from spec import api
-from sse_utils import (
+from utils.access import ensure_registered
+from utils.audit import log_audit
+from utils.auth_utils import (
+    check_worker_auth,
+    jury_access_required,
+    login_required,
+    rate_limit,
+    role_required,
+)
+from utils.cache import invalidate_entity_cache
+from utils.cache_utils import (
+    cache_lock,
+    get_cached,
+    get_coordination_client,
+    get_queue_depth,
+    get_sse_client,
+    invalidate_leaderboard_cache,
+    set_cached,
+    worker_spec_key,
+)
+from utils.dates import utcnow
+from utils.error_utils import err
+from utils.ipynb import sanitize_filename_part
+from utils.json_utils import safe_json_loads
+from utils.metadata import build_submission_metadata
+from utils.sse import sse_response
+from utils.sse_utils import (
     CHANNEL_TASK_REBUILD,
     CHANNEL_WORKER_STATUS,
     SSE_IDLE_TIMEOUT,
@@ -75,14 +85,6 @@ from sse_utils import (
     sse_heartbeat,
     submissions_channel,
 )
-from utils.access import ensure_registered
-from utils.audit import log_audit
-from utils.cache import invalidate_entity_cache
-from utils.dates import utcnow
-from utils.ipynb import sanitize_filename_part
-from utils.json_utils import safe_json_loads
-from utils.metadata import build_submission_metadata
-from utils.sse import sse_response
 from utils.streaming import stream_file_response
 
 tasks_bp = Blueprint("tasks", __name__)
@@ -315,9 +317,7 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
         queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
 
 
-# --- TASK CRUD ---
-
-
+# ── TASK CRUD ──
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["GET"])
 @login_required
 @jury_access_required
@@ -675,7 +675,7 @@ def update_task(
     fields = form.model_fields_set
 
     # Snapshot semantic inputs so we can decide whether the rebuild/baseline
-    # actually needs to run (title changes must not rebuild the image).
+    # Actually needs to run (title changes must not rebuild the image)
     semantic_before = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -717,8 +717,8 @@ def update_task(
         task.pip_requirements = form.pip_requirements
 
     # NOTE: build-family problem codes are NOT cleared here. The gate stays
-    # closed until the worker reports a successful rebuild (report-build-error
-    # with empty error), so a broken env cannot silently re-open submissions.
+    # Closed until the worker reports a successful rebuild (report-build-error
+    # With empty error), so a broken env cannot silently re-open submissions
 
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
@@ -956,9 +956,9 @@ def update_task(
                     )
 
             # A re-uploaded file replaces any previous entry with the same
-            # filename: keep exactly one manifest entry (consumers match on the
-            # first entry per filename) and defer removal of the replaced file
-            # on disk until the whole update commits successfully.
+            # Filename: keep exactly one manifest entry (consumers match on the
+            # First entry per filename) and defer removal of the replaced file
+            # On disk until the whole update commits successfully
             replaced_paths.extend(
                 os.path.join(task_upload_dir, prev["saved_name"])
                 for prev in current_files
@@ -994,8 +994,8 @@ def update_task(
     invalidate_entity_cache(task.challenge_id)
 
     # Only recompute the baseline and notify workers to rebuild when the
-    # image-affecting (semantic) or scoring inputs actually changed — title,
-    # description, periods, limits etc. must not churn images or baselines.
+    # Image-affecting (semantic) or scoring inputs actually changed — title,
+    # Description, periods, limits etc. must not churn images or baselines.
     semantic_now = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -1063,7 +1063,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     db.session.commit()
 
     # Remove on-disk files only after the transaction succeeded — a failed
-    # commit (e.g. FK constraint) must never leave a half-deleted task behind.
+    # Commit (e.g. FK constraint) must never leave a half-deleted task behind.
     import shutil
 
     shutil.rmtree(task_upload_dir, ignore_errors=True)
@@ -1089,9 +1089,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     return MessageResponse(message=f"Task '{task.title}' has been deleted successfully.")
 
 
-# --- DOWNLOAD FILE ---
-
-
+# ── DOWNLOAD FILE ──
 @tasks_bp.route("/tasks/<uuid:task_id>/download/<string:filename>", methods=["GET"])
 @login_required
 @jury_access_required
@@ -1121,7 +1119,7 @@ def download_task_file(
 
     # Ground-truth labels are the core secret of a competition: jury members
     # (already assignment-gated by jury_access_required) may only fetch them
-    # after the competition has started.
+    # After the competition has started
     if user_role == "jury" and filename == "labels.parquet":
         challenge = task.challenge
         now = utcnow()
@@ -1159,9 +1157,7 @@ def download_task_file(
     return err("ERR_FILE_NOT_FOUND", 404)
 
 
-# --- TASK SUBMISSIONS & EVALUATIONS ---
-
-
+# ── TASK SUBMISSIONS & EVALUATIONS ──
 @tasks_bp.route("/tasks/<uuid:task_id>/submit", methods=["POST"])
 @login_required
 @jury_access_required
@@ -1519,10 +1515,10 @@ def stream_task_submissions(
                         time.sleep(2.0)
                     if message:
                         pending_update = True
-                    # debounce the DB re-query so a burst of channel
-                    # messages coalesces into at most one query per 2s instead
-                    # of re-reading all submissions per message. Any update
-                    # suppressed while in the window is delivered after it.
+                    # Debounce the DB re-query so a burst of channel
+                    # Messages coalesces into at most one query per 2s instead
+                    # Of re-reading all submissions per message. Any update
+                    # Suppressed while in the window is delivered after it
                     now = time.time()
                     if pending_update and (now - last_query_at) >= debounce_seconds:
                         data = _get_task_submissions_data(
@@ -1637,7 +1633,7 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
 
         r = None
         try:
-            from cache_utils import get_coordination_client
+            from utils.cache_utils import get_coordination_client
 
             r = get_coordination_client()
         except Exception as e:
@@ -1693,9 +1689,9 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
     cached = get_cached(cache_key)
     if cached is not None:
         return cached
-    # single-flight recompute — each expiry triggers exactly one
-    # cluster-wide inspect.ping/stats/registered instead of one per SSE
-    # client; every concurrent reader shares the freshly cached result.
+    # Single-flight recompute — each expiry triggers exactly one
+    # Cluster-wide inspect.ping/stats/registered instead of one per SSE
+    # Client; every concurrent reader shares the freshly cached result
     with cache_lock(f"lock:{cache_key}", ttl=30):
         cached = get_cached(cache_key)
         if cached is not None:
@@ -1736,9 +1732,9 @@ def report_worker_progress(
     if not submission:
         return err("ERR_NOT_FOUND", 404)
 
-    # a killed submission is terminal (status=failed,
-    # detailed_status=killed). A stale in-flight worker report must not
-    # resurrect it — reject the report outright.
+    # A killed submission is terminal (status=failed,
+    # Detailed_status=killed). A stale in-flight worker report must not
+    # Resurrect it — reject the report outright
     if submission.detailed_status == "killed":
         return err("ERR_SUBMISSION_KILLED", 409)
 
@@ -1749,9 +1745,9 @@ def report_worker_progress(
         submission.status = status_val
     if "detailed_status" in data:
         submission.detailed_status = data["detailed_status"]
-    # executed_at anchors the watchdog clock; it must reflect actual container
-    # execution, not pre-execution phases (image build, GPU acquisition) that the
-    # runner reports under detailed_status="building_env" while status="running".
+    # Executed_at anchors the watchdog clock; it must reflect actual container
+    # Execution, not pre-execution phases (image build, GPU acquisition) that the
+    # Runner reports under detailed_status="building_env" while status="running"
     detailed_val = data.get("detailed_status") or submission.detailed_status
     if (
         submission.executed_at is None
@@ -1812,7 +1808,7 @@ def report_worker_progress(
         submission.final_weighted_score_private = data["final_weighted_score_private"]
 
     # Baseline lifecycle: a failed baseline makes the task not-ready; a
-    # completed baseline clears the problem (submissions are gated on
+    # Completed baseline clears the problem (submissions are gated on
     # task.problem_codes).
     if submission.is_baseline and submission.task_id and "status" in data:
         baseline_task = db.session.get(Task, submission.task_id)
@@ -1831,12 +1827,12 @@ def report_worker_progress(
     publish_leaderboard_update(submission.challenge_id)
 
     if submission.status in ("completed", "failed"):
-        from sse_utils import publish_submission_status
+        from utils.sse_utils import publish_submission_status
 
         publish_submission_status(submission.id, submission.status)
 
         try:
-            from cache_utils import invalidate_leaderboard_cache
+            from utils.cache_utils import invalidate_leaderboard_cache
 
             invalidate_leaderboard_cache(submission.challenge_id)
         except Exception:
@@ -2061,14 +2057,14 @@ def report_build_error(
         return err("ERR_TASK_NOT_FOUND", 404)
     if error_msg:
         # Record every reported root cause; if none were reported, fall back
-        # to the generic build-failed code.
+        # To the generic build-failed code
         reported = [c for c in data.get("problem_codes", []) if isinstance(c, str)]
         merged = set(task.problem_codes or [])
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
         task.problem_codes = sorted(merged) or None
     else:
         # Successful build clears all build-related problems (baseline state
-        # is managed separately by report_worker_progress).
+        # Is managed separately by report_worker_progress)
         build_codes = {
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",
@@ -2117,7 +2113,7 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     log_path = os.path.join(log_dir, "worker_remote.log")
     try:
         # Rotate before appending so a churny worker cannot grow the log file
-        # without bound.
+        # Without bound
         if os.path.exists(log_path) and os.path.getsize(log_path) > Config.MAX_WORKER_LOG_BYTES:
             backup = f"{log_path}.1"
             if os.path.exists(backup):

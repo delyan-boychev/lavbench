@@ -1,3 +1,5 @@
+"""Tests for the API error handlers."""
+
 import os
 import sys
 from datetime import timedelta
@@ -10,8 +12,8 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User, db
+from utils.auth_utils import generate_token
 
 
 class TestBackendExceptionAndErrorCases:
@@ -324,7 +326,7 @@ class TestBackendExceptionAndErrorCases:
     @patch("requests.post")
     def test_report_status_success_on_first_try(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200)
-        from worker_utils import report_status_to_server
+        from utils.worker_utils import report_status_to_server
 
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -343,7 +345,7 @@ class TestBackendExceptionAndErrorCases:
             MagicMock(status_code=500),
             MagicMock(status_code=200),
         ]
-        from worker_utils import report_status_to_server
+        from utils.worker_utils import report_status_to_server
 
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -361,7 +363,7 @@ class TestBackendExceptionAndErrorCases:
     @patch("requests.post")
     def test_report_status_fails_completely(self, mock_post, mock_sleep):
         mock_post.side_effect = Exception("Permanent failure")
-        from worker_utils import report_status_to_server
+        from utils.worker_utils import report_status_to_server
 
         metadata = {
             "main_server_url": "http://localhost:5001",
@@ -375,17 +377,17 @@ class TestBackendExceptionAndErrorCases:
         assert mock_post.call_count == 3
 
     @patch(
-        "worker_utils.fetch_submission_run_content",
+        "utils.worker_utils.fetch_submission_run_content",
         return_value=("def predict(x): return 1", None),
     )
     @patch("time.sleep")
     @patch("requests.post")
-    @patch("worker_utils.download_task_files_to_dir")
-    @patch("task_modules.submission_runner.run_sandbox")
-    @patch("task_modules.submission_runner._get_client")
-    @patch("task_modules.submission_runner.check_docker_available")
-    @patch("task_modules.submission_runner._image_exists_docker")
-    @patch("cache_utils.get_redis_client")
+    @patch("utils.worker_utils.download_task_files_to_dir")
+    @patch("tasks.task_modules.submission_runner.run_sandbox")
+    @patch("tasks.task_modules.submission_runner._get_client")
+    @patch("tasks.task_modules.submission_runner.check_docker_available")
+    @patch("tasks.task_modules.submission_runner._image_exists_docker")
+    @patch("utils.cache_utils.get_redis_client")
     def test_evaluate_submission_callback_failure_raises_runtime_error(
         self,
         mock_get_redis,

@@ -32,9 +32,8 @@ exclude = [
     "tests/",
     "scripts/",
     "examples/",
-    "reset_for_fresh_start.py",
-    "setup-admin.py",
     "conftest.py",
+    "config/conftest.py",
 ]
 plugins = ["pydantic.mypy"]
 enable_error_code = ["ignore-without-code"]
@@ -67,7 +66,7 @@ module = "utils.sse"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "task_modules.submission_runner"
+module = "tasks.task_modules.submission_runner"
 disable_error_code = ["attr-defined", "return-value", "union-attr", "no-redef", "assignment", "untyped-decorator", "no-any-return", "import-untyped"]
 
 [tool.pytest.ini_options]
@@ -110,7 +109,9 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "S", "A", "T", "C4", "RUF",
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S108", "T201", "PERF"]
 "conftest.py" = ["S101", "S105", "S106", "S107", "S108", "T201", "PERF"]
+"config/conftest.py" = ["S101", "S105", "S106", "S107", "S108", "T201", "PERF"]
 "scripts/check_error_codes.py" = ["T201"]
+"scripts/check_comments.py" = ["T201"]
 "routes/admin.py" = ["RUF001"]
 
 [tool.ruff.format]

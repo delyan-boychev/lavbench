@@ -1,3 +1,5 @@
+"""Tests for the kill-queue routes."""
+
 import os
 import sys
 from unittest.mock import patch
@@ -8,8 +10,8 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User, db
+from utils.auth_utils import generate_token
 
 
 class TestKillSubmission:

@@ -1,4 +1,12 @@
+"""Bootstrap the application and create or update an admin user."""
+
+import os
 import secrets
+import sys
+
+# This script lives in backend/scripts/, so the backend package root is not on
+# sys.path when it is invoked by path (python /app/scripts/setup-admin.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from werkzeug.security import generate_password_hash
 

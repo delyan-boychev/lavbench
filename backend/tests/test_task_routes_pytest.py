@@ -1,3 +1,5 @@
+"""Tests for the task routes."""
+
 import json
 import os
 import sys
@@ -11,9 +13,9 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Stage, Submission, Task, User, db
 from routes.tasks import _worker_nonce_allowed_for_task
+from utils.auth_utils import generate_token
 
 
 class TestWorkerNonceBinding:
@@ -346,8 +348,8 @@ class TestQueueSystemSubmission:
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
-        # the evaluator script is fetched by the worker via the signed
-        # run-content endpoint; it is no longer embedded in the message.
+        # The evaluator script is fetched by the worker via the signed
+        # Run-content endpoint; it is no longer embedded in the message
         assert "custom_eval_code" not in metadata
 
     @patch("tasks.evaluate_submission.apply_async")

@@ -1,3 +1,5 @@
+"""Tests for the watchdog task."""
+
 import json
 from datetime import timedelta
 
@@ -103,7 +105,7 @@ class TestWatchdogStuckSubmissions:
     def test_uses_dispatch_time_limit_snapshot_not_current(self):
         # Task limit shrank from 900s (dispatch time) to 60s after the run
         # started. The watchdog must keep the dispatch-time budget: 1.5 * 900
-        # > 1000s elapsed, so the run must NOT be killed.
+        # > 1000s elapsed, so the run must NOT be killed
         self.task.time_limit_sec = 60
         db.session.commit()
         sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
@@ -120,7 +122,7 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) >= 1
 
     def test_recovered_from_fallback(self):
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:
@@ -147,7 +149,7 @@ class TestWatchdogStuckSubmissions:
         assert updated.private_score == 0.8
 
     def test_fallback_clears_redis_key(self):
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:

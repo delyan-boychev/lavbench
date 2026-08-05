@@ -1,3 +1,5 @@
+"""Tests for the app-level route wiring."""
+
 import json
 import os
 import sys
@@ -10,9 +12,9 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User, db
 from services.submission_service import calculate_submission_priority
+from utils.auth_utils import generate_token
 
 
 class TestRouteLevelLogic:
@@ -232,8 +234,8 @@ class TestRouteLevelLogic:
         assert len(args) == 2
         meta_dict = args[1]
         assert meta_dict.get("is_custom_eval")
-        # evaluator code is no longer shipped in the Celery message;
-        # the worker fetches it on demand via the signed run-content endpoint.
+        # Evaluator code is no longer shipped in the Celery message;
+        # The worker fetches it on demand via the signed run-content endpoint
         assert "custom_eval_code" not in meta_dict
         assert "user_code" not in meta_dict
 
@@ -314,8 +316,8 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         # The runner stores lower-better metrics already normalized to
-        # higher-is-better (mse 0.10 -> 1/1.10, mse 0.15 -> 1/1.15), so the
-        # leaderboard must sort purely descending (H-C1).
+        # Higher-is-better (mse 0.10 -> 1/1.10, mse 0.15 -> 1/1.15), so the
+        # Leaderboard must sort purely descending (H-C1)
         s1 = Submission(
             user_id=u1.id,
             challenge_id=self.challenge.id,
@@ -545,7 +547,7 @@ class TestRouteLevelLogic:
         response_iter = iter(res.response)
         first_chunk = next(response_iter)  # "connected" message
         assert b"connected" in first_chunk
-        second_chunk = next(response_iter)  # leaderboard data
+        second_chunk = next(response_iter)  # Leaderboard data
         assert b"data: " in second_chunk
         assert b"challenge_title" in second_chunk
         # Close to prevent generator from lingering
@@ -894,7 +896,7 @@ class TestRouteLevelLogic:
         res = self.client.put(f"/api/tasks/{task.id}", data=data, headers=admin_header)
         assert res.status_code == 200
 
-    @patch("cache_utils.delete_cached")
+    @patch("utils.cache_utils.delete_cached")
     @patch("utils.cache_helpers.set_cached")
     @patch("utils.cache_helpers.get_cached")
     def test_cache_invalidation_workflows(self, mock_get, mock_set, mock_delete):
@@ -908,7 +910,7 @@ class TestRouteLevelLogic:
             f"challenge:{self.challenge.id}:competitor", res.get_json(), timeout=600
         )
 
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id, delete_only=True)
         mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:frozen")
@@ -1279,7 +1281,7 @@ class TestRouteLevelLogic:
         assert any(u["id"] == self.competitor.id for u in data["items"])
 
     def test_competitor_anonymity_privacy_constraints(self):
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id)
 
@@ -1337,7 +1339,7 @@ class TestRouteLevelLogic:
         self.challenge.reveal_results = False
         db.session.commit()
 
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id)
 
@@ -1392,7 +1394,7 @@ class TestRouteLevelLogic:
 
         self.challenge.reveal_results = True
         db.session.commit()
-        from cache_utils import invalidate_leaderboard_cache
+        from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id)
 
@@ -1605,7 +1607,7 @@ class TestRouteLevelLogic:
         stage2.start_time = utcnow() - timedelta(hours=2)
         stage2.end_time = utcnow() - timedelta(hours=1)
         db.session.commit()
-        from cache_utils import invalidate_challenge_cache
+        from utils.cache_utils import invalidate_challenge_cache
 
         invalidate_challenge_cache(self.challenge.id)
 
@@ -1714,7 +1716,7 @@ class TestRouteLevelLogic:
     def test_archived_challenges_visibility(self):
         self.challenge.is_archived = True
         db.session.commit()
-        from cache_utils import invalidate_challenge_cache
+        from utils.cache_utils import invalidate_challenge_cache
 
         invalidate_challenge_cache(self.challenge.id)
 

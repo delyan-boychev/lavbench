@@ -93,7 +93,7 @@ LavBench provides production-ready evaluator template scripts in `docs/evaluator
 | **`evaluator_ht3_animal.py`** | **Animal Deduction** (IOAI Home Task 3): Evaluates discrete logical deduction and categorization accuracy. | [`evaluator_ht3_animal.py`](evaluator_templates/evaluator_ht3_animal.py) |
 
 > [!NOTE]
-> `backend/task_modules/templates.py` contains Jinja2 templates for sandbox container creation and competitor code execution wrappers (`DEFAULT_EVALUATION_TEMPLATE`), whereas domain-specific metric templates reside in `docs/evaluator_templates/`.
+> `backend/tasks/task_modules/templates.py` contains Jinja2 templates for sandbox container creation and competitor code execution wrappers (`DEFAULT_EVALUATION_TEMPLATE`), whereas domain-specific metric templates reside in `docs/evaluator_templates/`.
 
 ---
 

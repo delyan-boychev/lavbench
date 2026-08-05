@@ -1,3 +1,5 @@
+"""Jupyter notebook cell helpers (ipynb JSON and raw cells)."""
+
 from __future__ import annotations
 
 import json

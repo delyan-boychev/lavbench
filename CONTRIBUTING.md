@@ -5,7 +5,7 @@
 ```bash
 cp .env.example .env
 # Edit .env — set SECRET_KEY, ENCRYPTION_KEY, DATABASE_URL, etc.
-python backend/setup-admin.py
+python backend/scripts/setup-admin.py
 ./scripts/deploy-debug.sh
 ```
 
@@ -60,12 +60,12 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 ### Backend (Python)
 
 - Formatted and linted with **Ruff** (configuration in `backend/pyproject.toml`, line‑length 100, rules matching the project’s standards)
-- Error responses must use the `err(code, status, message=...)` helper from `error_utils.py` or raise `SchemaError(code, message)` in Pydantic validators — never `jsonify({"error": ...})` directly
+- Error responses must use the `err(code, status, message=...)` helper from `backend/utils/error_utils.py` or raise `SchemaError(code, message)` in Pydantic validators — never `jsonify({"error": ...})` directly
 - Schema validators go in `backend/schemas/` with Pydantic v2 `BaseModel` classes; use `@api.validate(json=..., resp=Response(...))` decorators on route handlers
-- Every `ERR_*` code must be defined in `DEFAULT_ERROR_MESSAGES` in `backend/error_utils.py` and referenced by at least one `err()` or `SchemaError()` call
+- Every `ERR_*` code must be defined in `DEFAULT_ERROR_MESSAGES` in `backend/utils/error_utils.py` and referenced by at least one `err()` or `SchemaError()` call
 - Tests in `backend/tests/`, one file per route module or service
 - Dev dependencies (pytest, pytest-mock, Faker, etc.) are in `dev-requirements.in` — compile with `pip-compile dev-requirements.in`
-- Use pytest fixtures from `backend/conftest.py` for common setups
+- Use pytest fixtures from `backend/config/conftest.py` for common setups
 - New routes go in `backend/routes/`, new schemas go in `backend/schemas/`, register blueprints in `backend/app.py`
 - Security-sensitive code must include rate limiting and auth checks
 
@@ -156,7 +156,7 @@ paths['/api/endpoint']['method']['responses']['200']['content']['application/jso
 
 ## Security
 
-The platform evaluates untrusted competitor code in hardened Docker containers. When modifying the execution pipeline (`backend/task_modules/submission_runner.py`), ensure that:
+The platform evaluates untrusted competitor code in hardened Docker containers. When modifying the execution pipeline (`backend/tasks/task_modules/submission_runner.py`), ensure that:
 
 - No new network access is introduced
 - No new Linux capabilities are granted

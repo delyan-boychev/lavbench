@@ -1,3 +1,5 @@
+"""Tests for submission service extras."""
+
 import json
 import os
 import sys

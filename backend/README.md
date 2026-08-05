@@ -29,7 +29,7 @@ cp ../.env.example ../.env
 After starting your database and Redis instances, run the admin setup script to generate master credentials:
 
 ```bash
-python setup-admin.py
+python scripts/setup-admin.py
 ```
 
 This creates the initial administrator account and writes credentials to `admin_credentials.txt` in the repository root.
@@ -57,26 +57,20 @@ celery -A tasks.celery beat --loglevel=info
 ```text
 backend/
 ├── app.py                      # Flask factory, blueprint registration, error handlers
-├── config.py                   # Config class reading environment variables
-├── error_utils.py              # err() helper & DEFAULT_ERROR_MESSAGES dictionary
-├── auth_utils.py               # JWT authentication, httpOnly cookies, Redis token revocation
-├── cache_utils.py              # Redis connection pool, caching helpers, atomic locks
 ├── evaluation_engine.py        # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
-├── sse_utils.py                # Server-Sent Events streaming pub/sub helpers
-├── worker_utils.py             # Docker container sandbox runtime & status reporting
-├── tasks.py                    # Celery tasks & periodic beat schedule (backups, watchdog)
 ├── spec.py                     # Spectree OpenAPI spec instance & Swagger config
-├── setup-admin.py              # Script to generate administrator account
+├── config/                     # Config class (__init__), logging setup (log_config), pytest fixtures (conftest)
 ├── models/                     # SQLAlchemy models (User, Challenge, Stage, Task, Submission, AuditLog)
-├── schemas/                    # Pydantic v2 validation schemas & spectree before-handlers
-│   ├── exceptions.py           # SchemaError(code, message) base exception class
-│   ├── common.py               # Shared validators (_parse_datetime_strict, PaginationParams)
-│   └── responses/              # Pydantic response schemas (10 domain modules)
 ├── routes/                     # Flask blueprints (admin, auth, challenges, tasks, submissions, leaderboard, etc.)
+├── schemas/                    # Pydantic v2 validation schemas & spectree before-handlers
+│   ├── common.py               # Shared validators (_parse_datetime_strict, PaginationParams)
+│   ├── exceptions.py           # SchemaError(code, message) base exception class
+│   └── responses/              # Pydantic response schemas (10 domain modules)
+├── scripts/                    # Maintenance & CI scripts (setup-admin.py, check_error_codes.py, check_comments.py)
 ├── services/                   # Core business logic (challenge_service, submission_service, etc.)
-├── task_modules/               # Sandbox templates, image_builder, submission_runner
-├── scripts/                    # Maintenance & CI scripts (check_error_codes.py)
-└── tests/                      # pytest test suite (946 tests)
+├── tasks/                      # Celery app (__init__.py) + task_modules/ (runner, image builder, system, templates)
+├── tests/                      # pytest test suite (1282 tests)
+└── utils/                      # Helpers — error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, ...
 ```
 
 ---
@@ -103,10 +97,10 @@ def create_challenge(json: CreateChallengeSchema):
 - Custom schema validators raise `SchemaError("ERR_CODE", "Message")`.
 
 ### B. Standardized Error Handling
-All API route errors **must** use the `err()` helper function from `error_utils.py`:
+All API route errors **must** use the `err()` helper function from `utils/error_utils.py`:
 
 ```python
-from error_utils import err
+from utils.error_utils import err
 return err("ERR_INVALID_CREDENTIALS", 401)
 ```
 

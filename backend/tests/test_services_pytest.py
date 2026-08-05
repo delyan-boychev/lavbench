@@ -1,3 +1,5 @@
+"""Tests for the service layer."""
+
 import os
 import sys
 
@@ -66,7 +68,7 @@ class TestServiceSandboxAndPriority:
         assert calculate_submission_priority(2, "jury") == 0
 
     def test_evaluation_templates_formatting(self):
-        from task_modules.templates import (
+        from tasks.task_modules.templates import (
             DEFAULT_EVALUATION_TEMPLATE,
             render_eval_template,
         )
@@ -126,8 +128,8 @@ class TestServiceSandboxAndPriority:
 
         self.task.metrics_config = '{"mse": {"weight": 1.0, "higher_is_better": false}}'
         # In practice, scores are normalized by the runner to higher-is-better:
-        # sub1 (MSE = 10.0) -> normalized to 1.0 / (1.0 + 10.0) = 0.0909
-        # sub2 (MSE = 5.0)  -> normalized to 1.0 / (1.0 + 5.0) = 0.1667
+        # Sub1 (MSE = 10.0) -> normalized to 1.0 / (1.0 + 10.0) = 0.0909
+        # Sub2 (MSE = 5.0)  -> normalized to 1.0 / (1.0 + 5.0) = 0.1667
         sub1 = Submission(
             task_id=self.task.id,
             user_id=1,

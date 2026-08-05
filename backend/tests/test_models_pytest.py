@@ -1,3 +1,5 @@
+"""Tests for the SQLAlchemy models."""
+
 import os
 import sys
 import tempfile

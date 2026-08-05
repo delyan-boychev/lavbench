@@ -1,3 +1,5 @@
+"""Tests for the cache helpers."""
+
 import json
 import os
 import sys
@@ -7,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from cache_utils import (
+from utils.cache_utils import (
     cache_lock,
     delete_cached,
     get_cached,

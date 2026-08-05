@@ -1,3 +1,5 @@
+"""Tests for the Redis coordination client."""
+
 import json
 import os
 import sys
@@ -6,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from cache_utils import (
+from utils.cache_utils import (
     DIRTY_CHALLENGES_SET,
     get_coordination_client,
     get_queue_depth,

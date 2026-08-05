@@ -1,10 +1,12 @@
+"""Tests for the Docker image builder."""
+
 import json
 from collections import namedtuple
 
 import pytest
 
-from task_modules import image_builder as ib
-from task_modules.image_builder import (
+from tasks.task_modules import image_builder as ib
+from tasks.task_modules.image_builder import (
     _build_lock_key,
     _check_build_disk_space,
     _clear_stale_build_locks,
@@ -141,22 +143,22 @@ class TestCheckBuildDiskSpace:
 
     def test_enough_space_returns_true(self, mocker):
         usage = self.Usage(100, 50, 10 * 1024**3)
-        mocker.patch("task_modules.image_builder.shutil.disk_usage", return_value=usage)
+        mocker.patch("tasks.task_modules.image_builder.shutil.disk_usage", return_value=usage)
         assert _check_build_disk_space() is True
 
     def test_insufficient_space_returns_false(self, mocker):
         usage = self.Usage(100, 99, 4 * 1024**3)
-        mocker.patch("task_modules.image_builder.shutil.disk_usage", return_value=usage)
+        mocker.patch("tasks.task_modules.image_builder.shutil.disk_usage", return_value=usage)
         assert _check_build_disk_space() is False
 
     def test_boundary_exact_minimum_passes(self, mocker):
         usage = self.Usage(100, 50, ib.MIN_BUILD_DISK_GB * 1024**3)
-        mocker.patch("task_modules.image_builder.shutil.disk_usage", return_value=usage)
+        mocker.patch("tasks.task_modules.image_builder.shutil.disk_usage", return_value=usage)
         assert _check_build_disk_space() is True
 
     def test_oserror_fails_open(self, mocker):
         mocker.patch(
-            "task_modules.image_builder.shutil.disk_usage",
+            "tasks.task_modules.image_builder.shutil.disk_usage",
             side_effect=OSError("no such dir"),
         )
         assert _check_build_disk_space() is True

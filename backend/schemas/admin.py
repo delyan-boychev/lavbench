@@ -1,3 +1,5 @@
+"""Pydantic schemas for the admin blueprint."""
+
 from pydantic import BaseModel, Field
 
 

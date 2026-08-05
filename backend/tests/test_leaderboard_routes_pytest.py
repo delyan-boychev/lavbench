@@ -1,3 +1,5 @@
+"""Tests for the leaderboard routes."""
+
 import os
 import sys
 from datetime import timedelta
@@ -11,8 +13,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User
+from utils.auth_utils import generate_token
 
 
 class TestChallengeLeaderboardGetEndpoint:
@@ -166,7 +168,7 @@ class TestChallengeLeaderboardGetEndpoint:
     @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_admin_uses_cache(self, mock_build, client):
         mock_build.return_value = []
-        from cache_utils import set_cached
+        from utils.cache_utils import set_cached
 
         entry = {
             "user": {
