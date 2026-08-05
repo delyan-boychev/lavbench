@@ -60,6 +60,17 @@ jobs:
         working-directory: backend
       - name: Error code checker
         run: python backend/scripts/check_error_codes.py
+
+  comment-style:
+    # Advisory only — informational, never a required status check
+    name: Backend comment style (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - name: Comment style checker
         run: python backend/scripts/check_comments.py
 

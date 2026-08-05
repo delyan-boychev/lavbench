@@ -165,6 +165,7 @@ python scripts/check_translations.py
 |---|---|
 | `backend-tests` | `pytest -n auto --timeout=120 --cov` (≥70%) |
 | `backend-lint` | `ruff check`, `ruff format --check`, `check_error_codes.py` |
+| `comment-style` | `check_comments.py` (advisory — never a required check) |
 | `backend-types` | `mypy backend/ --no-incremental` |
 | `frontend-lint` | `npm run lint` |
 | `frontend-format` | `npm run format:check` |
