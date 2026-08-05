@@ -29,8 +29,8 @@ import pytest  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 from app import create_app  # noqa: E402
-from auth_utils import generate_token  # noqa: E402
 from models import Challenge, Stage, Submission, Task, User, db  # noqa: E402
+from utils.auth_utils import generate_token  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)

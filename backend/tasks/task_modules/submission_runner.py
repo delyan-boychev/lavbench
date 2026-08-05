@@ -23,8 +23,6 @@ from celery.signals import task_prerun, worker_ready
 
 from cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from config import Config
-from task_modules.docker_utils import _get_client, check_docker_available
-from task_modules.docker_utils import image_exists as _image_exists_docker
 from utils.dates import utcnow
 from worker_utils import (
     MockModel,
@@ -35,6 +33,9 @@ from worker_utils import (
     sync_labels_parquet_to_cache,
     sync_task_files_to_assets_cache,
 )
+
+from .docker_utils import _get_client, check_docker_available
+from .docker_utils import image_exists as _image_exists_docker
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def _report_runtime_sync_failure(
     """
     if not metadata or not metadata.get("main_server_url"):
         return
-    from task_modules.image_builder import _report_build_error
+    from .image_builder import _report_build_error
 
     _report_build_error(
         str(task_id),
@@ -807,7 +808,7 @@ def run_eval_submission(
                 logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
             else:
                 logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
-                from task_modules.image_builder import build_task_image
+                from .image_builder import build_task_image
 
                 build_logs_accum: list[str] = []
 
@@ -829,7 +830,7 @@ def run_eval_submission(
 
         # Safety check: verify the sandbox image exists before launching
         if not _image_exists_docker(image_tag):
-            from task_modules.image_builder import ensure_task_image
+            from .image_builder import ensure_task_image
 
             logs.append(f"Sandbox image '{image_tag}' missing — attempting final blocking build...")
             retry_logs: list[str] = []
@@ -1313,7 +1314,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         # code and must not touch the Docker image pipeline at all.
         if Config.RUNS_EVALUATION:
             try:
-                from task_modules.image_builder import (
+                from .image_builder import (
                     build_all_active_tasks,
                     start_rebuild_listener,
                 )

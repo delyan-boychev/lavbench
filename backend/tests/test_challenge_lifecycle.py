@@ -35,7 +35,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -78,7 +78,7 @@ class TestFinalizeChallenge:
 
     def test_finalize_challenge_not_found(self, client, create_user):
         jury = create_user(username="finalize-jury-nf", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -114,7 +114,7 @@ class TestFinalizeChallenge:
         db_session.commit()
 
         jury = create_user(username="finalize-jury-mp", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -141,7 +141,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury-rf", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -176,7 +176,7 @@ class TestFinalizeChallenge:
         create_user,
     ):
         jury = create_user(username="finalize-jury-ro", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -248,7 +248,7 @@ class TestFinalizeChallenge:
         db_session.commit()
 
         jury = create_user(username="finalize-jury-be", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -352,7 +352,7 @@ class TestCreateTestStage:
         self, client, db_session, sample_future_challenge, create_user
     ):
         jury = create_user(username="teststage-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}
@@ -487,7 +487,7 @@ class TestArchiveChallengePytest:
 
     def test_archive_jury_can_toggle(self, client, db_session, sample_challenge, create_user):
         jury = create_user(username="archive-jury", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
         headers = {"Authorization": f"Bearer {token}"}

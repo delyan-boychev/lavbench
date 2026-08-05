@@ -363,8 +363,8 @@ class TestBackupIncludesLogs:
         self.app.config["TESTING"] = True
 
     @patch("models.AuditLog.query")
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.path.getsize")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.path.getsize")
     def test_copytree_called_when_log_dir_exists(self, mock_getsize, mock_run, mock_audit):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -376,13 +376,13 @@ class TestBackupIncludesLogs:
         with open(os.path.join(log_dir, "backend.log"), "w") as f:
             f.write("test log")
 
-        from task_modules.system import run_backup
+        from tasks.task_modules.system import run_backup
 
         with (
             self.app.app_context(),
-            patch("task_modules.system.Config.LOG_DIR", log_dir),
-            patch("task_modules.system.Config.BACKUPS_DIR", backups_dir),
-            patch("task_modules.system.shutil.copytree") as mock_copytree,
+            patch("tasks.task_modules.system.Config.LOG_DIR", log_dir),
+            patch("tasks.task_modules.system.Config.BACKUPS_DIR", backups_dir),
+            patch("tasks.task_modules.system.shutil.copytree") as mock_copytree,
         ):
             run_backup(self.app, auto=True)
             mock_copytree.assert_called_once()
@@ -391,8 +391,8 @@ class TestBackupIncludesLogs:
             assert kwargs.get("dirs_exist_ok") is True
 
     @patch("models.AuditLog.query")
-    @patch("task_modules.system.subprocess.run")
-    @patch("task_modules.system.os.path.getsize")
+    @patch("tasks.task_modules.system.subprocess.run")
+    @patch("tasks.task_modules.system.os.path.getsize")
     def test_copytree_not_called_when_log_dir_missing(self, mock_getsize, mock_run, mock_audit):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -400,13 +400,15 @@ class TestBackupIncludesLogs:
         mock_audit.return_value.order_by.return_value.yield_per.return_value = []
 
         backups_dir = tempfile.mkdtemp()
-        from task_modules.system import run_backup
+        from tasks.task_modules.system import run_backup
 
         with (
             self.app.app_context(),
-            patch("task_modules.system.Config.LOG_DIR", "/tmp/nonexistent-test-log-dir-12345"),
-            patch("task_modules.system.Config.BACKUPS_DIR", backups_dir),
-            patch("task_modules.system.shutil.copytree") as mock_copytree,
+            patch(
+                "tasks.task_modules.system.Config.LOG_DIR", "/tmp/nonexistent-test-log-dir-12345"
+            ),
+            patch("tasks.task_modules.system.Config.BACKUPS_DIR", backups_dir),
+            patch("tasks.task_modules.system.shutil.copytree") as mock_copytree,
         ):
             run_backup(self.app, auto=True)
             mock_copytree.assert_not_called()

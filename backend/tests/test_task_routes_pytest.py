@@ -11,9 +11,9 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Stage, Submission, Task, User, db
 from routes.tasks import _worker_nonce_allowed_for_task
+from utils.auth_utils import generate_token
 
 
 class TestWorkerNonceBinding:

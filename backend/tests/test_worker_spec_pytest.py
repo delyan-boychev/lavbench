@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 import redis
 
-from task_modules import submission_runner as sr
-from task_modules.submission_runner import (
+from tasks.task_modules import submission_runner as sr
+from tasks.task_modules.submission_runner import (
     _preload_dataset,
     _preload_model,
     _recreate_spec_on_reconnect,
@@ -128,8 +128,8 @@ class TestRegisterWorkerSpecs:
         mocker.patch.object(sr.os, "cpu_count", return_value=8)
         mocker.patch("platform.system", return_value="Darwin")
         mocker.patch.object(sr.subprocess, "check_output", side_effect=self._fake_check_output)
-        mock_build = mocker.patch("task_modules.image_builder.build_all_active_tasks")
-        mock_listener = mocker.patch("task_modules.image_builder.start_rebuild_listener")
+        mock_build = mocker.patch("tasks.task_modules.image_builder.build_all_active_tasks")
+        mock_listener = mocker.patch("tasks.task_modules.image_builder.start_rebuild_listener")
         sender = SimpleNamespace(hostname=hostname, pool=SimpleNamespace(limit=concurrency))
         return mock_r, mock_build, mock_listener, sender
 
@@ -164,7 +164,7 @@ class TestRegisterWorkerSpecs:
 
     def test_no_client_returns_early(self, mocker):
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
-        mock_build = mocker.patch("task_modules.image_builder.build_all_active_tasks")
+        mock_build = mocker.patch("tasks.task_modules.image_builder.build_all_active_tasks")
         register_worker_specs(MagicMock(hostname="worker-3"))
         mock_build.assert_not_called()
 

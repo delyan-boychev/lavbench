@@ -225,6 +225,6 @@ def _publish_backup_event(filename: str, size_bytes: int, challenge_id: Any, sta
 
 def run_docker_prune() -> dict[str, str]:
     """Prune unused docker layers on worker nodes to prevent disk space leaks."""
-    from task_modules.docker_utils import prune_images
+    from .docker_utils import prune_images
 
     return prune_images()

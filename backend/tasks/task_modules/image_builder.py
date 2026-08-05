@@ -26,8 +26,9 @@ from typing import Any
 from cache_utils import get_coordination_client
 from config import Config
 from sse_utils import CHANNEL_TASK_REBUILD
-from task_modules.docker_utils import _get_client
-from task_modules.docker_utils import image_exists as _image_exists
+
+from .docker_utils import _get_client
+from .docker_utils import image_exists as _image_exists
 
 MIN_BUILD_DISK_GB = 5
 BUILD_LOCK_TTL = 900  # 15 minutes — plenty for any build, short enough for stale locks

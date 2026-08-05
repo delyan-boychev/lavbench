@@ -12,7 +12,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import (
     cache_lock,
     get_queue_depth,
@@ -52,6 +51,7 @@ from sse_utils import (
     sse_heartbeat,
     submission_logs_channel,
 )
+from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.dates import utcnow
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.json_utils import safe_json_loads

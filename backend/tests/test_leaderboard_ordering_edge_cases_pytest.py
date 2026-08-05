@@ -11,8 +11,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User
+from utils.auth_utils import generate_token
 
 
 class TestLeaderboardOrderingAndFinalizationConstraints:

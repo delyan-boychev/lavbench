@@ -17,7 +17,6 @@ from spectree import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from config import Config
 from error_utils import err
@@ -43,6 +42,7 @@ from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
 from spec import api
 from utils.audit import log_audit
+from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
 from utils.dates import to_utc as _to_utc

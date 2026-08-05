@@ -15,7 +15,7 @@ Checks:
 
 Usage:
     python scripts/check_error_codes.py [files...]
-    # If no files given, checks all *.py under routes/ plus auth_utils.py, app.py
+    # If no files given, checks all *.py under routes/ plus app.py, error_utils.py
 """
 
 import ast
@@ -222,11 +222,10 @@ def main():
         files.extend(sorted(services_dir.glob("*.py")))
         utils_dir = root / "utils"
         files.extend(sorted(utils_dir.glob("*.py")))
-        task_modules_dir = root / "task_modules"
+        task_modules_dir = root / "tasks/task_modules"
         if task_modules_dir.exists():
             files.extend(sorted(task_modules_dir.glob("*.py")))
         for extra in [
-            "auth_utils.py",
             "app.py",
             "error_utils.py",
             "sse_utils.py",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from auth_utils import check_competitor_access as _check
 from models import User, db
+from utils.auth_utils import check_competitor_access as _check
 
 
 def ensure_registered(user_id: str, challenge_id: str) -> User | None:

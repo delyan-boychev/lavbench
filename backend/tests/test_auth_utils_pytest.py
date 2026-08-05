@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from flask import Flask, jsonify, request
 
-from auth_utils import (
+from utils.auth_utils import (
     SECRET_KEY,
     check_worker_auth,
     generate_token,
@@ -41,8 +41,8 @@ class TestAuthUtils:
 
     def test_verify_token_returns_none_for_expired_token(self):
         with (
-            patch("auth_utils.SECRET_KEY", SECRET_KEY),
-            patch("auth_utils.utcnow") as mock_utcnow,
+            patch("utils.auth_utils.SECRET_KEY", SECRET_KEY),
+            patch("utils.auth_utils.utcnow") as mock_utcnow,
         ):
             mock_utcnow.return_value = datetime(2020, 1, 1, 12, 0, 0)
             token = generate_token(1, "competitor")
@@ -230,7 +230,7 @@ class TestRateLimit:
         """Create a fresh Flask app with rate-limited routes for each test."""
         from flask import Flask, jsonify, request
 
-        from auth_utils import login_required
+        from utils.auth_utils import login_required
 
         app = Flask(__name__)
         app.config["TESTING"] = True

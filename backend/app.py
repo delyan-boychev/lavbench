@@ -86,11 +86,10 @@ def _ensure_database_schema(app: Flask) -> None:
 
     Gunicorn workers import ``app`` (``wsgi:app``) and only the ``__main__``
     path called ``db.create_all()``, so a fresh deployment served 500s until
-    ``setup-admin`` or ``reset_for_fresh_start`` ran. ``create_all`` is
-    idempotent; a PostgreSQL advisory session lock merely serialises the
-    first-boot stampede. Eval and scheduler workers never reach this (they do
-    not hold the app/DB role). Failures degrade /api/health instead of blocking
-    boot.
+    ``setup-admin`` ran. ``create_all`` is idempotent; a PostgreSQL advisory
+    session lock merely serialises the first-boot stampede. Eval and scheduler
+    workers never reach this (they do not hold the app/DB role). Failures
+    degrade /api/health instead of blocking boot.
     """
     if not Config.HAS_APP:
         return

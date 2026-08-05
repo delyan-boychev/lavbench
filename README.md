@@ -115,18 +115,17 @@ lavbench/
 │   ├── app.py                   # Flask application factory
 │   ├── config.py                # Config class reading environment variables
 │   ├── models/                  # SQLAlchemy models (User, Challenge, Stage, Task, Submission)
-│   ├── auth_utils.py            # JWT auth, httpOnly cookies, rate limiting, token revocation
 │   ├── cache_utils.py           # Redis caching, connection pool, locks
 │   ├── error_utils.py           # err() helper & DEFAULT_ERROR_MESSAGES
 │   ├── evaluation_engine.py     # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
 │   ├── sse_utils.py             # SSE pub/sub helpers
 │   ├── worker_utils.py          # Worker runtime & Docker sandbox status reporting
-│   ├── tasks.py                 # Celery task definitions + beat schedule
 │   ├── setup-admin.py           # Account creation script for master admin
 │   ├── scripts/                 # Maintenance scripts (check_error_codes.py)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, tasks, leaderboard, etc.)
 │   ├── services/                # Business logic
-│   ├── task_modules/            # Submission runner, image builder, execution templates
+│   ├── tasks/                  # Celery app (__init__) + task_modules/ (runner, image builder, templates)
+│   ├── utils/                   # Helpers incl. auth_utils (JWT, cookies, rate limiting, revocation)
 │   └── tests/                   # Backend Pytest test suite (1280 tests)
 ├── frontend/
 │   ├── src/

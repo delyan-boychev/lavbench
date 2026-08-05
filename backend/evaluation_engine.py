@@ -747,7 +747,7 @@ def _run_custom_evaluator_sandbox(
     import shutil
     import tempfile
 
-    from task_modules.docker_utils import _get_client, image_exists
+    from tasks.task_modules.docker_utils import _get_client, image_exists
     from worker_utils import run_sandbox
 
     workdir = tempfile.mkdtemp(prefix="custom_eval_")

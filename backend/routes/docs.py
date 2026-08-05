@@ -5,9 +5,9 @@ import os
 from flask import Blueprint, request
 from spectree import Response
 
-from auth_utils import role_required
 from schemas.responses import DocContentResponse, ErrorResponse
 from spec import api
+from utils.auth_utils import role_required
 
 docs_bp = Blueprint("docs", __name__)
 

@@ -10,8 +10,8 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User, db
+from utils.auth_utils import generate_token
 
 
 class TestBackendExceptionAndErrorCases:
@@ -381,10 +381,10 @@ class TestBackendExceptionAndErrorCases:
     @patch("time.sleep")
     @patch("requests.post")
     @patch("worker_utils.download_task_files_to_dir")
-    @patch("task_modules.submission_runner.run_sandbox")
-    @patch("task_modules.submission_runner._get_client")
-    @patch("task_modules.submission_runner.check_docker_available")
-    @patch("task_modules.submission_runner._image_exists_docker")
+    @patch("tasks.task_modules.submission_runner.run_sandbox")
+    @patch("tasks.task_modules.submission_runner._get_client")
+    @patch("tasks.task_modules.submission_runner.check_docker_available")
+    @patch("tasks.task_modules.submission_runner._image_exists_docker")
     @patch("cache_utils.get_redis_client")
     def test_evaluate_submission_callback_failure_raises_runtime_error(
         self,

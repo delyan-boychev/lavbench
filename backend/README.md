@@ -59,22 +59,21 @@ backend/
 ├── app.py                      # Flask factory, blueprint registration, error handlers
 ├── config.py                   # Config class reading environment variables
 ├── error_utils.py              # err() helper & DEFAULT_ERROR_MESSAGES dictionary
-├── auth_utils.py               # JWT authentication, httpOnly cookies, Redis token revocation
 ├── cache_utils.py              # Redis connection pool, caching helpers, atomic locks
 ├── evaluation_engine.py        # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
 ├── sse_utils.py                # Server-Sent Events streaming pub/sub helpers
 ├── worker_utils.py             # Docker container sandbox runtime & status reporting
-├── tasks.py                    # Celery tasks & periodic beat schedule (backups, watchdog)
 ├── spec.py                     # Spectree OpenAPI spec instance & Swagger config
 ├── setup-admin.py              # Script to generate administrator account
 ├── models/                     # SQLAlchemy models (User, Challenge, Stage, Task, Submission, AuditLog)
 ├── schemas/                    # Pydantic v2 validation schemas & spectree before-handlers
 │   ├── exceptions.py           # SchemaError(code, message) base exception class
+├── tasks/                      # Celery app (__init__.py) + task_modules/ (runner, image builder, system, templates)
+├── utils/                      # Helpers — dates, files, sse, access, auth_utils (JWT, cookies, rate limiting)
 │   ├── common.py               # Shared validators (_parse_datetime_strict, PaginationParams)
 │   └── responses/              # Pydantic response schemas (10 domain modules)
 ├── routes/                     # Flask blueprints (admin, auth, challenges, tasks, submissions, leaderboard, etc.)
 ├── services/                   # Core business logic (challenge_service, submission_service, etc.)
-├── task_modules/               # Sandbox templates, image_builder, submission_runner
 ├── scripts/                    # Maintenance & CI scripts (check_error_codes.py)
 └── tests/                      # pytest test suite (946 tests)
 ```

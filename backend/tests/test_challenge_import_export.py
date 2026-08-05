@@ -109,7 +109,7 @@ class TestExportChallenge:
 
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
@@ -360,7 +360,7 @@ class TestImportChallenge:
         self, client, db_session, challenge_with_stages_and_tasks, create_user
     ):
         jury = create_user(username="jury_noimport", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         headers = {
@@ -502,7 +502,7 @@ class TestExportResultsCsv:
     ):
         ch = challenge_with_stages_and_tasks
         jury = create_user(username="jury_export_csv", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = client.get(
@@ -577,7 +577,7 @@ class TestImportCompetitorsCsv:
         self, client, db_session, sample_future_challenge, create_user
     ):
         jury = create_user(username="jury_csv", role="jury")
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
         res = self._upload_csv(client, sample_future_challenge.id, jury_token)

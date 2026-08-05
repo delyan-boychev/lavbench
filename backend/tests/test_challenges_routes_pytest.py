@@ -11,8 +11,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from models import Challenge, Stage, User
+from utils.auth_utils import generate_token
 
 
 class TestCreateChallenge:
@@ -600,8 +600,8 @@ class TestDeleteChallenge:
 
         from datetime import timedelta
 
-        from auth_utils import generate_token
         from models import Challenge, User
+        from utils.auth_utils import generate_token
 
         jury = User(
             username="jury_tok_del",

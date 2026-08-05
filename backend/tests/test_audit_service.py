@@ -122,8 +122,8 @@ class TestAuditLogsRoute:
         self.app = app
         self.client = app.test_client()
 
-        from auth_utils import generate_token
         from models import User
+        from utils.auth_utils import generate_token
 
         # Create users
         self.admin = User(

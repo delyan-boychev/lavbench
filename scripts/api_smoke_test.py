@@ -559,17 +559,20 @@ def main() -> int:
     print("\n== 10. Backups ==")
     code, data = api.send("POST", "/api/admin/backups/force")
     check("POST backups/force 202", code == 202 and isinstance(data, dict) and data.get("status") == "started")
-    deadline = time.time() + 150
+    # The backup runs as a Celery task on the internal worker (queue: celery),
+    # which also handles 20s leaderboard recalculations and may restart mid-run.
+    # Poll every 5s and give it up to 240s so queue backlog/restarts don't flake.
+    deadline = time.time() + 240
     created = False
     if code == 202:
         while time.time() < deadline:
-            time.sleep(10)
+            time.sleep(5)
             code, data = api.send("GET", "/api/admin/backups")
             backups = data.get("backups", []) if isinstance(data, dict) else []
             if len(backups) > len(known_backups):
                 created = True
                 break
-    check("backup appears within 150s", created, "see celery_worker logs if failing")
+    check("backup appears within 240s", created, "see celery_worker logs if failing")
 
     # ── 11. SSE streams through nginx ──────────────────────────────────
     print("\n== 11. SSE ==")

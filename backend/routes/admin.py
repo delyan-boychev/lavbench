@@ -23,7 +23,6 @@ from spectree import Response
 from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
-from auth_utils import jury_access_required, rate_limit, role_required
 from cache_utils import (
     get_coordination_client,
     get_sse_client,
@@ -80,6 +79,7 @@ from sse_utils import (
     sse_heartbeat,
 )
 from utils.audit import log_audit
+from utils.auth_utils import jury_access_required, rate_limit, role_required
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.competitor import check_duplicate_demographics, demographics_tuple
 from utils.dates import utcnow

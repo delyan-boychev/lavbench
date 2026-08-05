@@ -32,7 +32,6 @@ exclude = [
     "tests/",
     "scripts/",
     "examples/",
-    "reset_for_fresh_start.py",
     "setup-admin.py",
     "conftest.py",
 ]
@@ -67,7 +66,7 @@ module = "utils.sse"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "task_modules.submission_runner"
+module = "tasks.task_modules.submission_runner"
 disable_error_code = ["attr-defined", "return-value", "union-attr", "no-redef", "assignment", "untyped-decorator", "no-any-return", "import-untyped"]
 
 [tool.pytest.ini_options]

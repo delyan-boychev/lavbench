@@ -9,7 +9,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
 from error_utils import err
 from models import User, db
 from schemas.auth import LoginSchema
@@ -23,6 +22,7 @@ from schemas.responses import (
 )
 from spec import api
 from utils import client_ip
+from utils.auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)

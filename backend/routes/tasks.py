@@ -17,13 +17,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.utils import secure_filename
 
-from auth_utils import (
-    check_worker_auth,
-    jury_access_required,
-    login_required,
-    rate_limit,
-    role_required,
-)
 from cache_utils import (
     cache_lock,
     get_cached,
@@ -77,6 +70,13 @@ from sse_utils import (
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
+from utils.auth_utils import (
+    check_worker_auth,
+    jury_access_required,
+    login_required,
+    rate_limit,
+    role_required,
+)
 from utils.cache import invalidate_entity_cache
 from utils.dates import utcnow
 from utils.ipynb import sanitize_filename_part

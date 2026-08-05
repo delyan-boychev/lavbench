@@ -66,7 +66,7 @@ class TestServiceSandboxAndPriority:
         assert calculate_submission_priority(2, "jury") == 0
 
     def test_evaluation_templates_formatting(self):
-        from task_modules.templates import (
+        from tasks.task_modules.templates import (
             DEFAULT_EVALUATION_TEMPLATE,
             render_eval_template,
         )

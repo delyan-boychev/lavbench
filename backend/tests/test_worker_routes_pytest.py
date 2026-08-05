@@ -7,8 +7,8 @@ from datetime import timedelta
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from auth_utils import generate_token
 from models import Challenge, Submission, Task, User, db
+from utils.auth_utils import generate_token
 from utils.dates import utcnow
 
 

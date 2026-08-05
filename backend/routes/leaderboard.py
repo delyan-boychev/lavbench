@@ -10,7 +10,6 @@ from flask import Blueprint, request
 from flask import Response as FlaskResponse
 from spectree import Response
 
-from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import (
     get_cached,
     get_sse_client,
@@ -30,6 +29,7 @@ from sse_utils import (
     sse_heartbeat,
 )
 from utils.access import ensure_registered
+from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_helpers import cached_or_compute
 from utils.dates import utcnow
 from utils.json_utils import safe_json_loads

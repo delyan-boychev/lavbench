@@ -3,8 +3,8 @@ from datetime import timedelta
 import pytest
 from werkzeug.security import generate_password_hash
 
-from auth_utils import generate_token
 from models import Challenge, User, db
+from utils.auth_utils import generate_token
 from utils.dates import utcnow
 
 

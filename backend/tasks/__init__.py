@@ -17,12 +17,13 @@ from celery.signals import celeryd_init
 
 from config import Config
 from log_config import RemoteShipHandler, setup_logging
-from task_modules.submission_runner import run_eval_submission
-from task_modules.system import (
+from utils.dates import utcnow
+
+from .task_modules.submission_runner import run_eval_submission
+from .task_modules.system import (
     run_backup as _do_backup,
 )
-from task_modules.system import run_docker_prune
-from utils.dates import utcnow
+from .task_modules.system import run_docker_prune
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ def recalculate_all_leaderboards() -> None:
     """Celery task: rebuild leaderboard cache for all active challenges."""
     if not RUNS_INTERNAL:
         return
-    from task_modules.leaderboard import run_recalculate_all_leaderboards
+    from .task_modules.leaderboard import run_recalculate_all_leaderboards
 
     return run_recalculate_all_leaderboards(app)
 

@@ -9,7 +9,7 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: auth_utils
+.. automodule:: utils.auth_utils
    :members:
    :undoc-members:
 
@@ -69,30 +69,30 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: task_modules
+.. automodule:: tasks.task_modules
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.leaderboard
+.. automodule:: tasks.task_modules.leaderboard
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.submission_runner
+.. automodule:: tasks.task_modules.submission_runner
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.system
+.. automodule:: tasks.task_modules.system
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.templates
+.. automodule:: tasks.task_modules.templates
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.docker_utils
+.. automodule:: tasks.task_modules.docker_utils
    :members:
    :undoc-members:
 
-.. automodule:: task_modules.image_builder
+.. automodule:: tasks.task_modules.image_builder
    :members:
    :undoc-members:

@@ -14,9 +14,9 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from auth_utils import generate_token
 from evaluation_engine import evaluate_predictions, validate_parquet_schema
 from models import Challenge, Submission, Task, User, db
+from utils.auth_utils import generate_token
 
 
 class TestUnifiedParquetEvaluation:
@@ -134,19 +134,19 @@ class TestUnifiedParquetEvaluation:
         with (
             patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
             patch(
-                "task_modules.submission_runner.check_docker_available",
+                "tasks.task_modules.submission_runner.check_docker_available",
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner._get_client",
+                "tasks.task_modules.submission_runner._get_client",
                 return_value=MagicMock(),
             ),
             patch(
-                "task_modules.submission_runner._image_exists_docker",
+                "tasks.task_modules.submission_runner._image_exists_docker",
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner.run_sandbox",
+                "tasks.task_modules.submission_runner.run_sandbox",
                 return_value=(0, "", "", False),
             ),
             patch("tasks.app", self.app),
@@ -178,19 +178,19 @@ class TestUnifiedParquetEvaluation:
         with (
             patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
             patch(
-                "task_modules.submission_runner.check_docker_available",
+                "tasks.task_modules.submission_runner.check_docker_available",
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner._get_client",
+                "tasks.task_modules.submission_runner._get_client",
                 return_value=MagicMock(),
             ),
             patch(
-                "task_modules.submission_runner._image_exists_docker",
+                "tasks.task_modules.submission_runner._image_exists_docker",
                 return_value=True,
             ),
             patch(
-                "task_modules.submission_runner.run_sandbox",
+                "tasks.task_modules.submission_runner.run_sandbox",
                 return_value=(0, "", "", False),
             ),
             patch("tasks.app", self.app),
@@ -1192,8 +1192,8 @@ class TestCustomEvaluatorSandbox:
 
     EVAL_SCRIPT = "def evaluate(df_sub, df_labels, options=None):\n    return {'custom_f1': 1.0}\n"
 
-    @patch("task_modules.docker_utils.image_exists", return_value=True)
-    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
+    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
+    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
     def test_sandbox_success(self, mock_run, _mock_get_client, _mock_image_exists):
         def _fake_run(*args, **kwargs):
@@ -1227,7 +1227,7 @@ class TestCustomEvaluatorSandbox:
         assert "volumes" not in call_kwargs
         assert call_kwargs["seed_dir"] == os.path.dirname(call_kwargs["collect_files"][0][1])
 
-    @patch("task_modules.docker_utils.image_exists", return_value=False)
+    @patch("tasks.task_modules.docker_utils.image_exists", return_value=False)
     @patch("worker_utils.run_command_streaming")
     def test_sandbox_image_missing_fails_closed(self, mock_run, _mock_image_exists):
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
@@ -1243,8 +1243,8 @@ class TestCustomEvaluatorSandbox:
         assert res == {"custom_f1": 0.0}
         mock_run.assert_not_called()
 
-    @patch("task_modules.docker_utils.image_exists", return_value=True)
-    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
+    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
+    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
     def test_sandbox_timeout_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (1, "", "killed", True)
@@ -1260,8 +1260,8 @@ class TestCustomEvaluatorSandbox:
         # Evaluator must NOT have run on the host (in-process exec) — 0.0
         assert res == {"custom_f1": 0.0}
 
-    @patch("task_modules.docker_utils.image_exists", return_value=True)
-    @patch("task_modules.docker_utils._get_client", return_value=MagicMock())
+    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
+    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
     @patch("worker_utils.run_command_streaming")
     def test_sandbox_crash_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (2, "", "boom", False)

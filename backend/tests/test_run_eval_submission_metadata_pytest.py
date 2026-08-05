@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from task_modules import submission_runner as sr
+from tasks.task_modules import submission_runner as sr
 
 
 def _base_metadata(**overrides):
@@ -174,8 +174,8 @@ class TestRunEvalSubmissionMetadataMode:
     def test_build_failure_reports_failed_and_returns_none(self, mocker, tmp_path):
         mock_report = self._setup_happy(mocker, tmp_path)
         mocker.patch.object(sr, "_image_exists_docker", return_value=False)
-        mocker.patch("task_modules.image_builder.build_task_image", return_value=False)
-        mocker.patch("task_modules.image_builder.ensure_task_image", return_value=False)
+        mocker.patch("tasks.task_modules.image_builder.build_task_image", return_value=False)
+        mocker.patch("tasks.task_modules.image_builder.ensure_task_image", return_value=False)
         result = self._run(_base_metadata())
         assert result is None
         failed = self._reports_with_status(mock_report, "failed")

@@ -7,7 +7,7 @@ from flask import Response, jsonify
 # ruff: noqa: E501
 
 DEFAULT_ERROR_MESSAGES = {
-    # auth_utils.py
+    # utils/auth_utils.py
     "ERR_TOKEN_INVALID": "Unauthorized access. Token is missing, expired, or invalid.",
     "ERR_CSRF_FAILED": "CSRF token missing or invalid.",
     "ERR_RATE_LIMITED": "Too many requests. Please slow down.",

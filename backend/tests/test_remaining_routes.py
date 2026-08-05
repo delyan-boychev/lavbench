@@ -105,7 +105,7 @@ class TestTaskFileDownload:
         create_user,
         auth_headers,
     ):
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         future_task = Task(
             title="Future Labels Task",
@@ -140,7 +140,7 @@ class TestTaskFileDownload:
         create_user,
         auth_headers,
     ):
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         # models/hooks.py auto-assigns the jury to all existing challenges
         jury = create_user(username="active_labels_jury", role="jury")
@@ -182,7 +182,7 @@ class TestTaskFileDownload:
             alias_id="FutureComp",
             challenge_id=sample_future_challenge.id,
         )
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         comp_token = generate_token(comp.id, "competitor")
 
@@ -416,7 +416,7 @@ class TestRegisterCompetitor:
     def test_jury_registers_competitor_before_start(
         self, client, db_session, sample_future_challenge, auth_headers
     ):
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury = User(
             username="jury_before",
@@ -438,7 +438,7 @@ class TestRegisterCompetitor:
     def test_jury_blocked_after_competition_started(
         self, client, db_session, sample_challenge, auth_headers
     ):
-        from auth_utils import generate_token
+        from utils.auth_utils import generate_token
 
         jury = User(
             username="jury_after",
