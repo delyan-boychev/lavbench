@@ -133,6 +133,16 @@ def write_tag_specs(spec, by_tag):
 
 def write_rst(tag_files):
     """Generate api_spec.rst with per-tag sections."""
+    # Render full JSON schema descriptions and example bodies for every
+    # documented status, not just status codes. Kept in sync with the
+    # sphinxcontrib.openapi "httpdomain" renderer options (see conf.py).
+    OPENAPI_OPTS = [
+        "   :generate-examples-from-schemas:",
+        "   :response-examples-for: 200 201 202 203 204 206 207 208 226 "
+        "301 302 303 304 307 308 400 401 403 404 405 406 409 410 412 "
+        "413 415 422 429 500 501 502 503 504",
+    ]
+
     lines = [
         "API Specification",
         "=================",
@@ -145,12 +155,13 @@ def write_rst(tag_files):
 
     for tag, filename in tag_files:
         safe_tag = tag.replace("_", r"\_")
+        directive = "\n".join([f".. openapi:: api/{filename}", *OPENAPI_OPTS])
         lines.extend(
             [
                 safe_tag,
                 "-" * len(tag),
                 "",
-                f".. openapi:: api/{filename}",
+                directive,
                 "",
             ]
         )
@@ -160,7 +171,7 @@ def write_rst(tag_files):
             "Full specification",
             "------------------",
             "",
-            ".. openapi:: api/spec.json",
+            "\n".join([".. openapi:: api/spec.json", *OPENAPI_OPTS]),
             "",
         ]
     )

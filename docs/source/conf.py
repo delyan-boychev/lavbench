@@ -3,6 +3,35 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
+# Autodoc imports backend/app.py which calls setup_logging; the Docker default
+# LOG_DIR (/app/logs) is not writable on the host, so point it at a local dir.
+os.environ.setdefault("LOG_DIR", os.path.join(os.path.dirname(__file__), "..", ".logs"))
+
+# Use the full renderer: the default "httpdomain:old" only lists status codes,
+# while "httpdomain" renders request/response JSON schemas and example bodies.
+#
+# The upstream option_spec defines some options with a None converter, which
+# modern docutils treats as "explicitly disabled" (unknown option). Subclass
+# the renderer to give those options real converters.
+from sphinxcontrib.openapi.renderers import _httpdomain
+
+
+class LavBenchHttpdomainRenderer(_httpdomain.HttpdomainRenderer):
+    """HttpdomainRenderer with the None-converter options fixed."""
+
+    option_spec = {
+        **_httpdomain.HttpdomainRenderer.option_spec,
+        "response-examples-for": lambda s: set(s.split()),
+        "request-parameters-order": lambda s: s.split(),
+        "example-preference": str,
+        "request-example-preference": str,
+        "response-example-preference": str,
+    }
+
+
+openapi_renderers = {"httpdomain:lavbench": LavBenchHttpdomainRenderer}
+openapi_default_renderer = "httpdomain:lavbench"
+
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SECRET_KEY", "dev_key_32charsMinForHMACKey!!")
