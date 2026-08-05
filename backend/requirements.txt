@@ -88,7 +88,9 @@ fsspec[http]==2025.10.0
 gevent==26.5.0
     # via -r requirements.in
 greenlet==3.2.5
-    # via gevent
+    # via
+    #   gevent
+    #   sqlalchemy
 gunicorn==26.0.0
     # via -r requirements.in
 h11==0.16.0
@@ -169,7 +171,7 @@ packaging==26.2
     #   kombu
     #   lazy-loader
     #   scikit-image
-pandas==2.3.3
+pandas==3.0.3
     # via
     #   -r requirements.in
     #   datasets
@@ -215,8 +217,6 @@ python-dateutil==2.9.0.post0
     #   pandas
 python-dotenv==1.2.2
     # via -r requirements.in
-pytz==2026.2
-    # via pandas
 pyyaml==6.0.3
     # via
     #   datasets
@@ -277,9 +277,7 @@ typing-extensions==4.15.0
 typing-inspection==0.4.2
     # via pydantic
 tzdata==2026.2
-    # via
-    #   kombu
-    #   pandas
+    # via kombu
 tzlocal==5.3.1
     # via celery
 unidecode==1.4.0
