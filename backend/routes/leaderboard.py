@@ -13,7 +13,7 @@ from spectree import Response
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import (
     get_cached,
-    get_coordination_client,
+    get_sse_client,
     invalidate_leaderboard_cache,
     set_cached,
 )
@@ -506,7 +506,7 @@ def stream_challenge_leaderboard(
                 yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
-            r = get_coordination_client()
+            r = get_sse_client()
 
             yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 

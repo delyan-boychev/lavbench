@@ -55,11 +55,73 @@ class _LavBenchJSONProvider(DefaultJSONProvider):
         return super().default(obj)
 
 
+def _warn_insecure_cookie_deployment() -> None:
+    """Surface an insecure deployment loudly at startup.
+
+    When SECURE_COOKIES=false the 24h JWT auth cookie + CSRF cookie are sent in
+    cleartext and can be sniffed on shared networks (a real risk for the
+    school-LAN audience). This is a loud warning, not a hard failure —
+    operators may legitimately run HTTP on an isolated LAN — but it must not be
+    silent. nginx terminates TLS in front of this container; the compose
+    default is SECURE_COOKIES=true.
+    """
+    if Config.IS_EVAL_WORKER or Config.SECURE_COOKIES:
+        return
+    main_host = Config.MAIN_SERVER_URL.split("://")[-1].split("/")[0].split(":")[0]
+    if main_host in ("localhost", "127.0.0.1", "::1"):
+        return
+    logger.warning(
+        "SECURE_COOKIES is disabled while MAIN_SERVER_URL=%s is not localhost. "
+        "Auth cookies are transmitted in cleartext. Set SECURE_COOKIES=true and "
+        "terminate TLS at nginx for production deployments.",
+        Config.MAIN_SERVER_URL,
+    )
+
+
+_SCHEMA_BOOTSTRAP_LOCK = 727376317
+
+
+def _ensure_database_schema(app: Flask) -> None:
+    """Create tables on first boot without racing across app/worker containers.
+
+    Gunicorn workers import ``app`` (``wsgi:app``) and only the ``__main__``
+    path called ``db.create_all()``, so a fresh deployment served 500s until
+    ``setup-admin`` or ``reset_for_fresh_start`` ran. ``create_all`` is
+    idempotent; a PostgreSQL advisory session lock merely serialises the
+    first-boot stampede. Eval and scheduler workers never reach this (they do
+    not hold the app/DB role). Failures degrade /api/health instead of blocking
+    boot.
+    """
+    if not Config.HAS_APP:
+        return
+    with app.app_context():
+        try:
+            if db.engine.dialect.name == "postgresql":
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        db.text("SELECT pg_advisory_lock(:k)"),
+                        {"k": _SCHEMA_BOOTSTRAP_LOCK},
+                    )
+                    db.metadata.create_all(bind=conn)
+                    conn.execute(
+                        db.text("SELECT pg_advisory_unlock(:k)"),
+                        {"k": _SCHEMA_BOOTSTRAP_LOCK},
+                    )
+            else:
+                db.create_all()
+        except Exception:
+            logger.exception(
+                "Schema bootstrap failed — the app will boot and /api/health "
+                "will report the database as degraded."
+            )
+
+
 def create_app() -> Flask:
     setup_logging("backend")
+    _warn_insecure_cookie_deployment()
     app = Flask(__name__)
     app.json = _LavBenchJSONProvider(app)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[method-assign]
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)  # type: ignore[method-assign]
     app.config.from_object(Config)
 
     # Enable CORS - restrict origins in production
@@ -67,6 +129,7 @@ def create_app() -> Flask:
     CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
     db.init_app(app)
+    _ensure_database_schema(app)
 
     # Register Service Blueprints
     from routes.admin import admin_bp

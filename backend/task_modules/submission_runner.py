@@ -15,6 +15,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import redis
 import requests
@@ -116,6 +117,15 @@ def _fetch_hf_key_from_server(
             task_id,
             main_server_url,
             bool(worker_token),
+        )
+        return ""
+    # never ship an HF secret over plain HTTP to a non-localhost origin.
+    parsed = urlparse(main_server_url)
+    if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        logger.warning(
+            "Refusing to fetch HF key from insecure %s. Configure nginx TLS and "
+            "point MAIN_SERVER_URL at https.",
+            main_server_url,
         )
         return ""
     try:
@@ -234,31 +244,43 @@ def preload_submission_datasets(
 
 
 def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) -> float:
-    from models import is_metric_lower_better
+    from models import metric_direction_from_config
 
     if not metrics_cfg:
         if metrics_payload:
             m_name = next(iter(metrics_payload.keys()))
             val = metrics_payload[m_name]
+            if val is None:
+                return 0.0
             if math.isnan(val) or math.isinf(val):
                 return 0.0
-            if is_metric_lower_better(m_name):
+            if metric_direction_from_config(m_name, None):
                 if m_name.lower().strip() == "brier_score":
                     return 1.0 - val
                 return 1.0 / (1.0 + val) if val != -1.0 else 0.0
             return val
         return 0.0
 
-    total_weight = sum(float(cfg.get("weight", 1.0)) for cfg in metrics_cfg.values())
+    # Exclude missing/failed metrics (None) and re-normalize over the remainder
+    # so a broken metric can neither boost nor drag the weighted score (BP-H4).
+    configured = [
+        (m_name, cfg)
+        for m_name, cfg in metrics_cfg.items()
+        if metrics_payload.get(m_name) is not None
+    ]
+    if not configured:
+        return 0.0
+
+    total_weight = sum(float(cfg.get("weight", 1.0)) for _, cfg in configured)
     if total_weight == 0:
         return 0.0
 
     weighted_sum = 0.0
-    for m_name, cfg in metrics_cfg.items():
+    for m_name, cfg in configured:
         val = metrics_payload.get(m_name, 0.0)
         if math.isnan(val) or math.isinf(val):
             val = 0.0
-        if is_metric_lower_better(m_name):
+        if metric_direction_from_config(m_name, cfg):
             if m_name.lower().strip() == "brier_score":
                 norm_val = 1.0 - val
             else:
@@ -293,6 +315,19 @@ def run_eval_submission(
         _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
         if _worker_main_url:
             metadata["main_server_url"] = _worker_main_url
+        # user_code and custom_eval_code are no longer embedded in the
+        # Celery message — fetch them from the server on demand.
+        try:
+            from worker_utils import fetch_submission_run_content
+
+            run_user_code, run_eval_code = fetch_submission_run_content(metadata)
+            metadata["user_code"] = run_user_code
+            metadata["custom_eval_code"] = run_eval_code
+        except Exception as e:
+            logger.exception("Failed to fetch run content for submission %s", submission_id)
+            return f"Failed to fetch submission run content: {e}"
+        if metadata.get("user_code") is None:
+            return "Submission has no user code to execute."
         task = MockModel(
             id=metadata.get("task_id"),
             time_limit_sec=metadata.get("time_limit"),
@@ -1102,6 +1137,15 @@ def run_eval_submission(
                         private_score = calculate_weighted_score(m_priv, metrics_cfg)
                         metrics_payload_pub = m_pub
                         metrics_payload_priv = m_priv
+                        failed_metrics = sorted(
+                            {k for k, v in (m_pub or {}).items() if v is None}
+                            | {k for k, v in (m_priv or {}).items() if v is None}
+                        )
+                        if failed_metrics:
+                            logs.append(
+                                "Warning: metric(s) could not be computed and were "
+                                "excluded from the score: " + ", ".join(failed_metrics)
+                            )
                         execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
                         status = "completed"
                         logs.append("Evaluation completed successfully.")
@@ -1264,19 +1308,24 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         _spec_reconnect_needed = False
         logger.info("Worker specs registered: %s", spec)
 
-        # Build Docker images for all active tasks + start rebuild listener
-        try:
-            from task_modules.image_builder import (
-                build_all_active_tasks,
-                start_rebuild_listener,
-            )
+        # Build Docker images for all active tasks + start rebuild listener.
+        # Internal/system workers (role 'internal') never run submission
+        # code and must not touch the Docker image pipeline at all.
+        if Config.RUNS_EVALUATION:
+            try:
+                from task_modules.image_builder import (
+                    build_all_active_tasks,
+                    start_rebuild_listener,
+                )
 
-            main_server_url = Config.MAIN_SERVER_URL
-            worker_token = _sign_worker_token("worker")
-            build_all_active_tasks(main_server_url, worker_token)
-            start_rebuild_listener(main_server_url, worker_token)
-        except Exception as e:
-            logger.warning("Failed to build active task images on startup: %s", e)
+                main_server_url = Config.MAIN_SERVER_URL
+                worker_token = _sign_worker_token("worker")
+                build_all_active_tasks(main_server_url, worker_token)
+                start_rebuild_listener(main_server_url, worker_token)
+            except Exception as e:
+                logger.warning("Failed to build active task images on startup: %s", e)
+        else:
+            logger.info("Internal-only worker: skipping active-task image prebuilding")
     except Exception as e:
         logger.error("Failed to register specs: %s", e)
 

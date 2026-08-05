@@ -4,6 +4,7 @@ import contextlib
 import gzip
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -24,9 +25,13 @@ from auth_utils import (
     role_required,
 )
 from cache_utils import (
+    cache_lock,
+    get_cached,
     get_coordination_client,
     get_queue_depth,
+    get_sse_client,
     invalidate_leaderboard_cache,
+    set_cached,
     worker_spec_key,
 )
 from config import Config
@@ -45,6 +50,7 @@ from schemas.responses import (
     WorkerHfKeyResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
+    WorkerRunContentResponse,
     WorkerStatusResponse,
 )
 from schemas.submission import SelectedCellsSchema
@@ -55,6 +61,7 @@ from services.submission_service import (
     check_execution_rules,
     extract_code_from_cells,
     extract_code_from_notebook,
+    validate_submission_allowed,
 )
 from spec import api
 from sse_utils import (
@@ -71,7 +78,6 @@ from sse_utils import (
 from utils.access import ensure_registered
 from utils.audit import log_audit
 from utils.cache import invalidate_entity_cache
-from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.dates import utcnow
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
@@ -262,19 +268,9 @@ def queue_system_submission(
         task,
         challenge,
         submission,
-        user_code="\n\n".join(extract_code_from_cells(code_cells)),
         task_files_list=task_files_list,
         gpu_required=gpu_required,
     )
-
-    if task.custom_eval_code:
-        metadata["custom_eval_code"] = task.custom_eval_code
-    elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
-        try:
-            with open(task.evaluator_script_path) as ef:
-                metadata["custom_eval_code"] = ef.read()
-        except Exception:
-            logger.exception("Failed to read evaluator script for task %s", task.id)
 
     # Dispatch the submission via Celery
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
@@ -646,6 +642,7 @@ def create_task(
         target_id=task.id,
         details={"title": task.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -992,6 +989,7 @@ def update_task(
         target_id=task.id,
         details={"title": task.title, "challenge_id": task.challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(task.challenge_id)
 
@@ -1084,6 +1082,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
         target_id=task.id,
         details={"title": task.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -1188,60 +1187,18 @@ def submit_task(
     task = db.get_or_404(Task, task_id)
     challenge = task.challenge
 
-    if not challenge.is_active:
-        return err("ERR_CHALLENGE_INACTIVE", 400)
-    if challenge.is_archived:
-        return err("ERR_CHALLENGE_ARCHIVED", 400)
-
     user_id = request.user["user_id"]
     user_role = request.user["role"]
     selected_cells = json.selected_cells
 
-    if user_role == "competitor":
-        if not check_competitor_access(user_id, task.challenge_id):
-            return err("ERR_NOT_REGISTERED", 403)
+    if user_role == "competitor" and not check_competitor_access(user_id, task.challenge_id):
+        return err("ERR_NOT_REGISTERED", 403)
 
-        if challenge.scores_finalized:
-            return err("ERR_COMPETITION_FINALIZED", 403)
-
-        if task.stage_id:
-            from models import Stage
-
-            stage = db.session.get(Stage, task.stage_id)
-            if stage:
-                if utcnow() < stage.start_time:
-                    return err(
-                        "ERR_STAGE_NOT_STARTED",
-                        400,
-                        message=f"The stage '{stage.title}' has not started yet.",
-                    )
-                if utcnow() > stage.end_time:
-                    return err(
-                        "ERR_STAGE_DEADLINE_PASSED",
-                        400,
-                        message=f"The deadline for the stage '{stage.title}' has passed.",
-                    )
-        else:
-            if not challenge.is_started:
-                return err("ERR_COMPETITION_NOT_STARTED", 400)
-            if challenge.is_ended:
-                return err("ERR_COMPETITION_ENDED", 400)
+    blocked = validate_submission_allowed(user_id, user_role, task, challenge)
+    if blocked:
+        return blocked
 
     today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    submission_count = Submission.query.filter(
-        Submission.user_id == user_id,
-        Submission.challenge_id == challenge.id,
-        Submission.created_at >= today_start,
-    ).count()
-
-    if submission_count >= challenge.max_eval_requests:
-        return err(
-            "ERR_DAILY_LIMIT_REACHED",
-            429,
-            message=(
-                f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
-            ),
-        )
 
     gpu_required = False
     if task.gpu_required is not None:
@@ -1249,71 +1206,94 @@ def submit_task(
     elif challenge.gpu_required is not None:
         gpu_required = challenge.gpu_required
 
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-    if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-        return err(
-            "ERR_QUEUE_FULL",
-            429,
-            message=(
-                f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                "Please try again later."
-            ),
-        )
+    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
 
-    if task.max_submissions_per_period and task.submission_period_hours:
-        period_start = utcnow() - timedelta(hours=task.submission_period_hours)
-        sub_count = Submission.query.filter(
+    with cache_lock(lock_key, ttl=10) as acquired:
+        if not acquired:
+            return err("ERR_SUBMIT_LOCKED", 429)
+
+        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
+        submission_count = Submission.query.filter(
             Submission.user_id == user_id,
-            Submission.task_id == task.id,
-            Submission.created_at >= period_start,
+            Submission.challenge_id == challenge.id,
+            Submission.created_at >= today_start,
+            Submission.status != "failed",
         ).count()
-        if sub_count >= task.max_submissions_per_period:
+
+        if submission_count >= challenge.max_eval_requests:
             return err(
-                "ERR_TASK_LIMIT_REACHED",
+                "ERR_DAILY_LIMIT_REACHED",
                 429,
-                message=f"Task limit reached. Max {task.max_submissions_per_period} "
-                f"submissions per {task.submission_period_hours} hours.",
+                message=(
+                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
+                ),
             )
 
-    passed, err_msg = check_execution_rules(task, selected_cells)
-    if not passed:
+        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+            return err(
+                "ERR_QUEUE_FULL",
+                429,
+                message=(
+                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                    "Please try again later."
+                ),
+            )
+
+        if task.max_submissions_per_period and task.submission_period_hours:
+            period_start = utcnow() - timedelta(hours=task.submission_period_hours)
+            sub_count = Submission.query.filter(
+                Submission.user_id == user_id,
+                Submission.task_id == task.id,
+                Submission.created_at >= period_start,
+            ).count()
+            if sub_count >= task.max_submissions_per_period:
+                return err(
+                    "ERR_TASK_LIMIT_REACHED",
+                    429,
+                    message=f"Task limit reached. Max {task.max_submissions_per_period} "
+                    f"submissions per {task.submission_period_hours} hours.",
+                )
+
+        passed, err_msg = check_execution_rules(task, selected_cells)
+        if not passed:
+            submission = Submission(
+                user_id=user_id,
+                challenge_id=challenge.id,
+                task_id=task.id,
+                status="failed",
+                detailed_status="failed",
+                code_cells=jsonlib.dumps(selected_cells),
+                public_score=0.0,
+                private_score=0.0,
+                logs=f"--- Rule Check Failed ---\n{err_msg}",
+                execution_time_ms=0,
+            )
+            db.session.add(submission)
+            db.session.commit()
+            publish_submissions_update(submission.task_id, submission.challenge_id)
+            publish_queue_update()
+            publish_leaderboard_update(submission.challenge_id)
+            return err(
+                "ERR_AST_RULE_FAILED",
+                400,
+                message=err_msg,
+                submission_id=submission.id,
+                submission_status=submission.status,
+            )
+
+        priority = calculate_submission_priority(user_id, user_role)
+
         submission = Submission(
             user_id=user_id,
             challenge_id=challenge.id,
             task_id=task.id,
-            status="failed",
-            detailed_status="failed",
+            status="queued",
+            detailed_status="queued",
             code_cells=jsonlib.dumps(selected_cells),
-            public_score=0.0,
-            private_score=0.0,
-            logs=f"--- Rule Check Failed ---\n{err_msg}",
-            execution_time_ms=0,
         )
         db.session.add(submission)
         db.session.commit()
-        publish_submissions_update(submission.task_id, submission.challenge_id)
-        publish_queue_update()
-        publish_leaderboard_update(submission.challenge_id)
-        return err(
-            "ERR_AST_RULE_FAILED",
-            400,
-            message=err_msg,
-            submission_id=submission.id,
-            submission_status=submission.status,
-        )
-
-    priority = calculate_submission_priority(user_id, user_role)
-
-    submission = Submission(
-        user_id=user_id,
-        challenge_id=challenge.id,
-        task_id=task.id,
-        status="queued",
-        detailed_status="queued",
-        code_cells=jsonlib.dumps(selected_cells),
-    )
-    db.session.add(submission)
-    db.session.commit()
 
     invalidate_leaderboard_cache(submission.challenge_id)
 
@@ -1329,24 +1309,9 @@ def submit_task(
         task,
         challenge,
         submission,
-        user_code="\n\n".join(extract_code_from_cells(selected_cells)),
         task_files_list=task_files_list,
         gpu_required=gpu_required,
     )
-
-    if task.custom_eval_code:
-        metadata["custom_eval_code"] = task.custom_eval_code
-    elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
-        try:
-            with open(task.evaluator_script_path) as ef:
-                metadata["custom_eval_code"] = ef.read()
-        except Exception as ef_err:
-            logger.error("Failed to read evaluator script for task %s: %s", task.id, ef_err)
-            submission.status = "failed"
-            submission.detailed_status = "failed"
-            submission.logs = f"Evaluator script read error: {ef_err}"
-            db.session.commit()
-            return err("ERR_EVALUATOR_LOAD_FAILED", 500, submission_id=submission.id)
 
     try:
         result = evaluate_submission.apply_async(
@@ -1528,13 +1493,16 @@ def stream_task_submissions(
             data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
             yield f"data: {json.dumps(data)}\n\n"
 
-            r = get_coordination_client()
+            r = get_sse_client()
             pubsub = r.pubsub() if r else None
 
             if pubsub:
                 pubsub.subscribe(submissions_channel(task_id, challenge_id))
 
             start_time = time.time()
+            last_query_at = 0.0
+            pending_update = False
+            debounce_seconds = 2.0
 
             try:
                 while True:
@@ -1544,17 +1512,27 @@ def stream_task_submissions(
                     if time.time() - start_time > SSE_IDLE_TIMEOUT:
                         yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
                         break
+                    message = None
                     if pubsub:
                         message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            data = _get_task_submissions_data(
-                                task_id, user_role, current_user_id, page, per_page
-                            )
-                            yield f"data: {json.dumps(data)}\n\n"
-                            continue
                     else:
                         time.sleep(2.0)
-                    yield ": keep-alive\n\n"
+                    if message:
+                        pending_update = True
+                    # debounce the DB re-query so a burst of channel
+                    # messages coalesces into at most one query per 2s instead
+                    # of re-reading all submissions per message. Any update
+                    # suppressed while in the window is delivered after it.
+                    now = time.time()
+                    if pending_update and (now - last_query_at) >= debounce_seconds:
+                        data = _get_task_submissions_data(
+                            task_id, user_role, current_user_id, page, per_page
+                        )
+                        yield f"data: {json.dumps(data)}\n\n"
+                        last_query_at = now
+                        pending_update = False
+                    else:
+                        yield ": keep-alive\n\n"
             except GeneratorExit:
                 pass
             except Exception as e:
@@ -1601,7 +1579,7 @@ def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             res_data = _get_worker_status_data(user_role)
             yield f"data: {json.dumps(res_data)}\n\n"
 
-            r = get_coordination_client()
+            r = get_sse_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
                 pubsub.subscribe(CHANNEL_WORKER_STATUS)
@@ -1709,9 +1687,22 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
             "clusters": [],
         }
 
-    return cached_or_compute_unless_testing(
-        f"worker:status:summary:{view_role or 'user'}", _compute, timeout=10
-    )
+    cache_key = f"worker:status:summary:{view_role or 'user'}"
+    if current_app.config.get("TESTING", False):
+        return _compute()
+    cached = get_cached(cache_key)
+    if cached is not None:
+        return cached
+    # single-flight recompute — each expiry triggers exactly one
+    # cluster-wide inspect.ping/stats/registered instead of one per SSE
+    # client; every concurrent reader shares the freshly cached result.
+    with cache_lock(f"lock:{cache_key}", ttl=30):
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return cached
+        result = _compute()
+        set_cached(cache_key, result, timeout=30)
+        return result
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
@@ -1745,6 +1736,12 @@ def report_worker_progress(
     if not submission:
         return err("ERR_NOT_FOUND", 404)
 
+    # a killed submission is terminal (status=failed,
+    # detailed_status=killed). A stale in-flight worker report must not
+    # resurrect it — reject the report outright.
+    if submission.detailed_status == "killed":
+        return err("ERR_SUBMISSION_KILLED", 409)
+
     if "status" in data:
         status_val = data["status"]
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
@@ -1775,18 +1772,30 @@ def report_worker_progress(
         submission.logs = logs_val
     if "public_score" in data:
         val = data["public_score"]
-        if val is not None and not isinstance(val, (int, float)):
+        if val is not None and (
+            not isinstance(val, (int, float))
+            or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
+        ):
             return err("ERR_INVALID_PUBLIC_SCORE", 400)
         submission.public_score = val
         submission.final_weighted_score_public = val
     if "private_score" in data:
         val = data["private_score"]
-        if val is not None and not isinstance(val, (int, float)):
+        if val is not None and (
+            not isinstance(val, (int, float))
+            or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
+        ):
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
         submission.private_score = val
         submission.final_weighted_score_private = val
     if "execution_time_ms" in data:
-        submission.execution_time_ms = data["execution_time_ms"]
+        try:
+            exec_time = int(data["execution_time_ms"])
+        except (TypeError, ValueError, OverflowError):
+            exec_time = -1
+        if exec_time < 0 or exec_time > Config.MAX_EXECUTION_TIME_MS:
+            return err("ERR_INVALID_EXECUTION_TIME", 400)
+        submission.execution_time_ms = exec_time
     if "metrics_payload_public" in data:
         submission.metrics_payload_public = data["metrics_payload_public"]
     elif "metrics_payload_pub" in data:
@@ -2107,9 +2116,67 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "worker_remote.log")
     try:
+        # Rotate before appending so a churny worker cannot grow the log file
+        # without bound.
+        if os.path.exists(log_path) and os.path.getsize(log_path) > Config.MAX_WORKER_LOG_BYTES:
+            backup = f"{log_path}.1"
+            if os.path.exists(backup):
+                os.remove(backup)
+            os.replace(log_path, backup)
         with open(log_path, "a") as f:
             f.write(lines if lines.endswith("\n") else lines + "\n")
     except OSError as e:
         logger.error("Failed to write worker logs: %s", e)
         return err("ERR_INTERNAL_SERVER_ERROR", 500)
     return {"status": "ok"}, 200
+
+
+@tasks_bp.route("/worker/submission-run-content/<uuid:submission_id>", methods=["GET"])
+@rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
+@api.validate(
+    resp=Response(
+        HTTP_200=WorkerRunContentResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_404=ErrorResponse,
+        HTTP_500=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def get_submission_run_content(submission_id: Any) -> tuple[WorkerRunContentResponse, int]:
+    """Return the code a worker must execute for a submission.
+
+    The submission's code and evaluator script are fetched on demand with a
+    signed worker token bound to this exact submission_id — they are never
+    embedded in the Celery message. ``user_code`` is reconstructed from the
+    stored ``code_cells`` exactly as the submission runner consumes it.
+    """
+    token = request.headers.get("X-Worker-Token")
+    nonce = check_worker_auth(token)
+    if not nonce or nonce.get("submission_id") != str(submission_id):
+        return err("ERR_UNAUTHORIZED", 401)
+
+    submission = db.session.get(Submission, submission_id)
+    if not submission:
+        return err("ERR_NOT_FOUND", 404)
+
+    try:
+        cells_list = json.loads(submission.code_cells or "[]")
+    except Exception:
+        cells_list = []
+    user_code = "\n\n".join(extract_code_from_cells(cells_list))
+
+    custom_eval_code = None
+    task = submission.task
+    if task:
+        custom_eval_code = task.custom_eval_code
+        if not custom_eval_code and task.evaluator_script_path:
+            try:
+                with open(task.evaluator_script_path) as ef:
+                    custom_eval_code = ef.read()
+            except OSError as e:
+                logger.error("Failed to read evaluator script for task %s: %s", task.id, e)
+                return err("ERR_EVALUATOR_LOAD_FAILED", 500)
+
+    return WorkerRunContentResponse(
+        user_code=user_code or None, custom_eval_code=custom_eval_code
+    ), 200

@@ -127,7 +127,7 @@ lavbench/
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, tasks, leaderboard, etc.)
 │   ├── services/                # Business logic
 │   ├── task_modules/            # Submission runner, image builder, execution templates
-│   └── tests/                   # Backend Pytest test suite (1099 tests)
+│   └── tests/                   # Backend Pytest test suite (1280 tests)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # React components (admin, challenge, leaderboard, submissions, ui)
@@ -179,7 +179,16 @@ cp .env.example .env
 | `REDIS_BIND` | Host bind address for the Redis broker port. | `127.0.0.1` (set `0.0.0.0` for remote workers) |
 | `SECURE_COOKIES` | `true` when serving over HTTPS (Secure-flag auth cookie). | `true` (set `false` for plain HTTP) |
 | `NGINX_PORT` | Host port mapped to the frontend/nginx container. | `80` |
+| `HTTPS_PORT` | Host port mapped to the optional nginx TLS listener (auto-enabled when `certs/web/server.crt` exists). | `443` |
 | `CORS_ORIGINS` | Allowed browser origins (comma-separated). | `http://localhost:80` |
+| `WORKER_MEM_LIMIT` | Memory limit for the compose internal-worker container. | `1g` |
+| `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
+| `WORKER_GPU_IDS` | Comma-separated GPU device IDs available for round-robin pinning on eval workers (e.g. `0,1,3`). Unset → `count=-1` fallback. | unset |
+| `WORKER_ROLE` | Unified worker role. `server` = full API (default; requires `SECRET_KEY`/`DATABASE_URL`/`ENCRYPTION_KEY`); `scheduler` = Celery beat only (no app, no secrets); `internal` = app booted for system tasks (DB only, never evaluates); `eval` = remote evaluation worker (no DB, Ed25519 nonce auth, runs eval/image tasks only). | `server` |
+| `WORKER_SANDBOX_STORAGE_OPT` | `--storage-opt size` cap for submission sandboxes (best-effort; ignored on drivers without quota support, e.g. ext4/overlay2). | `8g` |
+| `MAX_WORKER_LOG_BYTES` | Worker remote-log file rotation threshold (bytes). | `10485760` (10 MB) |
+| `MAX_COLLECT_BUFFER_BYTES` | Max in-memory buffer while pulling sandbox output archives; larger archives are skipped. | `536870912` (512 MB) |
+| `MAX_EXTRACT_MEMBER_BYTES` | Max size for a single member inside collected archives; oversized members are skipped. | `536870912` (512 MB) |
 | `GPU_RAM_PER_TASK_GB` | Memory limit allocated per GPU sandbox container (GB). | `8` |
 | `CPU_RAM_PER_TASK_GB` | Memory limit allocated per CPU sandbox container (GB). | `4` |
 | `RESERVED_RAM_GB` | Host RAM reserved for OS and Docker overhead (GB). | `4` |
@@ -203,14 +212,14 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 cd backend && micromamba run -n lavbench_backend pytest tests -n auto -q
 ```
 
-Includes 1099 unit and integration tests covering routes, authentication, AST security, rate limiting, OpenAPI spec consistency, and all 44 evaluation engine metric paths.
+Includes 1280 unit and integration tests covering routes, authentication, AST security, rate limiting, OpenAPI spec consistency, and all 44 evaluation engine metric paths.
 
 ### Full-Stack Smoke Test (live Docker stack)
 
 After `make setup-admin`, verify the entire platform end-to-end against the running compose stack (auth/CSRF, role matrix for admin/jury/competitor/anonymous, rate limits, backups, SSE, edge cases — no task evaluation):
 
 ```bash
-python3 scripts/api_smoke_test.py            # 158 checks, exit 0 on success
+python3 scripts/api_smoke_test.py            # 128 checks, exit 0 on success
 ```
 
 ### Frontend Tests & Type Checking

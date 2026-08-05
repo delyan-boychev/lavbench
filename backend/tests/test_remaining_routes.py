@@ -290,6 +290,27 @@ class TestLoginRateLimiting:
             _record_login_failure(f"user_{i}", ip)
         assert _login_rate_limit_exceeded("some_other_user", ip) is True
 
+    def test_local_fallback_throttles_when_redis_down(self, redis_flush, monkeypatch):
+        from routes.auth import (
+            _LOCAL_LOGIN_FAILURES,
+            _clear_login_failures,
+            _login_rate_limit_exceeded,
+            _record_login_failure,
+        )
+
+        monkeypatch.setattr("cache_utils.get_redis_client", lambda: None)
+        _LOCAL_LOGIN_FAILURES.clear()
+        try:
+            username = "fallback_user"
+            ip = "10.9.9.9"
+            for _ in range(5):
+                _record_login_failure(username, ip)
+            assert _login_rate_limit_exceeded(username, ip) is True
+            _clear_login_failures(username, ip)
+            assert _login_rate_limit_exceeded(username, ip) is False
+        finally:
+            _LOCAL_LOGIN_FAILURES.clear()
+
     def test_login_endpoint_returns_429(self, client, db_session, app_ctx, redis_flush):
         from cache_utils import get_redis_client
 

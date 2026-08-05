@@ -145,7 +145,7 @@ class TestServiceSandboxAndPriority:
             execution_time_ms=100,
         )
 
-        best = get_best_submission(self.task, [sub1, sub2], challenge, is_lower_better=True)
+        best = get_best_submission(self.task, [sub1, sub2], challenge)
         assert best.public_score == 0.1667
 
     def test_challenge_csv_generation(self):

@@ -7,7 +7,7 @@ import time
 from flask import Blueprint, make_response, request
 from flask import Response as FlaskResponse
 from spectree import Response
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
 from error_utils import err
@@ -22,9 +22,22 @@ from schemas.responses import (
     UserResponse,
 )
 from spec import api
+from utils import client_ip
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
+
+# Precomputed hash so a login for an unknown username runs the same PBKDF2
+# work as a real one (~100-200ms). Without this, the short-circuit leaks
+# whether a username exists via response timing (username enumeration).
+_DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
+
+
+def _verify_password(user: User | None, password: str) -> bool:
+    if user is None:
+        check_password_hash(_DUMMY_PASSWORD_HASH, password)
+        return False
+    return check_password_hash(user.password_hash, password)
 
 
 def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
@@ -32,13 +45,16 @@ def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
     Two-tier sliding window rate limiting:
     - Per-username: max 5 failures per 60s
     - Per-IP: max 30 failures per 60s (accommodates school NAT)
+
+    Falls back to an in-process sliding window when Redis is unavailable so a
+    monitoring/backend hiccup does not silently disable throttling entirely.
     """
     try:
         from cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:
-            return False
+            return _local_failure_exceeded(username, ip)
 
         now = time.time()
         window = 60
@@ -54,18 +70,43 @@ def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
 
         return user_failures >= 5 or ip_failures >= 30
     except Exception:
-        return False
+        return _local_failure_exceeded(username, ip)
+
+
+_LOCAL_LOGIN_WINDOW = 60.0
+_LOCAL_LOGIN_USER_MAX = 5
+_LOCAL_LOGIN_IP_MAX = 30
+_LOCAL_LOGIN_FAILURES: dict[str, list[float]] = {}
+
+
+def _local_failure_exceeded(username: str, ip: str) -> bool:
+    """In-process fallback: prune + count records from this process."""
+    now = time.time()
+    for key in (f"user:{username}", f"ip:{ip}"):
+        kept = [t for t in _LOCAL_LOGIN_FAILURES.get(key, []) if t > now - _LOCAL_LOGIN_WINDOW]
+        if kept:
+            _LOCAL_LOGIN_FAILURES[key] = kept
+        else:
+            _LOCAL_LOGIN_FAILURES.pop(key, None)
+    return (
+        len(_LOCAL_LOGIN_FAILURES.get(f"user:{username}", [])) >= _LOCAL_LOGIN_USER_MAX
+        or len(_LOCAL_LOGIN_FAILURES.get(f"ip:{ip}", [])) >= _LOCAL_LOGIN_IP_MAX
+    )
 
 
 def _record_login_failure(username: str, ip: str) -> None:
-    """Record a failed login attempt in sliding window."""
+    """Record a failed login attempt in sliding window (Redis + local fallback)."""
+    now = time.time()
+    for key in (f"user:{username}", f"ip:{ip}"):
+        kept = [t for t in _LOCAL_LOGIN_FAILURES.get(key, []) if t > now - _LOCAL_LOGIN_WINDOW]
+        kept.append(now)
+        _LOCAL_LOGIN_FAILURES[key] = kept
     try:
         from cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:
             return
-        now = time.time()
         r.zadd(f"login_failures:user:{username}", {str(now): now})
         r.zadd(f"login_failures:ip:{ip}", {str(now): now})
         r.expire(f"login_failures:user:{username}", 120)
@@ -75,7 +116,9 @@ def _record_login_failure(username: str, ip: str) -> None:
 
 
 def _clear_login_failures(username: str, ip: str) -> None:
-    """Clear failure records on successful login."""
+    """Clear failure records on successful login (Redis + local fallback)."""
+    _LOCAL_LOGIN_FAILURES.pop(f"user:{username}", None)
+    _LOCAL_LOGIN_FAILURES.pop(f"ip:{ip}", None)
     try:
         from cache_utils import get_redis_client
 
@@ -89,9 +132,7 @@ def _clear_login_failures(username: str, ip: str) -> None:
 
 
 def get_client_ip() -> str:
-    if request.headers.getlist("X-Forwarded-For"):
-        return request.headers.getlist("X-Forwarded-For")[0].split(",")[0].strip()
-    return request.remote_addr or "127.0.0.1"
+    return client_ip.get_client_ip()
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -116,7 +157,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
 
     user = User.query.filter(User.username == username).first()
 
-    if not user or not check_password_hash(user.password_hash, password):
+    if not _verify_password(user, password):
         _record_login_failure(username, ip)
         return err("ERR_INVALID_CREDENTIALS", 401)
 

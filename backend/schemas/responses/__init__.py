@@ -65,6 +65,7 @@ from schemas.responses.worker import (
     WorkerHfKeyResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
+    WorkerRunContentResponse,
     WorkerStatusResponse,
 )
 
@@ -119,6 +120,7 @@ __all__ = [
     "WorkerHfKeyResponse",
     "WorkerLogsResponse",
     "WorkerReportResponse",
+    "WorkerRunContentResponse",
     "WorkerStatsResponse",
     "WorkerStatusResponse",
 ]

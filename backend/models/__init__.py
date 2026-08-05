@@ -10,6 +10,7 @@ from models.naming import (
     NOUNS,
     generate_pseudonym,
     is_metric_lower_better,
+    metric_direction_from_config,
     to_base36,
 )
 from models.stage import Stage
@@ -38,6 +39,7 @@ __all__ = [
     "generate_pseudonym",
     "is_metric_lower_better",
     "logger",
+    "metric_direction_from_config",
     "to_base36",
     "uuid7",
 ]

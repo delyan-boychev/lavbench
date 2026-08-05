@@ -372,6 +372,7 @@ export const handlers = [
         { name: 'worker-1', pid: 1234, uptime: 3600, pool_size: 4, active_tasks_count: 1 },
         { name: 'worker-2', pid: 5678, uptime: 1800, pool_size: 4, active_tasks_count: 0 },
       ],
+      partial_failures: [],
       system: {
         load_avg: [0.5, 0.3, 0.2],
         cpu_count: 8,

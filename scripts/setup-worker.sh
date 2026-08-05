@@ -138,15 +138,17 @@ fi
 RESERVED_CORES=1
 RESERVED_RAM=4
 
+WORKER_KEYS_RE='^(WORKER_ROLE|WORKER_ENCRYPTION_KEY|WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|WORKER_GPU_IDS|WORKER_SANDBOX_STORAGE_OPT|MAX_WORKER_LOG_BYTES|MAX_COLLECT_BUFFER_BYTES|MAX_EXTRACT_MEMBER_BYTES|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)='
+
 # ── Interactive configuration ─────────────────────────────────────
 if [ -f "worker.env" ]; then
   # Only ask about overwrite if worker-local config already exists
-  if grep -qE '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env 2>/dev/null; then
+  if grep -qE "$WORKER_KEYS_RE" worker.env 2>/dev/null; then
     read -p "  worker.env has existing worker config. Overwrite? [y/N]: " OVERWRITE
     case "${OVERWRITE:-N}" in
       y|Y)
         # Strip existing worker-local config lines, preserving server credentials
-        grep -v -E '^(WORKER_MODE|WORKER_TYPE|WORKER_GPU_ID|GPU_CORES_PER_TASK|CPU_CORES_PER_TASK|GPU_RAM_PER_TASK_GB|CPU_RAM_PER_TASK_GB|CELERY_WORKER_CONCURRENCY|RESERVED_RAM_GB|RESERVED_CPU_CORES|RAM_CLAMP_FACTOR)=' worker.env > worker.env.tmp
+        grep -v -E "$WORKER_KEYS_RE" worker.env > worker.env.tmp
         mv worker.env.tmp worker.env
         ;;
       *) echo "  Exiting. Keep existing worker.env."; exit 0 ;;
@@ -340,9 +342,25 @@ while [ "$CONFIG_OK" = "false" ]; do
 done
 
 # Save to worker.env
+# Worker encryption key — independent Fernet key for models/ field encryption.
+# generate-keys.sh ships one; mirror it here so 'make setup-worker' leaves
+# the worker bootable without the server's ENCRYPTION_KEY.
+if [ -z "${WORKER_ENCRYPTION_KEY:-}" ]; then
+  WORKER_ENCRYPTION_KEY=$(python3 - <<'WEMWKY'
+import base64, os
+try:
+    from cryptography.fernet import Fernet
+    print(Fernet.generate_key().decode())
+except Exception:
+    print(base64.urlsafe_b64encode(os.urandom(32)).decode())
+WEMWKY
+)
+fi
 {
   echo ""
   echo "# Worker config — set by make setup-worker"
+  echo "WORKER_ROLE=eval"
+  echo "WORKER_ENCRYPTION_KEY=$WORKER_ENCRYPTION_KEY"
   echo "WORKER_MODE=$WORKER_MODE"
   echo "WORKER_TYPE=$WORKER_TYPE"
   if [ -n "${WORKER_GPU_ID:-}" ]; then
@@ -360,6 +378,14 @@ done
   echo "RESERVED_RAM_GB=${RESERVED_RAM}"
   echo "RESERVED_CPU_CORES=${RESERVED_CORES}"
   echo "RAM_CLAMP_FACTOR=1.05"
+  # Optional per-worker hardening knobs — preserved only if explicitly set
+  # (each worker is configured individually; there is no server inheritance).
+  for _ek in WORKER_GPU_IDS WORKER_SANDBOX_STORAGE_OPT MAX_WORKER_LOG_BYTES MAX_COLLECT_BUFFER_BYTES MAX_EXTRACT_MEMBER_BYTES; do
+    eval "_ev=\${$_ek:-}"
+    if [ -n "$_ev" ]; then
+      echo "$_ek=$_ev"
+    fi
+  done
 } >> worker.env
 echo "  ✔ Configuration saved to worker.env"
 echo "  Run 'make deploy-worker' to start the worker."

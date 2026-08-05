@@ -27,8 +27,7 @@ def _registered_tasks(env):
 
 def test_internal_only_worker_registration():
     env = os.environ.copy()
-    env["INTERNAL_ONLY_WORKER"] = "true"
-    env["EVALUATION_ONLY_WORKER"] = "false"
+    env["WORKER_ROLE"] = "internal"
     res = _registered_tasks(env)
 
     for tname in EVALUATION_TASKS:
@@ -39,8 +38,7 @@ def test_internal_only_worker_registration():
 
 def test_evaluation_only_worker_registration():
     env = os.environ.copy()
-    env["INTERNAL_ONLY_WORKER"] = "false"
-    env["EVALUATION_ONLY_WORKER"] = "true"
+    env["WORKER_ROLE"] = "eval"
     res = _registered_tasks(env)
 
     for tname in EVALUATION_TASKS:
@@ -49,10 +47,18 @@ def test_evaluation_only_worker_registration():
         assert tname not in res
 
 
+def test_scheduler_registration():
+    env = os.environ.copy()
+    env["WORKER_ROLE"] = "scheduler"
+    res = _registered_tasks(env)
+
+    for tname in INTERNAL_TASKS | EVALUATION_TASKS:
+        assert tname not in res
+
+
 def test_default_registration():
     env = os.environ.copy()
-    env.pop("INTERNAL_ONLY_WORKER", None)
-    env.pop("EVALUATION_ONLY_WORKER", None)
+    env.pop("WORKER_ROLE", None)
     res = _registered_tasks(env)
 
     for tname in INTERNAL_TASKS | EVALUATION_TASKS:
@@ -72,8 +78,14 @@ def test_register_worker_specs_removed():
     assert not hasattr(tasks, "register_worker_specs")
 
 
-def test_beat_schedule_docker_prune_on_cpu_queue():
+def test_beat_schedule_prune_and_sweep_on_evaluation_queues():
     import tasks
 
-    entry = tasks.celery.conf.beat_schedule["docker-prune-weekly"]
-    assert entry["options"] == {"queue": "cpu_queue"}
+    schedule = tasks.celery.conf.beat_schedule
+    # Prune/sweep are host-side Docker ops that must run on evaluation worker
+    # nodes (they own the Docker socket). Emit on both cpu_queue and gpu_queue
+    # since either may be the deployed worker pool.
+    assert schedule["docker-prune-weekly-cpu"]["options"] == {"queue": "cpu_queue"}
+    assert schedule["docker-prune-weekly-gpu"]["options"] == {"queue": "gpu_queue"}
+    assert schedule["task-dir-sweep-daily-cpu"]["options"] == {"queue": "cpu_queue"}
+    assert schedule["task-dir-sweep-daily-gpu"]["options"] == {"queue": "gpu_queue"}

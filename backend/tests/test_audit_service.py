@@ -84,14 +84,24 @@ class TestAuditService:
     def test_get_client_ip_forwarded_for(self, app):
         from services.audit_service import get_client_ip
 
+        # client-supplied X-Forwarded-For is ignored; only the
+        # nginx-set X-Real-IP (or the proxy-overwritten remote_addr) is trusted.
         with app.test_request_context(headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}):
-            assert get_client_ip() == "10.0.0.1"
+            assert get_client_ip() == "127.0.0.1"
 
     def test_get_client_ip_forwarded_for_single(self, app):
         from services.audit_service import get_client_ip
 
         with app.test_request_context(headers={"X-Forwarded-For": "203.0.113.5"}):
-            assert get_client_ip() == "203.0.113.5"
+            assert get_client_ip() == "127.0.0.1"
+
+    def test_get_client_ip_prefers_x_real_ip(self, app):
+        from services.audit_service import get_client_ip
+
+        with app.test_request_context(
+            headers={"X-Real-IP": "198.51.100.7", "X-Forwarded-For": "10.0.0.1"}
+        ):
+            assert get_client_ip() == "198.51.100.7"
 
     def test_log_action_stores_ip(self):
         tid = self.dummy_uuids[7]

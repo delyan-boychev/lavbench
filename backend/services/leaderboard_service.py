@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy.orm import joinedload
 
 from cache_utils import cache_lock, get_cached, set_cached
-from models import Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
+from models import Challenge, Stage, Submission, Task, User, db, metric_direction_from_config
 from services.submission_service import get_best_submission
 
 logger = logging.getLogger(__name__)
@@ -46,25 +46,6 @@ def build_and_cache_leaderboard(
             return None
 
         tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
-        task_metrics = {}  # per-task is_lower_better
-        for task in tasks:
-            task_lower = False
-            if task.metrics_config:
-                try:
-                    cfg = (
-                        json.loads(task.metrics_config)
-                        if isinstance(task.metrics_config, str)
-                        else task.metrics_config
-                    )
-                    for m_name in cfg:
-                        if m_name.startswith("_"):
-                            continue
-                        if is_metric_lower_better(m_name):
-                            task_lower = True
-                            break
-                except Exception as e:
-                    logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
-            task_metrics[task.id] = task_lower
 
         challenge_finalized = challenge.scores_finalized
 
@@ -150,12 +131,7 @@ def build_and_cache_leaderboard(
 
             for task in tasks:
                 user_subs_for_task = sub_by_key.get((comp.id, task.id), [])
-                chosen_sub = get_best_submission(
-                    task,
-                    user_subs_for_task,
-                    challenge,
-                    is_lower_better=task_metrics.get(task.id, False),
-                )
+                chosen_sub = get_best_submission(task, user_subs_for_task, challenge)
 
                 if chosen_sub:
                     has_submitted = True
@@ -256,12 +232,7 @@ def build_and_cache_leaderboard(
                 if existing is None:
                     baseline_by_task[s.task_id] = s
                 else:
-                    chosen = get_best_submission(
-                        s.task,
-                        [existing, s],
-                        challenge,
-                        is_lower_better=task_metrics.get(s.task.id, False),
-                    )
+                    chosen = get_best_submission(s.task, [existing, s], challenge)
                     if chosen is not None:
                         baseline_by_task[s.task_id] = chosen
 
@@ -404,15 +375,53 @@ def build_and_cache_leaderboard(
 def get_task_leaderboard_data(
     task_id: uuid.UUID | str, user_role: str, current_user_id: uuid.UUID | None
 ) -> dict[str, Any]:
+    """Return the leaderboard for a task, served from a role-scoped Redis cache.
+
+    The full recompute is expensive (it loads every completed submission for the
+    task plus all competitors), so a cache hit short-circuits before any DB
+    work. A single-flight lock prevents thundering-herd recomputes, and the TTL
+    keeps staleness bounded (mirrors the challenge leaderboard's 120s TTL).
+    """
     task = db.session.get(Task, task_id)
     if not task:
         return {"error": "Task not found."}
-    challenge = task.challenge
 
     from routes.tasks import check_task_started
 
     if user_role == "competitor" and not check_task_started(task, user_role, current_user_id):
         return {"error": "Access denied or task not available yet."}
+
+    # Competitor views are anonymized while staff views expose real names and
+    # scores, so cached payloads are bucketed per role and never shared.
+    role_kind = "competitor" if user_role == "competitor" else "staff"
+    cache_key = f"task_leaderboard:{task_id}:{role_kind}"
+    lock_key = f"lock:{cache_key}"
+
+    cached: Any = get_cached(cache_key)
+    if cached is not None:
+        return cached  # type: ignore[no-any-return]
+
+    with cache_lock(lock_key, ttl=30) as got_lock:
+        if not got_lock:
+            for _ in range(10):
+                time.sleep(0.3)
+                cached = get_cached(cache_key)
+                if cached is not None:
+                    return cached  # type: ignore[no-any-return]
+
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[no-any-return]
+
+        result = _compute_task_leaderboard(task, task_id, user_role, current_user_id)
+        set_cached(cache_key, result, timeout=120)
+        return result
+
+
+def _compute_task_leaderboard(
+    task: Task, task_id: uuid.UUID | str, user_role: str, current_user_id: uuid.UUID | None
+) -> dict[str, Any]:
+    challenge = task.challenge
 
     all_completed = (
         Submission.query.filter_by(task_id=task_id, status="completed")
@@ -424,30 +433,12 @@ def get_task_leaderboard_data(
         .all()
     )
 
-    is_lower_better = False
-    if task.metrics_config:
-        try:
-            m_config = (
-                json.loads(task.metrics_config)
-                if isinstance(task.metrics_config, str)
-                else task.metrics_config
-            )
-            for m_name, m_info in m_config.items():
-                if m_name.startswith("_"):
-                    continue
-                if isinstance(m_info, dict) and (
-                    m_info.get("higher_is_better") is False or is_metric_lower_better(m_name)
-                ):
-                    is_lower_better = True
-        except Exception as e:
-            logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
-
     competitors = User.query.filter_by(role="competitor", challenge_id=task.challenge_id).all()
     challenge_cache = {challenge.id: challenge}
     user_best = {}
     for comp in competitors:
         comp_subs = [s for s in all_completed if s.user_id == comp.id]
-        best_sub = get_best_submission(task, comp_subs, challenge, is_lower_better=is_lower_better)
+        best_sub = get_best_submission(task, comp_subs, challenge)
         if best_sub:
             user_best[comp.id] = best_sub
 
@@ -498,9 +489,7 @@ def get_task_leaderboard_data(
     # Add baseline to entries list so it gets sorted and ranked with competitors
     baseline_subs = [s for s in all_completed if s.is_baseline]
     if baseline_subs:
-        best_baseline = get_best_submission(
-            task, baseline_subs, challenge, is_lower_better=is_lower_better
-        )
+        best_baseline = get_best_submission(task, baseline_subs, challenge)
         if best_baseline:
             baseline_entry = best_baseline.to_dict(
                 view_role=user_role,
@@ -540,10 +529,9 @@ def get_task_leaderboard_data(
         elif score_b is None:
             return -1
         elif score_a != score_b:
-            if is_lower_better:
-                return -1 if score_a < score_b else 1
-            else:
-                return -1 if score_a > score_b else 1
+            # Stored scores are always normalized to higher-is-better by the
+            # submission runner, so a plain descending sort is always correct.
+            return -1 if score_a > score_b else 1
 
         ta = a["execution_time_ms"] if a["execution_time_ms"] is not None else 999999
         tb = b["execution_time_ms"] if b["execution_time_ms"] is not None else 999999
@@ -590,7 +578,7 @@ def get_task_leaderboard_data(
                 if keys:
                     m_name = keys[0]
                     metric_name = m_name.replace("_", " ").title()
-                    is_normalized = is_metric_lower_better(m_name)
+                    is_normalized = metric_direction_from_config(m_name, m_config.get(m_name))
         except Exception as e:
             logger.exception("Failed to parse metrics_config for task %s: %s", task.id, e)
 

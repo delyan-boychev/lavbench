@@ -45,7 +45,7 @@ class TestEvaluateSubmissionDispatch:
 
     def test_soft_timeout_in_worker_mode_reports_failed(self, mocker):
         metadata = {"task_id": 7, "challenge_id": 3, "main_server_url": "http://localhost:5000"}
-        mocker.patch.object(tasks, "RUNNING_AS_WORKER", True)
+        mocker.patch.object(tasks, "IS_EVAL_WORKER", True)
         mocker.patch.object(tasks, "app", None)
         mocker.patch.object(tasks, "run_eval_submission", side_effect=SoftTimeLimitExceeded())
         mock_report = mocker.patch("worker_utils.report_status_to_server", return_value=True)

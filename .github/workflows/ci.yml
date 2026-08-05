@@ -227,9 +227,7 @@ jobs:
             -e ENCRYPTION_KEY="${ENCRYPTION_KEY}" \
             -e WORKER_PRIVATE_KEY="NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU=" \
             -e MAIN_SERVER_URL="http://backend:5001" \
-            -e RUNNING_AS_WORKER="true" \
-            -e EVALUATION_ONLY_WORKER="true" \
-            -e INTERNAL_ONLY_WORKER="false" \
+            -e WORKER_ROLE="eval" \
             -e HF_CACHE_DIR="/var/lib/lavbench/hf_cache" \
             -e TASK_IMAGES_DIR="/var/lib/lavbench/task_images" \
             -e LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace" \
@@ -306,10 +304,16 @@ jobs:
 
       - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE, eval worker)
         run: |
-          python3 -m pip install --user --break-system-packages --quiet pandas pyarrow
+          python3 -m pip install --user --break-system-packages --quiet pandas pyarrow cryptography
           python3 -u scripts/api_smoke_test.py
         env:
           SMOKE_EVALUATE: "1"
+          SMOKE_PIXEL_ACCURACY: "1"
+          # Same keypair as the eval worker started above (SMOKE_EVALUATE=1
+          # enables the worker-contract section that exercises /api/worker/*).
+          # The runner's public-key counterpart is the WORKER_PUBLIC_KEY the
+          # backend validates against.
+          SMOKE_WORKER_KEY: "NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU="
 
       # --- Remove the evaluation worker (not part of the compose stack) ---
       - name: Remove evaluation worker

@@ -13,6 +13,14 @@ Usage:
 
 Set SMOKE_EVALUATE=1 to enable the worker-backed evaluation section
 (requires an evaluation worker consuming cpu_queue on the broker).
+Set SMOKE_PIXEL_ACCURACY=1 (with SMOKE_EVALUATE=1) to additionally run the
+pixel-mask metric E2E.
+Set SMOKE_WORKER_KEY=<base64 ed25519 private key> (or SMOKE_WORKER_ENV pointing
+at a worker.env containing WORKER_PRIVATE_KEY) to enable the worker API
+contract section (run-content, report, logs, kill-with-409 replay guard).
+Set SMOKE_GUARD_CAPS=1 (worker.env with MAX_EXTRACT_MEMBER_BYTES /
+MAX_COLLECT_BUFFER_BYTES tuned small) to run the oversized-archive resilience
+E2E.
 
 Exit code: 0 = all passed, 1 = at least one FAIL.
 """
@@ -21,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import gzip
 import http.cookiejar
 import io
 import json
@@ -220,6 +229,59 @@ def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, so
     return False, last
 
 
+def _read_env_file_value(path: str, key: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if line.startswith(key + "=") and not line.startswith("#"):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _load_worker_private_key() -> str:
+    """Opt-in worker-contract section: return the base64 Ed25519 private key.
+
+    Priority: SMOKE_WORKER_KEY env var, then WORKER_PRIVATE_KEY in the file
+    named by SMOKE_WORKER_ENV (default worker.env) on the smoke host.
+    """
+    key = os.environ.get("SMOKE_WORKER_KEY", "")
+    if key:
+        return key
+    env_file = os.environ.get("SMOKE_WORKER_ENV", "worker.env")
+    return _read_env_file_value(env_file, "WORKER_PRIVATE_KEY")
+
+
+def _sign_worker_token(submission_id: str, priv_key_b64: str) -> str:
+    """Sign an Ed25519 worker token: ``{submission_id}:{unix_ts}.{b64sig}``.
+
+    Mirrors backend/_sign_worker_token; used to drive the /api/worker/*
+    endpoints black-box. Returns "" if no signing library is available.
+    """
+    import base64 as _b64
+    import time as _time
+
+    def _pad_b64(s: str) -> str:
+        return s + "=" * (-len(s) % 4)
+
+    nonce = f"{submission_id}:{int(_time.time())}"
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # type: ignore[import-not-found]
+            Ed25519PrivateKey,
+        )
+
+        pk = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(_pad_b64(priv_key_b64)))
+        return f"{nonce}.{_b64.b64encode(pk.sign(nonce.encode())).decode()}"
+    except Exception:  # noqa: BLE001
+        try:
+            import nacl.signing  # type: ignore[import-not-found]
+
+            sk = nacl.signing.SigningKey(_b64.b64decode(_pad_b64(priv_key_b64)))
+            return f"{nonce}.{_b64.b64encode(sk.sign(nonce.encode()).signature).decode()}"
+        except Exception:  # noqa: BLE001
+            return ""
+
+
 MIN_IPYNB = {
     "cells": [{"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
                "source": ["import pandas as pd\n", "print('ok')\n"]}],
@@ -264,6 +326,29 @@ def read_admin_credentials(path: str) -> tuple[str, str]:
         print(f"ERROR: could not parse credentials from {path}")
         sys.exit(2)
     return user, key
+
+
+def create_challenge_and_competitor(api: Api, base: str, title: str,
+                                    now: str, future: str) -> tuple[str, str, str]:
+    """Create a throwaway challenge + a fresh competitor in it.
+
+    Returns (challenge_id, generated_username, generated_password). The
+    challenge has no max_eval_requests so contract tests cannot trip the
+    daily submission cap. Admin API only (uses *api*'s session).
+    """
+    code, data = api.send("POST", "/api/challenges",
+                          {"title": title, "description": "created by api_smoke_test.py",
+                           "start_time": now, "end_time": future, "gpu_required": False})
+    cid2 = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+    comp_user = comp_pass = ""
+    if cid2:
+        code, data = api.send("POST", "/api/admin/register-competitor",
+                              {"name": "Contract", "surname": "Probe", "middle_name": "M",
+                               "birth_date": "2006-04-04", "grade": "10",
+                               "school": "Contract HS", "city": "Ruse", "challenge_id": cid2})
+        comp_user = data.get("generated_username", "") if code == 201 and isinstance(data, dict) else ""
+        comp_pass = data.get("generated_password", "") if code == 201 and isinstance(data, dict) else ""
+    return cid2, comp_user, comp_pass
 
 
 def main() -> int:
@@ -746,6 +831,9 @@ def main() -> int:
         if have_parquet:
             code, data = api.send("GET", "/api/admin/workers/stats")
             wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
+            partial_failures = data.get("partial_failures") if code == 200 and isinstance(data, dict) else None
+            check("eval: worker stats expose partial_failures list",
+                  isinstance(partial_failures, list), f"partial_failures={partial_failures}")
             worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
             check("eval: CPU worker connected (worker_spec)",
                   worker_ok,
@@ -824,6 +912,9 @@ def main() -> int:
                 check("eval: public_score == 1.0 (accuracy)",
                       isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
                       f"score={score}")
+                et = sub.get("execution_time_ms")
+                check("eval: execution_time_ms is a non-negative int",
+                      isinstance(et, int) and et >= 0, f"execution_time_ms={et}")
                 mpub = sub.get("metrics_payload_public")
                 check("eval: metrics_payload_public accuracy 1.0",
                       isinstance(mpub, dict) and abs(float(mpub.get("accuracy", -1)) - 1.0) < 1e-6,
@@ -1125,8 +1216,433 @@ def main() -> int:
                     if tdel:
                         api.send("DELETE", f"/api/tasks/{tdel}")
 
+                # ── 15c. Kill semantics (worker-backed) ─────────────────
+                print("\n== 15c. Kill semantics (worker-backed) ==")
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{pipe_cid}/tasks",
+                    {"title": "smoke-kill-task", **pipe_fields, "time_limit_sec": "120"},
+                    {"baseline_notebook": ("baseline.ipynb", nb_bytes),
+                     "file0": ("labels.parquet", labels_buf.getvalue())})
+                kill_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15c: create kill task 201", code == 201 and bool(kill_tid))
+                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
+                                       {"task_id": kill_tid,
+                                        "selected_cells": [{"id": 0, "type": "code",
+                                                            "source": "import time\ntime.sleep(120)\n"}]})
+                kill_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                check("15c: killable submission 202 queued", code == 202 and bool(kill_sid))
+                running = False
+                for _ in range(60):
+                    time.sleep(2)
+                    c2, d2 = api.send("GET", f"/api/submissions/{kill_sid}")
+                    if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
+                        running = True
+                        break
+                check("15c: submission reaches running (before kill)",
+                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2}")
+                code, data = ecomp.send("POST", f"/api/submissions/{kill_sid}/kill")
+                check("15c: cross-user competitor kill → 403 ERR_SUBMISSION_KILL_DENIED",
+                      code == 403 and expect_error(data, "ERR_SUBMISSION_KILL_DENIED"), f"got {code}")
+                code, data = api.send("POST", f"/api/submissions/{kill_sid}/kill")
+                check("15c: admin kill 200", code == 200 and isinstance(data, dict), f"got {code}")
+                code, data = api.send("GET", f"/api/submissions/{kill_sid}")
+                dstat = data if code == 200 and isinstance(data, dict) else {}
+                check("15c: killed submission status failed + detailed_status killed",
+                      code == 200 and dstat.get("status") == "failed"
+                      and dstat.get("detailed_status") == "killed",
+                      f"status={dstat.get('status')} detailed={dstat.get('detailed_status')}")
+                code, data = api.send("POST", f"/api/submissions/{kill_sid}/kill")
+                check("15c: re-kill → 400 ERR_SUBMISSION_NOT_KILLABLE",
+                      code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_KILLABLE"), f"got {code}")
+                if kill_tid:
+                    api.send("DELETE", f"/api/tasks/{kill_tid}")
+
+                # ── 15d. Pixel-mask metric E2E (SMOKE_PIXEL_ACCURACY=1) ─
+                if os.environ.get("SMOKE_PIXEL_ACCURACY") == "1":
+                    print("\n== 15d. Pixel-mask metric (worker-backed) ==")
+                    mask_true = bytes([0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0])
+                    mask_repr = repr(mask_true)
+                    labels_df = pd.DataFrame({"id": [1], "label": [mask_true]})
+                    labels_buf2 = io.BytesIO()
+                    labels_df.to_parquet(labels_buf2, index=False)
+                    mask_nb = {
+                        "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+                                   "outputs": [],
+                                   "source": ["import pandas as pd\n",
+                                              f"pd.DataFrame({{'id': [1], 'prediction': [{mask_repr}]}})"
+                                              ".to_parquet('submission.parquet')\n"]}],
+                        "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                                    "name": "python3"}},
+                        "nbformat": 4,
+                        "nbformat_minor": 5,
+                    }
+                    code, data = api.multipart(
+                        "POST", f"/api/challenges/{pipe_cid}/tasks",
+                        {"title": "smoke-mask-task", **pipe_fields,
+                         "metrics_config": json.dumps(
+                             {"pixel_accuracy": {"weight": 1.0, "higher_is_better": True}})},
+                        {"baseline_notebook": ("baseline.ipynb", json.dumps(mask_nb).encode()),
+                         "file0": ("labels.parquet", labels_buf2.getvalue())})
+                    mask_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                    check("15d: create pixel-mask task 201", code == 201 and bool(mask_tid))
+                    if mask_tid:
+                        good_mask_src = (
+                            "import pandas as pd\n"
+                            f"pd.DataFrame({{'id': [1], 'prediction': [{mask_repr}]}})"
+                            ".to_parquet('submission.parquet')\n"
+                        )
+                        reached, sub = submit_and_poll(pipe, api, pipe_cid, mask_tid,
+                                                       good_mask_src, poll_timeout=900.0)
+                        score = sub.get("public_score") if isinstance(sub, dict) else None
+                        check("15d: exact mask verifies at 1.0 (pixel_accuracy)",
+                              reached and sub.get("status") == "completed"
+                              and isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                              f"status={sub.get('status')} score={score}")
+                        wrong_repr = repr(bytes([1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0]))
+                        reached, sub = submit_and_poll(pipe, api, pipe_cid, mask_tid,
+                                                       "import pandas as pd\n"
+                                                       f"pd.DataFrame({{'id': [1], 'prediction': [{wrong_repr}]}})"
+                                                       ".to_parquet('submission.parquet')\n",
+                                                       poll_timeout=900.0)
+                        score = sub.get("public_score") if isinstance(sub, dict) else None
+                        check("15d: single-pixel flip penalized (0.9375)",
+                              reached and sub.get("status") == "completed"
+                              and isinstance(score, (int, float)) and abs(float(score) - 0.9375) < 1e-6,
+                              f"status={sub.get('status')} score={score}")
+                        api.send("DELETE", f"/api/tasks/{mask_tid}")
+
+                # ── 15g. Custom evaluator E2E (worker-backed) ───────────
+                print("\n== 15g. Custom evaluator (worker-backed) ==")
+                ce_labels = pd.DataFrame({"id": [1, 2, 3, 4, 5], "label": [0, 1, 0, 1, 0]})
+                ce_labels_buf = io.BytesIO()
+                ce_labels.to_parquet(ce_labels_buf, index=False)
+                ce_baseline = ("import pandas as pd\n"
+                               "pd.DataFrame({'id': [1, 2, 3, 4, 5], 'prediction': [0, 1, 0, 1, 0]})"
+                               ".to_parquet('submission.parquet')\n")
+                ce_baseline_nb = {
+                    "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+                               "outputs": [], "source": [ce_baseline]}],
+                    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                                "name": "python3"}},
+                    "nbformat": 4, "nbformat_minor": 5,
+                }
+                ce_meta = (
+                    'METRIC_NAME = "custom_score"\n'
+                    'SUBMISSION_COLUMNS = [{"name": "prediction", "type": "int64"}]\n'
+                    'LABELS_COLUMNS = [{"name": "label", "type": "int64"}]\n'
+                    'EVALUATOR_OPTIONS = {"scale": 1.0}\n'
+                )
+                ce_pred_source = ("import pandas as pd\n"
+                                  "pd.DataFrame({'id': [1, 2, 3, 4, 5], "
+                                  "'prediction': [0, 1, 0, 1, 0]})"
+                                  ".to_parquet('submission.parquet')\n")
+
+                def ce_create(ce_title: str, eval_code: str):
+                    return api.multipart(
+                        "POST", f"/api/challenges/{pipe_cid}/tasks",
+                        {"title": ce_title, **pipe_fields,
+                         "metrics_config": json.dumps(
+                             {"custom_score": {"weight": 1.0, "higher_is_better": True}})},
+                        {"baseline_notebook": ("baseline.ipynb", json.dumps(ce_baseline_nb).encode()),
+                         "evaluator_script": ("evaluator.py", eval_code.encode()),
+                         "file0": ("labels.parquet", ce_labels_buf.getvalue())})
+
+                def ce_run(ce_tid: str, source: str) -> tuple[bool, dict]:
+                    return submit_and_poll(pipe, api, pipe_cid, ce_tid, source,
+                                           poll_timeout=900.0)
+
+                # Upload-time rejection edge cases (fatal shape errors).
+                # The route validates METRIC_NAME / SUBMISSION_COLUMNS /
+                # LABELS_COLUMNS and rejects BEFORE a task is created.
+                code, data = ce_create("smoke-ce-syntax", ce_meta + "def evaluate(df_sub, df_labels, options):\n    this is !!! not python\n")
+                check("15g: syntax-error evaluator rejected at upload",
+                      code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
+                code, data = ce_create("smoke-ce-nometric",
+                                       "def evaluate(df_sub, df_labels, options):\n    return {'custom_score': 1.0}\n")
+                check("15g: missing METRIC_NAME rejected at upload",
+                      code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
+                code, data = ce_create("smoke-ce-badcols",
+                                       'METRIC_NAME = "custom_score"\n'
+                                       'SUBMISSION_COLUMNS = "nope"\n'
+                                       'LABELS_COLUMNS = [{"name": "label", "type": "int64"}]\n')
+                check("15g: bad SUBMISSION_COLUMNS shape rejected at upload",
+                      code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
+
+                # Runtime fail-closed edge cases: task is accepted, but the
+                # sandboxed evaluator cannot produce a score → 0.0 (never a
+                # host-side eval, never a 5xx). Submission still completes.
+                ce_fail_cases = [
+                    ("smoke-ce-noeval", ce_meta,
+                     "15g: missing 'evaluate' fails closed (score 0.0)"),
+                    ("smoke-ce-raise",
+                     ce_meta + "def evaluate(df_sub, df_labels, options):\n    raise RuntimeError('boom-eval')\n",
+                     "15g: evaluate() raising fails closed (score 0.0)"),
+                    ("smoke-ce-nondict",
+                     ce_meta + "def evaluate(df_sub, df_labels, options):\n    return ['not-a-dict']\n",
+                     "15g: non-dict evaluate() return fails closed (score 0.0)"),
+                    ("smoke-ce-nonnum",
+                     ce_meta + "def evaluate(df_sub, df_labels, options):\n    return {'custom_score': 'abc'}\n",
+                     "15g: non-numeric metric value fails closed (score 0.0)"),
+                    ("smoke-ce-mismatch",
+                     ce_meta + "def evaluate(df_sub, df_labels, options):\n    return {'other_metric': 1.0}\n",
+                     "15g: metric-key mismatch fails closed (score 0.0)"),
+                ]
+                for ce_title, ce_code, ce_label in ce_fail_cases:
+                    code, data = ce_create(ce_title, ce_code)
+                    ce_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                    check(f"{ce_label} — task 201", code == 201 and bool(ce_tid), f"got {code}")
+                    if ce_tid:
+                        reached, sub = ce_run(ce_tid, ce_pred_source)
+                        score = sub.get("public_score") if isinstance(sub, dict) else None
+                        mpub = sub.get("metrics_payload_public") if isinstance(sub, dict) else {}
+                        cev = mpub.get("custom_score", None) if isinstance(mpub, dict) else None
+                        check(f"{ce_label}: submission completed with score 0.0",
+                              reached and sub.get("status") == "completed"
+                              and isinstance(score, (int, float)) and abs(float(score) - 0.0) < 1e-6,
+                              f"status={sub.get('status')} score={score}")
+                        check(f"{ce_label}: metrics payload custom_score 0.0",
+                              isinstance(cev, (int, float)) and abs(float(cev) - 0.0) < 1e-6,
+                              f"custom_score={cev}")
+                        api.send("DELETE", f"/api/tasks/{ce_tid}")
+
+                # Success path: the evaluator merges predictions vs labels.
+                code, data = ce_create(
+                    "smoke-ce-ok",
+                    ce_meta + (
+                        "def evaluate(df_sub, df_labels, options):\n"
+                        "    import pandas as pd\n"
+                        "    merged = pd.merge(df_sub, df_labels, on='id', how='inner', "
+                        "suffixes=('_s', '_l'))\n"
+                        "    acc = float((merged['prediction'] == merged['label']).mean())\n"
+                        "    return {'custom_score': acc * options.get('scale', 1.0)}\n"
+                    ),
+                )
+                ce_ok_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15g: success evaluator task 201", code == 201 and bool(ce_ok_tid), f"got {code}")
+                if ce_ok_tid:
+                    reached, sub = ce_run(ce_ok_tid, ce_pred_source)
+                    score = sub.get("public_score") if isinstance(sub, dict) else None
+                    mpub = sub.get("metrics_payload_public") if isinstance(sub, dict) else {}
+                    cev = mpub.get("custom_score", None) if isinstance(mpub, dict) else None
+                    check("15g: exact prediction scores 1.0 via custom evaluator",
+                          reached and sub.get("status") == "completed"
+                          and isinstance(score, (int, float)) and abs(float(score) - 1.0) < 1e-6,
+                          f"status={sub.get('status')} score={score}")
+                    check("15g: metrics payload custom_score 1.0",
+                          isinstance(cev, (int, float)) and abs(float(cev) - 1.0) < 1e-6,
+                          f"custom_score={cev}")
+                    # Public split is the first 2 rows (labels [0, 1]); all-zero
+                    # predictions match 1 of 2 → 0.5.
+                    reached, sub = ce_run(ce_ok_tid,
+                                          "import pandas as pd\n"
+                                          "pd.DataFrame({'id': [1, 2, 3, 4, 5], "
+                                          "'prediction': [0, 0, 0, 0, 0]})"
+                                          ".to_parquet('submission.parquet')\n")
+                    score = sub.get("public_score") if isinstance(sub, dict) else None
+                    check("15g: partial prediction penalized (0.5)",
+                          reached and sub.get("status") == "completed"
+                          and isinstance(score, (int, float)) and abs(float(score) - 0.5) < 1e-6,
+                          f"status={sub.get('status')} score={score}")
+                    api.send("DELETE", f"/api/tasks/{ce_ok_tid}")
+
+    # ── 15e. Worker API contract (opt-in SMOKE_WORKER_KEY) ─────────────
+    print("\n== 15e. Worker API contract ==")
+    wpriv = _load_worker_private_key()
+    wc_cid = ""
+    if not wpriv:
+        warn("worker-contract", "no SMOKE_WORKER_KEY / WORKER_PRIVATE_KEY in worker.env — skipped")
+    else:
+        wc_cid, wc_user, wc_pass = create_challenge_and_competitor(
+            api, args.base, "smoke-worker-contract", now, future)
+        check("worker-contract: create challenge + competitor 201", bool(wc_cid) and bool(wc_user))
+        wcomp = Api(args.base)
+        code, data = wcomp.send("POST", "/api/auth/login",
+                                {"username": wc_user, "password": wc_pass})
+        check("worker-contract: competitor login 200", code == 200 and isinstance(data, dict))
+        code, data = wcomp.send("GET", "/api/auth/csrf-token")
+        wcomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+        wc_sid = ""
+        if wc_cid:
+            code, data = api.send("POST", f"/api/challenges/{wc_cid}/stages",
+                                  {"title": "Contract stage", "start_time": now, "end_time": future})
+            wc_sid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+            check("worker-contract: create stage 201", code == 201 and bool(wc_sid))
+        if wc_cid and wcomp.csrf and wc_sid:
+            code, data = api.multipart(
+                "POST", f"/api/challenges/{wc_cid}/tasks",
+                {"title": "smoke-contract-task", "stage_id": wc_sid, "gpu_required": "false",
+                 "ram_limit_mb": "512", "time_limit_sec": "600",
+                 "base_docker_image": "python:3.12-slim"},
+                {"baseline_notebook": ("baseline.ipynb", json.dumps(MIN_IPYNB).encode())})
+            wc_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+            check("worker-contract: create task 201", code == 201 and bool(wc_tid))
+            code, data = wcomp.send("POST", f"/api/challenges/{wc_cid}/submit",
+                                    {"task_id": wc_tid,
+                                     "selected_cells": [{"id": 0, "type": "code",
+                                                         "source": "import time\ntime.sleep(300)\n"}]})
+            ksid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+            check("worker-contract: contract submission 202", code == 202 and bool(ksid))
+            tok = _sign_worker_token(ksid, wpriv) if ksid else ""
+            other = _sign_worker_token(str(uuid.uuid4()), wpriv)
+            check("worker-contract: can sign ed25519 token", bool(tok) and bool(other))
+            if tok:
+                code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
+                                      headers={"X-Worker-Token": tok})
+                uc = data.get("user_code") if code == 200 and isinstance(data, dict) else None
+                check("run-content fetch returns user_code",
+                      code == 200 and isinstance(uc, str) and "time.sleep" in uc,
+                      f"code={str(uc)[:120]}")
+                code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
+                                      headers={"X-Worker-Token": other})
+                check("run-content rejects foreign-submission token",
+                      code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
+                code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}")
+                check("run-content rejects missing token",
+                      code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "running", "execution_time_ms": -5},
+                                      headers={"X-Worker-Token": tok})
+                check("negative execution_time_ms rejected",
+                      code == 400 and expect_error(data, "ERR_INVALID_EXECUTION_TIME"), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "running", "public_score": "abc"},
+                                      headers={"X-Worker-Token": tok})
+                check("non-numeric public_score rejected",
+                      code == 400 and expect_error(data, "ERR_INVALID_PUBLIC_SCORE"), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "not-a-status"},
+                                      headers={"X-Worker-Token": tok})
+                check("unknown status rejected",
+                      code == 400 and expect_error(data, "ERR_INVALID_STATUS"), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "running"},
+                                      headers={"X-Worker-Token": other})
+                check("foreign-submission report rejected",
+                      code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "running", "execution_time_ms": 123,
+                                       "public_score": 0.5},
+                                      headers={"X-Worker-Token": tok})
+                check("worker-contract: valid running report accepted",
+                      code == 200, f"got {code}")
+                code, data = api.send("POST", f"/api/submissions/{ksid}/kill")
+                check("worker-contract: admin kill 200", code == 200 and isinstance(data, dict), f"got {code}")
+                code, data = api.send("POST", f"/api/worker/report/{ksid}",
+                                      {"status": "running", "public_score": 1.0},
+                                      headers={"X-Worker-Token": tok})
+                check("stale report on killed submission → 409 ERR_SUBMISSION_KILLED",
+                      code == 409 and expect_error(data, "ERR_SUBMISSION_KILLED"), f"got {code}")
+                code, data = api.send("POST", f"/api/submissions/{ksid}/kill")
+                check("re-kill → 400 ERR_SUBMISSION_NOT_KILLABLE",
+                      code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_KILLABLE"), f"got {code}")
+                code, data = api.send("POST", "/api/workers/logs",
+                                      gzip.compress(json.dumps(["line1", "line2"]).encode()),
+                                      headers={"X-Worker-Token": tok})
+                check("worker logs gzip payload accepted",
+                      code == 200, f"got {code}")
+                code, data = api.send("POST", "/api/workers/logs",
+                                      gzip.compress(b"junk lines"),
+                                      headers={"X-Worker-Token": "not.a.valid.signature"})
+                check("worker logs bad signature rejected 401",
+                      code == 401, f"got {code}")
+                code, data = api.send("POST", "/api/workers/logs",
+                                      gzip.compress(os.urandom(1_100_000)),
+                                      headers={"X-Worker-Token": tok})
+                check("oversized log payload rejected (ERR_PAYLOAD_TOO_LARGE)",
+                      code == 400 and expect_error(data, "ERR_PAYLOAD_TOO_LARGE"), f"got {code}")
+
+    # ── 15f. Oversized-archive resilience (opt-in SMOKE_GUARD_CAPS=1) ──
+    if os.environ.get("SMOKE_GUARD_CAPS") == "1":
+        print("\n== 15f. Oversized-archive resilience ==")
+        try:
+            import pandas as pd  # noqa: F401
+            import pyarrow  # noqa: F401
+
+            have_pq = True
+        except ImportError as e:
+            have_pq = False
+            warn("15f oversized-archive", f"pandas/pyarrow not importable ({e}) — skipped")
+        caps_env = _read_env_file_value(os.environ.get("SMOKE_WORKER_ENV", "worker.env"),
+                                        "MAX_EXTRACT_MEMBER_BYTES")
+        caps_buf = _read_env_file_value(os.environ.get("SMOKE_WORKER_ENV", "worker.env"),
+                                        "MAX_COLLECT_BUFFER_BYTES")
+        small_cap = 0
+        for raw in (caps_env, caps_buf):
+            if raw.isdigit():
+                small_cap = min(small_cap, int(raw)) if small_cap else int(raw)
+        if not have_pq:
+            pass
+        elif not small_cap or small_cap > 64 * 1024:
+            warn("15f oversized-archive",
+                 f"caps not tuned small (extract={caps_env or 'unset'} buffer={caps_buf or 'unset'}) — set "
+                 "MAX_EXTRACT_MEMBER_BYTES/MAX_COLLECT_BUFFER_BYTES <= 64KB on the worker to exercise")
+        else:
+            oc_cid, oc_user, oc_pass = create_challenge_and_competitor(
+                api, args.base, "smoke-oversize-guard", now, future)
+            check("15f: create challenge + competitor 201", bool(oc_cid) and bool(oc_user))
+            ocomp = Api(args.base)
+            code, data = ocomp.send("POST", "/api/auth/login",
+                                    {"username": oc_user, "password": oc_pass})
+            check("15f: competitor login 200", code == 200 and isinstance(data, dict))
+            code, data = ocomp.send("GET", "/api/auth/csrf-token")
+            ocomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+            code, data = api.send("GET", "/api/admin/workers/stats")
+            wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
+            worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
+            if not worker_ok:
+                warn("15f oversized-archive",
+                     "no CPU worker registered — oversized-collect E2E skipped (needs SMOKE_EVALUATE=1 topology)")
+            else:
+                osv_labels = pd.DataFrame({"id": [1], "label": [0]})
+                osv_nb = {
+                    "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+                               "outputs": [],
+                               "source": ["import pandas as pd\n",
+                                          "pd.DataFrame({'id': [1], 'prediction': [0]})"
+                                          ".to_parquet('submission.parquet')\n"]}],
+                    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                                "name": "python3"}},
+                    "nbformat": 4, "nbformat_minor": 5,
+                }
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{oc_cid}/tasks",
+                    {"title": "smoke-oversize-task", "stage_id": stage_id, "gpu_required": "false",
+                     "ram_limit_mb": "512", "time_limit_sec": "60",
+                     "base_docker_image": "python:3.12-slim",
+                     "pip_requirements": "pandas\npyarrow",
+                     "metrics_config": json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+                     "public_eval_percentage": "50"},
+                    {"baseline_notebook": ("baseline.ipynb", json.dumps(osv_nb).encode()),
+                     "file0": ("labels.parquet", io.BytesIO(
+                         osv_labels.to_parquet(index=False)).getvalue())})
+                os_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("15f: create oversized task 201", code == 201 and bool(os_tid))
+                if os_tid:
+                    code, data = ocomp.send("POST", f"/api/challenges/{oc_cid}/submit",
+                                            {"task_id": os_tid,
+                                             "selected_cells": [{"id": 0, "type": "code",
+                                                                 "source": "open('submission.parquet','wb').write(b'A' * (2 * 1024 * 1024))\n"}]})
+                    os_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                    check("15f: oversized submission 202", code == 202 and bool(os_sid))
+                    if os_sid:
+                        reached, sub = poll_submission(api, os_sid, poll_timeout=600.0)
+                        logs_l = str(sub.get("logs", "")).lower() if isinstance(sub, dict) else ""
+                        check("15f: oversized collect fails gracefully (no hang, run failed)",
+                              reached and sub.get("status") == "failed",
+                              f"status={sub.get('status')}")
+                        check("15f: parquet-missing error surfaced in logs",
+                              reached and "submission.parquet" in logs_l, logs_l[:160])
+                        code, data = api.send("GET", "/api/health")
+                        check("15f: server stays healthy after oversized collect",
+                              code == 200 and isinstance(data, dict) and data.get("status") == "ok")
+                    api.send("DELETE", f"/api/tasks/{os_tid}")
+                api.send("DELETE", f"/api/challenges/{oc_cid}")
+
     # ── 16. Cleanup ────────────────────────────────────────────────────
     print("\n== 16. Cleanup ==")
+    if wc_cid:
+        code, data = api.send("DELETE", f"/api/challenges/{wc_cid}")
+        check("worker-contract: DELETE contract challenge 200", code == 200)
     if cid:
         code, data = api.send("DELETE", f"/api/challenges/{cid}")
         check("DELETE challenge 200", code == 200)

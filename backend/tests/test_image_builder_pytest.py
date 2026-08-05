@@ -442,7 +442,7 @@ class TestRebuildListener:
         }
         mocker.patch("requests.get", return_value=mock_resp)
         mock_build = mocker.patch.object(ib, "build_task_image")
-        ib._rebuild_listener("http://server:5000", "tok")
+        ib._rebuild_listener_once("http://server:5000", "tok")
         pubsub.subscribe.assert_called_once_with(ib.CHANNEL_TASK_REBUILD)
         mock_build.assert_called_once()
         assert mock_build.call_args[0][0]["task_id"] == "task-42"
@@ -456,10 +456,22 @@ class TestRebuildListener:
         mock_resp.json.return_value = {"tasks": [{"id": "task-42", "custom_eval_code": ""}]}
         mocker.patch("requests.get", return_value=mock_resp)
         mock_build = mocker.patch.object(ib, "build_task_image")
-        ib._rebuild_listener("http://server:5000", "tok")
+        ib._rebuild_listener_once("http://server:5000", "tok")
         mock_build.assert_not_called()
         pubsub.unsubscribe.assert_called_once()
 
     def test_no_redis_client_returns_early(self, mocker):
         mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        ib._rebuild_listener("http://server:5000", "tok")
+        mocker.patch.object(ib.time, "sleep")
+        ib._rebuild_listener_once("http://server:5000", "tok")
+
+    def test_crashes_are_retried_m_not_dying_permanently(self, mocker):
+        mocker.patch.object(
+            ib,
+            "_rebuild_listener_once",
+            side_effect=[Exception("boom"), Exception("boom")],
+        )
+        mocker.patch.object(ib.time, "sleep", side_effect=[None, KeyboardInterrupt])
+        with pytest.raises(KeyboardInterrupt):
+            ib._rebuild_listener("http://server:5000", "tok")
+        assert ib._rebuild_listener_once.call_count == 2

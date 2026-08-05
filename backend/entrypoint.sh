@@ -2,11 +2,16 @@
 set -e
 
 # Ensure runtime directories exist and are writable by nobody (65534)
-for dir in /app/uploads /app/hf_cache /app/backups /backups /app/run /app/.gunicorn; do
+for dir in /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn; do
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
   fi
-  chown -R 65534:65534 "$dir"
+  # Best-effort chown. The runtime user (nobody) needs write access, but
+  # hardened containers (cap_drop: ALL) cannot chown. Ownership is therefore
+  # also pre-set at image build time; here we only fix up bind/legacy mounts.
+  if ! chown -R 65534:65534 "$dir" 2>/dev/null; then
+    echo "WARNING: cannot chown '$dir' (running reduced-capability image); ensure it is owned by UID 65534"
+  fi
 done
 
 # Raise file descriptor limit for high concurrency

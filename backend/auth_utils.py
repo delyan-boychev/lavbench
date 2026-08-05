@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
@@ -48,6 +49,41 @@ def _redis_exists(key: str) -> bool:
     except Exception as e:
         logger.warning("Redis exists check failed for key %s: %s", key, e)
     return False
+
+
+# In-memory fallback for jti revocation when Redis is down. Redis is the system
+# of record; during an outage we still want logout/admin revocations to be
+# honored on the process that performed them (they always are, because we write
+# here synchronously). Bounded + lazily pruned.
+_LOCAL_REVOKED_TOKENS: dict[str, float] = {}
+_LOCAL_REVOKED_MAX = 10_000
+
+
+def _record_revoked_locally(jti: str, expires_at: float) -> None:
+    _LOCAL_REVOKED_TOKENS[jti] = expires_at
+    if len(_LOCAL_REVOKED_TOKENS) > _LOCAL_REVOKED_MAX:
+        now = time.time()
+        expired = [k for k, v in _LOCAL_REVOKED_TOKENS.items() if v <= now]
+        for k in expired:
+            _LOCAL_REVOKED_TOKENS.pop(k, None)
+
+
+def _is_token_revoked(jti: str) -> bool:
+    """Fail-closed revocation check with an in-process fallback.
+
+    Redis is the source of truth. If Redis is unavailable we still honor
+    revocations recorded in this process (logout + admin revoke always record
+    locally first). Tokens revoked only from another process during an outage
+    are not detected here — an accepted trade-off that keeps the site up while
+    preserving the strongest guarantee (this host's own revocations).
+    """
+    now = time.time()
+    expiry = _LOCAL_REVOKED_TOKENS.get(jti)
+    if expiry is not None:
+        if expiry > now:
+            return True
+        _LOCAL_REVOKED_TOKENS.pop(jti, None)
+    return _redis_exists(f"revoked:{jti}")
 
 
 AUTH_COOKIE_NAME = "auth_token"
@@ -120,6 +156,10 @@ def revoke_token(token: str) -> None:
         jti = payload.get("jti")
         exp = payload.get("exp")
         if jti and exp:
+            expires_at = float(exp)
+            # Always record locally first so revocation holds even if Redis is
+            # unavailable for the write.
+            _record_revoked_locally(jti, expires_at)
             r = _redis_client()
             if r:
                 ttl = max(1, int(exp - utcnow().timestamp()))
@@ -127,7 +167,7 @@ def revoke_token(token: str) -> None:
                     r.set(f"revoked:{jti}", "1", ex=ttl)
                 except Exception:
                     logger.warning(
-                        "Failed to write revocation for jti=%s to Redis",
+                        "Failed to write revocation for jti=%s to Redis (local fallback active)",
                         jti,
                         exc_info=True,
                     )
@@ -159,7 +199,7 @@ def verify_token(token: str | None) -> dict[str, Any] | None:
         user_id = str(payload["sub"])
         # Check blacklist
         jti = payload.get("jti")
-        if jti and _redis_exists(f"revoked:{jti}"):
+        if jti and _is_token_revoked(jti):
             return None
         # Fetch current role from DB (handles mid-session promotions/demotions)
         # Falls back to JWT role if DB is unavailable (e.g. test environments)

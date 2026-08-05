@@ -24,7 +24,12 @@ from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
 from auth_utils import jury_access_required, rate_limit, role_required
-from cache_utils import get_coordination_client, invalidate_leaderboard_cache, worker_spec_key
+from cache_utils import (
+    get_coordination_client,
+    get_sse_client,
+    invalidate_leaderboard_cache,
+    worker_spec_key,
+)
 from config import Config
 from error_utils import err
 from evaluation_engine import AVAILABLE_METRICS
@@ -235,6 +240,7 @@ def register_competitor(
             "challenge_id": challenge_id,
         },
     )
+    db.session.commit()
 
     invalidate_leaderboard_cache(challenge_id)
 
@@ -505,6 +511,7 @@ def register_user(
             "challenge_id": challenge_id if role == "competitor" else None,
         },
     )
+    db.session.commit()
 
     return RegisterUserResponse(
         message=f"{role.capitalize()} registered successfully.",
@@ -714,6 +721,7 @@ def import_competitors_csv() -> tuple[ImportCompetitorsResponse, int] | tuple[Fl
             "user",
             details={"challenge_id": challenge_id, "count": len(imported)},
         )
+        db.session.commit()
 
         invalidate_leaderboard_cache(challenge_id)
         return ImportCompetitorsResponse(
@@ -776,6 +784,7 @@ def list_backups() -> BackupListResponse:
 )
 def force_backup() -> BackupStartResponse | tuple[BackupStartResponse, int]:
     log_audit(request.user["user_id"], "create", "backup", details={"auto": False})
+    db.session.commit()
     from tasks import run_backup
 
     task = run_backup.delay(auto=False)
@@ -801,7 +810,7 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
             with current_app.app_context():
                 yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
 
-            r = get_coordination_client()
+            r = get_sse_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
                 pubsub.subscribe(CHANNEL_BACKUPS)
@@ -875,6 +884,7 @@ def delete_backup_file(filename: str) -> MessageResponse | tuple[FlaskResponse, 
         return err("ERR_NOT_FOUND", 404, message="Not found")
     os.remove(safe_path)
     log_audit(request.user["user_id"], "delete", "backup", details={"filename": filename})
+    db.session.commit()
     return MessageResponse(message="Deleted.")
 
 
@@ -1109,6 +1119,7 @@ def update_user(
         target_id=user.id,
         details={"username": user.username},
     )
+    db.session.commit()
     return UpdateUserResponse(
         message="User updated successfully.",
         user=user.to_dict(view_role=request.user["role"]),
@@ -1143,6 +1154,7 @@ def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResp
         target_id=user.id,
         details={"username": user.username},
     )
+    db.session.commit()
 
     return ResetPasswordResponse(
         message=f"Password reset successfully for {user.username}.",
@@ -1204,6 +1216,7 @@ def reset_all_challenge_passwords(
         "user",
         details={"challenge_id": challenge_id, "count": len(competitors)},
     )
+    db.session.commit()
 
     credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
     os.makedirs(credentials_dir, exist_ok=True)
@@ -1263,6 +1276,7 @@ def download_challenge_credentials(challenge_id: Any) -> FlaskResponse | tuple[F
         target_id=challenge_id,
         details={"challenge_id": challenge_id},
     )
+    db.session.commit()
     return FlaskResponse(
         plaintext,
         mimetype="application/json",
@@ -1470,7 +1484,7 @@ def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
                 res_data = _get_worker_stats_response()
                 yield f"data: {json.dumps(res_data)}\n\n"
 
-            r = get_coordination_client()
+            r = get_sse_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
                 pubsub.subscribe(CHANNEL_WORKER_STATS)
@@ -1625,13 +1639,39 @@ def _get_worker_stats_response() -> dict[str, Any]:
         # 2. Collect Celery Worker Statistics
         from tasks import celery
 
-        inspect = celery.control.inspect(timeout=1.0)
+        partial_failures: list[str] = []
 
-        pings = inspect.ping() or {}
-        stats = inspect.stats() or {}
-        active = inspect.active() or {}
-        reserved = inspect.reserved() or {}
-        registered = inspect.registered() or {}
+        def _safe_inspect(call_name: str, value: Any | None) -> Any:
+            if value is None:
+                partial_failures.append(f"celery.{call_name} returned no data")
+            return value or {}
+
+        inspect = celery.control.inspect(timeout=1.0)
+        try:
+            pings = _safe_inspect("ping", inspect.ping())
+        except Exception as e:
+            logger.warning("Celery inspect.ping failed: %s", e)
+            pings, partial_failures = {}, [f"celery.ping failed: {e}"]
+        try:
+            stats = _safe_inspect("stats", inspect.stats())
+        except Exception as e:
+            logger.warning("Celery inspect.stats failed: %s", e)
+            stats, partial_failures = {}, [*partial_failures, f"celery.stats failed: {e}"]
+        try:
+            active = _safe_inspect("active", inspect.active())
+        except Exception as e:
+            logger.warning("Celery inspect.active failed: %s", e)
+            active, partial_failures = {}, [*partial_failures, f"celery.active failed: {e}"]
+        try:
+            reserved = _safe_inspect("reserved", inspect.reserved())
+        except Exception as e:
+            logger.warning("Celery inspect.reserved failed: %s", e)
+            reserved, partial_failures = {}, [*partial_failures, f"celery.reserved failed: {e}"]
+        try:
+            registered = _safe_inspect("registered", inspect.registered())
+        except Exception as e:
+            logger.warning("Celery inspect.registered failed: %s", e)
+            registered, partial_failures = {}, [*partial_failures, f"celery.registered failed: {e}"]
 
         r = None
         try:
@@ -1718,6 +1758,7 @@ def _get_worker_stats_response() -> dict[str, Any]:
             "connected_workers_count": len(workers_list),
             "workers": workers_list,
             "system": system_resources,
+            "partial_failures": partial_failures,
         }
 
     try:
@@ -1854,7 +1895,7 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
             with current_app.app_context():
                 yield f"data: {json.dumps({'items': _queue_snapshot(), 'event': 'snapshot'})}\n\n"
 
-            r = get_coordination_client()
+            r = get_sse_client()
             pubsub = r.pubsub() if r else None
             if pubsub:
                 pubsub.subscribe(CHANNEL_QUEUE)

@@ -615,7 +615,7 @@ class TestEvaluatePredictionsEdgeCases:
             df_labels,
             {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}},
         )
-        assert result["rmse"] == 0.0
+        assert result["rmse"] is None
 
     def test_balanced_accuracy(self):
         df_sub = pd.DataFrame({"id": [1, 2, 3, 4], "prediction": [0, 0, 0, 1]})
@@ -649,7 +649,7 @@ class TestEvaluatePredictionsEdgeCases:
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "label": [0]})
         result = evaluate_predictions(df_sub, df_labels, {"logloss": {"weight": 1.0}})
-        assert isinstance(result["logloss"], float)
+        assert result["logloss"] is None
 
     def test_retrieval_ndcg_k(self):
         df_true = pd.DataFrame(

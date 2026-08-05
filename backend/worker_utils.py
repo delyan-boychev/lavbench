@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import itertools
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from typing import Any
 
 import requests
@@ -21,6 +23,34 @@ from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def fetch_submission_run_content(metadata: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Fetch user code + evaluator script for a submission from the server.
+
+    Messages no longer embed the (potentially large) user code and evaluator
+    script; the worker fetches them on demand with a signed token bound to the
+    submission just before execution. Returns ``(user_code, custom_eval_code)``.
+    """
+    submission_id = metadata.get("submission_id", "unknown")
+    main_url = metadata.get("main_server_url")
+    if not main_url:
+        logger.error("No main_server_url in metadata — cannot fetch run content")
+        raise RuntimeError("Cannot fetch run content: no main_server_url")
+    token = _sign_worker_token(str(submission_id))
+    if not token:
+        raise RuntimeError("Cannot sign worker token for run-content fetch")
+
+    url = f"{main_url}/api/worker/submission-run-content/{submission_id}"
+    resp = requests.get(
+        url,
+        headers={"X-Worker-Token": token},
+        timeout=Config.WORKER_REPORT_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Server returned {resp.status_code} for run-content fetch")
+    data = resp.json()
+    return data.get("user_code"), data.get("custom_eval_code")
 
 
 def _sign_worker_token(submission_id: str) -> str:
@@ -76,6 +106,25 @@ def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     return member
 
 
+def _write_response_stream(res: Any, fileobj: Any) -> None:
+    """Stream a requests response body to an open binary file object without
+    buffering it fully in memory."""
+    for chunk in res.iter_content(chunk_size=1024 * 1024):
+        if chunk:
+            fileobj.write(chunk)
+
+
+_GPU_ID_CYCLE: Iterator[str] | None = None
+
+
+def _next_gpu_id() -> str:
+    """Round-robin pick the next configured GPU device id."""
+    global _GPU_ID_CYCLE
+    if _GPU_ID_CYCLE is None:
+        _GPU_ID_CYCLE = itertools.cycle(Config.WORKER_GPU_IDS)
+    return next(_GPU_ID_CYCLE)
+
+
 def run_command_streaming(
     docker_client: DockerClient,
     image_tag: str,
@@ -98,6 +147,7 @@ def run_command_streaming(
     user: str | None = None,
     read_only: bool = False,
     collect_files: list[tuple[str, str]] | None = None,
+    storage_opt: dict[str, str] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container seeded from a host directory and stream its
     output to *logs_list* in real-time.
@@ -120,7 +170,15 @@ def run_command_streaming(
     if gpu_required:
         if gpu_id is not None:
             device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
+        elif Config.WORKER_GPU_IDS:
+            # pin a device from the configured pool instead of grabbing
+            # every GPU with count=-1.
+            device_requests = [DeviceRequest(device_ids=[_next_gpu_id()], capabilities=[["gpu"]])]
         else:
+            logger.warning(
+                "gpu_required but neither gpu_id nor WORKER_GPU_IDS set — "
+                "falling back to count=-1 (requests ALL GPUs)"
+            )
             device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]
 
     run_kwargs = {
@@ -142,6 +200,8 @@ def run_command_streaming(
         "user": user,
         "read_only": read_only,
     }
+    if storage_opt:
+        run_kwargs["storage_opt"] = storage_opt
 
     container: Any | None = None
     seed_volume: Any | None = None
@@ -154,7 +214,22 @@ def run_command_streaming(
         # mkdtemp) and the container runs as non-root nobody.
         seed_volume = docker_client.volumes.create()
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
-        container = docker_client.containers.create(**run_kwargs)
+        # best-effort size cap: --storage-opt needs quota support from the
+        # storage driver (e.g. XFS with pquota). ext4/overlay2 and other common
+        # daemons reject the option at create time, so fall back to a plain
+        # create (no size cap) instead of hard-failing every sandbox there.
+        try:
+            container = docker_client.containers.create(**run_kwargs)
+        except Exception:
+            if "storage_opt" not in run_kwargs:
+                raise
+            logger.warning(
+                "storage_opt %s rejected by this daemon's storage driver — "
+                "creating sandbox without a size cap (best-effort)",
+                run_kwargs["storage_opt"],
+            )
+            run_kwargs.pop("storage_opt", None)
+            container = docker_client.containers.create(**run_kwargs)
         with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
             tar_path = os.path.join(td, "seed.tar")
             with tarfile.open(tar_path, "w") as tar:
@@ -214,13 +289,18 @@ def run_command_streaming(
                     container.kill()
                     process_timeout = True
                     break
-                time.sleep(0.1)
+                # poll exit status at 1Hz instead of 10Hz — detecting a
+                # finished container a second late is irrelevant vs. the load
+                # this loop placed on the Docker daemon.
+                time.sleep(1.0)
         except Exception as exc:
             logs_list.append(f"Error during container execution: {exc}")
             container.kill()
             process_timeout = True
 
         t.join(timeout=30.0)
+        if hasattr(logs_list, "flush"):
+            logs_list.flush()
 
         try:
             result = container.wait()
@@ -232,16 +312,48 @@ def run_command_streaming(
             for container_path, host_path in collect_files:
                 try:
                     stream, _stat = container.get_archive(container_path)
-                    # docker-py returns the archive as a byte-chunk generator,
-                    # not a file object — materialize it for tarfile.
-                    with tarfile.open(fileobj=io.BytesIO(b"".join(stream)), mode="r:") as tar:
+                    # Cap the in-memory buffer while assembling the tar stream
+                    # so a hostile container cannot balloon host RAM via the
+                    # collect path.
+                    raw = bytearray()
+                    for chunk in stream:
+                        if len(raw) + len(chunk) > Config.MAX_COLLECT_BUFFER_BYTES:
+                            raise ValueError(
+                                f"collected archive from {container_path} exceeded "
+                                f"{Config.MAX_COLLECT_BUFFER_BYTES}-byte buffer cap"
+                            )
+                        raw.extend(chunk)
+                    with tarfile.open(fileobj=io.BytesIO(bytes(raw)), mode="r:") as tar:
                         for member in tar:
-                            if member.isfile():
-                                extracted = tar.extractfile(member)
-                                if extracted is not None:
-                                    os.makedirs(os.path.dirname(host_path), exist_ok=True)
-                                    with open(host_path, "wb") as f:
-                                        shutil.copyfileobj(extracted, f)
+                            if not member.isfile():
+                                continue
+                            # Per-member cap, enforced from the tar header size
+                            # before any extraction.
+                            if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
+                                logger.warning(
+                                    "Skipping oversized member %s (%d bytes) in %s",
+                                    member.name,
+                                    member.size,
+                                    container_path,
+                                )
+                                continue
+                            extracted = tar.extractfile(member)
+                            if extracted is not None:
+                                os.makedirs(os.path.dirname(host_path), exist_ok=True)
+                                written = 0
+                                with open(host_path, "wb") as f:
+                                    while True:
+                                        block = extracted.read(1024 * 1024)
+                                        if not block:
+                                            break
+                                        written += len(block)
+                                        if written > Config.MAX_EXTRACT_MEMBER_BYTES:
+                                            raise ValueError(
+                                                f"member {member.name} in {container_path} "
+                                                f"exceeded {Config.MAX_EXTRACT_MEMBER_BYTES}-byte "
+                                                "extract cap"
+                                            )
+                                        f.write(block)
                 except Exception as exc:
                     logger.warning("Could not collect %s from container: %s", container_path, exc)
     finally:
@@ -275,6 +387,7 @@ def run_sandbox(
     environment: dict[str, str] | None = None,
     gpu_required: bool = False,
     gpu_id: str | None = None,
+    storage_opt: dict[str, str] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a command in a hardened sandbox seeded from a host directory.
 
@@ -309,6 +422,7 @@ def run_sandbox(
         read_only=True,
         seed_dir=seed_dir,
         collect_files=collect_files,
+        storage_opt=storage_opt or {"size": Config.WORKER_SANDBOX_STORAGE_OPT},
     )
 
 
@@ -316,22 +430,44 @@ MAX_LOG_LINES = Config.WORKER_MAX_LOG_LINES
 
 
 class StreamingLogList(list[str]):
-    """A list subclass that publishes each appended log line via SSE in real time."""
+    """A list subclass that batches appended log lines and publishes them via SSE.
+
+    Lines are buffered and flushed as a single pipelined batch (>=50 lines or
+    100ms since the last flush) instead of one Redis round trip per line.
+    """
+
+    _BATCH_LINES = 50
+    _FLUSH_INTERVAL_SECONDS = 0.1
 
     def __init__(self, submission_id: Any) -> None:
         super().__init__()
         self.submission_id = submission_id
+        self._pending: list[str] = []
+        self._last_flush: float = 0.0
 
     def append(self, item: str) -> None:
         super().append(item)
         if len(self) > MAX_LOG_LINES:
             self.pop(0)
-        try:
-            from sse_utils import publish_submission_log
+        self._pending.append(str(item))
+        if len(self._pending) >= self._BATCH_LINES or (
+            self._pending and time.time() - self._last_flush >= self._FLUSH_INTERVAL_SECONDS
+        ):
+            self.flush()
 
-            publish_submission_log(self.submission_id, str(item))
+    def flush(self) -> None:
+        if not self._pending:
+            return
+        pending = self._pending
+        self._pending = []
+        try:
+            from sse_utils import publish_submission_log_batch
+
+            publish_submission_log_batch(self.submission_id, pending)
         except Exception:
-            logger.exception("[StreamingLogList Error] Failed to publish log line to Redis")
+            logger.exception("[StreamingLogList Error] Failed to publish log batch to Redis")
+        finally:
+            self._last_flush = time.time()
 
 
 class MockModel:
@@ -363,15 +499,6 @@ def report_status_to_server(
     submission_id = metadata.get("submission_id", "unknown")
     url = f"{metadata['main_server_url']}/api/worker/report/{submission_id}"
 
-    import sys
-
-    if (
-        "pytest" in sys.modules
-        and not hasattr(requests.post, "assert_called")
-        and any(lh in url for lh in ("localhost", "127.0.0.1"))
-    ):
-        logger.info("Skipping real network request to localhost in test runner: %s", url)
-        return True
     token = _sign_worker_token(submission_id)
     headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
 
@@ -483,12 +610,13 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     # keep being served to students until the image is rebuilt)
     for fn in [fn for fn in cached if fn not in expected_map]:
         with contextlib.suppress(OSError):
-            os.remove(os.path.join(cache_dir, fn))
+            os.remove(os.path.join(cache_dir, os.path.basename(fn)))
         cached.pop(fn, None)
 
     to_download: list[dict[str, Any]] = []
     for fn, ent in expected_map.items():
-        path = os.path.join(cache_dir, fn)
+        safe_name = os.path.basename(fn)
+        path = os.path.join(cache_dir, safe_name)
         meta = cached.get(fn)
         if meta and meta.get("saved_name") == ent.get("saved_name", fn) and os.path.isfile(path):
             continue
@@ -503,8 +631,9 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
         for ent in to_download:
             filename = ent.get("filename", "")
             saved_name = ent.get("saved_name", filename)
+            safe_name = os.path.basename(filename)
             url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
-            dest_file = os.path.join(cache_dir, filename)
+            dest_file = os.path.join(cache_dir, safe_name)
             try:
                 logs.append(f"Downloading task file '{filename}' from server...")
                 res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
@@ -515,11 +644,11 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
                     all_ok = False
                     continue
                 fd, tmp_path = tempfile.mkstemp(
-                    dir=cache_dir, prefix=f".{filename}.", suffix=".tmp"
+                    dir=cache_dir, prefix=f".{safe_name}.", suffix=".tmp"
                 )
                 try:
                     with os.fdopen(fd, "wb") as df:
-                        df.write(res.content)
+                        _write_response_stream(res, df)
                     os.chmod(tmp_path, 0o644)
                     os.replace(tmp_path, dest_file)
                 finally:
@@ -584,7 +713,7 @@ def sync_labels_parquet_to_cache(metadata: dict[str, Any] | None, logs: list[str
         fd, tmp_path = tempfile.mkstemp(dir=labels_dir, prefix=".labels.", suffix=".tmp")
         try:
             with os.fdopen(fd, "wb") as df:
-                df.write(res.content)
+                _write_response_stream(res, df)
             os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, dest_file)
         finally:
@@ -652,9 +781,9 @@ def download_task_files_to_dir(
             logs.append(f"Downloading task file '{filename}' from server...")
             res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
             if res.status_code == 200:
-                dest_file = os.path.join(temp_dir, filename)
+                dest_file = os.path.join(temp_dir, os.path.basename(filename))
                 with open(dest_file, "wb") as df:
-                    df.write(res.content)
+                    _write_response_stream(res, df)
                 os.chmod(dest_file, 0o644)
                 logs.append(f"Downloaded task file '{filename}' successfully.")
             else:
@@ -688,9 +817,9 @@ def download_labels_parquet_to_dir(
                 logs.append("Downloading labels.parquet securely from server...")
                 res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
                 if res.status_code == 200:
-                    dest_file = os.path.join(labels_dir, filename)
+                    dest_file = os.path.join(labels_dir, os.path.basename(filename))
                     with open(dest_file, "wb") as df:
-                        df.write(res.content)
+                        _write_response_stream(res, df)
                     logs.append("Downloaded labels.parquet securely.")
                     return dest_file
                 else:

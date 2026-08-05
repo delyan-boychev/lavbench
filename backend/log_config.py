@@ -104,6 +104,11 @@ class RemoteShipHandler(logging.Handler):
         if not lines:
             return
         with suppress(Exception):
+            from worker_utils import _sign_worker_token
+
+            token = _sign_worker_token("worker")
+            if not token:
+                return
             body = gzip.compress("\n".join(lines).encode())
             resp = requests.post(
                 self.ship_url,
@@ -111,7 +116,7 @@ class RemoteShipHandler(logging.Handler):
                 headers={
                     "Content-Type": "application/octet-stream",
                     "Content-Encoding": "gzip",
-                    "X-Worker-Token": self.token,
+                    "X-Worker-Token": token,
                     "X-Worker-Service": os.environ.get("HOSTNAME", "unknown-worker"),
                 },
                 timeout=10,

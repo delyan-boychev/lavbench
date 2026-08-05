@@ -15,8 +15,9 @@ from sqlalchemy.orm import joinedload
 from auth_utils import jury_access_required, login_required, rate_limit, role_required
 from cache_utils import (
     cache_lock,
-    get_coordination_client,
     get_queue_depth,
+    get_redis_client,
+    get_sse_client,
     invalidate_leaderboard_cache,
     submission_logs_key,
 )
@@ -34,7 +35,11 @@ from schemas.responses import (
 )
 from schemas.submission import SubmitCodeSchema
 from services.file_validation import validate_extension, validate_notebook_content
-from services.submission_service import check_execution_rules
+from services.submission_service import (
+    check_execution_rules,
+    get_best_submission,
+    validate_submission_allowed,
+)
 from spec import api
 from sse_utils import (
     SSE_IDLE_TIMEOUT,
@@ -134,21 +139,15 @@ def submit_code(
             return err("ERR_NOT_REGISTERED", 403)
 
     challenge = db.get_or_404(Challenge, challenge_id)
-    if not challenge.is_active:
-        return err("ERR_CHALLENGE_INACTIVE", 400)
-    if challenge.is_archived:
-        return err("ERR_CHALLENGE_ARCHIVED", 400)
-
-    if challenge.is_frozen:
-        return err("ERR_COMPETITION_FROZEN", 403)
-
-    if challenge.scores_finalized:
-        return err("ERR_COMPETITION_FINALIZED", 403)
 
     task_id = json.task_id
     selected_cells = json.selected_cells
 
     task = db.session.get(Task, task_id)
+
+    blocked = validate_submission_allowed(user_id, user_role, task, challenge)
+    if blocked:
+        return blocked
 
     if task and task.problem_codes:
         # Strict readiness gate: any build/labels/HF/baseline problem blocks
@@ -159,35 +158,6 @@ def submit_code(
             for code in sorted(codes)
         ]
         return err("ERR_TASK_NOT_READY", 403, problems=problems)
-
-    if user_role == "competitor":
-        from datetime import timedelta
-
-        now = utcnow()
-        grace_seconds = Config.DEADLINE_GRACE_PERIOD_SECONDS
-
-        if task and task.stage_id:
-            from models import Stage
-
-            stage = db.session.get(Stage, task.stage_id)
-            if stage:
-                if now < stage.start_time:
-                    return err(
-                        "ERR_STAGE_NOT_STARTED",
-                        400,
-                        message=f"The stage '{stage.title}' has not started yet.",
-                    )
-                if stage.end_time and now > (stage.end_time + timedelta(seconds=grace_seconds)):
-                    return err(
-                        "ERR_STAGE_DEADLINE_PASSED",
-                        400,
-                        message=f"The deadline for the stage '{stage.title}' has passed.",
-                    )
-        else:
-            if challenge.start_time and now < challenge.start_time:
-                return err("ERR_COMPETITION_NOT_STARTED", 400)
-            if challenge.end_time and now > (challenge.end_time + timedelta(seconds=grace_seconds)):
-                return err("ERR_COMPETITION_ENDED", 400)
 
     if not task or str(task.challenge_id) != str(challenge_id):
         return err("ERR_INVALID_TASK_ID", 400)
@@ -255,7 +225,6 @@ def submit_code(
     # Trigger Celery Task asynchronously
     from services.submission_service import (
         calculate_submission_priority,
-        extract_code_from_cells,
     )
     from tasks import evaluate_submission
 
@@ -267,7 +236,6 @@ def submit_code(
         task,
         challenge,
         submission,
-        user_code="\n\n".join(extract_code_from_cells(selected_cells)),
         task_files_list=task_files_list,
         gpu_required=gpu_required,
     )
@@ -579,14 +547,15 @@ def stream_submission_logs(
                 yield f"data: {json.dumps(sse_error_payload)}\n\n"
                 return
 
-            r = get_coordination_client()
+            cache_r = get_redis_client()
+            r = get_sse_client()
 
             yield f"data: {json.dumps({'info': 'connected'})}\n\n"
 
-            if r:
+            if cache_r:
                 try:
                     log_key = submission_logs_key(submission_id)
-                    existing_logs = r.lrange(log_key, 0, -1)
+                    existing_logs = cache_r.lrange(log_key, 0, -1)
                     if existing_logs:
                         for log_bin in existing_logs:
                             log_line = log_bin.decode("utf-8")
@@ -636,16 +605,20 @@ def stream_submission_logs(
                         message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
                         if message:
                             data_str = message["data"].decode("utf-8")
-                            yield f"data: {data_str}\n\n"
                             try:
-                                parsed = json.loads(data_str)
-                                if isinstance(parsed, dict) and parsed.get("status") in (
-                                    "completed",
-                                    "failed",
-                                ):
-                                    break
-                            except Exception as e:
-                                logger.debug("Failed to parse SSE message: %s", e)
+                                parsed: Any = json.loads(data_str)
+                            except Exception:
+                                parsed = None
+                            if isinstance(parsed, dict) and isinstance(parsed.get("logs"), list):
+                                for log_line in parsed["logs"]:
+                                    yield f"data: {json.dumps({'log': log_line})}\n\n"
+                                continue
+                            yield f"data: {data_str}\n\n"
+                            if isinstance(parsed, dict) and parsed.get("status") in (
+                                "completed",
+                                "failed",
+                            ):
+                                break
                         else:
                             yield ": keep-alive\n\n"
 
@@ -721,24 +694,16 @@ def download_competitor_submission(
     """Download a competitor's final selection or highest-scoring submission."""
     subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
 
-    best_sub = next((s for s in subs if s.is_final_selection), None)
-    if not best_sub:
-        subs_sorted = sorted(
-            subs,
-            key=lambda x: (
-                x.public_score if x.public_score is not None else -999999,
-                -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
-            ),
-            reverse=True,
-        )
-        if subs_sorted:
-            best_sub = subs_sorted[0]
+    user = db.session.get(User, user_id)
+    task = db.session.get(Task, task_id)
+    challenge = db.session.get(Challenge, challenge_id)
+
+    best_sub = None
+    if user and task and challenge:
+        best_sub = get_best_submission(task, subs, challenge)
 
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
-
-    user = db.session.get(User, user_id)
-    task = db.session.get(Task, task_id)
 
     name_part = decrypt_field(user.name) or ""
     surname_part = decrypt_field(user.surname) or ""

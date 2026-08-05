@@ -11,7 +11,19 @@ from evaluation_engine import (
     evaluate_predictions,
     validate_parquet_schema,
 )
+from task_modules import submission_runner as task_modules
 from task_modules.submission_runner import calculate_weighted_score
+
+
+@pytest.fixture(autouse=True)
+def _mock_run_content_fetch(mocker):
+    mocker.patch(
+        "worker_utils.fetch_submission_run_content",
+        side_effect=lambda metadata: (
+            metadata.get("user_code"),
+            metadata.get("custom_eval_code"),
+        ),
+    )
 
 
 class TestSubmissionRunnerMetrics:
@@ -66,6 +78,55 @@ class TestSubmissionRunnerMetrics:
         cfg = {"accuracy": {"weight": 1.0}, "f1_score": {"weight": 1.0}}
         score = calculate_weighted_score(payload, cfg)
         assert abs(score - (0.95 + 0.85) / 2.0) < 1e-6
+
+    def test_custom_metric_config_lower_better_normalizes(self):
+        payload = {"contamination_rate": 0.05}
+        cfg = {"contamination_rate": {"weight": 1.0, "higher_is_better": False}}
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - 1.0 / (1.0 + 0.05)) < 1e-9
+
+    def test_custom_metric_config_higher_better_not_normalized(self):
+        payload = {"coverage": 0.5}
+        cfg = {"coverage": {"weight": 1.0, "higher_is_better": True}}
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - 0.5) < 1e-9
+
+    def test_static_map_metric_explicit_flag_wins(self):
+        payload = {"mse": 4.0}
+        cfg = {"mse": {"weight": 1.0, "higher_is_better": True}}
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - 4.0) < 1e-9
+
+    def test_metric_direction_from_config_falls_back_to_static_map(self):
+        from models.naming import metric_direction_from_config
+
+        assert metric_direction_from_config("mse", None) is True
+        assert metric_direction_from_config("accuracy", None) is False
+        assert metric_direction_from_config("coverage", {}) is False
+        assert (
+            metric_direction_from_config("contamination_rate", {"higher_is_better": False}) is True
+        )
+        assert metric_direction_from_config("mse", {"higher_is_better": True}) is False
+
+    def test_failed_metric_excluded_and_renormalized(self):
+        payload = {"accuracy": 0.8, "contamination_rate": None}
+        cfg = {
+            "accuracy": {"weight": 1.0},
+            "contamination_rate": {"weight": 1.0, "higher_is_better": False},
+        }
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - 0.8) < 1e-9
+
+    def test_missing_metric_excluded_and_renormalized(self):
+        payload = {"accuracy": 0.9}
+        cfg = {"accuracy": {"weight": 1.0}, "f1": {"weight": 3.0}}
+        score = calculate_weighted_score(payload, cfg)
+        assert abs(score - 0.9) < 1e-9
+
+    def test_all_metrics_failed_returns_zero(self):
+        payload = {"accuracy": None, "f1": None}
+        cfg = {"accuracy": {"weight": 1.0}, "f1": {"weight": 1.0}}
+        assert calculate_weighted_score(payload, cfg) == 0.0
 
 
 captured_run_kwargs = {}
@@ -439,6 +500,14 @@ class TestFetchHFKeyFromServer:
 
         assert _fetch_hf_key_from_server("task_1", "http://server", None) == ""
 
+    def test_refuses_insecure_non_localhost_url(self, mocker):
+        from task_modules.submission_runner import _fetch_hf_key_from_server
+
+        mocker.patch("task_modules.submission_runner.requests.get")
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        assert result == ""
+        task_modules.requests.get.assert_not_called()
+
     def test_all_params_missing_returns_empty(self):
         from task_modules.submission_runner import _fetch_hf_key_from_server
 
@@ -452,7 +521,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.json.return_value = {"hf_key": "hf_secret_token"}
         mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "worker_token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "worker_token")
         assert result == "hf_secret_token"
 
     def test_http_403_returns_empty(self, mocker):
@@ -462,7 +531,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.status_code = 403
         mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "bad_token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "bad_token")
         assert result == ""
 
     def test_http_404_returns_empty(self, mocker):
@@ -472,7 +541,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.status_code = 404
         mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_999", "http://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_999", "https://server:5000", "token")
         assert result == ""
 
     def test_connection_error_returns_empty(self, mocker):
@@ -484,7 +553,7 @@ class TestFetchHFKeyFromServer:
             "task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.ConnectionError("refused"),
         )
-        result = _fetch_hf_key_from_server("task_1", "http://badhost:9999", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://badhost:9999", "token")
         assert result == ""
 
     def test_timeout_exception_returns_empty(self, mocker):
@@ -496,7 +565,7 @@ class TestFetchHFKeyFromServer:
             "task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.Timeout("timeout"),
         )
-        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
         assert result == ""
 
     def test_200_but_missing_hf_key_field_returns_empty_string(self, mocker):
@@ -507,7 +576,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.json.return_value = {}  # No "hf_key" field
         mocker.patch("task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
         assert result == ""
 
 

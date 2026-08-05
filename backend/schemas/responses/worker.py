@@ -41,3 +41,10 @@ class WorkerLogsResponse(BaseModel):
     status: str
 
     model_config = RESPONSE_CONFIG
+
+
+class WorkerRunContentResponse(BaseModel):
+    user_code: str | None = None
+    custom_eval_code: str | None = None
+
+    model_config = RESPONSE_CONFIG

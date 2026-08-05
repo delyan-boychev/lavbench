@@ -17,7 +17,6 @@ def build_submission_metadata(
     task: Any,
     challenge: Any,
     submission: Any,
-    user_code: str,
     task_files_list: list[dict[str, Any]],
     gpu_required: bool,
     main_server_url: str | None = None,
@@ -30,7 +29,6 @@ def build_submission_metadata(
         "submission_id": submission.id,
         "task_id": task.id,
         "challenge_id": challenge.id,
-        "user_code": user_code,
         "time_limit": time_limit,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or Config.DEFAULT_RAM_LIMIT_MB,
         "gpu_required": gpu_required,
@@ -41,15 +39,9 @@ def build_submission_metadata(
             task.custom_eval_code
             or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
-        "custom_eval_code": (
-            task.custom_eval_code
-            if task.custom_eval_code
-            else (
-                open(task.evaluator_script_path).read()
-                if task.evaluator_script_path and os.path.exists(task.evaluator_script_path)
-                else None
-            )
-        ),
+        # user_code and custom_eval_code are NOT embedded here — the
+        # worker fetches them on demand via a signed request right before
+        # execution, keeping Celery messages small.
         "metrics_config": task.metrics_config,
         "hf_datasets": _hf_value(task.hf_datasets),
         "hf_models": _hf_value(task.hf_models),

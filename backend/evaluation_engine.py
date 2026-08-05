@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
+import os
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,12 @@ from sklearn.metrics import (
 
 logger = logging.getLogger(__name__)
 
+# caps for mask images decoded host-side. PIL's own default
+# DecompressionBombWarning threshold is ~89M pixels; enforce explicit,
+# configurable caps before any pixel data is decoded.
+MAX_MASK_IMAGE_PIXELS = int(os.environ.get("MAX_MASK_IMAGE_PIXELS", 50 * 1024 * 1024))
+MAX_MASK_IMAGE_DIM = int(os.environ.get("MAX_MASK_IMAGE_DIM", 16384))
+
 # ---------------------------------------------------------
 # 0. DECOMPRESSION HELPERS
 # ---------------------------------------------------------
@@ -48,8 +55,26 @@ def decode_mask_bytes(b: bytes) -> Any:
 
             from PIL import Image
 
-            img = Image.open(io.BytesIO(b)).convert("L")
-            return np.array(img, dtype=np.uint8)
+            with Image.open(io.BytesIO(b)) as pil_img:
+                # Guard against decompression bombs: cap total pixels and
+                # per-axis dimensions before the image is ever decoded.
+                if (
+                    pil_img.width > 0
+                    and pil_img.height > 0
+                    and pil_img.width * pil_img.height <= MAX_MASK_IMAGE_PIXELS
+                    and pil_img.width <= MAX_MASK_IMAGE_DIM
+                    and pil_img.height <= MAX_MASK_IMAGE_DIM
+                ):
+                    return np.array(pil_img.convert("L"), dtype=np.uint8)
+                logger.warning(
+                    "Rejecting oversized mask image (%dx%d) exceeding caps %dx%d / %d pixels",
+                    pil_img.width,
+                    pil_img.height,
+                    MAX_MASK_IMAGE_DIM,
+                    MAX_MASK_IMAGE_DIM,
+                    MAX_MASK_IMAGE_PIXELS,
+                )
+                return np.array([], dtype=np.uint8)
         except Exception:
             logger.debug("Failed to decode image with PIL, falling back to raw bytes")
     return np.frombuffer(b, dtype=np.uint8)
@@ -437,6 +462,45 @@ def compute_audio_snr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) 
         except Exception:
             snr_scores.append(0.0)
     return float(np.mean(snr_scores))
+
+
+def compute_si_sdr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
+    """Compute true Scale-Invariant Signal-to-Distortion Ratio (SI-SDR).
+
+    Projects the estimate onto the reference: ``alpha = <est, ref> / <ref, ref>``,
+    then ``target = alpha * ref`` and ``SI-SDR = 10*log10(||target||^2 /
+    ||est - target||^2)``. Scale-invariance means a constant-scaled estimate is a
+    perfect score, unlike plain SNR.
+    """
+    sdr_scores = []
+    for ref, hyp in zip(ref_bytes_list, hyp_bytes_list, strict=False):
+        if not ref or not hyp:
+            sdr_scores.append(0.0)
+            continue
+        try:
+            arr_ref = np.frombuffer(ref, dtype=np.int16).astype(np.float32)
+            arr_hyp = np.frombuffer(hyp[: len(ref)], dtype=np.int16).astype(np.float32)
+            if len(arr_hyp) < len(arr_ref):
+                arr_ref = arr_ref[: len(arr_hyp)]
+
+            ref_power = float(np.dot(arr_ref, arr_ref))
+            if ref_power == 0:
+                sdr_scores.append(0.0)
+                continue
+            alpha = float(np.dot(arr_hyp, arr_ref)) / ref_power
+            target = alpha * arr_ref
+            noise = arr_hyp - target
+            target_power = float(np.dot(target, target))
+            noise_power = float(np.dot(noise, noise))
+            if noise_power == 0:
+                sdr_scores.append(100.0)
+            elif target_power == 0:
+                sdr_scores.append(0.0)
+            else:
+                sdr_scores.append(10 * np.log10(target_power / noise_power))
+        except Exception:
+            sdr_scores.append(0.0)
+    return float(np.mean(sdr_scores))
 
 
 def compute_mel_lsd(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> float:
@@ -848,17 +912,20 @@ def evaluate_predictions(
 
     # Extract arrays per metric
     payload = {}
+    metric_errors: dict[str, str] = {}
 
     for m_name in metrics_cfg:
         m_name_clean = m_name.lower().strip()
-        val = 0.0
+        val: float | None = 0.0
+        failed = False
         cfg = metrics_cfg[m_name]
         m_opts = cfg.get("options", {}) if isinstance(cfg, dict) else {}
 
         custom_col = m_opts.get("column", "")
         if custom_col:
             if custom_col not in df_labels.columns or custom_col not in df_sub.columns:
-                payload[m_name] = 0.0
+                metric_errors[m_name] = f"column '{custom_col}' missing from predictions or labels"
+                payload[m_name] = None
                 continue
             y_true = df_labels[custom_col].tolist()
             y_pred = df_sub[custom_col].tolist()
@@ -892,8 +959,8 @@ def evaluate_predictions(
                 else:
                     val = accuracy_score(y_true, y_pred)
             except Exception as e:
-                logger.warning("accuracy calculation failed, using fallback 0.0: %s", e)
-                val = 0.0
+                logger.warning("accuracy calculation failed: %s", e)
+                failed = True
         elif m_name_clean == "f1":
             # Dispatch: string inputs → QA word-overlap F1; else → classification F1
             first_true = y_true[0] if len(y_true) > 0 else None
@@ -917,8 +984,8 @@ def evaluate_predictions(
                 try:
                     val = f1_score(y_true, y_pred, average=m_opts.get("average", "macro"))
                 except Exception as e:
-                    logger.warning("f1 calculation failed, using fallback 0.0: %s", e)
-                    val = 0.0
+                    logger.warning("f1 calculation failed: %s", e)
+                    failed = True
         elif m_name_clean == "precision":
             try:
                 val = precision_score(
@@ -928,8 +995,8 @@ def evaluate_predictions(
                     zero_division=0,
                 )
             except Exception as e:
-                logger.warning("precision calculation failed, using fallback 0.0: %s", e)
-                val = 0.0
+                logger.warning("precision calculation failed: %s", e)
+                failed = True
         elif m_name_clean == "recall":
             # Dispatch: list entries (boxes) → detection box recall; else → classification recall
             first_true = y_true[0] if len(y_true) > 0 else None
@@ -959,20 +1026,20 @@ def evaluate_predictions(
                         zero_division=0,
                     )
                 except Exception as e:
-                    logger.warning("recall calculation failed, using fallback 0.0: %s", e)
-                    val = 0.0
+                    logger.warning("recall calculation failed: %s", e)
+                    failed = True
         elif m_name_clean == "cohen_kappa":
             try:
                 val = cohen_kappa_score(y_true, y_pred)
             except Exception as e:
-                logger.warning("cohen_kappa calculation failed, using fallback 0.0: %s", e)
-                val = 0.0
+                logger.warning("cohen_kappa calculation failed: %s", e)
+                failed = True
         elif m_name_clean == "matthews_corrcoef":
             try:
                 val = matthews_corrcoef(y_true, y_pred)
             except Exception as e:
-                logger.warning("matthews_corrcoef calculation failed, using fallback 0.0: %s", e)
-                val = 0.0
+                logger.warning("matthews_corrcoef calculation failed: %s", e)
+                failed = True
 
         # 2. Probabilistic Metrics
         elif m_name_clean == "auc_roc":
@@ -982,31 +1049,31 @@ def evaluate_predictions(
                 val = roc_auc_score(y_true, y_pred, average=avg, multi_class=mc)
             except Exception as e:
                 logger.warning(
-                    "roc_auc_score failed for metric '%s', using fallback 0.5: %s",
+                    "roc_auc_score failed for metric '%s': %s",
                     m_name,
                     e,
                 )
-                val = 0.5
+                failed = True
         elif m_name_clean == "logloss":
             try:
                 val = log_loss(y_true, y_pred)
             except Exception as e:
                 logger.warning(
-                    "log_loss failed for metric '%s', using fallback 10.0: %s",
+                    "log_loss failed for metric '%s': %s",
                     m_name,
                     e,
                 )
-                val = 10.0
+                failed = True
         elif m_name_clean == "brier_score":
             try:
                 val = brier_score_loss(y_true, y_pred)
             except Exception as e:
                 logger.warning(
-                    "brier_score_loss failed for metric '%s', using fallback 1.0: %s",
+                    "brier_score_loss failed for metric '%s': %s",
                     m_name,
                     e,
                 )
-                val = 1.0
+                failed = True
 
         # 3. Regression Metrics
         elif m_name_clean in ["rmse", "mse", "mae"]:
@@ -1015,7 +1082,8 @@ def evaluate_predictions(
                     scores = []
                     for t, p in zip(y_true, y_pred, strict=False):
                         if not t or not p:
-                            scores.append(1.0)
+                            # Empty prediction is a failure, not a near-perfect
+                            # distance of 1.0 (BP-H4) — skip the pair.
                             continue
                         min_len = min(len(t), len(p))
                         arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
@@ -1026,7 +1094,10 @@ def evaluate_predictions(
                             scores.append(mean_squared_error(arr_t, arr_p))
                         elif m_name_clean == "mae":
                             scores.append(mean_absolute_error(arr_t, arr_p))
-                    val = np.mean(scores)
+                    if not scores:
+                        failed = True
+                    else:
+                        val = np.mean(scores)
                 else:
                     shape_str = str(m_opts.get("shape", "0")).strip()
                     mo = m_opts.get("multioutput", "uniform_average")
@@ -1059,37 +1130,29 @@ def evaluate_predictions(
                                     scores.append(np.mean(np.abs(arr_t - arr_p)))
                             val = np.mean(scores)
                         except Exception as e:
-                            logger.warning(
-                                "Shape error for metric '%s', using fallback 999.0: %s",
-                                m_name,
-                                e,
-                            )
-                            val = 999.0  # Fallback on shape error
+                            logger.warning("Shape error for metric '%s': %s", m_name, e)
+                            failed = True
             except Exception as e:
-                logger.warning(
-                    "Regression calculation failed for metric '%s', using fallback 999.0: %s",
-                    m_name,
-                    e,
-                )
-                val = 999.0
+                logger.warning("Regression calculation failed for metric '%s': %s", m_name, e)
+                failed = True
         elif m_name_clean == "r_squared":
             try:
                 val = r2_score(y_true, y_pred)
             except Exception as e:
-                logger.warning("r_squared failed, fallback 0.0: %s", e)
-                val = 0.0
+                logger.warning("r_squared failed: %s", e)
+                failed = True
         elif m_name_clean == "mape":
             try:
                 val = mean_absolute_percentage_error(y_true, y_pred)
             except Exception as e:
-                logger.warning("mape failed, fallback 999.0: %s", e)
-                val = 999.0
+                logger.warning("mape failed: %s", e)
+                failed = True
         elif m_name_clean == "median_ae":
             try:
                 val = median_absolute_error(y_true, y_pred)
             except Exception as e:
-                logger.warning("median_ae failed, fallback 999.0: %s", e)
-                val = 999.0
+                logger.warning("median_ae failed: %s", e)
+                failed = True
 
         # 4. NER / Tagging (SeqEval approximate fallback)
         elif m_name_clean in ["seqeval_f1", "seqeval_precision", "seqeval_recall"]:
@@ -1192,7 +1255,7 @@ def evaluate_predictions(
         elif m_name_clean == "mel_lsd":
             val = compute_mel_lsd(y_true, y_pred)
         elif m_name_clean == "si_sdr":
-            val = compute_audio_snr(y_true, y_pred) + 1.2
+            val = compute_si_sdr(y_true, y_pred)
 
         # 12. Clustering
         elif m_name_clean == "adjusted_rand_index":
@@ -1212,14 +1275,16 @@ def evaluate_predictions(
                 )
                 val = float(result[m_name_clean]) if m_name_clean in result else 0.0
             except Exception as e:
-                logger.warning(
-                    "Custom evaluator metric '%s' failed, using fallback 0.0: %s", m_name, e
-                )
-                val = 0.0
+                logger.warning("Custom evaluator metric '%s' failed: %s", m_name, e)
+                failed = True
         else:
             # Skip unknown metrics when no custom evaluator code is provided
             continue
 
-        payload[m_name] = float(val)
+        if failed:
+            metric_errors[m_name] = "metric calculation failed"
+            payload[m_name] = None
+        elif val is not None:
+            payload[m_name] = float(val)
 
     return payload

@@ -329,6 +329,7 @@ def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[Flas
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     invalidate_challenge_cache()
 
@@ -440,6 +441,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         target_id=stage.id,
         details={"title": stage.title, "challenge_id": challenge.id, "type": "test"},
     )
+    db.session.commit()
 
     return stage
 
@@ -513,6 +515,7 @@ def update_challenge(
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -598,6 +601,7 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id, leaderboard_delete_only=True)
 
@@ -680,6 +684,7 @@ def finalize_challenge(
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -738,6 +743,7 @@ def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     invalidate_challenge_cache(challenge_id)
 
@@ -811,6 +817,7 @@ def create_stage(
         target_id=stage.id,
         details={"title": stage.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -871,6 +878,7 @@ def update_stage(
         target_id=stage.id,
         details={"title": stage.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -934,6 +942,7 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
         target_id=stage.id,
         details={"title": stage.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -1024,6 +1033,7 @@ def finalize_stage(
         target_id=stage.id,
         details={"title": stage.title, "challenge_id": challenge_id},
     )
+    db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
@@ -1232,6 +1242,7 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
         target_id=challenge.id,
         details={"title": challenge.title},
     )
+    db.session.commit()
 
     return challenge.to_dict(), 201
 

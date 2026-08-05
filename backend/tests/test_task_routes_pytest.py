@@ -346,7 +346,9 @@ class TestQueueSystemSubmission:
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
-        assert metadata["custom_eval_code"] == "def evaluate(): pass"
+        # the evaluator script is fetched by the worker via the signed
+        # run-content endpoint; it is no longer embedded in the message.
+        assert "custom_eval_code" not in metadata
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_custom_eval_code_direct(self, mock_apply):
@@ -361,7 +363,7 @@ class TestQueueSystemSubmission:
             self.admin.id,
         )
         metadata = mock_apply.call_args[1]["args"][1]
-        assert metadata["custom_eval_code"] == "def custom(): pass"
+        assert "custom_eval_code" not in metadata
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_priority_passed_to_celery(self, mock_apply):
@@ -1124,3 +1126,103 @@ class TestGetActiveTasks:
             headers={"X-Worker-Token": "bad"},
         )
         assert resp.status_code == 401
+
+
+class TestGetSubmissionRunContent:
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session, client, redis_flush):
+        self.client = client
+        self.challenge = Challenge(
+            title="Run Content",
+            description="Test",
+            max_eval_requests=5,
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
+            is_frozen=False,
+            is_archived=False,
+        )
+        db.session.add(self.challenge)
+        db.session.flush()
+        self.task = Task(
+            title="Task 1",
+            challenge_id=self.challenge.id,
+            base_docker_image="python:3.10-slim",
+            time_limit_sec=300,
+            ram_limit_mb=512,
+            gpu_required=False,
+            custom_eval_code="def evaluate(): pass",
+        )
+        db.session.add(self.task)
+        db.session.flush()
+        user = User(
+            username="runcontent_comp",
+            password_hash="x",
+            role="competitor",
+            challenge_id=self.challenge.id,
+        )
+        db.session.add(user)
+        db.session.flush()
+        self.submission = Submission(
+            user_id=user.id,
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            status="queued",
+            code_cells=json.dumps([{"source": ["x=1", "y=2"]}, {"source": "print(y)"}]),
+        )
+        db.session.add(self.submission)
+        db.session.commit()
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_returns_401_on_missing_token(self, mock_verify):
+        mock_verify.return_value = False
+        resp = self.client.get(
+            f"/api/worker/submission-run-content/{self.submission.id}",
+            headers={"X-Worker-Token": "bad"},
+        )
+        assert resp.status_code == 401
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_returns_401_on_submission_id_mismatch(self, mock_verify):
+        mock_verify.return_value = {"submission_id": "other-sub", "ts": "0"}
+        resp = self.client.get(
+            f"/api/worker/submission-run-content/{self.submission.id}",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 401
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_returns_404_for_missing_submission(self, mock_verify):
+        missing_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        mock_verify.return_value = {"submission_id": missing_id, "ts": "0"}
+        resp = self.client.get(
+            f"/api/worker/submission-run-content/{missing_id}",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 404
+
+    @patch("routes.tasks.check_worker_auth")
+    def test_returns_user_code_and_evaluator(self, mock_verify):
+        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
+        resp = self.client.get(
+            f"/api/worker/submission-run-content/{self.submission.id}",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["user_code"] == "x=1y=2\n\nprint(y)"
+        assert data["custom_eval_code"] == "def evaluate(): pass"
+
+    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks.open")
+    def test_reads_evaluator_script_file_when_code_is_null(self, mock_open, mock_verify):
+        self.task.custom_eval_code = None
+        self.task.evaluator_script_path = "/tmp/evaluator.py"
+        db.session.commit()
+        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
+        mock_open.return_value.__enter__.return_value.read.return_value = "def ev(): pass"
+        resp = self.client.get(
+            f"/api/worker/submission-run-content/{self.submission.id}",
+            headers={"X-Worker-Token": "valid"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["custom_eval_code"] == "def ev(): pass"
