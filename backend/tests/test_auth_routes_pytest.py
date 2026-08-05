@@ -1,3 +1,5 @@
+"""Tests for the auth routes."""
+
 from datetime import timedelta
 
 import pytest

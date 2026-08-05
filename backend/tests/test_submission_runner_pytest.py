@@ -1,3 +1,5 @@
+"""Tests for the submission runner."""
+
 import math
 import os
 import shutil
@@ -18,7 +20,7 @@ from tasks.task_modules.submission_runner import calculate_weighted_score
 @pytest.fixture(autouse=True)
 def _mock_run_content_fetch(mocker):
     mocker.patch(
-        "worker_utils.fetch_submission_run_content",
+        "utils.worker_utils.fetch_submission_run_content",
         side_effect=lambda metadata: (
             metadata.get("user_code"),
             metadata.get("custom_eval_code"),
@@ -212,7 +214,7 @@ class TestSubmissionRunnerDocker:
 
         # Hardened policy flags are applied inside run_sandbox (asserted in
         # test_worker_utils_pytest.TestRunCommandStreaming); the runner only
-        # passes the per-submission contract
+        # Passes the per-submission contract
         assert captured_run_kwargs.get("mem_limit") == "4096m"
         assert captured_run_kwargs.get("working_dir") == "/app"
         assert captured_run_kwargs.get("gpu_required") is False
@@ -268,8 +270,8 @@ class TestSubmissionRunnerDocker:
             )
 
         # The asset cache must be snapshotted into the sandbox dir, not
-        # bind-mounted: a rebuild re-sync can swap cache files mid-run and a
-        # live mount would expose the new content to the in-flight container.
+        # Bind-mounted: a rebuild re-sync can swap cache files mid-run and a
+        # Live mount would expose the new content to the in-flight container
         seed_dir = captured_run_kwargs.get("seed_dir")
         assert seed_dir and (
             os.path.basename(seed_dir).startswith("tmp") or os.path.isdir(seed_dir)
@@ -614,7 +616,7 @@ class TestPreloadSubmissionDatasets:
     """Unit tests for preload_submission_datasets."""
 
     def _make_task(self, datasets=None, models=None):
-        from worker_utils import MockModel
+        from utils.worker_utils import MockModel
 
         return MockModel(
             hf_datasets=datasets,

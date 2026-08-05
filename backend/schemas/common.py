@@ -1,3 +1,5 @@
+"""Shared validators: strict datetime parsing and pagination params."""
+
 from __future__ import annotations
 
 from datetime import datetime

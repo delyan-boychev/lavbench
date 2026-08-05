@@ -1,3 +1,5 @@
+"""Tests for the audit service."""
+
 import uuid
 
 import pytest
@@ -84,8 +86,8 @@ class TestAuditService:
     def test_get_client_ip_forwarded_for(self, app):
         from services.audit_service import get_client_ip
 
-        # client-supplied X-Forwarded-For is ignored; only the
-        # nginx-set X-Real-IP (or the proxy-overwritten remote_addr) is trusted.
+        # Client-supplied X-Forwarded-For is ignored; only the
+        # nginx-set X-Real-IP (or the proxy-overwritten remote_addr) is trusted
         with app.test_request_context(headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}):
             assert get_client_ip() == "127.0.0.1"
 

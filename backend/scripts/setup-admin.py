@@ -1,3 +1,5 @@
+"""Bootstrap the application and create or update an admin user."""
+
 import secrets
 
 from werkzeug.security import generate_password_hash

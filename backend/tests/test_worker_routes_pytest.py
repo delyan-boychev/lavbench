@@ -1,3 +1,5 @@
+"""Tests for the worker routes."""
+
 import base64
 import json
 import os
@@ -219,7 +221,7 @@ class TestWorkerEndpoints:
 
     def test_report_progress_building_env_does_not_stamp_executed_at(self):
         # Pre-execution phase (image build / GPU acquisition) must not start the
-        # watchdog clock.
+        # Watchdog clock
         self.client.post(
             f"/api/worker/report/{self.submission.id}",
             json={"status": "running", "detailed_status": "building_env"},
@@ -270,7 +272,7 @@ class TestWorkerEndpoints:
         assert sub.gpu_node == "gpu-01"
 
     def test_report_progress_with_fallback_data(self):
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if r:

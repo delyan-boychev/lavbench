@@ -1,3 +1,5 @@
+"""Competitor normalization and duplicate-check helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

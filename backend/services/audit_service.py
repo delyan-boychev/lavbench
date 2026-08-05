@@ -65,9 +65,9 @@ def log_action(
         )
         db.session.add(entry)
         # Deliberately NO commit here: committing mid-request would flush the
-        # caller's pending transaction (H-C3). The audit row is committed by
-        # the caller alongside the action it describes, so the audit log can
-        # never claim an action that was rolled back.
+        # Caller's pending transaction (H-C3). The audit row is committed by
+        # The caller alongside the action it describes, so the audit log can
+        # Never claim an action that was rolled back
     except Exception:
         logger.exception(
             "Failed to write audit log for action_type=%s target_type=%s target_id=%s",

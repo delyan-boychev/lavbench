@@ -1,3 +1,5 @@
+"""Logging configuration: setup_logging() and the RemoteShipHandler."""
+
 from __future__ import annotations
 
 import gzip
@@ -104,7 +106,7 @@ class RemoteShipHandler(logging.Handler):
         if not lines:
             return
         with suppress(Exception):
-            from worker_utils import _sign_worker_token
+            from utils.worker_utils import _sign_worker_token
 
             token = _sign_worker_token("worker")
             if not token:

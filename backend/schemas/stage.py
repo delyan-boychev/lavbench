@@ -1,3 +1,5 @@
+"""Pydantic schemas for the stage blueprint."""
+
 from __future__ import annotations
 
 from datetime import datetime

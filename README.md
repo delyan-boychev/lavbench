@@ -113,20 +113,15 @@ flowchart TD
 lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
-│   ├── cache_utils.py           # Redis caching, connection pool, locks
-│   ├── config.py                # Config class reading environment variables
-│   ├── error_utils.py           # err() helper & DEFAULT_ERROR_MESSAGES
 │   ├── evaluation_engine.py     # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
-│   ├── setup-admin.py           # Account creation script for master admin
-│   ├── sse_utils.py             # SSE pub/sub helpers
-│   ├── worker_utils.py          # Worker runtime & Docker sandbox status reporting
+│   ├── config/                  # Config class (__init__), logging setup, pytest fixtures
 │   ├── models/                  # SQLAlchemy models (User, Challenge, Stage, Task, Submission)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, tasks, leaderboard, etc.)
-│   ├── scripts/                 # Maintenance scripts (check_error_codes.py)
+│   ├── scripts/                 # Maintenance scripts (setup-admin.py, check_error_codes.py, check_comments.py)
 │   ├── services/                # Business logic
 │   ├── tasks/                   # Celery app (__init__) + task_modules/ (runner, image builder, templates)
 │   ├── tests/                   # Backend Pytest test suite (1282 tests)
-│   └── utils/                   # Helpers incl. auth_utils (JWT, cookies, rate limiting, revocation)
+│   └── utils/                   # Helpers (auth_utils, error_utils, worker_utils, sse_utils, cache_utils, wsgi, ...)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # React components (admin, challenge, leaderboard, submissions, ui)

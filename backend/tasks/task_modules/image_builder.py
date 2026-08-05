@@ -23,23 +23,23 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from cache_utils import get_coordination_client
 from config import Config
-from sse_utils import CHANNEL_TASK_REBUILD
+from utils.cache_utils import get_coordination_client
+from utils.sse_utils import CHANNEL_TASK_REBUILD
 
 from .docker_utils import _get_client
 from .docker_utils import image_exists as _image_exists
 
 MIN_BUILD_DISK_GB = 5
 BUILD_LOCK_TTL = 900  # 15 minutes — plenty for any build, short enough for stale locks
-BUILD_LOCK_RETRY_INTERVAL = 10  # seconds between retries
-BUILD_LOCK_MAX_WAIT = 300  # max seconds to block waiting for lock
+BUILD_LOCK_RETRY_INTERVAL = 10  # Seconds between retries
+BUILD_LOCK_MAX_WAIT = 300  # Max seconds to block waiting for lock
 
 logger = logging.getLogger(__name__)
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
-# Used to namespace Redis build locks per machine.
+# Used to namespace Redis build locks per machine
 _WORKER_HOSTNAME = socket.gethostname()
 
 
@@ -68,7 +68,7 @@ def _report_build_error(
         logger.debug("Failed to report build error for task %s", task_id)
 
 
-# Used to namespace Redis build locks per machine.
+# Used to namespace Redis build locks per machine
 _WORKER_HOSTNAME = socket.gethostname()
 
 
@@ -476,8 +476,8 @@ def _do_build(
     os.makedirs(task_dir, exist_ok=True)
 
     # HF cache is content-addressed and revalidated via etags on every build —
-    # no need to wipe it; a rebuild fetches only changed bytes of the latest
-    # revision.
+    # No need to wipe it; a rebuild fetches only changed bytes of the latest
+    # Revision
     os.makedirs(hf_cache_dir, exist_ok=True)
 
     try:
@@ -715,7 +715,7 @@ def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
         tasks = data.get("tasks", [])
         logger.info("Fetched %s active task(s) for image building", len(tasks))
         for task_config in tasks:
-            from worker_utils import _sign_worker_token
+            from utils.worker_utils import _sign_worker_token
 
             metadata = {
                 "task_id": task_config["id"],
@@ -789,7 +789,7 @@ def _rebuild_listener_once(main_server_url: str, worker_token: str) -> None:
                     # Fetch updated config from the server
                     import requests
 
-                    from worker_utils import _sign_worker_token
+                    from utils.worker_utils import _sign_worker_token
 
                     url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"
                     fresh_token = _sign_worker_token("worker")
@@ -811,8 +811,8 @@ def _rebuild_listener_once(main_server_url: str, worker_token: str) -> None:
                                     "_worker_token": fresh_token,
                                 }
                                 # Force: bypass the config-hash fast path so the
-                                # image is rebuilt and HF assets are re-resolved
-                                # against the latest upstream revision.
+                                # Image is rebuilt and HF assets are re-resolved
+                                # Against the latest upstream revision
                                 build_task_image(metadata, force_rebuild=True)
                                 break
                 except Exception as e:

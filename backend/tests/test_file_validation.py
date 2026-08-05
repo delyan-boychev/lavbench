@@ -1,3 +1,5 @@
+"""Tests for the file validation service."""
+
 import json
 
 from services.file_validation import (
@@ -76,7 +78,7 @@ class TestValidateMimeType:
 
     def test_empty_allowed_empty_set(self):
         valid, _error = validate_mime_type("text/csv", set())
-        assert valid is True  # empty set is falsy → no restriction
+        assert valid is True  # Empty set is falsy → no restriction
 
 
 class TestValidateNotebookContent:
@@ -133,7 +135,7 @@ class TestValidateNotebookContent:
     def test_no_cells_key(self):
         content = json.dumps({"nbformat": 4}).encode()
         valid, _error, notebook = validate_notebook_content(content)
-        assert valid is True  # notebooks without cells key are valid (empty notebook)
+        assert valid is True  # Notebooks without cells key are valid (empty notebook)
         assert notebook is not None
 
     def test_empty_cells(self):
@@ -228,7 +230,7 @@ class TestCheckDangerousMagic:
         assert desc is None
 
     def test_short_content_correctly_checked(self):
-        dangerous, desc = check_dangerous_magic(b"MZ")  # only 2 bytes but matches
+        dangerous, desc = check_dangerous_magic(b"MZ")  # Only 2 bytes but matches
         assert dangerous is True
         assert "executable" in desc
 
@@ -263,4 +265,4 @@ class TestCheckDangerousExtension:
         assert check_dangerous_extension("virus.Bat") is True
 
     def test_hidden_dangerous(self):
-        assert check_dangerous_extension(".bat") is True  # just the extension as "filename"
+        assert check_dangerous_extension(".bat") is True  # Just the extension as "filename"

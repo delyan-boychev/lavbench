@@ -34,12 +34,12 @@ from werkzeug.datastructures import FileStorage  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 
 from config import Config  # noqa: E402
-from error_utils import err  # noqa: E402
-from log_config import setup_logging  # noqa: E402
+from config.log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
 from schemas.responses import HealthResponse  # noqa: E402
 from spec import api  # noqa: E402
-from version import __version__  # noqa: E402
+from utils.error_utils import err  # noqa: E402
+from utils.version import __version__  # noqa: E402
 
 
 class _LavBenchJSONProvider(DefaultJSONProvider):
@@ -84,7 +84,7 @@ _SCHEMA_BOOTSTRAP_LOCK = 727376317
 def _ensure_database_schema(app: Flask) -> None:
     """Create tables on first boot without racing across app/worker containers.
 
-    Gunicorn workers import ``app`` (``wsgi:app``) and only the ``__main__``
+    Gunicorn workers import ``app`` (``utils.wsgi:app``) and only the ``__main__``
     path called ``db.create_all()``, so a fresh deployment served 500s until
     ``setup-admin`` ran. ``create_all`` is idempotent; a PostgreSQL advisory
     session lock merely serialises the first-boot stampede. Eval and scheduler
@@ -164,7 +164,7 @@ def create_app() -> Flask:
             checks["database"] = "degraded"
 
         try:
-            from cache_utils import get_redis_client
+            from utils.cache_utils import get_redis_client
 
             redis_client = get_redis_client()
             if redis_client is not None and redis_client.ping():

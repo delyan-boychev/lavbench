@@ -101,7 +101,7 @@ def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
         member.mode = 0o777
     elif member.isfile():
         # Preserve exec bits (submission scripts are run directly) but ensure
-        # read access for the sandbox user regardless of host file modes.
+        # Read access for the sandbox user regardless of host file modes
         member.mode = 0o644 | (member.mode & 0o111)
     return member
 
@@ -171,8 +171,8 @@ def run_command_streaming(
         if gpu_id is not None:
             device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
         elif Config.WORKER_GPU_IDS:
-            # pin a device from the configured pool instead of grabbing
-            # every GPU with count=-1.
+            # Pin a device from the configured pool instead of grabbing
+            # Every GPU with count=-1
             device_requests = [DeviceRequest(device_ids=[_next_gpu_id()], capabilities=[["gpu"]])]
         else:
             logger.warning(
@@ -207,17 +207,17 @@ def run_command_streaming(
     seed_volume: Any | None = None
     try:
         # Seed the sandbox through a per-run anonymous volume: the daemon
-        # can't put_archive into a tmpfs on a not-yet-started container, so
-        # /app is a disposable volume that is removed after the run.
+        # Can't put_archive into a tmpfs on a not-yet-started container, so
+        # /app is a disposable volume that is removed after the run
         # Tar metadata is normalized to the sandbox user (65534) with
-        # world-accessible modes — the seed dir is host-owned (e.g. 0o700
-        # mkdtemp) and the container runs as non-root nobody.
+        # World-accessible modes — the seed dir is host-owned (e.g. 0o700
+        # Mkdtemp) and the container runs as non-root nobody
         seed_volume = docker_client.volumes.create()
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
-        # best-effort size cap: --storage-opt needs quota support from the
-        # storage driver (e.g. XFS with pquota). ext4/overlay2 and other common
-        # daemons reject the option at create time, so fall back to a plain
-        # create (no size cap) instead of hard-failing every sandbox there.
+        # Best-effort size cap: --storage-opt needs quota support from the
+        # Storage driver (e.g. XFS with pquota). ext4/overlay2 and other common
+        # Daemons reject the option at create time, so fall back to a plain
+        # Create (no size cap) instead of hard-failing every sandbox there
         try:
             container = docker_client.containers.create(**run_kwargs)
         except Exception:
@@ -233,11 +233,11 @@ def run_command_streaming(
         with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
             tar_path = os.path.join(td, "seed.tar")
             with tarfile.open(tar_path, "w") as tar:
-                # put_archive ignores metadata on the '.' root entry, so
+                # Put_archive ignores metadata on the '.' root entry, so
                 # /app would keep the daemon's root-owned 0o755 mount point
-                # and the non-root sandbox user could not write outputs.
+                # And the non-root sandbox user could not write outputs
                 # A leading '/' entry makes the daemon chown/chmod the
-                # volume root (/app) itself before the seed contents.
+                # Volume root (/app) itself before the seed contents
                 root_entry = tarfile.TarInfo("/")
                 root_entry.type = tarfile.DIRTYPE
                 root_entry.mode = 0o777
@@ -289,9 +289,9 @@ def run_command_streaming(
                     container.kill()
                     process_timeout = True
                     break
-                # poll exit status at 1Hz instead of 10Hz — detecting a
-                # finished container a second late is irrelevant vs. the load
-                # this loop placed on the Docker daemon.
+                # Poll exit status at 1Hz instead of 10Hz — detecting a
+                # Finished container a second late is irrelevant vs. the load
+                # This loop placed on the Docker daemon
                 time.sleep(1.0)
         except Exception as exc:
             logs_list.append(f"Error during container execution: {exc}")
@@ -313,8 +313,8 @@ def run_command_streaming(
                 try:
                     stream, _stat = container.get_archive(container_path)
                     # Cap the in-memory buffer while assembling the tar stream
-                    # so a hostile container cannot balloon host RAM via the
-                    # collect path.
+                    # So a hostile container cannot balloon host RAM via the
+                    # Collect path
                     raw = bytearray()
                     for chunk in stream:
                         if len(raw) + len(chunk) > Config.MAX_COLLECT_BUFFER_BYTES:
@@ -328,7 +328,7 @@ def run_command_streaming(
                             if not member.isfile():
                                 continue
                             # Per-member cap, enforced from the tar header size
-                            # before any extraction.
+                            # Before any extraction
                             if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
                                 logger.warning(
                                     "Skipping oversized member %s (%d bytes) in %s",
@@ -461,7 +461,7 @@ class StreamingLogList(list[str]):
         pending = self._pending
         self._pending = []
         try:
-            from sse_utils import publish_submission_log_batch
+            from utils.sse_utils import publish_submission_log_batch
 
             publish_submission_log_batch(self.submission_id, pending)
         except Exception:
@@ -607,7 +607,7 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     cached = manifest.get("files", {})
 
     # Prune cache entries no longer part of the task (deleted uploads must not
-    # keep being served to students until the image is rebuilt)
+    # Keep being served to students until the image is rebuilt)
     for fn in [fn for fn in cached if fn not in expected_map]:
         with contextlib.suppress(OSError):
             os.remove(os.path.join(cache_dir, os.path.basename(fn)))

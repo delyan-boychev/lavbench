@@ -1,3 +1,5 @@
+"""Route handlers for the submissions blueprint."""
+
 from __future__ import annotations
 
 import contextlib
@@ -12,16 +14,7 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
-from cache_utils import (
-    cache_lock,
-    get_queue_depth,
-    get_redis_client,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    submission_logs_key,
-)
 from config import Config
-from error_utils import DEFAULT_ERROR_MESSAGES, err
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     ErrorResponse,
@@ -40,7 +33,23 @@ from services.submission_service import (
     validate_submission_allowed,
 )
 from spec import api
-from sse_utils import (
+from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
+from utils.cache_utils import (
+    cache_lock,
+    get_queue_depth,
+    get_redis_client,
+    get_sse_client,
+    invalidate_leaderboard_cache,
+    submission_logs_key,
+)
+from utils.dates import utcnow
+from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
+from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
+from utils.json_utils import safe_json_loads
+from utils.metadata import build_submission_metadata
+from utils.pagination import extract_pagination
+from utils.sse import sse_response
+from utils.sse_utils import (
     SSE_IDLE_TIMEOUT,
     clear_submission_logs,
     publish_leaderboard_update,
@@ -51,13 +60,6 @@ from sse_utils import (
     sse_heartbeat,
     submission_logs_channel,
 )
-from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
-from utils.dates import utcnow
-from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
-from utils.json_utils import safe_json_loads
-from utils.metadata import build_submission_metadata
-from utils.pagination import extract_pagination
-from utils.sse import sse_response
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +153,7 @@ def submit_code(
 
     if task and task.problem_codes:
         # Strict readiness gate: any build/labels/HF/baseline problem blocks
-        # submissions and reports every root cause (translated client-side).
+        # Submissions and reports every root cause (translated client-side)
         codes = {c for c in task.problem_codes if isinstance(c, str)}
         problems = [
             {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}

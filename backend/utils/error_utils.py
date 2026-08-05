@@ -1,3 +1,5 @@
+"""API error helpers: err() and DEFAULT_ERROR_MESSAGES."""
+
 from __future__ import annotations
 
 from typing import Any

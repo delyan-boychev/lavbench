@@ -1,3 +1,5 @@
+"""Tests for the double-blind evaluation routes."""
+
 import csv
 import io
 import os
@@ -47,7 +49,7 @@ class TestDoubleBlindAndLeaderboardRules:
             end_time=utcnow() + timedelta(hours=2),
             is_frozen=False,
             double_blind=True,
-            reveal_results=False,  # hidden initially
+            reveal_results=False,  # Hidden initially
             scores_finalized=False,
         )
         db_session.add(self.challenge)

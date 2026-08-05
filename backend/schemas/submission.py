@@ -1,3 +1,5 @@
+"""Pydantic schemas for the submissions blueprint."""
+
 from __future__ import annotations
 
 from typing import Any

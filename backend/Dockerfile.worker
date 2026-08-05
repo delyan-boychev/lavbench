@@ -14,7 +14,7 @@ COPY worker-entrypoint.sh .
 RUN chmod +x worker-entrypoint.sh
 
 # Celery console scripts don't put the cwd on sys.path (Python 3.12+), so
-# top-level imports like `sse_utils` fail in the worker process without this.
+# top-level imports like `utils.sse_utils` fail in the worker process without this.
 ENV PYTHONPATH=/app
 ENV HOME=/app
 

@@ -1,3 +1,5 @@
+"""Tests for the system tasks."""
+
 from tasks.task_modules import system as system_mod
 
 

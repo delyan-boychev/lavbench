@@ -16,7 +16,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import celeryd_init
 
 from config import Config
-from log_config import RemoteShipHandler, setup_logging
+from config.log_config import RemoteShipHandler, setup_logging
 from utils.dates import utcnow
 
 from .task_modules.submission_runner import run_eval_submission
@@ -28,7 +28,7 @@ from .task_modules.system import run_docker_prune
 logger = logging.getLogger(__name__)
 
 # Force UTC for Celery heartbeats to avoid clock drift warnings
-# when the host system uses a non-UTC local timezone.
+# When the host system uses a non-UTC local timezone
 os.environ["TZ"] = "UTC"
 time.tzset()
 
@@ -36,7 +36,7 @@ setup_logging("celery")
 
 # Worker role capabilities (see Config._worker_role). Only 'server' and
 # 'internal' boot a full app; 'eval' and 'scheduler' run a bare Celery
-# instance (eval publishes results over HTTP, scheduler only dispatches).
+# Instance (eval publishes results over HTTP, scheduler only dispatches)
 HAS_APP = Config.HAS_APP
 IS_EVAL_WORKER = Config.IS_EVAL_WORKER
 RUNS_EVALUATION = Config.RUNS_EVALUATION
@@ -44,7 +44,7 @@ RUNS_INTERNAL = Config.RUNS_INTERNAL
 
 if IS_EVAL_WORKER and Config.WORKER_LOG_SHIP_URL:
     ship_url = Config.WORKER_LOG_SHIP_URL
-    from worker_utils import _sign_worker_token
+    from utils.worker_utils import _sign_worker_token
 
     token = _sign_worker_token("worker")
     if token:
@@ -113,7 +113,7 @@ configure_celery_ssl(celery)
 celery.conf.update(
     worker_max_tasks_per_child=50,
     worker_concurrency=Config.CELERY_WORKER_CONCURRENCY,
-    worker_prefetch_multiplier=1,  # never hoard long-running evals per worker
+    worker_prefetch_multiplier=1,  # Never hoard long-running evals per worker
     result_expires=Config.CELERY_RESULT_EXPIRES,
     broker_transport_options={
         "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
@@ -139,7 +139,7 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
     its workspace root (see ``worker_utils.run_stale_dir_sweep``). Serialized
     with a file lock so concurrent worker starts don't sweep twice.
     """
-    from worker_utils import run_stale_dir_sweep
+    from utils.worker_utils import run_stale_dir_sweep
 
     lock_path = os.path.join(Config.LAVBENCH_WORKSPACE_DIR or "", ".stale_sweep.lock")
     if not Config.LAVBENCH_WORKSPACE_DIR:
@@ -189,11 +189,11 @@ def evaluate_submission(
                     sub.detailed_status = "failed"
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
                     db.session.commit()
-                    from sse_utils import publish_submission_status
+                    from utils.sse_utils import publish_submission_status
 
                     publish_submission_status(submission_id, "failed")
         elif IS_EVAL_WORKER and metadata:
-            from worker_utils import report_status_to_server
+            from utils.worker_utils import report_status_to_server
 
             report_status_to_server(
                 metadata=metadata,
@@ -203,7 +203,7 @@ def evaluate_submission(
             )
         return
     except Exception as e:
-        from cache_utils import log_dead_letter
+        from utils.cache_utils import log_dead_letter
 
         log_dead_letter(
             submission_id,
@@ -241,7 +241,7 @@ def recalculate_leaderboard(challenge_id: Any) -> None:
         if challenge.is_frozen:
             build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
 
-        from sse_utils import publish_leaderboard_update
+        from utils.sse_utils import publish_leaderboard_update
 
         publish_leaderboard_update(challenge_id)
 
@@ -277,7 +277,7 @@ def check_and_backup() -> dict[str, Any]:
 
         # General auto backup: every 20min when active, every 6h when idle
         last_key = "backup:last_auto"
-        from cache_utils import get_cached, get_redis_client, set_cached
+        from utils.cache_utils import get_cached, get_redis_client, set_cached
 
         r = get_redis_client()
         if r:
@@ -304,7 +304,7 @@ def check_and_backup() -> dict[str, Any]:
 
 
 # Periodic watchdog: marks submissions as failed if stuck in queued/running for too long
-# Also recovers results from Redis fallback (workers that completed but couldn't reach the server).
+# Also recovers results from Redis fallback (workers that completed but couldn't reach the server)
 # Runs every 5 minutes. Only the main server process runs this (not remote workers).
 @celery.task
 def watchdog_stuck_submissions() -> dict[str, Any]:
@@ -320,7 +320,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         recovered = 0
         stuck: list[Any] = []
         try:
-            from cache_utils import get_coordination_client, submission_fallback_key
+            from utils.cache_utils import get_coordination_client, submission_fallback_key
 
             r = get_coordination_client()
             if not r:
@@ -358,7 +358,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         r.delete(fallback_key)
                         recovered += 1
                         try:
-                            from sse_utils import publish_submission_status
+                            from utils.sse_utils import publish_submission_status
 
                             publish_submission_status(sub.id, sub.status)
                         except Exception as e:
@@ -390,7 +390,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         ).yield_per(500)
         now = utcnow()
         timeout_count = 0
-        # chain() streams both queries lazily (yield_per) without materializing
+        # Chain() streams both queries lazily (yield_per) without materializing
         for sub in chain(timed_out_candidates, running_candidates):
             task_time_limit = (
                 sub.time_limit_snapshot
@@ -421,7 +421,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     )
             timeout_count += 1
             try:
-                from sse_utils import publish_submission_status
+                from utils.sse_utils import publish_submission_status
 
                 publish_submission_status(sub.id, sub.status)
             except Exception as e:
@@ -432,7 +432,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
             # Invalidate leaderboard cache for affected challenges
-            from cache_utils import invalidate_leaderboard_cache
+            from utils.cache_utils import invalidate_leaderboard_cache
 
             challenge_ids = set()
             for sub in stuck:
@@ -451,7 +451,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
     if not app:
         return {"skipped": "no_app_context"}
 
-    from cache_utils import DIRTY_CHALLENGES_SET, get_coordination_client
+    from utils.cache_utils import DIRTY_CHALLENGES_SET, get_coordination_client
 
     r = get_coordination_client()
     if not r:
@@ -466,7 +466,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
 
         from models import Challenge
         from services.leaderboard_service import build_and_cache_leaderboard
-        from sse_utils import publish_leaderboard_update
+        from utils.sse_utils import publish_leaderboard_update
 
         with app.app_context():
             for cid_bytes in dirty_challenges:
@@ -498,7 +498,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
 
 
 # Celery Beat schedule for periodic tasks
-# watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
+# Watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
 @celery.task
 def prune_docker_images() -> dict[str, str]:
@@ -510,7 +510,7 @@ def prune_docker_images() -> dict[str, str]:
 def sweep_stale_task_dirs() -> dict[str, Any]:
     """Celery task: remove abandoned task execution dirs left behind by
     killed/restarted workers (see ``worker_utils.run_stale_dir_sweep``)."""
-    from worker_utils import run_stale_dir_sweep
+    from utils.worker_utils import run_stale_dir_sweep
 
     return {"removed": run_stale_dir_sweep()}
 
@@ -533,28 +533,28 @@ celery.conf.beat_schedule = {
     },
     "docker-prune-weekly-cpu": {
         "task": "tasks.prune_docker_images",
-        "schedule": 604800.0,  # once a week (7 days)
+        "schedule": 604800.0,  # Once a week (7 days)
         "options": {"queue": "cpu_queue"},
     },
     "docker-prune-weekly-gpu": {
         "task": "tasks.prune_docker_images",
-        "schedule": 604800.0,  # once a week (7 days)
+        "schedule": 604800.0,  # Once a week (7 days)
         "options": {"queue": "gpu_queue"},
     },
     "task-dir-sweep-daily-cpu": {
         "task": "tasks.sweep_stale_task_dirs",
-        "schedule": 86400.0,  # once a day
+        "schedule": 86400.0,  # Once a day
         "options": {"queue": "cpu_queue"},
     },
     "task-dir-sweep-daily-gpu": {
         "task": "tasks.sweep_stale_task_dirs",
-        "schedule": 86400.0,  # once a day
+        "schedule": 86400.0,  # Once a day
         "options": {"queue": "gpu_queue"},
     },
 }
 
 # Role-gated task registration. 'internal' workers handle only system tasks;
-# 'eval' workers handle only evaluation/image tasks; the main server runs all.
+# 'eval' workers handle only evaluation/image tasks; the main server runs all
 INTERNAL_TASKS = {
     "tasks.check_and_backup",
     "tasks.recalculate_all_leaderboards",

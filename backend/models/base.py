@@ -90,7 +90,7 @@ db = SQLAlchemy()
 # Symmetric encryption key for PII fields. Must be explicitly configured.
 # Server: ENCRYPTION_KEY. Workers: WORKER_ENCRYPTION_KEY (via config.py).
 # We deliberately never derive it from SECRET_KEY so a worker leak of the
-# JWT key never compromises encrypted-at-rest data.
+# JWT key never compromises encrypted-at-rest data
 ENCRYPTION_KEY_BASE64 = Config.ENCRYPTION_KEY
 if not ENCRYPTION_KEY_BASE64:
     logger.critical(

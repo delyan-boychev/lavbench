@@ -1,3 +1,5 @@
+"""Route handlers for the auth blueprint."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +11,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from error_utils import err
 from models import User, db
 from schemas.auth import LoginSchema
 from schemas.responses import (
@@ -23,13 +24,14 @@ from schemas.responses import (
 from spec import api
 from utils import client_ip
 from utils.auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
+from utils.error_utils import err
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
 # Precomputed hash so a login for an unknown username runs the same PBKDF2
-# work as a real one (~100-200ms). Without this, the short-circuit leaks
-# whether a username exists via response timing (username enumeration).
+# Work as a real one (~100-200ms). Without this, the short-circuit leaks
+# Whether a username exists via response timing (username enumeration)
 _DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
 
 
@@ -50,7 +52,7 @@ def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
     monitoring/backend hiccup does not silently disable throttling entirely.
     """
     try:
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:
@@ -102,7 +104,7 @@ def _record_login_failure(username: str, ip: str) -> None:
         kept.append(now)
         _LOCAL_LOGIN_FAILURES[key] = kept
     try:
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:
@@ -120,7 +122,7 @@ def _clear_login_failures(username: str, ip: str) -> None:
     _LOCAL_LOGIN_FAILURES.pop(f"user:{username}", None)
     _LOCAL_LOGIN_FAILURES.pop(f"ip:{ip}", None)
     try:
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:

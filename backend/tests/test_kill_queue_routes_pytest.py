@@ -1,3 +1,5 @@
+"""Tests for the kill-queue routes."""
+
 import os
 import sys
 from unittest.mock import patch

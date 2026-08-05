@@ -1,3 +1,5 @@
+"""Tests for the admin routes."""
+
 import os
 import sys
 from datetime import timedelta

@@ -1,3 +1,5 @@
+"""Pydantic schemas for the auth blueprint."""
+
 from pydantic import BaseModel, Field
 
 

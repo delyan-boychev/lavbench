@@ -15,9 +15,9 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from cache_utils import get_coordination_client, get_redis_client, submission_logs_key
 from config import Config
 from models.base import uuid7
+from utils.cache_utils import get_coordination_client, get_redis_client, submission_logs_key
 
 logger = logging.getLogger(__name__)
 

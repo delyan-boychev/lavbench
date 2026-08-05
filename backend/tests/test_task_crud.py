@@ -1,3 +1,5 @@
+"""Tests for the task CRUD routes."""
+
 import io
 import json
 from datetime import timedelta
@@ -33,16 +35,14 @@ def _make_parquet_with_id():
     return buf
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  CREATE — /api/challenges/<id>/tasks  (POST)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── CREATE — /api/challenges/<id>/tasks  (POST) ──
 
 
 class TestCreateTask:
     """POST /api/challenges/<challenge_id>/tasks"""
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_basic(
         self,
@@ -73,7 +73,7 @@ class TestCreateTask:
         assert body["stage_id"] is None
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_all_fields(
         self,
@@ -129,7 +129,7 @@ class TestCreateTask:
         assert "solution.ipynb" in body["solution_notebook_path"]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_gpu_flag_false(
         self,
@@ -155,7 +155,7 @@ class TestCreateTask:
         assert resp.get_json()["gpu_required"] is False
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_dataset_file(
         self,
@@ -185,7 +185,7 @@ class TestCreateTask:
         assert "train.csv" in filenames
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_labels_parquet(
         self,
@@ -213,7 +213,7 @@ class TestCreateTask:
         assert "labels.parquet" in [f["filename"] for f in files]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_evaluator_script(
         self,
@@ -247,7 +247,7 @@ class TestCreateTask:
         assert body["evaluator_metric_name"] == "my_eval"
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_stage(
         self,
@@ -332,7 +332,7 @@ class TestCreateTask:
         assert resp.status_code == 404
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_metrics(
         self,
@@ -358,7 +358,7 @@ class TestCreateTask:
         assert resp.get_json()["code"] == "ERR_INVALID_METRIC_CONFIG"
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_docker_image(
         self,
@@ -394,7 +394,7 @@ class TestCreateTask:
         assert resp.status_code == 403
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_syntax(
         self,
@@ -422,7 +422,7 @@ class TestCreateTask:
         assert "Syntax error" in resp.get_json()["error"]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_missing_metric_name(
         self,
@@ -454,7 +454,7 @@ class TestCreateTask:
         assert "Missing required variable: METRIC_NAME" in resp.get_json()["error"]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_bad_columns(
         self,
@@ -486,7 +486,7 @@ class TestCreateTask:
         assert "must be a list" in resp.get_json()["error"]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_columns_metadata(
         self,
@@ -523,16 +523,14 @@ class TestCreateTask:
         }
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  UPDATE — /api/tasks/<id>  (PUT)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── UPDATE — /api/tasks/<id>  (PUT) ──
 
 
 class TestUpdateTask:
     """PUT /api/tasks/<task_id>"""
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_basic_fields(
         self,
@@ -575,7 +573,7 @@ class TestUpdateTask:
         assert body["time_limit_sec"] == 900
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_env_change_keeps_problem_codes(
         self,
@@ -589,7 +587,7 @@ class TestUpdateTask:
         auth_headers,
     ):
         # The build gate must stay closed until the worker reports a successful
-        # rebuild — a PUT alone must never clear build-family problem codes.
+        # Rebuild — a PUT alone must never clear build-family problem codes
         from models import Task
 
         task = Task(
@@ -618,7 +616,7 @@ class TestUpdateTask:
         assert task.problem_codes == ["ERR_HF_DOWNLOAD_FAILED"]
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_clear_limits(
         self,
@@ -657,7 +655,7 @@ class TestUpdateTask:
         assert body["time_limit_sec"] is None
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_move_stage_without_manual_points(
         self,
@@ -708,7 +706,7 @@ class TestUpdateTask:
         assert resp.get_json()["stage_id"] == str(stage2.id)
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_move_stage_blocked_with_manual_points(
         self,
@@ -765,7 +763,7 @@ class TestUpdateTask:
         assert db_session.get(Task, task.id).stage_id == sample_stage.id
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_replace_file(
         self,
@@ -823,7 +821,7 @@ class TestUpdateTask:
         assert "new.csv" in filenames
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_task_files_have_unique_saved_names(
         self,
@@ -854,7 +852,7 @@ class TestUpdateTask:
         assert entry["saved_name"].endswith("-train.csv")
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_reupload_same_file_new_saved_name(
         self,
@@ -937,7 +935,7 @@ class TestUpdateTask:
         assert data_entries2[0]["saved_name"] != new_saved, "each re-upload gets a new saved_name"
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_gpu_flag(
         self,
@@ -1026,7 +1024,7 @@ class TestUpdateTask:
         assert resp.status_code == 403
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_baseline_notebook_replacement(
         self,
@@ -1077,7 +1075,7 @@ class TestUpdateTask:
     # ── Evaluator update tests ──
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_replace_evaluator_script(
         self,
@@ -1141,7 +1139,7 @@ class TestUpdateTask:
         assert body["evaluator_metric_name"] == "new_metric"
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_delete_evaluator(
         self,
@@ -1201,7 +1199,7 @@ class TestUpdateTask:
         assert not os.path.exists(eval_path)
 
     @patch("routes.tasks._maybe_queue_baseline")
-    @patch("cache_utils.invalidate_challenge_cache")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_invalid_evaluator_script_returns_error(
         self,
@@ -1242,9 +1240,7 @@ class TestUpdateTask:
         assert db_session.get(TaskModel, task.id) is not None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  DELETE — /api/tasks/<id>  (bonus coverage)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── DELETE — /api/tasks/<id>  (bonus coverage) ──
 
 
 class TestDeleteTaskCRUD:

@@ -21,10 +21,10 @@ import redis
 import requests
 from celery.signals import task_prerun, worker_ready
 
-from cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from config import Config
+from utils.cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from utils.dates import utcnow
-from worker_utils import (
+from utils.worker_utils import (
     MockModel,
     StreamingLogList,
     _sign_worker_token,
@@ -40,7 +40,7 @@ from .docker_utils import image_exists as _image_exists_docker
 logger = logging.getLogger(__name__)
 
 # In-memory cache of the worker spec, used to recreate the Redis key
-# after a Redis restart without re-running nvidia-smi.
+# After a Redis restart without re-running nvidia-smi
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
 _spec_reconnect_needed = False
@@ -120,7 +120,7 @@ def _fetch_hf_key_from_server(
             bool(worker_token),
         )
         return ""
-    # never ship an HF secret over plain HTTP to a non-localhost origin.
+    # Never ship an HF secret over plain HTTP to a non-localhost origin
     parsed = urlparse(main_server_url)
     if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
         logger.warning(
@@ -263,7 +263,7 @@ def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) 
         return 0.0
 
     # Exclude missing/failed metrics (None) and re-normalize over the remainder
-    # so a broken metric can neither boost nor drag the weighted score (BP-H4).
+    # So a broken metric can neither boost nor drag the weighted score (BP-H4)
     configured = [
         (m_name, cfg)
         for m_name, cfg in metrics_cfg.items()
@@ -308,18 +308,18 @@ def run_eval_submission(
     # 1. Setup mock/real models
     if metadata:
         # Submission callbacks (progress report, file/label fetch, HF-key fetch)
-        # read metadata["main_server_url"], which the server bakes in from ITS OWN
+        # Read metadata["main_server_url"], which the server bakes in from ITS OWN
         # MAIN_SERVER_URL. On external workers that value may be a container-internal
-        # hostname (e.g. "frontend:80") unreachable from the worker network. If the
-        # worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
-        # it; otherwise keep the server-provided URL.
+        # Hostname (e.g. "frontend:80") unreachable from the worker network. If the
+        # Worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
+        # It; otherwise keep the server-provided URL
         _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
         if _worker_main_url:
             metadata["main_server_url"] = _worker_main_url
-        # user_code and custom_eval_code are no longer embedded in the
-        # Celery message — fetch them from the server on demand.
+        # User_code and custom_eval_code are no longer embedded in the
+        # Celery message — fetch them from the server on demand
         try:
-            from worker_utils import fetch_submission_run_content
+            from utils.worker_utils import fetch_submission_run_content
 
             run_user_code, run_eval_code = fetch_submission_run_content(metadata)
             metadata["user_code"] = run_user_code
@@ -535,12 +535,12 @@ def run_eval_submission(
                             )
                 else:
                     # Intermediate status: best-effort —
-                    # already logged to Redis via StreamingLogList
+                    # Already logged to Redis via StreamingLogList
 
                     pass
         else:
             with app.app_context():
-                from sse_utils import (
+                from utils.sse_utils import (
                     publish_leaderboard_update,
                     publish_queue_update,
                     publish_submissions_update,
@@ -569,7 +569,7 @@ def run_eval_submission(
 
                     if status_val in ("completed", "failed"):
                         try:
-                            from cache_utils import invalidate_leaderboard_cache
+                            from utils.cache_utils import invalidate_leaderboard_cache
 
                             invalidate_leaderboard_cache(sub.challenge_id)
                         except Exception:
@@ -592,8 +592,8 @@ def run_eval_submission(
     # 3. Start evaluation execution
     try:
         # Pre-execution phase (image build / GPU acquisition). The server only
-        # stamps executed_at once the container actually starts, so the watchdog
-        # clock excludes build/GPU wait time.
+        # Stamps executed_at once the container actually starts, so the watchdog
+        # Clock excludes build/GPU wait time
         update_status("running", "building_env")
 
         # Extract user code
@@ -618,7 +618,7 @@ def run_eval_submission(
             return
 
         # Determine resource limits — always enforce the dispatch-time limit so
-        # both the runner and the server watchdog share one clock.
+        # Both the runner and the server watchdog share one clock
         time_limit = 300
         if metadata and metadata.get("time_limit"):
             time_limit = int(metadata["time_limit"])
@@ -754,7 +754,7 @@ def run_eval_submission(
 
         results_key = secrets.token_hex(16)
         # The executed module is named after the submission UUID (run by path,
-        # not import, so the deterministic name is collision-proof per task).
+        # Not import, so the deterministic name is collision-proof per task)
         exec_filename = f"submission_{submission_id}.py"
         with open(os.path.join(temp_dir, exec_filename), "w") as f:
             f.write(user_code)
@@ -773,7 +773,7 @@ def run_eval_submission(
         image_tag = f"lavbench_task_{task.id if task else 0}"
 
         # Prepopulate build_meta so it is always defined — the safety check at
-        # line ~698 may need it even when the task has no custom config.
+        # Line ~698 may need it even when the task has no custom config
         build_meta: dict[str, Any] = {
             "task_id": task.id,
             "base_docker_image": "python:3.10-slim",
@@ -890,7 +890,7 @@ def run_eval_submission(
 
         environment = {
             # Sandbox runs as nobody with a read-only rootfs — user-level pip
-            # installs (pip --user) land here on the writable tmpfs
+            # Installs (pip --user) land here on the writable tmpfs
             "HOME": "/tmp",  # noqa: S108
             "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
             "HF_HOME": "/hf_cache",
@@ -919,9 +919,9 @@ def run_eval_submission(
         task_id = metadata.get("task_id") if metadata else None
         if task_id:
             # Snapshot the asset cache into the per-run sandbox dir instead of
-            # bind-mounting the live cache: the cache is shared and a rebuild
-            # re-sync can swap files under a running container. Copying at
-            # launch keeps the in-flight run reading the files it started
+            # Bind-mounting the live cache: the cache is shared and a rebuild
+            # Re-sync can swap files under a running container. Copying at
+            # Launch keeps the in-flight run reading the files it started
             # with. Labels are never in this cache (see sync function).
             assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
             try:
@@ -977,7 +977,7 @@ def run_eval_submission(
                 labels_path = None
                 if metadata:
                     # Running on worker: use the host-only labels cache (never
-                    # mounted into the sandbox)
+                    # Mounted into the sandbox)
                     labels_path = sync_labels_parquet_to_cache(metadata, logs)
                 else:
                     # Running locally with DB: find in task files folder
@@ -1049,7 +1049,7 @@ def run_eval_submission(
                             num_public = int(len(unique_queries) * (pub_pct / 100.0))
                             num_public = max(0, min(num_public, len(unique_queries)))
                             # Tiny datasets must keep at least one row public so a
-                            # non-zero public score is always computed (>=1 row).
+                            # Non-zero public score is always computed (>=1 row)
                             if num_public == 0 and len(unique_queries) > 0 and pub_pct > 0:
                                 num_public = 1
                             public_queries = set(unique_queries[:num_public])
@@ -1110,7 +1110,7 @@ def run_eval_submission(
                         if task and getattr(task, "custom_eval_code", None):
                             eval_kwargs["custom_eval_code"] = task.custom_eval_code
                             # Run the admin-supplied evaluator in its own hardened
-                            # container (already-built sandbox image, no privileges)
+                            # Container (already-built sandbox image, no privileges)
                             eval_kwargs["sandbox_image"] = f"lavbench_task_{task.id}"
 
                         m_pub = (
@@ -1153,7 +1153,7 @@ def run_eval_submission(
                     except Exception as eval_err:
                         status = "failed"
                         # Full traceback goes to worker logs only — never into
-                        # submission logs visible to competitors (path leak)
+                        # Submission logs visible to competitors (path leak)
                         logger.exception(
                             "Parquet metric calculation failed for submission %s", submission_id
                         )
@@ -1180,7 +1180,7 @@ def run_eval_submission(
         )
 
         try:
-            from sse_utils import clear_submission_logs
+            from utils.sse_utils import clear_submission_logs
 
             clear_submission_logs(submission_id)
         except Exception as e:
@@ -1309,9 +1309,9 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         _spec_reconnect_needed = False
         logger.info("Worker specs registered: %s", spec)
 
-        # Build Docker images for all active tasks + start rebuild listener.
+        # Build Docker images for all active tasks + start rebuild listener
         # Internal/system workers (role 'internal') never run submission
-        # code and must not touch the Docker image pipeline at all.
+        # Code and must not touch the Docker image pipeline at all
         if Config.RUNS_EVALUATION:
             try:
                 from .image_builder import (

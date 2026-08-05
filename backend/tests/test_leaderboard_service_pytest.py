@@ -1,3 +1,5 @@
+"""Tests for the leaderboard service."""
+
 import json
 import os
 import sys

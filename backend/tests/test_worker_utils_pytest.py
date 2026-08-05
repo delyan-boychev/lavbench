@@ -1,3 +1,5 @@
+"""Tests for the worker helpers."""
+
 import base64
 import io
 import os
@@ -9,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from config import Config
-from worker_utils import (
+from utils.worker_utils import (
     MockModel,
     StreamingLogList,
     _sign_worker_token,
@@ -39,8 +41,8 @@ def _mock_response_body(mock_obj, body: bytes, chunk_size: int = 8) -> None:
 
 
 class TestFetchSubmissionRunContent:
-    @patch("worker_utils.requests.get")
-    @patch("worker_utils._sign_worker_token", return_value="signed-token")
+    @patch("utils.worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="signed-token")
     def test_returns_content_from_server(self, mock_sign, mock_get):
         mock_resp = mock_get.return_value
         mock_resp.status_code = 200
@@ -55,8 +57,8 @@ class TestFetchSubmissionRunContent:
         assert url == "http://server:5000/api/worker/submission-run-content/sub-1"
         assert mock_get.call_args[1]["headers"]["X-Worker-Token"] == "signed-token"
 
-    @patch("worker_utils.requests.get")
-    @patch("worker_utils._sign_worker_token", return_value="signed-token")
+    @patch("utils.worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="signed-token")
     def test_raises_on_non_200(self, mock_sign, mock_get):
         mock_get.return_value.status_code = 404
         with pytest.raises(RuntimeError, match="404"):
@@ -82,11 +84,11 @@ class TestAssetsCache:
 
     @pytest.fixture
     def cache_env(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("worker_utils.Config.TASK_IMAGES_DIR", str(tmp_path))
+        monkeypatch.setattr("utils.worker_utils.Config.TASK_IMAGES_DIR", str(tmp_path))
         return tmp_path
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_first_run_downloads_and_writes_manifest(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
@@ -96,8 +98,8 @@ class TestAssetsCache:
         manifest = (cache_env / "task_42" / ".assets.json").read_text()
         assert '"saved_name": "abc.csv"' in manifest
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         sync_task_files_to_assets_cache(self._metadata(), [])
@@ -106,8 +108,8 @@ class TestAssetsCache:
         assert ok is True
         mock_get.assert_not_called()
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_changed_saved_name_redownloads(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"new content")
         sync_task_files_to_assets_cache(self._metadata(), [])
@@ -119,8 +121,8 @@ class TestAssetsCache:
         dest = cache_env / "task_42" / "data" / "data.csv"
         assert dest.read_bytes() == b"new content"
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         metadata = self._metadata(
@@ -133,15 +135,15 @@ class TestAssetsCache:
         assert ok is True
         assert not (cache_env / "task_42" / "data" / "labels.parquet").exists()
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_download_failure_returns_false(self, mock_get, _tk, cache_env):
         mock_get.return_value.status_code = 404
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
         assert ok is False
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_labels_0600_and_0700_dir(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"labels data")
         path = sync_labels_parquet_to_cache(
@@ -153,7 +155,7 @@ class TestAssetsCache:
         assert os.stat(path).st_mode & 0o777 == 0o600
         assert os.stat(cache_env / "task_42" / "labels").st_mode & 0o777 == 0o700
 
-    @patch("worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     def test_labels_unchanged_reuses_cache(self, _tk, cache_env):
         import json as _json
 
@@ -171,7 +173,7 @@ class TestAssetsCache:
             _json.dumps({"labels": {"saved_name": "l1.parquet", "size": 6}})
         )
 
-        with patch("worker_utils.requests.get") as mock_get:
+        with patch("utils.worker_utils.requests.get") as mock_get:
             path = sync_labels_parquet_to_cache(metadata, [])
             assert path is not None
             mock_get.assert_not_called()
@@ -377,8 +379,8 @@ class TestRunCommandStreaming:
         assert dr.count == -1
 
     def test_gpu_ids_configured_pins_round_robin(self, mocker, tmp_path):
-        import worker_utils as wu
-        from worker_utils import _GPU_ID_CYCLE, _next_gpu_id
+        import utils.worker_utils as wu
+        from utils.worker_utils import _GPU_ID_CYCLE, _next_gpu_id
 
         saved = Config.WORKER_GPU_IDS
         saved_cycle = _GPU_ID_CYCLE
@@ -413,7 +415,7 @@ class TestSeedTarNormalization:
     def test_normalizes_ownership_and_modes(self):
         import tarfile
 
-        from worker_utils import SANDBOX_GID, SANDBOX_UID, _normalize_seed_tar_member
+        from utils.worker_utils import SANDBOX_GID, SANDBOX_UID, _normalize_seed_tar_member
 
         dir_member = tarfile.TarInfo(name=".")
         dir_member.type = tarfile.DIRTYPE
@@ -576,7 +578,7 @@ class TestSeededRunCommandStreaming:
         chown/chmod the /app mount point itself (writable by the sandbox user)."""
         import tarfile
 
-        from worker_utils import SANDBOX_GID, SANDBOX_UID
+        from utils.worker_utils import SANDBOX_GID, SANDBOX_UID
 
         seed = tmp_path / "seed"
         seed.mkdir()
@@ -668,13 +670,13 @@ class TestSeededRunCommandStreaming:
 
 class TestStreamingLogList:
     def test_append_immediately_flushes_single_line(self):
-        with patch("sse_utils.publish_submission_log_batch") as mock_publish:
+        with patch("utils.sse_utils.publish_submission_log_batch") as mock_publish:
             stream = StreamingLogList(submission_id=123)
             stream.append("test line")
             mock_publish.assert_called_once_with(123, ["test line"])
 
     def test_append_batches_many_lines(self):
-        with patch("sse_utils.publish_submission_log_batch") as mock_publish:
+        with patch("utils.sse_utils.publish_submission_log_batch") as mock_publish:
             stream = StreamingLogList(submission_id=123)
             for i in range(100):
                 stream.append(f"line {i}")
@@ -687,14 +689,16 @@ class TestStreamingLogList:
             ]
 
     def test_max_length_trims(self):
-        with patch("sse_utils.publish_submission_log_batch"):
+        with patch("utils.sse_utils.publish_submission_log_batch"):
             stream = StreamingLogList(submission_id=1)
             for i in range(10001):
                 stream.append(f"line {i}")
         assert len(stream) <= 10000
 
     def test_publish_exception_caught(self):
-        with patch("sse_utils.publish_submission_log_batch", side_effect=Exception("SSE error")):
+        with patch(
+            "utils.sse_utils.publish_submission_log_batch", side_effect=Exception("SSE error")
+        ):
             stream = StreamingLogList(submission_id=1)
             stream.append("test")
 
@@ -782,7 +786,7 @@ class TestSignWorkerToken:
 
 
 class TestReportStatusToServer:
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_successful_report(self, mock_post):
         mock_post.return_value.status_code = 200
         result = report_status_to_server(
@@ -795,7 +799,7 @@ class TestReportStatusToServer:
         )
         assert result
 
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_retry_on_failure(self, mock_post):
         mock_post.return_value.status_code = 500
         result = report_status_to_server(
@@ -810,7 +814,7 @@ class TestReportStatusToServer:
         assert result is False
         assert mock_post.call_count == 2
 
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_retry_on_exception(self, mock_post):
         mock_post.side_effect = Exception("connection error")
         result = report_status_to_server(
@@ -824,13 +828,13 @@ class TestReportStatusToServer:
         )
         assert result is False
 
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_no_metadata_returns_false(self, mock_post):
         result = report_status_to_server({}, "completed", "done")
         assert result is False
         mock_post.assert_not_called()
 
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_includes_logs_in_payload(self, mock_post):
         mock_post.return_value.status_code = 200
         report_status_to_server(
@@ -845,7 +849,7 @@ class TestReportStatusToServer:
         payload = mock_post.call_args[1]["json"]
         assert payload["logs"] == "line1\nline2"
 
-    @patch("worker_utils.requests.post")
+    @patch("utils.worker_utils.requests.post")
     def test_includes_scores_in_payload(self, mock_post):
         mock_post.return_value.status_code = 200
         report_status_to_server(
@@ -866,7 +870,7 @@ class TestReportStatusToServer:
 
 
 class TestDownloadTaskFilesToDir:
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_downloads_files(self, mock_get):
         _mock_response_body(mock_get.return_value, b"file content")
         metadata = {
@@ -881,7 +885,7 @@ class TestDownloadTaskFilesToDir:
             with open(filepath, "rb") as f:
                 assert f.read() == b"file content"
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_skips_labels_parquet(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
@@ -892,13 +896,13 @@ class TestDownloadTaskFilesToDir:
             download_task_files_to_dir(metadata, tmp, [])
             mock_get.assert_not_called()
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_no_metadata_does_nothing(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
             download_task_files_to_dir({}, tmp, [])
             mock_get.assert_not_called()
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_handles_download_failure(self, mock_get):
         mock_get.return_value.status_code = 404
         logs = []
@@ -911,7 +915,7 @@ class TestDownloadTaskFilesToDir:
             download_task_files_to_dir(metadata, tmp, logs)
         assert any("404" in log for log in logs)
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_empty_files_list(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
@@ -924,7 +928,7 @@ class TestDownloadTaskFilesToDir:
 
 
 class TestDownloadLabelsParquetToDir:
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_downloads_labels_parquet(self, mock_get):
         _mock_response_body(mock_get.return_value, b"labels data")
         metadata = {
@@ -939,7 +943,7 @@ class TestDownloadLabelsParquetToDir:
             with open(result, "rb") as f:
                 assert f.read() == b"labels data"
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_no_labels_file_returns_none(self, mock_get):
         metadata = {
             "main_server_url": "http://test:5001",
@@ -951,7 +955,7 @@ class TestDownloadLabelsParquetToDir:
             assert result is None
             mock_get.assert_not_called()
 
-    @patch("worker_utils.requests.get")
+    @patch("utils.worker_utils.requests.get")
     def test_no_metadata_returns_none(self, mock_get):
         with tempfile.TemporaryDirectory() as tmp:
             result = download_labels_parquet_to_dir({}, tmp, [])

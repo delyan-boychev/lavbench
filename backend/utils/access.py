@@ -1,3 +1,5 @@
+"""Competitor registration and access helpers."""
+
 from __future__ import annotations
 
 from models import User, db

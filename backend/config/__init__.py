@@ -81,8 +81,8 @@ def _require_env(key: str, message: str | None = None) -> str:
 
 class Config:
     # JWT signing key. Required for the API server, but NEVER shipped to
-    # workers (a compromised eval worker must not be able to mint tokens).
-    # Workers run without SECRET_KEY (they authenticate via Ed25519 nonces).
+    # Workers (a compromised eval worker must not be able to mint tokens)
+    # Workers run without SECRET_KEY (they authenticate via Ed25519 nonces)
     SECRET_KEY = os.environ.get("SECRET_KEY") or (
         "" if "SECRET_KEY" not in _WORKER_REQUIRED_ENV else _require_env("SECRET_KEY")
     )
@@ -105,7 +105,7 @@ class Config:
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
         # Must exceed the 1h watchdog cutoff so queued tasks are never
-        # redelivered/duplicated right before the watchdog marks them failed.
+        # redelivered/duplicated right before the watchdog marks them failed
         "visibility_timeout": int(os.environ.get("CELERY_VISIBILITY_TIMEOUT", 7200)),
     }
 
@@ -178,7 +178,7 @@ class Config:
     DEFAULT_TIME_LIMIT_SEC = int(os.environ.get("DEFAULT_TIME_LIMIT_SEC", 300))
 
     # Upper bound for a worker-reported execution_time_ms. Generous ceiling for
-    # long-running evaluations; anything above is a corrupt/adversarial report.
+    # Long-running evaluations; anything above is a corrupt/adversarial report
     MAX_EXECUTION_TIME_MS = int(os.environ.get("MAX_EXECUTION_TIME_MS", 30 * 24 * 3600 * 1000))
     DEFAULT_RAM_LIMIT_MB = int(os.environ.get("DEFAULT_RAM_LIMIT_MB", 8192))
     DEFAULT_PUBLIC_EVAL_PERCENTAGE = int(os.environ.get("DEFAULT_PUBLIC_EVAL_PERCENTAGE", 30))
@@ -186,32 +186,32 @@ class Config:
     # Worker utils
     WORKER_MAX_LOG_LINES = int(os.environ.get("WORKER_MAX_LOG_LINES", 10000))
     # Cumulative size cap for the server-side worker_remote.log; the file is
-    # rotated (kept as .1) once it would exceed this bound.
+    # Rotated (kept as .1) once it would exceed this bound.
     MAX_WORKER_LOG_BYTES = int(os.environ.get("MAX_WORKER_LOG_BYTES", 10 * 1024 * 1024))
     WORKER_REPORT_MAX_RETRIES = int(os.environ.get("WORKER_REPORT_MAX_RETRIES", 3))
     WORKER_REPORT_TIMEOUT = int(os.environ.get("WORKER_REPORT_TIMEOUT", 10))
     WORKER_DOWNLOAD_TIMEOUT = int(os.environ.get("WORKER_DOWNLOAD_TIMEOUT", 30))
     # Comma-separated GPU device ids exposed to sandboxes. When set, the
-    # worker pins a specific device per run instead of requesting every GPU.
+    # Worker pins a specific device per run instead of requesting every GPU
     WORKER_GPU_IDS: ClassVar[list[str]] = [
         id_.strip() for id_ in os.environ.get("WORKER_GPU_IDS", "").split(",") if id_.strip()
     ]
 
     # Caps for sandbox output collection: never buffer
-    # more than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
-    # extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES.
+    # More than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
+    # Extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES
     MAX_COLLECT_BUFFER_BYTES = int(os.environ.get("MAX_COLLECT_BUFFER_BYTES", 512 * 1024 * 1024))
     MAX_EXTRACT_MEMBER_BYTES = int(os.environ.get("MAX_EXTRACT_MEMBER_BYTES", 512 * 1024 * 1024))
     # Best-effort --storage-opt size cap for sandbox containers (ignored by
-    # storage drivers without quota support).
+    # Storage drivers without quota support)
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline
     DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
-    # use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
-    # so the server JWT key never leaves the server host.
+    # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
+    # So the server JWT key never leaves the server host
     WORKER_ENCRYPTION_KEY = os.environ.get("WORKER_ENCRYPTION_KEY", "")
     ENCRYPTION_KEY = (
         os.environ.get("ENCRYPTION_KEY")
@@ -241,7 +241,7 @@ class Config:
     # Main server URL (for worker callbacks)
     MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://localhost:5001")
 
-    # Unified worker role + derived capabilities (see _worker_role).
+    # Unified worker role + derived capabilities (see _worker_role)
     WORKER_ROLE = _WORKER_ROLE
     HAS_APP = WORKER_ROLE in ("server", "internal")
     IS_EVAL_WORKER = WORKER_ROLE == "eval"

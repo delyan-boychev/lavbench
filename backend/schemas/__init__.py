@@ -1,11 +1,13 @@
+"""Shared Pydantic schema helpers (spectree validation error formatting)."""
+
 from __future__ import annotations
 
 from typing import Any
 
 from pydantic import ValidationError
 
-from error_utils import err
 from schemas.exceptions import SchemaError
+from utils.error_utils import err
 
 
 def _format_validation_error_for_response(resp: Any, e: ValidationError) -> None:

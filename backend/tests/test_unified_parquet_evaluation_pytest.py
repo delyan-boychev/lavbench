@@ -1,3 +1,5 @@
+"""Tests for the unified Parquet evaluation."""
+
 import io
 import json
 import os
@@ -263,7 +265,7 @@ class TestEvalPredictionsAllMetricPaths:
     def test_auc_roc_bad_input_returns_fallback(self):
         """Multiclass labels with multi_class='raise' (default) → ValueError → fallback 0.5."""
         # 3-class labels with 1D probability scores
-        # triggers ValueError (multi_class='raise' default)
+        # Triggers ValueError (multi_class='raise' default)
 
         df_l = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 2]})
         df_s = pd.DataFrame({"id": [1, 2, 3], "prediction": [0.1, 0.5, 0.9]})
@@ -639,24 +641,24 @@ class TestEvalPredictionsAllMetricPaths:
             decode_mask_bytes,
         )
 
-        assert MAX_MASK_IMAGE_DIM < 5_000_000  # sanity: cap is tight
+        assert MAX_MASK_IMAGE_DIM < 5_000_000  # Sanity: cap is tight
         oversized = self._make_png_mask(128, 128, 1)
         # A 128x128 image is fine; only assert dimension logic via a cap that
-        # is provably below the fixture dimensions.
+        # Is provably below the fixture dimensions
         import evaluation_engine as ee
 
         saved_pixels = ee.MAX_MASK_IMAGE_PIXELS
         saved_dim = ee.MAX_MASK_IMAGE_DIM
         try:
-            ee.MAX_MASK_IMAGE_PIXELS = 100  # below 128*128
+            ee.MAX_MASK_IMAGE_PIXELS = 100  # Below 128*128
             assert decode_mask_bytes(oversized).size == 0
             ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
-            ee.MAX_MASK_IMAGE_DIM = 16  # below 128
+            ee.MAX_MASK_IMAGE_DIM = 16  # Below 128
             assert decode_mask_bytes(oversized).size == 0
         finally:
             ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
             ee.MAX_MASK_IMAGE_DIM = saved_dim
-        # Normal decode still works under default caps.
+        # Normal decode still works under default caps
         restored = decode_mask_bytes(oversized)
         assert restored.size == 128 * 128
 
@@ -765,7 +767,7 @@ class TestEvalPredictionsAllMetricPaths:
         df_s = pd.DataFrame({"id": [1], "prediction": [data]})
         res = evaluate_predictions(df_s, df_l, {"si_sdr": {"weight": 1.0}})
         assert "si_sdr" in res
-        assert res["si_sdr"] == pytest.approx(100.0)  # identical -> no residual
+        assert res["si_sdr"] == pytest.approx(100.0)  # Identical -> no residual
 
     def test_si_sdr_scale_invariant(self):
         """A constant-scaled estimate is a perfect SI-SDR score."""
@@ -1194,11 +1196,11 @@ class TestCustomEvaluatorSandbox:
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
     @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("worker_utils.run_command_streaming")
+    @patch("utils.worker_utils.run_command_streaming")
     def test_sandbox_success(self, mock_run, _mock_get_client, _mock_image_exists):
         def _fake_run(*args, **kwargs):
             # Emulate the harness: write result.json into the seed dir (the
-            # collect_files extraction target on the worker side)
+            # Collect_files extraction target on the worker side)
             seed_dir = kwargs["seed_dir"]
             with open(os.path.join(seed_dir, "result.json"), "w") as f:
                 json.dump({"custom_f1": 0.85}, f)
@@ -1215,7 +1217,7 @@ class TestCustomEvaluatorSandbox:
             sandbox_image="lavbench_task_test",
         )
         assert res["custom_f1"] == pytest.approx(0.85)
-        # run_sandbox must apply the hardened flags on the inner primitive
+        # Run_sandbox must apply the hardened flags on the inner primitive
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["network_mode"] == "none"
         assert call_kwargs["cap_drop"] == ["ALL"]
@@ -1228,7 +1230,7 @@ class TestCustomEvaluatorSandbox:
         assert call_kwargs["seed_dir"] == os.path.dirname(call_kwargs["collect_files"][0][1])
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=False)
-    @patch("worker_utils.run_command_streaming")
+    @patch("utils.worker_utils.run_command_streaming")
     def test_sandbox_image_missing_fails_closed(self, mock_run, _mock_image_exists):
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
@@ -1245,7 +1247,7 @@ class TestCustomEvaluatorSandbox:
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
     @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("worker_utils.run_command_streaming")
+    @patch("utils.worker_utils.run_command_streaming")
     def test_sandbox_timeout_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (1, "", "killed", True)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
@@ -1262,7 +1264,7 @@ class TestCustomEvaluatorSandbox:
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
     @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("worker_utils.run_command_streaming")
+    @patch("utils.worker_utils.run_command_streaming")
     def test_sandbox_crash_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
         mock_run.return_value = (2, "", "boom", False)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})

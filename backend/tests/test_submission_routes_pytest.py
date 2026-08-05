@@ -1,3 +1,5 @@
+"""Tests for the submission routes."""
+
 import io
 import json
 import os

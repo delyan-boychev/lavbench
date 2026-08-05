@@ -16,8 +16,8 @@ import jwt
 from flask import Response, jsonify, request
 
 from config import Config
-from error_utils import err
 from utils.dates import utcnow
+from utils.error_utils import err
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def _require_env(key: str) -> str:
 
 def _redis_client() -> Any:
     try:
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         return get_redis_client()
     except Exception:
@@ -52,9 +52,9 @@ def _redis_exists(key: str) -> bool:
 
 
 # In-memory fallback for jti revocation when Redis is down. Redis is the system
-# of record; during an outage we still want logout/admin revocations to be
-# honored on the process that performed them (they always are, because we write
-# here synchronously). Bounded + lazily pruned.
+# Of record; during an outage we still want logout/admin revocations to be
+# Honored on the process that performed them (they always are, because we write
+# Here synchronously). Bounded + lazily pruned.
 _LOCAL_REVOKED_TOKENS: dict[str, float] = {}
 _LOCAL_REVOKED_MAX = 10_000
 
@@ -158,7 +158,7 @@ def revoke_token(token: str) -> None:
         if jti and exp:
             expires_at = float(exp)
             # Always record locally first so revocation holds even if Redis is
-            # unavailable for the write.
+            # Unavailable for the write
             _record_revoked_locally(jti, expires_at)
             r = _redis_client()
             if r:
@@ -252,9 +252,7 @@ def role_required(allowed_roles: list[str]) -> Callable[[Callable[..., Any]], Ca
     return decorator
 
 
-# --- Rate limiting ---
-
-
+# ── Rate limiting ──
 def rate_limit(
     max_requests: int = 60,
     window_seconds: int = 60,

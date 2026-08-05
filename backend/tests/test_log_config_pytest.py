@@ -35,7 +35,7 @@ class TestSetupLogging:
         with tempfile.TemporaryDirectory() as tmp:
             log_dir = os.path.join(tmp, "subdir")
             assert not os.path.isdir(log_dir)
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             setup_logging("test", log_dir=log_dir)
             assert os.path.isdir(log_dir)
@@ -44,7 +44,7 @@ class TestSetupLogging:
         root = logging.getLogger()
         root.handlers.clear()
         with tempfile.TemporaryDirectory() as tmp:
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             root1 = setup_logging("test", log_dir=tmp)
             n_handlers = len(root1.handlers)
@@ -56,7 +56,7 @@ class TestSetupLogging:
         root = logging.getLogger()
         root.handlers.clear()
         with tempfile.TemporaryDirectory() as tmp:
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             root = setup_logging("test", log_dir=tmp)
             handler_types = [type(h).__name__ for h in root.handlers]
@@ -67,7 +67,7 @@ class TestSetupLogging:
         root = logging.getLogger()
         root.handlers.clear()
         with tempfile.TemporaryDirectory() as tmp:
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             root = setup_logging("test", log_dir=tmp)
             for h in root.handlers:
@@ -80,7 +80,7 @@ class TestSetupLogging:
         root = logging.getLogger()
         root.handlers.clear()
         with tempfile.TemporaryDirectory() as tmp:
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             root = setup_logging("test", log_dir=tmp)
             fh = next(h for h in root.handlers if isinstance(h, ConcurrentRotatingFileHandler))
@@ -90,7 +90,7 @@ class TestSetupLogging:
         root = logging.getLogger()
         root.handlers.clear()
         with tempfile.TemporaryDirectory() as tmp:
-            from log_config import setup_logging
+            from config.log_config import setup_logging
 
             root = setup_logging("test", log_dir=tmp)
             fh = next(h for h in root.handlers if isinstance(h, ConcurrentRotatingFileHandler))
@@ -103,7 +103,7 @@ class TestSetupLogging:
         with tempfile.TemporaryDirectory() as tmp:
             expected = os.path.join(tmp, "from_env")
             with patch.dict(os.environ, {"LOG_DIR": expected}, clear=False):
-                from log_config import setup_logging
+                from config.log_config import setup_logging
 
                 setup_logging("test")
                 assert os.path.isdir(expected)
@@ -118,11 +118,11 @@ class TestRemoteShipHandler:
         self.ship_url = "http://server:5000/api/workers/logs"
         self.token = "test-token"
         with (
-            patch("log_config.requests.post") as self.mock_post,
-            patch("worker_utils._sign_worker_token", return_value="worker-token"),
+            patch("config.log_config.requests.post") as self.mock_post,
+            patch("utils.worker_utils._sign_worker_token", return_value="worker-token"),
         ):
             self.mock_post.return_value.ok = True
-            from log_config import RemoteShipHandler
+            from config.log_config import RemoteShipHandler
 
             self.handler = RemoteShipHandler(
                 self.ship_url, self.token, max_lines=10, ship_interval_days=365
@@ -143,7 +143,7 @@ class TestRemoteShipHandler:
 
     def test_emit_drops_oldest_when_full(self):
         """Emit more than max_lines; oldest should be dropped, NOT flushed."""
-        from log_config import RemoteShipHandler
+        from config.log_config import RemoteShipHandler
 
         h = RemoteShipHandler(self.ship_url, self.token, max_lines=10, ship_interval_days=36500)
         # Reset _buffer_count after each emit to prevent auto-flush
@@ -167,13 +167,15 @@ class TestRemoteShipHandler:
 
     def test_flush_headers(self):
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
-        with patch("worker_utils._sign_worker_token", return_value="fresh-token") as mock_sign:
+        with patch(
+            "utils.worker_utils._sign_worker_token", return_value="fresh-token"
+        ) as mock_sign:
             self.handler.emit(record)
             self.handler.flush()
             mock_sign.assert_called_once_with("worker")
         headers = self.mock_post.call_args[1]["headers"]
-        # the token is re-minted on every flush so a 5-min replay window
-        # can never invalidate the worker's staleness-bounded log shipping.
+        # The token is re-minted on every flush so a 5-min replay window
+        # Can never invalidate the worker's staleness-bounded log shipping
         assert headers["X-Worker-Token"] == "fresh-token"
         assert headers["Content-Encoding"] == "gzip"
         assert headers["Content-Type"] == "application/octet-stream"
@@ -206,9 +208,9 @@ class TestRemoteShipHandler:
         self.handler.flush()
 
     def test_rate_limiting_via_ship_interval(self):
-        from log_config import RemoteShipHandler
+        from config.log_config import RemoteShipHandler
 
-        with patch("log_config.requests.post") as mock_post:
+        with patch("config.log_config.requests.post") as mock_post:
             mock_post.return_value.ok = True
             h = RemoteShipHandler(self.ship_url, self.token, max_lines=5, ship_interval_days=0)
             h._last_ship = _time.time() - 1
@@ -231,7 +233,7 @@ class TestReceiveWorkerLogs:
         from contextlib import suppress
 
         with suppress(Exception):
-            from cache_utils import get_redis_client
+            from utils.cache_utils import get_redis_client
 
             r = get_redis_client()
             if r:

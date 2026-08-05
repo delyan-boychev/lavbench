@@ -5,6 +5,22 @@ API Reference
    :members:
    :undoc-members:
 
+.. automodule:: config
+   :members:
+   :undoc-members:
+
+.. automodule:: config.log_config
+   :members:
+   :undoc-members:
+
+.. automodule:: utils.error_utils
+   :members:
+   :undoc-members:
+
+.. automodule:: utils.version
+   :members:
+   :undoc-members:
+
 .. automodule:: models
    :members:
    :undoc-members:
@@ -13,7 +29,7 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: cache_utils
+.. automodule:: utils.cache_utils
    :members:
    :undoc-members:
 
@@ -33,11 +49,11 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: sse_utils
+.. automodule:: utils.sse_utils
    :members:
    :undoc-members:
 
-.. automodule:: worker_utils
+.. automodule:: utils.worker_utils
    :members:
    :undoc-members:
 

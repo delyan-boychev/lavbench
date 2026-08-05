@@ -1,3 +1,5 @@
+"""Tests for the CSRF protection."""
+
 import json
 import uuid
 

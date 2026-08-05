@@ -82,7 +82,7 @@ def create_challenge(json: CreateChallengeSchema):
 ```
 
 ### Основни конвенции за бекенда:
-- **Стандарт за кодове за грешки**: Използвайте `err("ERR_CODE", status_code)` от `error_utils.py`. Всеки `ERR_*` код трябва да бъде регистриран в `DEFAULT_ERROR_MESSAGES` и преведен както за `en`, така и за `bg` локализациите.
+- **Стандарт за кодове за грешки**: Използвайте `err("ERR_CODE", status_code)` от `utils/error_utils.py`. Всеки `ERR_*` код трябва да бъде регистриран в `DEFAULT_ERROR_MESSAGES` и преведен както за `en`, така и за `bg` локализациите.
 - **Грешки в схемите**: Персонализираните валидатори на полета в Pydantic извличат `SchemaError("ERR_CODE", "Message")` от `schemas/exceptions.py`.
 - **Линтер за грешки**: Изпълнете `python backend/scripts/check_error_codes.py` преди изпращане на PR.
 - **Аннотации за типове**: Целият изходен код на бекенда трябва да преминава `mypy . --no-incremental` с 0 грешки.

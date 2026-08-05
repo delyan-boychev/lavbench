@@ -82,7 +82,7 @@ def create_challenge(json: CreateChallengeSchema):
 ```
 
 ### Key Backend Conventions:
-- **Error Code Standard**: Use `err("ERR_CODE", status_code)` from `error_utils.py`. Every `ERR_*` code must be registered in `DEFAULT_ERROR_MESSAGES` and translated in both `en` and `bg` locales.
+- **Error Code Standard**: Use `err("ERR_CODE", status_code)` from `utils/error_utils.py`. Every `ERR_*` code must be registered in `DEFAULT_ERROR_MESSAGES` and translated in both `en` and `bg` locales.
 - **Schema Errors**: Custom Pydantic field validators raise `SchemaError("ERR_CODE", "Message")` from `schemas/exceptions.py`.
 - **Error Linter**: Run `python backend/scripts/check_error_codes.py` before submitting PRs.
 - **Type Annotations**: All backend source code must pass `mypy . --no-incremental` with 0 errors.

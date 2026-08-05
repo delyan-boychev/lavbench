@@ -1,3 +1,5 @@
+"""Submission metadata builders."""
+
 from __future__ import annotations
 
 import json
@@ -23,7 +25,7 @@ def build_submission_metadata(
 ) -> dict[str, Any]:
     time_limit = task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
     # Persist the dispatch-time limit so the server watchdog and the runner
-    # enforce the same limit even if the task config changes mid-run.
+    # Enforce the same limit even if the task config changes mid-run
     submission.time_limit_snapshot = time_limit
     return {
         "submission_id": submission.id,
@@ -39,9 +41,9 @@ def build_submission_metadata(
             task.custom_eval_code
             or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
-        # user_code and custom_eval_code are NOT embedded here — the
-        # worker fetches them on demand via a signed request right before
-        # execution, keeping Celery messages small.
+        # User_code and custom_eval_code are NOT embedded here — the
+        # Worker fetches them on demand via a signed request right before
+        # Execution, keeping Celery messages small
         "metrics_config": task.metrics_config,
         "hf_datasets": _hf_value(task.hf_datasets),
         "hf_models": _hf_value(task.hf_models),

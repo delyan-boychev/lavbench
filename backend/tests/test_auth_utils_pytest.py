@@ -1,3 +1,5 @@
+"""Tests for the auth helpers."""
+
 from datetime import datetime
 from unittest.mock import patch
 
@@ -271,7 +273,7 @@ class TestRateLimit:
 
     # Added db_session here so SQLAlchemy creates the tables for the @login_required check
     # Keys are unique per test, so no global rate:* flush is needed (avoids races
-    # between xdist workers sharing the same Redis).
+    # Between xdist workers sharing the same Redis)
     @pytest.fixture(autouse=True)
     def setup_method_state(self, db_session):
         # Reset the static tracker attributes before every test
@@ -337,7 +339,7 @@ class TestRateLimit:
         res = rate_limit_client.get("/test-rl-identity", headers={"X-Test-Identity": ident})
         assert res.status_code == 200
 
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if not r:

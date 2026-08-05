@@ -1,3 +1,5 @@
+"""Tests for the challenges routes."""
+
 import json
 import os
 import sys

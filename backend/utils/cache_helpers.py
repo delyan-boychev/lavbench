@@ -1,3 +1,5 @@
+"""Memoization helpers layered on top of the Redis cache."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -5,8 +7,8 @@ from typing import Any
 
 from flask import current_app
 
-from cache_utils import get_cached, set_cached
 from config import Config
+from utils.cache_utils import get_cached, set_cached
 
 
 def cached_or_compute(

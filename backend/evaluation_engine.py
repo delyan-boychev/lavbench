@@ -34,15 +34,13 @@ from sklearn.metrics import (
 
 logger = logging.getLogger(__name__)
 
-# caps for mask images decoded host-side. PIL's own default
+# Caps for mask images decoded host-side. PIL's own default
 # DecompressionBombWarning threshold is ~89M pixels; enforce explicit,
-# configurable caps before any pixel data is decoded.
+# Configurable caps before any pixel data is decoded
 MAX_MASK_IMAGE_PIXELS = int(os.environ.get("MAX_MASK_IMAGE_PIXELS", 50 * 1024 * 1024))
 MAX_MASK_IMAGE_DIM = int(os.environ.get("MAX_MASK_IMAGE_DIM", 16384))
 
-# ---------------------------------------------------------
-# 0. DECOMPRESSION HELPERS
-# ---------------------------------------------------------
+# ── 0. DECOMPRESSION HELPERS ──
 
 
 def decode_mask_bytes(b: bytes) -> Any:
@@ -57,7 +55,7 @@ def decode_mask_bytes(b: bytes) -> Any:
 
             with Image.open(io.BytesIO(b)) as pil_img:
                 # Guard against decompression bombs: cap total pixels and
-                # per-axis dimensions before the image is ever decoded.
+                # Per-axis dimensions before the image is ever decoded
                 if (
                     pil_img.width > 0
                     and pil_img.height > 0
@@ -80,9 +78,7 @@ def decode_mask_bytes(b: bytes) -> Any:
     return np.frombuffer(b, dtype=np.uint8)
 
 
-# ---------------------------------------------------------
-# 1. TASK TYPE SCHEMAS & METRICS CONFIG
-# ---------------------------------------------------------
+# ── 1. TASK TYPE SCHEMAS & METRICS CONFIG ──
 
 
 AVAILABLE_METRICS = {
@@ -135,9 +131,7 @@ AVAILABLE_METRICS = {
     "v_measure": {},
 }
 
-# ---------------------------------------------------------
-# 2. SCHEMA VALIDATION ENGINE
-# ---------------------------------------------------------
+# ── 2. SCHEMA VALIDATION ENGINE ──
 
 
 def validate_parquet_schema(
@@ -166,9 +160,7 @@ def validate_parquet_schema_columns(
     return True, None
 
 
-# ---------------------------------------------------------
-# 3. ROBUST METRIC COMPUTATIONS WITH FALLBACKS
-# ---------------------------------------------------------
+# ── 3. ROBUST METRIC COMPUTATIONS WITH FALLBACKS ──
 
 
 # Basic String/NLP Helpers
@@ -235,7 +227,7 @@ def compute_meteor(ref: str, hyp: str) -> float:
     try:
         from nltk.translate.meteor_score import meteor_score
 
-        # nltk meteor_score expects token lists
+        # Nltk meteor_score expects token lists
         return float(meteor_score([ref.split()], hyp.split()))
     except Exception:
         # Fallback to Jaccard similarity
@@ -583,9 +575,9 @@ def compute_oks(y_true: list[Any], y_pred: list[Any]) -> float:
                 continue
 
             dists_sq = np.sum((arr_t - arr_p) ** 2, axis=1)
-            # scale estimation (box area)
-            scale = 1.0  # assume normalized keypoints
-            sigmas = 0.05  # standard constant
+            # Scale estimation (box area)
+            scale = 1.0  # Assume normalized keypoints
+            sigmas = 0.05  # Standard constant
             oks = np.mean(np.exp(-dists_sq / (2 * (scale**2) * (sigmas**2))))
             oks_scores.append(oks)
         except Exception:
@@ -674,13 +666,11 @@ def compute_retrieval_metrics(
     }
 
 
-# ---------------------------------------------------------
-# 4. CUSTOM EVALUATOR EXECUTION
-# ---------------------------------------------------------
+# ── 4. CUSTOM EVALUATOR EXECUTION ──
 
 # Trusted harness run INSIDE the sandbox container. The untrusted
-# evaluator code is exec'd here — isolated from the worker host by
-# --network none --cap-drop ALL --user 65534 --read-only --pids-limit.
+# Evaluator code is exec'd here — isolated from the worker host by
+# --network none --cap-drop ALL --user 65534 --read-only --pids-limit
 _CUSTOM_EVAL_HARNESS = '''\
 """Trusted harness: loads an admin-provided evaluator and applies it to data."""
 import json
@@ -748,7 +738,7 @@ def _run_custom_evaluator_sandbox(
     import tempfile
 
     from tasks.task_modules.docker_utils import _get_client, image_exists
-    from worker_utils import run_sandbox
+    from utils.worker_utils import run_sandbox
 
     workdir = tempfile.mkdtemp(prefix="custom_eval_")
     try:
@@ -850,9 +840,7 @@ def _run_custom_evaluator(
         return {}
 
 
-# ---------------------------------------------------------
-# 5. MAIN EVALUATION & METRIC RESOLUTION ROUTINE
-# ---------------------------------------------------------
+# ── 5. MAIN EVALUATION & METRIC RESOLUTION ROUTINE ──
 
 
 def evaluate_predictions(
@@ -1083,7 +1071,7 @@ def evaluate_predictions(
                     for t, p in zip(y_true, y_pred, strict=False):
                         if not t or not p:
                             # Empty prediction is a failure, not a near-perfect
-                            # distance of 1.0 (BP-H4) — skip the pair.
+                            # Distance of 1.0 (BP-H4) — skip the pair.
                             continue
                         min_len = min(len(t), len(p))
                         arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)

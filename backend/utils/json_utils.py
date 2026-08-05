@@ -1,3 +1,5 @@
+"""Safe JSON parsing helpers."""
+
 from __future__ import annotations
 
 import contextlib

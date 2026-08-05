@@ -9,7 +9,7 @@
 ```bash
 make setup-admin            # docker compose exec backend + fetch credentials into admin_credentials.txt
 # or, on a bare deployment without the compose stack:
-python backend/setup-admin.py
+python backend/scripts/setup-admin.py
 ```
 
 Това генерира първоначален администраторски акаунт, създава главни учетни данни (credentials) и ги записва във файла `admin_credentials.txt` в основната директория. Влезте в системата през главния уеб интерфейс с активиран превключвател **"Sign In as Administrator"**.

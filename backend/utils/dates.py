@@ -1,3 +1,5 @@
+"""Timezone-aware datetime parsing and formatting helpers."""
+
 from __future__ import annotations
 
 import logging

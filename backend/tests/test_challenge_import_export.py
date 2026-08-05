@@ -16,9 +16,7 @@ import pytest
 from models import Challenge, Stage, Task, User
 from utils.dates import utcnow
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Fixtures
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Fixtures ──
 
 
 @pytest.fixture
@@ -61,9 +59,7 @@ def challenge_with_stages_and_tasks(db_session, sample_challenge):
     return ch
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Export challenge (GET /api/challenges/<id>/export)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Export challenge (GET /api/challenges/<id>/export) ──
 
 
 class TestExportChallenge:
@@ -144,9 +140,7 @@ class TestExportChallenge:
         assert res.status_code == 404
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Import challenge (POST /api/challenges/import)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Import challenge (POST /api/challenges/import) ──
 
 
 class TestImportChallenge:
@@ -472,9 +466,7 @@ class TestImportChallenge:
         assert new_task.baseline_notebook_path == baseline_local
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Export results CSV (GET /api/challenges/<id>/export-results)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Export results CSV (GET /api/challenges/<id>/export-results) ──
 
 
 class TestExportResultsCsv:
@@ -541,9 +533,7 @@ class TestExportResultsCsv:
         assert "SCORE CORRECTION AUDIT LOG" in csv_text
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Import competitors CSV (POST /api/admin/import-competitors-csv)
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Import competitors CSV (POST /api/admin/import-competitors-csv) ──
 
 
 class TestImportCompetitorsCsv:

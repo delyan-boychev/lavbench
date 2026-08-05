@@ -60,6 +60,8 @@ jobs:
         working-directory: backend
       - name: Error code checker
         run: python backend/scripts/check_error_codes.py
+      - name: Comment style checker
+        run: python backend/scripts/check_comments.py
 
   backend-types:
     name: Backend type check (mypy)
@@ -299,7 +301,7 @@ jobs:
       # --- Run full-stack API smoke test against the live stack ---
       - name: Create admin user
         run: |
-          docker compose exec -T backend python3 /app/setup-admin.py
+          docker compose exec -T backend python3 /app/scripts/setup-admin.py
           docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt
 
       - name: Full-stack API smoke test (auth, roles, rate limits, backups, SSE, eval worker)

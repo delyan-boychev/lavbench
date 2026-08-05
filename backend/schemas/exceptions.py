@@ -1,3 +1,5 @@
+"""SchemaError: validation error carrying an API error code."""
+
 from __future__ import annotations
 
 

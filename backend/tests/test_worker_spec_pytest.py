@@ -1,3 +1,5 @@
+"""Tests for the worker spec."""
+
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -253,7 +255,7 @@ class TestPreloadDatasetModel:
 
 class TestPreloadSubmissionDatasetsDispatch:
     def _make_task(self, datasets=None, models=None, hf_token=None):
-        from worker_utils import MockModel
+        from utils.worker_utils import MockModel
 
         kwargs = {"hf_datasets": datasets, "hf_models": models}
         if hf_token is not None:

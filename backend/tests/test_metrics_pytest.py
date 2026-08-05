@@ -1,3 +1,5 @@
+"""Tests for the metrics evaluation."""
+
 import math
 import os
 import sys

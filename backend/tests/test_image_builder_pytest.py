@@ -1,3 +1,5 @@
+"""Tests for the Docker image builder."""
+
 import json
 from collections import namedtuple
 

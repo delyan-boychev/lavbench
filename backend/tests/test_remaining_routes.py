@@ -1,11 +1,11 @@
+"""Tests for routes not covered by the per-blueprint suites."""
+
 import json
 import os
 
 import pytest
 
-# =============================================================================
-# Area 1: Task File Download
-# =============================================================================
+# ── Area 1: Task File Download ──
 from werkzeug.security import generate_password_hash
 
 from models import Task, User
@@ -55,14 +55,12 @@ class TestTaskFileDownload:
         db_session.flush()
         return task
 
-    # --- unauthenticated ---
-
+    # ── unauthenticated ──
     def test_unauthenticated_returns_401(self, client, task_with_files):
         resp = client.get(f"/api/tasks/{task_with_files.id}/download/data.csv")
         assert resp.status_code == 401
 
-    # --- admin downloads ---
-
+    # ── admin downloads ──
     def test_admin_downloads_regular_file(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
@@ -77,8 +75,7 @@ class TestTaskFileDownload:
         )
         assert resp.status_code == 200
 
-    # --- competitor downloads ---
-
+    # ── competitor downloads ──
     def test_competitor_downloads_regular_file(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/data.csv",
@@ -153,8 +150,7 @@ class TestTaskFileDownload:
         )
         assert resp.status_code == 200
 
-    # --- task not started ---
-
+    # ── task not started ──
     def test_competitor_blocked_when_task_not_started(
         self,
         client,
@@ -194,8 +190,7 @@ class TestTaskFileDownload:
         data = resp.get_json()
         assert data.get("code") == "ERR_NOT_AVAILABLE"
 
-    # --- file not found in metadata ---
-
+    # ── file not found in metadata ──
     def test_file_not_found_in_metadata(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(
             f"/api/tasks/{task_with_files.id}/download/nonexistent.ipynb",
@@ -205,8 +200,7 @@ class TestTaskFileDownload:
         data = resp.get_json()
         assert data.get("code") == "ERR_FILE_NOT_FOUND"
 
-    # --- non-existent task ---
-
+    # ── non-existent task ──
     def test_non_existent_task(self, client, tokens, auth_headers):
         resp = client.get(
             "/api/tasks/999999/download/data.csv",
@@ -215,9 +209,7 @@ class TestTaskFileDownload:
         assert resp.status_code == 404
 
 
-# =============================================================================
-# Area 3: Login Rate Limiting
-# =============================================================================
+# ── Area 3: Login Rate Limiting ──
 
 
 @pytest.mark.xdist_group(name="rate_limiting")
@@ -228,7 +220,7 @@ class TestLoginRateLimiting:
     def clear_login_failures(self):
         """Flush login_failure keys between tests (safe under xdist_group)."""
         try:
-            from cache_utils import get_redis_client
+            from utils.cache_utils import get_redis_client
 
             r = get_redis_client()
             if r:
@@ -238,8 +230,8 @@ class TestLoginRateLimiting:
             pass
 
     def test_no_failures_not_exceeded(self, redis_flush):
-        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded
+        from utils.cache_utils import get_redis_client
 
         r = get_redis_client()
         if r:
@@ -247,8 +239,8 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
 
     def test_five_failures_exceeds_user_limit(self, redis_flush):
-        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded, _record_login_failure
+        from utils.cache_utils import get_redis_client
 
         username = "rate_test_user"
         ip = "10.0.0.1"
@@ -260,12 +252,12 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded(username, ip) is True
 
     def test_clear_failures_resets_limit(self, redis_flush):
-        from cache_utils import get_redis_client
         from routes.auth import (
             _clear_login_failures,
             _login_rate_limit_exceeded,
             _record_login_failure,
         )
+        from utils.cache_utils import get_redis_client
 
         username = "clear_test_user"
         ip = "10.0.0.2"
@@ -279,8 +271,8 @@ class TestLoginRateLimiting:
         assert _login_rate_limit_exceeded(username, ip) is False
 
     def test_thirty_ip_failures_exceeds_ip_limit(self, redis_flush):
-        from cache_utils import get_redis_client
         from routes.auth import _login_rate_limit_exceeded, _record_login_failure
+        from utils.cache_utils import get_redis_client
 
         ip = "10.0.0.100"
         r = get_redis_client()
@@ -298,7 +290,7 @@ class TestLoginRateLimiting:
             _record_login_failure,
         )
 
-        monkeypatch.setattr("cache_utils.get_redis_client", lambda: None)
+        monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: None)
         _LOCAL_LOGIN_FAILURES.clear()
         try:
             username = "fallback_user"
@@ -312,7 +304,7 @@ class TestLoginRateLimiting:
             _LOCAL_LOGIN_FAILURES.clear()
 
     def test_login_endpoint_returns_429(self, client, db_session, app_ctx, redis_flush):
-        from cache_utils import get_redis_client
+        from utils.cache_utils import get_redis_client
 
         target_ip = "198.51.100.99"
         target_user = "ratelimitme"
@@ -348,9 +340,7 @@ class TestLoginRateLimiting:
         assert data.get("code") == "ERR_RATE_LIMIT_EXCEEDED"
 
 
-# =============================================================================
-# Area 4: Register Competitor
-# =============================================================================
+# ── Area 4: Register Competitor ──
 
 
 class TestRegisterCompetitor:

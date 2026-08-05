@@ -15,7 +15,7 @@ Checks:
 
 Usage:
     python scripts/check_error_codes.py [files...]
-    # If no files given, checks all *.py under routes/ plus app.py, error_utils.py
+    # If no files given, checks all *.py under routes/ plus app.py
 """
 
 import ast
@@ -86,7 +86,7 @@ def check_file(filepath, valid_codes):
                     used_codes.add(code_val)
 
         # ── Check 2g: string literals inside set literals (e.g. the problem
-        # codes cleared on config change) count as used ──
+        # Codes cleared on config change) count as used ──
         if isinstance(node, ast.Set):
             for elt in node.elts:
                 cv = _get_str_value(elt)
@@ -136,7 +136,7 @@ def check_file(filepath, valid_codes):
                         used_codes.add(cv)
 
         # ── Check 2e: problem_codes=[...] list literals (e.g. worker build
-        # failures reported to the problem registry) count as used ──
+        # Failures reported to the problem registry) count as used ──
         if node.keywords:
             for kw in node.keywords:
                 if kw.arg == "problem_codes" and isinstance(kw.value, ast.List):
@@ -227,16 +227,12 @@ def main():
             files.extend(sorted(task_modules_dir.glob("*.py")))
         for extra in [
             "app.py",
-            "error_utils.py",
-            "sse_utils.py",
-            "worker_utils.py",
-            "cache_utils.py",
         ]:
             p = root / extra
             if p.exists():
                 files.append(p)
 
-    error_utils_path = root / "error_utils.py"
+    error_utils_path = root / "utils" / "error_utils.py"
     valid_codes = _load_valid_codes(error_utils_path) if error_utils_path.exists() else set()
 
     all_violations = []
