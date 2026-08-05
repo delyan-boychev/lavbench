@@ -15,6 +15,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:comments": "eslint -c eslint.comments.config.js .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
