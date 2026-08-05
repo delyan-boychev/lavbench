@@ -15,7 +15,7 @@ python backend/setup-admin.py
 This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
 
 > [!TIP]
-> End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — 158 checks, exit code 0 on success.
+> End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — 265 checks, exit code 0 on success.
 
 > [!IMPORTANT]
 > Run `setup-admin.py` only once on a fresh deployment. Re-running this script will reset system administrator access.
