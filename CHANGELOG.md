@@ -2,668 +2,172 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - 2026-08-02
+## [1.1.0] - 2026-08-05
 
 
 ### <!-- 0 -->🚀 Features
 
-- Feat & docs: task prefetching, build error diagnostics, SSE logging, and complete documentation overhaul (#111) by @delyan-boychev
-- Configurable Nginx port via interactive setup (#102) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-
-### <!-- 1 -->🐛 Bug Fixes
-
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Include Nginx port in MAIN_SERVER_URL and simplify worker healthcheck (#108) by @delyan-boychev
-- AuditLogResponse.details type (dict not str) (#107) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve nested env vars in deploy-server.sh for Docker Compose (#105) by @delyan-boychev
-- Portable sed -i for Linux/macOS compatibility (#104) by @delyan-boychev
-- Fix/worker auth padding (#101) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Invalidate admin worker stats cache on spec write so backend picks up GPU immediately after Redis reconnect (#96) by @delyan-boychev
-- Recreate worker spec from in-memory cache after Redis restart (#95) by @delyan-boychev
-- Submission SSE auto-update on completion, guard SSE against Redis None, add worker spec heartbeat (#94) by @delyan-boychev
-- Detect GPU in worker registration via nvidia-smi, show GPU info in admin worker stats (#93) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
 
 ### <!-- 10 -->💼 Other
 
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
-- * epic: prefetch task files + eval code during build, auto-clear build_error, watchdog 1h (#110) by @delyan-boychev
-- * docs: comprehensive user guide and technical documentation overhaul by @delyan-boychev
-- * build: rebuild openapi spec and frontend api.d.ts declarations by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Queue priority, SSE deterministic reconnect, loading states, Content-Disposition fix (#110) by @delyan-boychev
-- Include Nginx port in MAIN_SERVER_URL and simplify worker healthcheck (#108) by @delyan-boychev
-- Include Nginx port in MAIN_SERVER_URL and simplify worker healthcheck (#108) by @delyan-boychev
-- Include Nginx port in MAIN_SERVER_URL and simplify worker healthcheck (#108) by @delyan-boychev
-- Include Nginx port in MAIN_SERVER_URL and simplify worker healthcheck (#108) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve env vars, cascade dependent config, and cleanup (#106) by @delyan-boychev
-- Resolve nested env vars in deploy-server.sh for Docker Compose (#105) by @delyan-boychev
-- Resolve nested env vars in deploy-server.sh for Docker Compose (#105) by @delyan-boychev
-- Resolve nested env vars in deploy-server.sh for Docker Compose (#105) by @delyan-boychev
-- Resolve nested env vars in deploy-server.sh for Docker Compose (#105) by @delyan-boychev
-- WARN 'REDIS_PASSWORD variable is not set' during deploy. by @delyan-boychev
-- * feat: replace action metrics with custom evaluator scripts by @delyan-boychev
-- Remove simulator/action-metrics system (action_success_rate, by @delyan-boychev
-- Action_avg_steps, action_invalid_count, action_cumulative_reward). by @delyan-boychev
-- Add _run_custom_evaluator() with custom_eval_code param. by @delyan-boychev
-- New model columns: evaluator_metric_name, evaluator_options_schema. by @delyan-boychev
-- Backend routes parse METRIC_NAME from uploaded .py via AST. by @delyan-boychev
-- Evaluator upload UI in TaskForm, metric badge in TaskDetail. by @delyan-boychev
-- Import/export reads evaluator script content, sets custom_eval_code. by @delyan-boychev
-- DB migration script for existing Docker instances. by @delyan-boychev
-- 3 evaluator template scripts for IOAI tasks. by @delyan-boychev
-- * feat: custom evaluator script as single source of truth for metrics by @delyan-boychev
-- - Add _validate_evaluator_script (AST-based parser) to routes/tasks.py by @delyan-boychev
-- - Integrate evaluator script validation into task create/update routes by @delyan-boychev
-- - Add 21 unit tests (test_evaluator_validation_pytest.py) + 6 integration tests (test_task_crud.py) by @delyan-boychev
-- - Frontend: evaluator upload section, ScriptPreview, handleScriptParsed resets other metrics by @delyan-boychev
-- - Frontend: conditionally hide column-mapping and remove columns when evaluator active by @delyan-boychev
-- - Frontend: add i18n keys evaluator_metric_label, evaluator_columns_count (en/bg) by @delyan-boychev
-- - Frontend: add 6 evaluator UI tests to TaskForm.test.jsx by @delyan-boychev
-- - Refactor: replace 28 inline SVGs with Lucide icons across 14 frontend files by @delyan-boychev
-- - Fix: datetime.UTC alias, utcnow() deprecation, to_tz_iso utility by @delyan-boychev
-- - Fix: test_stage_crud +00:00 vs Z assertion, E501 line length violations by @delyan-boychev
-- - Fix: mypy type annotations, eslint unused vars and missing deps by @delyan-boychev
-- - Run ruff format, prettier, mypy, tsc --noEmit — all clean by @delyan-boychev
-- - All 1021 backend tests + 532 frontend tests pass by @delyan-boychev
-- * fix: add ERR_EVALUATOR_SCRIPT_INVALID translation keys by @delyan-boychev
-- * fix: skip AVAILABLE_METRICS validation for custom evaluator metric; restore evaluator options on edit by @delyan-boychev
-- - Backend: validate evaluator script early in create_task, skip by @delyan-boychev
--   AVAILABLE_METRICS check for the evaluator's metric name by @delyan-boychev
-- - Frontend: initialize evaluatorOptions from existing metrics_config by @delyan-boychev
--   when editing a task, preventing the sync effect from overwriting by @delyan-boychev
--   stored options with empty defaults by @delyan-boychev
-- * fix: auto-pad base64 keys in worker auth to prevent Incorrect padding error by @delyan-boychev
-- - scripts/generate-keys.sh: cut -d= -f2 → -f2- to preserve trailing = by @delyan-boychev
-- - backend/auth_utils.py: _pad_b64 helper for WORKER_PUBLIC_KEY + sig by @delyan-boychev
-- - backend/worker_utils.py: _pad_b64 helper for WORKER_PRIVATE_KEY by @delyan-boychev
-- * fix: always overwrite WORKER_PUBLIC_KEY in .env to keep it in sync with worker private key by @delyan-boychev
-- Previously set_if_missing preserved a stale public key on re-runs, by @delyan-boychev
-- While worker.env always got a fresh private key — causing a mismatch. by @delyan-boychev
-- Using set_env ensures both keys always come from the same generation. by @delyan-boychev
-- * fix: block on build lock contention and verify image before sandbox execution by @delyan-boychev
-- - build_task_image now waits up to 300s for another build to finish by @delyan-boychev
--   instead of immediately skipping by @delyan-boychev
-- - Added _try_acquire_build_lock with configurable retry/timeout by @delyan-boychev
-- - Build lock TTL reduced from 3600s to 900s to clear stale locks faster by @delyan-boychev
-- - Added ensure_task_image (3-attempt blocking build) and clear_build_lock by @delyan-boychev
-- - evaluate_submission: fallback to ensure_task_image if image missing by @delyan-boychev
--   just before sandbox launch (safety net for race conditions) by @delyan-boychev
-- - evaluate_submission: recognize image built by another process by @delyan-boychev
-- * fix: snapshot_download full dataset repo to cache .pkl and other non-standard files by @delyan-boychev
-- _DownloadPreload now runs snapshot_download(repo_type='dataset') by @delyan-boychev
-- After load_dataset to ensure all files (including .pkl) are cached by @delyan-boychev
-- In the HF cache tree before the Docker image is built. This lets by @delyan-boychev
-- Hf_hub_download() work inside the sandbox with HF_HUB_OFFLINE=1. by @delyan-boychev
-- * fix: snapshot_download to hf_cache_dir/hub so files land where HF_HOME expects them by @delyan-boychev
-- * fix: snapshot_download for models also needs cache_dir=hf_cache_dir/hub by @delyan-boychev
-- Same fix as for datasets — the hub cache lives under {cache_dir}/hub/ by @delyan-boychev
-- So HF_HOME=/hf_cache finds files at /hf_cache/hub/models--.../snapshots/... by @delyan-boychev
-- * fix: wire GPU_CORES_PER_TASK and CPU_CORES_PER_TASK into Config and submission_runner cpu limit by @delyan-boychev
-- * fix: include custom_eval_code in submission metadata so worker receives the evaluator script by @delyan-boychev
-- * fix: handle numpy ndarray in evaluator actions parsing (parquet reads lists as arrays); add warning log by @delyan-boychev
-- * fix: aggregate skipped count warning instead of per-row log in evaluator by @delyan-boychev
-- * fix: address critical bugs and align frontend validation with backend by @delyan-boychev
-- Backend fixes: by @delyan-boychev
-- - Remove ClassVar cache declarations; use per-instance getattr cache by @delyan-boychev
-- - Define build_meta before if block to prevent NameError by @delyan-boychev
-- - Add rouge_type parameter support to compute_rouge by @delyan-boychev
-- - Close GPU lock FDs on OSError to prevent FD leak by @delyan-boychev
-- - Use GET + existence guard on SSE counter DECR to prevent negative values by @delyan-boychev
-- - Update compute_rouge_l references to compute_rouge in tests by @delyan-boychev
-- Frontend fixes: by @delyan-boychev
-- - Remove required from description field (optional in backend schema) by @delyan-boychev
-- - Change gpu_required default to false (matches backend) by @delyan-boychev
-- - Add min/max constraints to numeric inputs (ram, timeout, submissions) by @delyan-boychev
-- - Add whitespace-nowrap to SelectField trigger to prevent text wrapping by @delyan-boychev
-- - Add submit-time client-side validation for docker image, apt, pip, HF limits by @delyan-boychev
-- - Add min/max prop support to InputField component by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Evaluator upload UI in TaskForm, metric badge in TaskDetail. by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Custom evaluator script as single source of truth for metrics, validation, and full test coverage (#100) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Reconnect guard re-registers worker spec after Redis disconnect-recovery cycle (#97) by @delyan-boychev
-- Recreate worker spec from in-memory cache after Redis restart (#95) by @delyan-boychev
-- Recreate worker spec from in-memory cache after Redis restart (#95) by @delyan-boychev
-- Submission SSE auto-update on completion, guard SSE against Redis None, add worker spec heartbeat (#94) by @delyan-boychev
-- Submission SSE auto-update on completion, guard SSE against Redis None, add worker spec heartbeat (#94) by @delyan-boychev
-- Submission SSE auto-update on completion, guard SSE against Redis None, add worker spec heartbeat (#94) by @delyan-boychev
-- Submission SSE auto-update on completion, guard SSE against Redis None, add worker spec heartbeat (#94) by @delyan-boychev
-- Detect GPU in worker registration via nvidia-smi, show GPU info in admin worker stats (#93) by @delyan-boychev
-- Detect GPU in worker registration via nvidia-smi, show GPU info in admin worker stats (#93) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Resolve task inconsistencies, baseline rendering, import/export, and delete cascades (#92) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Skip metrics config weight validation for _columns metadata (#91) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Replace curated copy list with COPY . ./ in worker Dockerfile (#90) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Models COPY path in Dockerfile.worker + lazy leaderboard import (#89) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Worker env cleanup, config.py guards, setup-worker.sh preserve creds (#88) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Align pre-commit with CI, resolve warnings, sync API types (#87) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
-- Fully parsed Pydantic schemas with specific error codes (#86) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Faithful generator-based get_archive mock, and assert the seed by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Run the smoke test with python3 -u — the eval section polls silently by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
 
 ### <!-- 2 -->🚜 Refactor
 
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
 
 ### <!-- 3 -->📚 Documentation
 
-- Run sandboxed CPU submissions end-to-end via a real eval worker (#118) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Fix language switcher links and button contrast (#124) by @delyan-boychev
 
 ### <!-- 6 -->🧪 Testing
 
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- TanStack Query frontend architecture + quality audit fixes (#115) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
 
 ### <!-- 8 -->🛡️ Security
 
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
-- Backend hardening + scale/ops + full-stack API smoke test in CI (#117) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
 
 
