@@ -203,7 +203,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** import_competitors_csv <POST> */
+        /**
+         * Bulk import competitors from a CSV file.
+         * @description Multipart form fields: ``file`` (CSV, required — validated manually for extension, size, and content) and ``challenge_id`` (optional — also accepted as a query parameter). spectree passes ``form=None`` for bodiless requests while the annotation still has to be the model (it drives the OpenAPI schema), hence the runtime guard below.
+         */
         post: operations["post__api_admin_import-competitors-csv"];
         delete?: never;
         options?: never;
@@ -1715,9 +1718,14 @@ export interface components {
             /** Message */
             message: string;
             /** Reset Accounts */
-            reset_accounts: {
-                [key: string]: unknown;
-            }[];
+            reset_accounts: components["schemas"]["BulkResetPasswordResponse.febf810.ResetAccountItem"][];
+        };
+        /** ResetAccountItem */
+        "BulkResetPasswordResponse.febf810.ResetAccountItem": {
+            /** Password */
+            password: string;
+            /** Username */
+            username: string;
         };
         /** ChallengeResponse */
         "ChallengeResponse.7ed3705": {
@@ -2737,6 +2745,20 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /**
+         * ImportCompetitorsForm
+         * @description Multipart form for the CSV competitor import.
+         *
+         *     The CSV file itself is sent in the ``file`` field and validated manually in
+         *     the route (extension, size, content) — spectree does not model file uploads.
+         */
+        "ImportCompetitorsForm.e1ac751": {
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
         };
         /** ImportCompetitorsResponse */
         "ImportCompetitorsResponse.febf810": {
@@ -5640,30 +5662,6 @@ export interface components {
              */
             username: string | null;
         };
-        /**
-         * ValidationError
-         * @description Model of a validation error response.
-         */
-        "ValidationError.6a07bef": components["schemas"]["ValidationError.6a07bef.ValidationErrorElement"][];
-        /**
-         * ValidationErrorElement
-         * @description Model of a validation error response element.
-         */
-        "ValidationError.6a07bef.ValidationErrorElement": {
-            /**
-             * Error context
-             * @default null
-             */
-            ctx: {
-                [key: string]: unknown;
-            } | null;
-            /** Missing field name */
-            loc: string[];
-            /** Error message */
-            msg: string;
-            /** Error type */
-            type: string;
-        };
         /** WorkerActiveDatasetsResponse */
         "WorkerActiveDatasetsResponse.6bc6f68": {
             /** Datasets */
@@ -5781,7 +5779,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -5810,7 +5808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -5837,7 +5835,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -5915,7 +5913,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -5953,7 +5951,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -5991,7 +5989,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6029,7 +6027,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6089,7 +6087,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6101,7 +6099,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImportCompetitorsForm.e1ac751"];
+            };
+        };
         responses: {
             /** @description Created */
             201: {
@@ -6147,7 +6149,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6251,7 +6253,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6289,7 +6291,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6325,7 +6327,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6480,7 +6482,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6507,7 +6509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6536,7 +6538,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6578,7 +6580,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6607,7 +6609,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6645,7 +6647,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6674,7 +6676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6716,7 +6718,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6754,7 +6756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6803,7 +6805,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6847,7 +6849,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6878,7 +6880,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6909,7 +6911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6947,7 +6949,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -6976,7 +6978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7005,7 +7007,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7049,7 +7051,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7089,7 +7091,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7136,7 +7138,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7246,7 +7248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7290,7 +7292,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7335,7 +7337,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7367,7 +7369,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7412,7 +7414,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7457,7 +7459,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7497,7 +7499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7585,7 +7587,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7625,7 +7627,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7669,7 +7671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7785,7 +7787,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Service Unavailable */
@@ -7883,7 +7885,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -7930,7 +7932,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8001,7 +8003,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8054,7 +8056,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8085,7 +8087,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8133,7 +8135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8173,7 +8175,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8213,7 +8215,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8251,7 +8253,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8304,7 +8306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Internal Server Error */
@@ -8351,7 +8353,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8378,7 +8380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8416,7 +8418,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8454,7 +8456,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8512,7 +8514,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8561,7 +8563,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Internal Server Error */
@@ -8609,7 +8611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8658,7 +8660,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8716,7 +8718,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
         };
@@ -8763,7 +8765,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ValidationError.6a07bef"];
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Internal Server Error */
