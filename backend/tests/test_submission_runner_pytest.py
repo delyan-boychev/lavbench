@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from config import Config
-from evaluation_engine import (
+from services.evaluation import (
     AVAILABLE_METRICS,
     evaluate_predictions,
     validate_parquet_schema,

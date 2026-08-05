@@ -134,13 +134,14 @@ def main() -> int:
         files = [Path(f).resolve() for f in args]
     else:
         files = []
-        for rel in ["app.py", "evaluation_engine.py", "spec.py", "conftest.py"]:
+        for rel in ["app.py", "conftest.py"]:
             p = ROOT / rel
             if p.exists():
                 files.append(p)
         for sub in [
             "routes",
             "services",
+            "services/evaluation",
             "schemas",
             "tasks",
             "utils",

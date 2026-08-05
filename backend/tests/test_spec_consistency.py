@@ -45,6 +45,31 @@ def test_spec_contains_queue_and_kill_paths(client: Any) -> None:
         assert path in spec["paths"], f"missing path {path}"
 
 
+def test_import_competitors_csv_has_multipart_request_body(client: Any) -> None:
+    spec = _get_spec(client)
+    op = spec["paths"]["/api/admin/import-competitors-csv"]["post"]
+    content = op["requestBody"]["content"]
+    assert "multipart/form-data" in content, "CSV import must be documented as multipart"
+    schema = content["multipart/form-data"]["schema"]
+    assert "$ref" in schema, "challenge_id form schema must be resolvable"
+    ref_name = schema["$ref"].split("/")[-1]
+    props = spec["components"]["schemas"][ref_name]["properties"]
+    assert "challenge_id" in props, "challenge_id form field must be in the request schema"
+
+
+def test_validation_error_model_is_error_response(client: Any) -> None:
+    spec = _get_spec(client)
+    op = spec["paths"]["/api/admin/backups"]["get"]
+    schema = op["responses"]["422"]["content"]["application/json"]["schema"]
+    assert schema.get("type") != "array", (
+        "implicit 422 must use ErrorResponse, not spectree's default ValidationError array"
+    )
+    if "properties" in schema:
+        assert {"code", "error"}.issubset(schema["properties"]), (
+            "implicit 422 must follow the ErrorResponse shape (code, error)"
+        )
+
+
 def test_spec_contains_all_sse_live_endpoints(client: Any) -> None:
     spec = _get_spec(client)
     for path in SSE_PATHS:

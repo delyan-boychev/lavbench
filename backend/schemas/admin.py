@@ -3,6 +3,16 @@
 from pydantic import BaseModel, Field
 
 
+class ImportCompetitorsForm(BaseModel):
+    """Multipart form for the CSV competitor import.
+
+    The CSV file itself is sent in the ``file`` field and validated manually in
+    the route (extension, size, content) — spectree does not model file uploads.
+    """
+
+    challenge_id: str | None = Field(default=None)
+
+
 class RegisterCompetitorSchema(BaseModel):
     name: str = Field(..., min_length=1)
     surname: str = Field(..., min_length=1)

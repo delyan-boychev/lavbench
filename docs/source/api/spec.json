@@ -1001,8 +1001,7 @@
           },
           "reset_accounts": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/BulkResetPasswordResponse.febf810.ResetAccountItem"
             },
             "title": "Reset Accounts",
             "type": "array"
@@ -1013,6 +1012,24 @@
           "reset_accounts"
         ],
         "title": "BulkResetPasswordResponse",
+        "type": "object"
+      },
+      "BulkResetPasswordResponse.febf810.ResetAccountItem": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "ResetAccountItem",
         "type": "object"
       },
       "ChallengeResponse.7ed3705": {
@@ -3238,6 +3255,25 @@
           "checks"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "ImportCompetitorsForm.e1ac751": {
+        "description": "Multipart form for the CSV competitor import.\n\nThe CSV file itself is sent in the ``file`` field and validated manually in\nthe route (extension, size, content) \u2014 spectree does not model file uploads.",
+        "properties": {
+          "challenge_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Challenge Id"
+          }
+        },
+        "title": "ImportCompetitorsForm",
         "type": "object"
       },
       "ImportCompetitorsResponse.febf810": {
@@ -9786,54 +9822,6 @@
         "title": "UpdateUserSchema",
         "type": "object"
       },
-      "ValidationError.6a07bef": {
-        "description": "Model of a validation error response.",
-        "items": {
-          "$ref": "#/components/schemas/ValidationError.6a07bef.ValidationErrorElement"
-        },
-        "title": "ValidationError",
-        "type": "array"
-      },
-      "ValidationError.6a07bef.ValidationErrorElement": {
-        "description": "Model of a validation error response element.",
-        "properties": {
-          "ctx": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Error context"
-          },
-          "loc": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Missing field name",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Error message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationErrorElement",
-        "type": "object"
-      },
       "WorkerActiveDatasetsResponse.6bc6f68": {
         "properties": {
           "datasets": {
@@ -10039,7 +10027,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10077,7 +10065,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10108,7 +10096,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10219,7 +10207,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10271,7 +10259,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10323,7 +10311,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10375,7 +10363,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10462,7 +10450,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10482,9 +10470,19 @@
     },
     "/api/admin/import-competitors-csv": {
       "post": {
-        "description": "",
+        "description": "Multipart form fields: ``file`` (CSV, required \u2014 validated manually for extension, size, and content) and ``challenge_id`` (optional \u2014 also accepted as a query parameter). spectree passes ``form=None`` for bodiless requests while the annotation still has to be the model (it drives the OpenAPI schema), hence the runtime guard below.",
         "operationId": "post__api_admin_import-competitors-csv",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCompetitorsForm.e1ac751"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -10512,7 +10510,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "import_competitors_csv <POST>",
+        "summary": "Bulk import competitors from a CSV file.",
         "tags": [
           "Admin"
         ]
@@ -10538,7 +10536,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10682,7 +10680,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10730,7 +10728,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -10771,7 +10769,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11002,7 +11000,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11033,7 +11031,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11071,7 +11069,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11124,7 +11122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11157,7 +11155,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11200,7 +11198,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11238,7 +11236,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11294,7 +11292,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11342,7 +11340,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11391,7 +11389,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11458,7 +11456,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11525,7 +11523,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11574,7 +11572,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11626,7 +11624,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11668,7 +11666,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11710,7 +11708,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11779,7 +11777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11838,7 +11836,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -11900,7 +11898,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12072,7 +12070,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12141,7 +12139,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12200,7 +12198,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12277,7 +12275,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12356,7 +12354,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12435,7 +12433,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12494,7 +12492,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12632,7 +12630,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12704,7 +12702,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12773,7 +12771,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -12925,7 +12923,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13058,7 +13056,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13120,7 +13118,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13218,7 +13216,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13275,7 +13273,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13352,7 +13350,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13423,7 +13421,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13482,7 +13480,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13541,7 +13539,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13593,7 +13591,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13672,7 +13670,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13730,7 +13728,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13761,7 +13759,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13809,7 +13807,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13852,7 +13850,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13926,7 +13924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -13990,7 +13988,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -14056,7 +14054,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -14120,7 +14118,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -14194,7 +14192,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },
@@ -14247,7 +14245,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidationError.6a07bef"
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
                 }
               }
             },

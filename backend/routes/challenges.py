@@ -40,7 +40,6 @@ from schemas.stage import (
 )
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
-from spec import api
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
@@ -52,6 +51,7 @@ from utils.error_utils import err
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
+from utils.spec import api
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)

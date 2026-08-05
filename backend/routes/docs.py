@@ -8,8 +8,8 @@ from flask import Blueprint, request
 from spectree import Response
 
 from schemas.responses import DocContentResponse, ErrorResponse
-from spec import api
 from utils.auth_utils import role_required
+from utils.spec import api
 
 docs_bp = Blueprint("docs", __name__)
 

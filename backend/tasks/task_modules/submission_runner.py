@@ -1008,7 +1008,7 @@ def run_eval_submission(
                     try:
                         import pandas as pd
 
-                        from evaluation_engine import (
+                        from services.evaluation import (
                             evaluate_predictions,
                             validate_parquet_schema,
                         )

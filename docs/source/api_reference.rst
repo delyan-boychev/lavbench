@@ -45,7 +45,19 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: evaluation_engine
+.. automodule:: services.evaluation
+   :members:
+   :undoc-members:
+
+.. automodule:: services.evaluation.metrics
+   :members:
+   :undoc-members:
+
+.. automodule:: services.evaluation.validation
+   :members:
+   :undoc-members:
+
+.. automodule:: services.evaluation.engine
    :members:
    :undoc-members:
 

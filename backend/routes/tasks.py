@@ -47,7 +47,6 @@ from services.submission_service import (
     extract_code_from_notebook,
     validate_submission_allowed,
 )
-from spec import api
 from utils.access import ensure_registered
 from utils.audit import log_audit
 from utils.auth_utils import (
@@ -73,6 +72,7 @@ from utils.error_utils import err
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
+from utils.spec import api
 from utils.sse import sse_response
 from utils.sse_utils import (
     CHANNEL_TASK_REBUILD,
@@ -400,7 +400,7 @@ def create_task(
 
     metrics_config = form.metrics_config
     if metrics_config:
-        from evaluation_engine import AVAILABLE_METRICS
+        from services.evaluation import AVAILABLE_METRICS
 
         allowed_metrics = list(AVAILABLE_METRICS.keys())
         for metric_name in metrics_config:
@@ -590,7 +590,7 @@ def create_task(
                 try:
                     import pyarrow.parquet as pq
 
-                    from evaluation_engine import validate_parquet_schema_columns
+                    from services.evaluation import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
                     columns = [col.name for col in schema]
@@ -929,7 +929,7 @@ def update_task(
                 try:
                     import pyarrow.parquet as pq
 
-                    from evaluation_engine import validate_parquet_schema_columns
+                    from services.evaluation import validate_parquet_schema_columns
 
                     schema = pq.read_schema(save_path)
                     columns = [col.name for col in schema]
