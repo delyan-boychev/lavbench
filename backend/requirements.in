@@ -26,11 +26,11 @@ scipy>=1.10.0
 scikit-learn>=1.7.2
 datasets>=5.0.0
 
-# ── Image processing (evaluation_engine.py: PSNR, SSIM) ────────────
+# ── Image processing (services/evaluation/metrics.py: PSNR, SSIM) ──
 Pillow>=10.0.0
 scikit-image>=0.21.0
 
-# ── NLP metrics (evaluation_engine.py) ─────────────────────────────
+# ── NLP metrics (services/evaluation/metrics.py) ───────────
 nltk>=3.8.0
 rouge-score>=0.1.2
 

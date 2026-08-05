@@ -16,7 +16,6 @@ from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_me
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
 from services.leaderboard_service import build_and_cache_leaderboard
-from spec import api
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_helpers import cached_or_compute
@@ -29,6 +28,7 @@ from utils.cache_utils import (
 from utils.dates import utcnow
 from utils.error_utils import err
 from utils.json_utils import safe_json_loads
+from utils.spec import api
 from utils.sse import sse_response
 from utils.sse_utils import (
     SSE_IDLE_TIMEOUT,

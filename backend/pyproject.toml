@@ -57,7 +57,12 @@ disallow_untyped_decorators = false
 disable_error_code = ["attr-defined", "assignment", "arg-type", "import-untyped"]
 
 [[tool.mypy.overrides]]
-module = "evaluation_engine"
+module = "services.evaluation"
+disallow_untyped_defs = false
+disable_error_code = ["import-untyped", "no-untyped-call", "no-any-return", "assignment"]
+
+[[tool.mypy.overrides]]
+module = "services.evaluation.*"
 disallow_untyped_defs = false
 disable_error_code = ["import-untyped", "no-untyped-call", "no-any-return", "assignment"]
 

@@ -32,7 +32,6 @@ from services.submission_service import (
     get_best_submission,
     validate_submission_allowed,
 )
-from spec import api
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
     cache_lock,
@@ -48,6 +47,7 @@ from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_co
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
+from utils.spec import api
 from utils.sse import sse_response
 from utils.sse_utils import (
     SSE_IDLE_TIMEOUT,

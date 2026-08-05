@@ -16,8 +16,8 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from evaluation_engine import evaluate_predictions, validate_parquet_schema
 from models import Challenge, Submission, Task, User, db
+from services.evaluation import evaluate_predictions, validate_parquet_schema
 from utils.auth_utils import generate_token
 
 
@@ -636,7 +636,7 @@ class TestEvalPredictionsAllMetricPaths:
     def test_decode_mask_rejects_oversized_image(self):
         """masks exceeding per-axis/pixel caps must be rejected rather
         than decoded (which would risk a decompression-bomb allocation)."""
-        from evaluation_engine import (
+        from services.evaluation import (
             MAX_MASK_IMAGE_DIM,
             decode_mask_bytes,
         )
@@ -645,19 +645,20 @@ class TestEvalPredictionsAllMetricPaths:
         oversized = self._make_png_mask(128, 128, 1)
         # A 128x128 image is fine; only assert dimension logic via a cap that
         # Is provably below the fixture dimensions
-        import evaluation_engine as ee
+        # Patch the metrics module directly — the package re-export is by-value
+        import services.evaluation.metrics as eval_metrics
 
-        saved_pixels = ee.MAX_MASK_IMAGE_PIXELS
-        saved_dim = ee.MAX_MASK_IMAGE_DIM
+        saved_pixels = eval_metrics.MAX_MASK_IMAGE_PIXELS
+        saved_dim = eval_metrics.MAX_MASK_IMAGE_DIM
         try:
-            ee.MAX_MASK_IMAGE_PIXELS = 100  # Below 128*128
+            eval_metrics.MAX_MASK_IMAGE_PIXELS = 100  # Below 128*128
             assert decode_mask_bytes(oversized).size == 0
-            ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
-            ee.MAX_MASK_IMAGE_DIM = 16  # Below 128
+            eval_metrics.MAX_MASK_IMAGE_PIXELS = saved_pixels
+            eval_metrics.MAX_MASK_IMAGE_DIM = 16  # Below 128
             assert decode_mask_bytes(oversized).size == 0
         finally:
-            ee.MAX_MASK_IMAGE_PIXELS = saved_pixels
-            ee.MAX_MASK_IMAGE_DIM = saved_dim
+            eval_metrics.MAX_MASK_IMAGE_PIXELS = saved_pixels
+            eval_metrics.MAX_MASK_IMAGE_DIM = saved_dim
         # Normal decode still works under default caps
         restored = decode_mask_bytes(oversized)
         assert restored.size == 128 * 128
@@ -1046,7 +1047,7 @@ class TestMetricsCalculationEdgeCases:
         assert "contains no prediction columns" in str(exc_info.value)
 
     def test_metrics_empty_nlp_inputs(self):
-        from evaluation_engine import compute_rouge, compute_ter
+        from services.evaluation import compute_rouge, compute_ter
 
         assert compute_rouge("", "") == 0.0
         assert compute_rouge("hello", "") == 0.0

@@ -113,15 +113,14 @@ flowchart TD
 lavbench/
 ├── backend/
 │   ├── app.py                   # Flask application factory
-│   ├── evaluation_engine.py     # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
 │   ├── config/                  # Config class (__init__), logging setup, pytest fixtures
 │   ├── models/                  # SQLAlchemy models (User, Challenge, Stage, Task, Submission)
 │   ├── routes/                  # Flask blueprints (admin, auth, challenges, tasks, leaderboard, etc.)
 │   ├── scripts/                 # Maintenance scripts (setup-admin.py, check_error_codes.py, check_comments.py)
-│   ├── services/                # Business logic
+│   ├── services/                # Business logic (challenge_service, submission_service, evaluation/, etc.)
 │   ├── tasks/                   # Celery app (__init__) + task_modules/ (runner, image builder, templates)
 │   ├── tests/                   # Backend Pytest test suite (1282 tests)
-│   └── utils/                   # Helpers (auth_utils, error_utils, worker_utils, sse_utils, cache_utils, wsgi, ...)
+│   └── utils/                   # Helpers (auth_utils, error_utils, worker_utils, sse_utils, cache_utils, wsgi, spec, ...)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/          # React components (admin, challenge, leaderboard, submissions, ui)

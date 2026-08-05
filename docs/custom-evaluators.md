@@ -77,7 +77,7 @@ def evaluate(df_sub, df_labels, options=None):
 ### Key Rules & Conventions:
 - **Directionality**: All returned metric scores are treated as **higher-is-better** by the leaderboard engine.
 - **AST Validation on Upload**: The server executes static AST validation (`backend/routes/tasks.py`) when an evaluator is uploaded or modified. If `METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate` signature are missing or malformed, the upload returns **HTTP 400 Bad Request** with a detailed error description.
-- **Runtime Options Overrides**: When evaluation runs (`backend/evaluation_engine.py`), runtime options defined in the task's `metrics_config[m_name].get("options", {})` or `evaluator_options_schema` override default keys in `EVALUATOR_OPTIONS`.
+- **Runtime Options Overrides**: When evaluation runs (`backend/services/evaluation/engine.py`), runtime options defined in the task's `metrics_config[m_name].get("options", {})` or `evaluator_options_schema` override default keys in `EVALUATOR_OPTIONS`.
 
 ---
 

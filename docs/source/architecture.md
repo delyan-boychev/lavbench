@@ -145,7 +145,7 @@ successful commit.
 
 ## 6. Evaluation Engine Architecture
 
-`evaluation_engine.py` supports 44 standard evaluation metrics across 12 problem categories, alongside custom evaluation scripts (`evaluator.py`).
+`services/evaluation/` supports 44 standard evaluation metrics across 12 problem categories, alongside custom evaluation scripts (`evaluator.py`).
 
 | # | Category | Metric Keys | Primary Use |
 | :--- | :--- | :--- | :--- |

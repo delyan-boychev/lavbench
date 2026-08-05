@@ -21,10 +21,10 @@ from schemas.responses import (
     LogoutResponse,
     UserResponse,
 )
-from spec import api
 from utils import client_ip
 from utils.auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
 from utils.error_utils import err
+from utils.spec import api
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)

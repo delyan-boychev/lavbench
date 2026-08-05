@@ -7,6 +7,8 @@ from typing import Any
 from spectree import SpecTree
 from spectree.models import InType, SecureType, SecurityScheme, SecuritySchemeData
 
+from schemas.responses.common import ErrorResponse
+
 
 def _validation_before_handler(
     req: Any, resp: Any, req_validation_error: Any, instance: Any
@@ -25,6 +27,11 @@ api = SpecTree(
     version="1.0",
     description="Machine Learning Competition Platform — REST + SSE Endpoints",
     openapi_version="3.0.3",
+    # Most route handlers declare HTTP_422=ErrorResponse explicitly, but every
+    # Route without such a declaration would otherwise get spectree's default
+    # ValidationError schema (a pydantic ctx/loc/msg/type array) that the API
+    # Never returns — the before-handler reformats all errors to {code, error}
+    validation_error_model=ErrorResponse,
     security_schemes=[
         SecurityScheme(
             name="cookieAuth",

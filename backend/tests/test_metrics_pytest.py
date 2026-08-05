@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from evaluation_engine import (
+from services.evaluation import (
     calculate_box_iou,
     calculate_lcs,
     compute_audio_snr,

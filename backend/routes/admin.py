@@ -17,7 +17,7 @@ import time
 import zipfile
 from collections.abc import Generator
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
@@ -26,7 +26,6 @@ from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
 from config import Config
-from evaluation_engine import AVAILABLE_METRICS
 from models import (
     AuditLog,
     Challenge,
@@ -39,7 +38,12 @@ from models import (
     generate_pseudonym,
     to_base36,
 )
-from schemas.admin import CreateUserSchema, RegisterCompetitorSchema, UpdateUserSchema
+from schemas.admin import (
+    CreateUserSchema,
+    ImportCompetitorsForm,
+    RegisterCompetitorSchema,
+    UpdateUserSchema,
+)
 from schemas.responses import (
     AuditLinkListResponse,
     AvailableMetricsResponse,
@@ -59,8 +63,8 @@ from schemas.responses import (
     WorkerStatsResponse,
 )
 from services.challenge_service import generate_scores_csv
+from services.evaluation import AVAILABLE_METRICS
 from services.file_validation import validate_csv_content, validate_extension
-from spec import api
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, rate_limit, role_required
 from utils.cache_helpers import cached_or_compute_unless_testing
@@ -75,6 +79,7 @@ from utils.dates import utcnow
 from utils.error_utils import err
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
+from utils.spec import api
 from utils.sse import sse_response
 from utils.sse_utils import (
     CHANNEL_BACKUPS,
@@ -525,12 +530,26 @@ def register_user(
 @role_required(["admin", "jury"])
 @rate_limit(max_requests=10, window_seconds=60)
 @api.validate(
+    form=ImportCompetitorsForm,
     tags=["Admin"],
     security=[{"cookieAuth": []}],
     resp=Response(HTTP_201=ImportCompetitorsResponse, HTTP_422=ErrorResponse),
 )
-def import_competitors_csv() -> tuple[ImportCompetitorsResponse, int] | tuple[FlaskResponse, int]:
-    challenge_id = request.form.get("challenge_id") or request.args.get("challenge_id")
+def import_competitors_csv(
+    form: ImportCompetitorsForm,
+) -> tuple[ImportCompetitorsResponse, int] | tuple[FlaskResponse, int]:
+    """Bulk import competitors from a CSV file.
+
+    Multipart form fields: ``file`` (CSV, required — validated manually for
+    extension, size, and content) and ``challenge_id`` (optional — also
+    accepted as a query parameter). spectree passes ``form=None`` for
+    bodiless requests while the annotation still has to be the model (it
+    drives the OpenAPI schema), hence the runtime guard below.
+    """
+    form_opt = cast(ImportCompetitorsForm | None, form)
+    challenge_id = (form_opt.challenge_id if form_opt is not None else None) or request.args.get(
+        "challenge_id"
+    )
     if not challenge_id:
         return err(
             "ERR_CHALLENGE_ID_REQUIRED",

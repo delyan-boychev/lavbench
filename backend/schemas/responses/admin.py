@@ -97,9 +97,16 @@ class ResetPasswordResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
+class ResetAccountItem(BaseModel):
+    username: str
+    password: str
+
+    model_config = RESPONSE_CONFIG
+
+
 class BulkResetPasswordResponse(BaseModel):
     message: str
-    reset_accounts: list[dict[str, Any]]
+    reset_accounts: list[ResetAccountItem]
 
     model_config = RESPONSE_CONFIG
 

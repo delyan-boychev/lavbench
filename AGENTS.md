@@ -38,7 +38,6 @@ lavbench/
 ├── scripts/                           # Deployment & setup scripts
 ├── backend/
 │   ├── app.py                         # Flask factory, blueprint registration, error handlers
-│   ├── evaluation_engine.py           # Parquet-based evaluation
 │   ├── config/                        # Config (__init__), logging (log_config), pytest fixtures (conftest)
 │   ├── models/                        # SQLAlchemy models (challenge, task, submission, user, stage...)
 │   ├── schemas/                       # Pydantic v2 validation schemas
@@ -49,9 +48,10 @@ lavbench/
 │   │   └── admin.py, auth.py, challenge.py, task.py, submission.py, leaderboard.py, stage.py
 │   ├── routes/                        # Flask blueprints
 │   ├── services/                      # Business logic
+│   │   └── evaluation/                # Parquet evaluation engine (metrics, validation, engine)
 │   ├── tasks/                         # Celery app (__init__) + beat schedule
 │   │   └── task_modules/              # Submission runner, image builder, system
-│   ├── utils/                         # Helpers (error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi...)
+│   ├── utils/                         # Helpers (error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, spec...)
 │   ├── scripts/                       # Lint & maintenance (check_error_codes.py, check_comments.py, setup-admin.py)
 │   └── tests/                         # pytest (config/conftest.py: client, auth, model fixtures)
 ├── frontend/
@@ -88,6 +88,8 @@ The backend is packaged: **no top-level `*_utils.py`, `config.py`, or `task_modu
 | SSE pub/sub | `backend/utils/sse_utils.py` | `from utils.sse_utils import publish_submission_log_batch` |
 | Redis cache / locks | `backend/utils/cache_utils.py` | `from utils.cache_utils import ...` |
 | WSGI entrypoint | `backend/utils/wsgi.py` | gunicorn target `utils.wsgi:app` |
+| OpenAPI spec (spectree) | `backend/utils/spec.py` | `from utils.spec import api` |
+| Evaluation engine | `backend/services/evaluation/` | `from services.evaluation import evaluate_predictions` |
 | Admin bootstrap | `backend/scripts/setup-admin.py` | `python scripts/setup-admin.py` (or `/app/scripts/setup-admin.py` in Docker) |
 
 `backend/utils/` also holds small helpers: `access.py`, `audit.py`, `cache.py`, `cache_helpers.py`, `client_ip.py`, `competitor.py`, `dates.py`, `files.py`, `ipynb.py`, `json_utils.py`, `metadata.py`, `pagination.py`, `request_helpers.py`, `sse.py`, `streaming.py`, `version.py`.
@@ -107,11 +109,13 @@ Never reintroduce these (they broke the packaging twice):
 - ❌ test patch targets like `patch("worker_utils.…")` / `patch("sse_utils.…")` → ✅ `patch("utils.worker_utils.…")`, `patch("utils.sse_utils.…")`
 - ❌ `import worker_utils as wu` → ✅ `import utils.worker_utils as wu`
 - ❌ old paths in CI/Docker: `/app/setup-admin.py`, `wsgi:app` → `/app/scripts/setup-admin.py`, `utils.wsgi:app`
+- ❌ `backend/evaluation_engine.py` / `from evaluation_engine import ...` → ✅ `backend/services/evaluation/` / `from services.evaluation import ...`
+- ❌ `backend/spec.py` / `from spec import api` → ✅ `backend/utils/spec.py` / `from utils.spec import api`
 
 **Straggler sweep** before committing backend changes:
 
 ```bash
-cd backend && rg -n "from (error_utils|worker_utils|sse_utils|cache_utils|log_config|version) import|patch\(\"(error_utils|worker_utils|sse_utils|cache_utils|log_config|version)\." --glob '*.py' .
+cd backend && rg -n "from (error_utils|worker_utils|sse_utils|cache_utils|log_config|version|spec|evaluation_engine) import|import evaluation_engine\b|patch\(\"(error_utils|worker_utils|sse_utils|cache_utils|log_config|version)\." --glob '*.py' .
 ```
 
 ### No migrations policy

@@ -57,8 +57,6 @@ celery -A tasks.celery beat --loglevel=info
 ```text
 backend/
 ├── app.py                      # Flask factory, blueprint registration, error handlers
-├── evaluation_engine.py        # Parquet evaluation engine (44 metrics across 12 categories + custom evaluators)
-├── spec.py                     # Spectree OpenAPI spec instance & Swagger config
 ├── config/                     # Config class (__init__), logging setup (log_config), pytest fixtures (conftest)
 ├── models/                     # SQLAlchemy models (User, Challenge, Stage, Task, Submission, AuditLog)
 ├── routes/                     # Flask blueprints (admin, auth, challenges, tasks, submissions, leaderboard, etc.)
@@ -67,10 +65,11 @@ backend/
 │   ├── exceptions.py           # SchemaError(code, message) base exception class
 │   └── responses/              # Pydantic response schemas (10 domain modules)
 ├── scripts/                    # Maintenance & CI scripts (setup-admin.py, check_error_codes.py, check_comments.py)
-├── services/                   # Core business logic (challenge_service, submission_service, etc.)
+├── services/                   # Core business logic (challenge_service, submission_service, evaluation/, etc.)
+│   └── evaluation/             # Parquet evaluation engine (metrics, validation, engine — 44 metrics, custom evaluators)
 ├── tasks/                      # Celery app (__init__.py) + task_modules/ (runner, image builder, system, templates)
 ├── tests/                      # pytest test suite (1282 tests)
-└── utils/                      # Helpers — error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, ...
+└── utils/                      # Helpers — error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, spec, ...
 ```
 
 ---

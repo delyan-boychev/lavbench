@@ -37,8 +37,8 @@ from config import Config  # noqa: E402
 from config.log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
 from schemas.responses import HealthResponse  # noqa: E402
-from spec import api  # noqa: E402
 from utils.error_utils import err  # noqa: E402
+from utils.spec import api  # noqa: E402
 from utils.version import __version__  # noqa: E402
 
 
