@@ -15,11 +15,19 @@ exported as GEMINI_API_KEY for the API call.
 
 Only changed sources are translated: git compares the working-tree EN
 file against the EN version at the last commit that touched the BG
-output, so untouched files are skipped (no state file needed).
+output, so untouched files are skipped (no state file needed). Use
+--force to translate everything regardless.
+
+When an existing Bulgarian translation is present (per-key for locales,
+whole document for markdown), it is sent to the model as context along
+with the English source: already-correct and terminology-consistent
+translations are REUSED instead of re-generated, so re-translating after
+an English edit no longer causes drift across keys/files.
 
 Usage:
   python3 scripts/translate_gemini.py                # frontend + guides + docs README
   python3 scripts/translate_gemini.py --docs         # + docs/source
+  python3 scripts/translate_gemini.py --force        # re-translate everything (skip git change detection)
   python3 scripts/translate_gemini.py --only readme  # just the docs README
   python3 scripts/translate_gemini.py --dry-run      # preview only
   python3 scripts/translate_gemini.py --model gemini-3.6-flash
@@ -219,22 +227,48 @@ def flatten(d: dict, prefix: str = "", out: dict | None = None) -> dict[str, str
 
 
 def translate_flat_batch(
-    key: str, batch: dict[str, str], dry_run: bool
+    key: str,
+    batch: dict[str, str],
+    dry_run: bool,
+    prev_bg: dict[str, str] | None = None,
 ) -> dict[str, str] | None:
-    """Translate one flat batch {dot.path: value}; returns None on failure."""
+    """Translate one flat batch {dot.path: value}; returns None on failure.
+
+    When *prev_bg* carries the existing Bulgarian values, they are sent to the
+    model as per-key context so already-correct translations are reused rather
+    than re-generated from scratch (which caused drift across re-runs). The
+    model always replies with a flat {dot.path: "bulgarian"} object.
+    """
     if dry_run:
         return {p: f"[BG] {v}" for p, v in batch.items()}
-    src = json.dumps(batch, ensure_ascii=False, indent=1)
+    prev_bg = prev_bg or {}
+    payload: dict[str, dict[str, str]] = {}
+    for p, v in batch.items():
+        entry = {"en": v}
+        if p in prev_bg:
+            entry["bg"] = prev_bg[p]
+        payload[p] = entry
+    src = json.dumps(payload, ensure_ascii=False, indent=1)
     prompt = (
         "Translate the following JSON object of UI/message strings from English "
         "to Bulgarian.\n"
+        "Each entry has two fields: 'en' (the English source) and 'bg' (the "
+        "existing Bulgarian translation, or the marker \u00abno previous "
+        "translation\u00bb for new keys).\n"
         "Rules:\n"
-        "- Return ONLY the translated JSON object, no markdown fences, no comments.\n"
+        "- Return ONLY a flat JSON object of the form "
+        '{"dot.path": "bulgarian"} with the exact same keys — no markdown '
+        "fences, no comments, no nested objects.\n"
         "- Keep the exact same keys (dot notation); do not add, remove or reorder keys.\n"
         "- Keep placeholders ({{name}}, {count}, %s, $1) and HTML/JSX untouched.\n"
         "- Keep proper nouns/technical terms as-is (Hugging Face, parquet, LavBench, GPU...).\n"
-        "- Use natural, idiomatic, professional Bulgarian.\n\n"
-        f"JSON:\n{src}"
+        "- Use natural, idiomatic, professional Bulgarian.\n"
+        "- CONSISTENCY: when an entry has an existing 'bg' value, REUSE it "
+        "verbatim when it is already correct and idiomatic. Only revise it if "
+        "the English text changed, the existing translation is inaccurate or "
+        "unnatural, or it conflicts with the terminology in CONTEXT. The same "
+        "English term must map to the same Bulgarian term in every key.\n"
+        "JSON:\n" + src
     )
     text = gemini_call(
         os.environ["GEMINI_API_KEY"], key, prompt, system=SYSTEM_LOCALES
@@ -257,12 +291,12 @@ def translate_flat_batch(
     if not isinstance(translated, dict) or set(translated) != set(batch):
         print(f"  !! {key}: key mismatch ({len(batch)} in, {len(translated)} out) — keeping originals")
         return None
-    return {p: (v if isinstance(v, str) else str(v)) for p, v in translated.items()}
+    return {p: (v if isinstance(v, str) else batch[p]) for p, v in translated.items()}
 
 
-def translate_locales(model: str, dry_run: bool) -> None:
+def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
     print("== frontend/public/locales ==")
-    if not source_changed_since_last_translation(LOCALES_EN, LOCALES_BG):
+    if not force and not source_changed_since_last_translation(LOCALES_EN, LOCALES_BG):
         print(f"  {LOCALES_EN.relative_to(ROOT)}: unchanged since last translation — skip")
         return
     en = json.loads(LOCALES_EN.read_text(encoding="utf-8"))
@@ -277,11 +311,14 @@ def translate_locales(model: str, dry_run: bool) -> None:
     size = 0
     for path in paths:
         val = flat_en[path]
-        if size + len(val) > MAX_BATCH_CHARS and current:
+        # Count the en+bg payload so batches stay under the model's context cap
+        # once the existing Bulgarian reuse context is included.
+        cost = len(val) + len(flat_bg.get(path, ""))
+        if size + cost > MAX_BATCH_CHARS and current:
             batches.append(current)
             current, size = {}, 0
         current[path] = val
-        size += len(val)
+        size += cost
     if current:
         batches.append(current)
 
@@ -289,7 +326,7 @@ def translate_locales(model: str, dry_run: bool) -> None:
     ok = 0
     for i, batch in enumerate(batches, 1):
         print(f"  batch {i}/{len(batches)} ({len(batch)} keys)")
-        result = translate_flat_batch(model, batch, dry_run)
+        result = translate_flat_batch(model, batch, dry_run, prev_bg=new_bg)
         if result is not None:
             new_bg.update(result)
             ok += len(result)
@@ -328,8 +365,16 @@ MD_PROMPT = (
     "  and the exact same section structure — nothing may be omitted or added.\n"
     "- Do NOT translate code blocks, inline code, URLs, file paths or YAML front matter.\n"
     "- Keep the same line structure where possible.\n"
-    "- Use natural, idiomatic, professional Bulgarian.\n\n"
+    "- Use natural, idiomatic, professional Bulgarian.\n"
+    "- CONSISTENCY: treat the EXISTING BULGARIAN TRANSLATION below as a reference "
+    "for terminology and style. Reuse its wording verbatim wherever the English "
+    "source is unchanged. Revise only what changed in the English DOCUMENT above "
+    "or any part that is inaccurate, unnatural, or conflicts with the terminology "
+    "in CONTEXT. The same English term must map to the same Bulgarian term "
+    "everywhere in the document.\n\n"
     "ROLE CONTEXT:\n{role}\n\n"
+    "EXISTING BULGARIAN TRANSLATION (reference for consistency — update only "
+    "changed or inconsistent sections):\n{previous}\n\n"
     "DOCUMENT:\n{text}"
 )
 
@@ -368,7 +413,11 @@ def _relink_anchors(src: str, translated: str) -> str:
 
 
 def translate_markdown(
-    model: str, text: str, dry_run: bool, filename: str | None = None
+    model: str,
+    text: str,
+    dry_run: bool,
+    filename: str | None = None,
+    previous_bg: str | None = None,
 ) -> str:
     if dry_run:
         return f"[DRY-RUN — would translate this file]\n\n{text}"
@@ -378,7 +427,10 @@ def translate_markdown(
             "This document is platform documentation for LavBench, an ML "
             "competition platform. Write clearly and professionally."
         )
-    prompt = MD_PROMPT.format(role=role, text=text[:90000])
+    previous = previous_bg or "\u00abno previous translation — new document\u00bb"
+    prompt = MD_PROMPT.format(
+        role=role, previous=previous[:90000], text=text[:90000]
+    )
     translated = _strip_fences(
         gemini_call(os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_GUIDES)
     )
@@ -386,7 +438,12 @@ def translate_markdown(
 
 
 def translate_dir(
-    model: str, src_dir: Path, dst_dir: Path, dry_run: bool, names: list[str] | None = None
+    model: str,
+    src_dir: Path,
+    dst_dir: Path,
+    dry_run: bool,
+    names: list[str] | None = None,
+    force: bool = False,
 ) -> None:
     src_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(src_dir.glob("*.md"))
@@ -419,12 +476,15 @@ def translate_dir(
                 out.symlink_to(os.path.relpath(bg_target, out.parent))
             print(f"  {f.name}: symlinked -> {bg_target.relative_to(ROOT)}")
             continue
-        if not source_changed_since_last_translation(f, out):
+        if not force and not source_changed_since_last_translation(f, out):
             print(f"  {f.relative_to(ROOT)}: unchanged since last translation — skip")
             continue
         print(f"  {f.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
         content = f.read_text(encoding="utf-8")
-        translated = translate_markdown(model, content, dry_run, filename=f.name)
+        previous_bg = out.read_text(encoding="utf-8") if out.exists() else None
+        translated = translate_markdown(
+            model, content, dry_run, filename=f.name, previous_bg=previous_bg
+        )
         if not dry_run:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(translated + "\n", encoding="utf-8")
@@ -436,6 +496,11 @@ def main() -> None:
     parser.add_argument("--docs", action="store_true", help="also translate docs/source/*.md")
     parser.add_argument("--dry-run", action="store_true", help="preview only, don't write files")
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="translate everything, bypassing git change detection",
+    )
+    parser.add_argument(
         "--only", choices=["locales", "guides", "docs", "readme"], help="translate only this target"
     )
     parser.add_argument("--model", default="gemini-3.6-flash", help="Gemini model id")
@@ -443,28 +508,35 @@ def main() -> None:
     args = parser.parse_args()
 
     load_api_key(Path(args.key_file))
-    print(f"model: {args.model}  dry-run: {args.dry_run}")
+    print(f"model: {args.model}  dry-run: {args.dry_run}  force: {args.force}")
 
     if not args.only or args.only == "locales":
-        translate_locales(args.model, args.dry_run)
+        translate_locales(args.model, args.dry_run, force=args.force)
     if not args.only or args.only == "guides":
         print("== guides ==")
-        translate_dir(args.model, GUIDES_EN, GUIDES_BG, args.dry_run)
+        translate_dir(args.model, GUIDES_EN, GUIDES_BG, args.dry_run, force=args.force)
     if not args.only or args.only == "readme":
         print("== docs/README ==")
         out = README_BG
         if README_EN.exists():
-            if not source_changed_since_last_translation(README_EN, out):
+            if not args.force and not source_changed_since_last_translation(README_EN, out):
                 print(f"  {README_EN.relative_to(ROOT)}: unchanged since last translation — skip")
             else:
-                translated = translate_markdown(args.model, README_EN.read_text(encoding="utf-8"), args.dry_run, filename="README.md")
+                previous_bg = out.read_text(encoding="utf-8") if out.exists() else None
+                translated = translate_markdown(
+                    args.model,
+                    README_EN.read_text(encoding="utf-8"),
+                    args.dry_run,
+                    filename="README.md",
+                    previous_bg=previous_bg,
+                )
                 if not args.dry_run:
                     out.write_text(translated + "\n", encoding="utf-8")
                 print(f"  {README_EN.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
             time.sleep(SLEEP_BETWEEN_CALLS)
     if args.only == "docs" or (args.docs and not args.only):
         print("== docs ==")
-        translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run)
+        translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run, force=args.force)
 
 
 if __name__ == "__main__":

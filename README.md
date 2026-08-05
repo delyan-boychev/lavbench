@@ -184,6 +184,7 @@ cp .env.example .env
 | `WORKER_MEM_LIMIT` | Memory limit for the compose internal-worker container. | `1g` |
 | `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
 | `WORKER_GPU_IDS` | Comma-separated GPU device IDs available for round-robin pinning on eval workers (e.g. `0,1,3`). Unset → `count=-1` fallback. | unset |
+| `WORKER_ROLE` | Unified worker role. `server` = full API (default; requires `SECRET_KEY`/`DATABASE_URL`/`ENCRYPTION_KEY`); `scheduler` = Celery beat only (no app, no secrets); `internal` = app booted for system tasks (DB only, never evaluates); `eval` = remote evaluation worker (no DB, Ed25519 nonce auth, runs eval/image tasks only). | `server` |
 | `WORKER_SANDBOX_STORAGE_OPT` | `--storage-opt size` cap for submission sandboxes (best-effort; ignored on drivers without quota support, e.g. ext4/overlay2). | `8g` |
 | `MAX_WORKER_LOG_BYTES` | Worker remote-log file rotation threshold (bytes). | `10485760` (10 MB) |
 | `MAX_COLLECT_BUFFER_BYTES` | Max in-memory buffer while pulling sandbox output archives; larger archives are skipped. | `536870912` (512 MB) |
