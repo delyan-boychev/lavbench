@@ -182,7 +182,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
         LoginResponse(message="Logged in successfully.", user=user_data).model_dump_json()
     )
     resp.headers["Content-Type"] = "application/json"
-    set_auth_cookie(resp, user.id, user.role)
+    set_auth_cookie(resp, user.id, user.role, user.password_hash)
     return resp
 
 

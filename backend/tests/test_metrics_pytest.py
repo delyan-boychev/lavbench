@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services.evaluation import (
+    EvaluationError,
     calculate_box_iou,
     calculate_lcs,
     compute_audio_snr,
@@ -576,14 +577,16 @@ class TestEvaluatePredictionsEdgeCases:
     def test_empty_labels_df(self):
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [], "label": []})
-        result = evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0}})
-        assert result == {}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_ID_SET_MISMATCH"
 
     def test_submission_id_mismatch(self):
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [0, 1]})
         df_labels = pd.DataFrame({"id": [3, 4], "label": [0, 1]})
-        with pytest.raises(ValueError):
+        with pytest.raises(EvaluationError) as exc_info:
             evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_ID_SET_MISMATCH"
 
     def test_single_class_accuracy(self):
         df_sub = pd.DataFrame({"id": [1, 2, 3], "prediction": [0, 0, 0]})
@@ -600,7 +603,7 @@ class TestEvaluatePredictionsEdgeCases:
         assert isinstance(result["f1"], float)
 
     def test_custom_column(self):
-        df_sub = pd.DataFrame({"id": [1], "my_pred": [0.5]})
+        df_sub = pd.DataFrame({"id": [1], "my_label": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "my_label": [0.5]})
         result = evaluate_predictions(
             df_sub,
@@ -612,12 +615,13 @@ class TestEvaluatePredictionsEdgeCases:
     def test_custom_column_missing(self):
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "label": [0.5]})
-        result = evaluate_predictions(
-            df_sub,
-            df_labels,
-            {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}},
-        )
-        assert result["rmse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_sub,
+                df_labels,
+                {"rmse": {"weight": 1.0, "options": {"column": "nonexistent"}}},
+            )
+        assert exc_info.value.code == "EVALUATION_MISSING_METRIC_COLUMN"
 
     def test_balanced_accuracy(self):
         df_sub = pd.DataFrame({"id": [1, 2, 3, 4], "prediction": [0, 0, 0, 1]})
@@ -641,17 +645,18 @@ class TestEvaluatePredictionsEdgeCases:
         result = evaluate_predictions(df_sub, df_labels, {"exact_match": {"weight": 1.0}})
         assert result["exact_match"] == 0.5
 
-    def test_auc_roc_fallback_on_error(self):
+    def test_auc_roc_binary_scores(self):
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [0.5, 0.6]})
         df_labels = pd.DataFrame({"id": [1, 2], "label": [0, 1]})
         result = evaluate_predictions(df_sub, df_labels, {"auc_roc": {"weight": 1.0}})
         assert isinstance(result["auc_roc"], float)
 
-    def test_logloss_fallback(self):
+    def test_logloss_failure_is_rejected(self):
         df_sub = pd.DataFrame({"id": [1], "prediction": [0.5]})
         df_labels = pd.DataFrame({"id": [1], "label": [0]})
-        result = evaluate_predictions(df_sub, df_labels, {"logloss": {"weight": 1.0}})
-        assert result["logloss"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_sub, df_labels, {"logloss": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_retrieval_ndcg_k(self):
         df_true = pd.DataFrame(

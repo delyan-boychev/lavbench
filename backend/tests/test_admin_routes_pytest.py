@@ -35,9 +35,10 @@ class TestGetAvailableMetrics:
         assert "ssim" in data
         assert "psnr" in data
 
-    def test_requires_admin_role(self, client):
+    def test_requires_authentication(self, client):
         resp = client.get("/api/admin/metrics")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
+        assert resp.get_json()["code"] == "ERR_TOKEN_INVALID"
 
     def test_competitor_cannot_access(self, client, db_session, auth_headers):
         comp = User(username="comp1", password_hash="x", role="competitor", alias_id="C1")
@@ -280,7 +281,7 @@ class TestRegisterUser:
         assert resp.status_code == 400
         assert "already exists" in resp.get_json()["error"]
 
-    def test_unauthorized_access_returns_403(self, client):
+    def test_unauthorized_access_returns_401(self, client):
         resp = client.post(
             "/api/admin/register-user",
             json={
@@ -290,7 +291,8 @@ class TestRegisterUser:
                 "challenge_id": self.challenge.id,
             },
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
+        assert resp.get_json()["code"] == "ERR_TOKEN_INVALID"
 
     def test_random_password_generated_when_omitted(self, client):
         resp = client.post(

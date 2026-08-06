@@ -13,7 +13,7 @@ from datetime import timedelta
 
 import pytest
 
-from models import Challenge, Stage, Task, User
+from models import Challenge, JuryChallenge, Stage, Task, User
 from utils.dates import utcnow
 
 # ── Fixtures ──
@@ -573,6 +573,22 @@ class TestImportCompetitorsCsv:
         res = self._upload_csv(client, sample_future_challenge.id, jury_token)
         assert res.status_code == 201
         assert len(res.get_json()["competitors"]) == 2
+
+    def test_import_competitors_rejects_unassigned_jury(
+        self, client, db_session, sample_future_challenge, create_user
+    ):
+        jury = create_user(username="unassigned_jury_csv", role="jury")
+        JuryChallenge.query.filter_by(
+            jury_id=jury.id, challenge_id=sample_future_challenge.id
+        ).delete()
+        db_session.commit()
+        from utils.auth_utils import generate_token
+
+        jury_token = generate_token(jury.id, jury.role)
+        res = self._upload_csv(client, sample_future_challenge.id, jury_token)
+
+        assert res.status_code == 403
+        assert res.get_json()["code"] == "ERR_ACCESS_DENIED"
 
     def test_import_competitors_creates_users_in_db(
         self, client, tokens, sample_challenge, db_session

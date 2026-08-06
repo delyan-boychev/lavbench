@@ -17,6 +17,7 @@ import time
 import zipfile
 from collections.abc import Generator
 from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
 from flask import Blueprint, current_app, request
@@ -66,7 +67,13 @@ from services.challenge_service import generate_scores_csv
 from services.evaluation import AVAILABLE_METRICS
 from services.file_validation import validate_csv_content, validate_extension
 from utils.audit import log_audit
-from utils.auth_utils import jury_access_required, rate_limit, role_required
+from utils.auth_utils import (
+    jury_access_required,
+    jury_challenge_ids,
+    jury_has_challenge_access,
+    rate_limit,
+    role_required,
+)
 from utils.cache_helpers import cached_or_compute_unless_testing
 from utils.cache_utils import (
     get_coordination_client,
@@ -195,6 +202,11 @@ def register_competitor(
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
         return err("ERR_INVALID_CHALLENGE_ID", 400)
+
+    if request.user["role"] == "jury" and not jury_has_challenge_access(
+        request.user["user_id"], challenge_id
+    ):
+        return err("ERR_ACCESS_DENIED", 403)
 
     if challenge.is_started and request.user["role"] != "admin":
         return err("ERR_JURY_REGISTRATION_STARTED", 403)
@@ -561,6 +573,11 @@ def import_competitors_csv(
     if not challenge:
         return err("ERR_INVALID_CHALLENGE_ID", 400)
 
+    if request.user["role"] == "jury" and not jury_has_challenge_access(
+        request.user["user_id"], challenge_id
+    ):
+        return err("ERR_ACCESS_DENIED", 403)
+
     # Check if the competition has started
     if challenge.is_started and request.user["role"] != "admin":
         return err(
@@ -756,6 +773,19 @@ def import_competitors_csv(
 BACKUPS_DIR = Config.BACKUPS_DIR
 
 
+def _resolve_backup_path(filename: str) -> Path | None:
+    """Resolve an expected backup filename while containing symlinks and traversal."""
+    if Path(filename).name != filename or not filename.endswith(".tar.gz"):
+        return None
+    backup_root = Path(BACKUPS_DIR).resolve()
+    candidate = (backup_root / filename).resolve()
+    try:
+        candidate.relative_to(backup_root)
+    except ValueError:
+        return None
+    return candidate
+
+
 def _list_backup_files(directory: str) -> list[dict[str, Any]]:
     if not os.path.isdir(directory):
         return []
@@ -877,13 +907,13 @@ def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
 def download_backup_file(
     filename: str,
 ) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
-    safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
-    if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
+    safe_path = _resolve_backup_path(filename)
+    if safe_path is None:
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
         return err("ERR_NOT_FOUND", 404, message="Not found")
     # Stream from disk — backups can be multi-GB and must not be buffered in RAM
-    return stream_file_response(safe_path, "application/gzip", filename)
+    return stream_file_response(str(safe_path), "application/gzip", filename)
 
 
 @admin_bp.route("/backups/<path:filename>", methods=["DELETE"])
@@ -896,8 +926,8 @@ def download_backup_file(
 def delete_backup_file(filename: str) -> MessageResponse | tuple[FlaskResponse, int]:
     if filename.startswith("auto_"):
         return err("ERR_NO_AUTO_BACKUP_DELETE", 403)
-    safe_path = os.path.abspath(os.path.join(BACKUPS_DIR, filename))
-    if not safe_path.startswith(os.path.abspath(BACKUPS_DIR)):
+    safe_path = _resolve_backup_path(filename)
+    if safe_path is None:
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
         return err("ERR_NOT_FOUND", 404, message="Not found")
@@ -1830,6 +1860,9 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
         .outerjoin(User, Submission.user_id == User.id)
         .order_by(Submission.created_at.asc())
     )
+    if request.user["role"] == "jury":
+        assigned_ids = jury_challenge_ids(request.user["user_id"])
+        query = query.filter(Submission.challenge_id.in_(assigned_ids))
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
@@ -1860,15 +1893,17 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
     return paginated_response(items, pagination.total, pagination.page, pagination.pages)
 
 
-def _queue_snapshot() -> list[dict[str, Any]]:
+def _queue_snapshot(challenge_ids: set[Any] | None = None) -> list[dict[str, Any]]:
     """Return full unpaginated list of queued/running submissions."""
-    subs = (
+    query = (
         Submission.query.filter(Submission.status.in_(["queued", "running"]))
         .outerjoin(Task, Submission.task_id == Task.id)
         .outerjoin(User, Submission.user_id == User.id)
         .order_by(Submission.created_at.asc())
-        .all()
     )
+    if challenge_ids is not None:
+        query = query.filter(Submission.challenge_id.in_(challenge_ids))
+    subs = query.all()
     snapshot = []
     for sub in subs:
         task_title = sub.task.title if sub.task else None
@@ -1899,6 +1934,9 @@ def _queue_snapshot() -> list[dict[str, Any]]:
 )
 def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """SSE endpoint: stream real-time queue updates."""
+    accessible_challenge_ids = None
+    if request.user["role"] == "jury":
+        accessible_challenge_ids = jury_challenge_ids(request.user["user_id"])
 
     def event_generator():
         user_id = request.user["user_id"]
@@ -1912,7 +1950,8 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
                 return
 
             with current_app.app_context():
-                yield f"data: {json.dumps({'items': _queue_snapshot(), 'event': 'snapshot'})}\n\n"
+                snapshot = _queue_snapshot(accessible_challenge_ids)
+                yield f"data: {json.dumps({'items': snapshot, 'event': 'snapshot'})}\n\n"
 
             r = get_sse_client()
             pubsub = r.pubsub() if r else None
@@ -1933,7 +1972,7 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
                             with current_app.app_context():
                                 payload = json.dumps(
                                     {
-                                        "items": _queue_snapshot(),
+                                        "items": _queue_snapshot(accessible_challenge_ids),
                                         "event": "update",
                                     }
                                 )
@@ -1944,7 +1983,7 @@ def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskRes
                         with current_app.app_context():
                             payload = json.dumps(
                                 {
-                                    "items": _queue_snapshot(),
+                                    "items": _queue_snapshot(accessible_challenge_ids),
                                     "event": "update",
                                 }
                             )
