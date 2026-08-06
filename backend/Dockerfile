@@ -29,7 +29,7 @@ COPY --chown=nobody:nogroup . .
 # Pre-own the runtime dirs so reduced-capability containers (cap_drop: ALL)
 # that cannot chown at boot still have nobody-writable storage.
 RUN mkdir -p /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn \
-    && chown -R 65534:65534 /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn
+    && chown -R 65534:65534 /app /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
