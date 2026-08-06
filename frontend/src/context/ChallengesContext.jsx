@@ -3,8 +3,8 @@ import { useChallengesQuery } from '../hooks/useChallengesQuery';
 
 const ChallengesContext = createContext(null);
 
-export const ChallengesProvider = ({ children }) => {
-  const { data: challenges = [], isLoading } = useChallengesQuery();
+export const ChallengesProvider = ({ children, userId }) => {
+  const { data: challenges = [], isLoading } = useChallengesQuery(userId);
   const [selectedChallenge, setSelectedChallengeState] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
 

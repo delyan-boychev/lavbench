@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { useAuth } from '../../../AuthContext';
 import ProtectedLayout from '../ProtectedLayout';
 
@@ -54,6 +54,25 @@ describe('ProtectedLayout Component', () => {
     expect(navigateEl).toHaveAttribute('data-to', '/login');
     expect(navigateEl).toHaveAttribute('data-replace', 'true');
     expect(screen.queryByTestId('navbar')).not.toBeInTheDocument();
+  });
+
+  it('shows a retryable state for a transient auth check failure', () => {
+    const fetchUser = vi.fn();
+    useAuth.mockReturnValue({
+      currentUser: { id: 1, username: 'test', role: 'admin' },
+      authLoading: false,
+      authCheckError: true,
+      fetchUser,
+    });
+
+    render(<ProtectedLayout />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Authentication is temporarily unavailable. Please try again.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(fetchUser).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('router-navigate')).not.toBeInTheDocument();
   });
 
   it('renders navbar, competition bar, and outlet content when logged in', () => {

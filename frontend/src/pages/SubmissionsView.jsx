@@ -297,18 +297,19 @@ export default function SubmissionsView() {
       const bestPerTask = {};
       for (const task of tasks) {
         try {
-          const res = await api.fetch(`/api/tasks/${task.id}/submissions?page=1&per_page=100`);
+          const res = await api.fetch(
+            `/api/tasks/${task.id}/submissions?page=1&per_page=100&user_id=${selectedCompetitor.id}`,
+          );
           if (res.ok) {
             const data = await res.json();
             const items = data?.items || data || [];
-            const userSubs = items.filter((s) => s.user?.id === selectedCompetitor.id);
-            if (userSubs.length === 0) continue;
-            const final = userSubs.find((s) => s.is_final_selection);
+            if (items.length === 0) continue;
+            const final = items.find((s) => s.is_final_selection);
             if (final) {
               bestPerTask[task.id] = final;
               continue;
             }
-            const best = userSubs.reduce(
+            const best = items.reduce(
               (b, s) => (s.public_score != null && (!b || s.public_score > b.public_score) ? s : b),
               null,
             );

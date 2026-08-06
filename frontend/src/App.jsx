@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import LeaderboardView from './pages/LeaderboardView';
 import LeaderboardDemo from './pages/LeaderboardDemo';
+import { useAuth } from './AuthContext';
 
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
@@ -25,24 +26,28 @@ function LoadingFallback() {
 function ToastContainer() {
   const { toast } = useApp();
   if (!toast?.show) return null;
+  const isError = toast.type === 'rose' || toast.type === 'error';
 
   return (
     <div
-      className={`fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-white/10 p-4 rounded-lg shadow-2xl z-[200] transition-all duration-300 ${toast.type === 'rose' || toast.type === 'error' ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-indigo-600'}`}
+      role={isError ? 'alert' : 'status'}
+      aria-live={isError ? 'assertive' : 'polite'}
+      aria-atomic="true"
+      className={`fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-white/10 p-4 rounded-lg shadow-2xl z-[200] transition-all duration-300 ${isError ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-indigo-600'}`}
     >
-      <div
-        className={`h-2 w-2 rounded-full ${toast.type === 'rose' || toast.type === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`}
-      ></div>
+      <div className={`h-2 w-2 rounded-full ${isError ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
       <span className="text-sm font-semibold text-slate-100">{toast.message}</span>
     </div>
   );
 }
 
 export default function App() {
+  const { currentUser } = useAuth();
+
   return (
     <ThemeProvider>
       <NotificationsProvider>
-        <ChallengesProvider>
+        <ChallengesProvider userId={currentUser?.id}>
           <BrowserRouter>
             <ErrorBoundary>
               <Routes>

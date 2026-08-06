@@ -1,52 +1,64 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import api from './services/ApiService';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
+  const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
+  const [authCheckError, setAuthCheckError] = useState(false);
+
+  const clearSession = useCallback(() => {
+    setCurrentUser(null);
+    setAuthLoading(false);
+    setAuthCheckError(false);
+    queryClient.clear();
+  }, [queryClient]);
 
   const logout = useCallback(async () => {
+    clearSession();
     /** @type {Promise<{ ok: boolean, data: import('./types/api').paths['/api/auth/logout']['post']['responses']['200']['content']['application/json'] }>} */
     try {
       await api.post('/auth/logout');
     } catch {
       /* ignore network errors on logout */
     }
-    setCurrentUser(null);
-    setAuthLoading(false);
-  }, []);
+  }, [clearSession]);
 
   // Listen for global unauthorized events from ApiService
   useEffect(() => {
     const handleUnauthorized = () => {
-      logout();
+      clearSession();
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => {
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
-  }, [logout]);
+  }, [clearSession]);
 
   // Fetch current user details
   const fetchUser = useCallback(async () => {
     setAuthLoading(true);
+    setAuthCheckError(false);
     try {
-      /** @type {{ ok: boolean, data: import('./types/api').paths['/api/auth/me']['get']['responses']['200']['content']['application/json'] }} */
-      const { ok, data } = await api.get('/auth/me');
+      /** @type {{ ok: boolean, status: number, data: import('./types/api').paths['/api/auth/me']['get']['responses']['200']['content']['application/json'] }} */
+      const { ok, status, data } = await api.get('/auth/me');
       if (ok) {
         setCurrentUser(data.user);
+      } else if (status === 401) {
+        clearSession();
       } else {
-        setCurrentUser(null);
+        setAuthCheckError(true);
       }
     } catch {
-      setCurrentUser(null);
+      setAuthCheckError(true);
     } finally {
       setAuthLoading(false);
     }
-  }, []);
+  }, [clearSession]);
 
   const login = async (identifier, password) => {
     setAuthError('');
@@ -60,6 +72,7 @@ export const AuthProvider = ({ children }) => {
 
       if (ok) {
         setCurrentUser(data.user);
+        setAuthCheckError(false);
         await api.refreshCsrfToken();
         return { success: true };
       } else {
@@ -88,6 +101,7 @@ export const AuthProvider = ({ children }) => {
         currentUser,
         authLoading,
         authError,
+        authCheckError,
         login,
         logout,
         setAuthError,

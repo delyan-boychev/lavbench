@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -66,6 +66,7 @@ function ConfirmModal({ config }) {
 
 export const NotificationsProvider = ({ children }) => {
   const { t } = useTranslation();
+  const toastTimeoutRef = useRef(null);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [confirmConfig, setConfirmConfig] = useState({
     isOpen: false,
@@ -80,9 +81,24 @@ export const NotificationsProvider = ({ children }) => {
   });
 
   const showToast = useCallback((message, type = 'success') => {
+    if (toastTimeoutRef.current !== null) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+      toastTimeoutRef.current = null;
+    }, 4000);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (toastTimeoutRef.current !== null) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const confirm = useCallback(
     ({

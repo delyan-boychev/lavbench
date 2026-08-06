@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/ApiService';
 
-export function useChallengesQuery() {
+export function useChallengesQuery(userId) {
   return useQuery({
-    queryKey: ['challenges'],
+    queryKey: ['challenges', userId],
     queryFn: async () => {
       const res = await api.get('/challenges');
       if (!res.ok) throw new Error(res.data?.error || 'Failed to load challenges');
@@ -11,5 +11,6 @@ export function useChallengesQuery() {
     },
     staleTime: 30_000,
     retry: 1,
+    enabled: userId !== null && userId !== undefined,
   });
 }

@@ -63,6 +63,9 @@ function TestConsumer() {
       <button data-testid="toast-btn" onClick={() => app.showToast('Test message', 'error')}>
         Show Toast
       </button>
+      <button data-testid="toast-second-btn" onClick={() => app.showToast('Second message')}>
+        Show Second Toast
+      </button>
       <button
         data-testid="confirm-btn"
         onClick={async () => {
@@ -213,6 +216,25 @@ describe('AppContext', () => {
     expect(screen.getByTestId('toast-show').textContent).toBe('false');
     vi.useRealTimers();
     await act(async () => {});
+  });
+
+  it('keeps a newer toast visible for its full timeout', async () => {
+    vi.useFakeTimers();
+    mockGet.mockResolvedValue({ ok: true, data: emptyChallenges });
+    renderWithProvider();
+    await act(async () => {});
+
+    act(() => screen.getByTestId('toast-btn').click());
+    act(() => vi.advanceTimersByTime(3000));
+    act(() => screen.getByTestId('toast-second-btn').click());
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(screen.getByTestId('toast-show').textContent).toBe('true');
+    expect(screen.getByTestId('toast-message').textContent).toBe('Second message');
+
+    act(() => vi.advanceTimersByTime(3000));
+    expect(screen.getByTestId('toast-show').textContent).toBe('false');
+    vi.useRealTimers();
   });
 
   it('confirm returns a promise', async () => {

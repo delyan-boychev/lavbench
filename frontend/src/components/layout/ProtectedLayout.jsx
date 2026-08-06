@@ -7,7 +7,7 @@ import CompetitionBar from './CompetitionBar';
 
 export default function ProtectedLayout() {
   const { t } = useTranslation();
-  const { currentUser, authLoading } = useAuth();
+  const { currentUser, authLoading, authCheckError, fetchUser } = useAuth();
   const location = useLocation();
 
   if (authLoading) {
@@ -34,6 +34,43 @@ export default function ProtectedLayout() {
             }}
           />
           <p style={{ fontSize: '0.8rem' }}>{t('common.loading')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authCheckError) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          padding: 24,
+          background: 'var(--bg-base)',
+        }}
+      >
+        <div
+          role="alert"
+          style={{
+            maxWidth: 420,
+            padding: 24,
+            textAlign: 'center',
+            color: 'var(--text-muted)',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+          }}
+        >
+          <p style={{ marginBottom: 16 }}>{t('api.ERR_AUTH_UNAVAILABLE')}</p>
+          <button
+            type="button"
+            onClick={fetchUser}
+            className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg cursor-pointer transition-colors"
+          >
+            {t('common.retry')}
+          </button>
         </div>
       </div>
     );

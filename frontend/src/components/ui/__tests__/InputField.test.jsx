@@ -50,9 +50,17 @@ describe('InputField Component', () => {
     expect(input).toHaveAttribute('id', 'my-unique-id');
   });
 
-  it('generates fallback id from label when no id is provided', () => {
-    render(<InputField label="Fallback ID Input" value="" onChange={() => {}} />);
-    const input = screen.getByLabelText('Fallback ID Input');
-    expect(input).toHaveAttribute('id', 'fallback-id-input');
+  it('generates unique fallback ids when no id is provided', () => {
+    render(
+      <>
+        <InputField label="Repeated Label" value="" onChange={() => {}} />
+        <InputField label="Repeated Label" value="" onChange={() => {}} />
+      </>,
+    );
+    const [firstInput, secondInput] = screen.getAllByLabelText('Repeated Label');
+
+    expect(firstInput.id).toBeTruthy();
+    expect(secondInput.id).toBeTruthy();
+    expect(firstInput.id).not.toBe(secondInput.id);
   });
 });

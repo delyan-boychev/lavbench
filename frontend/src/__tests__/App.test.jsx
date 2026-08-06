@@ -84,7 +84,10 @@ describe('App', () => {
       toast: { show: true, message: 'Operation successful', type: 'success' },
     });
     renderWithProviders(<App />);
-    expect(screen.getByText('Operation successful')).toBeTruthy();
+    const toast = screen.getByRole('status');
+    expect(toast).toHaveTextContent('Operation successful');
+    expect(toast).toHaveAttribute('aria-live', 'polite');
+    expect(toast).toHaveAttribute('aria-atomic', 'true');
   });
 
   it('renders toast with error styling for rose type', () => {
@@ -92,7 +95,9 @@ describe('App', () => {
       toast: { show: true, message: 'Something went wrong', type: 'rose' },
     });
     renderWithProviders(<App />);
-    expect(screen.getByText('Something went wrong')).toBeTruthy();
+    const toast = screen.getByRole('alert');
+    expect(toast).toHaveTextContent('Something went wrong');
+    expect(toast).toHaveAttribute('aria-live', 'assertive');
   });
 
   it('renders toast with error styling for error type', () => {

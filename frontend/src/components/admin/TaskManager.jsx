@@ -59,7 +59,7 @@ export default function TaskManager({
               : ''
             : '',
           hf_api_key: '',
-          public_eval_percentage: editingTask.public_eval_percentage || 30,
+          public_eval_percentage: editingTask.public_eval_percentage ?? 30,
           max_submissions_per_period:
             editingTask.max_submissions_per_period !== null
               ? editingTask.max_submissions_per_period
