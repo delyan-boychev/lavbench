@@ -6,39 +6,93 @@
 #
 ast-serialize==0.6.0
     # via mypy
+boolean-py==5.0
+    # via license-expression
+cachecontrol[filecache]==0.14.4
+    # via
+    #   cachecontrol
+    #   pip-audit
+certifi==2026.5.20
+    # via
+    #   -c requirements.txt
+    #   requests
 cffi==2.0.0
     # via
     #   -c requirements.txt
     #   cryptography
+charset-normalizer==3.4.7
+    # via
+    #   -c requirements.txt
+    #   requests
 coverage[toml]==7.14.1
     # via pytest-cov
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   -c requirements.txt
     #   types-pyopenssl
     #   types-redis
+cyclonedx-python-lib==11.11.0
+    # via pip-audit
+defusedxml==0.7.1
+    # via
+    #   -c requirements.txt
+    #   py-serializable
 execnet==2.1.2
     # via pytest-xdist
 faker==40.23.0
     # via -r dev-requirements.in
+filelock==3.32.2
+    # via
+    #   -c requirements.txt
+    #   cachecontrol
+idna==3.18
+    # via
+    #   -c requirements.txt
+    #   requests
 iniconfig==2.3.0
     # via pytest
 librt==0.12.0
     # via mypy
+license-expression==30.4.4
+    # via cyclonedx-python-lib
+markdown-it-py==3.0.0
+    # via
+    #   -c requirements.txt
+    #   rich
+mdurl==0.1.2
+    # via
+    #   -c requirements.txt
+    #   markdown-it-py
+msgpack==1.2.1
+    # via cachecontrol
 mypy==2.1.0
     # via -r dev-requirements.in
 mypy-extensions==1.1.0
     # via mypy
+packageurl-python==0.17.6
+    # via cyclonedx-python-lib
 packaging==26.2
     # via
     #   -c requirements.txt
+    #   pip-audit
+    #   pip-requirements-parser
     #   pytest
 pathspec==1.1.1
     # via mypy
+pip-api==0.0.34
+    # via pip-audit
+pip-audit==2.10.1
+    # via -r dev-requirements.in
+pip-requirements-parser==32.0.1
+    # via pip-audit
+platformdirs==4.11.0
+    # via pip-audit
 pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
+py-serializable==2.1.0
+    # via cyclonedx-python-lib
 pycparser==2.23
     # via
     #   -c requirements.txt
@@ -47,6 +101,9 @@ pygments==2.20.0
     # via
     #   -c requirements.txt
     #   pytest
+    #   rich
+pyparsing==3.3.2
+    # via pip-requirements-parser
 pytest==9.1.0
     # via
     #   -r dev-requirements.in
@@ -62,6 +119,21 @@ pytest-timeout==2.4.0
     # via -r dev-requirements.in
 pytest-xdist==3.8.0
     # via -r dev-requirements.in
+requests==2.34.2
+    # via
+    #   -c requirements.txt
+    #   cachecontrol
+    #   pip-audit
+rich==15.0.0
+    # via
+    #   -c requirements.txt
+    #   pip-audit
+sortedcontainers==2.4.0
+    # via cyclonedx-python-lib
+tomli==2.4.1
+    # via pip-audit
+tomli-w==1.2.0
+    # via pip-audit
 types-cffi==2.0.0.20260518
     # via types-pyopenssl
 types-pyopenssl==24.1.0.20240722
@@ -77,8 +149,13 @@ types-setuptools==82.0.0.20260518
 typing-extensions==4.15.0
     # via
     #   -c requirements.txt
+    #   cyclonedx-python-lib
     #   mypy
 urllib3==2.7.0
     # via
     #   -c requirements.txt
+    #   requests
     #   types-requests
+
+# The following packages are considered to be unsafe in a requirements file:
+# pip
