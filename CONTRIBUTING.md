@@ -17,10 +17,10 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 2. **Run all tests**:
 
    ```bash
-   # Backend (pytest — 982 tests, requires micromamba env)
+   # Backend (requires the lavbench_backend micromamba env)
    cd backend && micromamba run -n lavbench_backend python -m pytest tests/ -v
 
-   # Frontend (vitest — 363 tests)
+   # Frontend (vitest)
    cd frontend && npm run test
    ```
 
@@ -78,6 +78,19 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 - Never use `@ts-ignore` or `@type {any}` — use specific type assertions or narrow types with `typeof` guards
 - Tests use vitest + happy-dom, co-located with components as `*.test.jsx`
 
+### Comments & Docstrings
+
+Comment style is enforced for Python by `backend/scripts/check_comments.py` (run it before pushing; the frontend has an advisory equivalent via `npm run lint:comments`):
+
+- Every Python module needs a **one-line summary docstring** as its first statement (`"""Describe the module."""`); skip only for empty `__init__.py` files
+- Function docstrings are optional one-liners (`"""Short summary."""`) — no argument lists unless they add value
+- Inline comments explain **why**, not what — `# ` + capitalized sentence, no trailing period
+- Section dividers use `# ── Title ──` (U+2500 `─`, at least 3 dashes per side). Forbidden styles: `# ===`, `# ---`, `# ═══`, box banners, or decorative `# **` blocks
+- Never leave commented-out code in the tree
+- Lint pragmas keep their codes: `# noqa: CODE` and `# type: ignore[code]`; a bare `# noqa` is forbidden
+- TODOs must be actionable: `# TODO: <imperative> ...` (e.g. `# TODO: add pagination to this endpoint`)
+- Security comments (e.g. about key derivation or sandbox flags) stay — they document intent
+
 ### Translations
 
 - Translation keys use dot-notation (e.g., `section.subsection.key`)
@@ -130,6 +143,9 @@ pre-commit install
 ```
 
 After that, `git commit` will run **Ruff format** and **Ruff check** (with safe fixes) for Python, and **Prettier** for JS/CSS/JSON automatically. If formatting or linting fails, the commit is blocked — run the format and fix commands (see step 3 above), stage the changes, and commit again.
+
+> [!NOTE]
+> With ruff v0.15.19 the pre-commit hook currently false-positives on test files (S101/S106 despite per-file-ignores). CI does not have this problem — you can bypass the local hook with `git commit --no-verify`; the checks below still run on push.
 
 The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` jobs) on every push and PR. The error code linter (`check_error_codes.py`) runs as part of `backend-lint`.
 

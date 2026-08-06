@@ -238,6 +238,3 @@ When two competitors achieve identical score values:
 | `AST Syntax Error / Parsing Error` | Selected notebook cells contain invalid Python syntax. | Verify notebook executes cleanly locally before uploading. |
 | `Submission quota exceeded` | Reached daily limit or hourly rate limit for task. | Wait for quota window reset before submitting additional notebooks. |
 
----
-
-
