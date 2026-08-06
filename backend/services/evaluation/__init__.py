@@ -1,6 +1,7 @@
 """Evaluation engine public API — metric computations, schema validation, and scoring."""
 
 from services.evaluation.engine import evaluate_predictions
+from services.evaluation.exceptions import EvaluationError
 from services.evaluation.metrics import (
     AVAILABLE_METRICS,
     MAX_MASK_IMAGE_DIM,
@@ -26,7 +27,10 @@ from services.evaluation.metrics import (
     compute_ter,
     decode_mask_bytes,
 )
+from services.evaluation.split import derive_task_split_key, split_evaluation_frames
 from services.evaluation.validation import (
+    read_parquet_bounded,
+    validate_evaluation_frames,
     validate_parquet_schema,
     validate_parquet_schema_columns,
 )
@@ -35,6 +39,7 @@ __all__ = [
     "AVAILABLE_METRICS",
     "MAX_MASK_IMAGE_DIM",
     "MAX_MASK_IMAGE_PIXELS",
+    "EvaluationError",
     "calculate_box_iou",
     "calculate_lcs",
     "compute_audio_snr",
@@ -55,7 +60,11 @@ __all__ = [
     "compute_ssim",
     "compute_ter",
     "decode_mask_bytes",
+    "derive_task_split_key",
     "evaluate_predictions",
+    "read_parquet_bounded",
+    "split_evaluation_frames",
+    "validate_evaluation_frames",
     "validate_parquet_schema",
     "validate_parquet_schema_columns",
 ]

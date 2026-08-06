@@ -1132,7 +1132,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all HuggingFace datasets used by active challenges for worker preloading. */
+        /** Reject the retired fleet-wide dataset and key enumeration contract. */
         get: operations["get__api_worker_active-datasets"];
         put?: never;
         post?: never;
@@ -1149,10 +1149,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all active task configurations for worker image pre-building. */
+        /** Reject the retired fleet-wide task enumeration contract. */
         get: operations["get__api_worker_active-tasks"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worker/capabilities/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bind a broker-delivered attempt to one registered worker and issue scopes. */
+        post: operations["post__api_worker_capabilities_{submission_id}"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8452,6 +8469,71 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_worker_capabilities_{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

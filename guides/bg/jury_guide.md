@@ -60,7 +60,7 @@
 Членовете на журито могат да регистрират групово цели групи от ученици/студенти или състезателни отбори чрез CSV файлове.
 
 #### Формат на заглавната част на CSV:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city
 ```
 
@@ -68,7 +68,7 @@ name,surname,middle_name,birth_date,grade,school,city
 Полетата `email` и `is_anonymous` могат да бъдат включени в заглавния ред на CSV файла.
 
 #### Примерно съдържание на CSV файл:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city,email,is_anonymous
 Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false

@@ -1,12 +1,13 @@
 """Tests for the auth routes."""
 
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from werkzeug.security import generate_password_hash
 
 from models import Challenge, User, db
-from utils.auth_utils import generate_token
+from utils.auth_utils import AuthenticationUnavailableError, generate_token
 from utils.dates import utcnow
 
 
@@ -190,5 +191,33 @@ class TestAuthMe:
     def test_me_user_not_found(self, client):
         token = generate_token(99999, "competitor")
         res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 404
-        assert res.get_json()["code"] == "ERR_USER_NOT_FOUND"
+        assert res.status_code == 401
+        assert res.get_json()["code"] == "ERR_TOKEN_INVALID"
+
+    def test_me_rejects_token_after_password_change(self, client):
+        self.user.password_hash = "replacement-password-hash"
+        db.session.commit()
+
+        res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {self.token}"})
+
+        assert res.status_code == 401
+        assert res.get_json()["code"] == "ERR_TOKEN_INVALID"
+
+    def test_me_rejects_token_after_user_deleted(self, client):
+        db.session.delete(self.user)
+        db.session.commit()
+
+        res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {self.token}"})
+
+        assert res.status_code == 401
+        assert res.get_json()["code"] == "ERR_TOKEN_INVALID"
+
+    def test_me_returns_service_unavailable_on_user_lookup_failure(self, client):
+        with patch(
+            "utils.auth_utils._fetch_current_user",
+            side_effect=AuthenticationUnavailableError,
+        ):
+            res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {self.token}"})
+
+        assert res.status_code == 503
+        assert res.get_json()["code"] == "ERR_AUTH_UNAVAILABLE"

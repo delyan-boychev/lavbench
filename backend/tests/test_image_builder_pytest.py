@@ -226,7 +226,7 @@ class TestBuildTaskImage:
         mock_report = mocker.patch.object(ib, "_report_build_error")
         assert ib._do_build(metadata, force_rebuild=True) is True
         mock_build.assert_called_once()
-        mock_report.assert_any_call(42, "", "", "")
+        mock_report.assert_any_call(42, "", "", None)
 
     def test_image_missing_triggers_build(self, mocker, _tmp_images_dir):
         metadata = _metadata()
@@ -310,10 +310,11 @@ class TestDoBuild:
         task_dir = _tmp_images_dir / "task_42"
         assert (task_dir / "Dockerfile").exists()
         assert (task_dir / "requirements.txt").exists()
-        assert (task_dir / "evaluator_script.py").exists()
+        assert not (task_dir / "evaluator_script.py").exists()
+        assert "evaluator_script.py" not in (task_dir / "Dockerfile").read_text()
         meta = json.loads((task_dir / "hf_meta.json").read_text())
         assert meta["hash"]
-        mock_report.assert_called_once_with(42, "", "", "")
+        mock_report.assert_called_once_with(42, "", "", None)
 
     def test_build_rc_failure_reports_error(self, mocker, _tmp_images_dir):
         mocker.patch.object(ib, "_image_exists", return_value=False)
@@ -336,7 +337,7 @@ class TestDoBuild:
         mocker.patch.object(ib, "_check_build_disk_space", return_value=False)
         mock_report = mocker.patch.object(ib, "_report_build_error")
         assert ib._do_build(_metadata()) is False
-        mock_report.assert_called_once_with(42, "Insufficient disk space for build", "", "")
+        mock_report.assert_called_once_with(42, "Insufficient disk space for build", "", None)
 
 
 class TestReportBuildError:
@@ -349,12 +350,23 @@ class TestReportBuildError:
 
     def test_posts_error_to_server(self, mocker):
         mock_post = mocker.patch("requests.post")
-        ib._report_build_error(42, "build exploded", "http://server:5000/", "tok123")
+        mocker.patch.object(
+            ib,
+            "worker_request_headers",
+            return_value={
+                "X-Worker-Token": "tok123",
+                "X-Worker-Capability": "scoped-capability",
+            },
+        )
+        ib._report_build_error(42, "build exploded", "http://server:5000/", {"task_id": 42})
         mock_post.assert_called_once()
         url, kwargs = mock_post.call_args[0][0], mock_post.call_args[1]
         assert url == "http://server:5000/api/worker/tasks/42/report-build-error"
         assert kwargs["json"] == {"error": "build exploded"}
-        assert kwargs["headers"] == {"X-Worker-Token": "tok123"}
+        assert kwargs["headers"] == {
+            "X-Worker-Token": "tok123",
+            "X-Worker-Capability": "scoped-capability",
+        }
         assert kwargs["timeout"] == 10
 
     def test_exception_is_swallowed(self, mocker):
@@ -407,73 +419,3 @@ class TestClearStaleBuildLocks:
         mock_r.scan_iter.side_effect = Exception("redis down")
         mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
         _clear_stale_build_locks()
-
-
-class TestRebuildListener:
-    def _mock_client(self, mocker, messages):
-        mock_r = mocker.MagicMock()
-        pubsub = mocker.MagicMock()
-        mock_r.pubsub.return_value = pubsub
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-
-        def get_message(**kwargs):
-            if messages:
-                return messages.pop(0)
-            raise RuntimeError("stop loop")
-
-        pubsub.get_message.side_effect = get_message
-        return pubsub
-
-    def test_processes_rebuild_message(self, mocker):
-        pubsub = self._mock_client(mocker, [{"type": "message", "data": b"task-42"}])
-        mock_resp = mocker.MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "tasks": [
-                {
-                    "id": "task-42",
-                    "base_docker_image": "python:3.10-slim",
-                    "pip_requirements": "numpy",
-                    "hf_datasets": "[]",
-                    "hf_models": "[]",
-                    "hf_api_key": "",
-                    "task_files": [],
-                    "custom_eval_code": "",
-                }
-            ]
-        }
-        mocker.patch("requests.get", return_value=mock_resp)
-        mock_build = mocker.patch.object(ib, "build_task_image")
-        ib._rebuild_listener_once("http://server:5000", "tok")
-        pubsub.subscribe.assert_called_once_with(ib.CHANNEL_TASK_REBUILD)
-        mock_build.assert_called_once()
-        assert mock_build.call_args[0][0]["task_id"] == "task-42"
-        pubsub.unsubscribe.assert_called_once()
-        pubsub.close.assert_called_once()
-
-    def test_message_for_unknown_task_is_ignored(self, mocker):
-        pubsub = self._mock_client(mocker, [{"type": "message", "data": b"task-99"}])
-        mock_resp = mocker.MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"tasks": [{"id": "task-42", "custom_eval_code": ""}]}
-        mocker.patch("requests.get", return_value=mock_resp)
-        mock_build = mocker.patch.object(ib, "build_task_image")
-        ib._rebuild_listener_once("http://server:5000", "tok")
-        mock_build.assert_not_called()
-        pubsub.unsubscribe.assert_called_once()
-
-    def test_no_redis_client_returns_early(self, mocker):
-        mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        mocker.patch.object(ib.time, "sleep")
-        ib._rebuild_listener_once("http://server:5000", "tok")
-
-    def test_crashes_are_retried_m_not_dying_permanently(self, mocker):
-        mocker.patch.object(
-            ib,
-            "_rebuild_listener_once",
-            side_effect=[Exception("boom"), Exception("boom")],
-        )
-        mocker.patch.object(ib.time, "sleep", side_effect=[None, KeyboardInterrupt])
-        with pytest.raises(KeyboardInterrupt):
-            ib._rebuild_listener("http://server:5000", "tok")
-        assert ib._rebuild_listener_once.call_count == 2

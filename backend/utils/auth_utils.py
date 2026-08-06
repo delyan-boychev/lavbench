@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import sys
@@ -102,8 +104,8 @@ def _extract_token() -> str | None:
     return token
 
 
-def set_auth_cookie(response: Response, user_id: str, role: str) -> str:
-    token = generate_token(user_id, role)
+def set_auth_cookie(response: Response, user_id: str, role: str, password_hash: str) -> str:
+    token = generate_token(user_id, role, password_hash=password_hash)
     response.set_cookie(
         AUTH_COOKIE_NAME,
         token,
@@ -135,8 +137,23 @@ def clear_auth_cookie(response: Response) -> None:
 SECRET_KEY = Config.SECRET_KEY
 
 
-def generate_token(user_id: str, role: str) -> str:
-    """Create a signed JWT with user id, role, and unique jti for revocation."""
+class AuthenticationUnavailableError(RuntimeError):
+    """Raised when current-user authentication cannot reach its source of truth."""
+
+
+def _authentication_fingerprint(password_hash: str) -> str:
+    """Bind a session to the user's current password without exposing its hash."""
+    return hmac.new(
+        SECRET_KEY.encode("utf-8"), password_hash.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def generate_token(user_id: str, role: str, password_hash: str | None = None) -> str:
+    """Create a signed JWT bound to the user's current password hash."""
+    if password_hash is None:
+        user = _fetch_current_user(str(user_id))
+        if user is not None:
+            password_hash = user.password_hash
     payload = {
         "sub": str(user_id),
         "role": role,
@@ -144,6 +161,8 @@ def generate_token(user_id: str, role: str) -> str:
         "exp": utcnow() + timedelta(days=1),  # Token valid for 24 hours
         "iat": utcnow(),
     }
+    if password_hash is not None:
+        payload["auth_fp"] = _authentication_fingerprint(password_hash)
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
@@ -175,21 +194,18 @@ def revoke_token(token: str) -> None:
         logger.warning("Revocation token parsing failed: %s", e)
 
 
-def _fetch_current_role(user_id: str) -> str | None:
+def _fetch_current_user(user_id: str) -> Any | None:
     try:
         from models import User, db
 
-        if db and db.session:
-            user = db.session.get(User, user_id)
-            if user:
-                return user.role  # type: ignore[no-any-return]
-    except Exception:
-        logger.warning("Failed to fetch current role for user_id=%s", user_id, exc_info=True)
-    return None
+        return db.session.get(User, user_id)
+    except Exception as exc:
+        logger.error("Failed to fetch current user for user_id=%s", user_id, exc_info=True)
+        raise AuthenticationUnavailableError from exc
 
 
 def verify_token(token: str | None) -> dict[str, Any] | None:
-    """Decode and verify a JWT. Checks revocation blacklist and DB role (live role sync)."""
+    """Decode a JWT and verify it against the current database user."""
     if not token:
         return None
     try:
@@ -201,10 +217,16 @@ def verify_token(token: str | None) -> dict[str, Any] | None:
         jti = payload.get("jti")
         if jti and _is_token_revoked(jti):
             return None
-        # Fetch current role from DB (handles mid-session promotions/demotions)
-        # Falls back to JWT role if DB is unavailable (e.g. test environments)
-        role = _fetch_current_role(user_id) or payload.get("role")
-        return {"user_id": user_id, "role": role}
+        user = _fetch_current_user(user_id)
+        if user is None or not user.password_hash:
+            return None
+        token_fingerprint = payload.get("auth_fp")
+        current_fingerprint = _authentication_fingerprint(user.password_hash)
+        if not isinstance(token_fingerprint, str) or not hmac.compare_digest(
+            token_fingerprint, current_fingerprint
+        ):
+            return None
+        return {"user_id": user_id, "role": user.role}
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
@@ -217,7 +239,10 @@ def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
         token = _extract_token()
-        user_data = verify_token(token)
+        try:
+            user_data = verify_token(token)
+        except AuthenticationUnavailableError:
+            return err("ERR_AUTH_UNAVAILABLE", 503)
         if not user_data:
             return err("ERR_TOKEN_INVALID", 401)
         request.user = user_data  # type: ignore[attr-defined]
@@ -235,8 +260,13 @@ def role_required(allowed_roles: list[str]) -> Callable[[Callable[..., Any]], Ca
         @wraps(f)
         def decorated(*args: Any, **kwargs: Any) -> Any:
             token = _extract_token()
-            user_data = verify_token(token)
-            if not user_data or user_data["role"] not in allowed_roles:
+            try:
+                user_data = verify_token(token)
+            except AuthenticationUnavailableError:
+                return err("ERR_AUTH_UNAVAILABLE", 503)
+            if not user_data:
+                return err("ERR_TOKEN_INVALID", 401)
+            if user_data["role"] not in allowed_roles:
                 return err(
                     "ERR_ROLE_REQUIRED",
                     403,
@@ -346,66 +376,6 @@ def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
     return decorated
 
 
-def check_worker_auth(token: str) -> dict[str, str] | None:
-    """Verify a worker request using Ed25519 asymmetric signature verification.
-
-    The worker signs a nonce with its private key.  The server verifies the
-    signature using the public key.  No shared secret, no JWT, no expiration
-    — the server never sees the private key.
-
-    Token format:  {nonce}.{base64_signature}
-    Nonce format:  {submission_id}:{unix_timestamp}
-
-    The timestamp must be within 300 seconds (5 min) of server time to
-    prevent replay attacks.
-
-    Returns a dict with the parsed nonce fields (``submission_id``, ``ts``)
-    when the token is valid, ``None`` otherwise. Callers with a submission or
-    task context MUST additionally verify the nonce ``submission_id`` is
-    bound to the target (replay protection).
-    """
-    import base64
-    import time
-
-    def _pad_b64(s: str) -> str:
-        return s + "=" * (-len(s) % 4)
-
-    pub_key_b64 = os.environ.get("WORKER_PUBLIC_KEY", "")
-    if not pub_key_b64:
-        logger.critical("WORKER_PUBLIC_KEY not set — all worker requests will be rejected")
-        return None
-    if not token:
-        return None
-
-    try:
-        nonce, sig_b64 = token.split(".", 1)
-    except ValueError:
-        return None
-
-    try:
-        from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-        pub_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(_pad_b64(pub_key_b64)))
-        pub_key.verify(base64.b64decode(_pad_b64(sig_b64)), nonce.encode())
-    except (InvalidSignature, ValueError, Exception) as e:
-        logger.warning("Worker auth failed: %s", e)
-        return None
-
-    # Replay protection: nonce must be within 5 minutes of server time
-    try:
-        submission_id, ts_str = nonce.rsplit(":", 1)
-        ts = int(ts_str)
-        delta = abs(time.time() - ts)
-        if delta > 300:
-            logger.warning("Worker token outside replay window: %ss old (limit 300s)", int(delta))
-            return None
-    except (ValueError, IndexError):
-        return None
-
-    return {"submission_id": submission_id, "ts": ts_str}
-
-
 def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: restricts jury members to only
     access endpoints of challenges they are assigned to.
@@ -417,7 +387,10 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
     def decorated(*args: Any, **kwargs: Any) -> Any:
         if not hasattr(request, "user") or not request.user:
             token = _extract_token()
-            user_data = verify_token(token)
+            try:
+                user_data = verify_token(token)
+            except AuthenticationUnavailableError:
+                return err("ERR_AUTH_UNAVAILABLE", 503)
             if not user_data:
                 return err("ERR_TOKEN_INVALID", 401)
             request.user = user_data  # type: ignore[attr-defined]
@@ -428,7 +401,7 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
         if user_role == "jury":
             challenge_id = kwargs.get("challenge_id")
 
-            from models import JuryChallenge, Stage, Submission, Task, User, db
+            from models import Stage, Submission, Task, User, db
 
             if not challenge_id:
                 if "task_id" in kwargs:
@@ -456,18 +429,31 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
             if not challenge_id:
                 return err("ERR_ACCESS_DENIED", 403)
 
-            assigned = (
-                db.session.query(JuryChallenge)
-                .filter_by(jury_id=user_id, challenge_id=challenge_id)
-                .first()
-            )
-
-            if not assigned:
+            if not jury_has_challenge_access(user_id, challenge_id):
                 return err("ERR_ACCESS_DENIED", 403)
 
         return f(*args, **kwargs)
 
     return decorated
+
+
+def jury_has_challenge_access(user_id: Any, challenge_id: Any) -> bool:
+    """Return whether a jury member is assigned to a challenge."""
+    if user_id is None or challenge_id is None:
+        return False
+
+    from models import JuryChallenge
+
+    assignment = JuryChallenge.query.filter_by(jury_id=user_id, challenge_id=challenge_id).first()
+    return assignment is not None
+
+
+def jury_challenge_ids(user_id: Any) -> set[Any]:
+    """Return all challenge IDs assigned to a jury member."""
+    from models import JuryChallenge
+
+    assignments = JuryChallenge.query.filter_by(jury_id=user_id).all()
+    return {assignment.challenge_id for assignment in assignments}
 
 
 def check_competitor_access(user: Any, challenge_id: Any) -> bool:

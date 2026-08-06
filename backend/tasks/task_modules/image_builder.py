@@ -25,7 +25,7 @@ from typing import Any
 
 from config import Config
 from utils.cache_utils import get_coordination_client
-from utils.sse_utils import CHANNEL_TASK_REBUILD
+from utils.worker_auth import worker_request_headers
 
 from .docker_utils import _get_client
 from .docker_utils import image_exists as _image_exists
@@ -47,10 +47,10 @@ def _report_build_error(
     task_id: str | None,
     error_msg: str,
     main_server_url: str | None = None,
-    worker_token: str | None = None,
+    worker_metadata: dict[str, Any] | None = None,
     problem_codes: list[str] | None = None,
 ) -> None:
-    if not task_id or not main_server_url or not worker_token:
+    if not task_id or not main_server_url or not worker_metadata:
         return
     try:
         import requests
@@ -61,15 +61,11 @@ def _report_build_error(
         requests.post(
             f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/report-build-error",
             json=payload,
-            headers={"X-Worker-Token": worker_token},
+            headers=worker_request_headers(worker_metadata, "report_build_error"),
             timeout=10,
         )
     except Exception:
         logger.debug("Failed to report build error for task %s", task_id)
-
-
-# Used to namespace Redis build locks per machine
-_WORKER_HOSTNAME = socket.gethostname()
 
 
 def _config_hash(
@@ -85,8 +81,8 @@ def _config_hash(
     """Stable hash of the task configuration for cache invalidation.
 
     Covers every *semantic* input to the image: base image, pip/apt packages,
-    HF dataset/model lists, task resource files (including labels.parquet),
-    the evaluator script, and HF-key presence. Runtime-only fields
+    HF dataset/model lists, task resource files, evaluator dependency changes,
+    and HF-key presence. Runtime-only fields
     (ram/time/gpu limits, metrics config, imports) deliberately do not
     participate — changing them must not trigger a rebuild.
     """
@@ -123,8 +119,8 @@ def _download_task_file_for_build(
     metadata: dict[str, Any],
 ) -> None:
     main_server_url = metadata.get("_main_server_url", "")
-    worker_token = metadata.get("_worker_token", "")
-    if not main_server_url or not worker_token:
+    worker_metadata = metadata.get("_worker_metadata", {})
+    if not main_server_url or not worker_metadata:
         raise RuntimeError(
             f"Cannot download task file '{filename}' for build: missing server URL or token"
         )
@@ -134,7 +130,7 @@ def _download_task_file_for_build(
         url = f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/files/{filename}"
         res = requests.get(
             url,
-            headers={"X-Worker-Token": worker_token},
+            headers=worker_request_headers(worker_metadata, "task_file"),
             timeout=Config.WORKER_DOWNLOAD_TIMEOUT,
         )
         if res.status_code != 200:
@@ -469,7 +465,7 @@ def _do_build(
             task_id,
             "Insufficient disk space for build",
             metadata.get("_main_server_url"),
-            metadata.get("_worker_token"),
+            metadata.get("_worker_metadata"),
         )
         return False
 
@@ -494,7 +490,7 @@ def _do_build(
             task_id,
             err_msg,
             metadata.get("_main_server_url"),
-            metadata.get("_worker_token"),
+            metadata.get("_worker_metadata"),
             problem_codes=["ERR_HF_DOWNLOAD_FAILED"],
         )
         return False
@@ -528,17 +524,14 @@ def _do_build(
             task_id,
             err_msg,
             metadata.get("_main_server_url"),
-            metadata.get("_worker_token"),
+            metadata.get("_worker_metadata"),
             problem_codes=["ERR_TASK_FILE_SYNC_FAILED"],
         )
         return False
 
-    # Write evaluator script into build context
-    if custom_eval_code:
-        eval_path = os.path.join(task_dir, "evaluator_script.py")
-        with open(eval_path, "w") as f:
-            f.write(custom_eval_code)
-        os.chmod(eval_path, 0o644)
+    # Evaluator source is injected only into the later trusted evaluator sandbox
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(os.path.join(task_dir, "evaluator_script.py"))
 
     req_path = os.path.join(task_dir, "requirements.txt")
     with open(req_path, "w") as f:
@@ -563,9 +556,6 @@ def _do_build(
     dockerfile_lines.append("COPY hf_cache /hf_cache")
     if task_files_list:
         dockerfile_lines.append("COPY data/ /app/data/")
-    if custom_eval_code:
-        dockerfile_lines.append("COPY evaluator_script.py /app/evaluator_script.py")
-
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
         f.write("\n".join(dockerfile_lines) + "\n")
@@ -597,7 +587,7 @@ def _do_build(
                 task_id,
                 "",
                 metadata.get("_main_server_url"),
-                metadata.get("_worker_token"),
+                metadata.get("_worker_metadata"),
             )
             return True
         err_msg = logs[-1] if logs else f"Build failed (rc={retcode})"
@@ -606,7 +596,7 @@ def _do_build(
             task_id,
             err_msg,
             metadata.get("_main_server_url"),
-            metadata.get("_worker_token"),
+            metadata.get("_worker_metadata"),
         )
         return False
     except Exception as e:
@@ -616,7 +606,7 @@ def _do_build(
             task_id,
             err_msg,
             metadata.get("_main_server_url"),
-            metadata.get("_worker_token"),
+            metadata.get("_worker_metadata"),
         )
         return False
 
@@ -698,128 +688,3 @@ def _clear_stale_build_locks() -> None:
             logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
     except Exception as e:
         logger.warning("Failed to clear stale build locks: %s", e)
-
-
-def build_all_active_tasks(main_server_url: str, worker_token: str) -> None:
-    """Fetch active tasks from the server and build images for all of them."""
-    _clear_stale_build_locks()
-    import requests
-
-    try:
-        url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"
-        res = requests.get(url, headers={"X-Worker-Token": worker_token}, timeout=30)
-        if res.status_code != 200:
-            logger.warning("Failed to fetch active tasks (HTTP %s)", res.status_code)
-            return
-        data = res.json()
-        tasks = data.get("tasks", [])
-        logger.info("Fetched %s active task(s) for image building", len(tasks))
-        for task_config in tasks:
-            from utils.worker_utils import _sign_worker_token
-
-            metadata = {
-                "task_id": task_config["id"],
-                "base_docker_image": task_config.get("base_docker_image", ""),
-                "pip_requirements": task_config.get("pip_requirements", ""),
-                "hf_datasets": task_config.get("hf_datasets", "[]"),
-                "hf_models": task_config.get("hf_models", "[]"),
-                "hf_api_key": task_config.get("hf_api_key", ""),
-                "task_files": task_config.get("task_files", []),
-                "custom_eval_code": task_config.get("custom_eval_code", ""),
-                "_main_server_url": main_server_url,
-                "_worker_token": _sign_worker_token("worker"),
-            }
-            try:
-                build_task_image(metadata)
-            except Exception as e:
-                logger.warning("Error building task %s image: %s", task_config.get("id"), e)
-    except Exception as e:
-        logger.warning("Error in build_all_active_tasks: %s", e)
-
-
-def start_rebuild_listener(main_server_url: str, worker_token: str) -> None:
-    """Start a background thread that listens for Redis task-rebuild notifications."""
-    import threading
-
-    t = threading.Thread(
-        target=_rebuild_listener, args=(main_server_url, worker_token), daemon=True
-    )
-    t.start()
-    logger.info("Rebuild listener thread started")
-
-
-def _rebuild_listener(main_server_url: str, worker_token: str) -> None:
-    """Background thread: subscribe to Redis 'task_rebuild' channel.
-
-    Never exits permanently: a Redis hiccup is retried after a short sleep
-    so a transient failure does not silently kill rebuild handling.
-    """
-
-    while True:
-        try:
-            _rebuild_listener_once(main_server_url, worker_token)
-        except Exception as e:
-            logger.warning("Rebuild listener crashed, retrying in 10s: %s", e)
-        time.sleep(10)
-
-
-def _rebuild_listener_once(main_server_url: str, worker_token: str) -> None:
-    r = get_coordination_client()
-    if not r:
-        logger.warning("Rebuild listener: no Redis client available")
-        time.sleep(10)
-        return
-    try:
-        pubsub = r.pubsub()
-        pubsub.subscribe(CHANNEL_TASK_REBUILD)
-        logger.info("Subscribed to Redis 'task_rebuild' channel")
-        while True:
-            try:
-                msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=60)
-            except Exception as e:
-                logger.warning("Rebuild listener: pubsub connection lost, reconnecting: %s", e)
-                break
-            if msg and msg.get("type") == "message":
-                try:
-                    raw_data = msg.get("data")
-                    task_id = (
-                        raw_data.decode("utf-8") if isinstance(raw_data, bytes) else str(raw_data)
-                    ).strip()
-                    logger.info("Rebuild notification for task %s", task_id)
-                    # Fetch updated config from the server
-                    import requests
-
-                    from utils.worker_utils import _sign_worker_token
-
-                    url = f"{main_server_url.rstrip('/')}/api/worker/active-tasks"
-                    fresh_token = _sign_worker_token("worker")
-                    res = requests.get(url, headers={"X-Worker-Token": fresh_token}, timeout=30)
-                    if res.status_code == 200:
-                        tasks = res.json().get("tasks", [])
-                        for t in tasks:
-                            if t["id"] == task_id:
-                                metadata = {
-                                    "task_id": t["id"],
-                                    "base_docker_image": t.get("base_docker_image", ""),
-                                    "pip_requirements": t.get("pip_requirements", ""),
-                                    "hf_datasets": t.get("hf_datasets", "[]"),
-                                    "hf_models": t.get("hf_models", "[]"),
-                                    "hf_api_key": t.get("hf_api_key", ""),
-                                    "task_files": t.get("task_files", []),
-                                    "custom_eval_code": t.get("custom_eval_code", ""),
-                                    "_main_server_url": main_server_url,
-                                    "_worker_token": fresh_token,
-                                }
-                                # Force: bypass the config-hash fast path so the
-                                # Image is rebuilt and HF assets are re-resolved
-                                # Against the latest upstream revision
-                                build_task_image(metadata, force_rebuild=True)
-                                break
-                except Exception as e:
-                    logger.warning("Error handling rebuild notification: %s", e)
-    finally:
-        try:
-            pubsub.unsubscribe()
-            pubsub.close()
-        except Exception as e:
-            logger.debug("Error during Redis pubsub cleanup: %s", e)

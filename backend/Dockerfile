@@ -29,10 +29,14 @@ COPY --chown=nobody:nogroup . .
 # Pre-own the runtime dirs so reduced-capability containers (cap_drop: ALL)
 # that cannot chown at boot still have nobody-writable storage.
 RUN mkdir -p /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn \
-    && chown -R 65534:65534 /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn
+    && chown -R 65534:65534 /app /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run /app/.gunicorn
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# Run as the pre-existing nobody user (65534): the code and runtime dirs are
+# chowned to it above, so gunicorn/celery need no root privileges.
+USER 65534:65534
 
 ENV HOME=/app
 

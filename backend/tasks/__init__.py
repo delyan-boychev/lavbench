@@ -342,6 +342,25 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 if fallback_data:
                     try:
                         fb = json.loads(fallback_data)
+                        if not sub.celery_task_id or fb.get("attempt_id") != sub.celery_task_id:
+                            logger.warning(
+                                "Discarding stale fallback for submission %s (attempt %s)",
+                                sub.id,
+                                fb.get("attempt_id"),
+                            )
+                            r.delete(fallback_key)
+                            continue
+                        bound_worker = r.get(f"worker:attempt:{sub.celery_task_id}")
+                        if isinstance(bound_worker, bytes):
+                            bound_worker = bound_worker.decode()
+                        if not bound_worker or fb.get("worker_id") != bound_worker:
+                            logger.warning(
+                                "Discarding unowned fallback for submission %s (worker %s)",
+                                sub.id,
+                                fb.get("worker_id"),
+                            )
+                            r.delete(fallback_key)
+                            continue
                         sub.status = fb.get("status", "failed")
                         sub.detailed_status = fb.get("detailed_status", "failed")
                         sub.logs = (sub.logs or "") + "\n" + (fb.get("logs") or "")

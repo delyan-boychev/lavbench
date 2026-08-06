@@ -13,7 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import Challenge, Submission, Task, User, db
+from models import Challenge, Stage, Submission, Task, User, db
 from services.leaderboard_service import (
     build_and_cache_leaderboard,
     get_task_leaderboard_data,
@@ -110,6 +110,69 @@ class TestBuildAndCacheLeaderboard:
         assert entry["has_submitted"] is True
         ts = entry["task_scores"][str(self.task.id)]
         assert ts["public_score"] == 0.9
+
+    def test_active_leaderboard_selects_public_best_without_private_leak(self):
+        comp = self._create_competitor("alice")
+        public_best = self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+
+        result = build_and_cache_leaderboard(self.challenge.id)
+
+        task_score = result[0]["task_scores"][str(self.task.id)]
+        assert task_score["submission_id"] == public_best.id
+        assert task_score["public_score"] == 0.9
+
+    def test_finalized_hidden_leaderboard_still_selects_public_best(self):
+        self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
+        db.session.commit()
+        comp = self._create_competitor("alice")
+        public_best = self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+
+        result = build_and_cache_leaderboard(self.challenge.id)
+
+        task_score = result[0]["task_scores"][str(self.task.id)]
+        assert task_score["submission_id"] == public_best.id
+        assert task_score["public_score"] == 0.9
+
+    def test_finalized_revealed_leaderboard_selects_private_best(self):
+        self.challenge.scores_finalized = True
+        self.challenge.reveal_results = True
+        db.session.commit()
+        comp = self._create_competitor("alice")
+        self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        private_best = self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+
+        result = build_and_cache_leaderboard(self.challenge.id)
+
+        task_score = result[0]["task_scores"][str(self.task.id)]
+        assert task_score["submission_id"] == private_best.id
+        assert task_score["private_score"] == 0.99
+
+    def test_revealed_stage_selects_private_best_before_challenge_finalization(self):
+        stage = Stage(
+            challenge_id=self.challenge.id,
+            stage_number=1,
+            title="Revealed Stage",
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() - timedelta(hours=1),
+            is_finalized=True,
+            reveal_results=True,
+        )
+        db.session.add(stage)
+        db.session.flush()
+        self.task.stage_id = stage.id
+        db.session.commit()
+        comp = self._create_competitor("alice")
+        self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        private_best = self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+
+        result = build_and_cache_leaderboard(self.challenge.id)
+
+        task_score = result[0]["task_scores"][str(self.task.id)]
+        assert task_score["submission_id"] == private_best.id
+        assert task_score["private_score"] == 0.99
 
     def test_multiple_competitors_sorted_by_score(self):
         alice = self._create_competitor("alice")

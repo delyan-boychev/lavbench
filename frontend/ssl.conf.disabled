@@ -4,7 +4,9 @@
 server {
     listen 443 ssl;
     server_name localhost;
-    client_max_body_size 50M;
+    # Match the backend's task-upload ceiling; sensitive JSON endpoints enforce
+    # Much smaller request limits before parsing
+    client_max_body_size 2G;
 
     ssl_certificate     /etc/nginx/ssl/lavbench.crt;
     ssl_certificate_key /etc/nginx/ssl/lavbench.key;

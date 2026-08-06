@@ -14,97 +14,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, Stage, Submission, Task, User, db
-from routes.tasks import _worker_nonce_allowed_for_task
 from utils.auth_utils import generate_token
-
-
-class TestWorkerNonceBinding:
-    @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, redis_flush):
-        self.client = client
-        self.challenge = Challenge(
-            title="Nonce Binding Test",
-            description="Test",
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=2),
-            end_time=utcnow() + timedelta(hours=2),
-            is_frozen=False,
-        )
-        db.session.add(self.challenge)
-        db.session.flush()
-        self.task_a = Task(
-            title="Task A",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            gpu_required=False,
-        )
-        db.session.add(self.task_a)
-        db.session.flush()
-        self.task_b = Task(
-            title="Task B",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            gpu_required=False,
-        )
-        db.session.add(self.task_b)
-        db.session.flush()
-        self.submission = Submission(
-            user_id="00000000-0000-0000-0000-000000000000",
-            challenge_id=self.challenge.id,
-            task_id=self.task_a.id,
-            status="running",
-            code_cells="[]",
-        )
-        db.session.add(self.submission)
-        db.session.commit()
-
-    def test_build_flow_nonce_allowed_for_any_task(self):
-        nonce = {"submission_id": "worker", "ts": "0"}
-        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is True
-        assert _worker_nonce_allowed_for_task(nonce, self.task_b.id) is True
-
-    def test_submission_nonce_allowed_only_for_its_task(self):
-        nonce = {"submission_id": str(self.submission.id), "ts": "0"}
-        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is True
-        assert _worker_nonce_allowed_for_task(nonce, self.task_b.id) is False
-
-    def test_nonce_for_unknown_submission_rejected(self):
-        nonce = {"submission_id": "99999999-9999-9999-9999-999999999999", "ts": "0"}
-        assert _worker_nonce_allowed_for_task(nonce, self.task_a.id) is False
-
-    def test_empty_submission_id_rejected(self):
-        assert (
-            _worker_nonce_allowed_for_task({"submission_id": "", "ts": "0"}, self.task_a.id)
-            is False
-        )
-        assert _worker_nonce_allowed_for_task({}, self.task_a.id) is False
-
-    @patch("routes.tasks.check_worker_auth")
-    def test_progress_report_rejects_unbound_nonce(self, mock_verify):
-        mock_verify.return_value = {
-            "submission_id": "99999999-9999-9999-9999-999999999999",
-            "ts": "0",
-        }
-        resp = self.client.post(
-            f"/api/worker/report/{self.submission.id}",
-            json={"status": "completed", "scores": {"accuracy": 0.9}},
-            headers={"X-Worker-Token": "valid-token"},
-        )
-        assert resp.status_code == 401
-
-    @patch("routes.tasks.check_worker_auth")
-    def test_progress_report_accepts_bound_nonce(self, mock_verify):
-        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
-        resp = self.client.post(
-            f"/api/worker/report/{self.submission.id}",
-            json={"status": "completed", "scores": {"accuracy": 0.9}},
-            headers={"X-Worker-Token": "valid-token"},
-        )
-        assert resp.status_code == 200
 
 
 class TestCheckCompetitorAccess:
@@ -925,16 +835,16 @@ class TestWorkerDownloadTaskFile:
         db.session.commit()
         self._upload_dir = self.app.config["UPLOAD_FOLDER"]
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_downloads_file_with_valid_token(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/test.txt",
             headers={"X-Worker-Token": "valid-token"},
         )
         assert resp.status_code == 200
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -943,9 +853,9 @@ class TestWorkerDownloadTaskFile:
         )
         assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_returns_404_for_nonexistent_file(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/missing.txt",
             headers={"X-Worker-Token": "valid-token"},
@@ -981,23 +891,15 @@ class TestGetActiveDatasets:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("routes.tasks.check_worker_auth")
-    def test_returns_datasets_from_custom_eval(self, mock_verify):
-        mock_verify.return_value = True
+    def test_global_dataset_enumeration_is_retired(self):
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "dataset1" in data["datasets"]
+        assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
-    def test_skips_archived_challenges(self, mock_verify):
-        mock_verify.return_value = True
+    def test_global_dataset_enumeration_stays_retired_for_archived_challenges(self):
         self.challenge.is_archived = True
         db.session.commit()
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["datasets"] == []
+        assert resp.status_code == 401
 
     @patch("routes.tasks.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
@@ -1032,9 +934,9 @@ class TestGetTaskHfKey:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_returns_hf_key(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         with patch.object(Task, "get_hf_api_key", return_value="my-key"):
             resp = self.client.get(
                 f"/api/worker/tasks/{self.task.id}/hf-key",
@@ -1044,7 +946,7 @@ class TestGetTaskHfKey:
         data = resp.get_json()
         assert data["hf_key"] == "my-key"
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_returns_401_without_valid_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -1053,9 +955,9 @@ class TestGetTaskHfKey:
         )
         assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._task_capability")
     def test_returns_404_for_nonexistent_task(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "worker", "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         resp = self.client.get(
             "/api/worker/tasks/99999/hf-key", headers={"X-Worker-Token": "token"}
         )
@@ -1091,34 +993,21 @@ class TestGetActiveTasks:
         db.session.add(self.task)
         db.session.commit()
 
-    @patch("routes.tasks.check_worker_auth")
-    def test_includes_task_files_and_custom_eval_code(self, mock_verify):
-        mock_verify.return_value = True
+    def test_global_task_enumeration_is_retired(self):
         resp = self.client.get(
             "/api/worker/active-tasks",
             headers={"X-Worker-Token": "valid"},
         )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        task_data = [t for t in data["tasks"] if t["id"] == str(self.task.id)]
-        assert len(task_data) == 1
-        task = task_data[0]
-        assert task["task_files"] == [{"filename": "data.csv", "saved_name": "data.csv"}]
-        assert task["custom_eval_code"] == "def evaluate(): pass"
+        assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
-    def test_skips_archived_challenges(self, mock_verify):
-        mock_verify.return_value = True
+    def test_global_task_enumeration_stays_retired_for_archived_challenges(self):
         self.challenge.is_archived = True
         db.session.commit()
         resp = self.client.get(
             "/api/worker/active-tasks",
             headers={"X-Worker-Token": "valid"},
         )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        task_ids = [t["id"] for t in data["tasks"]]
-        assert str(self.task.id) not in task_ids
+        assert resp.status_code == 401
 
     @patch("routes.tasks.check_worker_auth")
     def test_returns_401_without_valid_token(self, mock_verify):
@@ -1174,7 +1063,7 @@ class TestGetSubmissionRunContent:
         db.session.add(self.submission)
         db.session.commit()
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._worker_capability")
     def test_returns_401_on_missing_token(self, mock_verify):
         mock_verify.return_value = False
         resp = self.client.get(
@@ -1183,28 +1072,28 @@ class TestGetSubmissionRunContent:
         )
         assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._worker_capability")
     def test_returns_401_on_submission_id_mismatch(self, mock_verify):
-        mock_verify.return_value = {"submission_id": "other-sub", "ts": "0"}
+        mock_verify.return_value = None
         resp = self.client.get(
             f"/api/worker/submission-run-content/{self.submission.id}",
             headers={"X-Worker-Token": "valid"},
         )
         assert resp.status_code == 401
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._worker_capability")
     def test_returns_404_for_missing_submission(self, mock_verify):
         missing_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-        mock_verify.return_value = {"submission_id": missing_id, "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         resp = self.client.get(
             f"/api/worker/submission-run-content/{missing_id}",
             headers={"X-Worker-Token": "valid"},
         )
         assert resp.status_code == 404
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._worker_capability")
     def test_returns_user_code_and_evaluator(self, mock_verify):
-        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         resp = self.client.get(
             f"/api/worker/submission-run-content/{self.submission.id}",
             headers={"X-Worker-Token": "valid"},
@@ -1214,13 +1103,13 @@ class TestGetSubmissionRunContent:
         assert data["user_code"] == "x=1y=2\n\nprint(y)"
         assert data["custom_eval_code"] == "def evaluate(): pass"
 
-    @patch("routes.tasks.check_worker_auth")
+    @patch("routes.tasks._worker_capability")
     @patch("routes.tasks.open")
     def test_reads_evaluator_script_file_when_code_is_null(self, mock_open, mock_verify):
         self.task.custom_eval_code = None
         self.task.evaluator_script_path = "/tmp/evaluator.py"
         db.session.commit()
-        mock_verify.return_value = {"submission_id": str(self.submission.id), "ts": "0"}
+        mock_verify.return_value = {"attempt_id": "attempt"}
         mock_open.return_value.__enter__.return_value.read.return_value = "def ev(): pass"
         resp = self.client.get(
             f"/api/worker/submission-run-content/{self.submission.id}",

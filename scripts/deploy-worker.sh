@@ -3,6 +3,7 @@
 # Called by: make deploy-worker
 # Prerequisite: make setup-worker (creates worker.env)
 set -euo pipefail
+umask 077
 
 WORKER_IMAGE="lavbench-worker"
 CONTAINER_NAME="lavbench-worker"
@@ -42,6 +43,11 @@ if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
   echo "  [ERROR] WORKER_PRIVATE_KEY not set. Copy worker.env from the server."
   exit 1
 fi
+if [ -z "${WORKER_ID:-}" ]; then
+  echo "  [ERROR] WORKER_ID not set. Re-run setup to create a registered worker identity."
+  exit 1
+fi
+chmod 0600 worker.env
 
 REDIS_URL="${CELERY_BROKER_URL:-}"
 if [ -z "$REDIS_URL" ]; then
@@ -115,6 +121,19 @@ deploy_docker() {
   LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace"
   HF_CACHE_DIR="/var/lib/lavbench/hf_cache"
 
+  # Legacy volumes are root-owned; make them writable by the worker's
+  # non-root user (uid 10001) so celery can persist task images and caches.
+  for vol in lavbench_task_images lavbench_hf_cache lavbench_workspace; do
+    docker run --rm --user root --entrypoint chown \
+      -v "$vol":/var/lib/lavbench/data "$WORKER_IMAGE" \
+      -R 10001:10001 /var/lib/lavbench/data 2>/dev/null || true
+  done
+
+  # The worker drives the Docker daemon through the mounted socket, so it
+  # must run in the host's docker-socket group (Linux: `stat -c %g`;
+  # macOS: `stat -f %g`).
+  DOCKER_SOCK_GID=$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock 2>/dev/null || true)
+
   # ── Run container ──────────────────────────────────────────────
   echo "  → Starting container..."
   docker run -d --name "$CONTAINER_NAME" \
@@ -124,6 +143,7 @@ deploy_docker() {
     -e CELERY_RESULT_BACKEND \
     -e WORKER_ENCRYPTION_KEY \
     -e WORKER_PRIVATE_KEY \
+    -e WORKER_ID \
     -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_GPU_ID \
@@ -151,6 +171,7 @@ deploy_docker() {
     $( [ -n "${REDIS_SSL_KEYFILE:-}" ] && echo "-e REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE}" || true ) \
     $( [ -n "${REDIS_SSL_CERT_REQS:-}" ] && echo "-e REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS}" || true ) \
     -e PYTHONPATH=/app \
+    $( [ -n "$DOCKER_SOCK_GID" ] && echo "--group-add $DOCKER_SOCK_GID" || true ) \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v lavbench_task_images:/var/lib/lavbench/task_images \
     -v lavbench_hf_cache:/var/lib/lavbench/hf_cache \

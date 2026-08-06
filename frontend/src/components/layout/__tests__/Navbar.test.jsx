@@ -16,8 +16,8 @@ vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-// Mock react-router-dom for useLocation
-vi.mock('react-router-dom', () => ({
+// Mock react-router for useLocation
+vi.mock('react-router', () => ({
   useLocation: () => ({ pathname: '/' }),
 }));
 

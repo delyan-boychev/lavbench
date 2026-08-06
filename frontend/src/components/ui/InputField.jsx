@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export default function InputField({
@@ -20,7 +20,8 @@ export default function InputField({
   const { t } = useTranslation();
   const [error, setError] = useState(false);
   const inputRef = useRef(null);
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+  const fallbackId = useId();
+  const inputId = id || fallbackId;
 
   useEffect(() => {
     if (value) setError(false); // eslint-disable-line react-hooks/set-state-in-effect

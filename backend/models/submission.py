@@ -89,6 +89,14 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
 
     @code_cells.setter
     def code_cells(self, value: str) -> None:
+        from config import Config
+
+        encoded_size = len(value.encode("utf-8"))
+        if encoded_size > Config.MAX_CODE_CELLS_CHARS:
+            msg = (
+                f"Submission code is {encoded_size} bytes; maximum is {Config.MAX_CODE_CELLS_CHARS}"
+            )
+            raise ValueError(msg)
         self._cached_code_cells = value
         try:
             from flask import current_app
@@ -96,8 +104,6 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             if current_app:
                 upload_folder = current_app.config.get("UPLOAD_FOLDER")
             else:
-                from config import Config
-
                 upload_folder = Config.UPLOAD_FOLDER
 
             submissions_dir = os.path.join(upload_folder, "submissions")  # type: ignore[arg-type]

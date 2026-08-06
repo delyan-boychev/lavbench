@@ -19,7 +19,7 @@ function AllProviders({ children }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <NotificationsProvider>
-          <ChallengesProvider>{children}</ChallengesProvider>
+          <ChallengesProvider userId="test-user">{children}</ChallengesProvider>
         </NotificationsProvider>
       </ThemeProvider>
     </QueryClientProvider>

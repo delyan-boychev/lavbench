@@ -391,7 +391,7 @@ class TestCreateTask:
             "baseline_notebook": (nb, "baseline.ipynb"),
         }
         resp = client.post(url, data=data, content_type="multipart/form-data")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
@@ -1021,7 +1021,7 @@ class TestUpdateTask:
 
         url = f"/api/tasks/{task.id}"
         resp = client.put(url, data={"title": "X"}, content_type="multipart/form-data")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
@@ -1260,7 +1260,7 @@ class TestDeleteTaskCRUD:
         db_session.add(task)
         db_session.flush()
         resp = client.delete(f"/api/tasks/{task.id}")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_delete_task_success(self, client, db_session, sample_challenge, tokens, auth_headers):
         import os
@@ -1346,9 +1346,7 @@ class TestReportBuildError:
         assert resp.status_code == 401
 
         # Valid token → set problem_codes
-        with patch(
-            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
-        ):
+        with patch("routes.tasks._task_capability", return_value={"attempt_id": "attempt"}):
             resp = client.post(
                 f"/api/worker/tasks/{task_id}/report-build-error",
                 json={"error": "Docker pull failed: 404 Not Found"},
@@ -1369,9 +1367,7 @@ class TestReportBuildError:
             assert task.problem_codes is None
 
     def test_report_error_not_found(self, client, tokens):
-        with patch(
-            "routes.tasks.check_worker_auth", return_value={"submission_id": "worker", "ts": "0"}
-        ):
+        with patch("routes.tasks._task_capability", return_value={"attempt_id": "attempt"}):
             resp = client.post(
                 "/api/worker/tasks/00000000-0000-0000-0000-000000000000/report-build-error",
                 json={"error": "fail"},

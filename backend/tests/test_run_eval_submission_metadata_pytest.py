@@ -30,6 +30,7 @@ def _base_metadata(**overrides):
         "hf_dataset_split": "test",
         "user_code": "print('hello')",
         "submission_id": "sub_meta_1",
+        "attempt_id": "attempt-meta-1",
         "main_server_url": "http://localhost:5000",
     }
     metadata.update(overrides)
@@ -38,6 +39,7 @@ def _base_metadata(**overrides):
 
 @pytest.fixture(autouse=True)
 def _mock_run_content_fetch(mocker):
+    mocker.patch.object(sr, "fetch_submission_capabilities", return_value=None)
     mocker.patch(
         "utils.worker_utils.fetch_submission_run_content",
         side_effect=lambda metadata: (
@@ -99,7 +101,7 @@ class TestRunEvalSubmissionMetadataMode:
         assert len(final) == 1
         kwargs = final[0].kwargs
         assert kwargs["public_score"] == pytest.approx(1.0)
-        assert kwargs["private_score"] == pytest.approx(0.0)
+        assert kwargs["private_score"] is None
         assert kwargs["metrics_payload_pub"] == {"accuracy": 1.0}
         assert kwargs["metrics_payload_priv"] == {}
         statuses = {c.kwargs.get("status") for c in mock_report.call_args_list}
@@ -145,6 +147,7 @@ class TestRunEvalSubmissionMetadataMode:
         assert key == "submission:sub_meta_1:fallback"
         fallback = json.loads(payload)
         assert fallback["status"] == "completed"
+        assert fallback["attempt_id"] == "attempt-meta-1"
         assert fallback["public_score"] == pytest.approx(1.0)
         assert fallback["execution_time_ms"] is not None
         assert mock_r.set.call_args.kwargs["ex"] == 7200

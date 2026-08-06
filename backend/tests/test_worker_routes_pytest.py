@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from models import Challenge, Submission, Task, User, db
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
+from utils.worker_auth import issue_worker_capability, sign_worker_token
 
 
 class TestWorkerEndpoints:
@@ -71,6 +72,7 @@ class TestWorkerEndpoints:
             task_id=self.task.id,
             user_id=self.competitor.id,
             status="running",
+            celery_task_id="attempt-test-worker-routes",
             code_cells="[]",
         )
         db.session.add(self.submission)
@@ -78,13 +80,17 @@ class TestWorkerEndpoints:
 
         # Generate test Ed25519 keypair and sign a nonce for worker auth
         self._worker_key = Ed25519PrivateKey.generate()
+        self.worker_id = "test-worker"
+        private_key = base64.urlsafe_b64encode(self._worker_key.private_bytes_raw()).decode()
+        public_key = base64.urlsafe_b64encode(
+            self._worker_key.public_key().public_bytes_raw()
+        ).decode()
+        self._monkeypatch.setenv("WORKER_ID", self.worker_id)
+        self._monkeypatch.setenv("WORKER_PRIVATE_KEY", private_key)
         self._monkeypatch.setenv(
-            "WORKER_PUBLIC_KEY",
-            base64.b64encode(self._worker_key.public_key().public_bytes_raw()).decode(),
+            "WORKER_PUBLIC_KEYS_JSON", json.dumps({self.worker_id: public_key})
         )
-        nonce = f"{self.submission.id}:{int(time.time())}"
-        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
-        self.worker_token = f"{nonce}.{sig}"
+        self._monkeypatch.setenv("WORKER_CAPABILITY_SECRET", "test-worker-capability-secret")
 
         self.admin = User(
             username="test_admin",
@@ -96,8 +102,35 @@ class TestWorkerEndpoints:
         db.session.commit()
         self.admin_token = generate_token(self.admin.id, role="admin")
 
-    def _worker_headers(self):
-        return {"X-Worker-Token": self.worker_token, "Content-Type": "application/json"}
+    def _worker_headers(
+        self,
+        operation="report_submission",
+        resource_type="submission",
+        resource_id=None,
+        attempt_id=None,
+        method=None,
+    ):
+        resource_id = resource_id or self.submission.id
+        attempt_id = attempt_id or self.submission.celery_task_id
+        method = method or ("POST" if operation.startswith("report") else "GET")
+        capability = issue_worker_capability(
+            worker_id=self.worker_id,
+            method=method,
+            operation=operation,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            attempt_id=attempt_id,
+        )
+        from utils.cache_utils import get_coordination_client
+
+        coordination = get_coordination_client()
+        assert coordination is not None
+        coordination.set(f"worker:attempt:{attempt_id}", self.worker_id, ex=3600)
+        return {
+            "X-Worker-Token": sign_worker_token(),
+            "X-Worker-Capability": capability,
+            "Content-Type": "application/json",
+        }
 
     def _auth_headers(self, token=None):
         t = token or self.admin_token
@@ -200,13 +233,12 @@ class TestWorkerEndpoints:
             user_id=self.competitor.id,
             status="failed",
             detailed_status="killed",
+            celery_task_id="attempt-killed",
             code_cells="[]",
         )
         db.session.add(killed)
         db.session.commit()
-        nonce = f"{killed.id}:{int(time.time())}"
-        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
-        headers = {"X-Worker-Token": f"{nonce}.{sig}", "Content-Type": "application/json"}
+        headers = self._worker_headers(resource_id=killed.id, attempt_id=killed.celery_task_id)
         resp = self.client.post(
             f"/api/worker/report/{killed.id}",
             json={"status": "completed", "detailed_status": "done", "public_score": 0.9},
@@ -298,7 +330,7 @@ class TestWorkerEndpoints:
 
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/data.csv",
-            headers={"X-Worker-Token": self.worker_token},
+            headers=self._worker_headers("task_file", "task", self.task.id),
         )
         assert resp.status_code == 200
         assert b"col1,col2" in resp.data
@@ -306,17 +338,13 @@ class TestWorkerEndpoints:
     def test_download_task_file_wrong_task(self):
         resp = self.client.get(
             "/api/worker/tasks/99999/files/data.csv",
-            headers={"X-Worker-Token": self.worker_token},
+            headers=self._worker_headers("task_file", "task", self.task.id),
         )
         assert resp.status_code == 404
 
     def test_get_active_datasets(self):
-        resp = self.client.get(
-            "/api/worker/active-datasets", headers={"X-Worker-Token": self.worker_token}
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "datasets" in data
+        resp = self.client.get("/api/worker/active-datasets", headers=self._worker_headers())
+        assert resp.status_code == 401
 
     def test_get_active_datasets_invalid_token(self):
         resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "bad"})
@@ -325,7 +353,7 @@ class TestWorkerEndpoints:
     def test_get_task_hf_key(self):
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/hf-key",
-            headers={"X-Worker-Token": self.worker_token},
+            headers=self._worker_headers("task_hf_key", "task", self.task.id),
         )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -341,6 +369,6 @@ class TestWorkerEndpoints:
     def test_get_task_hf_key_task_not_found(self):
         resp = self.client.get(
             "/api/worker/tasks/99999/hf-key",
-            headers={"X-Worker-Token": self.worker_token},
+            headers=self._worker_headers("task_hf_key", "task", self.task.id),
         )
         assert resp.status_code == 404

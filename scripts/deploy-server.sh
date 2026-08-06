@@ -27,7 +27,7 @@ if [ ! -f ".env" ]; then
   echo "  [ERROR] .env not found. Run: make setup-server"
   exit 1
 fi
-REQUIRED_VARS=("SECRET_KEY" "POSTGRES_PASSWORD" "REDIS_PASSWORD" "WORKER_PUBLIC_KEY")
+REQUIRED_VARS=("SECRET_KEY" "POSTGRES_PASSWORD" "REDIS_PASSWORD" "WORKER_PUBLIC_KEYS_JSON" "WORKER_CAPABILITY_SECRET" "EVALUATION_SPLIT_SECRET")
 for var in "${REQUIRED_VARS[@]}"; do
   val=$(grep "^${var}=" .env 2>/dev/null | tail -1 | cut -d= -f2-)
   if [ -z "$val" ]; then

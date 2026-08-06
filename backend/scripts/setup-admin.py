@@ -4,15 +4,17 @@ import os
 import secrets
 import sys
 
+os.umask(0o077)
+
 # This script lives in backend/scripts/, so the backend package root is not on
 # sys.path when it is invoked by path (python /app/scripts/setup-admin.py)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash  # noqa: E402
 
-from app import create_app
-from models import User, db
-from utils.dates import utcnow
+from app import create_app  # noqa: E402
+from models import User, db  # noqa: E402
+from utils.dates import utcnow  # noqa: E402
 
 
 def generate_master_key():
@@ -67,6 +69,7 @@ def generate_master_key():
                 f.write("Keep this file secure. Enter these credentials on the\n")
                 f.write("login page (Sign In as Administrator checkbox).\n")
                 f.write("==================================================\n")
+            os.chmod(creds_path, 0o600)
             saved_msg = f"Saved credentials to: {creds_path}"
         except Exception as e:
             saved_msg = f"Failed to save credentials file: {e!s}"

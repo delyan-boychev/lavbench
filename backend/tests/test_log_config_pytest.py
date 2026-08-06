@@ -224,10 +224,10 @@ class TestRemoteShipHandler:
 
 class TestReceiveWorkerLogs:
     @pytest.fixture(autouse=True)
-    def setup(self, app, db_session, redis_flush):
+    def setup(self, app, db_session, redis_flush, monkeypatch):
         self.client = app.test_client()
         self.log_dir = tempfile.mkdtemp()
-        os.environ["LOG_DIR"] = self.log_dir
+        monkeypatch.setenv("LOG_DIR", self.log_dir)
 
         # Clear rate-limit counters left by other xdist workers
         from contextlib import suppress
@@ -243,14 +243,19 @@ class TestReceiveWorkerLogs:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         self._worker_key = Ed25519PrivateKey.generate()
-        os.environ["WORKER_PUBLIC_KEY"] = base64.b64encode(
+        self.worker_id = "log-test-worker"
+        private_key = base64.urlsafe_b64encode(self._worker_key.private_bytes_raw()).decode()
+        public_key = base64.urlsafe_b64encode(
             self._worker_key.public_key().public_bytes_raw()
         ).decode()
+        monkeypatch.setenv("WORKER_ID", self.worker_id)
+        monkeypatch.setenv("WORKER_PRIVATE_KEY", private_key)
+        monkeypatch.setenv("WORKER_PUBLIC_KEYS_JSON", json.dumps({self.worker_id: public_key}))
 
-    def _worker_token(self, submission_id="1"):
-        nonce = f"{submission_id}:{int(_time.time())}"
-        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
-        return f"{nonce}.{sig}"
+    def _worker_token(self):
+        from utils.worker_auth import sign_worker_token
+
+        return sign_worker_token()
 
     def _post_logs(self, lines, token=None):
         token = token or self._worker_token()
@@ -341,9 +346,10 @@ class TestReceiveWorkerLogs:
         assert resp.status_code == 401
 
     def test_expired_token_returns_401(self):
-        nonce = "1:0"
-        sig = base64.b64encode(self._worker_key.sign(nonce.encode())).decode()
-        token = f"{nonce}.{sig}"
+        from utils.worker_auth import sign_worker_token
+
+        with patch("utils.worker_auth.time.time", return_value=0):
+            token = sign_worker_token()
         resp = self._post_logs(["msg"], token=token)
         assert resp.status_code == 401
 

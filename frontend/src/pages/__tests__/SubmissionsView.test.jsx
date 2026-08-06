@@ -1175,7 +1175,7 @@ describe('SubmissionsView Page', () => {
       });
     });
 
-    it('fetches best submissions for all tasks on competitor selection', async () => {
+    it('requests and renders only the selected competitor submissions for every task', async () => {
       useApp.mockReturnValue({
         selectedChallenge: mockChallenge,
         selectedTask: null,
@@ -1207,17 +1207,19 @@ describe('SubmissionsView Page', () => {
         ok: true,
         data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
       });
-      api.fetch
-        .mockResolvedValueOnce({
+      api.fetch.mockImplementation((url) => {
+        const itemsByUrl = {
+          '/api/tasks/10/submissions?page=1&per_page=100&user_id=101': [subForTask1],
+          '/api/tasks/11/submissions?page=1&per_page=100&user_id=101': [subForTask2],
+          '/api/tasks/10/submissions?page=1&per_page=10&user_id=101': [subForTask1],
+        };
+        const items = itemsByUrl[url] || [];
+        return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ items: [subForTask1], total: 1, pages: 1 }),
-          blob: () => Promise.resolve(new Blob(['test'])),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ items: [subForTask2], total: 1, pages: 1 }),
+          json: () => Promise.resolve({ items, total: items.length, pages: 1 }),
           blob: () => Promise.resolve(new Blob(['test'])),
         });
+      });
 
       renderWithProviders(<SubmissionsView />);
 
@@ -1234,7 +1236,21 @@ describe('SubmissionsView Page', () => {
       await waitFor(() => {
         expect(screen.getByText('Task 1')).toBeInTheDocument();
         expect(screen.getByText('Task 2')).toBeInTheDocument();
+        expect(screen.getAllByText('#200').length).toBeGreaterThan(0);
+        expect(screen.getByText('#201')).toBeInTheDocument();
       });
+
+      const taskSubmissionUrls = api.fetch.mock.calls
+        .map(([url]) => url)
+        .filter((url) => url.startsWith('/api/tasks/') && url.includes('/submissions?'));
+      expect(taskSubmissionUrls).toEqual(
+        expect.arrayContaining([
+          '/api/tasks/10/submissions?page=1&per_page=100&user_id=101',
+          '/api/tasks/11/submissions?page=1&per_page=100&user_id=101',
+          '/api/tasks/10/submissions?page=1&per_page=10&user_id=101',
+        ]),
+      );
+      expect(taskSubmissionUrls.every((url) => url.includes('user_id=101'))).toBe(true);
     });
 
     it('handles no submissions for a competitor', async () => {

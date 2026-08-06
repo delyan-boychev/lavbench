@@ -598,7 +598,7 @@ describe('AdminPanel – challenge management', () => {
   it('renders tasks and stages for a challenge with data', async () => {
     const challenge = setupChallenge({
       tasks: [
-        { id: 10, title: 'Task Alpha', public_eval_percentage: 30 },
+        { id: 10, title: 'Task Alpha', public_eval_percentage: 0 },
         { id: 11, title: 'Task Beta', public_eval_percentage: 50 },
       ],
       stages: [
@@ -635,6 +635,7 @@ describe('AdminPanel – challenge management', () => {
       expect(screen.getByText('Task Alpha')).toBeInTheDocument();
     });
     expect(screen.getByText('Task Beta')).toBeInTheDocument();
+    expect(screen.getByText('Public Eval split: 0%')).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText('Stage 1: Warm-up')).toBeInTheDocument();
     });

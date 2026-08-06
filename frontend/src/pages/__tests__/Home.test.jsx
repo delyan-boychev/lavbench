@@ -23,7 +23,7 @@ vi.mock('../../components/ui/EmptyState', () => ({
   default: ({ message }) => <div data-testid="empty-state">{message}</div>,
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: vi.fn(),
   useNavigate: vi.fn(),
 }));
@@ -32,7 +32,7 @@ vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { useApp } from '../../context/AppContext';
 
 describe('Home Page', () => {

@@ -1020,8 +1020,7 @@ class TestRouteLevelLogic:
 
     def test_docs_secure_access(self):
         comp_header = self.get_auth_header(self.competitor_token)
-        jury_token = generate_token(999, "jury")
-        jury_header = self.get_auth_header(jury_token)
+        jury_header = self.get_auth_header(self.jury_token)
         admin_header = self.get_auth_header(self.admin_token)
 
         res = self.client.get("/api/docs/competitor", headers=comp_header)

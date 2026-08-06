@@ -7272,6 +7272,7 @@
               "additionalProperties": true,
               "type": "object"
             },
+            "maxItems": 500,
             "minItems": 1,
             "title": "Selected Cells",
             "type": "array"
@@ -8455,6 +8456,7 @@
               "additionalProperties": true,
               "type": "object"
             },
+            "maxItems": 500,
             "minItems": 1,
             "title": "Selected Cells",
             "type": "array"
@@ -13814,7 +13816,7 @@
             "description": "Unprocessable Content"
           }
         },
-        "summary": "List all HuggingFace datasets used by active challenges for worker preloading.",
+        "summary": "Reject the retired fleet-wide dataset and key enumeration contract.",
         "tags": [
           "Tasks"
         ]
@@ -13857,7 +13859,84 @@
             "description": "Unprocessable Content"
           }
         },
-        "summary": "List all active task configurations for worker image pre-building.",
+        "summary": "Reject the retired fleet-wide task enumeration contract.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/capabilities/{submission_id}": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_worker_capabilities_{submission_id}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Bind a broker-delivered attempt to one registered worker and issue scopes.",
         "tags": [
           "Tasks"
         ]

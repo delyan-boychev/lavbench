@@ -10,7 +10,7 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import Challenge, Submission, Task, User, db
+from models import Challenge, JuryChallenge, Submission, Task, User, db
 from utils.auth_utils import generate_token
 
 
@@ -183,6 +183,36 @@ class TestKillSubmission:
         sub = db.session.get(Submission, self.queued_sub.id)
         assert sub.status == "failed"
 
+    def test_unassigned_jury_cannot_kill_submission(self):
+        other_challenge = Challenge(
+            title="Other Kill Test",
+            description="Test",
+            max_eval_requests=10,
+            start_time=utcnow(),
+            end_time=utcnow(),
+        )
+        db.session.add(other_challenge)
+        db.session.flush()
+        JuryChallenge.query.filter_by(
+            jury_id=self.jury.id, challenge_id=other_challenge.id
+        ).delete()
+        other_submission = Submission(
+            user_id=self.other_comp.id,
+            challenge_id=other_challenge.id,
+            status="queued",
+        )
+        db.session.add(other_submission)
+        db.session.commit()
+
+        resp = self.client.post(
+            f"/api/submissions/{other_submission.id}/kill",
+            headers=self._auth(self.jury_token),
+        )
+
+        assert resp.status_code == 403
+        assert resp.get_json()["code"] == "ERR_ACCESS_DENIED"
+        assert db.session.get(Submission, other_submission.id).status == "queued"
+
     # ── Competitor tests ──
 
     def test_competitor_kills_own_queued(self):
@@ -341,6 +371,37 @@ class TestSubmissionQueue:
             headers=self._auth(self.jury_token),
         )
         assert resp.status_code == 200
+
+    def test_jury_queue_excludes_unassigned_challenges(self):
+        other_challenge = Challenge(
+            title="Unassigned Queue Test",
+            description="Test",
+            max_eval_requests=10,
+            start_time=utcnow(),
+            end_time=utcnow(),
+        )
+        db.session.add(other_challenge)
+        db.session.flush()
+        JuryChallenge.query.filter_by(
+            jury_id=self.jury.id, challenge_id=other_challenge.id
+        ).delete()
+        hidden_submission = Submission(
+            user_id=self.competitor.id,
+            challenge_id=other_challenge.id,
+            status="queued",
+        )
+        db.session.add(hidden_submission)
+        db.session.commit()
+
+        resp = self.client.get(
+            "/api/admin/submissions/queue?page=1&per_page=10",
+            headers=self._auth(self.jury_token),
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total"] == 3
+        assert str(hidden_submission.id) not in {item["id"] for item in data["items"]}
 
     def test_competitor_cannot_view_queue(self):
         resp = self.client.get(

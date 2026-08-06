@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import io
 import json
 import logging
 import math
@@ -50,7 +51,6 @@ from services.submission_service import (
 from utils.access import ensure_registered
 from utils.audit import log_audit
 from utils.auth_utils import (
-    check_worker_auth,
     jury_access_required,
     login_required,
     rate_limit,
@@ -86,6 +86,11 @@ from utils.sse_utils import (
     submissions_channel,
 )
 from utils.streaming import stream_file_response
+from utils.worker_auth import (
+    build_submission_capabilities,
+    check_worker_auth,
+    verify_worker_capability,
+)
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -105,10 +110,60 @@ def _unique_saved_name(original_name: str) -> str:
 
 
 def _worker_token_identity() -> str:
-    import hashlib
+    return request.remote_addr or "unknown"
 
-    token = request.headers.get("X-Worker-Token", "")
-    return hashlib.sha256(token.encode()).hexdigest()[:32]
+
+def _worker_capability(
+    operation: str,
+    resource_type: str,
+    resource_id: Any,
+    *,
+    attempt_id: str | None = None,
+    identity: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Authenticate a worker request and verify its exact operation scope."""
+    identity = identity or check_worker_auth(request.headers.get("X-Worker-Token"))
+    if not identity or not identity.get("worker_id"):
+        return None
+    claims = verify_worker_capability(
+        request.headers.get("X-Worker-Capability"),
+        worker_id=identity["worker_id"],
+        method=request.method,
+        operation=operation,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        attempt_id=attempt_id,
+    )
+    if not claims:
+        return None
+    coordination = get_coordination_client()
+    if coordination is None:
+        return None
+    binding_key = f"worker:attempt:{claims['attempt_id']}"
+    try:
+        bound_worker = coordination.get(binding_key)
+        if isinstance(bound_worker, bytes):
+            bound_worker = bound_worker.decode()
+        if bound_worker != identity["worker_id"]:
+            return None
+        coordination.expire(binding_key, Config.WORKER_ATTEMPT_LEASE_TTL)
+    except Exception:
+        logger.exception("Failed to verify worker attempt binding")
+        return None
+    return claims
+
+
+def _task_capability(operation: str, task_id: Any) -> dict[str, Any] | None:
+    """Verify a task capability is tied to a live submission attempt for that task."""
+    claims = _worker_capability(operation, "task", task_id)
+    if not claims:
+        return None
+    submission = Submission.query.filter_by(celery_task_id=claims.get("attempt_id")).first()
+    if not submission or str(submission.task_id) != str(task_id):
+        return None
+    if submission.status not in ("queued", "running"):
+        return None
+    return claims
 
 
 def _validate_evaluator_script(code: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -266,6 +321,10 @@ def queue_system_submission(
     elif challenge.gpu_required is not None:
         gpu_required = challenge.gpu_required
 
+    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
+    submission.celery_task_id = attempt_id
+    db.session.commit()
+
     metadata = build_submission_metadata(
         task,
         challenge,
@@ -277,16 +336,13 @@ def queue_system_submission(
     # Dispatch the submission via Celery
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
-    result = evaluate_submission.apply_async(
+    evaluate_submission.apply_async(
         args=[submission.id, metadata],
         priority=priority,
         queue=queue_name,
         countdown=1,
-        task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
+        task_id=attempt_id,
     )
-    if result is not None:
-        submission.celery_task_id = str(result.id)
-    db.session.commit()
 
 
 def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
@@ -1301,6 +1357,10 @@ def submit_task(
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
     task_files_list = safe_json_loads(task.files, [])
 
+    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
+    submission.celery_task_id = attempt_id
+    db.session.commit()
+
     metadata = build_submission_metadata(
         task,
         challenge,
@@ -1310,17 +1370,14 @@ def submit_task(
     )
 
     try:
-        result = evaluate_submission.apply_async(
+        evaluate_submission.apply_async(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
             countdown=1,
             expires=Config.CELERY_MESSAGE_EXPIRES,
-            task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
+            task_id=attempt_id,
         )
-        if result is not None:
-            submission.celery_task_id = str(result.id)
-        db.session.commit()
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = "failed"
@@ -1701,6 +1758,75 @@ def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
         return result
 
 
+@tasks_bp.route("/worker/capabilities/<uuid:submission_id>", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60, per_user=False, identity=_worker_token_identity)
+@api.validate(
+    resp=Response(
+        HTTP_200=None,
+        HTTP_400=ErrorResponse,
+        HTTP_401=ErrorResponse,
+        HTTP_409=ErrorResponse,
+        HTTP_503=ErrorResponse,
+    ),
+    tags=["Tasks"],
+)
+def claim_worker_capabilities(
+    submission_id: Any,
+) -> tuple[dict[str, dict[str, str]], int] | tuple[FlaskResponse, int]:
+    """Bind a broker-delivered attempt to one registered worker and issue scopes."""
+    identity = check_worker_auth(request.headers.get("X-Worker-Token"))
+    if not identity:
+        return err("ERR_UNAUTHORIZED", 401)
+    data = request.get_json(silent=True) or {}
+    attempt_id = data.get("attempt_id")
+    if not isinstance(attempt_id, str) or not attempt_id:
+        return err("ERR_INVALID_REQUEST_BODY", 400)
+
+    submission = Submission.query.filter_by(id=submission_id).with_for_update().first()
+    if not submission or submission.celery_task_id != attempt_id:
+        return err("ERR_STALE_WORKER_ATTEMPT", 409)
+    if submission.status not in ("queued", "running"):
+        return err("ERR_STALE_WORKER_ATTEMPT", 409)
+
+    coordination = get_coordination_client()
+    if coordination is None:
+        return err("ERR_WORKER_AUTH_UNAVAILABLE", 503)
+    binding_key = f"worker:attempt:{attempt_id}"
+    worker_id = identity["worker_id"]
+    try:
+        bound = coordination.get(binding_key)
+        if isinstance(bound, bytes):
+            bound = bound.decode()
+        if bound and bound != worker_id:
+            retry_after = coordination.ttl(binding_key)
+            if not isinstance(retry_after, int) or retry_after < 1:
+                retry_after = Config.WORKER_ATTEMPT_LEASE_TTL
+            return err("ERR_STALE_WORKER_ATTEMPT", 409, retry_after=retry_after)
+        if not bound and not coordination.set(
+            binding_key, worker_id, nx=True, ex=Config.WORKER_ATTEMPT_LEASE_TTL
+        ):
+            retry_after = coordination.ttl(binding_key)
+            if not isinstance(retry_after, int) or retry_after < 1:
+                retry_after = Config.WORKER_ATTEMPT_LEASE_TTL
+            return err("ERR_STALE_WORKER_ATTEMPT", 409, retry_after=retry_after)
+        if bound == worker_id:
+            coordination.expire(binding_key, Config.WORKER_ATTEMPT_LEASE_TTL)
+    except Exception:
+        logger.exception("Failed to bind worker attempt %s", attempt_id)
+        return err("ERR_WORKER_AUTH_UNAVAILABLE", 503)
+
+    if submission.status == "queued":
+        submission.status = "running"
+        db.session.commit()
+    metadata = {
+        "submission_id": submission.id,
+        "task_id": submission.task_id,
+        "attempt_id": attempt_id,
+    }
+    capabilities = build_submission_capabilities(metadata, worker_id)
+    return {"capabilities": capabilities}, 200
+
+
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
 @rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
@@ -1716,21 +1842,25 @@ def report_worker_progress(
     submission_id: Any,
 ) -> tuple[dict[str, str], int] | tuple[FlaskResponse, int]:
     """Worker callback to report submission status and scores."""
-    token = request.headers.get("X-Worker-Token")
-
-    nonce = check_worker_auth(token)
-    if not nonce:
-        return err("ERR_UNAUTHORIZED", 401)
-    # Replay protection: the signed nonce must reference this exact submission
-    if nonce.get("submission_id") != str(submission_id):
-        return err("ERR_UNAUTHORIZED", 401)
-
     if not request.is_json:
         return err("ERR_INVALID_REQUEST_BODY", 400)
     data = request.get_json()
+    if not isinstance(data, dict):
+        return err("ERR_INVALID_REQUEST_BODY", 400)
     submission = Submission.query.filter_by(id=submission_id).with_for_update().first()
     if not submission:
         return err("ERR_NOT_FOUND", 404)
+    identity = check_worker_auth(request.headers.get("X-Worker-Token"))
+    if not identity:
+        return err("ERR_UNAUTHORIZED", 401)
+    if not _worker_capability(
+        "report_submission",
+        "submission",
+        submission_id,
+        attempt_id=submission.celery_task_id,
+        identity=identity,
+    ):
+        return err("ERR_STALE_WORKER_ATTEMPT", 409)
 
     # A killed submission is terminal (status=failed,
     # Detailed_status=killed). A stale in-flight worker report must not
@@ -1738,13 +1868,27 @@ def report_worker_progress(
     if submission.detailed_status == "killed":
         return err("ERR_SUBMISSION_KILLED", 409)
 
+    status_val = submission.status
     if "status" in data:
         status_val = data["status"]
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
+        if submission.status in ("completed", "failed"):
+            if status_val == submission.status:
+                return {"message": "Status already applied"}, 200
+            return err("ERR_STALE_WORKER_ATTEMPT", 409)
+        allowed = {
+            "queued": {"queued", "running", "failed"},
+            "running": {"running", "completed", "failed"},
+        }
+        if status_val not in allowed.get(submission.status, set()):
+            return err("ERR_STALE_WORKER_ATTEMPT", 409)
         submission.status = status_val
     if "detailed_status" in data:
-        submission.detailed_status = data["detailed_status"]
+        detailed_status = data["detailed_status"]
+        if not isinstance(detailed_status, str) or len(detailed_status) > 100:
+            return err("ERR_INVALID_REQUEST_BODY", 400)
+        submission.detailed_status = detailed_status
     # Executed_at anchors the watchdog clock; it must reflect actual container
     # Execution, not pre-execution phases (image build, GPU acquisition) that the
     # Runner reports under detailed_status="building_env" while status="running"
@@ -1764,12 +1908,15 @@ def report_worker_progress(
         if isinstance(logs_val, list):
             logs_val = "\n".join(str(line) for line in logs_val)
         if isinstance(logs_val, str) and len(logs_val.encode("utf-8")) > MAX_LOG_SIZE:
-            logs_val = logs_val[: MAX_LOG_SIZE // 2]
+            logs_val = logs_val.encode("utf-8")[:MAX_LOG_SIZE].decode("utf-8", errors="ignore")
+        if logs_val is not None and not isinstance(logs_val, str):
+            return err("ERR_INVALID_REQUEST_BODY", 400)
         submission.logs = logs_val
     if "public_score" in data:
         val = data["public_score"]
         if val is not None and (
             not isinstance(val, (int, float))
+            or isinstance(val, bool)
             or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
         ):
             return err("ERR_INVALID_PUBLIC_SCORE", 400)
@@ -1779,6 +1926,7 @@ def report_worker_progress(
         val = data["private_score"]
         if val is not None and (
             not isinstance(val, (int, float))
+            or isinstance(val, bool)
             or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
         ):
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
@@ -1786,7 +1934,11 @@ def report_worker_progress(
         submission.final_weighted_score_private = val
     if "execution_time_ms" in data:
         try:
-            exec_time = int(data["execution_time_ms"])
+            exec_time = (
+                -1
+                if isinstance(data["execution_time_ms"], bool)
+                else int(data["execution_time_ms"])
+            )
         except (TypeError, ValueError, OverflowError):
             exec_time = -1
         if exec_time < 0 or exec_time > Config.MAX_EXECUTION_TIME_MS:
@@ -1801,11 +1953,28 @@ def report_worker_progress(
     elif "metrics_payload_priv" in data:
         submission.metrics_payload_private = data["metrics_payload_priv"]
     if "gpu_node" in data:
-        submission.gpu_node = data["gpu_node"]
+        gpu_node = data["gpu_node"]
+        if gpu_node is not None and (not isinstance(gpu_node, str) or len(gpu_node) > 255):
+            return err("ERR_INVALID_REQUEST_BODY", 400)
+        submission.gpu_node = gpu_node
     if "final_weighted_score_public" in data:
-        submission.final_weighted_score_public = data["final_weighted_score_public"]
+        val = data["final_weighted_score_public"]
+        if val is not None and (
+            not isinstance(val, (int, float))
+            or isinstance(val, bool)
+            or (isinstance(val, float) and not math.isfinite(val))
+        ):
+            return err("ERR_INVALID_PUBLIC_SCORE", 400)
+        submission.final_weighted_score_public = val
     if "final_weighted_score_private" in data:
-        submission.final_weighted_score_private = data["final_weighted_score_private"]
+        val = data["final_weighted_score_private"]
+        if val is not None and (
+            not isinstance(val, (int, float))
+            or isinstance(val, bool)
+            or (isinstance(val, float) and not math.isfinite(val))
+        ):
+            return err("ERR_INVALID_PRIVATE_SCORE", 400)
+        submission.final_weighted_score_private = val
 
     # Baseline lifecycle: a failed baseline makes the task not-ready; a
     # Completed baseline clears the problem (submissions are gated on
@@ -1841,22 +2010,6 @@ def report_worker_progress(
     return {"message": "Status updated successfully"}, 200
 
 
-def _worker_nonce_allowed_for_task(nonce: dict[str, str], task_id: Any) -> bool:
-    """Replay protection for task-scoped worker endpoints.
-
-    A signed nonce only grants access to the submission it was issued for
-    (the evaluation flow), or to any task during the image-build flow
-    (nonce submission id is the literal ``worker`` sentinel).
-    """
-    submission_id = nonce.get("submission_id")
-    if not submission_id:
-        return False
-    if submission_id == "worker":
-        return True
-    submission = Submission.query.filter_by(id=submission_id).first()
-    return bool(submission and str(submission.task_id) == str(task_id))
-
-
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
 @rate_limit(max_requests=10, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
@@ -1864,10 +2017,7 @@ def worker_download_task_file(
     task_id: Any, filename: str
 ) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Worker endpoint to securely download task resource files."""
-    token = request.headers.get("X-Worker-Token")
-
-    nonce = check_worker_auth(token)
-    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
+    if not _task_capability("task_file", task_id):
         return err("ERR_UNAUTHORIZED", 401)
 
     task = db.get_or_404(Task, task_id)
@@ -1901,49 +2051,8 @@ def worker_download_task_file(
     tags=["Tasks"],
 )
 def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskResponse, int]:
-    """List all active task configurations for worker image pre-building."""
-    token = request.headers.get("X-Worker-Token")
-
-    if not check_worker_auth(token):
-        return err("ERR_UNAUTHORIZED", 401)
-
-    active_challenges = Challenge.query.filter_by(is_archived=False).all()
-    tasks_list = []
-    import json
-
-    for challenge in active_challenges:
-        for task in challenge.tasks:
-            hf_datasets_list: list[str] = []
-            if task.hf_datasets:
-                with contextlib.suppress(Exception):
-                    hf_datasets_list = (
-                        json.loads(task.hf_datasets)
-                        if isinstance(task.hf_datasets, str)
-                        else (task.hf_datasets or [])
-                    )
-            hf_models_list: list[str] = []
-            if task.hf_models:
-                with contextlib.suppress(Exception):
-                    hf_models_list = (
-                        json.loads(task.hf_models)
-                        if isinstance(task.hf_models, str)
-                        else (task.hf_models or [])
-                    )
-            tasks_list.append(
-                {
-                    "id": task.id,
-                    "base_docker_image": task.base_docker_image
-                    or "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime",
-                    "pip_requirements": task.pip_requirements or "",
-                    "hf_datasets": hf_datasets_list,
-                    "hf_models": hf_models_list,
-                    "hf_api_key": task.get_hf_api_key() if task.hf_api_key else "",
-                    "task_files": safe_json_loads(task.files, []),
-                    "custom_eval_code": task.custom_eval_code or "",
-                }
-            )
-
-    return {"tasks": tasks_list}, 200
+    """Reject the retired fleet-wide task enumeration contract."""
+    return err("ERR_UNAUTHORIZED", 401)
 
 
 @tasks_bp.route("/worker/active-datasets", methods=["GET"])
@@ -1952,64 +2061,8 @@ def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskRes
     tags=["Tasks"],
 )
 def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[FlaskResponse, int]:
-    """List all HuggingFace datasets used by active challenges for worker preloading."""
-    token = request.headers.get("X-Worker-Token")
-
-    if not check_worker_auth(token):
-        return err("ERR_UNAUTHORIZED", 401)
-
-    active_challenges = Challenge.query.filter_by(is_archived=False).all()
-    datasets_set = set()
-    hf_api_key = None
-    import json
-    import re
-
-    for challenge in active_challenges:
-        for task in challenge.tasks:
-            # Collect from task.hf_datasets field
-            if task.hf_datasets:
-                try:
-                    hf_list = (
-                        json.loads(task.hf_datasets)
-                        if isinstance(task.hf_datasets, str)
-                        else (task.hf_datasets or [])
-                    )
-                    for d in hf_list:
-                        if isinstance(d, str) and d.strip():
-                            datasets_set.add(d.strip())
-                except (json.JSONDecodeError, TypeError, ValueError) as e:
-                    logger.warning("Failed to parse hf_datasets for task %s: %s", task.id, e)
-
-            # Extract from custom evaluation code
-            eval_code = ""
-            if task.custom_eval_code:
-                eval_code = task.custom_eval_code
-            elif task.evaluator_script_path and os.path.exists(task.evaluator_script_path):
-                try:
-                    with open(task.evaluator_script_path) as f:
-                        eval_code = f.read()
-                except (OSError, UnicodeDecodeError) as e:
-                    logger.warning("Failed to read evaluator script for task %s: %s", task.id, e)
-                    eval_code = ""
-
-            if eval_code:
-                matches = re.findall(
-                    r'(?:datasets\.)?load_dataset\(\s*[\'"]([^\'"]+)[\'"]', eval_code
-                )
-                for m in matches:
-                    datasets_set.add(m)
-
-            # Grab first hf_api_key from any active task
-            if hf_api_key is None and task.hf_api_key:
-                try:
-                    hf_api_key = task.get_hf_api_key()
-                except Exception as e:
-                    logger.warning("Failed to decrypt hf_api_key for task %s: %s", task.id, e)
-
-    resp = {"datasets": list(datasets_set)}
-    if hf_api_key:
-        resp["hf_api_key"] = hf_api_key
-    return resp, 200
+    """Reject the retired fleet-wide dataset and key enumeration contract."""
+    return err("ERR_UNAUTHORIZED", 401)
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
@@ -2018,10 +2071,7 @@ def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[Fl
     tags=["Tasks"],
 )
 def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[FlaskResponse, int]:
-    token = request.headers.get("X-Worker-Token")
-
-    nonce = check_worker_auth(token)
-    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
+    if not _task_capability("task_hf_key", task_id):
         return err("ERR_UNAUTHORIZED", 401)
     task = db.session.get(Task, task_id)
     if not task:
@@ -2046,9 +2096,7 @@ def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[Fla
 def report_build_error(
     task_id: Any,
 ) -> tuple[FlaskResponse, int] | tuple[dict[str, str], int]:
-    token = request.headers.get("X-Worker-Token")
-    nonce = check_worker_auth(token)
-    if not nonce or not _worker_nonce_allowed_for_task(nonce, task_id):
+    if not _task_capability("report_build_error", task_id):
         return err("ERR_UNAUTHORIZED", 401)
     data = request.get_json(silent=True) or {}
     error_msg = (data.get("error") or "").strip()
@@ -2097,16 +2145,18 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
         return err("ERR_INVALID_REQUEST_BODY", 400)
 
     # Cap the decompressed payload to prevent disk fill from a compromised worker
-    if len(body) > 1024 * 1024:
-        return err("ERR_PAYLOAD_TOO_LARGE", 400)
+    if len(body) > Config.MAX_WORKER_LOG_SHIP_BYTES:
+        return err("ERR_PAYLOAD_TOO_LARGE", 413)
 
     try:
-        lines = gzip.decompress(body).decode()
-    except Exception:
+        with gzip.GzipFile(fileobj=io.BytesIO(body)) as compressed:
+            lines_bytes = compressed.read(Config.MAX_WORKER_LOG_SHIP_BYTES + 1)
+        lines = lines_bytes.decode()
+    except (OSError, EOFError, UnicodeDecodeError):
         return err("ERR_INVALID_REQUEST_BODY", 400)
 
-    if len(lines.encode()) > 1024 * 1024:
-        return err("ERR_PAYLOAD_TOO_LARGE", 400)
+    if len(lines_bytes) > Config.MAX_WORKER_LOG_SHIP_BYTES:
+        return err("ERR_PAYLOAD_TOO_LARGE", 413)
 
     log_dir = os.environ.get("LOG_DIR", "/app/logs")
     os.makedirs(log_dir, exist_ok=True)
@@ -2146,14 +2196,16 @@ def get_submission_run_content(submission_id: Any) -> tuple[WorkerRunContentResp
     embedded in the Celery message. ``user_code`` is reconstructed from the
     stored ``code_cells`` exactly as the submission runner consumes it.
     """
-    token = request.headers.get("X-Worker-Token")
-    nonce = check_worker_auth(token)
-    if not nonce or nonce.get("submission_id") != str(submission_id):
-        return err("ERR_UNAUTHORIZED", 401)
-
     submission = db.session.get(Submission, submission_id)
     if not submission:
         return err("ERR_NOT_FOUND", 404)
+    if not _worker_capability(
+        "submission_run_content",
+        "submission",
+        submission_id,
+        attempt_id=submission.celery_task_id,
+    ):
+        return err("ERR_UNAUTHORIZED", 401)
 
     try:
         cells_list = json.loads(submission.code_cells or "[]")

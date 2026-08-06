@@ -60,7 +60,7 @@ Access for jury members is strictly controlled by explicit challenge assignments
 Jury members can register entire student cohorts or competition teams in bulk using CSV files.
 
 #### CSV Header Format:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city
 ```
 
@@ -68,7 +68,7 @@ name,surname,middle_name,birth_date,grade,school,city
 `email` and `is_anonymous` may be included in the CSV header.
 
 #### Example CSV Payload:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city,email,is_anonymous
 Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false

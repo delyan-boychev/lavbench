@@ -14,7 +14,7 @@ from typing import Any
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
-from services.submission_service import get_best_submission
+from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,20 @@ def generate_scores_csv(challenge: Challenge) -> str:
     else:
         is_final_active = Submission.is_final_selection
 
+    private_score_task_ids = [
+        task.id for task in tasks if uses_private_score_for_selection(task, challenge)
+    ]
+    if private_score_task_ids:
+        selection_score = case(
+            (
+                Submission.task_id.in_(private_score_task_ids),
+                func.coalesce(Submission.private_score, Submission.public_score),
+            ),
+            else_=Submission.public_score,
+        )
+    else:
+        selection_score = Submission.public_score
+
     subq = (
         db.session.query(
             Submission.id.label("sub_id"),
@@ -59,8 +73,7 @@ def generate_scores_csv(challenge: Challenge) -> str:
                 partition_by=(Submission.user_id, Submission.task_id),
                 order_by=(
                     is_final_active.desc(),
-                    Submission.private_score.desc(),
-                    Submission.public_score.desc(),
+                    selection_score.desc(),
                     Submission.execution_time_ms.asc(),
                 ),
             )

@@ -283,6 +283,15 @@ def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
     return 1
 
 
+def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:
+    """Return whether automatic selection may use a task's private score."""
+    if challenge.scores_finalized:
+        return bool(challenge.reveal_results)
+
+    stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
+    return bool(stage and stage.is_finalized and stage.reveal_results)
+
+
 def get_best_submission(
     task: Task, user_subs: list[Submission], challenge: Challenge
 ) -> Submission | None:
@@ -303,15 +312,16 @@ def get_best_submission(
     if final_sub and not has_late_sub:
         return final_sub
 
-    # 2. Tie-breaking sorting logic
-    # Since all database scores (public_score, private_score) are normalized to higher-is-better,
-    # We always sort descending by score and ascending by execution time (faster is better)
+    # 2. Automatic selection logic
+    # Private ordering must not influence the visible selection before private results are revealed
+    use_private_score = uses_private_score_for_selection(task, challenge)
+
     subs_sorted = sorted(
         user_subs,
         key=lambda x: (
             (
                 x.private_score
-                if x.private_score is not None
+                if use_private_score and x.private_score is not None
                 else (x.public_score if x.public_score is not None else -999999)
             ),
             -(x.execution_time_ms if x.execution_time_ms is not None else 999999),

@@ -102,19 +102,19 @@ class TestBackendExceptionAndErrorCases:
     def test_me_unauthorized_missing_token(self):
         res = self.client.get("/api/auth/me")
         assert res.status_code == 401
-        assert "Unauthorized access" in res.json["error"]
+        assert res.json["code"] == "ERR_TOKEN_INVALID"
 
     def test_me_unauthorized_invalid_token(self):
         headers = {"Authorization": "Bearer malformed.token.signature"}
         res = self.client.get("/api/auth/me", headers=headers)
         assert res.status_code == 401
-        assert "Unauthorized access" in res.json["error"]
+        assert res.json["code"] == "ERR_TOKEN_INVALID"
 
-    def test_me_user_not_found(self):
+    def test_me_nonexistent_user_token_is_invalid(self):
         token = generate_token(99999, "competitor")
         res = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 404
-        assert "User not found" in res.json["error"]
+        assert res.status_code == 401
+        assert res.json["code"] == "ERR_TOKEN_INVALID"
 
     def test_get_challenge_not_registered_competitor(self):
         headers = self._auth(self.competitor)
@@ -413,6 +413,7 @@ class TestBackendExceptionAndErrorCases:
             "main_server_url": "http://localhost:5001",
             "worker_secret_key": "secret",
             "submission_id": 1,
+            "attempt_id": "attempt-callback-failure",
             "task_id": 2,
             "user_code": "def predict(x): return 1",
             "is_custom_eval": True,
@@ -422,5 +423,9 @@ class TestBackendExceptionAndErrorCases:
             ),
         }
 
-        result = evaluate_submission(submission_id=1, metadata=metadata)
+        with patch(
+            "tasks.task_modules.submission_runner.fetch_submission_capabilities",
+            return_value=None,
+        ):
+            result = evaluate_submission(submission_id=1, metadata=metadata)
         assert "evaluated with status failed" in result

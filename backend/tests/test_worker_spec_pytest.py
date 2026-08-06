@@ -130,13 +130,11 @@ class TestRegisterWorkerSpecs:
         mocker.patch.object(sr.os, "cpu_count", return_value=8)
         mocker.patch("platform.system", return_value="Darwin")
         mocker.patch.object(sr.subprocess, "check_output", side_effect=self._fake_check_output)
-        mock_build = mocker.patch("tasks.task_modules.image_builder.build_all_active_tasks")
-        mock_listener = mocker.patch("tasks.task_modules.image_builder.start_rebuild_listener")
         sender = SimpleNamespace(hostname=hostname, pool=SimpleNamespace(limit=concurrency))
-        return mock_r, mock_build, mock_listener, sender
+        return mock_r, sender
 
     def test_registers_cpu_spec(self, mocker):
-        mock_r, mock_build, mock_listener, sender = self._setup(mocker)
+        mock_r, sender = self._setup(mocker)
         register_worker_specs(sender)
         mock_r.set.assert_called_once()
         key = mock_r.set.call_args.args[0]
@@ -151,13 +149,9 @@ class TestRegisterWorkerSpecs:
         assert spec["gpu_type"] == "N/A"
         assert "last_seen" in spec
         assert mock_r.set.call_args.kwargs["ex"] == 604800
-        mock_build.assert_called_once()
-        mock_listener.assert_called_once()
 
     def test_registers_gpu_spec_by_worker_name(self, mocker):
-        mock_r, _mock_build, _mock_listener, sender = self._setup(
-            mocker, hostname="gpu-worker-2", concurrency=2
-        )
+        mock_r, sender = self._setup(mocker, hostname="gpu-worker-2", concurrency=2)
         register_worker_specs(sender)
         spec = json.loads(mock_r.set.call_args.args[1])
         assert spec["type"] == "GPU"
@@ -166,23 +160,7 @@ class TestRegisterWorkerSpecs:
 
     def test_no_client_returns_early(self, mocker):
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
-        mock_build = mocker.patch("tasks.task_modules.image_builder.build_all_active_tasks")
         register_worker_specs(MagicMock(hostname="worker-3"))
-        mock_build.assert_not_called()
-
-    def test_internal_only_worker_skips_image_prebuilding(self, mocker):
-        mock_r, mock_build, mock_listener, sender = self._setup(mocker)
-        mocker.patch.object(sr.Config, "RUNS_EVALUATION", False)
-        register_worker_specs(sender)
-        mock_r.set.assert_called_once()
-        mock_build.assert_not_called()
-        mock_listener.assert_not_called()
-
-    def test_build_failure_does_not_block_spec_registration(self, mocker):
-        mock_r, mock_build, _mock_listener, sender = self._setup(mocker)
-        mock_build.side_effect = Exception("build boom")
-        register_worker_specs(sender)
-        mock_r.set.assert_called_once()
 
 
 class TestRefreshWorkerSpec:

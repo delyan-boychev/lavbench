@@ -849,7 +849,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                 </span>
                                 <span className="text-[10px] text-slate-500 ml-2">
                                   {t('admin.public_eval_split', {
-                                    percentage: task.public_eval_percentage || 30,
+                                    percentage: task.public_eval_percentage ?? 30,
                                   })}
                                 </span>
                                 {expandedErrorTask === task.id &&

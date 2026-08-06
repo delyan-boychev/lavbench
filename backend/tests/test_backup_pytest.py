@@ -12,6 +12,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, User, db
+from routes.admin import _resolve_backup_path
 from tasks import check_and_backup
 from tasks.task_modules.system import run_backup
 from utils.auth_utils import generate_token
@@ -230,7 +231,8 @@ class TestAdminBackupEndpoints:
 
     def test_list_backups_unauthenticated(self):
         resp = self.client.get("/api/admin/backups")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
+        assert resp.get_json()["code"] == "ERR_TOKEN_INVALID"
 
     def test_force_backup_admin_access(self):
         resp = self.client.post("/api/admin/backups/force", headers=self._auth(self.admin_token))
@@ -283,3 +285,34 @@ class TestAdminBackupEndpoints:
             "/api/admin/backups/test.tar.gz", headers=self._auth(self.jury_token)
         )
         assert resp.status_code == 403
+
+
+def test_resolve_backup_path_rejects_prefix_sibling(tmp_path):
+    backup_dir = tmp_path / "backups"
+    sibling_dir = tmp_path / "backups-stolen"
+    backup_dir.mkdir()
+    sibling_dir.mkdir()
+
+    with patch("routes.admin.BACKUPS_DIR", str(backup_dir)):
+        assert _resolve_backup_path("../backups-stolen/secret.tar.gz") is None
+
+
+def test_resolve_backup_path_rejects_symlink_escape(tmp_path):
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    outside_backup = tmp_path / "secret.tar.gz"
+    outside_backup.write_bytes(b"secret")
+    (backup_dir / "linked.tar.gz").symlink_to(outside_backup)
+
+    with patch("routes.admin.BACKUPS_DIR", str(backup_dir)):
+        assert _resolve_backup_path("linked.tar.gz") is None
+
+
+def test_resolve_backup_path_accepts_contained_backup(tmp_path):
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    backup = backup_dir / "manual_test.tar.gz"
+    backup.write_bytes(b"backup")
+
+    with patch("routes.admin.BACKUPS_DIR", str(backup_dir)):
+        assert _resolve_backup_path(backup.name) == backup.resolve()

@@ -59,6 +59,7 @@ class TestTaskFileDownload:
     def test_unauthenticated_returns_401(self, client, task_with_files):
         resp = client.get(f"/api/tasks/{task_with_files.id}/download/data.csv")
         assert resp.status_code == 401
+        assert resp.get_json()["code"] == "ERR_TOKEN_INVALID"
 
     # ── admin downloads ──
     def test_admin_downloads_regular_file(self, client, task_with_files, tokens, auth_headers):
@@ -448,10 +449,11 @@ class TestRegisterCompetitor:
         assert resp.status_code == 403
         assert "Jury members cannot register" in resp.get_json()["error"]
 
-    def test_unauthenticated_returns_403(self, client, sample_challenge):
+    def test_unauthenticated_returns_401(self, client, sample_challenge):
         payload = {**self.COMP_PAYLOAD, "challenge_id": sample_challenge.id}
         resp = client.post(
             "/api/admin/register-competitor",
             json=payload,
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
+        assert resp.get_json()["code"] == "ERR_TOKEN_INVALID"

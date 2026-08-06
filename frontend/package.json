@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check-types": "tsc --noEmit",
+    "audit:security": "node scripts/check-npm-audit.mjs",
     "format": "prettier --write \"src/**/*.{js,jsx,css,json,md}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,css,json,md}\"",
     "generate-api-types": "openapi-typescript \"${API_SPEC_URL:-http://localhost:5001/apidoc/openapi.json}\" -o src/types/api.d.ts"
@@ -36,7 +37,7 @@
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.11",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.18.2",
+    "react-router": "8.3.0",
     "react-simple-code-editor": "^0.14.1",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.1"
@@ -63,6 +64,7 @@
     "vitest": "^4.1.9"
   },
   "overrides": {
-    "js-yaml": "^4.1.2"
+    "brace-expansion": "^5.0.9",
+    "js-yaml": "^4.3.0"
   }
 }

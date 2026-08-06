@@ -24,10 +24,14 @@ from celery.signals import task_prerun, worker_ready
 from config import Config
 from utils.cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from utils.dates import utcnow
+from utils.worker_auth import (
+    WorkerCapabilityClaimError,
+    fetch_submission_capabilities,
+    worker_request_headers,
+)
 from utils.worker_utils import (
     MockModel,
     StreamingLogList,
-    _sign_worker_token,
     report_status_to_server,
     run_sandbox,
     sync_labels_parquet_to_cache,
@@ -66,7 +70,7 @@ def _report_runtime_sync_failure(
         str(task_id),
         "Task resource synchronization failed; submissions are blocked until the task is fixed.",
         str(metadata.get("main_server_url", "")),
-        _sign_worker_token(str(metadata.get("submission_id", "unknown"))),
+        metadata,
         problem_codes=problem_codes,
     )
 
@@ -110,14 +114,14 @@ _install_reconnect_guard()
 
 
 def _fetch_hf_key_from_server(
-    task_id: str | None, main_server_url: str | None, worker_token: str | None
+    task_id: str | None, main_server_url: str | None, metadata: dict[str, Any] | None
 ) -> str:
-    if not task_id or not main_server_url or not worker_token:
+    if not task_id or not main_server_url or not metadata:
         logger.warning(
             "_fetch_hf_key_from_server: missing params (task=%s url=%s has_token=%s)",
             task_id,
             main_server_url,
-            bool(worker_token),
+            bool(metadata),
         )
         return ""
     # Never ship an HF secret over plain HTTP to a non-localhost origin
@@ -132,7 +136,7 @@ def _fetch_hf_key_from_server(
     try:
         res = requests.get(
             f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/hf-key",
-            headers={"X-Worker-Token": worker_token},
+            headers=worker_request_headers(metadata, "task_hf_key"),
             timeout=5,
         )
         if res.status_code == 200:
@@ -246,15 +250,22 @@ def preload_submission_datasets(
 
 def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) -> float:
     from models import metric_direction_from_config
+    from services.evaluation import EvaluationError
 
     if not metrics_cfg:
         if metrics_payload:
             m_name = next(iter(metrics_payload.keys()))
             val = metrics_payload[m_name]
             if val is None:
-                return 0.0
+                raise EvaluationError(
+                    "EVALUATION_METRIC_FAILED",
+                    f"Metric {m_name!r} did not produce a score.",
+                )
             if math.isnan(val) or math.isinf(val):
-                return 0.0
+                raise EvaluationError(
+                    "EVALUATION_METRIC_FAILED",
+                    f"Metric {m_name!r} produced a non-finite score.",
+                )
             if metric_direction_from_config(m_name, None):
                 if m_name.lower().strip() == "brier_score":
                     return 1.0 - val
@@ -262,15 +273,13 @@ def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) 
             return val
         return 0.0
 
-    # Exclude missing/failed metrics (None) and re-normalize over the remainder
-    # So a broken metric can neither boost nor drag the weighted score (BP-H4)
-    configured = [
-        (m_name, cfg)
-        for m_name, cfg in metrics_cfg.items()
-        if metrics_payload.get(m_name) is not None
-    ]
-    if not configured:
-        return 0.0
+    configured = list(metrics_cfg.items())
+    missing = [name for name, _cfg in configured if metrics_payload.get(name) is None]
+    if missing:
+        raise EvaluationError(
+            "EVALUATION_METRIC_FAILED",
+            "Required metric(s) did not produce scores: " + ", ".join(sorted(missing)),
+        )
 
     total_weight = sum(float(cfg.get("weight", 1.0)) for _, cfg in configured)
     if total_weight == 0:
@@ -278,9 +287,12 @@ def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) 
 
     weighted_sum = 0.0
     for m_name, cfg in configured:
-        val = metrics_payload.get(m_name, 0.0)
+        val = metrics_payload[m_name]
         if math.isnan(val) or math.isinf(val):
-            val = 0.0
+            raise EvaluationError(
+                "EVALUATION_METRIC_FAILED",
+                f"Metric {m_name!r} produced a non-finite score.",
+            )
         if metric_direction_from_config(m_name, cfg):
             if m_name.lower().strip() == "brier_score":
                 norm_val = 1.0 - val
@@ -289,7 +301,10 @@ def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) 
         else:
             norm_val = val
         if math.isnan(norm_val) or math.isinf(norm_val):
-            norm_val = 0.0
+            raise EvaluationError(
+                "EVALUATION_METRIC_FAILED",
+                f"Metric {m_name!r} could not be normalized safely.",
+            )
         weight = float(cfg.get("weight", 1.0))
         weighted_sum += norm_val * weight
     return weighted_sum / total_weight
@@ -316,6 +331,12 @@ def run_eval_submission(
         _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
         if _worker_main_url:
             metadata["main_server_url"] = _worker_main_url
+        try:
+            fetch_submission_capabilities(metadata)
+        except WorkerCapabilityClaimError as exc:
+            if self_task is not None and hasattr(self_task, "retry"):
+                raise self_task.retry(exc=exc, countdown=exc.retry_after, max_retries=5) from exc
+            raise
         # User_code and custom_eval_code are no longer embedded in the
         # Celery message — fetch them from the server on demand
         try:
@@ -344,7 +365,7 @@ def run_eval_submission(
             get_hf_api_key=lambda: _fetch_hf_key_from_server(
                 metadata.get("task_id"),
                 metadata.get("main_server_url"),
-                _sign_worker_token(metadata.get("submission_id", "unknown")),
+                metadata,
             ),
             evaluator_script_path=None,
             custom_eval_code=metadata.get("custom_eval_code"),
@@ -490,19 +511,23 @@ def run_eval_submission(
             if not success:
                 if status_val in ("completed", "failed"):
                     # Final status: critical — must persist via Redis fallback
+                    fallback = {
+                        "submission_id": submission_id,
+                        "attempt_id": metadata.get("attempt_id"),
+                        "worker_id": Config.WORKER_ID,
+                        "status": status_val,
+                        "detailed_status": detailed_val,
+                        "logs": logs_str or "",
+                        "public_score": pub_score,
+                        "private_score": priv_score,
+                        "execution_time_ms": time_ms,
+                        "metrics_payload_pub": m_pub,
+                        "metrics_payload_priv": m_priv,
+                    }
                     try:
                         r = get_coordination_client()
-                        fallback = {
-                            "submission_id": submission_id,
-                            "status": status_val,
-                            "detailed_status": detailed_val,
-                            "logs": logs_str or "",
-                            "public_score": pub_score,
-                            "private_score": priv_score,
-                            "execution_time_ms": time_ms,
-                            "metrics_payload_pub": m_pub,
-                            "metrics_payload_priv": m_priv,
-                        }
+                        if r is None:
+                            raise RuntimeError("Redis coordination is unavailable")
                         r.set(
                             submission_fallback_key(submission_id),
                             json.dumps(fallback, default=str),
@@ -784,7 +809,7 @@ def run_eval_submission(
                 _fetch_hf_key_from_server(
                     task.id,
                     metadata.get("main_server_url", ""),
-                    _sign_worker_token(metadata.get("submission_id", "unknown")),
+                    metadata,
                 )
                 if metadata and metadata.get("main_server_url")
                 else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
@@ -792,11 +817,7 @@ def run_eval_submission(
             "task_files": metadata.get("task_files", []) if metadata else [],
             "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
             "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
-            "_worker_token": (
-                _sign_worker_token(metadata.get("submission_id", "unknown"))
-                if metadata and metadata.get("main_server_url")
-                else ""
-            ),
+            "_worker_metadata": metadata if metadata and metadata.get("main_server_url") else {},
         }
 
         if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
@@ -1006,14 +1027,22 @@ def run_eval_submission(
                         )
                 else:
                     try:
-                        import pandas as pd
-
                         from services.evaluation import (
+                            EvaluationError,
+                            derive_task_split_key,
                             evaluate_predictions,
+                            read_parquet_bounded,
+                            split_evaluation_frames,
                             validate_parquet_schema,
                         )
 
-                        df_sub = pd.read_parquet(sub_parquet_path)
+                        parquet_limits = {
+                            "max_file_bytes": Config.MAX_PARQUET_FILE_BYTES,
+                            "max_uncompressed_bytes": Config.MAX_PARQUET_UNCOMPRESSED_BYTES,
+                            "max_rows": Config.MAX_PARQUET_ROWS,
+                            "max_columns": Config.MAX_PARQUET_COLUMNS,
+                        }
+                        df_sub = read_parquet_bounded(sub_parquet_path, **parquet_limits)
 
                         is_valid, err = validate_parquet_schema(df_sub, is_submission=True)
                         if not is_valid:
@@ -1022,9 +1051,8 @@ def run_eval_submission(
                             update_status("failed", "failed", logs_list=logs)
                             return
 
-                        df_labels = pd.read_parquet(labels_path)
+                        df_labels = read_parquet_bounded(labels_path, **parquet_limits)
 
-                        # Split into public/private sets based on public_eval_percentage
                         metrics_cfg = task.metrics_config
                         if isinstance(metrics_cfg, str):
                             try:
@@ -1043,67 +1071,17 @@ def run_eval_submission(
                             if task.public_eval_percentage is not None
                             else 30
                         )
-
-                        if "query_id" in df_labels.columns:
-                            unique_queries = sorted(df_labels["query_id"].unique())
-                            num_public = int(len(unique_queries) * (pub_pct / 100.0))
-                            num_public = max(0, min(num_public, len(unique_queries)))
-                            # Tiny datasets must keep at least one row public so a
-                            # Non-zero public score is always computed (>=1 row)
-                            if num_public == 0 and len(unique_queries) > 0 and pub_pct > 0:
-                                num_public = 1
-                            public_queries = set(unique_queries[:num_public])
-
-                            df_labels_pub = (
-                                df_labels[df_labels["query_id"].isin(public_queries)]
-                                if num_public > 0
-                                else pd.DataFrame(columns=df_labels.columns)
+                        split_key = (metadata or {}).get("evaluation_split_key")
+                        if not split_key:
+                            split_key = derive_task_split_key(
+                                Config.EVALUATION_SPLIT_SECRET, task.id
                             )
-                            df_labels_priv = (
-                                df_labels[~df_labels["query_id"].isin(public_queries)]
-                                if num_public < len(unique_queries)
-                                else pd.DataFrame(columns=df_labels.columns)
-                            )
-
-                            df_sub_pub = (
-                                df_sub[df_sub["query_id"].isin(public_queries)]
-                                if num_public > 0
-                                else pd.DataFrame(columns=df_sub.columns)
-                            )
-                            df_sub_priv = (
-                                df_sub[~df_sub["query_id"].isin(public_queries)]
-                                if num_public < len(unique_queries)
-                                else pd.DataFrame(columns=df_sub.columns)
-                            )
-                        else:
-                            df_labels = df_labels.sort_values("id").reset_index(drop=True)
-                            n_total = len(df_labels)
-                            num_public = int(n_total * (pub_pct / 100.0))
-                            num_public = max(0, min(num_public, n_total))
-                            if num_public == 0 and n_total > 0 and pub_pct > 0:
-                                num_public = 1
-
-                            df_labels_pub = (
-                                df_labels.iloc[:num_public]
-                                if num_public > 0
-                                else pd.DataFrame(columns=df_labels.columns)
-                            )
-                            df_labels_priv = (
-                                df_labels.iloc[num_public:]
-                                if num_public < n_total
-                                else pd.DataFrame(columns=df_labels.columns)
-                            )
-
-                            df_sub_pub = (
-                                df_sub[df_sub["id"].isin(df_labels_pub["id"])]
-                                if num_public > 0
-                                else pd.DataFrame(columns=df_sub.columns)
-                            )
-                            df_sub_priv = (
-                                df_sub[df_sub["id"].isin(df_labels_priv["id"])]
-                                if num_public < n_total
-                                else pd.DataFrame(columns=df_sub.columns)
-                            )
+                        (
+                            df_sub_pub,
+                            df_labels_pub,
+                            df_sub_priv,
+                            df_labels_priv,
+                        ) = split_evaluation_frames(df_sub, df_labels, pub_pct, split_key)
 
                         # Compute metrics (skip empty splits)
                         eval_kwargs = {}
@@ -1134,19 +1112,18 @@ def run_eval_submission(
                             else {}
                         )
 
-                        public_score = calculate_weighted_score(m_pub, metrics_cfg)
-                        private_score = calculate_weighted_score(m_priv, metrics_cfg)
+                        public_score = (
+                            calculate_weighted_score(m_pub, metrics_cfg)
+                            if len(df_labels_pub) > 0
+                            else None
+                        )
+                        private_score = (
+                            calculate_weighted_score(m_priv, metrics_cfg)
+                            if len(df_labels_priv) > 0
+                            else None
+                        )
                         metrics_payload_pub = m_pub
                         metrics_payload_priv = m_priv
-                        failed_metrics = sorted(
-                            {k for k, v in (m_pub or {}).items() if v is None}
-                            | {k for k, v in (m_priv or {}).items() if v is None}
-                        )
-                        if failed_metrics:
-                            logs.append(
-                                "Warning: metric(s) could not be computed and were "
-                                "excluded from the score: " + ", ".join(failed_metrics)
-                            )
                         execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
                         status = "completed"
                         logs.append("Evaluation completed successfully.")
@@ -1157,10 +1134,13 @@ def run_eval_submission(
                         logger.exception(
                             "Parquet metric calculation failed for submission %s", submission_id
                         )
-                        logs.append(
-                            f"Error during parquet metric calculation: {eval_err!s} "
-                            "(contact administrator for details)"
-                        )
+                        if isinstance(eval_err, EvaluationError):
+                            logs.append(f"Evaluation failed ({eval_err.code}): {eval_err}")
+                        else:
+                            logs.append(
+                                "Evaluation failed unexpectedly. Contact an administrator "
+                                "for details."
+                            )
 
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1309,24 +1289,8 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         _spec_reconnect_needed = False
         logger.info("Worker specs registered: %s", spec)
 
-        # Build Docker images for all active tasks + start rebuild listener
-        # Internal/system workers (role 'internal') never run submission
-        # Code and must not touch the Docker image pipeline at all
-        if Config.RUNS_EVALUATION:
-            try:
-                from .image_builder import (
-                    build_all_active_tasks,
-                    start_rebuild_listener,
-                )
-
-                main_server_url = Config.MAIN_SERVER_URL
-                worker_token = _sign_worker_token("worker")
-                build_all_active_tasks(main_server_url, worker_token)
-                start_rebuild_listener(main_server_url, worker_token)
-            except Exception as e:
-                logger.warning("Failed to build active task images on startup: %s", e)
-        else:
-            logger.info("Internal-only worker: skipping active-task image prebuilding")
+        # Images are built on demand from the submission's scoped capabilities
+        # So workers never receive global task enumeration access
     except Exception as e:
         logger.error("Failed to register specs: %s", e)
 

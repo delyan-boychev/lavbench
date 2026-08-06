@@ -115,9 +115,8 @@ describe('TaskForm', () => {
   describe('General Tab (default)', () => {
     it('renders title input', () => {
       renderTaskForm();
-      const titleInput = document.querySelector('input[id="task-title"]');
+      const titleInput = screen.getByRole('textbox', { name: /Task Title/ });
       expect(titleInput).toBeInTheDocument();
-      expect(screen.getByText('Task Title')).toBeInTheDocument();
     });
 
     it('renders stage dropdown selector', () => {

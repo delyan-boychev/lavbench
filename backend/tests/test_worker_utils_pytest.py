@@ -42,8 +42,14 @@ def _mock_response_body(mock_obj, body: bytes, chunk_size: int = 8) -> None:
 
 class TestFetchSubmissionRunContent:
     @patch("utils.worker_utils.requests.get")
-    @patch("utils.worker_utils._sign_worker_token", return_value="signed-token")
-    def test_returns_content_from_server(self, mock_sign, mock_get):
+    @patch(
+        "utils.worker_utils.worker_request_headers",
+        return_value={
+            "X-Worker-Token": "signed-token",
+            "X-Worker-Capability": "scoped-capability",
+        },
+    )
+    def test_returns_content_from_server(self, mock_headers, mock_get):
         mock_resp = mock_get.return_value
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -56,10 +62,17 @@ class TestFetchSubmissionRunContent:
         url = mock_get.call_args[0][0]
         assert url == "http://server:5000/api/worker/submission-run-content/sub-1"
         assert mock_get.call_args[1]["headers"]["X-Worker-Token"] == "signed-token"
+        assert mock_get.call_args[1]["headers"]["X-Worker-Capability"] == "scoped-capability"
 
     @patch("utils.worker_utils.requests.get")
-    @patch("utils.worker_utils._sign_worker_token", return_value="signed-token")
-    def test_raises_on_non_200(self, mock_sign, mock_get):
+    @patch(
+        "utils.worker_utils.worker_request_headers",
+        return_value={
+            "X-Worker-Token": "signed-token",
+            "X-Worker-Capability": "scoped-capability",
+        },
+    )
+    def test_raises_on_non_200(self, mock_headers, mock_get):
         mock_get.return_value.status_code = 404
         with pytest.raises(RuntimeError, match="404"):
             fetch_submission_run_content(
@@ -742,17 +755,19 @@ class TestSignWorkerToken:
 
         priv = Ed25519PrivateKey.generate()
         priv_b64 = base64.b64encode(priv.private_bytes_raw()).decode()
+        monkeypatch.setenv("WORKER_ID", "test-worker")
         monkeypatch.setenv("WORKER_PRIVATE_KEY", priv_b64)
 
         token = _sign_worker_token(42)
         assert "." in token
 
-        nonce, b64_sig = token.split(".", 1)
-        assert nonce.startswith("42:")
+        version, worker_id, timestamp, nonce, b64_sig = token.split(".", 4)
+        assert version == "v1"
+        assert worker_id == "test-worker"
 
-        signature = base64.b64decode(b64_sig)
+        signature = base64.urlsafe_b64decode(b64_sig + "=" * (-len(b64_sig) % 4))
         pub = priv.public_key()
-        pub.verify(signature, nonce.encode())
+        pub.verify(signature, f"{version}.{worker_id}.{timestamp}.{nonce}".encode())
 
     def test_token_format(self, monkeypatch):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -762,13 +777,10 @@ class TestSignWorkerToken:
             "WORKER_PRIVATE_KEY",
             base64.b64encode(priv.private_bytes_raw()).decode(),
         )
+        monkeypatch.setenv("WORKER_ID", "test-worker")
         token = _sign_worker_token(99)
-        assert token.count(".") == 1
-
-        nonce, _ = token.split(".")
-        parts = nonce.split(":")
-        assert len(parts) == 2
-        assert parts[0] == "99"
+        assert token.count(".") == 4
+        assert token.split(".", 2)[:2] == ["v1", "test-worker"]
 
     def test_different_submissions_different_tokens(self, monkeypatch):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -778,11 +790,10 @@ class TestSignWorkerToken:
             "WORKER_PRIVATE_KEY",
             base64.b64encode(priv.private_bytes_raw()).decode(),
         )
+        monkeypatch.setenv("WORKER_ID", "test-worker")
         t1 = _sign_worker_token(1)
         t2 = _sign_worker_token(2)
-        # Different submission_id → different nonce → different token
-        assert t1.split(".")[0].split(":")[0] == "1"
-        assert t2.split(".")[0].split(":")[0] == "2"
+        assert t1 != t2
 
 
 class TestReportStatusToServer:

@@ -76,6 +76,8 @@ def evaluate(df_sub, df_labels, options=None):
 
 ### Key Rules & Conventions:
 - **Directionality**: All returned metric scores are treated as **higher-is-better** by the leaderboard engine.
+- **Complete Results**: Every configured metric must be present and finite. A crash, timeout, malformed result, or missing metric fails the evaluation; failed metrics are never replaced with zero or excluded while the remaining weights are renormalized.
+- **Identifier Integrity**: Ordinary submissions require unique, non-null IDs whose set and type match the labels exactly. Retrieval submissions require unique `(query_id, doc_id)` pairs and exactly the ground-truth query set.
 - **AST Validation on Upload**: The server executes static AST validation (`backend/routes/tasks.py`) when an evaluator is uploaded or modified. If `METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate` signature are missing or malformed, the upload returns **HTTP 400 Bad Request** with a detailed error description.
 - **Runtime Options Overrides**: When evaluation runs (`backend/services/evaluation/engine.py`), runtime options defined in the task's `metrics_config[m_name].get("options", {})` or `evaluator_options_schema` override default keys in `EVALUATOR_OPTIONS`.
 
@@ -99,12 +101,14 @@ LavBench provides production-ready evaluator template scripts in `docs/evaluator
 
 ## 4. Best Practices & Resilience Guidelines
 
-Custom evaluators run directly in the server evaluation process. Follow these defensive programming patterns to ensure resilience against malformed competitor submissions:
+Custom evaluators run in a separate hardened evaluation sandbox after competitor code exits. The script is injected into that trusted evaluation step and is not copied into the contestant image. Follow these defensive programming patterns to ensure resilience against malformed competitor submissions:
 
-1. **Check Required Columns**: Always verify that `predictions` or required column names exist in `df_sub`. If missing, throw a descriptive `ValueError` so it displays in the competitor's submission error log.
-2. **Sanitize `NaN` & `Inf` Values**: Use `pd.to_numeric(..., errors='coerce').fillna(0.0)` or `np.nan_to_num()` to prevent calculation crashes on invalid outputs.
+1. **Check Required Columns**: Always verify that `predictions` or required column names exist in `df_sub`. If missing, raise a descriptive `ValueError`; the submission fails without exposing worker paths or tracebacks.
+2. **Reject Invalid Numeric Values**: Validate `NaN` and infinite values explicitly. Returned metric values must be finite; silently coercing malformed predictions to an advantageous score is discouraged.
 3. **Native Float Return Values**: Cast all score dict values to standard Python `float` (e.g. `float(score)`), as raw `numpy.float64` objects may cause JSON serialization issues.
 4. **Test via Baseline Solution Notebooks (`is_baseline=True`)**: Prior to contest launch, submit a reference solution as an Admin with **"Mark as Baseline Solution"** (`is_baseline=True`). This validates that your evaluator script executes cleanly against actual `submission.parquet` outputs.
+
+Public/private membership is ordered with HMAC using a server-held `EVALUATION_SPLIT_SECRET` and a derived per-task key. Retrieval query groups are kept whole. Configure an independent random secret before creating evaluations; changing it changes split membership.
 
 ---
 

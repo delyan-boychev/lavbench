@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
 import CompetitionBar from '../CompetitionBar';

@@ -1,6 +1,7 @@
 """Tests for the auth helpers."""
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -8,7 +9,6 @@ from flask import Flask, jsonify, request
 
 from utils.auth_utils import (
     SECRET_KEY,
-    check_worker_auth,
     generate_token,
     login_required,
     rate_limit,
@@ -16,16 +16,27 @@ from utils.auth_utils import (
     verify_token,
 )
 
+_PASSWORD_HASH = "test-password-hash"
+
+
+def _token(user_id=42, role="competitor"):
+    return generate_token(user_id, role, password_hash=_PASSWORD_HASH)
+
+
+def _user(role="competitor", password_hash=_PASSWORD_HASH):
+    return SimpleNamespace(role=role, password_hash=password_hash)
+
 
 class TestAuthUtils:
     def test_generate_token_returns_valid_jwt(self):
-        token = generate_token(42, "competitor")
+        token = _token()
         assert token is not None
         assert len(token) > 20
 
     def test_verify_token_returns_user_data(self):
-        token = generate_token(42, "competitor")
-        result = verify_token(token)
+        token = _token()
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user()):
+            result = verify_token(token)
         assert result is not None
         assert result["user_id"] == "42"
         assert result["role"] == "competitor"
@@ -35,8 +46,9 @@ class TestAuthUtils:
         assert verify_token(None) is None
 
     def test_verify_token_handles_bearer_prefix(self):
-        token = generate_token(42, "admin")
-        result = verify_token(f"Bearer {token}")
+        token = _token(role="admin")
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user(role="admin")):
+            result = verify_token(f"Bearer {token}")
         assert result is not None
         assert result["user_id"] == "42"
         assert result["role"] == "admin"
@@ -47,7 +59,7 @@ class TestAuthUtils:
             patch("utils.auth_utils.utcnow") as mock_utcnow,
         ):
             mock_utcnow.return_value = datetime(2020, 1, 1, 12, 0, 0)
-            token = generate_token(1, "competitor")
+            token = _token(user_id=1)
             mock_utcnow.return_value = datetime(2020, 1, 3, 12, 0, 0)
             result = verify_token(token)
             assert result is None
@@ -56,67 +68,22 @@ class TestAuthUtils:
         assert verify_token("not-a-valid-token!!!") is None
 
     def test_verify_token_returns_none_for_tampered_token(self):
-        token = generate_token(42, "competitor")
+        token = _token()
         tampered = token[: len(token) // 2] + "AAAA" + token[len(token) // 2 + 4 :]
         assert verify_token(tampered) is None
 
-    def test_check_worker_auth_valid_signature(self, monkeypatch):
-        import base64
-        import time
+    def test_verify_token_rejects_changed_password_hash(self):
+        token = _token()
+        with patch(
+            "utils.auth_utils._fetch_current_user",
+            return_value=_user(password_hash="replacement-password-hash"),
+        ):
+            assert verify_token(token) is None
 
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-        k = Ed25519PrivateKey.generate()
-        monkeypatch.setenv(
-            "WORKER_PUBLIC_KEY",
-            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
-        )
-        nonce = f"100:{int(time.time())}"
-        sig = base64.b64encode(k.sign(nonce.encode())).decode()
-        token = f"{nonce}.{sig}"
-        result = check_worker_auth(token)
-        assert result is not None
-        assert result["submission_id"] == "100"
-
-    def test_check_worker_auth_wrong_signature(self, monkeypatch):
-        import base64
-        import time
-
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-        k = Ed25519PrivateKey.generate()
-        monkeypatch.setenv(
-            "WORKER_PUBLIC_KEY",
-            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
-        )
-        nonce = f"100:{int(time.time())}"
-        sig = base64.b64encode(b"wrong" * 8).decode()
-        token = f"{nonce}.{sig}"
-        assert check_worker_auth(token) is None
-
-    def test_check_worker_auth_expired_nonce(self, monkeypatch):
-        import base64
-        import time
-
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-        k = Ed25519PrivateKey.generate()
-        monkeypatch.setenv(
-            "WORKER_PUBLIC_KEY",
-            base64.b64encode(k.public_key().public_bytes_raw()).decode(),
-        )
-        old_ts = int(time.time()) - 600
-        nonce = f"100:{old_ts}"
-        sig = base64.b64encode(k.sign(nonce.encode())).decode()
-        token = f"{nonce}.{sig}"
-        assert check_worker_auth(token) is None
-
-    def test_check_worker_auth_missing_public_key(self):
-        assert check_worker_auth("anything") is None
-
-    def test_check_worker_auth_empty_token(self):
-        assert check_worker_auth("") is None
-        assert check_worker_auth(None) is None
+    def test_verify_token_rejects_deleted_user(self):
+        token = _token()
+        with patch("utils.auth_utils._fetch_current_user", return_value=None):
+            assert verify_token(token) is None
 
     def test_login_required_blocks_unauthenticated(self):
         app = Flask(__name__)
@@ -134,7 +101,7 @@ class TestAuthUtils:
     def test_login_required_allows_valid_token(self):
         app = Flask(__name__)
         app.config["TESTING"] = True
-        token = generate_token(42, "competitor")
+        token = _token()
 
         @app.route("/test")
         @login_required
@@ -142,7 +109,8 @@ class TestAuthUtils:
             return jsonify({"user_id": request.user["user_id"]})
 
         client = app.test_client()
-        res = client.get("/test", headers={"Authorization": f"Bearer {token}"})
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user()):
+            res = client.get("/test", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200
         data = res.get_json()
         assert data["user_id"] == "42"
@@ -150,7 +118,7 @@ class TestAuthUtils:
     def test_role_required_blocks_wrong_role(self):
         app = Flask(__name__)
         app.config["TESTING"] = True
-        token = generate_token(42, "competitor")
+        token = _token()
 
         @app.route("/admin-only")
         @role_required(["admin"])
@@ -158,13 +126,14 @@ class TestAuthUtils:
             return jsonify({"ok": True})
 
         client = app.test_client()
-        res = client.get("/admin-only", headers={"Authorization": f"Bearer {token}"})
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user()):
+            res = client.get("/admin-only", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 403
 
     def test_role_required_allows_correct_role(self):
         app = Flask(__name__)
         app.config["TESTING"] = True
-        token = generate_token(42, "admin")
+        token = _token(role="admin")
 
         @app.route("/admin-only")
         @role_required(["admin"])
@@ -172,7 +141,8 @@ class TestAuthUtils:
             return jsonify({"ok": True})
 
         client = app.test_client()
-        res = client.get("/admin-only", headers={"Authorization": f"Bearer {token}"})
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user(role="admin")):
+            res = client.get("/admin-only", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200
 
 
@@ -180,7 +150,7 @@ class TestAuthTokenURLQuery:
     def test_login_required_rejects_url_query_param(self):
         app = Flask(__name__)
         app.config["TESTING"] = True
-        token = generate_token(42, "competitor")
+        token = _token()
 
         @app.route("/test")
         @login_required
@@ -194,7 +164,7 @@ class TestAuthTokenURLQuery:
     def test_role_required_rejects_url_query_param(self):
         app = Flask(__name__)
         app.config["TESTING"] = True
-        token = generate_token(42, "admin")
+        token = _token(role="admin")
 
         @app.route("/test")
         @role_required(["admin"])
@@ -299,16 +269,19 @@ class TestRateLimit:
     def test_per_user_keying(self, rate_limit_client):
         import uuid
 
-        token1 = generate_token(uuid.uuid4().hex, "competitor")
-        for _ in range(2):
+        token1 = _token(user_id=uuid.uuid4().hex)
+        with patch("utils.auth_utils._fetch_current_user", return_value=_user()):
+            for _ in range(2):
+                res = rate_limit_client.get(
+                    "/test-rl3", headers={"Authorization": f"Bearer {token1}"}
+                )
+                assert res.status_code == 200
             res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
-            assert res.status_code == 200
-        res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token1}"})
-        assert res.status_code == 429
+            assert res.status_code == 429
 
-        token2 = generate_token(uuid.uuid4().hex, "competitor")
-        res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token2}"})
-        assert res.status_code == 200
+            token2 = _token(user_id=uuid.uuid4().hex)
+            res = rate_limit_client.get("/test-rl3", headers={"Authorization": f"Bearer {token2}"})
+            assert res.status_code == 200
 
     def test_identity_keyed_limiting(self, rate_limit_client):
         import uuid

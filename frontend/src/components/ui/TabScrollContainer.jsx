@@ -64,7 +64,7 @@ export default function TabScrollContainer({ children }) {
       {/* Scrollable area */}
       <div
         ref={scrollRef}
-        className="w-full flex gap-2 overflow-x-auto scroll-smooth no-scrollbar"
+        className="tab-scroll-container w-full flex gap-2 overflow-x-auto scroll-smooth no-scrollbar"
         style={{
           scrollbarWidth: 'none' /* Firefox */,
           msOverflowStyle: 'none' /* IE 10+ */,
@@ -74,7 +74,7 @@ export default function TabScrollContainer({ children }) {
         <style
           dangerouslySetInnerHTML={{
             __html: `
-          div::-webkit-scrollbar {
+          .tab-scroll-container::-webkit-scrollbar {
             display: none !important;
           }
         `,

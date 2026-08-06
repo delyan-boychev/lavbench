@@ -18,4 +18,12 @@ RUN chmod +x worker-entrypoint.sh
 ENV PYTHONPATH=/app
 ENV HOME=/app
 
+# Run as a dedicated non-root user (uid 10001). Docker-socket access for sandbox
+# orchestration is granted at deploy time via --group-add (see deploy-worker.sh).
+RUN useradd --system --uid 10001 --no-create-home lavbench \
+    && mkdir -p /var/lib/lavbench/task_images /var/lib/lavbench/workspace /var/lib/lavbench/hf_cache \
+    && chown -R lavbench:lavbench /app /var/lib/lavbench
+
+USER lavbench
+
 CMD ["./worker-entrypoint.sh"]

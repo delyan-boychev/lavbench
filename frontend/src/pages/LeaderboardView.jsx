@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import useSSE from '../hooks/useSSE';
 import { useLeaderboardQuery } from '../hooks/useLeaderboardQuery';

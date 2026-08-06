@@ -2,7 +2,7 @@
 
 Welcome to the LavBench Platform Administrator Portal. This guide details every aspect of configuring, managing, and maintaining the platform, executing worker nodes, configuring security rules, building task Docker images, and implementing custom evaluator scripts.
 
-### Initial Setup
+## Initial Setup
 
 After deploying the platform, initialize the admin account via the Makefile target (recommended) or the script directly:
 
@@ -15,7 +15,7 @@ python backend/scripts/setup-admin.py
 This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
 
 > [!TIP]
-> End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — 265 checks, exit code 0 on success.
+> End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — exit code 0 on success.
 
 > [!IMPORTANT]
 > Run `setup-admin.py` only once on a fresh deployment. Re-running this script will reset system administrator access.
@@ -257,7 +257,7 @@ Administrators and organizers can submit baseline solutions to verify task integ
 Administrators can onboard competitors in bulk via the `/admin` portal using standard CSV files.
 
 #### Required CSV Header Structure:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city
 ```
 
@@ -265,7 +265,7 @@ name,surname,middle_name,birth_date,grade,school,city
 `email` and `is_anonymous` can be included in the CSV header.
 
 #### Example CSV Content:
-```csv
+```text
 name,surname,middle_name,birth_date,grade,school,city,email,is_anonymous
 Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false

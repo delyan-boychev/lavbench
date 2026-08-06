@@ -234,6 +234,10 @@ def submit_code(
 
     task.get_hf_api_key() or ""
 
+    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
+    submission.celery_task_id = attempt_id
+    db.session.commit()
+
     metadata = build_submission_metadata(
         task,
         challenge,
@@ -246,17 +250,14 @@ def submit_code(
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
 
     try:
-        result = evaluate_submission.apply_async(
+        evaluate_submission.apply_async(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
             countdown=1,
             expires=Config.CELERY_MESSAGE_EXPIRES,
-            task_id=f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}",
+            task_id=attempt_id,
         )
-        if result is not None:
-            submission.celery_task_id = str(result.id)
-        db.session.commit()
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = "failed"
@@ -450,6 +451,7 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/kill", methods=["POST"])
 @login_required
+@jury_access_required
 @api.validate(
     tags=["Submissions"],
     security=[{"cookieAuth": []}],
@@ -470,7 +472,10 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     if not submission:
         return err("ERR_NOT_FOUND", 404)
 
-    if user_role == "competitor" and submission.user_id != user_id:
+    if user_role == "competitor":
+        if submission.user_id != user_id:
+            return err("ERR_SUBMISSION_KILL_DENIED", 403)
+    elif user_role not in ("admin", "jury"):
         return err("ERR_SUBMISSION_KILL_DENIED", 403)
 
     if submission.status not in ("queued", "running"):
@@ -694,15 +699,27 @@ def download_competitor_submission(
     challenge_id: Any, task_id: Any, user_id: Any
 ) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Download a competitor's final selection or highest-scoring submission."""
-    subs = Submission.query.filter_by(task_id=task_id, user_id=user_id, status="completed").all()
-
     user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
     challenge = db.session.get(Challenge, challenge_id)
 
-    best_sub = None
-    if user and task and challenge:
-        best_sub = get_best_submission(task, subs, challenge)
+    if (
+        user is None
+        or task is None
+        or challenge is None
+        or str(user.challenge_id) != str(challenge_id)
+        or str(task.challenge_id) != str(challenge_id)
+    ):
+        return err("ERR_NOT_FOUND", 404)
+
+    subs = Submission.query.filter_by(
+        challenge_id=challenge_id,
+        task_id=task_id,
+        user_id=user_id,
+        status="completed",
+    ).all()
+
+    best_sub = get_best_submission(task, subs, challenge)
 
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)

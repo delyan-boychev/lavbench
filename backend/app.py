@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 logger = logging.getLogger(__name__)
 
-from flask import Flask  # noqa: E402
+from flask import Flask, request  # noqa: E402
 from flask import Response as FlaskResponse  # noqa: E402
 from flask.json.provider import DefaultJSONProvider  # noqa: E402
 from flask_cors import CORS  # noqa: E402
@@ -147,6 +147,32 @@ def create_app() -> Flask:
     app.register_blueprint(tasks_bp, url_prefix="/api")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")
 
+    @app.before_request
+    def apply_request_body_limits() -> tuple[FlaskResponse, int] | None:
+        """Apply endpoint-specific body limits before parsing request data."""
+        is_submission = (
+            request.method == "POST"
+            and request.path.endswith("/submit")
+            and (
+                request.path.startswith("/api/tasks/")
+                or request.path.startswith("/api/challenges/")
+            )
+        )
+        limit = Config.MAX_SUBMISSION_REQUEST_BYTES if is_submission else None
+        if request.path.startswith("/api/worker/report/"):
+            limit = Config.MAX_WORKER_REPORT_BYTES
+        elif request.path.startswith("/api/worker/capabilities/"):
+            limit = Config.MAX_WORKER_AUTH_BODY_BYTES
+        elif request.path == "/api/workers/logs":
+            limit = Config.MAX_WORKER_LOG_SHIP_BYTES
+        if limit is None:
+            return None
+        request.max_content_length = limit
+        content_length = request.content_length
+        if content_length is not None and content_length > limit:
+            return err("ERR_PAYLOAD_TOO_LARGE", 413)
+        return None
+
     @app.route("/api/health", methods=["GET"])
     @api.validate(resp=Response(HTTP_200=HealthResponse, HTTP_503=HealthResponse), tags=["Health"])
     def health_check() -> tuple[HealthResponse, int]:
@@ -200,6 +226,10 @@ def create_app() -> Flask:
     @app.errorhandler(500)
     def handle_internal_error(e: Exception) -> tuple[FlaskResponse, int]:
         return err("ERR_INTERNAL", 500)
+
+    @app.errorhandler(413)
+    def handle_payload_too_large(e: Exception) -> tuple[FlaskResponse, int]:
+        return err("ERR_PAYLOAD_TOO_LARGE", 413)
 
     return app
 
