@@ -32,6 +32,8 @@ from sklearn.metrics import (
     v_measure_score,
 )
 
+from config import Config
+from services.evaluation.exceptions import EvaluationError
 from services.evaluation.metrics import (
     calculate_box_iou,
     compute_audio_snr,
@@ -52,6 +54,7 @@ from services.evaluation.metrics import (
     compute_ter,
     decode_mask_bytes,
 )
+from services.evaluation.validation import validate_evaluation_frames
 
 logger = logging.getLogger(__name__)
 # ── 4. CUSTOM EVALUATOR EXECUTION ──
@@ -112,13 +115,10 @@ def _run_custom_evaluator_sandbox(
     df_labels: pd.DataFrame,
     options: dict[str, Any] | None,
     image_tag: str,
-) -> dict[str, float] | None:
+) -> dict[str, float]:
     """Run the custom evaluator inside a hardened container.
 
-    Returns the metrics dict on success; returns ``None`` when the sandbox
-    could not be used (no docker, image missing) so callers can fall back.
-    Failures inside the container (timeout, crash, bad result shape) are
-    logged and returned as ``None`` — never execute the code on the host.
+    Infrastructure and evaluator failures raise :class:`EvaluationError`.
     """
     import json
     import shutil
@@ -146,8 +146,10 @@ def _run_custom_evaluator_sandbox(
             f.write(_CUSTOM_EVAL_HARNESS)
 
         if not image_exists(image_tag):
-            logger.warning("Custom evaluator image %s not present — skipping sandbox", image_tag)
-            return None
+            raise EvaluationError(
+                "EVALUATOR_IMAGE_MISSING",
+                f"Custom evaluator image {image_tag!r} is not available.",
+            )
         docker_client = _get_client()
 
         logs: list[str] = []
@@ -172,8 +174,10 @@ def _run_custom_evaluator_sandbox(
             working_dir="/work",
         )
         if is_timeout:
-            logger.warning("Custom evaluator timed out in sandbox (300s cap)")
-            return None
+            raise EvaluationError(
+                "EVALUATOR_TIMEOUT",
+                "Custom evaluator exceeded the 300 second time limit.",
+            )
         if retcode != 0 or not os.path.exists(result_path):
             logger.warning(
                 "Custom evaluator failed in sandbox (rc=%s, timeout=%s): %s",
@@ -181,15 +185,47 @@ def _run_custom_evaluator_sandbox(
                 is_timeout,
                 stderr.strip() or (logs[-1] if logs else ""),
             )
-            return None
+            raise EvaluationError(
+                "EVALUATOR_EXECUTION_FAILED",
+                "Custom evaluator did not complete successfully.",
+            )
+        if os.path.getsize(result_path) > Config.MAX_EVALUATOR_RESULT_BYTES:
+            raise EvaluationError(
+                "EVALUATOR_INVALID_OUTPUT",
+                "Custom evaluator output exceeds the configured size limit.",
+            )
         with open(result_path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning("Custom evaluator sandbox unavailable, using fallback: %s", e)
-        return None
+            result = json.load(f)
+        if not isinstance(result, dict):
+            raise EvaluationError(
+                "EVALUATOR_INVALID_OUTPUT",
+                "Custom evaluator output must be a metric mapping.",
+            )
+        clean: dict[str, float] = {}
+        for key, value in result.items():
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise EvaluationError(
+                    "EVALUATOR_INVALID_OUTPUT",
+                    f"Custom evaluator metric {key!r} is not numeric.",
+                ) from exc
+            if not math.isfinite(numeric):
+                raise EvaluationError(
+                    "EVALUATOR_INVALID_OUTPUT",
+                    f"Custom evaluator metric {key!r} is not finite.",
+                )
+            clean[str(key)] = numeric
+        return clean
+    except EvaluationError:
+        raise
+    except Exception as exc:
+        logger.warning("Custom evaluator sandbox failed: %s", exc)
+        raise EvaluationError(
+            "EVALUATOR_SANDBOX_UNAVAILABLE",
+            "Custom evaluator sandbox is unavailable.",
+        ) from exc
     finally:
-        import shutil
-
         shutil.rmtree(workdir, ignore_errors=True)
 
 
@@ -210,21 +246,46 @@ def _run_custom_evaluator(
     container; otherwise it runs in-process (test/dev only).
     """
     if sandbox_image:
-        result = _run_custom_evaluator_sandbox(code, df_sub, df_labels, options, sandbox_image)
-        if result is not None:
-            return result
-        logger.warning("Sandboxed custom evaluator failed — returning {} (fail closed)")
-        return {}
+        return _run_custom_evaluator_sandbox(code, df_sub, df_labels, options, sandbox_image)
     try:
         local_ns: dict[str, Any] = {}
         exec(code, local_ns)  # noqa: S102
-        if "evaluate" not in local_ns:
-            logger.warning("Custom evaluator missing 'evaluate' function")
-            return {}
-        return local_ns["evaluate"](df_sub, df_labels, options or {})
-    except Exception as e:
-        logger.warning("Custom evaluator failed: %s", e)
-        return {}
+        evaluate = local_ns.get("evaluate")
+        if not callable(evaluate):
+            raise EvaluationError(
+                "EVALUATOR_INVALID_SCRIPT",
+                "Custom evaluator is missing a callable evaluate function.",
+            )
+        result = evaluate(df_sub, df_labels, options or {})
+        if not isinstance(result, dict):
+            raise EvaluationError(
+                "EVALUATOR_INVALID_OUTPUT",
+                "Custom evaluator output must be a metric mapping.",
+            )
+        clean: dict[str, float] = {}
+        for key, value in result.items():
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise EvaluationError(
+                    "EVALUATOR_INVALID_OUTPUT",
+                    f"Custom evaluator metric {key!r} is not numeric.",
+                ) from exc
+            if not math.isfinite(numeric):
+                raise EvaluationError(
+                    "EVALUATOR_INVALID_OUTPUT",
+                    f"Custom evaluator metric {key!r} is not finite.",
+                )
+            clean[str(key)] = numeric
+        return clean
+    except EvaluationError:
+        raise
+    except Exception as exc:
+        logger.warning("Custom evaluator failed: %s", exc)
+        raise EvaluationError(
+            "EVALUATOR_EXECUTION_FAILED",
+            "Custom evaluator did not complete successfully.",
+        ) from exc
 
 
 # ── 5. MAIN EVALUATION & METRIC RESOLUTION ROUTINE ──
@@ -246,8 +307,12 @@ def evaluate_predictions(
     if not metrics_cfg:
         metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
 
-    # Sort dataframes by ID to ensure alignment
-    # For Retrieval task, we handle retrieval separately
+    df_sub, df_labels = validate_evaluation_frames(df_sub, df_labels)
+
+    if len(df_labels) == 0:
+        return {}
+
+    # Retrieval metrics use query groups instead of row-wise label alignment
     if "query_id" in df_labels.columns:
         payload = {}
         for m_name in metrics_cfg:
@@ -265,29 +330,21 @@ def evaluate_predictions(
 
             retrieval_results = compute_retrieval_metrics(df_labels, df_sub, k=k_val)
             if m_name_clean == "ndcg_k":
-                payload[m_name] = retrieval_results.get(f"ndcg_{k_val}", 0.0)
+                result_key = f"ndcg_{k_val}"
             elif m_name_clean == "recall_k":
-                payload[m_name] = retrieval_results.get(f"recall_{k_val}", 0.0)
+                result_key = f"recall_{k_val}"
             else:
-                payload[m_name] = retrieval_results.get(m_name_clean, 0.0)
+                result_key = m_name_clean
+            if result_key not in retrieval_results:
+                raise EvaluationError(
+                    "EVALUATION_UNKNOWN_METRIC",
+                    f"Configured retrieval metric {m_name!r} is not supported.",
+                )
+            payload[m_name] = retrieval_results[result_key]
         return payload
-
-    # Align dataframes by 'id'
-    if len(df_labels) == 0:
-        return {}
-
-    df_labels = df_labels.sort_values("id")
-    df_sub = df_sub[df_sub["id"].isin(df_labels["id"])].sort_values("id")
-
-    if len(df_sub) != len(df_labels):
-        raise ValueError(
-            f"Submission ID alignment mismatch. Found {len(df_sub)} "
-            f"aligned items out of {len(df_labels)} ground truths."
-        )
 
     # Extract arrays per metric
     payload = {}
-    metric_errors: dict[str, str] = {}
 
     for m_name in metrics_cfg:
         m_name_clean = m_name.lower().strip()
@@ -299,9 +356,10 @@ def evaluate_predictions(
         custom_col = m_opts.get("column", "")
         if custom_col:
             if custom_col not in df_labels.columns or custom_col not in df_sub.columns:
-                metric_errors[m_name] = f"column '{custom_col}' missing from predictions or labels"
-                payload[m_name] = None
-                continue
+                raise EvaluationError(
+                    "EVALUATION_MISSING_METRIC_COLUMN",
+                    f"Configured column {custom_col!r} is missing from predictions or labels.",
+                )
             y_true = df_labels[custom_col].tolist()
             y_pred = df_sub[custom_col].tolist()
         else:
@@ -329,7 +387,14 @@ def evaluate_predictions(
             y_pred = df_sub[pred_col].tolist()
         if m_name_clean == "accuracy":
             try:
-                if str(m_opts.get("balanced", "false")).lower() == "true":
+                sequence_types = (list, tuple, np.ndarray, dict)
+                true_shapes = [isinstance(value, sequence_types) for value in y_true]
+                prediction_shapes = [isinstance(value, sequence_types) for value in y_pred]
+                if true_shapes != prediction_shapes or any(
+                    isinstance(value, dict) for value in [*y_true, *y_pred]
+                ):
+                    failed = True
+                elif str(m_opts.get("balanced", "false")).lower() == "true":
                     val = balanced_accuracy_score(y_true, y_pred)
                 else:
                     val = accuracy_score(y_true, y_pred)
@@ -384,12 +449,21 @@ def evaluate_predictions(
                     if not pred_boxes:
                         recall_scores.append(0.0)
                         continue
+                    matched_predictions: set[int] = set()
                     hits = 0
                     for t in true_boxes:
-                        for p in pred_boxes:
-                            if p.get("label") == t.get("label") and calculate_box_iou(p, t) >= 0.5:
-                                hits += 1
-                                break
+                        best_index = -1
+                        best_iou = 0.0
+                        for index, p in enumerate(pred_boxes):
+                            if index in matched_predictions or p.get("label") != t.get("label"):
+                                continue
+                            iou = calculate_box_iou(p, t)
+                            if iou >= 0.5 and iou > best_iou:
+                                best_iou = iou
+                                best_index = index
+                        if best_index >= 0:
+                            matched_predictions.add(best_index)
+                            hits += 1
                     recall_scores.append(hits / len(true_boxes))
                 val = np.mean(recall_scores) if recall_scores else 0.0
             else:
@@ -457,9 +531,8 @@ def evaluate_predictions(
                     scores = []
                     for t, p in zip(y_true, y_pred, strict=False):
                         if not t or not p:
-                            # Empty prediction is a failure, not a near-perfect
-                            # Distance of 1.0 (BP-H4) — skip the pair.
-                            continue
+                            failed = True
+                            break
                         min_len = min(len(t), len(p))
                         arr_t = np.frombuffer(t[:min_len], dtype=np.uint8)
                         arr_p = np.frombuffer(p[:min_len], dtype=np.uint8)
@@ -469,7 +542,7 @@ def evaluate_predictions(
                             scores.append(mean_squared_error(arr_t, arr_p))
                         elif m_name_clean == "mae":
                             scores.append(mean_absolute_error(arr_t, arr_p))
-                    if not scores:
+                    if failed or not scores:
                         failed = True
                     else:
                         val = np.mean(scores)
@@ -587,7 +660,7 @@ def evaluate_predictions(
         elif m_name_clean == "map_75":
             val = compute_map_detection(y_true, y_pred, iou_threshold=0.75)
         elif m_name_clean == "map_50_95":
-            thresholds = np.arange(0.5, 0.95, 0.05)
+            thresholds = np.arange(0.5, 0.951, 0.05)
             vals = [
                 compute_map_detection(y_true, y_pred, iou_threshold=float(th)) for th in thresholds
             ]
@@ -644,22 +717,33 @@ def evaluate_predictions(
 
         # 13. Custom evaluator dispatch
         elif custom_eval_code:
-            try:
-                result = _run_custom_evaluator(
-                    custom_eval_code, df_sub, df_labels, m_opts, sandbox_image
+            custom_result = _run_custom_evaluator(
+                custom_eval_code, df_sub, df_labels, m_opts, sandbox_image
+            )
+            if m_name_clean not in custom_result:
+                raise EvaluationError(
+                    "EVALUATOR_METRIC_MISSING",
+                    f"Custom evaluator did not return configured metric {m_name!r}.",
                 )
-                val = float(result[m_name_clean]) if m_name_clean in result else 0.0
-            except Exception as e:
-                logger.warning("Custom evaluator metric '%s' failed: %s", m_name, e)
-                failed = True
+            val = custom_result[m_name_clean]
         else:
-            # Skip unknown metrics when no custom evaluator code is provided
-            continue
+            raise EvaluationError(
+                "EVALUATION_UNKNOWN_METRIC",
+                f"Configured metric {m_name!r} is not supported.",
+            )
 
         if failed:
-            metric_errors[m_name] = "metric calculation failed"
-            payload[m_name] = None
+            raise EvaluationError(
+                "EVALUATION_METRIC_FAILED",
+                f"Configured metric {m_name!r} could not be calculated.",
+            )
         elif val is not None:
-            payload[m_name] = float(val)
+            numeric = float(val)
+            if not math.isfinite(numeric):
+                raise EvaluationError(
+                    "EVALUATION_METRIC_FAILED",
+                    f"Configured metric {m_name!r} returned a non-finite value.",
+                )
+            payload[m_name] = numeric
 
     return payload

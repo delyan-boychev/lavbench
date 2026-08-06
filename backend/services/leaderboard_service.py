@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy.orm import joinedload
 
 from models import Challenge, Stage, Submission, Task, User, db, metric_direction_from_config
-from services.submission_service import get_best_submission
+from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.cache_utils import cache_lock, get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,20 @@ def build_and_cache_leaderboard(
         else:
             is_final_active = Submission.is_final_selection
 
+        private_score_task_ids = [
+            task.id for task in tasks if uses_private_score_for_selection(task, challenge)
+        ]
+        if private_score_task_ids:
+            selection_score = case(
+                (
+                    Submission.task_id.in_(private_score_task_ids),
+                    func.coalesce(Submission.private_score, Submission.public_score),
+                ),
+                else_=Submission.public_score,
+            )
+        else:
+            selection_score = Submission.public_score
+
         test_stage_task_ids = [
             s[0]
             for s in db.session.query(Task.id)
@@ -89,8 +103,7 @@ def build_and_cache_leaderboard(
                     partition_by=(Submission.user_id, Submission.task_id),
                     order_by=(
                         is_final_active.desc(),
-                        Submission.private_score.desc(),
-                        Submission.public_score.desc(),
+                        selection_score.desc(),
                         Submission.execution_time_ms.asc(),
                     ),
                 )

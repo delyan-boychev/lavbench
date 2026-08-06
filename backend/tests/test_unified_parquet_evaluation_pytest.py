@@ -17,7 +17,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, Submission, Task, User, db
-from services.evaluation import evaluate_predictions, validate_parquet_schema
+from services.evaluation import EvaluationError, evaluate_predictions, validate_parquet_schema
 from utils.auth_utils import generate_token
 
 
@@ -87,6 +87,7 @@ class TestUnifiedParquetEvaluation:
         from tasks import evaluate_submission
 
         task = Task(
+            id="00000000-0000-0000-0000-00003ade68b1",
             challenge_id=self.challenge.id,
             title="Class Task",
             metrics_config=json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
@@ -151,6 +152,10 @@ class TestUnifiedParquetEvaluation:
                 "tasks.task_modules.submission_runner.run_sandbox",
                 return_value=(0, "", "", False),
             ),
+            patch(
+                "tasks.task_modules.submission_runner.Config.EVALUATION_SPLIT_SECRET",
+                "lavbench-test-split",
+            ),
             patch("tasks.app", self.app),
         ):
             res = evaluate_submission(sub.id)
@@ -163,10 +168,10 @@ class TestUnifiedParquetEvaluation:
         db.session.expire(sub)
         sub = db.session.get(Submission, sub.id)
         assert sub.status == "completed"
-        assert sub.public_score == pytest.approx(1.0)
-        assert sub.private_score == pytest.approx(0.5)
-        assert sub.metrics_payload_public == {"accuracy": 1.0}
-        assert sub.metrics_payload_private == {"accuracy": 0.5}
+        assert sub.public_score == pytest.approx(0.5)
+        assert sub.private_score == pytest.approx(1.0)
+        assert sub.metrics_payload_public == {"accuracy": 0.5}
+        assert sub.metrics_payload_private == {"accuracy": 1.0}
 
         def mock_mkdtemp(*args, **kwargs):
             td = original_mkdtemp(*args, **kwargs)
@@ -226,12 +231,13 @@ class TestEvalPredictionsAllMetricPaths:
         assert "accuracy" in res
         assert 0.0 <= res["accuracy"] <= 1.0
 
-    def test_accuracy_invalid_inputs_fallback(self):
-        """Accuracy with non-matching shape → fallback 0.0."""
+    def test_accuracy_invalid_inputs_fail_closed(self):
+        """Reject incompatible target shapes for accuracy."""
         df_l = pd.DataFrame({"id": [1, 2], "label": [0, 1]})
-        df_s = pd.DataFrame({"id": [1, 2], "prediction": [0, 1]})
-        res = evaluate_predictions(df_s, df_l, {"accuracy": {"weight": 1.0}})
-        assert "accuracy" in res
+        df_s = pd.DataFrame({"id": [1, 2], "prediction": [[0], [1]]})
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"accuracy": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_precision_metric(self):
         df_l, df_s = self._df([1, 2, 3, 4], [0, 1, 0, 1], [0, 1, 0, 1])
@@ -262,16 +268,13 @@ class TestEvalPredictionsAllMetricPaths:
         assert "auc_roc" in res
         assert res["auc_roc"] > 0.5
 
-    def test_auc_roc_bad_input_returns_fallback(self):
-        """Multiclass labels with multi_class='raise' (default) → ValueError → fallback 0.5."""
-        # 3-class labels with 1D probability scores
-        # Triggers ValueError (multi_class='raise' default)
-
+    def test_auc_roc_bad_input_fails_closed(self):
+        """Reject multiclass labels paired with one-dimensional probability scores."""
         df_l = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 2]})
         df_s = pd.DataFrame({"id": [1, 2, 3], "prediction": [0.1, 0.5, 0.9]})
-        res = evaluate_predictions(df_s, df_l, {"auc_roc": {"weight": 1.0}})
-        # ValueError is caught → metric is excluded (None)
-        assert res["auc_roc"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"auc_roc": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_logloss_metric(self):
         df_l = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]})
@@ -280,12 +283,13 @@ class TestEvalPredictionsAllMetricPaths:
         assert "logloss" in res
         assert res["logloss"] < 5.0
 
-    def test_logloss_invalid_input_returns_fallback(self):
-        """String predictions → logloss fails → fallback 10.0."""
+    def test_logloss_invalid_input_fails_closed(self):
+        """Reject non-numeric predictions for log loss."""
         df_l = pd.DataFrame({"id": [1, 2], "label": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
-        res = evaluate_predictions(df_s, df_l, {"logloss": {"weight": 1.0}})
-        assert res["logloss"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"logloss": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_brier_score_metric(self):
         df_l = pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]})
@@ -294,12 +298,13 @@ class TestEvalPredictionsAllMetricPaths:
         assert "brier_score" in res
         assert 0.0 <= res["brier_score"] <= 1.0
 
-    def test_brier_score_invalid_returns_fallback(self):
-        """Non-numeric predictions → brier_score fails → fallback 1.0."""
+    def test_brier_score_invalid_fails_closed(self):
+        """Reject non-numeric predictions for the Brier score."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
-        res = evaluate_predictions(df_s, df_l, {"brier_score": {"weight": 1.0}})
-        assert res["brier_score"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"brier_score": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     # ── Regression ────────────────────────────────────────────────────────────
 
@@ -372,61 +377,65 @@ class TestEvalPredictionsAllMetricPaths:
         )
         assert "mae" in res
 
-    def test_rmse_with_invalid_shape_returns_fallback(self):
-        """An impossible reshape returns fallback 999.0."""
+    def test_rmse_with_invalid_shape_fails_closed(self):
+        """Reject an impossible reshape rather than assigning a fallback score."""
         df_l = pd.DataFrame({"id": [1, 2], "label": [[0.0, 1.0], [2.0, 3.0]]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": [[0.1, 1.1], [2.1, 3.1]]})
-        res = evaluate_predictions(
-            df_s, df_l, {"rmse": {"weight": 1.0, "options": {"shape": "9999,9999"}}}
-        )
-        assert "rmse" in res
-        assert res["rmse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s, df_l, {"rmse": {"weight": 1.0, "options": {"shape": "9999,9999"}}}
+            )
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_regression_string_inputs_returns_fallback(self):
-        """String labels passed to MSE → fallback 999.0."""
+    def test_regression_string_inputs_fail_closed(self):
+        """Reject string inputs passed to MSE."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["cat", "dog"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["cat", "mouse"]})
-        res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
-        assert res["mse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_r_squared_invalid_inputs_returns_fallback(self):
-        """Non-numeric inputs to r2_score → fallback 0.0."""
+    def test_r_squared_invalid_inputs_fail_closed(self):
+        """Reject non-numeric inputs to R-squared."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["a", "b"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "c"]})
-        res = evaluate_predictions(df_s, df_l, {"r_squared": {"weight": 1.0}})
-        assert res["r_squared"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"r_squared": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_mape_zero_in_denominator_returns_fallback(self):
-        """Zero true values causes MAPE division by zero → fallback 999.0."""
+    def test_mape_invalid_inputs_fail_closed(self):
+        """Reject non-numeric MAPE inputs."""
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["x", "y"]})
-        res = evaluate_predictions(df_s, df_l, {"mape": {"weight": 1.0}})
-        assert res["mape"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"mape": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_median_ae_invalid_inputs_returns_fallback(self):
+    def test_median_ae_invalid_inputs_fail_closed(self):
         df_l = pd.DataFrame({"id": [1, 2], "label": ["x", "y"]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": ["a", "b"]})
-        res = evaluate_predictions(df_s, df_l, {"median_ae": {"weight": 1.0}})
-        assert res["median_ae"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"median_ae": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_empty_prediction_bytes_regression_excluded(self):
-        """Empty byte-array predictions for a regression must NOT score 1.0
-        (BP-H4) — the metric is excluded instead."""
+    def test_empty_prediction_bytes_regression_fails_closed(self):
+        """Empty byte-array predictions must fail rather than receive a score."""
         data = np.array([10, 20, 30, 40], dtype=np.uint8).tobytes()
         df_l = pd.DataFrame({"id": [1], "label": [data]})
         df_s = pd.DataFrame({"id": [1], "prediction": [b""]})
-        res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
-        assert "mse" in res
-        assert res["mse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_partial_empty_prediction_bytes_regression(self):
-        """Mixing empty and valid byte pairs still yields a real score."""
+        """Reject a byte submission that omits any selected prediction."""
         d1 = np.array([10, 20, 30, 40], dtype=np.uint8).tobytes()
         d2 = np.array([10, 20, 30, 44], dtype=np.uint8).tobytes()
         df_l = pd.DataFrame({"id": [1, 2], "label": [d1, d1]})
         df_s = pd.DataFrame({"id": [1, 2], "prediction": [b"", d2]})
-        res = evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
-        assert res["mse"] is not None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_s, df_l, {"mse": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     # ── NER / Tagging (seqeval fallback) ────────────────────────────────────
 
@@ -876,27 +885,29 @@ class TestEvalPredictionsAllMetricPaths:
 
     # ── Custom column logic ────────────────────────────────────────────────────
 
-    def test_custom_column_missing_from_submission_returns_zero(self):
-        """Specified column not in submission df → metric excluded (None)."""
+    def test_custom_column_missing_from_submission_fails_closed(self):
+        """Reject a configured metric column missing from the submission."""
         df_l = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
-        )
-        assert res["accuracy"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
+            )
+        assert exc_info.value.code == "EVALUATION_MISSING_METRIC_COLUMN"
 
-    def test_custom_column_missing_from_labels_returns_zero(self):
-        """Specified column not in labels df → metric excluded (None)."""
+    def test_custom_column_missing_from_labels_fails_closed(self):
+        """Reject a configured metric column missing from the labels."""
         df_l = pd.DataFrame({"id": [1, 2], "other_col": [0, 1]})
         df_s = pd.DataFrame({"id": [1, 2], "target_col": [0, 1]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
-        )
-        assert res["accuracy"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"accuracy": {"weight": 1.0, "options": {"column": "target_col"}}},
+            )
+        assert exc_info.value.code == "EVALUATION_MISSING_METRIC_COLUMN"
 
     def test_custom_column_correctly_selected(self):
         df_l = pd.DataFrame({"id": [1, 2], "special_col": [0, 1]})
@@ -957,12 +968,13 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
         res = evaluate_predictions(df_empty, df_empty, metrics_cfg)
         assert res == {}
 
-    def test_empty_labels_only_returns_empty_dict(self):
+    def test_empty_labels_only_rejects_nonempty_submission(self):
         df_sub = pd.DataFrame({"id": [1], "label": [0]})
         df_labels = pd.DataFrame(columns=["id", "label"])
         metrics_cfg = {"accuracy": {"weight": 1.0}}
-        res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
-        assert res == {}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_sub, df_labels, metrics_cfg)
+        assert exc_info.value.code == "EVALUATION_ID_SET_MISMATCH"
 
     def test_column_auto_selection_prefers_prediction_label(self):
         df_labels = pd.DataFrame({"id": [1, 2], "label": [0, 1], "extra": [1, 2]})
@@ -1034,9 +1046,9 @@ class TestMetricsCalculationEdgeCases:
         df_labels = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 0]})
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [0, 1]})
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(EvaluationError) as exc_info:
             evaluate_predictions(df_sub, df_labels, {"accuracy": {"weight": 1.0}})
-        assert "Submission ID alignment mismatch" in str(exc_info.value)
+        assert exc_info.value.code == "EVALUATION_ID_SET_MISMATCH"
 
     def test_evaluate_predictions_missing_columns(self):
         df_labels = pd.DataFrame({"id": [1, 2], "label": [0, 1]})
@@ -1061,9 +1073,9 @@ class TestMetricsCalculationEdgeCases:
         df_labels = pd.DataFrame({"id": [1, 2], "label": [1.0, 2.0]})
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [np.nan, 2.0]})
 
-        res = evaluate_predictions(df_sub, df_labels, {"mse": {"weight": 1.0}})
-        assert "mse" in res
-        assert res["mse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_sub, df_labels, {"mse": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_evaluate_predictions_type_mismatch_resilience(self):
         # Classification metric receiving continuous values
@@ -1072,18 +1084,18 @@ class TestMetricsCalculationEdgeCases:
         df_labels = pd.DataFrame({"id": [1, 2], "label": [0.5, 1.5]})
         df_sub = pd.DataFrame({"id": [1, 2], "prediction": [0.2, 1.8]})
 
-        res = evaluate_predictions(
-            df_sub, df_labels, {"f1": {"weight": 1.0, "options": {"average": "binary"}}}
-        )
-        assert "f1" in res
-        assert res["f1"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_sub, df_labels, {"f1": {"weight": 1.0, "options": {"average": "binary"}}}
+            )
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
         # String targets passed to regression metrics
         df_labels_reg = pd.DataFrame({"id": [1, 2], "label": ["cat", "dog"]})
         df_sub_reg = pd.DataFrame({"id": [1, 2], "prediction": ["cat", "mouse"]})
-        res_reg = evaluate_predictions(df_sub_reg, df_labels_reg, {"mse": {"weight": 1.0}})
-        assert "mse" in res_reg
-        assert res_reg["mse"] is None
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(df_sub_reg, df_labels_reg, {"mse": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
 
 class TestCustomEvaluator:
@@ -1159,15 +1171,16 @@ def evaluate(df_sub, df_labels, options=None):
         )
         assert res == {}
 
-    def test_custom_evaluator_no_custom_code(self):
+    def test_custom_evaluator_no_custom_code_fails_closed(self):
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"custom_f1": {"weight": 1.0}},
-        )
-        assert res == {}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"custom_f1": {"weight": 1.0}},
+            )
+        assert exc_info.value.code == "EVALUATION_UNKNOWN_METRIC"
 
     def test_custom_evaluator_returns_multiple_metrics(self):
         script = """\
@@ -1235,15 +1248,15 @@ class TestCustomEvaluatorSandbox:
     def test_sandbox_image_missing_fails_closed(self, mock_run, _mock_image_exists):
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"custom_f1": {"weight": 1.0}},
-            custom_eval_code=self.EVAL_SCRIPT,
-            sandbox_image="lavbench_task_missing",
-        )
-        # Evaluator must NOT have run on the host (in-process exec) — 0.0
-        assert res == {"custom_f1": 0.0}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"custom_f1": {"weight": 1.0}},
+                custom_eval_code=self.EVAL_SCRIPT,
+                sandbox_image="lavbench_task_missing",
+            )
+        assert exc_info.value.code == "EVALUATOR_IMAGE_MISSING"
         mock_run.assert_not_called()
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
@@ -1253,15 +1266,15 @@ class TestCustomEvaluatorSandbox:
         mock_run.return_value = (1, "", "killed", True)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"custom_f1": {"weight": 1.0}},
-            custom_eval_code=self.EVAL_SCRIPT,
-            sandbox_image="lavbench_task_test",
-        )
-        # Evaluator must NOT have run on the host (in-process exec) — 0.0
-        assert res == {"custom_f1": 0.0}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"custom_f1": {"weight": 1.0}},
+                custom_eval_code=self.EVAL_SCRIPT,
+                sandbox_image="lavbench_task_test",
+            )
+        assert exc_info.value.code == "EVALUATOR_TIMEOUT"
 
     @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
     @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
@@ -1270,12 +1283,12 @@ class TestCustomEvaluatorSandbox:
         mock_run.return_value = (2, "", "boom", False)
         df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
         df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"custom_f1": {"weight": 1.0}},
-            custom_eval_code=self.EVAL_SCRIPT,
-            sandbox_image="lavbench_task_test",
-        )
-        # Evaluator must NOT have run on the host (in-process exec) — 0.0
-        assert res == {"custom_f1": 0.0}
+        with pytest.raises(EvaluationError) as exc_info:
+            evaluate_predictions(
+                df_s,
+                df_l,
+                {"custom_f1": {"weight": 1.0}},
+                custom_eval_code=self.EVAL_SCRIPT,
+                sandbox_image="lavbench_task_test",
+            )
+        assert exc_info.value.code == "EVALUATOR_EXECUTION_FAILED"
