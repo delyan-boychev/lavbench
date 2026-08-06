@@ -2,15 +2,9 @@
 
 import { spawnSync } from 'node:child_process';
 
-const allowedAdvisories = new Map([
-  [
-    1124282,
-    {
-      expires: '2026-12-31',
-      reason: 'React Router RSC server actions are not used by this client-only Vite SPA.',
-    },
-  ],
-]);
+// No allowlisted advisories at present. When a reviewed, non-exploitable
+// advisory must be tolerated, add an entry with an expiry date here.
+const allowedAdvisories = new Map();
 
 const result = spawnSync('npm', ['audit', '--omit=dev', '--json'], {
   cwd: process.cwd(),

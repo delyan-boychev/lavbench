@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useParams: vi.fn(),
 }));
 
@@ -35,7 +35,7 @@ vi.mock('../../components/ui/EmptyState', () => ({
   ),
 }));
 
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { useApp } from '../../context/AppContext';
 import { useLeaderboardQuery } from '../../hooks/useLeaderboardQuery';
 import LeaderboardView from '../LeaderboardView';

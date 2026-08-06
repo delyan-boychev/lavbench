@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';

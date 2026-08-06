@@ -8,7 +8,7 @@ import useSSE from '../hooks/useSSE';
 import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
 import { useUsersQuery } from '../hooks/useUsersQuery';
 import { useCompetitorsQuery } from '../hooks/useCompetitorsQuery';
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import SelectField from '../components/ui/SelectField';

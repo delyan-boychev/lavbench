@@ -49,7 +49,7 @@ vi.mock('../pages/SubmissionsView', () => ({
   default: () => <div data-testid="submissions-view">Submissions View</div>,
 }));
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   BrowserRouter: ({ children }) => <div>{children}</div>,
   Routes: ({ children }) => <div>{children}</div>,
   Route: ({ element }) => element,

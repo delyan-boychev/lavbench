@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { useApp } from '../context/AppContext';
 import ChallengeOverview from '../components/challenge/ChallengeOverview';
 import TaskSidebar from '../components/challenge/TaskSidebar';

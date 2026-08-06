@@ -5,7 +5,7 @@ import { useAuth } from '../../../AuthContext';
 import ProtectedLayout from '../ProtectedLayout';
 
 // Mock routing components
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   Outlet: () => <div data-testid="router-outlet" />,
   Navigate: ({ to, replace }) => (
     <div data-testid="router-navigate" data-to={to} data-replace={replace ? 'true' : 'false'} />

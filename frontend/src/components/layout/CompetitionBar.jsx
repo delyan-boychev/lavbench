@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import SelectField from '../ui/SelectField';

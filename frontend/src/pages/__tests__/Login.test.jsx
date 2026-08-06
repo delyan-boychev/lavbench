@@ -9,7 +9,7 @@ import Login from '../Login';
 const mockNavigate = vi.fn();
 const mockLogin = vi.fn();
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
