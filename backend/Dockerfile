@@ -34,6 +34,10 @@ RUN mkdir -p /app/uploads /app/hf_cache /app/backups /backups /app/logs /app/run
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Run as the pre-existing nobody user (65534): the code and runtime dirs are
+# chowned to it above, so gunicorn/celery need no root privileges.
+USER 65534:65534
+
 ENV HOME=/app
 
 EXPOSE 5001
