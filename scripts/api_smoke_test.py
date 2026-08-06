@@ -252,32 +252,46 @@ def _load_worker_private_key() -> str:
     return _read_env_file_value(env_file, "WORKER_PRIVATE_KEY")
 
 
-def _sign_worker_token(submission_id: str, priv_key_b64: str) -> str:
-    """Sign an Ed25519 worker token: ``{submission_id}:{unix_ts}.{b64sig}``.
+def _load_worker_id() -> str:
+    """Return the worker identity paired with the smoke-test private key."""
+    worker_id = os.environ.get("SMOKE_WORKER_ID", "")
+    if worker_id:
+        return worker_id
+    env_file = os.environ.get("SMOKE_WORKER_ENV", "worker.env")
+    return _read_env_file_value(env_file, "WORKER_ID")
 
-    Mirrors backend/_sign_worker_token; used to drive the /api/worker/*
+
+def _sign_worker_token(worker_id: str, priv_key_b64: str) -> str:
+    """Sign a fresh versioned Ed25519 worker authentication token.
+
+    Mirrors ``utils.worker_auth.sign_worker_token``; used to drive the /api/worker/*
     endpoints black-box. Returns "" if no signing library is available.
     """
     import base64 as _b64
+    import secrets as _secrets
     import time as _time
 
     def _pad_b64(s: str) -> str:
         return s + "=" * (-len(s) % 4)
 
-    nonce = f"{submission_id}:{int(_time.time())}"
+    timestamp = str(int(_time.time()))
+    nonce = _secrets.token_urlsafe(18)
+    message = ".".join(("v1", worker_id, timestamp, nonce))
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # type: ignore[import-not-found]
             Ed25519PrivateKey,
         )
 
         pk = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(_pad_b64(priv_key_b64)))
-        return f"{nonce}.{_b64.b64encode(pk.sign(nonce.encode())).decode()}"
+        signature = _b64.urlsafe_b64encode(pk.sign(message.encode())).decode().rstrip("=")
+        return f"{message}.{signature}"
     except Exception:  # noqa: BLE001
         try:
             import nacl.signing  # type: ignore[import-not-found]
 
             sk = nacl.signing.SigningKey(_b64.b64decode(_pad_b64(priv_key_b64)))
-            return f"{nonce}.{_b64.b64encode(sk.sign(nonce.encode()).signature).decode()}"
+            signature = _b64.urlsafe_b64encode(sk.sign(message.encode()).signature).decode()
+            return f"{message}.{signature.rstrip('=')}"
         except Exception:  # noqa: BLE001
             return ""
 
@@ -689,31 +703,31 @@ def main() -> int:
     matrix = [
         ("POST /api/challenges (create)", "POST", "/api/challenges",
          {"title": "matrix-junk", "start_time": now, "end_time": future},
-         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/users", "GET", "/api/admin/users", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/metrics", "GET", "/api/admin/metrics", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/audit-logs", "GET", "/api/admin/audit-logs", None,
-         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/dead-letters", "GET", "/api/admin/dead-letters", None,
-         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/backups", "GET", "/api/admin/backups", None,
-         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/backups/<f>/download", "GET", "/api/admin/backups/missing.tar.gz/download", None,
-         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/submissions/queue", "GET", "/api/admin/submissions/queue", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/workers/stats", "GET", "/api/admin/workers/stats", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET scores CSV (not finalized)", "GET", f"/api/admin/challenges/{cid}/download-scores-csv", None,
-         {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET submissions zip", "GET", f"/api/admin/challenges/{cid}/download-submissions-zip", None,
-         {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET challenge credentials", "GET", f"/api/admin/challenges/{cid}/credentials", None,
-         {"a": ((200, 404), None), "j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"a": ((200, 404), None), "j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/export", "GET", f"/api/challenges/{cid}/export", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}),
+         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/export-results", "GET", f"/api/challenges/{cid}/export-results", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/tasks/<id>", "GET", f"/api/tasks/{tid}", None,
@@ -775,14 +789,14 @@ def main() -> int:
                 matrix_run("POST challenge finalize (jury)", "POST",
                            f"/api/challenges/{role_cid}/finalize",
                            {"reveal_results": False}, {"j2": (200, None), "a": (403, "ERR_ROLE_REQUIRED"),
-                                                       "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}, clients)
+                                                       "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}, clients)
                 matrix_run("PUT reveal-results (jury)", "PUT",
                            f"/api/challenges/{role_cid}/reveal-results",
                            {"reveal_results": True}, {"j2": (200, None)}, clients)
                 matrix_run("POST archive (jury)", "POST", f"/api/challenges/{role_cid}/archive",
-                           None, {"j2": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (403, "ERR_ROLE_REQUIRED")}, clients)
+                           None, {"j2": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}, clients)
                 matrix_run("DELETE challenge (admin)", "DELETE", f"/api/challenges/{role_cid}",
-                           None, {"a": (200, None), "j2": (403, "ERR_ROLE_REQUIRED")}, clients)
+                           None, {"a": (200, None), "j2": (401, "ERR_TOKEN_INVALID")}, clients)
     if jury2_id:
         code, data = api.send("DELETE", f"/api/admin/users/{jury2_id}")
         check("DELETE jury2 user → 404 ERR_USER_NOT_FOUND (challenge cascade)",
@@ -1372,23 +1386,23 @@ def main() -> int:
                       code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
 
                 # Runtime fail-closed edge cases: task is accepted, but the
-                # sandboxed evaluator cannot produce a score → 0.0 (never a
-                # host-side eval, never a 5xx). Submission still completes.
+                # sandboxed evaluator cannot produce a trustworthy score. The
+                # submission fails without publishing a fabricated score.
                 ce_fail_cases = [
                     ("smoke-ce-noeval", ce_meta,
-                     "15g: missing 'evaluate' fails closed (score 0.0)"),
+                     "15g: missing 'evaluate' fails evaluation"),
                     ("smoke-ce-raise",
                      ce_meta + "def evaluate(df_sub, df_labels, options):\n    raise RuntimeError('boom-eval')\n",
-                     "15g: evaluate() raising fails closed (score 0.0)"),
+                     "15g: evaluate() raising fails evaluation"),
                     ("smoke-ce-nondict",
                      ce_meta + "def evaluate(df_sub, df_labels, options):\n    return ['not-a-dict']\n",
-                     "15g: non-dict evaluate() return fails closed (score 0.0)"),
+                     "15g: non-dict evaluate() return fails evaluation"),
                     ("smoke-ce-nonnum",
                      ce_meta + "def evaluate(df_sub, df_labels, options):\n    return {'custom_score': 'abc'}\n",
-                     "15g: non-numeric metric value fails closed (score 0.0)"),
+                     "15g: non-numeric metric value fails evaluation"),
                     ("smoke-ce-mismatch",
                      ce_meta + "def evaluate(df_sub, df_labels, options):\n    return {'other_metric': 1.0}\n",
-                     "15g: metric-key mismatch fails closed (score 0.0)"),
+                     "15g: metric-key mismatch fails evaluation"),
                 ]
                 for ce_title, ce_code, ce_label in ce_fail_cases:
                     code, data = ce_create(ce_title, ce_code)
@@ -1399,12 +1413,11 @@ def main() -> int:
                         score = sub.get("public_score") if isinstance(sub, dict) else None
                         mpub = sub.get("metrics_payload_public") if isinstance(sub, dict) else {}
                         cev = mpub.get("custom_score", None) if isinstance(mpub, dict) else None
-                        check(f"{ce_label}: submission completed with score 0.0",
-                              reached and sub.get("status") == "completed"
-                              and isinstance(score, (int, float)) and abs(float(score) - 0.0) < 1e-6,
+                        check(f"{ce_label}: submission failed without a score",
+                              reached and sub.get("status") == "failed" and score is None,
                               f"status={sub.get('status')} score={score}")
-                        check(f"{ce_label}: metrics payload custom_score 0.0",
-                              isinstance(cev, (int, float)) and abs(float(cev) - 0.0) < 1e-6,
+                        check(f"{ce_label}: metrics payload has no fabricated score",
+                              cev is None,
                               f"custom_score={cev}")
                         api.send("DELETE", f"/api/tasks/{ce_tid}")
 
@@ -1434,26 +1447,30 @@ def main() -> int:
                     check("15g: metrics payload custom_score 1.0",
                           isinstance(cev, (int, float)) and abs(float(cev) - 1.0) < 1e-6,
                           f"custom_score={cev}")
-                    # Public split is the first 2 rows (labels [0, 1]); all-zero
-                    # predictions match 1 of 2 → 0.5.
+                    # Use the opposite label for every identifier so the
+                    # assertion is independent of the keyed public split.
                     reached, sub = ce_run(ce_ok_tid,
                                           "import pandas as pd\n"
                                           "pd.DataFrame({'id': [1, 2, 3, 4, 5], "
-                                          "'prediction': [0, 0, 0, 0, 0]})"
+                                          "'prediction': [1, 0, 1, 0, 1]})"
                                           ".to_parquet('submission.parquet')\n")
                     score = sub.get("public_score") if isinstance(sub, dict) else None
-                    check("15g: partial prediction penalized (0.5)",
+                    check("15g: incorrect prediction penalized (0.0)",
                           reached and sub.get("status") == "completed"
-                          and isinstance(score, (int, float)) and abs(float(score) - 0.5) < 1e-6,
+                          and isinstance(score, (int, float)) and abs(float(score) - 0.0) < 1e-6,
                           f"status={sub.get('status')} score={score}")
                     api.send("DELETE", f"/api/tasks/{ce_ok_tid}")
 
     # ── 15e. Worker API contract (opt-in SMOKE_WORKER_KEY) ─────────────
     print("\n== 15e. Worker API contract ==")
     wpriv = _load_worker_private_key()
+    worker_id = _load_worker_id()
     wc_cid = ""
-    if not wpriv:
-        warn("worker-contract", "no SMOKE_WORKER_KEY / WORKER_PRIVATE_KEY in worker.env — skipped")
+    if not wpriv or not worker_id:
+        warn(
+            "worker-contract",
+            "no worker ID/private key in worker.env — skipped",
+        )
     else:
         wc_cid, wc_user, wc_pass = create_challenge_and_competitor(
             api, args.base, "smoke-worker-contract", now, future)
@@ -1485,54 +1502,89 @@ def main() -> int:
                                                          "source": "import time\ntime.sleep(300)\n"}]})
             ksid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
             check("worker-contract: contract submission 202", code == 202 and bool(ksid))
-            tok = _sign_worker_token(ksid, wpriv) if ksid else ""
-            other = _sign_worker_token(str(uuid.uuid4()), wpriv)
-            check("worker-contract: can sign ed25519 token", bool(tok) and bool(other))
-            if tok:
+            attempt_id = ""
+            if ksid:
+                code, submission_data = api.send("GET", f"/api/submissions/{ksid}")
+                attempt_id = (
+                    submission_data.get("celery_task_id", "")
+                    if code == 200 and isinstance(submission_data, dict)
+                    else ""
+                )
+            auth_token = _sign_worker_token(worker_id, wpriv) if ksid else ""
+            check(
+                "worker-contract: can sign ed25519 token",
+                bool(auth_token) and bool(attempt_id),
+            )
+            capabilities: dict[str, str] = {}
+            if auth_token and attempt_id:
+                code, capability_data = api.send(
+                    "POST",
+                    f"/api/worker/capabilities/{ksid}",
+                    {"attempt_id": attempt_id},
+                    headers={"X-Worker-Token": auth_token},
+                )
+                capabilities = (
+                    capability_data.get("capabilities", {})
+                    if code == 200 and isinstance(capability_data, dict)
+                    else {}
+                )
+                check(
+                    "worker-contract: claim scoped capabilities",
+                    code == 200 and bool(capabilities),
+                    f"got {code}",
+                )
+
+            def worker_headers(operation: str) -> dict[str, str]:
+                return {
+                    "X-Worker-Token": _sign_worker_token(worker_id, wpriv),
+                    "X-Worker-Capability": capabilities.get(operation, ""),
+                }
+
+            if capabilities:
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("submission_run_content"))
                 uc = data.get("user_code") if code == 200 and isinstance(data, dict) else None
                 check("run-content fetch returns user_code",
                       code == 200 and isinstance(uc, str) and "time.sleep" in uc,
                       f"code={str(uc)[:120]}")
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}",
-                                      headers={"X-Worker-Token": other})
-                check("run-content rejects foreign-submission token",
+                                      headers=worker_headers("report_submission"))
+                check("run-content rejects wrong-scope capability",
                       code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
                 code, data = api.send("GET", f"/api/worker/submission-run-content/{ksid}")
                 check("run-content rejects missing token",
                       code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "execution_time_ms": -5},
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("report_submission"))
                 check("negative execution_time_ms rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_EXECUTION_TIME"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "public_score": "abc"},
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("report_submission"))
                 check("non-numeric public_score rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_PUBLIC_SCORE"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "not-a-status"},
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("report_submission"))
                 check("unknown status rejected",
                       code == 400 and expect_error(data, "ERR_INVALID_STATUS"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running"},
-                                      headers={"X-Worker-Token": other})
-                check("foreign-submission report rejected",
-                      code == 401 and expect_error(data, "ERR_UNAUTHORIZED"), f"got {code}")
+                                      headers=worker_headers("submission_run_content"))
+                check("wrong-scope report rejected",
+                      code == 409 and expect_error(data, "ERR_STALE_WORKER_ATTEMPT"), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "execution_time_ms": 123,
                                        "public_score": 0.5},
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("report_submission"))
                 check("worker-contract: valid running report accepted",
                       code == 200, f"got {code}")
                 code, data = api.send("POST", f"/api/submissions/{ksid}/kill")
                 check("worker-contract: admin kill 200", code == 200 and isinstance(data, dict), f"got {code}")
                 code, data = api.send("POST", f"/api/worker/report/{ksid}",
                                       {"status": "running", "public_score": 1.0},
-                                      headers={"X-Worker-Token": tok})
+                                      headers=worker_headers("report_submission"))
                 check("stale report on killed submission → 409 ERR_SUBMISSION_KILLED",
                       code == 409 and expect_error(data, "ERR_SUBMISSION_KILLED"), f"got {code}")
                 code, data = api.send("POST", f"/api/submissions/{ksid}/kill")
@@ -1540,7 +1592,7 @@ def main() -> int:
                       code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_KILLABLE"), f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
                                       gzip.compress(json.dumps(["line1", "line2"]).encode()),
-                                      headers={"X-Worker-Token": tok})
+                                      headers={"X-Worker-Token": _sign_worker_token(worker_id, wpriv)})
                 check("worker logs gzip payload accepted",
                       code == 200, f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
@@ -1550,9 +1602,9 @@ def main() -> int:
                       code == 401, f"got {code}")
                 code, data = api.send("POST", "/api/workers/logs",
                                       gzip.compress(os.urandom(1_100_000)),
-                                      headers={"X-Worker-Token": tok})
+                                      headers={"X-Worker-Token": _sign_worker_token(worker_id, wpriv)})
                 check("oversized log payload rejected (ERR_PAYLOAD_TOO_LARGE)",
-                      code == 400 and expect_error(data, "ERR_PAYLOAD_TOO_LARGE"), f"got {code}")
+                      code == 413 and expect_error(data, "ERR_PAYLOAD_TOO_LARGE"), f"got {code}")
 
     # ── 15f. Oversized-archive resilience (opt-in SMOKE_GUARD_CAPS=1) ──
     if os.environ.get("SMOKE_GUARD_CAPS") == "1":

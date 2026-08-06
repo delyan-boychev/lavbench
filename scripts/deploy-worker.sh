@@ -3,6 +3,7 @@
 # Called by: make deploy-worker
 # Prerequisite: make setup-worker (creates worker.env)
 set -euo pipefail
+umask 077
 
 WORKER_IMAGE="lavbench-worker"
 CONTAINER_NAME="lavbench-worker"
@@ -42,6 +43,11 @@ if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
   echo "  [ERROR] WORKER_PRIVATE_KEY not set. Copy worker.env from the server."
   exit 1
 fi
+if [ -z "${WORKER_ID:-}" ]; then
+  echo "  [ERROR] WORKER_ID not set. Re-run setup to create a registered worker identity."
+  exit 1
+fi
+chmod 0600 worker.env
 
 REDIS_URL="${CELERY_BROKER_URL:-}"
 if [ -z "$REDIS_URL" ]; then
@@ -124,6 +130,7 @@ deploy_docker() {
     -e CELERY_RESULT_BACKEND \
     -e WORKER_ENCRYPTION_KEY \
     -e WORKER_PRIVATE_KEY \
+    -e WORKER_ID \
     -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_GPU_ID \

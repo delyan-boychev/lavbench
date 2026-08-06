@@ -67,6 +67,7 @@ class TestWatchdogStuckSubmissions:
         if time_limit is not None:
             self.task.time_limit_sec = time_limit
         sub = Submission(**kwargs)
+        sub.celery_task_id = f"attempt-{sub.id or 'pending'}-{status}"
         db.session.add(sub)
         db.session.commit()
         return sub
@@ -131,12 +132,15 @@ class TestWatchdogStuckSubmissions:
         sub = self._create_submission("running")
         fallback_key = f"submission:{sub.id}:fallback"
         fallback_data = {
+            "attempt_id": sub.celery_task_id,
+            "worker_id": "worker-watchdog",
             "status": "completed",
             "detailed_status": "done",
             "public_score": 0.9,
             "private_score": 0.8,
             "logs": "recovered via fallback",
         }
+        r.set(f"worker:attempt:{sub.celery_task_id}", "worker-watchdog", ex=3600)
         r.set(fallback_key, json.dumps(fallback_data))
 
         result = watchdog_stuck_submissions()
@@ -157,8 +161,46 @@ class TestWatchdogStuckSubmissions:
 
         sub = self._create_submission("running")
         fallback_key = f"submission:{sub.id}:fallback"
-        r.set(fallback_key, json.dumps({"status": "completed"}))
+        r.set(
+            fallback_key,
+            json.dumps(
+                {
+                    "status": "completed",
+                    "attempt_id": sub.celery_task_id,
+                    "worker_id": "worker-watchdog",
+                }
+            ),
+        )
+        r.set(f"worker:attempt:{sub.celery_task_id}", "worker-watchdog", ex=3600)
         watchdog_stuck_submissions()
+        assert r.get(fallback_key) is None
+
+    def test_stale_fallback_cannot_overwrite_new_attempt(self):
+        from utils.cache_utils import get_redis_client
+
+        r = get_redis_client()
+        if not r:
+            pytest.skip("Redis unavailable")
+
+        sub = self._create_submission("running")
+        fallback_key = f"submission:{sub.id}:fallback"
+        r.set(
+            fallback_key,
+            json.dumps(
+                {
+                    "status": "completed",
+                    "attempt_id": "superseded-attempt",
+                    "worker_id": "old-worker",
+                    "public_score": 1.0,
+                }
+            ),
+        )
+        r.set(f"worker:attempt:{sub.celery_task_id}", "new-worker", ex=3600)
+
+        watchdog_stuck_submissions()
+
+        db.session.expire_all()
+        assert db.session.get(Submission, sub.id).status == "running"
         assert r.get(fallback_key) is None
 
     def test_times_out_building_env_status(self):

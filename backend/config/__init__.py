@@ -86,6 +86,8 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or (
         "" if "SECRET_KEY" not in _WORKER_REQUIRED_ENV else _require_env("SECRET_KEY")
     )
+    # Root secret used only to derive per-task evaluation split keys on the server
+    EVALUATION_SPLIT_SECRET = os.environ.get("EVALUATION_SPLIT_SECRET") or SECRET_KEY
 
     # Database configuration - PostgreSQL strictly enforced
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or (
@@ -185,12 +187,16 @@ class Config:
 
     # Worker utils
     WORKER_MAX_LOG_LINES = int(os.environ.get("WORKER_MAX_LOG_LINES", 10000))
+    WORKER_MAX_STDOUT_CHARS = int(os.environ.get("WORKER_MAX_STDOUT_CHARS", 1024 * 1024))
     # Cumulative size cap for the server-side worker_remote.log; the file is
     # Rotated (kept as .1) once it would exceed this bound.
     MAX_WORKER_LOG_BYTES = int(os.environ.get("MAX_WORKER_LOG_BYTES", 10 * 1024 * 1024))
     WORKER_REPORT_MAX_RETRIES = int(os.environ.get("WORKER_REPORT_MAX_RETRIES", 3))
     WORKER_REPORT_TIMEOUT = int(os.environ.get("WORKER_REPORT_TIMEOUT", 10))
     WORKER_DOWNLOAD_TIMEOUT = int(os.environ.get("WORKER_DOWNLOAD_TIMEOUT", 30))
+    MAX_WORKER_REPORT_BYTES = int(os.environ.get("MAX_WORKER_REPORT_BYTES", 512 * 1024))
+    MAX_WORKER_AUTH_BODY_BYTES = int(os.environ.get("MAX_WORKER_AUTH_BODY_BYTES", 8 * 1024))
+    MAX_WORKER_LOG_SHIP_BYTES = int(os.environ.get("MAX_WORKER_LOG_SHIP_BYTES", 1024 * 1024))
     # Comma-separated GPU device ids exposed to sandboxes. When set, the
     # Worker pins a specific device per run instead of requesting every GPU
     WORKER_GPU_IDS: ClassVar[list[str]] = [
@@ -202,6 +208,13 @@ class Config:
     # Extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES
     MAX_COLLECT_BUFFER_BYTES = int(os.environ.get("MAX_COLLECT_BUFFER_BYTES", 512 * 1024 * 1024))
     MAX_EXTRACT_MEMBER_BYTES = int(os.environ.get("MAX_EXTRACT_MEMBER_BYTES", 512 * 1024 * 1024))
+    MAX_PARQUET_FILE_BYTES = int(os.environ.get("MAX_PARQUET_FILE_BYTES", 512 * 1024 * 1024))
+    MAX_PARQUET_UNCOMPRESSED_BYTES = int(
+        os.environ.get("MAX_PARQUET_UNCOMPRESSED_BYTES", 1024 * 1024 * 1024)
+    )
+    MAX_PARQUET_ROWS = int(os.environ.get("MAX_PARQUET_ROWS", 10_000_000))
+    MAX_PARQUET_COLUMNS = int(os.environ.get("MAX_PARQUET_COLUMNS", 512))
+    MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
     # Best-effort --storage-opt size cap for sandbox containers (ignored by
     # Storage drivers without quota support)
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
@@ -250,8 +263,12 @@ class Config:
     CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", 2))
     WORKER_GPU_ID = os.environ.get("WORKER_GPU_ID", "")
     GPU_ACQUISITION_TIMEOUT = int(os.environ.get("GPU_ACQUISITION_TIMEOUT", 600))
-    WORKER_PUBLIC_KEY = os.environ.get("WORKER_PUBLIC_KEY", "")
+    WORKER_PUBLIC_KEYS_JSON = os.environ.get("WORKER_PUBLIC_KEYS_JSON", "{}")
     WORKER_PRIVATE_KEY = os.environ.get("WORKER_PRIVATE_KEY", "")
+    WORKER_ID = os.environ.get("WORKER_ID", "")
+    WORKER_CAPABILITY_SECRET = os.environ.get("WORKER_CAPABILITY_SECRET", SECRET_KEY)
+    WORKER_CAPABILITY_TTL = int(os.environ.get("WORKER_CAPABILITY_TTL", 3600))
+    WORKER_ATTEMPT_LEASE_TTL = int(os.environ.get("WORKER_ATTEMPT_LEASE_TTL", 1500))
 
     # Worker sandbox resource allocation
     GPU_RAM_PER_TASK_GB = int(os.environ.get("GPU_RAM_PER_TASK_GB", 8))
@@ -281,8 +298,13 @@ class Config:
 
     # Submission file size limits (prevents OOM on property access)
     MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
+    MAX_SELECTED_CELLS = int(os.environ.get("MAX_SELECTED_CELLS", 500))
+    MAX_CODE_CELL_CHARS = int(os.environ.get("MAX_CODE_CELL_CHARS", 1024 * 1024))
     MAX_CODE_CELLS_CHARS = int(
-        os.environ.get("MAX_CODE_CELLS_CHARS", 50 * 1024 * 1024)  # 50 MB
+        os.environ.get("MAX_CODE_CELLS_CHARS", 5 * 1024 * 1024)  # 5 MB
+    )
+    MAX_SUBMISSION_REQUEST_BYTES = int(
+        os.environ.get("MAX_SUBMISSION_REQUEST_BYTES", 6 * 1024 * 1024)
     )
 
     # Redis SSL settings

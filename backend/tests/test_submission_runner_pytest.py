@@ -10,6 +10,7 @@ import pytest
 from config import Config
 from services.evaluation import (
     AVAILABLE_METRICS,
+    EvaluationError,
     evaluate_predictions,
     validate_parquet_schema,
 )
@@ -18,7 +19,8 @@ from tasks.task_modules.submission_runner import calculate_weighted_score
 
 
 @pytest.fixture(autouse=True)
-def _mock_run_content_fetch(mocker):
+def _mock_worker_callbacks(mocker):
+    mocker.patch("tasks.task_modules.submission_runner.fetch_submission_capabilities")
     mocker.patch(
         "utils.worker_utils.fetch_submission_run_content",
         side_effect=lambda metadata: (
@@ -59,8 +61,9 @@ class TestSubmissionRunnerMetrics:
     def test_calculate_weighted_score_nan_inf(self):
         payload = {"accuracy": math.nan, "f1": math.inf}
         cfg = {"accuracy": {"weight": 1.0}, "f1": {"weight": 1.0}}
-        score = calculate_weighted_score(payload, cfg)
-        assert score == 0.0
+        with pytest.raises(EvaluationError, match="non-finite") as exc_info:
+            calculate_weighted_score(payload, cfg)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_calculate_weighted_score_negative_one(self):
         payload = {"mse": -1.0}
@@ -110,25 +113,29 @@ class TestSubmissionRunnerMetrics:
         )
         assert metric_direction_from_config("mse", {"higher_is_better": True}) is False
 
-    def test_failed_metric_excluded_and_renormalized(self):
+    def test_failed_metric_fails_closed(self):
         payload = {"accuracy": 0.8, "contamination_rate": None}
         cfg = {
             "accuracy": {"weight": 1.0},
             "contamination_rate": {"weight": 1.0, "higher_is_better": False},
         }
-        score = calculate_weighted_score(payload, cfg)
-        assert abs(score - 0.8) < 1e-9
+        with pytest.raises(EvaluationError, match="contamination_rate") as exc_info:
+            calculate_weighted_score(payload, cfg)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_missing_metric_excluded_and_renormalized(self):
+    def test_missing_metric_fails_closed(self):
         payload = {"accuracy": 0.9}
         cfg = {"accuracy": {"weight": 1.0}, "f1": {"weight": 3.0}}
-        score = calculate_weighted_score(payload, cfg)
-        assert abs(score - 0.9) < 1e-9
+        with pytest.raises(EvaluationError, match="f1") as exc_info:
+            calculate_weighted_score(payload, cfg)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_all_metrics_failed_returns_zero(self):
+    def test_all_metrics_failed_fails_closed(self):
         payload = {"accuracy": None, "f1": None}
         cfg = {"accuracy": {"weight": 1.0}, "f1": {"weight": 1.0}}
-        assert calculate_weighted_score(payload, cfg) == 0.0
+        with pytest.raises(EvaluationError, match="accuracy, f1") as exc_info:
+            calculate_weighted_score(payload, cfg)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
 
 captured_run_kwargs = {}
@@ -445,14 +452,15 @@ class TestSubmissionRunnerDocker:
 class TestCalculateWeightedScoreEdgeCases:
     """Edge cases for calculate_weighted_score — no-cfg nan/inf + weighted special paths."""
 
-    def test_no_cfg_nan_payload_returns_zero(self):
-        """No config with NaN payload (lines 150-151) → 0.0."""
-        score = calculate_weighted_score({"accuracy": math.nan}, None)
-        assert score == 0.0
+    def test_no_cfg_nan_payload_fails_closed(self):
+        with pytest.raises(EvaluationError, match="non-finite") as exc_info:
+            calculate_weighted_score({"accuracy": math.nan}, None)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
-    def test_no_cfg_inf_payload_returns_zero(self):
-        score = calculate_weighted_score({"accuracy": math.inf}, None)
-        assert score == 0.0
+    def test_no_cfg_inf_payload_fails_closed(self):
+        with pytest.raises(EvaluationError, match="non-finite") as exc_info:
+            calculate_weighted_score({"accuracy": math.inf}, None)
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
     def test_no_cfg_empty_payload_returns_zero(self):
         score = calculate_weighted_score({}, None)
@@ -478,26 +486,37 @@ class TestCalculateWeightedScoreEdgeCases:
         score = calculate_weighted_score({"mse": -1.0}, {"mse": {"weight": 1.0}})
         assert score == pytest.approx(0.0)
 
-    def test_cfg_nan_norm_val_clamped_to_zero(self):
-        """NaN/inf higher-is-better metric values → guard returns 0.0 contribution."""
-        score = calculate_weighted_score({"accuracy": math.inf}, {"accuracy": {"weight": 1.0}})
-        assert score == pytest.approx(0.0)
+    def test_cfg_non_finite_metric_fails_closed(self):
+        with pytest.raises(EvaluationError, match="non-finite") as exc_info:
+            calculate_weighted_score({"accuracy": math.inf}, {"accuracy": {"weight": 1.0}})
+        assert exc_info.value.code == "EVALUATION_METRIC_FAILED"
 
 
 class TestFetchHFKeyFromServer:
     """Unit tests for _fetch_hf_key_from_server."""
 
+    @pytest.fixture(autouse=True)
+    def _scoped_headers(self, mocker):
+        self.metadata = {"worker_capabilities": {"task_hf_key": "scoped-capability"}}
+        self.mock_headers = mocker.patch(
+            "tasks.task_modules.submission_runner.worker_request_headers",
+            return_value={
+                "X-Worker-Token": "signed-token",
+                "X-Worker-Capability": "scoped-capability",
+            },
+        )
+
     def test_missing_task_id_returns_empty(self):
         from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
-        assert _fetch_hf_key_from_server(None, "http://server", "token") == ""
+        assert _fetch_hf_key_from_server(None, "http://server", self.metadata) == ""
 
     def test_missing_server_url_returns_empty(self):
         from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
-        assert _fetch_hf_key_from_server("task_1", None, "token") == ""
+        assert _fetch_hf_key_from_server("task_1", None, self.metadata) == ""
 
-    def test_missing_token_returns_empty(self):
+    def test_missing_metadata_returns_empty(self):
         from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         assert _fetch_hf_key_from_server("task_1", "http://server", None) == ""
@@ -506,7 +525,7 @@ class TestFetchHFKeyFromServer:
         from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
 
         mocker.patch("tasks.task_modules.submission_runner.requests.get")
-        result = _fetch_hf_key_from_server("task_1", "http://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_1", "http://server:5000", self.metadata)
         assert result == ""
         task_modules.requests.get.assert_not_called()
 
@@ -523,8 +542,9 @@ class TestFetchHFKeyFromServer:
         mock_resp.json.return_value = {"hf_key": "hf_secret_token"}
         mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "worker_token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", self.metadata)
         assert result == "hf_secret_token"
+        self.mock_headers.assert_called_once_with(self.metadata, "task_hf_key")
 
     def test_http_403_returns_empty(self, mocker):
         from tasks.task_modules.submission_runner import _fetch_hf_key_from_server
@@ -533,7 +553,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.status_code = 403
         mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "bad_token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", self.metadata)
         assert result == ""
 
     def test_http_404_returns_empty(self, mocker):
@@ -543,7 +563,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.status_code = 404
         mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_999", "https://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_999", "https://server:5000", self.metadata)
         assert result == ""
 
     def test_connection_error_returns_empty(self, mocker):
@@ -555,7 +575,7 @@ class TestFetchHFKeyFromServer:
             "tasks.task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.ConnectionError("refused"),
         )
-        result = _fetch_hf_key_from_server("task_1", "https://badhost:9999", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://badhost:9999", self.metadata)
         assert result == ""
 
     def test_timeout_exception_returns_empty(self, mocker):
@@ -567,7 +587,7 @@ class TestFetchHFKeyFromServer:
             "tasks.task_modules.submission_runner.requests.get",
             side_effect=req.exceptions.Timeout("timeout"),
         )
-        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", self.metadata)
         assert result == ""
 
     def test_200_but_missing_hf_key_field_returns_empty_string(self, mocker):
@@ -578,7 +598,7 @@ class TestFetchHFKeyFromServer:
         mock_resp.json.return_value = {}  # No "hf_key" field
         mocker.patch("tasks.task_modules.submission_runner.requests.get", return_value=mock_resp)
 
-        result = _fetch_hf_key_from_server("task_1", "https://server:5000", "token")
+        result = _fetch_hf_key_from_server("task_1", "https://server:5000", self.metadata)
         assert result == ""
 
 
@@ -920,19 +940,20 @@ class TestReportRuntimeSyncFailure:
     def test_noop_without_metadata(self, mocker):
         from tasks.task_modules.submission_runner import _report_runtime_sync_failure
 
-        mock_sign = mocker.patch("tasks.task_modules.submission_runner._sign_worker_token")
+        mock_report = mocker.patch("tasks.task_modules.image_builder._report_build_error")
         _report_runtime_sync_failure(1, None, ["ERR_TASK_FILE_SYNC_FAILED"])
         _report_runtime_sync_failure(1, {}, ["ERR_TASK_FILE_SYNC_FAILED"])
-        mock_sign.assert_not_called()
+        mock_report.assert_not_called()
 
     def test_reports_problem_codes_via_build_error(self, mocker):
         from tasks.task_modules.submission_runner import _report_runtime_sync_failure
 
         mock_report = mocker.patch("tasks.task_modules.image_builder._report_build_error")
-        mocker.patch(
-            "tasks.task_modules.submission_runner._sign_worker_token", return_value="signed-token"
-        )
-        metadata = {"main_server_url": "http://server:5000", "submission_id": "sub-9"}
+        metadata = {
+            "main_server_url": "http://server:5000",
+            "submission_id": "sub-9",
+            "worker_capabilities": {"report_build_error": "scoped-capability"},
+        }
         _report_runtime_sync_failure(7, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"])
         block_msg = (
             "Task resource synchronization failed; submissions are blocked until the task is fixed."
@@ -941,7 +962,7 @@ class TestReportRuntimeSyncFailure:
             "7",
             block_msg,
             "http://server:5000",
-            "signed-token",
+            metadata,
             problem_codes=["ERR_TASK_LABELS_SYNC_FAILED"],
         )
 

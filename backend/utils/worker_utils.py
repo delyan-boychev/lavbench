@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import io
 import itertools
 import json
 import logging
@@ -13,6 +12,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from typing import Any
 
@@ -21,6 +21,7 @@ from docker import DockerClient  # type: ignore[import-untyped]
 from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
 
 from config import Config
+from utils.worker_auth import sign_worker_token, worker_request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +38,14 @@ def fetch_submission_run_content(metadata: dict[str, Any]) -> tuple[str | None, 
     if not main_url:
         logger.error("No main_server_url in metadata — cannot fetch run content")
         raise RuntimeError("Cannot fetch run content: no main_server_url")
-    token = _sign_worker_token(str(submission_id))
-    if not token:
+    headers = worker_request_headers(metadata, "submission_run_content")
+    if not headers["X-Worker-Token"] or not headers["X-Worker-Capability"]:
         raise RuntimeError("Cannot sign worker token for run-content fetch")
 
     url = f"{main_url}/api/worker/submission-run-content/{submission_id}"
     resp = requests.get(
         url,
-        headers={"X-Worker-Token": token},
+        headers=headers,
         timeout=Config.WORKER_REPORT_TIMEOUT,
     )
     if resp.status_code != 200:
@@ -53,34 +54,9 @@ def fetch_submission_run_content(metadata: dict[str, Any]) -> tuple[str | None, 
     return data.get("user_code"), data.get("custom_eval_code")
 
 
-def _sign_worker_token(submission_id: str) -> str:
-    """Create an Ed25519-signed token for authenticating to the main server.
-
-    The worker reads WORKER_PRIVATE_KEY from its environment, signs a nonce
-    containing the submission_id and current timestamp, and returns the token
-    as ``nonce.base64_signature`` for use in the X-Worker-Token header.
-    """
-    import base64 as _b64
-
-    def _pad_b64(s: str) -> str:
-        return s + "=" * (-len(s) % 4)
-
-    priv_key_b64 = os.environ.get("WORKER_PRIVATE_KEY", "")
-    if not priv_key_b64:
-        logger.critical(
-            "WORKER_PRIVATE_KEY is not set — worker cannot authenticate to the main server"
-        )
-        return ""
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-        private_key = Ed25519PrivateKey.from_private_bytes(_b64.b64decode(_pad_b64(priv_key_b64)))
-        nonce = f"{submission_id}:{int(time.time())}"
-        signature = private_key.sign(nonce.encode())
-        return f"{nonce}.{_b64.b64encode(signature).decode()}"
-    except Exception as exc:
-        logger.warning("Failed to sign worker token: %s", exc)
-        return ""
+def _sign_worker_token(submission_id: Any = None) -> str:
+    """Compatibility alias for callers while issuing fresh per-request tokens."""
+    return sign_worker_token()
 
 
 SANDBOX_UID = 65534
@@ -258,11 +234,14 @@ def run_command_streaming(
         logs_list.append(f"Failed to start container: {exc}")
         return -1, "", str(exc), False
 
-    stdout_lines: list[str] = []
+    stdout_lines: deque[str] = deque()
+    stdout_chars = 0
+    sink_chars = sum(len(str(item)) for item in logs_list)
     process_timeout = False
     exit_code = -1
 
     def stream_logs() -> None:
+        nonlocal sink_chars, stdout_chars
         try:
             for chunk in container.logs(stream=True, follow=True):
                 if chunk:
@@ -270,8 +249,16 @@ def run_command_streaming(
                     for line in text.splitlines(keepends=True):
                         clean = line.rstrip("\r\n")
                         if clean:
+                            clean = clean[-Config.WORKER_MAX_STDOUT_CHARS :]
                             stdout_lines.append(clean)
-                            logs_list.append(clean)
+                            stdout_chars += len(clean)
+                            while stdout_lines and stdout_chars > Config.WORKER_MAX_STDOUT_CHARS:
+                                stdout_chars -= len(stdout_lines.popleft())
+                            sink_line = clean[-Config.MAX_LOG_CHARS :]
+                            logs_list.append(sink_line)
+                            sink_chars += len(sink_line)
+                            while logs_list and sink_chars > Config.MAX_LOG_CHARS:
+                                sink_chars -= len(str(logs_list.pop(0)))
         except Exception:
             logger.debug("Log stream ended", exc_info=True)
 
@@ -312,48 +299,51 @@ def run_command_streaming(
             for container_path, host_path in collect_files:
                 try:
                     stream, _stat = container.get_archive(container_path)
-                    # Cap the in-memory buffer while assembling the tar stream
-                    # So a hostile container cannot balloon host RAM via the
-                    # Collect path
-                    raw = bytearray()
-                    for chunk in stream:
-                        if len(raw) + len(chunk) > Config.MAX_COLLECT_BUFFER_BYTES:
-                            raise ValueError(
-                                f"collected archive from {container_path} exceeded "
-                                f"{Config.MAX_COLLECT_BUFFER_BYTES}-byte buffer cap"
-                            )
-                        raw.extend(chunk)
-                    with tarfile.open(fileobj=io.BytesIO(bytes(raw)), mode="r:") as tar:
-                        for member in tar:
-                            if not member.isfile():
-                                continue
-                            # Per-member cap, enforced from the tar header size
-                            # Before any extraction
-                            if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
-                                logger.warning(
-                                    "Skipping oversized member %s (%d bytes) in %s",
-                                    member.name,
-                                    member.size,
-                                    container_path,
+                    # Spool the bounded archive to disk so a valid large output does
+                    # Not require duplicate bytearray/bytes/BytesIO copies in RAM
+                    with tempfile.TemporaryFile() as archive:
+                        archive_size = 0
+                        for chunk in stream:
+                            archive_size += len(chunk)
+                            if archive_size > Config.MAX_COLLECT_BUFFER_BYTES:
+                                raise ValueError(
+                                    f"collected archive from {container_path} exceeded "
+                                    f"{Config.MAX_COLLECT_BUFFER_BYTES}-byte buffer cap"
                                 )
-                                continue
-                            extracted = tar.extractfile(member)
-                            if extracted is not None:
-                                os.makedirs(os.path.dirname(host_path), exist_ok=True)
-                                written = 0
-                                with open(host_path, "wb") as f:
-                                    while True:
-                                        block = extracted.read(1024 * 1024)
-                                        if not block:
-                                            break
-                                        written += len(block)
-                                        if written > Config.MAX_EXTRACT_MEMBER_BYTES:
-                                            raise ValueError(
-                                                f"member {member.name} in {container_path} "
-                                                f"exceeded {Config.MAX_EXTRACT_MEMBER_BYTES}-byte "
-                                                "extract cap"
-                                            )
-                                        f.write(block)
+                            archive.write(chunk)
+                        archive.seek(0)
+                        with tarfile.open(fileobj=archive, mode="r:") as tar:
+                            for member in tar:
+                                if not member.isfile():
+                                    continue
+                                # Per-member cap, enforced from the tar header size
+                                # Before any extraction
+                                if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
+                                    logger.warning(
+                                        "Skipping oversized member %s (%d bytes) in %s",
+                                        member.name,
+                                        member.size,
+                                        container_path,
+                                    )
+                                    continue
+                                extracted = tar.extractfile(member)
+                                if extracted is not None:
+                                    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+                                    written = 0
+                                    with open(host_path, "wb") as f:
+                                        while True:
+                                            block = extracted.read(1024 * 1024)
+                                            if not block:
+                                                break
+                                            written += len(block)
+                                            if written > Config.MAX_EXTRACT_MEMBER_BYTES:
+                                                raise ValueError(
+                                                    f"member {member.name} in {container_path} "
+                                                    "exceeded "
+                                                    f"{Config.MAX_EXTRACT_MEMBER_BYTES}-byte "
+                                                    "extract cap"
+                                                )
+                                            f.write(block)
                 except Exception as exc:
                     logger.warning("Could not collect %s from container: %s", container_path, exc)
     finally:
@@ -499,9 +489,6 @@ def report_status_to_server(
     submission_id = metadata.get("submission_id", "unknown")
     url = f"{metadata['main_server_url']}/api/worker/report/{submission_id}"
 
-    token = _sign_worker_token(submission_id)
-    headers = {"X-Worker-Token": token, "Content-Type": "application/json"}
-
     payload: dict[str, Any] = {"status": status, "detailed_status": detailed_status}
     if logs is not None:
         if isinstance(logs, list):
@@ -523,6 +510,8 @@ def report_status_to_server(
 
     for attempt in range(max_retries):
         try:
+            headers = worker_request_headers(metadata, "report_submission")
+            headers["Content-Type"] = "application/json"
             res = requests.post(
                 url, json=payload, headers=headers, timeout=Config.WORKER_REPORT_TIMEOUT
             )
@@ -625,8 +614,7 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     if to_download:
         logs.append(f"Syncing {len(to_download)} task file(s) into the asset cache...")
         main_server_url = metadata["main_server_url"]
-        token = _sign_worker_token(metadata.get("submission_id", "unknown"))
-        headers = {"X-Worker-Token": token}
+        headers = worker_request_headers(metadata, "task_file")
         all_ok = True
         for ent in to_download:
             filename = ent.get("filename", "")
@@ -701,8 +689,7 @@ def sync_labels_parquet_to_cache(metadata: dict[str, Any] | None, logs: list[str
         return dest_file
 
     main_server_url = metadata["main_server_url"]
-    token = _sign_worker_token(metadata.get("submission_id", "unknown"))
-    headers = {"X-Worker-Token": token}
+    headers = worker_request_headers(metadata, "task_file")
     url = f"{main_server_url}/api/worker/tasks/{task_id}/files/labels.parquet"
     try:
         logs.append("Downloading labels.parquet securely (host-only cache)...")
@@ -766,10 +753,8 @@ def download_task_files_to_dir(
                 " from build cache, downloading rest"
             )
 
-    submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
-    token = _sign_worker_token(submission_id)
-    headers = {"X-Worker-Token": token}
+    headers = worker_request_headers(metadata, "task_file")
 
     for f in files_list:
         filename = f["filename"]
@@ -805,10 +790,8 @@ def download_labels_parquet_to_dir(
         return None
 
     task_id = metadata.get("task_id")
-    submission_id = metadata.get("submission_id", "unknown")
     main_server_url = metadata["main_server_url"]
-    token = _sign_worker_token(submission_id)
-    headers = {"X-Worker-Token": token}
+    headers = worker_request_headers(metadata, "task_file")
     for f in files_list:
         filename = f["filename"]
         if filename == "labels.parquet":

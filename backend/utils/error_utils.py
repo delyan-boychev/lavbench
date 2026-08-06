@@ -11,6 +11,7 @@ from flask import Response, jsonify
 DEFAULT_ERROR_MESSAGES = {
     # utils/auth_utils.py
     "ERR_TOKEN_INVALID": "Unauthorized access. Token is missing, expired, or invalid.",
+    "ERR_AUTH_UNAVAILABLE": "Authentication is temporarily unavailable. Please try again.",
     "ERR_CSRF_FAILED": "CSRF token missing or invalid.",
     "ERR_RATE_LIMITED": "Too many requests. Please slow down.",
     "ERR_ACCESS_DENIED": "Access denied.",
@@ -144,6 +145,8 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_PRIVATE_SCORE": "private_score must be numeric or null",
     "ERR_INVALID_EXECUTION_TIME": "execution_time_ms must be a finite non-negative number",
     "ERR_SUBMISSION_KILLED": "Submission was killed and can no longer be updated by worker reports.",
+    "ERR_STALE_WORKER_ATTEMPT": "Worker report does not match the active submission attempt.",
+    "ERR_WORKER_AUTH_UNAVAILABLE": "Worker authentication is temporarily unavailable.",
     "ERR_INVALID_FILENAME": "Invalid filename",
     # submissions.py — kill / queue
     "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",

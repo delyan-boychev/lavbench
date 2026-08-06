@@ -2,6 +2,7 @@
 # scripts/generate-keys.sh — Auto-generate all security keys for LavBench.
 # Called by make setup. Prompts for server address, HTTP/HTTPS, Redis TLS.
 set -euo pipefail
+umask 077
 
 ENV_FILE=".env"
 WORKER_ENV="worker.env"
@@ -55,18 +56,33 @@ GENERATE_HTTPS_CERTS=false
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 set_if_missing "SECRET_KEY" "$SECRET_KEY"
 
-ENCRYPTION_KEY=$(python3 -c "
-from cryptography.fernet import Fernet
-print(Fernet.generate_key().decode())
-" 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-set_if_missing "ENCRYPTION_KEY" "$ENCRYPTION_KEY"
+generate_fernet_key() {
+  python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+}
+
+ensure_fernet_key() {
+  local key="$1"
+  local current
+  current=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-) || true
+  if python3 -c "
+import base64, sys
+try:
+    valid = len(base64.urlsafe_b64decode(sys.argv[1].encode())) == 32
+except Exception:
+    valid = False
+raise SystemExit(0 if valid else 1)
+" "$current"; then
+    echo "  → ${key}    ✓ already set (skipped)"
+  else
+    set_env "$key" "$(generate_fernet_key)"
+    echo "  → ${key}    ✓ generated"
+  fi
+}
+
+ensure_fernet_key "ENCRYPTION_KEY"
 
 # Independent Fernet key for remote workers — never the server JWT key.
-WORKER_ENCRYPTION_KEY=$(python3 -c "
-from cryptography.fernet import Fernet
-print(Fernet.generate_key().decode())
-" 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-set_if_missing "WORKER_ENCRYPTION_KEY" "$WORKER_ENCRYPTION_KEY"
+ensure_fernet_key "WORKER_ENCRYPTION_KEY"
 
 POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
 set_if_missing "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
@@ -74,8 +90,13 @@ set_if_missing "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
 REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
 set_if_missing "REDIS_PASSWORD" "$REDIS_PASSWORD"
 
-# Ed25519 keypair
-KEYPAIR=$(python3 -c "
+# Per-worker Ed25519 keypair and append-only server registry. Re-running setup
+# Reuses the local worker identity instead of invalidating deployed workers.
+WORKER_ID=$(grep "^WORKER_ID=" "$WORKER_ENV" 2>/dev/null | tail -1 | cut -d= -f2-) || true
+WORKER_PRIVATE_KEY=$(grep "^WORKER_PRIVATE_KEY=" "$WORKER_ENV" 2>/dev/null | tail -1 | cut -d= -f2-) || true
+if [ -z "$WORKER_ID" ] || [ -z "$WORKER_PRIVATE_KEY" ]; then
+  WORKER_ID="eval-$(python3 -c "import secrets; print(secrets.token_hex(6))")"
+  KEYPAIR=$(python3 -c "
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import base64
 k = Ed25519PrivateKey.generate()
@@ -84,9 +105,30 @@ priv = base64.b64encode(k.private_bytes_raw()).decode()
 print(f'WORKER_PUBLIC_KEY={pub}')
 print(f'WORKER_PRIVATE_KEY={priv}')
 ")
-WORKER_PUBLIC_KEY=$(echo "$KEYPAIR" | grep WORKER_PUBLIC_KEY | cut -d= -f2-)
-WORKER_PRIVATE_KEY=$(echo "$KEYPAIR" | grep WORKER_PRIVATE_KEY | cut -d= -f2-)
-set_env "WORKER_PUBLIC_KEY" "$WORKER_PUBLIC_KEY"
+  WORKER_PRIVATE_KEY=$(echo "$KEYPAIR" | grep WORKER_PRIVATE_KEY | cut -d= -f2-)
+fi
+WORKER_PUBLIC_KEY=$(python3 -c "
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import base64, sys
+private = base64.b64decode(sys.argv[1])
+print(base64.b64encode(Ed25519PrivateKey.from_private_bytes(private).public_key().public_bytes_raw()).decode())
+" "$WORKER_PRIVATE_KEY")
+EXISTING_WORKER_REGISTRY=$(grep "^WORKER_PUBLIC_KEYS_JSON=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-) || true
+WORKER_PUBLIC_KEYS_JSON=$(python3 -c "
+import json, sys
+registry = json.loads(sys.argv[1] or '{}')
+if not isinstance(registry, dict):
+    raise SystemExit('WORKER_PUBLIC_KEYS_JSON must be a JSON object')
+registry[sys.argv[2]] = sys.argv[3]
+print(json.dumps(registry, separators=(',', ':')))
+" "$EXISTING_WORKER_REGISTRY" "$WORKER_ID" "$WORKER_PUBLIC_KEY")
+set_env "WORKER_PUBLIC_KEYS_JSON" "$WORKER_PUBLIC_KEYS_JSON"
+
+WORKER_CAPABILITY_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+set_if_missing "WORKER_CAPABILITY_SECRET" "$WORKER_CAPABILITY_SECRET"
+
+EVALUATION_SPLIT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+set_if_missing "EVALUATION_SPLIT_SECRET" "$EVALUATION_SPLIT_SECRET"
 
 # ── Read existing values ───────────────────────────────────────────
 read_env() {
@@ -94,6 +136,7 @@ read_env() {
 }
 POSTGRES_PASSWORD=$(read_env "POSTGRES_PASSWORD")
 REDIS_PASSWORD=$(read_env "REDIS_PASSWORD")
+WORKER_ENCRYPTION_KEY=$(read_env "WORKER_ENCRYPTION_KEY")
 WORKER_PRIVATE_KEY="${WORKER_PRIVATE_KEY:-$(grep "^WORKER_PRIVATE_KEY=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)}" || true
 
 # ── Interative prompts ─────────────────────────────────────────────
@@ -237,6 +280,7 @@ CELERY_RESULT_BACKEND=\${CELERY_BROKER_URL}
 MAIN_SERVER_URL=${SERVER_URL}
 
 # Worker authentication (auto-generated Ed25519 private key)
+WORKER_ID=${WORKER_ID}
 WORKER_PRIVATE_KEY=${WORKER_PRIVATE_KEY}
 
 # Worker encryption key — independent Fernet key for models/ field encryption.
@@ -248,6 +292,7 @@ ${CERTS_SECTION}
 # WORKER_GPU_ID=0
 # CELERY_WORKER_CONCURRENCY=4
 WORKEREOF
+chmod 0600 "$ENV_FILE" "$WORKER_ENV"
 echo "  ✔ worker.env created"
 echo ""
 

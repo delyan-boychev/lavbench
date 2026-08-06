@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from config import Config
+from services.evaluation import derive_task_split_key
 
 
 def _hf_value(value: Any) -> str | None:
@@ -29,6 +30,7 @@ def build_submission_metadata(
     submission.time_limit_snapshot = time_limit
     return {
         "submission_id": submission.id,
+        "attempt_id": submission.celery_task_id,
         "task_id": task.id,
         "challenge_id": challenge.id,
         "time_limit": time_limit,
@@ -52,6 +54,7 @@ def build_submission_metadata(
             if task.public_eval_percentage is not None
             else Config.DEFAULT_PUBLIC_EVAL_PERCENTAGE
         ),
+        "evaluation_split_key": derive_task_split_key(Config.EVALUATION_SPLIT_SECRET, task.id),
         "task_files": task_files_list,
         "is_unified_parquet": any(
             isinstance(f, dict) and f.get("filename") == "labels.parquet" for f in task_files_list
