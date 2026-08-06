@@ -224,7 +224,11 @@ jobs:
       REDIS_PASSWORD: ci-redis-pass
       SECRET_KEY: ci-secret-key-0000000000000000000000
       ENCRYPTION_KEY: tVG8-i368hyvsKNRoBKqZIXuExByVbQgKrUHKvqNFis=
-      WORKER_PUBLIC_KEY: gwEOQ7vkepTvOxbVFGy/iayILrRTEsYbw54+I5BF7RY=
+      # The eval worker's public key registered under its CI identity
+      # (private counterpart: NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU=).
+      WORKER_PUBLIC_KEYS_JSON: '{"ci-eval-worker":"gwEOQ7vkepTvOxbVFGy/iayILrRTEsYbw54+I5BF7RY="}'
+      WORKER_CAPABILITY_SECRET: ci-capability-secret-00000000000000000000
+      EVALUATION_SPLIT_SECRET: ci-split-secret-00000000000000000000000000
       SERVER_ADDRESS: localhost
       MAIN_SERVER_URL: http://backend:5001
       SECURE_COOKIES: "false"
@@ -298,12 +302,16 @@ jobs:
           docker volume create lavbench_workspace >/dev/null
           docker run -d --name lavbench_eval_worker \
             --network "$NETWORK" \
+            --group-add "$(stat -c %g /var/run/docker.sock)" \
             -e CELERY_BROKER_URL="redis://:${REDIS_PASSWORD}@redis:6379/0" \
             -e CELERY_RESULT_BACKEND="redis://:${REDIS_PASSWORD}@redis:6379/0" \
             -e CACHE_REDIS_URL="redis://:${REDIS_PASSWORD}@redis-cache:6379/1" \
             -e SECRET_KEY="${SECRET_KEY}" \
             -e ENCRYPTION_KEY="${ENCRYPTION_KEY}" \
             -e WORKER_PRIVATE_KEY="NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU=" \
+            -e WORKER_ID="ci-eval-worker" \
+            -e WORKER_CAPABILITY_SECRET="${WORKER_CAPABILITY_SECRET}" \
+            -e EVALUATION_SPLIT_SECRET="${EVALUATION_SPLIT_SECRET}" \
             -e MAIN_SERVER_URL="http://backend:5001" \
             -e WORKER_ROLE="eval" \
             -e HF_CACHE_DIR="/var/lib/lavbench/hf_cache" \
@@ -389,9 +397,10 @@ jobs:
           SMOKE_PIXEL_ACCURACY: "1"
           # Same keypair as the eval worker started above (SMOKE_EVALUATE=1
           # enables the worker-contract section that exercises /api/worker/*).
-          # The runner's public-key counterpart is the WORKER_PUBLIC_KEY the
-          # backend validates against.
+          # The runner's public-key counterpart is registered under
+          # WORKER_PUBLIC_KEYS_JSON with the WORKER_ID below.
           SMOKE_WORKER_KEY: "NaKOt/qVZHOA4rAe6MmGoj/bNkHSG1FjTxrzcYL7zBU="
+          SMOKE_WORKER_ID: "ci-eval-worker"
 
       # --- Remove the evaluation worker (not part of the compose stack) ---
       - name: Remove evaluation worker
