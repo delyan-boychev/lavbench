@@ -39,7 +39,7 @@ defusedxml==0.7.1
     #   py-serializable
 execnet==2.1.2
     # via pytest-xdist
-faker==40.23.0
+faker==40.36.0
     # via -r dev-requirements.in
 filelock==3.32.2
     # via
@@ -51,21 +51,17 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-librt==0.12.0
+librt==0.15.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
 markdown-it-py==3.0.0
-    # via
-    #   -c requirements.txt
-    #   rich
+    # via rich
 mdurl==0.1.2
-    # via
-    #   -c requirements.txt
-    #   markdown-it-py
+    # via markdown-it-py
 msgpack==1.2.1
     # via cachecontrol
-mypy==2.1.0
+mypy==2.3.0
     # via -r dev-requirements.in
 mypy-extensions==1.1.0
     # via mypy
@@ -99,12 +95,11 @@ pycparser==2.23
     #   cffi
 pygments==2.20.0
     # via
-    #   -c requirements.txt
     #   pytest
     #   rich
 pyparsing==3.3.2
     # via pip-requirements-parser
-pytest==9.1.0
+pytest==9.1.1
     # via
     #   -r dev-requirements.in
     #   pytest-cov
@@ -125,9 +120,7 @@ requests==2.34.2
     #   cachecontrol
     #   pip-audit
 rich==15.0.0
-    # via
-    #   -c requirements.txt
-    #   pip-audit
+    # via pip-audit
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
 tomli==2.4.1

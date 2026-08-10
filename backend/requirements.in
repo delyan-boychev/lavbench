@@ -4,12 +4,12 @@ spectree>=2.0
 Flask-SQLAlchemy>=3.0.0
 Flask-CORS>=4.0.0
 gunicorn>=26.0.0
-gevent>=23.9.0
+gevent>=26.7.0
 jinja2>=3.1.0
 
 # ── Database & caching ────────────────────────────────────────────
 psycopg2-binary>=2.9.0
-redis>=8.0.1
+redis>=8.1.0
 
 # ── Task processing ────────────────────────────────────────────────
 celery>=5.3.0
@@ -19,31 +19,31 @@ cryptography>=50.0.0
 pyjwt>=2.8.0
 
 # ── Data science / ML ─────────────────────────────────────────────
-numpy>=1.24.0
+numpy>=2.2.6
 pandas>=2.0.0
 pyarrow>=23.0.1
-scipy>=1.10.0
+scipy>=1.18.0
 scikit-learn>=1.7.2
-datasets>=5.0.0
+datasets>=5.0.1
 aiohttp>=3.14.3
 filelock>=3.20.3
 
 # ── Image processing (services/evaluation/metrics.py: PSNR, SSIM) ──
 Pillow>=12.3.0
-scikit-image>=0.21.0
+scikit-image>=0.26.0
 
 # ── NLP metrics (services/evaluation/metrics.py) ───────────
 nltk>=3.10.0
 rouge-score>=0.1.2
 
 # ── HuggingFace model preloading (submission_runner.py) ────────────
-huggingface_hub>=0.19.0
+huggingface_hub>=1.26.1
 
 # ── System monitoring (tasks/task_modules/system.py) ─────────────────
 psutil>=5.9.0
 
 # ── Docker SDK (replaces subprocess calls to docker CLI) ───────────
-docker>=7.1.0
+docker>=7.2.0
 
 # ── Logging (cross-process safe rotating file handler) ────────────
 concurrent-log-handler>=0.9
