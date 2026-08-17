@@ -39,9 +39,9 @@ defusedxml==0.7.1
     #   py-serializable
 execnet==2.1.2
     # via pytest-xdist
-faker==40.23.0
+faker==40.36.0
     # via -r dev-requirements.in
-filelock==3.32.2
+filelock==3.32.3
     # via
     #   -c requirements.txt
     #   cachecontrol
@@ -51,7 +51,7 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-librt==0.12.0
+librt==0.15.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
@@ -65,7 +65,7 @@ mdurl==0.1.2
     #   markdown-it-py
 msgpack==1.2.1
     # via cachecontrol
-mypy==2.1.0
+mypy==2.3.0
     # via -r dev-requirements.in
 mypy-extensions==1.1.0
     # via mypy
@@ -104,7 +104,7 @@ pygments==2.20.0
     #   rich
 pyparsing==3.3.2
     # via pip-requirements-parser
-pytest==9.1.0
+pytest==9.1.1
     # via
     #   -r dev-requirements.in
     #   pytest-cov
