@@ -276,9 +276,7 @@ class TestRunCommandStreaming:
         assert retcode == -1
         assert "failed to create container" in stderr
 
-    def test_storage_opt_falls_back_to_plain_create_on_unsupported_driver(
-        self, mocker, tmp_path, caplog
-    ):
+    def test_storage_opt_falls_back_to_plain_create_on_unsupported_driver(self, mocker, tmp_path):
         """best-effort: when the daemon rejects --storage-opt (ext4/overlay2),
         retry create without the size cap instead of hard-failing the sandbox."""
         seed = tmp_path / "seed"
@@ -293,23 +291,24 @@ class TestRunCommandStreaming:
             return mock_container
 
         mock_client.containers.create.side_effect = flaky_create
+        warning = mocker.patch("utils.worker_utils.logger.warning")
         logs = []
-        with caplog.at_level("WARNING", logger="utils.worker_utils"):
-            retcode, _stdout, _stderr, _is_timeout = run_sandbox(
-                mock_client,
-                "test:latest",
-                ["echo", "hello"],
-                seed_dir=str(seed),
-                collect_files=[],
-                logs_list=logs,
-            )
+        retcode, _stdout, _stderr, _is_timeout = run_sandbox(
+            mock_client,
+            "test:latest",
+            ["echo", "hello"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
+        )
         assert retcode == 0
         assert call_count["n"] == 2
         first_kwargs = mock_client.containers.create.call_args_list[0][1]
         second_kwargs = mock_client.containers.create.call_args_list[1][1]
         assert "storage_opt" in first_kwargs
         assert "storage_opt" not in second_kwargs
-        assert any("storage_opt" in record.message for record in caplog.records)
+        warning.assert_called_once()
+        assert "storage_opt" in warning.call_args.args[0]
 
     def test_timeout_exceeded(self, mocker, tmp_path):
         seed = tmp_path / "seed"
