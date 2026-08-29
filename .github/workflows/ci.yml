@@ -364,7 +364,7 @@ jobs:
           body = json.load(sys.stdin)
           assert body.get('status') == 'ok', 'status is ' + str(body.get('status'))
           checks = body.get('checks', {})
-          for name in ('database', 'redis', 'disk'):
+          for name in ('database', 'redis_cache', 'redis_broker', 'disk'):
               assert 'error' not in str(checks.get(name, '')), f'{name} check failed: {checks[name]}'
           print(json.dumps(body, indent=2))
           print('All health checks passed')

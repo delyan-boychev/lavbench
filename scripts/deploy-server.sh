@@ -41,11 +41,15 @@ echo ""
 # ── Create Docker-specific .env (resolves nested variables) ──────────
 REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" .env | tail -1 | cut -d= -f2-)
 POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" .env | tail -1 | cut -d= -f2-)
-export REDIS_PASSWORD POSTGRES_PASSWORD
+POSTGRES_USER=$(grep "^POSTGRES_USER=" .env 2>/dev/null | tail -1 | cut -d= -f2-) || true
+POSTGRES_DB=$(grep "^POSTGRES_DB=" .env 2>/dev/null | tail -1 | cut -d= -f2-) || true
+: "${POSTGRES_USER:=lavbench_user}"
+: "${POSTGRES_DB:=lavbench_db}"
+export REDIS_PASSWORD POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB
 grep -v -E '^(CELERY_BROKER_URL|CELERY_RESULT_BACKEND|DATABASE_URL)=' .env > .env.docker
 echo "CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0" >> .env.docker
 echo "CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0" >> .env.docker
-echo "DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db" >> .env.docker
+echo "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}" >> .env.docker
 DOCKER_ENV="--env-file .env.docker"
 
 # ── Stop existing services ─────────────────────────────────────────
@@ -63,7 +67,7 @@ echo "  → Starting database and cache..."
 docker compose $DOCKER_ENV up -d db redis
 echo "    Waiting for PostgreSQL..."
 RETRIES=15
-until docker compose exec -T db pg_isready -U lavbench_user -d lavbench_db &>/dev/null || [ $RETRIES -eq 0 ]; do
+until docker compose exec -T db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" &>/dev/null || [ $RETRIES -eq 0 ]; do
   echo "      ... ($RETRIES retries left)"
   sleep 1
   RETRIES=$((RETRIES - 1))

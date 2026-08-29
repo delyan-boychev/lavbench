@@ -150,7 +150,7 @@ def create_app() -> Flask:
     def health_check() -> tuple[HealthResponse, int]:
         """Health check for Docker and load balancer monitoring.
 
-        Probes the database, Redis (cache/SSE/broker) and disk space so a
+        Probes the database, both Redis roles and disk space so a
         degraded stack never reports healthy.
         """
         checks: dict[str, str] = {}
@@ -162,15 +162,26 @@ def create_app() -> Flask:
             checks["database"] = "degraded"
 
         try:
-            from utils.cache_utils import get_redis_client
+            from utils.cache_utils import get_redis_client, redis_dependency_is_healthy
 
-            redis_client = get_redis_client()
-            if redis_client is not None and redis_client.ping():
-                checks["redis"] = "ok"
-            else:
-                checks["redis"] = "degraded"
+            checks["redis_cache"] = (
+                "ok"
+                if redis_dependency_is_healthy(get_redis_client(), require_aof=False)
+                else "degraded"
+            )
         except Exception:
-            checks["redis"] = "degraded"
+            checks["redis_cache"] = "degraded"
+
+        try:
+            from utils.cache_utils import get_coordination_client, redis_dependency_is_healthy
+
+            checks["redis_broker"] = (
+                "ok"
+                if redis_dependency_is_healthy(get_coordination_client(), require_aof=True)
+                else "degraded"
+            )
+        except Exception:
+            checks["redis_broker"] = "degraded"
 
         try:
             import shutil

@@ -119,6 +119,7 @@ class Config:
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
     REDIS_SOCKET_TIMEOUT = int(os.environ.get("REDIS_SOCKET_TIMEOUT", 5))
+    REDIS_HEALTH_MIN_FREE_PERCENT = int(os.environ.get("REDIS_HEALTH_MIN_FREE_PERCENT", 10))
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
@@ -215,8 +216,7 @@ class Config:
     MAX_PARQUET_ROWS = int(os.environ.get("MAX_PARQUET_ROWS", 10_000_000))
     MAX_PARQUET_COLUMNS = int(os.environ.get("MAX_PARQUET_COLUMNS", 512))
     MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
-    # Best-effort --storage-opt size cap for sandbox containers (ignored by
-    # Storage drivers without quota support)
+    # Mandatory --storage-opt size cap for sandbox containers
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline

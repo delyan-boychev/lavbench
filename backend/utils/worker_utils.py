@@ -190,22 +190,9 @@ def run_command_streaming(
         # Mkdtemp) and the container runs as non-root nobody
         seed_volume = docker_client.volumes.create()
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
-        # Best-effort size cap: --storage-opt needs quota support from the
-        # Storage driver (e.g. XFS with pquota). ext4/overlay2 and other common
-        # Daemons reject the option at create time, so fall back to a plain
-        # Create (no size cap) instead of hard-failing every sandbox there
-        try:
-            container = docker_client.containers.create(**run_kwargs)
-        except Exception:
-            if "storage_opt" not in run_kwargs:
-                raise
-            logger.warning(
-                "storage_opt %s rejected by this daemon's storage driver — "
-                "creating sandbox without a size cap (best-effort)",
-                run_kwargs["storage_opt"],
-            )
-            run_kwargs.pop("storage_opt", None)
-            container = docker_client.containers.create(**run_kwargs)
+        # A sandbox without an enforceable writable-layer quota can exhaust
+        # The worker host, so unsupported storage drivers fail closed
+        container = docker_client.containers.create(**run_kwargs)
         with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
             tar_path = os.path.join(td, "seed.tar")
             with tarfile.open(tar_path, "w") as tar:

@@ -276,24 +276,16 @@ class TestRunCommandStreaming:
         assert retcode == -1
         assert "failed to create container" in stderr
 
-    def test_storage_opt_falls_back_to_plain_create_on_unsupported_driver(self, mocker, tmp_path):
-        """best-effort: when the daemon rejects --storage-opt (ext4/overlay2),
-        retry create without the size cap instead of hard-failing the sandbox."""
+    def test_storage_opt_failure_fails_closed_and_cleans_up(self, mocker, tmp_path):
+        """Reject sandboxes when the daemon cannot enforce the storage quota."""
         seed = tmp_path / "seed"
         seed.mkdir()
-        mock_client, mock_container = self._make_mock_client(mocker, exit_code=0)
-        call_count = {"n": 0}
-
-        def flaky_create(**kwargs):
-            call_count["n"] += 1
-            if call_count["n"] == 1 and kwargs.get("storage_opt"):
-                raise Exception("Backing Filesystem: extfs is not supported for storage_opt")
-            return mock_container
-
-        mock_client.containers.create.side_effect = flaky_create
-        warning = mocker.patch("utils.worker_utils.logger.warning")
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
+        mock_client.containers.create.side_effect = Exception(
+            "Backing Filesystem: extfs is not supported for storage_opt"
+        )
         logs = []
-        retcode, _stdout, _stderr, _is_timeout = run_sandbox(
+        retcode, _stdout, stderr, _is_timeout = run_sandbox(
             mock_client,
             "test:latest",
             ["echo", "hello"],
@@ -301,14 +293,10 @@ class TestRunCommandStreaming:
             collect_files=[],
             logs_list=logs,
         )
-        assert retcode == 0
-        assert call_count["n"] == 2
-        first_kwargs = mock_client.containers.create.call_args_list[0][1]
-        second_kwargs = mock_client.containers.create.call_args_list[1][1]
-        assert "storage_opt" in first_kwargs
-        assert "storage_opt" not in second_kwargs
-        warning.assert_called_once()
-        assert "storage_opt" in warning.call_args.args[0]
+        assert retcode == -1
+        assert "storage_opt" in stderr
+        assert mock_client.containers.create.call_count == 1
+        mock_client.volumes.create.return_value.remove.assert_called_once_with()
 
     def test_timeout_exceeded(self, mocker, tmp_path):
         seed = tmp_path / "seed"

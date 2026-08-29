@@ -7,11 +7,6 @@ services:
     # compose-v2 resource caps (deploy.resources.limits is Swarm-only and ignored by `docker compose up`)
     mem_limit: 1g
     cpus: "1.0"
-    entrypoint: >
-      sh -c '
-        mkdir -p /app/logs && chmod 1777 /app/logs &&
-        /usr/local/bin/docker-entrypoint.sh "$$@" 2>&1 | tee /app/logs/postgresql.log
-      ' --
     command: >
       postgres
       -c max_connections=500
@@ -21,7 +16,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-lavbench_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - logs_data:/app/logs
     # No host port — accessible via Docker network (db:5432)
     logging:
       driver: json-file
@@ -44,35 +38,40 @@ services:
     image: redis:7.4-alpine
     container_name: lavbench_redis
     restart: always
-    mem_limit: 256m
+    mem_limit: ${REDIS_BROKER_CONTAINER_MEMORY:-384m}
     cpus: "0.5"
-    entrypoint: >
-      sh -c '
-        mkdir -p /app/logs && chmod 1777 /app/logs &&
-        /usr/local/bin/docker-entrypoint.sh "$$@" 2>&1 | tee /app/logs/redis.log
-      ' --
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD}
-      --maxmemory 256mb
+      --maxmemory ${REDIS_BROKER_MAXMEMORY:-256mb}
       --maxmemory-policy noeviction
       --appendonly yes
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
+      REDIS_HEALTH_MIN_FREE_PERCENT: ${REDIS_HEALTH_MIN_FREE_PERCENT:-10}
     # Bound to loopback by default — remote workers must override REDIS_BIND=0.0.0.0
     ports:
       - "${REDIS_BIND:-127.0.0.1}:6379:6379"
     volumes:
       - redis_data:/data
-      - logs_data:/app/logs
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - >-
+          redis-cli --no-auth-warning ping | grep -qx PONG &&
+          redis-cli --no-auth-warning --raw INFO persistence |
+          grep -q '^aof_last_write_status:ok' &&
+          redis-cli --no-auth-warning --raw INFO memory |
+          awk -F: -v free="$${REDIS_HEALTH_MIN_FREE_PERCENT}"
+          '/^used_memory:/{gsub(/\r/, "", $$2); used=$$2}
+          /^maxmemory:/{gsub(/\r/, "", $$2); max=$$2}
+          END{exit !(max > 0 && used * 100 <= max * (100 - free))}'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -83,23 +82,34 @@ services:
     image: redis:7.4-alpine
     container_name: lavbench_redis_cache
     restart: always
-    mem_limit: 192m
+    mem_limit: ${REDIS_CACHE_CONTAINER_MEMORY:-256m}
     cpus: "0.25"
     command: >
       redis-server
       --save ""
       --requirepass ${REDIS_PASSWORD}
-      --maxmemory 128mb
+      --maxmemory ${REDIS_CACHE_MAXMEMORY:-128mb}
       --maxmemory-policy noeviction
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+      REDIS_HEALTH_MIN_FREE_PERCENT: ${REDIS_HEALTH_MIN_FREE_PERCENT:-10}
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - >-
+          redis-cli --no-auth-warning ping | grep -qx PONG &&
+          redis-cli --no-auth-warning --raw INFO persistence | grep -q '^loading:0' &&
+          redis-cli --no-auth-warning --raw INFO memory |
+          awk -F: -v free="$${REDIS_HEALTH_MIN_FREE_PERCENT}"
+          '/^used_memory:/{gsub(/\r/, "", $$2); used=$$2}
+          /^maxmemory:/{gsub(/\r/, "", $$2); max=$$2}
+          END{exit !(max > 0 && used * 100 <= max * (100 - free))}'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -111,7 +121,7 @@ services:
     restart: "no"
     command: python scripts/migrate.py
     environment:
-      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
     depends_on:
@@ -133,7 +143,7 @@ services:
     environment:
       # In-network URLs only — .env's localhost URLs are for `make dev` and
       # must never be interpolated into the compose network.
-      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
@@ -149,6 +159,7 @@ services:
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
+      - REDIS_HEALTH_MIN_FREE_PERCENT=${REDIS_HEALTH_MIN_FREE_PERCENT:-10}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
       - BACKUPS_DIR=/backups
     ulimits:
@@ -249,7 +260,7 @@ services:
     environment:
       # In-network URLs only — .env's localhost URLs are for `make dev` and
       # must never be interpolated into the compose network.
-      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
