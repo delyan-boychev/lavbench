@@ -237,8 +237,47 @@ class TestRunCommandStreaming:
         assert create_kwargs["tmpfs"] == {"/tmp": "noexec,nosuid,size=128m"}
         assert create_kwargs["user"] == "65534:65534"
         assert create_kwargs["read_only"] is True
+        assert create_kwargs["storage_opt"] == {"size": Config.WORKER_SANDBOX_STORAGE_OPT}
         # Per-run anonymous volume, never a host-path bind
         assert create_kwargs["volumes"] == {"lavbench_seed_vol": {"bind": "/app", "mode": "rw"}}
+
+    def test_empty_config_omits_storage_opt(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
+        mocker.patch.object(Config, "WORKER_SANDBOX_STORAGE_OPT", "")
+
+        retcode, _stdout, _stderr, _is_timeout = run_sandbox(
+            mock_client,
+            "test:latest",
+            ["echo", "hello"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=[],
+        )
+
+        assert retcode == 0
+        create_kwargs = mock_client.containers.create.call_args.kwargs
+        assert "storage_opt" not in create_kwargs
+
+    def test_explicit_empty_storage_opt_omits_option(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
+
+        retcode, _stdout, _stderr, _is_timeout = run_sandbox(
+            mock_client,
+            "test:latest",
+            ["echo", "hello"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=[],
+            storage_opt={},
+        )
+
+        assert retcode == 0
+        create_kwargs = mock_client.containers.create.call_args.kwargs
+        assert "storage_opt" not in create_kwargs
 
     def test_failing_run(self, mocker, tmp_path):
         seed = tmp_path / "seed"

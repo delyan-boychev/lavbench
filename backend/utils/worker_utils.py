@@ -378,6 +378,10 @@ def run_sandbox(
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
+    if storage_opt is None:
+        configured_storage_size = Config.WORKER_SANDBOX_STORAGE_OPT.strip()
+        storage_opt = {"size": configured_storage_size} if configured_storage_size else None
+
     return run_command_streaming(
         docker_client,
         image_tag,
@@ -399,7 +403,7 @@ def run_sandbox(
         read_only=True,
         seed_dir=seed_dir,
         collect_files=collect_files,
-        storage_opt=storage_opt or {"size": Config.WORKER_SANDBOX_STORAGE_OPT},
+        storage_opt=storage_opt,
     )
 
 
