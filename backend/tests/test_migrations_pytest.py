@@ -7,7 +7,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 
 from models import db
-from utils.migrations import BASELINE_REVISION, migrate_database
+from utils.migrations import BASELINE_REVISION, _render_database_url, migrate_database
 
 
 def _sqlite_engine(tmp_path, name):
@@ -48,4 +48,11 @@ def test_migrate_database_rejects_incompatible_legacy_schema(tmp_path):
         migrate_database(engine)
 
     assert "alembic_version" not in inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_migration_url_preserves_database_password():
+    engine = create_engine("postgresql://lavbench:secret-password@db:5432/lavbench")
+
+    assert _render_database_url(engine) == "postgresql://lavbench:secret-password@db:5432/lavbench"
     engine.dispose()
