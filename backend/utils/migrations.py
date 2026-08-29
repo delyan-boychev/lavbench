@@ -37,6 +37,11 @@ def migration_config(database_url: str | None = None) -> AlembicConfig:
     return alembic_config
 
 
+def _render_database_url(engine: Engine) -> str:
+    """Render the connection URL without SQLAlchemy masking its password."""
+    return engine.url.render_as_string(hide_password=False)
+
+
 def expected_database_heads(alembic_config: AlembicConfig | None = None) -> set[str]:
     """Return the revision heads shipped with this application build."""
     config = alembic_config or migration_config()
@@ -120,7 +125,7 @@ def _adopt_legacy_schema(engine: Engine, alembic_config: AlembicConfig) -> None:
 
 def migrate_database(engine: Engine) -> None:
     """Adopt a compatible legacy schema and upgrade it to the latest revision."""
-    alembic_config = migration_config(str(engine.url))
+    alembic_config = migration_config(_render_database_url(engine))
     lock_connection = engine.connect()
     try:
         if engine.dialect.name == "postgresql":
