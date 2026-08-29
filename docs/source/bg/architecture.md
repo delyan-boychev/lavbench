@@ -29,6 +29,17 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Scheduler** | Celery Beat | Периодични задачи (контрольор за заседнали решения, график за автоматични резервни копия). |
 | **Worker Nodes** | Celery Evaluation Worker | Уъркъри **само за оценяване**, консумиращи `cpu_queue`; изпълняват кода на състезателя в съседни Docker контейнери в пясъчна среда (`deploy-worker.sh` / `worker.env`). |
 
+### Жизнен цикъл на миграциите на базата данни
+
+В Docker Compose еднократната услуга `migrate` изчаква PostgreSQL да стане работоспособна и
+изпълнява `python scripts/migrate.py`. API и вътрешният уъркър се стартират само след успешното
+приключване на услугата; неуспешна миграция предотвратява стартирането им. При самостоятелно
+внедряване трябва да се изпълни `cd backend && python scripts/migrate.py` преди API или уъркърите.
+Скриптът обновява познатите ревизии, приема база без Alembic версия само ако отразената ѝ схема
+съвпада точно с базовата, отхвърля отклонения или непознати ревизии и проверява достигането на
+очакваната крайна ревизия. API проверява независимо PostgreSQL ревизията при стартиране и
+прекратява работата при несъответствие.
+
 ---
 
 ## 3. Поток на автентификация и авторизация
@@ -48,7 +59,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/challenges/<id>/submit
-3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check) → rate limit check → creates Submission → dispatches Celery evaluation job
+3. Сървър: AST валидация преди изпълнение (премахване на IPython magic команди, проверка на `banned_imports`). Отхвърленият код връща диагностика, без да създава решение или да използва квота; приетият код преминава проверки за честота и квота → създава решение → изпраща Celery задача за оценяване
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
 6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)
@@ -70,11 +81,14 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | `--pids-limit 64` | Ограничава общия брой процеси за предотвратяване на fork bombs. |
 | `--ulimit nofile=256:256` | Ограничава броя на отворените файлови дескриптори. |
 | `--cpus` | Ограничава разпределението на процесорни ядра за контейнер (`CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`). |
+| `--storage-opt size` | Задължителна квота за записвания коренов слой на контейнера (`WORKER_SANDBOX_STORAGE_OPT`, по подразбиране `8g`). Оценяването се прекратява, ако Docker драйверът не може да я приложи. |
 
-> **Известно ограничение без критичен характер:** анонимният том за всяко изпълнение, монтиран в `/app` (rw), **няма собствена дискова квота**
-> — състезателят може да го запълни, докато достигне дисковото ограничение на хоста. Това е съзнателен
-> компромис, приет тъй като паметта, процесорното време, броят на процесите и астрономическото време са ограничени, а
-> свободното пространство на `TASK_IMAGES_DIR` (`MIN_BUILD_DISK_GB`) се следи по време на изграждането.
+> **Известно ограничение:** `WORKER_SANDBOX_STORAGE_OPT` покрива само записвания коренов слой на
+> контейнера. Отделният анонимен том за всяко изпълнение, монтиран в `/app` (rw), е извън тази
+> квота и **няма дискова квота**; кодът на състезателя може да го запълни до достигане на лимита
+> на хоста. Паметта, процесорното време, броят процеси и астрономическото време остават
+> ограничени, а свободното пространство на `TASK_IMAGES_DIR` (`MIN_BUILD_DISK_GB`) се следи при
+> изграждане, но тези контроли не ограничават `/app`.
 
 ### Структура на персистентното съхранение
 

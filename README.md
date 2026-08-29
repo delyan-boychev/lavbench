@@ -153,15 +153,20 @@ cp .env.example .env
 | `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
 | `WORKER_GPU_IDS` | Comma-separated GPU device IDs available for round-robin pinning on eval workers (e.g. `0,1,3`). Unset → `count=-1` fallback. | unset |
 | `WORKER_ROLE` | Unified worker role. `server` = full API (default; requires `SECRET_KEY`/`DATABASE_URL`/`ENCRYPTION_KEY`); `scheduler` = Celery beat only (no app, no secrets); `internal` = app booted for system tasks (DB only, never evaluates); `eval` = remote evaluation worker (no DB, Ed25519 nonce auth, runs eval/image tasks only). | `server` |
-| `WORKER_SANDBOX_STORAGE_OPT` | Mandatory `--storage-opt size` cap for submission sandboxes. Workers must use a Docker storage driver with per-container quota support; evaluation fails closed otherwise. | `8g` |
+| `WORKER_SANDBOX_STORAGE_OPT` | Mandatory `--storage-opt size` cap for a sandbox container's root writable layer. Workers fail closed if the Docker storage driver cannot enforce it. The disposable anonymous volume mounted at `/app` is separate and is not covered by this quota. | `8g` |
 | `MAX_WORKER_LOG_BYTES` | Worker remote-log file rotation threshold (bytes). | `10485760` (10 MB) |
 | `MAX_COLLECT_BUFFER_BYTES` | Max in-memory buffer while pulling sandbox output archives; larger archives are skipped. | `536870912` (512 MB) |
 | `MAX_EXTRACT_MEMBER_BYTES` | Max size for a single member inside collected archives; oversized members are skipped. | `536870912` (512 MB) |
 | `GPU_RAM_PER_TASK_GB` | Memory limit allocated per GPU sandbox container (GB). | `8` |
-| `CPU_RAM_PER_TASK_GB` | Memory limit allocated per CPU sandbox container (GB). | `4` |
+| `CPU_RAM_PER_TASK_GB` | Memory limit allocated per CPU sandbox container (GB). | `8` |
 | `RESERVED_RAM_GB` | Host RAM reserved for OS and Docker overhead (GB). | `4` |
 | `RESERVED_CPU_CORES` | Host CPU cores reserved for system scheduler. | `1` |
 | `RAM_CLAMP_FACTOR` | Maximum task RAM overshoot ratio before rejection. | `1.05` (5%) |
+| `CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES` | Maximum uploaded challenge ZIP size, in bytes. | `209715200` (200 MiB) |
+| `CHALLENGE_ARCHIVE_MAX_UNCOMPRESSED_BYTES` | Maximum aggregate uncompressed size of all ZIP members, in bytes. | `2147483648` (2 GiB) |
+| `CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES` | Maximum uncompressed size of one ZIP member, in bytes. | `524288000` (500 MiB) |
+| `CHALLENGE_ARCHIVE_MAX_MEMBERS` | Maximum number of entries in a challenge ZIP. | `1000` |
+| `CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO` | Maximum uncompressed-to-compressed ratio allowed for each non-empty member. | `100:1` |
 
 ---
 
@@ -221,7 +226,7 @@ python scripts/check_translations.py
 ```bash
 cd docs
 pip install -r requirements.txt
-make html        # Generates HTML documentation at docs/build/html/index.html
+make html        # Generates HTML documentation at docs/build/index.html
 ```
 
 ---
