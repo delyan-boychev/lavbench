@@ -14,7 +14,7 @@ describe('SelectField Component', () => {
       <SelectField label="Select Option" options={options} value="option1" onChange={() => {}} />,
     );
     expect(screen.getByText('Select Option')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Option 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Select Option/i })).toBeInTheDocument();
   });
 
   it('renders asterisk when required is true', () => {
@@ -29,11 +29,11 @@ describe('SelectField Component', () => {
     );
 
     // Click button to open dropdown
-    const btn = screen.getByRole('button', { name: /Option 1/i });
+    const btn = screen.getByRole('combobox', { name: /Choose/i });
     fireEvent.click(btn);
 
     // Click Option 2 in the dropdown menu (which has role button inside container)
-    const option2Btn = screen.getByRole('button', { name: /^Option 2$/i });
+    const option2Btn = screen.getByRole('option', { name: /^Option 2$/i });
     fireEvent.click(option2Btn);
 
     expect(handleChange).toHaveBeenCalledWith('option2');
@@ -43,7 +43,7 @@ describe('SelectField Component', () => {
     render(
       <SelectField label="Disabled Select" options={options} disabled={true} onChange={() => {}} />,
     );
-    expect(screen.getByRole('button', { name: /Select Option/i })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /Disabled Select/i })).toBeDisabled();
   });
 
   it('supports searching/filtering options', () => {
@@ -52,7 +52,7 @@ describe('SelectField Component', () => {
     );
 
     // Open dropdown
-    fireEvent.click(screen.getByRole('button', { name: /Select Option/i }));
+    fireEvent.click(screen.getByRole('combobox', { name: /Search Select/i }));
 
     // Find search input
     const input = screen.getByPlaceholderText(/Search/i);
@@ -62,8 +62,8 @@ describe('SelectField Component', () => {
     fireEvent.change(input, { target: { value: 'Option 2' } });
 
     // Option 1 should be filtered out, Option 2 should be present in custom buttons
-    expect(screen.queryByRole('button', { name: /^Option 1$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Option 2$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /^Option 1$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Option 2$/i })).toBeInTheDocument();
   });
 
   it('supports multiple selections', () => {
@@ -79,13 +79,25 @@ describe('SelectField Component', () => {
     );
 
     // Button should display selected options summary
-    expect(screen.getByRole('button', { name: /Option 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /Multi Select/i })).toBeInTheDocument();
 
     // Open dropdown
-    fireEvent.click(screen.getByRole('button', { name: /Option 1/i }));
+    fireEvent.click(screen.getByRole('combobox', { name: /Multi Select/i }));
 
     // Click Option 2 to add to selection
-    fireEvent.click(screen.getByRole('button', { name: /^Option 2$/i }));
+    fireEvent.click(screen.getByRole('option', { name: /^Option 2$/i }));
     expect(handleChange).toHaveBeenCalledWith(['option1', 'option2']);
+  });
+
+  it('supports keyboard navigation and selection', () => {
+    const handleChange = vi.fn();
+    render(<SelectField label="Keyboard" options={options} onChange={handleChange} />);
+
+    const combobox = screen.getByRole('combobox', { name: 'Keyboard' });
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+    fireEvent.keyDown(combobox, { key: 'Enter' });
+
+    expect(handleChange).toHaveBeenCalledWith('option2');
   });
 });

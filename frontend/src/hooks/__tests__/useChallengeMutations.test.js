@@ -35,6 +35,10 @@ function createWrapper() {
 describe('useChallengeMutations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.post.mockResolvedValue({ ok: true, data: {} });
+    api.put.mockResolvedValue({ ok: true, data: {} });
+    api.delete.mockResolvedValue({ ok: true, data: {} });
+    api.postForm.mockResolvedValue({ ok: true, data: {} });
   });
 
   it('useCreateChallenge calls api.post', async () => {
@@ -59,14 +63,22 @@ describe('useChallengeMutations', () => {
 
   it('useFinalizeChallenge calls api.post', async () => {
     const { result } = renderHook(() => useFinalizeChallenge(), { wrapper: createWrapper() });
-    result.current.mutate('c1');
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/challenges/c1/finalize'));
+    result.current.mutate({ id: 'c1', reveal_results: false });
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/challenges/c1/finalize', {
+        reveal_results: false,
+      }),
+    );
   });
 
   it('useToggleRevealChallenge calls api.put', async () => {
     const { result } = renderHook(() => useToggleRevealChallenge(), { wrapper: createWrapper() });
-    result.current.mutate('c1');
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/challenges/c1/reveal-results'));
+    result.current.mutate({ id: 'c1', reveal_results: true });
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/challenges/c1/reveal-results', {
+        reveal_results: true,
+      }),
+    );
   });
 
   it('useArchiveToggle calls api.post', async () => {
@@ -80,5 +92,22 @@ describe('useChallengeMutations', () => {
     const { result } = renderHook(() => useImportChallenge(), { wrapper: createWrapper() });
     result.current.mutate(fd);
     await waitFor(() => expect(api.postForm).toHaveBeenCalledWith('/challenges/import', fd));
+  });
+
+  it('preserves backend errors and enters the error state', async () => {
+    api.post.mockResolvedValue({
+      ok: false,
+      status: 422,
+      data: { code: 'ERR_VALIDATION', error: 'Invalid challenge' },
+    });
+    const { result } = renderHook(() => useCreateChallenge(), { wrapper: createWrapper() });
+    result.current.mutate({ title: '' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({
+      code: 'ERR_VALIDATION',
+      error: 'Invalid challenge',
+      status: 422,
+    });
   });
 });

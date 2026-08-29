@@ -29,11 +29,13 @@ export default function Button({
       type={buttonType}
       onClick={onClick}
       disabled={disabled || isLoading}
+      aria-busy={isLoading || undefined}
       title={title}
       className={`${baseStyle} ${variants[variant] || variants.primary} ${className}`}
     >
       {isLoading && (
         <svg
+          aria-hidden="true"
           className="animate-spin -ml-1 mr-2 h-4 w-4 text-current"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"

@@ -2,9 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export default function useSSE(url, opts = {}) {
   const {
-    reconnect = false,
-    reconnectDelay = 5000,
-    maxReconnects = 0,
+    reconnect = true,
+    reconnectDelay = 1000,
+    maxReconnectDelay = 15000,
+    maxReconnects = 5,
     onMessage,
     onError,
     storeData = true,
@@ -13,6 +14,7 @@ export default function useSSE(url, opts = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const retryCountRef = useRef(0);
   const esRef = useRef(null);
@@ -56,6 +58,7 @@ export default function useSSE(url, opts = {}) {
       }
       retryCountRef.current = 0;
       setConnected(true);
+      setRetrying(false);
       setError(null);
     };
 
@@ -79,19 +82,22 @@ export default function useSSE(url, opts = {}) {
       setConnected(false);
       es.close();
       if (reconnect && retryCountRef.current < maxReconnects) {
+        const retryDelay = Math.min(reconnectDelay * 2 ** retryCountRef.current, maxReconnectDelay);
         retryCountRef.current += 1;
+        setRetrying(true);
         timeoutRef.current = setTimeout(() => {
           if (mountedRef.current && connectRef.current) connectRef.current();
-        }, reconnectDelay);
+        }, retryDelay);
       } else {
         const msg = 'Connection lost';
+        setRetrying(false);
         setError(msg);
         if (onErrorRef.current) {
           onErrorRef.current(msg);
         }
       }
     };
-  }, [clearConnection, reconnect, reconnectDelay, maxReconnects, storeData]);
+  }, [clearConnection, reconnect, reconnectDelay, maxReconnectDelay, maxReconnects, storeData]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -104,11 +110,13 @@ export default function useSSE(url, opts = {}) {
 
   useEffect(() => {
     urlRef.current = url;
+    retryCountRef.current = 0;
     if (url) {
       connect();
     } else {
       clearConnection();
       setConnected(false);
+      setRetrying(false);
       setData(null);
       setError(null);
     }
@@ -122,5 +130,5 @@ export default function useSSE(url, opts = {}) {
     };
   }, []);
 
-  return { data, error, connected, reconnect: reconnectFn };
+  return { data, error, connected, retrying, reconnect: reconnectFn };
 }

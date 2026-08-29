@@ -5,6 +5,7 @@ import useSSE from '../hooks/useSSE';
 import { useLeaderboardQuery } from '../hooks/useLeaderboardQuery';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
 import EmptyState from '../components/ui/EmptyState';
+import QueryErrorState from '../components/ui/QueryErrorState';
 import { useTranslation } from 'react-i18next';
 
 export default function LeaderboardView() {
@@ -16,7 +17,7 @@ export default function LeaderboardView() {
   const activeId = challengeId || selectedChallenge?.id;
   const hasSse = typeof EventSource !== 'undefined';
 
-  const { data, isLoading, refetch } = useLeaderboardQuery(activeId);
+  const { data, isLoading, isError, refetch } = useLeaderboardQuery(activeId);
 
   useSSE(useSse && hasSse && activeId ? `/api/challenges/${activeId}/leaderboard/live` : '', {
     storeData: false,
@@ -45,7 +46,9 @@ export default function LeaderboardView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
-      {selectedChallenge ? (
+      {selectedChallenge && isError ? (
+        <QueryErrorState onRetry={refetch} />
+      ) : selectedChallenge ? (
         <LeaderboardTable
           data={data?.leaderboard || []}
           tasks={data?.tasks || []}

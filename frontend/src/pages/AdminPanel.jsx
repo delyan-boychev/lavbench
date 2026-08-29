@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
@@ -33,6 +32,7 @@ import ChallengeConfig from '../components/admin/ChallengeConfig';
 import SidebarNav from '../components/admin/SidebarNav';
 import AuditLogViewer from '../components/admin/AuditLogViewer';
 import SubmissionQueue from '../components/admin/SubmissionQueue';
+import Modal from '../components/ui/Modal';
 import { TIMEZONES } from '../utils/timezones';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
@@ -698,147 +698,136 @@ export default function AdminPanel() {
       </div>
 
       {/* Edit Competitor Modal */}
-      {editingUser &&
-        adminSubTab === 'competitor-reg' &&
-        createPortal(
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[10000] p-4">
-            <div className="bg-[#0b0c16] border border-white/10 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fadein">
-              <form
-                onSubmit={handleUpdateUserSubmit}
-                noValidate
-                className="flex flex-col flex-1 min-h-0"
-              >
-                {/* Header */}
-                <div className="p-6 border-b border-white/5 flex-shrink-0">
-                  <h2 className="text-lg font-bold text-white mb-1">
-                    {t('admin.competitor_reg.edit_competitor_details')}
-                  </h2>
-                  <p className="text-slate-400 text-xs">
-                    {t('admin.competitor_reg.updating_account', { username: editingUser.username })}
-                  </p>
-                </div>
+      {adminSubTab === 'competitor-reg' && (
+        <Modal
+          isOpen={Boolean(editingUser)}
+          onClose={() => setEditingUser(null)}
+          title={t('admin.competitor_reg.edit_competitor_details')}
+          size="md"
+          bodyScrollable={false}
+        >
+          {editingUser && (
+            <form
+              onSubmit={handleUpdateUserSubmit}
+              noValidate
+              className="flex flex-col flex-1 min-h-0"
+            >
+              <p className="text-slate-400 text-xs mb-4">
+                {t('admin.competitor_reg.updating_account', { username: editingUser.username })}
+              </p>
 
-                {/* Form Body (Scrollable) */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <InputField
-                      label={t('admin.competitor_reg.first_name')}
-                      value={editUserForm.name}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
-                      required
-                    />
-                    <InputField
-                      label={t('admin.competitor_reg.middle_name')}
-                      value={editUserForm.middle_name || ''}
-                      onChange={(e) =>
-                        setEditUserForm({ ...editUserForm, middle_name: e.target.value })
-                      }
-                      required
-                    />
-                    <InputField
-                      label={t('admin.competitor_reg.last_name')}
-                      value={editUserForm.surname}
-                      onChange={(e) =>
-                        setEditUserForm({ ...editUserForm, surname: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
+              {/* Form Body (Scrollable) */}
+              <div className="flex-1 overflow-y-auto flex flex-col gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <InputField
-                    label={t('admin.competitor_reg.birth_date')}
-                    type="date"
-                    value={editUserForm.birth_date || ''}
+                    label={t('admin.competitor_reg.first_name')}
+                    value={editUserForm.name}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                    required
+                  />
+                  <InputField
+                    label={t('admin.competitor_reg.middle_name')}
+                    value={editUserForm.middle_name || ''}
                     onChange={(e) =>
-                      setEditUserForm({ ...editUserForm, birth_date: e.target.value })
+                      setEditUserForm({ ...editUserForm, middle_name: e.target.value })
                     }
                     required
                   />
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <InputField
-                      label={t('admin.competitor_reg.grade')}
-                      value={editUserForm.grade || ''}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })}
-                      required
-                    />
-                    <InputField
-                      label={t('admin.competitor_reg.school')}
-                      value={editUserForm.school || ''}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })}
-                      required
-                    />
-                    <InputField
-                      label={t('admin.competitor_reg.city')}
-                      value={editUserForm.city || ''}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })}
-                      required
-                    />
-                  </div>
-
                   <InputField
-                    label={t('admin.competitor_reg.system_username')}
-                    value={editUserForm.username}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })}
+                    label={t('admin.competitor_reg.last_name')}
+                    value={editUserForm.surname}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, surname: e.target.value })}
                     required
-                    disabled
                   />
-
-                  <InputField
-                    label={t('admin.competitor_reg.email_address')}
-                    type="text"
-                    value={editUserForm.email || ''}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
-                    placeholder={t('admin.competitor_reg.email_placeholder')}
-                  />
-
-                  <SelectField
-                    label={t('admin.competitor_reg.assign_competition')}
-                    value={editUserForm.challenge_id}
-                    onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })}
-                    required
-                    options={[
-                      { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
-                      ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
-                    ]}
-                  />
-
-                  <div className="mt-2.5">
-                    <ToggleField
-                      label={t('admin.competitor_reg.anonymous_help')}
-                      id="edit-is-anonymous"
-                      checked={editUserForm.is_anonymous}
-                      onChange={(e) =>
-                        setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })
-                      }
-                    />
-                  </div>
-
-                  {isEditDisabled && (
-                    <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                      {t('admin.competitor_reg.competition_started_warning')}
-                    </div>
-                  )}
                 </div>
 
-                {/* Footer */}
-                <div className="p-6 border-t border-white/5 flex justify-end gap-3 flex-shrink-0">
-                  <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
-                    {t('common.cancel')}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    disabled={isEditDisabled || isUpdatingUser}
-                  >
-                    {t('admin.stages.save_changes_btn')}
-                  </Button>
+                <InputField
+                  label={t('admin.competitor_reg.birth_date')}
+                  type="date"
+                  value={editUserForm.birth_date || ''}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, birth_date: e.target.value })}
+                  required
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <InputField
+                    label={t('admin.competitor_reg.grade')}
+                    value={editUserForm.grade || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })}
+                    required
+                  />
+                  <InputField
+                    label={t('admin.competitor_reg.school')}
+                    value={editUserForm.school || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })}
+                    required
+                  />
+                  <InputField
+                    label={t('admin.competitor_reg.city')}
+                    value={editUserForm.city || ''}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })}
+                    required
+                  />
                 </div>
-              </form>
-            </div>
-          </div>,
-          document.body,
-        )}
+
+                <InputField
+                  label={t('admin.competitor_reg.system_username')}
+                  value={editUserForm.username}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })}
+                  required
+                  disabled
+                />
+
+                <InputField
+                  label={t('admin.competitor_reg.email_address')}
+                  type="text"
+                  value={editUserForm.email || ''}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                  placeholder={t('admin.competitor_reg.email_placeholder')}
+                />
+
+                <SelectField
+                  label={t('admin.competitor_reg.assign_competition')}
+                  value={editUserForm.challenge_id}
+                  onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })}
+                  required
+                  options={[
+                    { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
+                    ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
+                  ]}
+                />
+
+                <div className="mt-2.5">
+                  <ToggleField
+                    label={t('admin.competitor_reg.anonymous_help')}
+                    id="edit-is-anonymous"
+                    checked={editUserForm.is_anonymous}
+                    onChange={(e) =>
+                      setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })
+                    }
+                  />
+                </div>
+
+                {isEditDisabled && (
+                  <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
+                    {t('admin.competitor_reg.competition_started_warning')}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 mt-4 border-t border-white/5 flex justify-end gap-3 flex-shrink-0">
+                <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" variant="primary" disabled={isEditDisabled || isUpdatingUser}>
+                  {t('admin.stages.save_changes_btn')}
+                </Button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
     </>
   );
 }

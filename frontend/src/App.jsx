@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import LeaderboardView from './pages/LeaderboardView';
 import LeaderboardDemo from './pages/LeaderboardDemo';
 import { useAuth } from './AuthContext';
+import LoadingIndicator from './components/ui/LoadingIndicator';
 
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
@@ -18,7 +19,7 @@ const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
 function LoadingFallback() {
   return (
     <div className="flex items-center justify-center min-h-[400px]">
-      <div className="animate-spin h-6 w-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
+      <LoadingIndicator />
     </div>
   );
 }

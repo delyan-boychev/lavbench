@@ -24,6 +24,8 @@ function createWrapper() {
 describe('useBackupMutations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.post.mockResolvedValue({ ok: true, data: {} });
+    api.delete.mockResolvedValue({ ok: true, data: {} });
   });
 
   it('useForceBackup calls api.post', async () => {

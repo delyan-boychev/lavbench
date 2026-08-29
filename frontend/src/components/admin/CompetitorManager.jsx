@@ -104,7 +104,7 @@ export default function CompetitorManager({
           </p>
 
           <form onSubmit={handleRegisterCompetitor} className="flex flex-col gap-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <InputField
                 label={t('admin.competitor_reg.first_name')}
                 value={newCompetitor.name}
@@ -133,7 +133,7 @@ export default function CompetitorManager({
               onChange={(e) => setNewCompetitor({ ...newCompetitor, birth_date: e.target.value })}
               required
             />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <InputField
                 label={t('admin.competitor_reg.grade')}
                 value={newCompetitor.grade}

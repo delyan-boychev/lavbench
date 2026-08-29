@@ -152,7 +152,7 @@ describe('useSSE', () => {
     expect(mockEventSourceInstance).toBeNull();
   });
 
-  it('reconnects with fixed delay when reconnect=true', () => {
+  it('reconnects with exponential delay when reconnect=true', () => {
     renderHook(() =>
       useSSE('/api/test', { reconnect: true, reconnectDelay: 5000, maxReconnects: 3 }),
     );
@@ -205,6 +205,10 @@ describe('useSSE', () => {
     act(() => {
       vi.advanceTimersByTime(1000);
     });
+    expect(mockEventSourceInstance).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
 
     // 3rd error → exhausted, no reconnect
     act(() => {
@@ -231,7 +235,7 @@ describe('useSSE', () => {
 
   it('calls onError callback on connection error', () => {
     const onError = vi.fn();
-    renderHook(() => useSSE('/api/test', { onError }));
+    renderHook(() => useSSE('/api/test', { onError, reconnect: false }));
     act(() => {
       triggerOpen();
     });

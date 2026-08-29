@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function EmptyState({
   icon = null,
-  message,
+  message = null,
   minHeight = 200,
   surface = true,
   children = null,

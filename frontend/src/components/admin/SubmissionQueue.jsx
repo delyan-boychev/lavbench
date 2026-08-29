@@ -10,6 +10,8 @@ import { FileText } from 'lucide-react';
 import useSSE from '../../hooks/useSSE';
 import { useQueueQuery } from '../../hooks/useQueueQuery';
 import { useClearQueue, useKillSubmission } from '../../hooks/useSubmissionMutations';
+import LoadingIndicator from '../ui/LoadingIndicator';
+import QueryErrorState from '../ui/QueryErrorState';
 
 export default function SubmissionQueue() {
   const { t } = useTranslation();
@@ -21,7 +23,7 @@ export default function SubmissionQueue() {
 
   const perPage = 20;
 
-  const { data, refetch } = useQueueQuery(page, perPage);
+  const { data, isLoading, isError, refetch } = useQueueQuery(page, perPage);
 
   const clearQueueMutation = useClearQueue();
   const killMutation = useKillSubmission();
@@ -36,6 +38,9 @@ export default function SubmissionQueue() {
   const items = data?.items || [];
   const total = data?.total ?? 0;
   const pages = data?.pages ?? 1;
+
+  if (isLoading) return <LoadingIndicator className="py-12" />;
+  if (isError) return <QueryErrorState onRetry={refetch} minHeight={200} />;
 
   const handleKill = async (submissionId) => {
     const confirmed = await confirm({
@@ -76,8 +81,11 @@ export default function SubmissionQueue() {
           : t('admin.notifications.clear_queue_failed');
         showToast(errMsg, 'rose');
       }
-    } catch {
-      showToast(t('admin.notifications.clear_queue_network_error'), 'rose');
+    } catch (err) {
+      const errMsg = err.code
+        ? t(`api.${err.code}`, err.error)
+        : t('admin.notifications.clear_queue_network_error');
+      showToast(errMsg, 'rose');
     }
   };
 
@@ -122,8 +130,8 @@ export default function SubmissionQueue() {
         )}
       </div>
 
-      <div className="bg-[#0d0e18] border border-white/5 rounded-2xl overflow-hidden">
-        <table className="w-full text-left border-collapse text-xs">
+      <div className="bg-[#0d0e18] border border-white/5 rounded-2xl overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left border-collapse text-xs">
           <thead>
             <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
               <th className="p-3">{t('admin.submission_queue.task_header')}</th>

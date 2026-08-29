@@ -20,6 +20,9 @@ import BestSubmissionCard from '../components/submissions/BestSubmissionCard';
 import StageGroup from '../components/submissions/StageGroup';
 import { formatLocalizedDate } from '../utils/formatDate';
 import { Star, Download, ChevronRight, Search, X } from 'lucide-react';
+import { requireOk } from '../services/apiResult';
+import LoadingIndicator from '../components/ui/LoadingIndicator';
+import QueryErrorState from '../components/ui/QueryErrorState';
 
 export default function SubmissionsView() {
   const { t } = useTranslation();
@@ -62,25 +65,32 @@ export default function SubmissionsView() {
 
   const queryClient = useQueryClient();
 
-  const { data: subsData, isLoading: loading } = useSubmissionsQuery(
-    selectedTask?.id,
-    submissionsPage,
-    10,
-  );
+  const {
+    data: subsData,
+    isLoading: loading,
+    isError: submissionsError,
+    refetch: refetchSubmissions,
+  } = useSubmissionsQuery(selectedTask?.id, submissionsPage, 10);
   const submissions = subsData?.items || [];
   const submissionsPages = subsData?.pages || 1;
   const submissionsTotal = subsData?.total || 0;
 
-  const { data: competitorData, isLoading: searching } = useCompetitorSearchQuery(
-    selectedChallenge?.id,
-    debouncedCompetitorSearch,
-    competitorPage,
-  );
+  const {
+    data: competitorData,
+    isLoading: searching,
+    isError: competitorSearchError,
+    refetch: refetchCompetitors,
+  } = useCompetitorSearchQuery(selectedChallenge?.id, debouncedCompetitorSearch, competitorPage);
   const competitorResults = competitorData?.items || [];
   const competitorPages = competitorData?.pages || 1;
   const competitorTotal = competitorData?.total || 0;
 
-  const { data: adminSubsData, isLoading: adminLoading } = useQuery({
+  const {
+    data: adminSubsData,
+    isLoading: adminLoading,
+    isError: adminError,
+    refetch: refetchAdminSubmissions,
+  } = useQuery({
     queryKey: ['admin-submissions', adminActiveTask, adminSubPage, selectedCompetitor?.id],
     queryFn: async () => {
       const res = await api.fetch(
@@ -96,25 +106,26 @@ export default function SubmissionsView() {
   const adminSubPages = adminSubsData?.pages || 1;
   const adminSubTotal = adminSubsData?.total || 0;
 
-  const { data: baselineSubmissions = [], isLoading: baselineLoading } = useQuery({
+  const {
+    data: baselineSubmissions = [],
+    isLoading: baselineLoading,
+    isError: baselineError,
+    refetch: refetchBaselines,
+  } = useQuery({
     queryKey: ['baselines', selectedChallenge?.id],
     queryFn: async () => {
       const tasks = selectedChallenge?.tasks || [];
       const results = await Promise.all(
         tasks.map(async (task) => {
-          try {
-            const res = await api.fetch(
-              `/api/tasks/${task.id}/submissions?baseline=true&page=1&per_page=100`,
-            );
-            if (res.ok) {
-              const data = await res.json();
-              const items = data?.items || data || [];
-              return items.length > 0 ? { task, submission: items[0] } : null;
-            }
-          } catch {
-            // ignore per-task errors
+          const res = await api.fetch(
+            `/api/tasks/${task.id}/submissions?baseline=true&page=1&per_page=100`,
+          );
+          if (!res.ok) {
+            throw new Error(`Failed to load baseline for task ${task.id}`);
           }
-          return null;
+          const data = await res.json();
+          const items = data?.items || data || [];
+          return items.length > 0 ? { task, submission: items[0] } : null;
         }),
       );
       return results.filter(Boolean);
@@ -290,47 +301,24 @@ export default function SubmissionsView() {
   };
 
   // Admin: fetch best submissions across all tasks for the selected competitor
-  const { data: bestSubs = {} } = useQuery({
+  const {
+    data: bestSubs = {},
+    isError: bestSubsError,
+    refetch: refetchBestSubmissions,
+  } = useQuery({
     queryKey: ['admin-best-subs', selectedChallenge?.id, selectedCompetitor?.id],
     queryFn: async () => {
-      const tasks = selectedChallenge?.tasks || [];
-      const bestPerTask = {};
-      for (const task of tasks) {
-        try {
-          const res = await api.fetch(
-            `/api/tasks/${task.id}/submissions?page=1&per_page=100&user_id=${selectedCompetitor.id}`,
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const items = data?.items || data || [];
-            if (items.length === 0) continue;
-            const final = items.find((s) => s.is_final_selection);
-            if (final) {
-              bestPerTask[task.id] = final;
-              continue;
-            }
-            const best = items.reduce(
-              (b, s) => (s.public_score != null && (!b || s.public_score > b.public_score) ? s : b),
-              null,
-            );
-            if (best) bestPerTask[task.id] = best;
-          }
-        } catch (err) {
-          console.error(`Failed to fetch submissions for task ${task.id}:`, err);
-        }
-      }
-      return bestPerTask;
+      const response = await api
+        .getBestSubmissions(selectedChallenge.id, selectedCompetitor.id)
+        .then(requireOk);
+      return Object.fromEntries((response.data?.items || []).map((item) => [item.task_id, item]));
     },
     enabled: !!selectedChallenge && !!selectedCompetitor && isAdminOrJury,
     staleTime: 10_000,
   });
 
-  const prevCompetitorKeyRef = useRef('');
   useEffect(() => {
-    const key = `${selectedChallenge?.id}_${selectedCompetitor?.id}`;
     if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) return;
-    if (prevCompetitorKeyRef.current === key) return;
-    prevCompetitorKeyRef.current = key;
     const bestTaskIds = Object.keys(bestSubs);
     const allTaskIds = (selectedChallenge.tasks || []).map((t) => t.id);
     const resolvedTaskId = bestTaskIds[0] || allTaskIds[0];
@@ -509,9 +497,9 @@ export default function SubmissionsView() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   {loading && submissions.length === 0 ? (
-                    <EmptyState minHeight={200} message={t('submissions.loading')}>
-                      <div className="animate-spin w-5.5 h-5.5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
-                    </EmptyState>
+                    <LoadingIndicator message={t('submissions.loading')} className="py-12" />
+                  ) : submissionsError ? (
+                    <QueryErrorState onRetry={refetchSubmissions} minHeight={200} />
                   ) : submissions.length === 0 ? (
                     <EmptyState minHeight={200} message={t('submissions.none_found')} />
                   ) : (
@@ -630,9 +618,9 @@ export default function SubmissionsView() {
               {baselineExpanded && (
                 <div className="mt-4 flex flex-col gap-1.5">
                   {baselineLoading ? (
-                    <div className="flex items-center justify-center py-6">
-                      <div className="animate-spin w-5 h-5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
-                    </div>
+                    <LoadingIndicator className="py-6" />
+                  ) : baselineError ? (
+                    <QueryErrorState onRetry={refetchBaselines} minHeight={100} />
                   ) : baselineSubmissions.length === 0 ? (
                     <div className="text-xs text-slate-500 text-center py-4">
                       {t('submissions.no_baselines', 'No baseline submissions available')}
@@ -719,6 +707,8 @@ export default function SubmissionsView() {
             <div className="flex flex-col gap-1.5">
               {searching ? (
                 <EmptyState minHeight={100} message={t('common.searching')} />
+              ) : competitorSearchError ? (
+                <QueryErrorState onRetry={refetchCompetitors} minHeight={100} />
               ) : competitorResults.length === 0 ? (
                 <div className="text-xs text-slate-500 text-center py-6">
                   {t('submissions.no_competitors_found', 'No competitors found')}
@@ -809,30 +799,34 @@ export default function SubmissionsView() {
           </div>
 
           {/* Stage-grouped task cards */}
-          <div className="flex flex-col gap-4">
-            {groupedByStage.map(({ stage, tasks }) => (
-              <StageGroup
-                key={stage?.id || 'no-stage'}
-                stage={stage}
-                tasks={tasks}
-                challenge={selectedChallenge}
-                bestSubs={bestSubs}
-                onView={handleAdminViewSubmission}
-                onDownload={(sub) =>
-                  handleDownloadSubmission(
-                    adminActiveTask || sub.task_id,
-                    sub.user?.id || selectedCompetitor.id,
-                  )
-                }
-                showPrivate={true}
-                onTaskClick={(taskId) => {
-                  setAdminActiveTask(taskId);
-                  setSelectedSubmission(null);
-                  setAdminSubPage(1);
-                }}
-              />
-            ))}
-          </div>
+          {bestSubsError ? (
+            <QueryErrorState onRetry={refetchBestSubmissions} />
+          ) : (
+            <div className="flex flex-col gap-4">
+              {groupedByStage.map(({ stage, tasks }) => (
+                <StageGroup
+                  key={stage?.id || 'no-stage'}
+                  stage={stage}
+                  tasks={tasks}
+                  challenge={selectedChallenge}
+                  bestSubs={bestSubs}
+                  onView={handleAdminViewSubmission}
+                  onDownload={(sub) =>
+                    handleDownloadSubmission(
+                      adminActiveTask || sub.task_id,
+                      sub.user?.id || selectedCompetitor.id,
+                    )
+                  }
+                  showPrivate={true}
+                  onTaskClick={(taskId) => {
+                    setAdminActiveTask(taskId);
+                    setSelectedSubmission(null);
+                    setAdminSubPage(1);
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* All submissions for the active task */}
           {adminActiveTask && (
@@ -844,9 +838,9 @@ export default function SubmissionsView() {
               </div>
               <div className="flex flex-col gap-1.5">
                 {adminLoading && adminSubmissions.length === 0 ? (
-                  <EmptyState minHeight={100} message={t('submissions.loading')}>
-                    <div className="animate-spin w-5.5 h-5.5 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
-                  </EmptyState>
+                  <LoadingIndicator message={t('submissions.loading')} className="py-8" />
+                ) : adminError ? (
+                  <QueryErrorState onRetry={refetchAdminSubmissions} minHeight={100} />
                 ) : adminSubmissions.length === 0 ? (
                   <div className="text-xs text-slate-500 text-center py-4">
                     {t('submissions.none_found')}

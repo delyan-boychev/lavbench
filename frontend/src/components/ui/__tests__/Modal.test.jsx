@@ -22,6 +22,7 @@ describe('Modal Component', () => {
     expect(screen.getByText('Modal Title')).toBeInTheDocument();
     expect(screen.getByText('Modal Content')).toBeInTheDocument();
     expect(screen.getByTitle('Close')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
   });
 
   it('renders footer when provided', () => {
