@@ -10,12 +10,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from schemas.common import _parse_datetime_strict
 from schemas.exceptions import SchemaError
+from utils.dates import is_valid_timezone
 
 
 class _ChallengeLimits(BaseModel):
     max_eval_requests: int | None = Field(default=None, ge=1)
     ram_limit_mb: int | None = Field(default=None, ge=128)
     time_limit_sec: int | None = Field(default=None, ge=1)
+
+
+def _validate_timezone_name(value: str) -> str:
+    if not is_valid_timezone(value):
+        raise SchemaError("ERR_INVALID_TIMEZONE", "Timezone must be a valid IANA timezone name.")
+    return value
 
 
 class CreateChallengeSchema(_ChallengeLimits):
@@ -36,6 +43,11 @@ class CreateChallengeSchema(_ChallengeLimits):
     @classmethod
     def _parse_dt(cls, v: Any) -> datetime | None:
         return _parse_datetime_strict(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        return _validate_timezone_name(value)
 
     @model_validator(mode="after")
     def check_dates(self) -> Self:
@@ -74,8 +86,15 @@ class UpdateChallengeSchema(BaseModel):
     def _parse_dt(cls, v: Any) -> datetime | None:
         return _parse_datetime_strict(v)
 
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        return _validate_timezone_name(value) if value is not None else None
+
     @model_validator(mode="after")
     def check_dates(self) -> Self:
+        if "timezone" in self.model_fields_set and self.timezone is None:
+            raise SchemaError("ERR_INVALID_TIMEZONE", "Timezone cannot be null.")
         start = self.start_time
         end = self.end_time
         if start and end:

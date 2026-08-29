@@ -6,20 +6,23 @@ import csv
 import io
 import json
 import logging
+import os
+import shutil
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from config import Config
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from schemas.exceptions import SchemaError
 from services.file_validation import check_dangerous_extension
 from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission, uses_private_score_for_selection
-from utils.dates import utcnow
+from utils.dates import is_valid_timezone, utcnow
 
 logger = logging.getLogger(__name__)
-
-MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
 
 
 def generate_scores_csv(challenge: Challenge) -> str:
@@ -304,8 +307,6 @@ def import_challenge_from_dict(
 ) -> Challenge:
     """Create a challenge (with stages and tasks) from an exported dict.
     Returns the created Challenge object. Raises ValueError on invalid data."""
-    import os
-
     from flask import current_app
     from werkzeug.utils import secure_filename
 
@@ -313,14 +314,29 @@ def import_challenge_from_dict(
     if not title:
         raise ValueError("Challenge title is required.")
 
+    timezone_name = data.get("timezone", "UTC")
+    if not isinstance(timezone_name, str) or not is_valid_timezone(timezone_name):
+        raise SchemaError("ERR_INVALID_TIMEZONE", "Imported timezone is not a valid IANA name.")
+
     def _parse_dt(val: Any, field: str) -> datetime | None:
         if not val:
             return None
         try:
             if isinstance(val, str):
-                return datetime.fromisoformat(val.replace("Z", "+00:00")).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    return parsed.astimezone(UTC).replace(tzinfo=None)
+                return (
+                    parsed.replace(tzinfo=ZoneInfo(timezone_name))
+                    .astimezone(UTC)
+                    .replace(tzinfo=None)
+                )
             if isinstance(val, datetime):
-                return val.replace(tzinfo=None)
+                if val.tzinfo is not None:
+                    return val.astimezone(UTC).replace(tzinfo=None)
+                return (
+                    val.replace(tzinfo=ZoneInfo(timezone_name)).astimezone(UTC).replace(tzinfo=None)
+                )
             raise ValueError
         except Exception:
             raise ValueError(f"Invalid {field} in import: {val!r}") from None
@@ -329,6 +345,18 @@ def import_challenge_from_dict(
     end_time = _parse_dt(data.get("end_time"), "end_time") or utcnow()
     if end_time <= start_time:
         raise ValueError("end_time must be after start_time in imported challenge data.")
+
+    parsed_stages: list[tuple[dict[str, Any], datetime, datetime]] = []
+    for s_data in data.get("stages", []):
+        stage_start = _parse_dt(s_data.get("start_time"), "stage start_time")
+        stage_end = _parse_dt(s_data.get("end_time"), "stage end_time")
+        if stage_start is None or stage_end is None:
+            raise ValueError("Imported stages require start_time and end_time.")
+        if stage_end <= stage_start:
+            raise ValueError("Stage end_time must be after start_time in imported data.")
+        if stage_start < start_time or stage_end > end_time:
+            raise ValueError("Imported stage dates must be within the challenge timeframe.")
+        parsed_stages.append((s_data, stage_start, stage_end))
 
     challenge = Challenge(
         title=title,
@@ -345,20 +373,20 @@ def import_challenge_from_dict(
         is_frozen=bool(data.get("is_frozen", False)),
         double_blind=bool(data.get("double_blind", True)),
         reveal_results=bool(data.get("reveal_results", True)),
-        timezone=data.get("timezone", "UTC"),
+        timezone=timezone_name,
     )
     db.session.add(challenge)
     db.session.flush()
 
     old_to_new_stage = {}
 
-    for s_data in data.get("stages", []):
+    for s_data, stage_start, stage_end in parsed_stages:
         stage = Stage(
             challenge_id=challenge.id,
             stage_number=int(s_data.get("stage_number", 1)),
             title=s_data.get("title", "Stage"),
-            start_time=_parse_dt(s_data.get("start_time"), "start_time") or utcnow(),
-            end_time=_parse_dt(s_data.get("end_time"), "end_time") or utcnow(),
+            start_time=stage_start,
+            end_time=stage_end,
             is_finalized=False,
             reveal_results=bool(s_data.get("reveal_results", False)),
         )
@@ -367,6 +395,7 @@ def import_challenge_from_dict(
         if s_data.get("id"):
             old_to_new_stage[s_data["id"]] = stage.id
 
+    created_task_dirs: list[str] = []
     for t_data in data.get("tasks", []):
         if not t_data.get("title"):
             continue
@@ -417,6 +446,7 @@ def import_challenge_from_dict(
             if upload_folder:
                 task_dir = os.path.join(upload_folder, f"task_{task.id}")
                 os.makedirs(task_dir, exist_ok=True)
+                created_task_dirs.append(task_dir)
 
                 for member in zip_ref.namelist():
                     if member.startswith(prefix):
@@ -434,10 +464,10 @@ def import_challenge_from_dict(
                         target_path = os.path.join(task_dir, safe_name)
                         try:
                             info = zip_ref.getinfo(member)
-                            if info.file_size > MAX_FILE_SIZE_BYTES:
+                            if info.file_size > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
                                 raise ValueError(
                                     f"File {basename} in ZIP exceeds "
-                                    f"the maximum allowed size of 25MB."
+                                    "the configured per-file size limit."
                                 )
 
                             if check_dangerous_extension(safe_name):
@@ -447,9 +477,18 @@ def import_challenge_from_dict(
                                 zip_ref.open(member) as source,
                                 open(target_path, "wb") as target,
                             ):
-                                target.write(source.read())
+                                written = 0
+                                while block := source.read(1024 * 1024):
+                                    written += len(block)
+                                    if written > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
+                                        raise ValueError(
+                                            f"File {basename} exceeds the configured size limit."
+                                        )
+                                    target.write(block)
                         except Exception as e:
                             db.session.rollback()
+                            for created_dir in created_task_dirs:
+                                shutil.rmtree(created_dir, ignore_errors=True)
                             raise ValueError(f"Failed to extract {basename} from ZIP") from e
 
                 if t_data.get("evaluator_script_path"):

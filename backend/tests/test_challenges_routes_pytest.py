@@ -726,3 +726,192 @@ class TestDeleteChallenge:
         # Verify jury users cleanup
         assert self.db.get(User, jury_only_id) is None  # Deleted because no other assignments
         assert self.db.get(User, jury_shared_id) is not None  # Kept because has other assignment
+
+
+class TestChallengeTimezoneValidation:
+    """IANA timezone validation on challenge create/update."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session, redis_flush):
+        self.admin = User(
+            username="tz_admin",
+            password_hash="pbkdf2:sha256:...",
+            role="admin",
+            alias_id="Tz-Admin-001",
+        )
+        db_session.add(self.admin)
+
+        self.challenge = Challenge(
+            title="Timezone Challenge",
+            description="Timezone validation",
+            start_time=utcnow() + timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=24),
+            timezone="UTC",
+        )
+        db_session.add(self.challenge)
+        db_session.commit()
+        self.admin_token = generate_token(self.admin.id, self.admin.role)
+
+    def _auth(self):
+        return {"Authorization": f"Bearer {self.admin_token}"}
+
+    def _payload(self, **overrides):
+        payload = {
+            "title": "Timezone Test",
+            "start_time": (utcnow() + timedelta(hours=1)).isoformat(),
+            "end_time": (utcnow() + timedelta(hours=24)).isoformat(),
+            "timezone": "UTC",
+        }
+        payload.update(overrides)
+        return payload
+
+    @pytest.mark.parametrize("timezone", ["Not/AZone", "UTC+2", "", "Europe/Atlantis"])
+    def test_create_rejects_invalid_timezone(self, client, timezone):
+        res = client.post(
+            "/api/challenges",
+            data=json.dumps(self._payload(timezone=timezone)),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_TIMEZONE"
+
+    def test_create_accepts_valid_iana_timezone(self, client):
+        res = client.post(
+            "/api/challenges",
+            data=json.dumps(self._payload(timezone="Europe/Sofia")),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        assert res.status_code == 201
+        assert res.get_json()["timezone"] == "Europe/Sofia"
+
+    def test_update_rejects_invalid_timezone(self, client):
+        res = client.put(
+            f"/api/challenges/{self.challenge.id}",
+            data=json.dumps({"timezone": "Not/AZone"}),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_TIMEZONE"
+
+    def test_update_rejects_explicit_null_timezone(self, client):
+        res = client.put(
+            f"/api/challenges/{self.challenge.id}",
+            data=json.dumps({"timezone": None}),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_INVALID_TIMEZONE"
+
+    def test_invalid_timezone_does_not_mutate_the_challenge(self, client, db_session):
+        original = self.challenge.timezone
+        client.put(
+            f"/api/challenges/{self.challenge.id}",
+            data=json.dumps({"title": "Renamed", "timezone": "Not/AZone"}),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        db_session.expire_all()
+        refreshed = db_session.get(Challenge, self.challenge.id)
+        assert refreshed.timezone == original
+        assert refreshed.title == "Timezone Challenge"
+
+
+class TestValidateBeforeMutate:
+    """Rejected date updates must leave the persisted row untouched."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session, redis_flush):
+        self.admin = User(
+            username="vbm_admin",
+            password_hash="pbkdf2:sha256:...",
+            role="admin",
+            alias_id="Vbm-Admin-001",
+        )
+        db_session.add(self.admin)
+
+        self.start = utcnow() + timedelta(hours=1)
+        self.end = utcnow() + timedelta(hours=24)
+        self.challenge = Challenge(
+            title="Mutate Challenge",
+            description="Validate before mutate",
+            start_time=self.start,
+            end_time=self.end,
+            timezone="UTC",
+        )
+        db_session.add(self.challenge)
+        db_session.commit()
+
+        self.stage = Stage(
+            challenge_id=self.challenge.id,
+            stage_number=1,
+            title="Stage 1",
+            start_time=self.start + timedelta(hours=1),
+            end_time=self.start + timedelta(hours=5),
+        )
+        db_session.add(self.stage)
+        db_session.commit()
+        self.admin_token = generate_token(self.admin.id, self.admin.role)
+
+    def _auth(self):
+        return {"Authorization": f"Bearer {self.admin_token}"}
+
+    def _put_stage(self, client, body):
+        return client.put(
+            f"/api/challenges/{self.challenge.id}/stages/{self.stage.id}",
+            data=json.dumps(body),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+
+    def test_stage_end_before_start_is_rejected(self, client):
+        res = self._put_stage(
+            client,
+            {"end_time": (self.stage.start_time - timedelta(hours=1)).isoformat() + "Z"},
+        )
+        assert res.status_code == 400
+        assert res.get_json()["code"] == "ERR_INVALID_DATE_RANGE"
+
+    def test_rejected_stage_update_leaves_row_unchanged(self, client, db_session):
+        original_title = self.stage.title
+        original_end = self.stage.end_time
+        res = self._put_stage(
+            client,
+            {
+                "title": "Should Not Persist",
+                "end_time": (self.stage.start_time - timedelta(hours=1)).isoformat() + "Z",
+            },
+        )
+        assert res.status_code == 400
+
+        db_session.expire_all()
+        refreshed = db_session.get(Stage, self.stage.id)
+        assert refreshed.title == original_title
+        assert refreshed.end_time == original_end
+
+    def test_stage_null_start_time_is_rejected(self, client):
+        res = self._put_stage(client, {"start_time": None})
+        assert res.status_code == 400
+        assert res.get_json()["code"] == "ERR_DATETIME_REQUIRED"
+
+    def test_rejected_challenge_update_leaves_row_unchanged(self, client, db_session):
+        res = client.put(
+            f"/api/challenges/{self.challenge.id}",
+            data=json.dumps(
+                {
+                    "title": "Should Not Persist",
+                    "end_time": (self.start - timedelta(hours=1)).isoformat(),
+                }
+            ),
+            content_type="application/json",
+            headers=self._auth(),
+        )
+        assert res.status_code == 400
+
+        db_session.expire_all()
+        refreshed = db_session.get(Challenge, self.challenge.id)
+        assert refreshed.title == "Mutate Challenge"
+        assert refreshed.end_time == self.end

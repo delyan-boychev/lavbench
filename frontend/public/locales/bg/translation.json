@@ -147,6 +147,7 @@
     "ERR_INVALID_DATE": "Невалидна дата.",
     "ERR_INVALID_DATE_FORMAT": "Невалиден формат на датата.",
     "ERR_INVALID_DATE_RANGE": "Крайният час трябва да бъде след началния час.",
+    "ERR_INVALID_TIMEZONE": "Часовата зона трябва да бъде валидно име от базата IANA.",
     "ERR_INVALID_DOCKER_IMAGE": "Невалиден формат на Docker образ.",
     "ERR_INVALID_FILENAME": "Невалидно име на файл",
     "ERR_INVALID_FILE_TYPE": "Поддържат се само файлове на Jupyter Notebook (.ipynb).",

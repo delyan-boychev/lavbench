@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import contextlib
-import io
 import json
 import logging
 import os
 import shutil
+import stat
+import tempfile
 import zipfile
 import zoneinfo
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Any
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, after_this_request, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
+from werkzeug.utils import secure_filename
 
 from config import Config
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
+from schemas.exceptions import SchemaError
 from schemas.responses import (
     ArchiveResponse,
     ChallengeResponse,
@@ -52,9 +56,67 @@ from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 from utils.spec import api
+from utils.streaming import stream_open_handle_response
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
+
+
+def _validate_challenge_archive(archive: zipfile.ZipFile) -> None:
+    """Validate archive structure and resource bounds before reading members."""
+    infos = archive.infolist()
+    if len(infos) > Config.CHALLENGE_ARCHIVE_MAX_MEMBERS:
+        raise ValueError("ZIP archive contains too many members.")
+
+    names: set[str] = set()
+    targets: set[tuple[str, str]] = set()
+    total_uncompressed = 0
+    for info in infos:
+        name = info.filename
+        if name in names:
+            raise ValueError(f"ZIP archive contains duplicate member {name!r}.")
+        names.add(name)
+
+        if info.flag_bits & 0x1:
+            raise ValueError("Encrypted ZIP members are not supported.")
+        if "\\" in name:
+            raise ValueError(f"Invalid archive member path {name!r}.")
+
+        path = PurePosixPath(name)
+        if path.is_absolute() or ".." in path.parts or not path.parts:
+            raise ValueError(f"Invalid archive member path {name!r}.")
+
+        mode = info.external_attr >> 16
+        file_type = stat.S_IFMT(mode)
+        if file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
+            raise ValueError(f"Special archive member {name!r} is not supported.")
+
+        if not info.is_dir():
+            if name == "challenge.json":
+                pass
+            elif len(path.parts) == 3 and path.parts[0] == "tasks":
+                safe_name = secure_filename(path.parts[2])
+                if not safe_name:
+                    raise ValueError(f"Invalid archive filename {path.parts[2]!r}.")
+                target = (path.parts[1], safe_name)
+                if target in targets:
+                    raise ValueError(f"Archive members resolve to duplicate target {safe_name!r}.")
+                targets.add(target)
+            else:
+                raise ValueError(f"Unexpected archive member {name!r}.")
+
+        if info.file_size > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
+            raise ValueError(f"Archive member {name!r} exceeds the per-file size limit.")
+        total_uncompressed += info.file_size
+        if total_uncompressed > Config.CHALLENGE_ARCHIVE_MAX_UNCOMPRESSED_BYTES:
+            raise ValueError("ZIP archive exceeds the aggregate uncompressed size limit.")
+        if info.file_size and info.file_size / max(info.compress_size, 1) > (
+            Config.CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO
+        ):
+            raise ValueError(f"Archive member {name!r} exceeds the compression-ratio limit.")
+
+    if "challenge.json" not in names:
+        raise ValueError("challenge.json not found in the ZIP archive.")
 
 
 def _check_and_add_active_stage(
@@ -465,6 +527,25 @@ def update_challenge(
 
     fields = json.model_fields_set
 
+    timezone = json.timezone if "timezone" in fields else (challenge.timezone or "UTC")
+    if timezone is None:
+        return err("ERR_INVALID_TIMEZONE", 400)
+
+    effective_start = challenge.start_time
+    effective_end = challenge.end_time
+    if "start_time" in fields:
+        if json.start_time is None:
+            return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
+        effective_start = _to_utc(json.start_time, timezone)
+    if "end_time" in fields:
+        if json.end_time is None:
+            return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
+        effective_end = _to_utc(json.end_time, timezone)
+    if effective_start is None or effective_end is None:
+        return err("ERR_DATETIME_REQUIRED", 400)
+    if effective_end <= effective_start:
+        return err("ERR_INVALID_DATE_RANGE", 400)
+
     if "title" in fields:
         challenge.title = json.title
     if "description" in fields:
@@ -478,17 +559,10 @@ def update_challenge(
     if "gpu_required" in fields:
         challenge.gpu_required = json.gpu_required
 
-    timezone = json.timezone if "timezone" in fields else (challenge.timezone or "UTC")
     if "start_time" in fields:
-        st = json.start_time
-        if not st:
-            return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
-        challenge.start_time = _to_utc(st, timezone)
+        challenge.start_time = effective_start
     if "end_time" in fields:
-        et = json.end_time
-        if not et:
-            return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
-        challenge.end_time = _to_utc(et, timezone)
+        challenge.end_time = effective_end
 
     if "is_frozen" in fields:
         challenge.is_frozen = json.is_frozen
@@ -844,32 +918,45 @@ def update_stage(
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     fields = json.model_fields_set
 
-    if "title" in fields:
-        stage.title = json.title
-    if "stage_number" in fields:
-        stage.stage_number = json.stage_number
-    if "start_time" in fields and json.start_time:
-        stage.start_time = _to_utc(json.start_time, challenge.timezone or "UTC")
-    if "end_time" in fields and json.end_time:
-        stage.end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
-    if "reveal_results" in fields:
-        stage.reveal_results = json.reveal_results
-    if "is_finalized" in fields:
-        stage.is_finalized = json.is_finalized
+    effective_start = stage.start_time
+    effective_end = stage.end_time
+    if "start_time" in fields:
+        if json.start_time is None:
+            return err("ERR_DATETIME_REQUIRED", 400, message="Stage start time is required.")
+        effective_start = _to_utc(json.start_time, challenge.timezone or "UTC")
+    if "end_time" in fields:
+        if json.end_time is None:
+            return err("ERR_DATETIME_REQUIRED", 400, message="Stage end time is required.")
+        effective_end = _to_utc(json.end_time, challenge.timezone or "UTC")
+    if effective_end <= effective_start:
+        return err("ERR_INVALID_DATE_RANGE", 400)
 
-    if challenge.start_time and stage.start_time < challenge.start_time:
+    if challenge.start_time and effective_start < challenge.start_time:
         return err(
             "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
             message="Stage start time must be within the competition timeframe.",
         )
 
-    if challenge.end_time and stage.end_time > challenge.end_time:
+    if challenge.end_time and effective_end > challenge.end_time:
         return err(
             "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
             400,
             message="Stage end time must be within the competition timeframe.",
         )
+
+    if "title" in fields:
+        stage.title = json.title
+    if "stage_number" in fields:
+        stage.stage_number = json.stage_number
+    if "start_time" in fields:
+        stage.start_time = effective_start
+    if "end_time" in fields:
+        stage.end_time = effective_end
+    if "reveal_results" in fields:
+        stage.reveal_results = json.reveal_results
+    if "is_finalized" in fields:
+        stage.is_finalized = json.is_finalized
 
     db.session.commit()
 
@@ -1128,39 +1215,45 @@ def export_results(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, in
 @api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
 def export_challenge(
     challenge_id: Any,
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[Any, int, dict[str, str]]:
     """Export a challenge configuration as ZIP, including tasks, stages, and uploaded files."""
 
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     data = challenge.to_dict(view_role=user_role)
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("challenge.json", json.dumps(data, default=str, indent=2))
+    fd, archive_path = tempfile.mkstemp(prefix="lavbench-challenge-", suffix=".zip")
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("challenge.json", json.dumps(data, default=str, indent=2))
 
-        upload_folder = current_app.config.get("UPLOAD_FOLDER")
-        if upload_folder:
-            for task in challenge.tasks:
-                task_dir = os.path.join(upload_folder, f"task_{task.id}")
-                if os.path.isdir(task_dir):
-                    for filename in os.listdir(task_dir):
-                        file_path = os.path.join(task_dir, filename)
-                        if os.path.isfile(file_path):
-                            zf.write(file_path, f"tasks/{task.id}/{filename}")
+            upload_folder = current_app.config.get("UPLOAD_FOLDER")
+            if upload_folder:
+                for task in challenge.tasks:
+                    task_dir = os.path.join(upload_folder, f"task_{task.id}")
+                    if os.path.isdir(task_dir):
+                        for filename in os.listdir(task_dir):
+                            file_path = os.path.join(task_dir, filename)
+                            if os.path.isfile(file_path) and not os.path.islink(file_path):
+                                zf.write(file_path, f"tasks/{task.id}/{filename}")
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(archive_path)
+        raise
 
-    zip_buffer.seek(0)
     safe_title = sanitize_filename_part(challenge.title) or "challenge"
     download_name = f"challenge_{safe_title}.zip"
 
-    return (
-        zip_buffer.read(),
-        200,
-        {
-            "Content-Type": "application/zip",
-            "Content-Disposition": f'attachment; filename="{download_name}"',
-        },
-    )
+    archive_handle = open(archive_path, "rb")  # noqa: SIM115 — closed by the generator
+
+    @after_this_request
+    def remove_archive(response: FlaskResponse) -> FlaskResponse:
+        with contextlib.suppress(OSError):
+            os.unlink(archive_path)
+        return response
+
+    return stream_open_handle_response(archive_handle, "application/zip", download_name)
 
 
 @challenges_bp.route("/import", methods=["POST"])
@@ -1184,43 +1277,37 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
     if not valid_ext:
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
-    if f.content_length and f.content_length > 200 * 1024 * 1024:
-        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds 200MB limit")
+    max_compressed = Config.CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES
+    if f.content_length and f.content_length > max_compressed:
+        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit.")
 
-    raw = f.read()
-    if len(raw) > 200 * 1024 * 1024:
-        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds 200MB limit")
-    if not raw:
-        return err("ERR_NO_DATA_PROVIDED", 400)
-
-    import_data = None
-    zip_ref = None
-    zip_buffer = None
-
+    fd, archive_path = tempfile.mkstemp(prefix="lavbench-import-", suffix=".zip")
+    os.close(fd)
+    zip_ref: zipfile.ZipFile | None = None
     try:
-        if raw.startswith(b"PK\x03\x04"):
-            import io
-            import zipfile
-
-            zip_buffer = io.BytesIO(raw)
-            try:
-                zip_ref = zipfile.ZipFile(zip_buffer, "r")
-                if "challenge.json" not in zip_ref.namelist():
+        total = 0
+        with open(archive_path, "wb") as destination:
+            while chunk := f.stream.read(1024 * 1024):
+                total += len(chunk)
+                if total > max_compressed:
                     return err(
-                        "ERR_INVALID_ARCHIVE",
-                        400,
-                        message="challenge.json not found in the ZIP archive.",
+                        "ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit."
                     )
-                challenge_json_content = zip_ref.read("challenge.json").decode("utf-8")
-                import_data = json.loads(challenge_json_content)
-            except Exception as e:
-                return err(
-                    "ERR_INVALID_ARCHIVE", 400, message=f"Invalid or corrupt ZIP archive: {e!s}"
-                )
-        else:
-            return err(
-                "ERR_INVALID_ARCHIVE", 400, message="Uploaded file is not a valid ZIP archive."
-            )
+                destination.write(chunk)
+        if total == 0:
+            return err("ERR_NO_DATA_PROVIDED", 400)
+
+        try:
+            zip_ref = zipfile.ZipFile(archive_path, "r")
+            _validate_challenge_archive(zip_ref)
+            info = zip_ref.getinfo("challenge.json")
+            with zip_ref.open(info) as challenge_file:
+                content = challenge_file.read(Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES + 1)
+            if len(content) > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
+                raise ValueError("challenge.json exceeds the per-file size limit.")
+            import_data = json.loads(content.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError, zipfile.BadZipFile) as exc:
+            return err("ERR_INVALID_ARCHIVE", 400, message=f"Invalid ZIP archive: {exc!s}")
 
         if not isinstance(import_data, dict):
             return err("ERR_INVALID_IMPORT_DATA", 400)
@@ -1229,13 +1316,17 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
 
         try:
             challenge = import_challenge_from_dict(import_data, zip_ref=zip_ref)
+        except SchemaError as e:
+            return err("ERR_INVALID_TIMEZONE", 400, message=e.message)
         except ValueError as e:
-            return err("ERR_INVALID_DATE", 400, message=str(e))
+            return err("ERR_INVALID_IMPORT_DATA", 400, message=str(e))
 
     finally:
         if zip_ref:
             with contextlib.suppress(Exception):
                 zip_ref.close()
+        with contextlib.suppress(OSError):
+            os.unlink(archive_path)
 
     log_audit(
         request.user["user_id"],
