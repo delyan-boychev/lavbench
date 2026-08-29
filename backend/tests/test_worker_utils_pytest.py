@@ -294,7 +294,7 @@ class TestRunCommandStreaming:
 
         mock_client.containers.create.side_effect = flaky_create
         logs = []
-        with caplog.at_level("WARNING", logger="worker_utils"):
+        with caplog.at_level("WARNING", logger="utils.worker_utils"):
             retcode, _stdout, _stderr, _is_timeout = run_sandbox(
                 mock_client,
                 "test:latest",
