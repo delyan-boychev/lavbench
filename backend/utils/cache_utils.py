@@ -24,6 +24,26 @@ _sse_pools: dict[str, redis_lib.ConnectionPool] = {}
 _sse_pools_pid: int | None = None
 
 DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
+DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
+
+_MIGRATE_DIRTY_SET_SCRIPT = """
+local members = redis.call('smembers', KEYS[1])
+for _, challenge_id in ipairs(members) do
+    redis.call('hincrby', KEYS[2], challenge_id, 1)
+end
+if #members > 0 then
+    redis.call('del', KEYS[1])
+end
+return #members
+"""
+
+_CLEAR_DIRTY_VERSION_SCRIPT = """
+local current = redis.call('hget', KEYS[1], ARGV[1])
+if current == ARGV[2] then
+    return redis.call('hdel', KEYS[1], ARGV[1])
+end
+return 0
+"""
 
 
 def worker_spec_key(hostname: str) -> str:
@@ -247,6 +267,41 @@ def get_queue_depth(queue_name: str) -> int:
         return 0
 
 
+def get_dirty_leaderboard_versions(r: redis_lib.Redis[Any]) -> dict[str, int]:
+    """Return dirty challenge versions after atomically consuming the legacy set."""
+    r.eval(  # type: ignore[no-untyped-call]
+        _MIGRATE_DIRTY_SET_SCRIPT,
+        2,
+        DIRTY_CHALLENGES_SET,
+        DIRTY_LEADERBOARD_VERSIONS,
+    )
+    versions: dict[str, int] = {}
+    for raw_challenge_id, raw_version in r.hgetall(DIRTY_LEADERBOARD_VERSIONS).items():
+        challenge_id = (
+            raw_challenge_id.decode("utf-8")
+            if isinstance(raw_challenge_id, bytes)
+            else str(raw_challenge_id)
+        )
+        version = raw_version.decode("utf-8") if isinstance(raw_version, bytes) else raw_version
+        versions[challenge_id] = int(version)
+    return versions
+
+
+def clear_dirty_leaderboard_version(
+    r: redis_lib.Redis[Any], challenge_id: Any, rebuilt_version: int
+) -> bool:
+    """Clear a dirty marker only when no newer invalidation was recorded."""
+    return bool(
+        r.eval(  # type: ignore[no-untyped-call]
+            _CLEAR_DIRTY_VERSION_SCRIPT,
+            1,
+            DIRTY_LEADERBOARD_VERSIONS,
+            str(challenge_id),
+            str(rebuilt_version),
+        )
+    )
+
+
 def get_cached(key: str) -> Any:
     """Get a JSON-deserialized value from Redis by key. Returns None on miss/error."""
     r = get_redis_client()
@@ -309,13 +364,16 @@ def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -
         r = get_coordination_client()
         if r:
             with suppress(Exception):
-                r.srem(DIRTY_CHALLENGES_SET, challenge_id)
+                pipeline = r.pipeline(transaction=True)
+                pipeline.srem(DIRTY_CHALLENGES_SET, challenge_id)
+                pipeline.hdel(DIRTY_LEADERBOARD_VERSIONS, challenge_id)
+                pipeline.execute()
         return
 
     r = get_coordination_client()
     if r:
         try:
-            r.sadd(DIRTY_CHALLENGES_SET, challenge_id)
+            r.hincrby(DIRTY_LEADERBOARD_VERSIONS, challenge_id, 1)
             return
         except Exception as e:
             logger.warning("Failed to mark challenge %s as dirty in Redis: %s", challenge_id, e)

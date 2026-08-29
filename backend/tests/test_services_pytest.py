@@ -2,6 +2,7 @@
 
 import os
 import sys
+from datetime import timedelta
 
 import pytest
 
@@ -86,10 +87,11 @@ class TestServiceSandboxAndPriority:
         from models import Challenge, Submission
         from services.submission_service import get_best_submission
 
+        now = utcnow()
         challenge = Challenge(
             title="Test Challenge",
-            start_time=utcnow(),
-            end_time=utcnow(),
+            start_time=now - timedelta(hours=1),
+            end_time=now + timedelta(hours=1),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -101,6 +103,7 @@ class TestServiceSandboxAndPriority:
             public_score=0.7,
             private_score=0.8,
             execution_time_ms=200,
+            created_at=now,
         )
         sub2 = Submission(
             task_id=self.task.id,
@@ -109,6 +112,7 @@ class TestServiceSandboxAndPriority:
             public_score=0.9,
             private_score=0.9,
             execution_time_ms=100,
+            created_at=now,
         )
 
         best = get_best_submission(self.task, [sub1, sub2], challenge)
@@ -118,10 +122,11 @@ class TestServiceSandboxAndPriority:
         from models import Challenge, Submission
         from services.submission_service import get_best_submission
 
+        now = utcnow()
         challenge = Challenge(
             title="Test Challenge",
-            start_time=utcnow(),
-            end_time=utcnow(),
+            start_time=now - timedelta(hours=1),
+            end_time=now + timedelta(hours=1),
         )
         db.session.add(challenge)
         db.session.commit()
@@ -137,6 +142,7 @@ class TestServiceSandboxAndPriority:
             public_score=0.0909,
             private_score=0.0909,
             execution_time_ms=200,
+            created_at=now,
         )
         sub2 = Submission(
             task_id=self.task.id,
@@ -145,6 +151,7 @@ class TestServiceSandboxAndPriority:
             public_score=0.1667,
             private_score=0.1667,
             execution_time_ms=100,
+            created_at=now,
         )
 
         best = get_best_submission(self.task, [sub1, sub2], challenge)

@@ -6,7 +6,7 @@
 Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             ├── Flask API Server (Port 5001, Gunicorn + gevent)
                             │     ├── PostgreSQL 15 (Primary Database)
-                            │     ├── Redis (Celery Broker + Coordination: SSE pub/sub fan-out, worker_spec registry, submission fallback key, dirty-challenges set, dead-letter queue, GPU/build locks)
+                            │     ├── Redis (Celery Broker + Coordination: SSE pub/sub fan-out, worker_spec registry, submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks)
                             │     ├── Redis Cache (Private, server-only: leaderboard caches, locks, rate-limit counters, JWT blacklist — CACHE_REDIS_URL never given to external workers)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
                             │     └── Internal Celery Worker (System tasks only, inside Docker Compose, -Q celery,internal)
@@ -23,7 +23,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Frontend** | React 19 + Vite + Vanilla/Tailwind CSS | SPA с актуализации на живо чрез SSE, i18n (en/bg), JSDoc `@type` валидация (`tsc --noEmit`). |
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API крайни точки, Pydantic v2 валидация на заявки/отговори, SSE поточно предаване на събития. |
 | **Primary Database** | PostgreSQL 15 | Потребители, състезания, етапи, задачи, решения, журнали за одит (`AuditLog`). |
-| **Cache & Broker** | Redis | Celery брокер на задачи + **клиент за координация** за цялото споделено състояние между машините: SSE pub/sub разпращане, регистър на спецификациите на уъркърите (`worker_spec:<hostname>`), ключ за резервно решение, съвкупност от променени състезания (dirty-challenges), опашка за необработени съобщения (dead-letter queue), GPU/build заключвания. |
+| **Cache & Broker** | Redis | Celery брокер на задачи + **клиент за координация** за цялото споделено състояние между машините: SSE pub/sub разпращане, регистър на спецификациите на уъркърите (`worker_spec:<hostname>`), ключ за резервно решение, версионирани сигнали за промяна на класациите, опашка за необработени съобщения (dead-letter queue), GPU/build заключвания. AOF устойчивостта и `noeviction` защитават задачите в опашката. |
 | **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Самостоятелен, частен сървърен кеш: кешове за класацията, разпределени заключвания, броячи за ограничение на честотата (rate-limit) и черен списък за JWT токени (`CACHE_REDIS_URL`). Вътрешен контейнер — без порт към хоста; външните уъркъри никога не получават този URL адрес. |
 | **Task Queue** | Celery 5.4 | Асинхронно изпълнение на задачи (оценяване на решения, компилиране на изображения, резервни копия на базата данни). |
 | **Scheduler** | Celery Beat | Периодични задачи (контрольор за заседнали решения, график за автоматични резервни копия). |

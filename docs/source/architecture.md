@@ -6,7 +6,7 @@
 Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             ├── Flask API Server (Port 5001, Gunicorn + gevent)
                             │     ├── PostgreSQL 15 (Primary Database)
-                            │     ├── Redis (Celery Broker + Coordination: SSE pub/sub fan-out, worker_spec registry, submission fallback key, dirty-challenges set, dead-letter queue, GPU/build locks)
+                            │     ├── Redis (Celery Broker + Coordination: SSE pub/sub fan-out, worker_spec registry, submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks)
                             │     ├── Redis Cache (Private, server-only: leaderboard caches, locks, rate-limit counters, JWT blacklist — CACHE_REDIS_URL never given to external workers)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
                             │     └── Internal Celery Worker (System tasks only, inside Docker Compose, -Q celery,internal)
@@ -23,7 +23,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Frontend** | React 19 + Vite + Vanilla/Tailwind CSS | SPA with SSE live updates, i18n (en/bg), JSDoc `@type` validation (`tsc --noEmit`). |
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API endpoints, Pydantic v2 request/response validation, SSE event streaming. |
 | **Primary Database** | PostgreSQL 15 | Users, challenges, stages, tasks, submissions, audit logs (`AuditLog`). |
-| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, dirty-challenges set, dead-letter queue, GPU/build locks. |
+| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks. AOF persistence and `noeviction` protect queued work. |
 | **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Private, server-only cache: leaderboard caches, distributed locks, rate-limit counters, and JWT token blacklist (`CACHE_REDIS_URL`). Internal container — no host port; external workers never receive this URL. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |

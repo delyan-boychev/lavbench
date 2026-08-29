@@ -154,6 +154,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             user_id=self.comp_failed_sub.id,
             status="failed",
             code_cells="[]",
+            created_at=self.challenge.end_time - timedelta(minutes=1),
         )
         db_session.add(sub)
         db_session.commit()
@@ -200,6 +201,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             public_score=90.0,
             private_score=95.0,
             execution_time_ms=100,
+            created_at=self.challenge.end_time - timedelta(minutes=1),
         )
         sub_low = Submission(
             challenge_id=self.challenge.id,
@@ -209,6 +211,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             public_score=40.0,
             private_score=50.0,
             execution_time_ms=200,
+            created_at=self.challenge.end_time - timedelta(minutes=1),
         )
         # Create a failed submission for failed_sub competitor
         sub_failed = Submission(
@@ -216,6 +219,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
             task_id=self.task1.id,
             user_id=self.comp_failed_sub.id,
             status="failed",
+            created_at=self.challenge.end_time - timedelta(minutes=1),
         )
         db_session.add_all([sub_high, sub_low, sub_failed])
         db_session.commit()

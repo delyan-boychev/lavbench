@@ -875,6 +875,14 @@ def main() -> int:
                 code, data = ecomp.send("GET", "/api/auth/csrf-token")
                 ecomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
 
+                # cid was created with max_eval_requests=2 for the earlier daily-limit
+                # test. Failed submissions now count toward that quota too, and this
+                # section submits 3 evaluations (boom-ci, good, no-parquet) for a
+                # fresh competitor — raise the cap so none are quota-rejected.
+                code, data = api.send("PUT", f"/api/challenges/{cid}",
+                                      {"max_eval_requests": 20})
+                check("eval: raise max_eval_requests for eval section 200", code == 200)
+
                 labels_df = pd.DataFrame({"id": [1, 2, 3, 4, 5], "label": [0, 1, 0, 1, 0]})
                 labels_buf = io.BytesIO()
                 labels_df.to_parquet(labels_buf, index=False)

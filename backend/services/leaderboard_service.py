@@ -10,10 +10,15 @@ from datetime import datetime
 from functools import cmp_to_key
 from typing import Any
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
 
 from models import Challenge, Stage, Submission, Task, User, db, metric_direction_from_config
-from services.submission_service import get_best_submission, uses_private_score_for_selection
+from services.submission_service import (
+    get_best_submission,
+    submission_deadline,
+    uses_private_score_for_selection,
+)
 from utils.cache_utils import cache_lock, get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -49,29 +54,7 @@ def build_and_cache_leaderboard(
 
         challenge_finalized = challenge.scores_finalized
 
-        # Determine users who have late submissions
-        late_users = set()
-        if challenge.end_time:
-            late_user_ids = (
-                db.session.query(Submission.user_id)
-                .filter(
-                    Submission.challenge_id == challenge_id,
-                    Submission.executed_at > challenge.end_time,
-                )
-                .distinct()
-                .all()
-            )
-            late_users = {uid[0] for uid in late_user_ids}
-
         from sqlalchemy import case, func
-
-        if late_users:
-            is_final_active = case(
-                (Submission.user_id.in_(late_users), False),
-                else_=Submission.is_final_selection,
-            )
-        else:
-            is_final_active = Submission.is_final_selection
 
         private_score_task_ids = [
             task.id for task in tasks if uses_private_score_for_selection(task, challenge)
@@ -94,6 +77,15 @@ def build_and_cache_leaderboard(
             .filter(Stage.challenge_id == challenge_id, Stage.is_test)
             .all()
         ]
+        eligible_clauses = []
+        for task in tasks:
+            deadline = submission_deadline(task, challenge)
+            if deadline is None:
+                eligible_clauses.append(Submission.task_id == task.id)
+            else:
+                eligible_clauses.append(
+                    and_(Submission.task_id == task.id, Submission.created_at <= deadline)
+                )
 
         subq = (
             db.session.query(
@@ -102,7 +94,7 @@ def build_and_cache_leaderboard(
                 .over(
                     partition_by=(Submission.user_id, Submission.task_id),
                     order_by=(
-                        is_final_active.desc(),
+                        Submission.is_final_selection.desc(),
                         selection_score.desc(),
                         Submission.execution_time_ms.asc(),
                     ),
@@ -113,6 +105,7 @@ def build_and_cache_leaderboard(
                 Submission.challenge_id == challenge_id,
                 Submission.status == "completed",
                 ~Submission.task_id.in_(test_stage_task_ids) if test_stage_task_ids else True,
+                or_(*eligible_clauses) if eligible_clauses else False,
             )
             .subquery()
         )

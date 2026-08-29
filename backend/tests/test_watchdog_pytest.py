@@ -2,6 +2,7 @@
 
 import json
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -82,8 +83,10 @@ class TestWatchdogStuckSubmissions:
 
     def test_times_out_stuck_queued_submission(self):
         self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
-        result = watchdog_stuck_submissions()
+        with patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate:
+            result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
+        invalidate.assert_called_once_with(self.challenge.id)
         sub = Submission.query.first()
         assert sub.status == "failed"
         assert "WATCHDOG" in sub.logs
@@ -143,8 +146,10 @@ class TestWatchdogStuckSubmissions:
         r.set(f"worker:attempt:{sub.celery_task_id}", "worker-watchdog", ex=3600)
         r.set(fallback_key, json.dumps(fallback_data))
 
-        result = watchdog_stuck_submissions()
+        with patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate:
+            result = watchdog_stuck_submissions()
         assert result.get("recovered", 0) >= 1
+        invalidate.assert_called_once_with(self.challenge.id)
 
         db.session.expire_all()
         updated = db.session.get(Submission, sub.id)

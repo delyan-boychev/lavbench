@@ -1264,12 +1264,10 @@ def submit_task(
         if not acquired:
             return err("ERR_SUBMIT_LOCKED", 429)
 
-        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge.id,
             Submission.created_at >= today_start,
-            Submission.status != "failed",
         ).count()
 
         if submission_count >= challenge.max_eval_requests:

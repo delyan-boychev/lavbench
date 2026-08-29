@@ -318,6 +318,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
         # 1. Recover fallback results from Redis (workers that finished but couldn't reach server)
         recovered = 0
+        affected_challenge_ids: set[Any] = set()
         stuck: list[Any] = []
         try:
             from utils.cache_utils import get_coordination_client, submission_fallback_key
@@ -376,6 +377,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                             sub.metrics_payload_private = fb["metrics_payload_priv"]
                         r.delete(fallback_key)
                         recovered += 1
+                        if sub.challenge_id:
+                            affected_challenge_ids.add(sub.challenge_id)
                         try:
                             from utils.sse_utils import publish_submission_status
 
@@ -439,6 +442,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         e,
                     )
             timeout_count += 1
+            if sub.challenge_id:
+                affected_challenge_ids.add(sub.challenge_id)
             try:
                 from utils.sse_utils import publish_submission_status
 
@@ -450,14 +455,9 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
-            # Invalidate leaderboard cache for affected challenges
             from utils.cache_utils import invalidate_leaderboard_cache
 
-            challenge_ids = set()
-            for sub in stuck:
-                if sub.challenge_id:
-                    challenge_ids.add(sub.challenge_id)
-            for cid in challenge_ids:
+            for cid in affected_challenge_ids:
                 invalidate_leaderboard_cache(cid)
         return {"recovered": recovered, "timed_out": timeout_count}
 
@@ -470,15 +470,19 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
     if not app:
         return {"skipped": "no_app_context"}
 
-    from utils.cache_utils import DIRTY_CHALLENGES_SET, get_coordination_client
+    from utils.cache_utils import (
+        clear_dirty_leaderboard_version,
+        get_coordination_client,
+        get_dirty_leaderboard_versions,
+    )
 
     r = get_coordination_client()
     if not r:
         return {"error": "redis_unavailable"}
 
     try:
-        dirty_challenges = r.smembers(DIRTY_CHALLENGES_SET)
-        if not dirty_challenges:
+        dirty_versions = get_dirty_leaderboard_versions(r)
+        if not dirty_versions:
             return {"recalculated": 0}
 
         recalculated_count = 0
@@ -488,15 +492,11 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
         from utils.sse_utils import publish_leaderboard_update
 
         with app.app_context():
-            for cid_bytes in dirty_challenges:
-                cid = cid_bytes.decode("utf-8") if isinstance(cid_bytes, bytes) else str(cid_bytes)
-
-                # Remove from dirty set first to prevent race condition
-                r.srem(DIRTY_CHALLENGES_SET, cid)
-
+            for cid, dirty_version in dirty_versions.items():
                 try:
-                    challenge = Challenge.query.get(cid)
+                    challenge = db.session.get(Challenge, cid)
                     if not challenge:
+                        clear_dirty_leaderboard_version(r, cid, dirty_version)
                         continue
 
                     # Rebuild cache
@@ -506,6 +506,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
 
                     # Publish event for live SSE updates
                     publish_leaderboard_update(cid)
+                    clear_dirty_leaderboard_version(r, cid, dirty_version)
                     recalculated_count += 1
                 except Exception as e:
                     logger.error("recalculate_dirty_leaderboards: failed for %s: %s", cid, e)
