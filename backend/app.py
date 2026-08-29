@@ -38,6 +38,7 @@ from config.log_config import setup_logging  # noqa: E402
 from models import db  # noqa: E402
 from schemas.responses import HealthResponse  # noqa: E402
 from utils.error_utils import err  # noqa: E402
+from utils.migrations import verify_database_revision  # noqa: E402
 from utils.spec import api  # noqa: E402
 from utils.version import __version__  # noqa: E402
 
@@ -78,41 +79,12 @@ def _warn_insecure_cookie_deployment() -> None:
     )
 
 
-_SCHEMA_BOOTSTRAP_LOCK = 727376317
-
-
-def _ensure_database_schema(app: Flask) -> None:
-    """Create tables on first boot without racing across app/worker containers.
-
-    Gunicorn workers import ``app`` (``utils.wsgi:app``) and only the ``__main__``
-    path called ``db.create_all()``, so a fresh deployment served 500s until
-    ``setup-admin`` ran. ``create_all`` is idempotent; a PostgreSQL advisory
-    session lock merely serialises the first-boot stampede. Eval and scheduler
-    workers never reach this (they do not hold the app/DB role). Failures
-    degrade /api/health instead of blocking boot.
-    """
+def _verify_database_schema(app: Flask) -> None:
+    """Refuse to start an application role against an outdated PostgreSQL schema."""
     if not Config.HAS_APP:
         return
     with app.app_context():
-        try:
-            if db.engine.dialect.name == "postgresql":
-                with db.engine.begin() as conn:
-                    conn.execute(
-                        db.text("SELECT pg_advisory_lock(:k)"),
-                        {"k": _SCHEMA_BOOTSTRAP_LOCK},
-                    )
-                    db.metadata.create_all(bind=conn)
-                    conn.execute(
-                        db.text("SELECT pg_advisory_unlock(:k)"),
-                        {"k": _SCHEMA_BOOTSTRAP_LOCK},
-                    )
-            else:
-                db.create_all()
-        except Exception:
-            logger.exception(
-                "Schema bootstrap failed — the app will boot and /api/health "
-                "will report the database as degraded."
-            )
+        verify_database_revision(db.engine)
 
 
 def create_app() -> Flask:
@@ -128,7 +100,7 @@ def create_app() -> Flask:
     CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
     db.init_app(app)
-    _ensure_database_schema(app)
+    _verify_database_schema(app)
 
     # Register Service Blueprints
     from routes.admin import admin_bp
@@ -238,7 +210,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
     app.run(host="0.0.0.0", port=5001, debug=debug_mode)  # noqa: S104
