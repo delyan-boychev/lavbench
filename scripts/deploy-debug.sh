@@ -92,13 +92,9 @@ echo "  ✔ Redis ready"
 echo ""
 
 # ── Database schema ────────────────────────────────────────────────
-echo "  → Initializing database schema..."
+echo "  → Applying database migrations..."
 cd backend
-python3 -c "
-from app import app, db
-with app.app_context():
-    db.create_all()
-" && echo "  ✔ Database schema initialized"
+python3 scripts/migrate.py && echo "  ✔ Database migrations applied"
 cd ..
 echo ""
 

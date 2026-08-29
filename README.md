@@ -183,6 +183,17 @@ After `make setup-admin`, verify the entire platform end-to-end against the runn
 python3 scripts/api_smoke_test.py            # exit code 0 on success
 ```
 
+### Database upgrades
+
+Docker Compose runs the one-shot `migrate` service before the API and internal worker start. For a local backend process, apply the same migrations explicitly:
+
+```bash
+cd backend
+python scripts/migrate.py
+```
+
+The first migration run can adopt a pre-Alembic LavBench database only when its schema exactly matches the recorded baseline. The API then verifies the revision at startup and fails fast if a deployment skipped an upgrade.
+
 ### Frontend Tests & Type Checking
 
 ```bash

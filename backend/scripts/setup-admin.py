@@ -4,6 +4,8 @@ import os
 import secrets
 import sys
 
+from sqlalchemy import create_engine
+
 os.umask(0o077)
 
 # This script lives in backend/scripts/, so the backend package root is not on
@@ -12,26 +14,29 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from werkzeug.security import generate_password_hash  # noqa: E402
 
-from app import create_app  # noqa: E402
+from config import Config  # noqa: E402
 from models import User, db  # noqa: E402
 from utils.dates import utcnow  # noqa: E402
+from utils.migrations import migrate_database  # noqa: E402
 
 
 def generate_master_key():
+    engine = create_engine(Config.SQLALCHEMY_DATABASE_URI)
+    print("Dropping all existing database tables...")  # noqa: T201
+    try:
+        with engine.begin() as connection:
+            connection.execute(db.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+    except Exception as e:
+        print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")  # noqa: T201
+        db.metadata.drop_all(bind=engine)
+    print("Applying database migrations...")  # noqa: T201
+    migrate_database(engine)
+    engine.dispose()
+
+    from app import create_app
+
     app = create_app()
     with app.app_context():
-        # Drop and recreate database to clean old runs
-        print("Dropping all existing database tables...")  # noqa: T201
-        try:
-            db.session.execute(db.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            print(f"Non-fatal error resetting schema: {e}. Falling back to drop_all...")  # noqa: T201
-            db.drop_all()
-        print("Recreating database tables...")  # noqa: T201
-        db.create_all()
-
         # Generate random unique admin username (not standard "admin")
         admin_username = f"admin_{secrets.token_hex(4)}"
 

@@ -81,17 +81,6 @@ echo "  → Starting all services..."
 docker compose $DOCKER_ENV up -d
 echo ""
 
-# ── Initialize database ────────────────────────────────────────────
-echo "  → Initializing database schema..."
-docker compose exec -T backend python -c "
-from app import app, db
-with app.app_context():
-    db.create_all()
-"
-echo "    ✔ Database schema created"
-rm -f .env.docker
-echo ""
-
 # ── Read URL config from .env ───────────────────────────────────────
 SERVER_ADDRESS=$(grep "^SERVER_ADDRESS=" .env | tail -1 | cut -d= -f2-)
 NGINX_PORT=$(grep "^NGINX_PORT=" .env | tail -1 | cut -d= -f2-)

@@ -54,6 +54,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    python backend/scripts/check_error_codes.py
    ```
 8. **Adhere to project patterns** — Use the `err()` helper or `SchemaError` for error responses (never `jsonify({"error": ...})`), add `api.ERR_*` translation keys for new codes, and rely on `tsc --noEmit` for frontend validation.
+9. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations, and verify `python scripts/migrate.py` against a fresh and upgraded database.
 
 ## Code Conventions
 
@@ -68,6 +69,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 - Use pytest fixtures from `backend/config/conftest.py` for common setups
 - New routes go in `backend/routes/`, new schemas go in `backend/schemas/`, register blueprints in `backend/app.py`
 - Security-sensitive code must include rate limiting and auth checks
+- Database schema changes require a reviewed Alembic revision in `backend/migrations/versions/`; application processes must never create or mutate schema at startup
 
 ### Frontend (JavaScript/React)
 
