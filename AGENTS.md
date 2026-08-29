@@ -118,10 +118,13 @@ Never reintroduce these (they broke the packaging twice):
 cd backend && rg -n "from (error_utils|worker_utils|sse_utils|cache_utils|log_config|version|spec|evaluation_engine) import|import evaluation_engine\b|patch\(\"(error_utils|worker_utils|sse_utils|cache_utils|log_config|version)\." --glob '*.py' .
 ```
 
-### No migrations policy
+### Database migration policy
 
-- **No Alembic.** Schema changes are expressed in `backend/models/`; `db.create_all()` runs in `create_app()` under a PostgreSQL advisory lock so multiple workers boot safely.
-- Never create migration files or alter `models/` in a way that requires them.
+- Schema changes require an Alembic revision in `backend/migrations/versions/`; never rely on `db.create_all()` in an application process.
+- Run `python scripts/migrate.py` from `backend/` before starting the API or workers. Compose enforces this through its one-shot `migrate` service.
+- The migration runner adopts an existing pre-Alembic database only when its reflected schema exactly matches the baseline. It fails closed on drift.
+- Application startup verifies the PostgreSQL revision and refuses to serve against an outdated or unversioned schema.
+- Keep model and migration changes in the same pull request, and test both a fresh upgrade and any supported upgrade path.
 
 ### Running the app
 
