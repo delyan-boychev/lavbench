@@ -105,7 +105,25 @@ services:
       retries: 5
       start_period: 5s
 
-  # 3. Flask API Backend
+  # 3. One-shot database schema upgrade
+  migrate:
+    build: ./backend
+    restart: "no"
+    command: python scripts/migrate.py
+    environment:
+      - DATABASE_URL=postgresql://lavbench_user:${POSTGRES_PASSWORD}@db:5432/lavbench_db
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 4. Flask API Backend
   backend:
     build: ./backend
     container_name: lavbench_backend
@@ -140,6 +158,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       redis-cache:
@@ -163,7 +183,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # 4. Celery Beat (watchdog + backup scheduler)
+  # 5. Celery Beat (watchdog + backup scheduler)
   celery_beat:
     build: ./backend
     container_name: lavbench_beat
@@ -210,7 +230,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # 5. Celery Worker (internal/system tasks worker only)
+  # 6. Celery Worker (internal/system tasks worker only)
   celery_worker:
     build: ./backend
     container_name: lavbench_worker
@@ -250,6 +270,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis-cache:
         condition: service_healthy
     volumes:
@@ -276,7 +298,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # 6. React Frontend & Nginx Router
+  # 7. React Frontend & Nginx Router
   frontend:
     build: ./frontend
     container_name: lavbench_frontend

@@ -1,0 +1,5 @@
+LavBench database migrations
+============================
+
+Run ``python scripts/migrate.py`` to safely adopt or upgrade a database.
+Generate reviewed revisions with ``alembic revision --autogenerate -m "summary"``.
