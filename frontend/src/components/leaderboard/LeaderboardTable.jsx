@@ -10,6 +10,7 @@ import { RefreshCw, BarChart3, Layers, CheckSquare } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
+import LoadingIndicator from '../ui/LoadingIndicator';
 
 export default function LeaderboardTable({
   data,
@@ -155,8 +156,8 @@ export default function LeaderboardTable({
 
   if (loading) {
     return (
-      <EmptyState minHeight={150} message={t('leaderboard.loading')}>
-        <div className="animate-spin w-6 h-6 border-2 border-slate-700 border-t-indigo-500 rounded-full" />
+      <EmptyState minHeight={150}>
+        <LoadingIndicator message={t('leaderboard.loading')} />
       </EmptyState>
     );
   }

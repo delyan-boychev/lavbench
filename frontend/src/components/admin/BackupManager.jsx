@@ -7,11 +7,15 @@ import useSSE from '../../hooks/useSSE';
 import { useBackupsQuery } from '../../hooks/useBackupsQuery';
 import { useDeleteBackup, useForceBackup } from '../../hooks/useBackupMutations';
 import { formatDateTime } from '../../utils/formatDate';
+import { useApiError } from '../../hooks/useApiError';
+import LoadingIndicator from '../ui/LoadingIndicator';
+import QueryErrorState from '../ui/QueryErrorState';
 
 export default function BackupManager() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
-  const { data, isLoading, refetch } = useBackupsQuery();
+  const { showApiError } = useApiError();
+  const { data, isLoading, isError, refetch } = useBackupsQuery();
 
   const deleteBackupMutation = useDeleteBackup();
   const forceBackupMutation = useForceBackup();
@@ -32,8 +36,8 @@ export default function BackupManager() {
   const handleForce = async () => {
     try {
       await forceBackupMutation.mutateAsync();
-    } catch {
-      /* noop */
+    } catch (error) {
+      showApiError(error, 'common.unexpected_error');
     }
   };
 
@@ -41,8 +45,8 @@ export default function BackupManager() {
     try {
       await deleteBackupMutation.mutateAsync(filename);
       refetch();
-    } catch {
-      /* noop */
+    } catch (error) {
+      showApiError(error, 'common.unexpected_error');
     }
   };
 
@@ -72,7 +76,9 @@ export default function BackupManager() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-8 text-slate-500 text-sm">{t('common.loading')}</div>
+        <LoadingIndicator className="py-8" />
+      ) : isError ? (
+        <QueryErrorState onRetry={refetch} />
       ) : backups.length === 0 ? (
         <EmptyState message={t('admin.backups.no_backups')} />
       ) : (

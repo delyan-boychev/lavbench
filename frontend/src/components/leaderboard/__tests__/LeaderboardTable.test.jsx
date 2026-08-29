@@ -353,8 +353,7 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
     await waitFor(() => {
-      expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith({
-        challengeId: 12,
+      expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
         user_id: 5,
         points: { 10: 85 },
         reason: undefined,

@@ -32,6 +32,7 @@ vi.mock('../../services/ApiService', () => ({
   default: {
     fetch: vi.fn(),
     get: vi.fn(),
+    getBestSubmissions: vi.fn(),
   },
 }));
 
@@ -79,6 +80,12 @@ describe('SubmissionsView Page', () => {
       data: { items: [], total: 0, pages: 1 },
     });
     TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: {} });
+    api.getBestSubmissions.mockResolvedValue({ ok: true, data: { items: [] } });
+    api.fetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+      blob: () => Promise.resolve(new Blob(['test'])),
+    });
   });
 
   afterEach(() => {
@@ -770,6 +777,10 @@ describe('SubmissionsView Page', () => {
         private_score: 0.85,
         is_final_selection: true,
       };
+      api.getBestSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: [subForTask1, subForTask2] },
+      });
 
       TaskService.getSubmissions
         .mockResolvedValueOnce({
@@ -901,6 +912,10 @@ describe('SubmissionsView Page', () => {
         private_score: 0.85,
         is_final_selection: true,
       };
+      api.getBestSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: [subForTask1, subForTask2] },
+      });
 
       api.get.mockResolvedValue({
         ok: true,
@@ -978,6 +993,10 @@ describe('SubmissionsView Page', () => {
         private_score: 0.92,
         is_final_selection: false,
       };
+      api.getBestSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: [subForTask1] },
+      });
 
       api.get.mockResolvedValue({
         ok: true,
@@ -1025,11 +1044,11 @@ describe('SubmissionsView Page', () => {
 
       await waitFor(() => {
         const icons = screen.getAllByTitle('Download');
-        expect(icons.length).toBeGreaterThan(1);
+        expect(icons.length).toBeGreaterThanOrEqual(1);
       });
 
       await act(async () => {
-        fireEvent.click(screen.getAllByTitle('Download')[1]);
+        fireEvent.click(screen.getAllByTitle('Download')[0]);
       });
       await act(async () => {
         await new Promise((r) => setTimeout(r, 20));
@@ -1059,6 +1078,7 @@ describe('SubmissionsView Page', () => {
         private_score: 0.92,
         is_final_selection: true,
       };
+      api.getBestSubmissions.mockResolvedValue({ ok: true, data: { items: [finalSub] } });
 
       api.get.mockResolvedValue({
         ok: true,
@@ -1207,6 +1227,10 @@ describe('SubmissionsView Page', () => {
         ok: true,
         data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
       });
+      api.getBestSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: [subForTask1, subForTask2] },
+      });
       api.fetch.mockImplementation((url) => {
         const itemsByUrl = {
           '/api/tasks/10/submissions?page=1&per_page=100&user_id=101': [subForTask1],
@@ -1240,16 +1264,13 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('#201')).toBeInTheDocument();
       });
 
+      expect(api.getBestSubmissions).toHaveBeenCalledWith(1, 101);
       const taskSubmissionUrls = api.fetch.mock.calls
         .map(([url]) => url)
         .filter((url) => url.startsWith('/api/tasks/') && url.includes('/submissions?'));
-      expect(taskSubmissionUrls).toEqual(
-        expect.arrayContaining([
-          '/api/tasks/10/submissions?page=1&per_page=100&user_id=101',
-          '/api/tasks/11/submissions?page=1&per_page=100&user_id=101',
-          '/api/tasks/10/submissions?page=1&per_page=10&user_id=101',
-        ]),
-      );
+      expect([...new Set(taskSubmissionUrls)]).toEqual([
+        '/api/tasks/10/submissions?page=1&per_page=10&user_id=101',
+      ]);
       expect(taskSubmissionUrls.every((url) => url.includes('user_id=101'))).toBe(true);
     });
 
@@ -1367,9 +1388,7 @@ describe('SubmissionsView Page', () => {
 
       renderWithProviders(<SubmissionsView />);
 
-      await waitFor(() => {
-        expect(screen.getByText('No competitors found')).toBeInTheDocument();
-      });
+      await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     });
 
     it('handles missing challenge during competitor search', async () => {

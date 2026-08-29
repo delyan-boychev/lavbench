@@ -350,6 +350,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
   });
 
   it('handles SSE errors gracefully', async () => {
+    vi.useFakeTimers();
     vi.stubGlobal(
       'EventSource',
       class {
@@ -368,23 +369,21 @@ describe('AdminPanel Page - Workers & Resources', () => {
 
     renderWithProviders(<AdminPanel />);
 
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
     const workersTabBtn = screen.getByText('Workers & Resources');
 
     await act(async () => {
       fireEvent.click(workersTabBtn);
     });
 
-    await vi.waitFor(() => {
-      expect(screen.getByText(/Network error fetching stats/i)).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000);
     });
 
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    try {
+      expect(screen.getByText(/Network error fetching stats/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1335,7 +1334,9 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.put).toHaveBeenCalledWith('/challenges/1/reveal-results');
+    expect(api.put).toHaveBeenCalledWith('/challenges/1/reveal-results', {
+      reveal_results: true,
+    });
   });
 
   it('calls handleExportChallenge on Export button click', async () => {

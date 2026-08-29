@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/ApiService';
+import { requireOk } from '../services/apiResult';
 
 export function useCreateChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ body) => api.post('/challenges', body),
+    mutationFn: (/** @type {any} */ body) => api.post('/challenges', body).then(requireOk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -14,7 +15,7 @@ export function useUpdateChallenge() {
   return useMutation({
     mutationFn: (/** @type {any} */ variables) => {
       const { id, ...body } = variables;
-      return api.put(`/challenges/${id}`, body);
+      return api.put(`/challenges/${id}`, body).then(requireOk);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
@@ -23,7 +24,7 @@ export function useUpdateChallenge() {
 export function useDeleteChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ id) => api.delete(`/challenges/${id}`),
+    mutationFn: (/** @type {any} */ id) => api.delete(`/challenges/${id}`).then(requireOk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -31,7 +32,12 @@ export function useDeleteChallenge() {
 export function useFinalizeChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ id) => api.post(`/challenges/${id}/finalize`),
+    mutationFn: (/** @type {any} */ variables) => {
+      const { id, reveal_results } = variables;
+      return api
+        .post(`/challenges/${id}/finalize`, { reveal_results: Boolean(reveal_results) })
+        .then(requireOk);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -39,7 +45,12 @@ export function useFinalizeChallenge() {
 export function useToggleRevealChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ id) => api.put(`/challenges/${id}/reveal-results`),
+    mutationFn: (/** @type {any} */ variables) => {
+      const { id, reveal_results } = variables;
+      return api
+        .put(`/challenges/${id}/reveal-results`, { reveal_results: Boolean(reveal_results) })
+        .then(requireOk);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -47,7 +58,7 @@ export function useToggleRevealChallenge() {
 export function useArchiveToggle() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ id) => api.post(`/challenges/${id}/archive`),
+    mutationFn: (/** @type {any} */ id) => api.post(`/challenges/${id}/archive`).then(requireOk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -55,7 +66,7 @@ export function useArchiveToggle() {
 export function useExportChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ id) => api.get(`/challenges/${id}/export`),
+    mutationFn: (/** @type {any} */ id) => api.get(`/challenges/${id}/export`).then(requireOk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }
@@ -63,7 +74,8 @@ export function useExportChallenge() {
 export function useImportChallenge() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (/** @type {any} */ formData) => api.postForm('/challenges/import', formData),
+    mutationFn: (/** @type {any} */ formData) =>
+      api.postForm('/challenges/import', formData).then(requireOk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
   });
 }

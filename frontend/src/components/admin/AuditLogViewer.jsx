@@ -5,6 +5,8 @@ import SelectField from '../ui/SelectField';
 import { useApp } from '../../context/AppContext';
 import { useAuditLogsQuery } from '../../hooks/useAuditLogsQuery';
 import { formatDateTime } from '../../utils/formatDate';
+import LoadingIndicator from '../ui/LoadingIndicator';
+import QueryErrorState from '../ui/QueryErrorState';
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();
@@ -14,7 +16,11 @@ export default function AuditLogViewer() {
   const [expandedLog, setExpandedLog] = useState(null);
 
   const challengeId = selectedChallenge?.id;
-  const { data, isLoading } = useAuditLogsQuery(challengeId, page, selectedAction);
+  const { data, isLoading, isError, refetch } = useAuditLogsQuery(
+    challengeId,
+    page,
+    selectedAction,
+  );
 
   const logs = data?.logs || [];
   const totalPages = data?.pages || 1;
@@ -80,7 +86,9 @@ export default function AuditLogViewer() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-slate-500 text-sm">{t('common.loading')}</div>
+        <LoadingIndicator className="py-12" />
+      ) : isError ? (
+        <QueryErrorState onRetry={refetch} />
       ) : logs.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">
           {t('admin.no_audit_logs') || 'No audit logs found matching criteria.'}

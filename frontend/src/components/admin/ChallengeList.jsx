@@ -104,8 +104,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.competition_update_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_update_competition'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_update_competition');
     }
     return result;
   };
@@ -124,8 +124,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.competition_delete_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_delete_competition'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_delete_competition');
     }
   };
 
@@ -138,22 +138,25 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     e.preventDefault();
     if (!finalizingChallenge) return;
     try {
-      const res = await finalizeChallengeAct(finalizingChallenge.id);
+      const res = await finalizeChallengeAct({
+        id: finalizingChallenge.id,
+        reveal_results: challengeFinalizeForm.reveal_results,
+      });
       if (res.ok) {
         showToast(t('admin.notifications.scores_finalized'));
         setFinalizingChallenge(null);
       } else {
         showApiError(res.data, 'admin.notifications.scores_finalize_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_finalize_scores'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_finalize_scores');
     }
   };
 
   const handleToggleRevealChallenge = async (id, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      const res = await toggleRevealChallengeAct(id);
+      const res = await toggleRevealChallengeAct({ id, reveal_results: nextVal });
       if (res.ok) {
         showToast(
           nextVal
@@ -163,15 +166,15 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, '', 'Failed to toggle reveal');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error');
     }
   };
 
   const handleToggleRevealStage = async (challengeId, stageId, currentRevealResults) => {
     const nextVal = !currentRevealResults;
     try {
-      const res = await toggleRevealStageAct({ challengeId, stageId });
+      const res = await toggleRevealStageAct({ challengeId, stageId, reveal_results: nextVal });
       if (res.ok) {
         showToast(
           nextVal
@@ -181,8 +184,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, '', 'Failed to toggle stage reveal');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error');
     }
   };
 
@@ -194,8 +197,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.archive_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error');
     }
   };
 
@@ -248,8 +251,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.stage_create_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_create_stage'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_create_stage');
     }
   };
 
@@ -274,8 +277,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.stage_update_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_update_stage'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_update_stage');
     }
   };
 
@@ -292,8 +295,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.stage_delete_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_delete_stage'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_delete_stage');
     }
   };
 
@@ -303,6 +306,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       const res = await finalizeStageAct({
         challengeId: stageChallengeId,
         stageId: finalizingStage.id,
+        reveal_results: stageFinalizeForm.reveal_results,
       });
       if (res.ok) {
         showToast(t('admin.notifications.stage_finalized'));
@@ -310,8 +314,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.stage_finalize_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_finalize_stage'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_finalize_stage');
     }
   };
 
@@ -328,8 +332,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, 'admin.notifications.task_delete_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error');
     }
   };
 
@@ -454,8 +458,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       } else {
         showApiError(res.data, '', 'Failed to import challenge.');
       }
-    } catch {
-      showToast('Failed to import challenge.', 'rose');
+    } catch (error) {
+      showApiError(error, '', 'Failed to import challenge.');
     }
     e.target.value = '';
   };

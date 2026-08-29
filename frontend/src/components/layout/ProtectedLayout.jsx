@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../AuthContext';
 import Navbar from './Navbar';
 import CompetitionBar from './CompetitionBar';
+import LoadingIndicator from '../ui/LoadingIndicator';
 
 export default function ProtectedLayout() {
   const { t } = useTranslation();
@@ -21,20 +22,7 @@ export default function ProtectedLayout() {
           background: 'var(--bg-base)',
         }}
       >
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div
-            className="animate-spin"
-            style={{
-              width: 28,
-              height: 28,
-              border: '2px solid var(--border)',
-              borderTopColor: 'var(--accent)',
-              borderRadius: '50%',
-              margin: '0 auto 12px',
-            }}
-          />
-          <p style={{ fontSize: '0.8rem' }}>{t('common.loading')}</p>
-        </div>
+        <LoadingIndicator message={t('common.loading')} />
       </div>
     );
   }

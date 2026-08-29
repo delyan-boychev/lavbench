@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Check } from 'lucide-react';
@@ -21,6 +21,10 @@ export default function SelectField({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [hasError, setHasError] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const fieldId = useId();
+  const listboxId = `${fieldId}-listbox`;
+  const labelId = `${fieldId}-label`;
 
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
@@ -75,6 +79,13 @@ export default function SelectField({
       window.removeEventListener('resize', updateCoords);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document
+      .getElementById(`${listboxId}-option-${activeIndex}`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, isOpen, listboxId]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -139,10 +150,53 @@ export default function SelectField({
       (String(opt.value) || '').toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  const handleKeyDown = (event) => {
+    if (event.key === 'Tab') {
+      setIsOpen(false);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      setIsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
+      }
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((current) => {
+        const optionCount = filteredOptions.length;
+        return optionCount ? (current + direction + optionCount) % optionCount : 0;
+      });
+      return;
+    }
+
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      setActiveIndex(event.key === 'Home' ? 0 : Math.max(filteredOptions.length - 1, 0));
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      } else if (filteredOptions[activeIndex]) {
+        toggleOption(filteredOptions[activeIndex].value);
+        if (!multiple) triggerRef.current?.focus();
+      }
+    }
+  };
+
   return (
     <div ref={containerRef} className={`flex flex-col gap-1.5 relative w-full ${className}`}>
       {label && (
-        <span className="text-xs font-semibold text-slate-300">
+        <span id={labelId} className="text-xs font-semibold text-slate-300">
           {label}
           {required && <span className="text-rose-500 ml-1">*</span>}
         </span>
@@ -153,7 +207,27 @@ export default function SelectField({
           ref={triggerRef}
           type="button"
           disabled={disabled}
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            if (!isOpen) {
+              const selectedIndex = options.findIndex((option) => isSelected(option.value));
+              setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+            }
+            setIsOpen(!isOpen);
+          }}
+          onKeyDown={handleKeyDown}
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-controls={listboxId}
+          aria-labelledby={label ? labelId : undefined}
+          aria-label={label ? undefined : buttonLabel}
+          aria-activedescendant={
+            isOpen && filteredOptions[activeIndex]
+              ? `${listboxId}-option-${activeIndex}`
+              : undefined
+          }
+          aria-required={required}
+          aria-invalid={Boolean(error || hasError)}
           className={`flex items-center justify-between w-full px-3 py-2 text-sm text-slate-200 bg-slate-900 border rounded-lg hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
             error || hasError ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-slate-800'
           }`}
@@ -169,6 +243,10 @@ export default function SelectField({
           createPortal(
             <div
               ref={dropdownRef}
+              id={listboxId}
+              role="listbox"
+              aria-multiselectable={multiple || undefined}
+              aria-labelledby={label ? labelId : undefined}
               style={{
                 position: 'fixed',
                 top: `${coords.top}px`,
@@ -184,7 +262,11 @@ export default function SelectField({
                     ref={searchInputRef}
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setActiveIndex(0);
+                    }}
+                    onKeyDown={handleKeyDown}
                     placeholder={t('common.search_placeholder', 'Search...')}
                     className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-xs text-slate-100 placeholder-slate-500 focus:outline-none"
                     onClick={(e) => e.stopPropagation()}
@@ -201,17 +283,23 @@ export default function SelectField({
                     {t('common.no_results', 'No results found')}
                   </div>
                 ) : (
-                  filteredOptions.map((opt) => {
+                  filteredOptions.map((opt, optionIndex) => {
                     const selected = isSelected(opt.value);
                     return (
                       <button
                         key={opt.value}
+                        id={`${listboxId}-option-${optionIndex}`}
+                        role="option"
+                        aria-selected={selected}
                         type="button"
                         onClick={() => toggleOption(opt.value)}
+                        onMouseEnter={() => setActiveIndex(optionIndex)}
                         className={`flex items-center justify-between w-full px-3 py-2 text-left transition-colors duration-150 cursor-pointer ${
                           selected
                             ? 'bg-indigo-600/20 text-indigo-300 font-bold border-l-2 border-indigo-500'
-                            : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                            : optionIndex === activeIndex
+                              ? 'bg-slate-900 text-white'
+                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
                         } text-sm`}
                       >
                         <span className="truncate mr-2">{opt.label}</span>
@@ -227,6 +315,7 @@ export default function SelectField({
       </div>
 
       <select
+        aria-hidden="true"
         required={required}
         multiple={multiple}
         value={multiple ? (Array.isArray(value) ? value : []) : value || ''}
