@@ -86,6 +86,8 @@ ensure_fernet_key "WORKER_ENCRYPTION_KEY"
 
 POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
 set_if_missing "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
+set_if_missing "POSTGRES_USER" "lavbench_user"
+set_if_missing "POSTGRES_DB" "lavbench_db"
 
 REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
 set_if_missing "REDIS_PASSWORD" "$REDIS_PASSWORD"
@@ -243,7 +245,9 @@ else
 fi
 
 # ── Resolve derived URLs with actual password values ─────────────────
-set_env "DATABASE_URL" "postgresql://lavbench_user:${POSTGRES_PASSWORD}@localhost:5432/lavbench_db"
+POSTGRES_USER=$(grep "^POSTGRES_USER=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
+POSTGRES_DB=$(grep "^POSTGRES_DB=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
+set_env "DATABASE_URL" "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
 set_env "CELERY_BROKER_URL" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
 set_env "CELERY_RESULT_BACKEND" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
 

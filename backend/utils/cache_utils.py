@@ -105,6 +105,30 @@ def get_coordination_client() -> redis_lib.Redis[Any] | None:
     return _client_for(Config.CELERY_BROKER_URL or "redis://localhost:6379/0")
 
 
+def redis_dependency_is_healthy(client: redis_lib.Redis[Any] | None, *, require_aof: bool) -> bool:
+    """Check Redis connectivity, loading/persistence state, and memory headroom."""
+    if client is None or not client.ping():
+        return False
+
+    persistence = client.info("persistence")
+    if int(persistence.get("loading", 0)) != 0:
+        return False
+    if require_aof and (
+        int(persistence.get("aof_enabled", 0)) != 1
+        or persistence.get("aof_last_write_status") != "ok"
+    ):
+        return False
+
+    memory = client.info("memory")
+    used_memory = int(memory.get("used_memory", 0))
+    maxmemory = int(memory.get("maxmemory", 0))
+    if maxmemory > 0:
+        maximum_used_percent = 100 - Config.REDIS_HEALTH_MIN_FREE_PERCENT
+        if used_memory * 100 > maxmemory * maximum_used_percent:
+            return False
+    return True
+
+
 def _get_sse_pool(url: str) -> redis_lib.ConnectionPool | None:
     """Connection pool for blocking pubsub subscriptions, sized to SSE_MAX_GLOBAL.
 

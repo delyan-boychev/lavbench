@@ -3236,7 +3236,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk.",
+            "description": "Per-dependency probe results: 'ok' or 'degraded' for database, cache Redis, broker Redis and disk.",
             "title": "Checks",
             "type": "object"
           },
@@ -12907,7 +12907,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "Probes the database, Redis (cache/SSE/broker) and disk space so a degraded stack never reports healthy.",
+        "description": "Probes the database, both Redis roles and disk space so a degraded stack never reports healthy.",
         "operationId": "get__api_health",
         "parameters": [],
         "responses": {

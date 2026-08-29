@@ -299,6 +299,7 @@ jobs:
           docker volume create lavbench_task_images >/dev/null
           docker volume create lavbench_hf_cache >/dev/null
           docker volume create lavbench_workspace >/dev/null
+          # The root is read-only, while hosted extfs cannot enforce overlay2 size quotas
           docker run -d --name lavbench_eval_worker \
             --network "$NETWORK" \
             --group-add "$(stat -c %g /var/run/docker.sock)" \
@@ -317,6 +318,7 @@ jobs:
             -e TASK_IMAGES_DIR="/var/lib/lavbench/task_images" \
             -e LAVBENCH_WORKSPACE_DIR="/var/lib/lavbench/workspace" \
             -e CPU_WORKER_CONCURRENCY="1" \
+            -e WORKER_SANDBOX_STORAGE_OPT="" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v lavbench_task_images:/var/lib/lavbench/task_images \
             -v lavbench_hf_cache:/var/lib/lavbench/hf_cache \
@@ -364,7 +366,7 @@ jobs:
           body = json.load(sys.stdin)
           assert body.get('status') == 'ok', 'status is ' + str(body.get('status'))
           checks = body.get('checks', {})
-          for name in ('database', 'redis', 'disk'):
+          for name in ('database', 'redis_cache', 'redis_broker', 'disk'):
               assert 'error' not in str(checks.get(name, '')), f'{name} check failed: {checks[name]}'
           print(json.dumps(body, indent=2))
           print('All health checks passed')

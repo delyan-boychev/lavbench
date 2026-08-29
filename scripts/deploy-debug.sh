@@ -69,7 +69,11 @@ if ! docker ps --format '{{.Names}}' | grep -q "^lavbench_db$"; then
   echo "    Starting PostgreSQL via Docker..."
   docker compose up -d db
   RETRIES=15
-  until docker compose exec -T db pg_isready -U lavbench_user -d lavbench_db &>/dev/null || [ $RETRIES -eq 0 ]; do
+  POSTGRES_USER=$(grep "^POSTGRES_USER=" .env 2>/dev/null | tail -1 | cut -d= -f2-) || true
+  POSTGRES_DB=$(grep "^POSTGRES_DB=" .env 2>/dev/null | tail -1 | cut -d= -f2-) || true
+  : "${POSTGRES_USER:=lavbench_user}"
+  : "${POSTGRES_DB:=lavbench_db}"
+  until docker compose exec -T db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" &>/dev/null || [ $RETRIES -eq 0 ]; do
     sleep 1
     RETRIES=$((RETRIES - 1))
   done

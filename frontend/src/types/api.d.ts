@@ -908,7 +908,7 @@ export interface paths {
         };
         /**
          * Health check for Docker and load balancer monitoring.
-         * @description Probes the database, Redis (cache/SSE/broker) and disk space so a degraded stack never reports healthy.
+         * @description Probes the database, both Redis roles and disk space so a degraded stack never reports healthy.
          */
         get: operations["get__api_health"];
         put?: never;
@@ -2753,7 +2753,7 @@ export interface components {
         "HealthResponse.c6e31f5": {
             /**
              * Checks
-             * @description Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk.
+             * @description Per-dependency probe results: 'ok' or 'degraded' for database, cache Redis, broker Redis and disk.
              */
             checks: {
                 [key: string]: string;

@@ -35,7 +35,8 @@ class HealthResponse(BaseModel):
     checks: dict[str, str] = Field(
         ...,
         description=(
-            "Per-dependency probe results: 'ok' or 'degraded' for database, redis and disk."
+            "Per-dependency probe results: 'ok' or 'degraded' for database, cache Redis, "
+            "broker Redis and disk."
         ),
     )
 
