@@ -59,7 +59,7 @@ API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec
 
 ```python
 from spectree import Response
-from spec import api
+from utils.spec import api
 from schemas.challenge import CreateChallengeSchema
 from schemas.responses.challenge import ChallengeResponse
 
@@ -114,7 +114,7 @@ pip install -r requirements.txt
 # 2. Build HTML output
 make html
 
-# Output is generated in docs/build/html/ (open index.html in browser)
+# Output is generated in docs/build/ (open docs/build/index.html in a browser)
 
 # 3. Bulgarian build (sources: docs/source/bg/ — guides symlinked from
 #    guides/bg/, architecture.md translated via scripts/translate_gemini.py):

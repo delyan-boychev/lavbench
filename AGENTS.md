@@ -38,8 +38,10 @@ lavbench/
 ├── scripts/                           # Deployment & setup scripts
 ├── backend/
 │   ├── app.py                         # Flask factory, blueprint registration, error handlers
+│   ├── alembic.ini                    # Alembic configuration (run from backend/)
 │   ├── config/                        # Config (__init__), logging (log_config), pytest fixtures (conftest)
 │   ├── models/                        # SQLAlchemy models (challenge, task, submission, user, stage...)
+│   ├── migrations/                    # Alembic environment and reviewed schema revisions
 │   ├── schemas/                       # Pydantic v2 validation schemas
 │   │   ├── __init__.py                # _format_validation_error_for_response (spectree before-handler)
 │   │   ├── exceptions.py              # SchemaError(code, message)
@@ -52,7 +54,7 @@ lavbench/
 │   ├── tasks/                         # Celery app (__init__) + beat schedule
 │   │   └── task_modules/              # Submission runner, image builder, system
 │   ├── utils/                         # Helpers (error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, spec...)
-│   ├── scripts/                       # Lint & maintenance (check_error_codes.py, check_comments.py, setup-admin.py)
+│   ├── scripts/                       # Migration, lint & maintenance (migrate.py, checks, setup-admin.py)
 │   └── tests/                         # pytest (config/conftest.py: client, auth, model fixtures)
 ├── frontend/
 │   ├── src/
@@ -191,7 +193,7 @@ The pre-commit hook (`ruff check --fix --config backend/pyproject.toml`) fails o
 
 ### Request Validation — spectree `@api.validate`
 ```python
-from spec import api
+from utils.spec import api
 from schemas.challenge import CreateChallengeSchema
 from schemas.responses.challenge import ChallengeResponse
 
@@ -389,7 +391,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 
 ### General
 - `from __future__ import annotations` at the top of every file **except** `backend/models/*` (PEP 563 breaks Annotated Declarative Table)
-- Full type annotations — `mypy --strict` must pass with 0 errors (81 source files)
+- Full type annotations — `mypy --strict` must pass with 0 errors (91 source files)
 - No bare `except:`; no `print()` in source (use `logger`; tests/scripts add `# noqa: T201`)
 - f-strings over `%`; timestamps via `utils.dates.utcnow()`
 - Errors only via `err()` or `SchemaError` (see Error Handling); import sorting per ruff `I` rules

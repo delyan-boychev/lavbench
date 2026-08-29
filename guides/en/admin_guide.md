@@ -62,6 +62,23 @@ Competitions on LavBench are structured around **Stages** (e.g., *Qualification 
 > [!NOTE]
 > Setting `is_frozen=True` allows administrators to pause evaluation queues instantly without corrupting competition deadline metadata or timer state history.
 
+### Challenge ZIP Export and Import Limits
+
+Challenge export creates a portable ZIP containing `challenge.json` and task files under
+`tasks/<task-id>/`. Import accepts that layout and is bounded by five server settings:
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES` | `209715200` bytes (200 MiB) | Maximum uploaded ZIP stream size, enforced even when `Content-Length` is absent or untrusted. |
+| `CHALLENGE_ARCHIVE_MAX_UNCOMPRESSED_BYTES` | `2147483648` bytes (2 GiB) | Maximum aggregate uncompressed size. |
+| `CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES` | `524288000` bytes (500 MiB) | Maximum uncompressed size of one member. |
+| `CHALLENGE_ARCHIVE_MAX_MEMBERS` | `1000` entries | Maximum ZIP entry count. |
+| `CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO` | `100:1` | Maximum uncompressed-to-compressed ratio per non-empty member. |
+
+Imports are rejected when any limit is exceeded. Validation also rejects duplicate member names
+or normalized targets, encrypted or special-file entries, absolute/traversal/backslash paths,
+unexpected archive layouts, a missing `challenge.json`, and unsafe task-file extensions.
+
 ---
 
 ## 2. Sandbox Customization and Image Build Error Remediation
@@ -89,7 +106,7 @@ Competitor code runs within a hardened, zero-trust Docker container enforcing th
 | `--memory-swap` = RAM Limit | Disables disk swap — prevents memory footprint evasion. |
 | `--pids-limit 64` | Restricts total process count to mitigate fork bombs. |
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
-| `--storage-opt size` | Mandatory per-sandbox writable-layer size cap (default `8g`, `WORKER_SANDBOX_STORAGE_OPT`). Evaluation fails closed unless the Docker storage driver supports per-container quotas (for example XFS with `pquota`). |
+| `--storage-opt size` | Mandatory size cap for the container root writable layer (default `8g`, `WORKER_SANDBOX_STORAGE_OPT`). Evaluation fails closed unless the Docker storage driver supports per-container quotas (for example XFS with `pquota`). The separate disposable anonymous volume at `/app` is not covered by this quota. |
 | Output collection caps | `MAX_COLLECT_BUFFER_BYTES` / `MAX_EXTRACT_MEMBER_BYTES` (default 512 MB) cap how much output is pulled back from the sandbox. Oversized archives and individual members are skipped and logged rather than buffered unbounded on the host — protects the worker from decompression bombs. |
 
 ### Docker Image Build Pipeline & Error Troubleshooting
@@ -148,7 +165,9 @@ Before any submission is queued for execution, the server executes static applic
 2. **Module Access Verification**:
    - `banned_imports`: Explicit list of forbidden Python modules (e.g., `os, sys, subprocess, socket, requests, urllib, shutil`).
    - `whitelisted_imports`: Restrictive allowed module list (when strict mode is activated).
-3. **Quota Preservation**: If AST validation fails (syntax error or restricted import), the submission status is marked as `Failed`, detailed diagnostics are returned, and **the competitor's submission quota is preserved (not decremented)**.
+3. **Quota Preservation**: If AST validation fails (syntax error or restricted import), the
+   request returns detailed diagnostics before a Submission row is created and before daily or
+   task-period quota accounting. **No submission entry is created and no quota is consumed.**
 
 ### Dynamic Metrics Schema
 

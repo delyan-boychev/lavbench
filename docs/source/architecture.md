@@ -29,6 +29,16 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
 | **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
 
+### Database Migration Lifecycle
+
+In Docker Compose, the one-shot `migrate` service waits for healthy PostgreSQL and runs
+`python scripts/migrate.py`. The API and internal worker start only after that service exits
+successfully; a migration failure prevents them from starting. Standalone deployments must run
+`cd backend && python scripts/migrate.py` before the API or workers. The runner upgrades known
+revisions, adopts an unversioned legacy database only when its reflected schema exactly matches
+the baseline, rejects drift or unknown revisions, and verifies that the expected head was reached.
+The API independently checks the PostgreSQL revision at startup and fails closed on a mismatch.
+
 ---
 
 ## 3. Authentication & Authorization Flow
@@ -48,7 +58,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/challenges/<id>/submit
-3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check) → rate limit check → creates Submission → dispatches Celery evaluation job
+3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code proceeds through rate/quota checks → creates Submission → dispatches Celery evaluation job
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
 6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)
@@ -70,11 +80,13 @@ Competitor code runs inside a zero-trust Docker container with strict Linux kern
 | `--pids-limit 64` | Restricts total process count to mitigate fork bombs. |
 | `--ulimit nofile=256:256` | Caps open file descriptor counts. |
 | `--cpus` | Restricts CPU core allocation per container (`CPU_CORES_PER_TASK` / `GPU_CORES_PER_TASK`). |
+| `--storage-opt size` | Mandatory quota for the container root writable layer (`WORKER_SANDBOX_STORAGE_OPT`, default `8g`). Evaluation fails closed if the Docker storage driver cannot enforce it. |
 
-> **Known non-blocker:** the per-run anonymous volume mounted at `/app` (rw) has **no disk quota**
-> of its own — a competitor can fill it until host disk pressure is hit. It is a deliberate
-> trade-off accepted because memory, CPU, pid count, and wall-clock time are all capped, and
-> `TASK_IMAGES_DIR` free-space (`MIN_BUILD_DISK_GB`) is monitored at build time.
+> **Known limitation:** `WORKER_SANDBOX_STORAGE_OPT` covers only the container root writable
+> layer. The separate per-run anonymous volume mounted at `/app` (rw) is outside that quota and
+> has **no disk quota**; competitor code can fill it until the host disk limit is reached. Memory,
+> CPU, pid count, and wall-clock time remain capped, and free space on `TASK_IMAGES_DIR`
+> (`MIN_BUILD_DISK_GB`) is monitored during builds, but those controls do not cap `/app`.
 
 ### Persistent Storage Layout
 

@@ -26,7 +26,16 @@ cp ../.env.example ../.env
 
 ### Initialize Admin Account
 
-After starting your database and Redis instances, run the admin setup script to generate master credentials:
+After starting the database, apply schema migrations from the `backend/` directory before
+starting the API, workers, or admin setup:
+
+```bash
+python scripts/migrate.py
+```
+
+The runner upgrades a fresh database and adopts a pre-Alembic database only when its reflected
+schema exactly matches the baseline. It fails closed on schema drift. Then run the admin setup
+script to generate master credentials:
 
 ```bash
 python scripts/setup-admin.py
@@ -57,19 +66,21 @@ celery -A tasks.celery beat --loglevel=info
 ```text
 backend/
 ├── app.py                      # Flask factory, blueprint registration, error handlers
+├── alembic.ini                 # Alembic configuration (commands run from backend/)
 ├── config/                     # Config class (__init__), logging setup (log_config), pytest fixtures (conftest)
+├── migrations/                 # Alembic environment and reviewed schema revisions
 ├── models/                     # SQLAlchemy models (User, Challenge, Stage, Task, Submission, AuditLog)
 ├── routes/                     # Flask blueprints (admin, auth, challenges, tasks, submissions, leaderboard, etc.)
 ├── schemas/                    # Pydantic v2 validation schemas & spectree before-handlers
 │   ├── common.py               # Shared validators (_parse_datetime_strict, PaginationParams)
 │   ├── exceptions.py           # SchemaError(code, message) base exception class
 │   └── responses/              # Pydantic response schemas (10 domain modules)
-├── scripts/                    # Maintenance & CI scripts (setup-admin.py, check_error_codes.py, check_comments.py)
+├── scripts/                    # Migration, maintenance & CI scripts (migrate.py, setup-admin.py, checks)
 ├── services/                   # Core business logic (challenge_service, submission_service, evaluation/, etc.)
 │   └── evaluation/             # Parquet evaluation engine (metrics, validation, engine — 44 metrics, custom evaluators)
 ├── tasks/                      # Celery app (__init__.py) + task_modules/ (runner, image builder, system, templates)
-├── tests/                      # pytest test suite (1282 tests)
-└── utils/                      # Helpers — error_utils, worker_utils, sse_utils, cache_utils, auth_utils, wsgi, spec, ...
+├── tests/                      # pytest test suite (1368 tests)
+└── utils/                      # Helpers — migrations, error_utils, worker_utils, auth_utils, wsgi, spec, ...
 ```
 
 ---
@@ -80,7 +91,7 @@ backend/
 Routes use spectree `@api.validate` decorators for automatic request parsing and response validation:
 
 ```python
-from spec import api
+from utils.spec import api
 from schemas.challenge import CreateChallengeSchema
 from schemas.responses.challenge import ChallengeResponse
 

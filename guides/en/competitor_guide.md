@@ -155,7 +155,9 @@ Before your code is dispatched to execution workers, it undergoes server-side St
 - **Security Inspection**: Validates syntax and checks against `banned_imports` or `whitelisted_imports`.
 
 > [!IMPORTANT]
-> **Quota Preservation**: If a submission fails AST pre-validation (e.g., syntax error or forbidden import), the upload is rejected immediately with error feedback, and **your daily/hourly submission quota is NOT consumed**.
+> **Quota Preservation**: If code fails AST pre-validation (for example, a syntax error or
+> forbidden import), the request is rejected immediately with diagnostics. **No submission entry
+> is created and your daily/hourly submission quota is not consumed.**
 
 ---
 
@@ -215,7 +217,10 @@ You can submit multiple solutions during a competition stage. To designate which
 4. The icon highlights to solid (★), marking it as your active **Final Selection**.
 
 > [!IMPORTANT]
-> **Automatic Default**: If you do not manually star a final submission before the selection window closes, the platform **automatically selects your latest completed submission** as your default final entry.
+> **Automatic Selection**: Among completed submissions that are eligible under the deadline and
+> grace period, an eligible starred submission wins. If none is starred, the platform selects the
+> highest score currently allowed to be visible (public before private results are revealed;
+> private after reveal), breaking equal scores by shorter execution runtime.
 
 ### Tie-Breaking Rules
 
@@ -237,4 +242,3 @@ When two competitors achieve identical score values:
 | `ImportError: No module named 'X'` | Library requested is not pre-installed in container image. | Check task description for available image libraries. Package installation inside container is disabled (`--network none`). |
 | `AST Syntax Error / Parsing Error` | Selected notebook cells contain invalid Python syntax. | Verify notebook executes cleanly locally before uploading. |
 | `Submission quota exceeded` | Reached daily limit or hourly rate limit for task. | Wait for quota window reset before submitting additional notebooks. |
-

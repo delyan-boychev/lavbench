@@ -1,5 +1,9 @@
 LavBench database migrations
 ============================
 
-Run ``python scripts/migrate.py`` to safely adopt or upgrade a database.
+From the ``backend/`` directory, run ``python scripts/migrate.py`` before starting the API or
+workers. The runner upgrades a fresh or versioned database, and adopts an existing pre-Alembic
+database only when its reflected schema exactly matches the baseline. It rejects drift and unknown
+revisions, then fails closed if revision verification does not reach the expected head.
+
 Generate reviewed revisions with ``alembic revision --autogenerate -m "summary"``.
