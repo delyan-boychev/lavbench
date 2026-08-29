@@ -12,6 +12,9 @@ RUN npm run build
 # Stage 2: Serve using Nginx
 FROM nginx:1.31-alpine
 
+# Apply current Alpine security fixes before dropping privileges
+RUN apk upgrade --no-cache
+
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 

@@ -58,7 +58,7 @@ concurrent-log-handler==0.9.29
     # via -r requirements.in
 cryptography==50.0.0
     # via -r requirements.in
-datasets==5.0.0
+datasets==5.0.1
     # via -r requirements.in
 defusedxml==0.7.1
     # via nltk
