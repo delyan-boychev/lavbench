@@ -57,6 +57,12 @@ class SubmissionsListResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
+class BestSubmissionsResponse(BaseModel):
+    items: list[SubmissionLightResponse]
+
+    model_config = RESPONSE_CONFIG
+
+
 class QueueItemResponse(BaseModel):
     id: UUID
     status: str

@@ -848,6 +848,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/challenges/{challenge_id}/users/{user_id}/best-submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the canonical best submission for each challenge task. */
+        get: operations["get__api_challenges_{challenge_id}_users_{user_id}_best-submissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/admin": {
         parameters: {
             query?: never;
@@ -1729,6 +1746,242 @@ export interface components {
             status: string;
             /** Task Id */
             task_id: string;
+        };
+        /** BestSubmissionsResponse */
+        "BestSubmissionsResponse.aad2a03": {
+            /** Items */
+            items: components["schemas"]["BestSubmissionsResponse.aad2a03.SubmissionLightResponse"][];
+        };
+        /** SubmissionLightResponse */
+        "BestSubmissionsResponse.aad2a03.SubmissionLightResponse": {
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Disqualified
+             * @default false
+             */
+            is_disqualified: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["BestSubmissionsResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["BestSubmissionsResponse.aad2a03.UserResponse"] | null;
+        };
+        /** UserMinimalResponse */
+        "BestSubmissionsResponse.aad2a03.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "BestSubmissionsResponse.aad2a03.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
         };
         /** BulkResetPasswordResponse */
         "BulkResetPasswordResponse.febf810": {
@@ -7675,6 +7928,56 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_users_{user_id}_best-submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BestSubmissionsResponse.aad2a03"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

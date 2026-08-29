@@ -17,10 +17,12 @@ from sqlalchemy.orm import joinedload
 from config import Config
 from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
+    BestSubmissionsResponse,
     ErrorResponse,
     MessageResponse,
     ParseNotebookResponse,
     SelectFinalResponse,
+    SubmissionLightResponse,
     SubmissionResponse,
     SubmissionsListResponse,
     SubmitResponse,
@@ -336,6 +338,66 @@ def get_submissions(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
         "page": pagination.page,
         "pages": pagination.pages,
     }
+
+
+@submissions_bp.route(
+    "/challenges/<uuid:challenge_id>/users/<uuid:user_id>/best-submissions", methods=["GET"]
+)
+@role_required(["admin", "jury"])
+@jury_access_required
+@api.validate(
+    resp=Response(
+        HTTP_200=BestSubmissionsResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_404=ErrorResponse,
+    ),
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+)
+def get_user_best_submissions(
+    challenge_id: Any, user_id: Any
+) -> BestSubmissionsResponse | tuple[FlaskResponse, int]:
+    """Get the canonical best submission for each challenge task."""
+    challenge = db.session.get(Challenge, challenge_id)
+    if not challenge:
+        return err("ERR_CHALLENGE_NOT_FOUND", 404)
+
+    competitor = db.session.get(User, user_id)
+    if not competitor or competitor.role != "competitor" or competitor.challenge_id != challenge.id:
+        return err("ERR_USER_NOT_FOUND", 404)
+
+    submissions = (
+        Submission.query.filter_by(
+            challenge_id=challenge.id,
+            user_id=competitor.id,
+            status="completed",
+            is_baseline=False,
+            is_disqualified=False,
+        )
+        .options(
+            joinedload(Submission.challenge),
+            joinedload(Submission.task),
+            joinedload(Submission.user),
+        )
+        .all()
+    )
+    submissions_by_task: dict[Any, list[Submission]] = {}
+    for submission in submissions:
+        submissions_by_task.setdefault(submission.task_id, []).append(submission)
+
+    items: list[SubmissionLightResponse] = []
+    for task in challenge.tasks:
+        best = get_best_submission(task, submissions_by_task.get(task.id, []), challenge)
+        if best:
+            items.append(
+                SubmissionLightResponse(
+                    **best.to_dict_light(
+                        view_role=request.user["role"], current_user_id=request.user["user_id"]
+                    )
+                )
+            )
+
+    return BestSubmissionsResponse(items=items)
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>", methods=["GET"])

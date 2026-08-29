@@ -52,6 +52,7 @@ from schemas.responses.leaderboard import (
     TaskLeaderboardResponse,
 )
 from schemas.responses.submission import (
+    BestSubmissionsResponse,
     QueueItemResponse,
     SelectFinalResponse,
     SubmissionLightResponse,
@@ -77,6 +78,7 @@ __all__ = [
     "BackupInfo",
     "BackupListResponse",
     "BackupStartResponse",
+    "BestSubmissionsResponse",
     "BulkResetPasswordResponse",
     "CellResponse",
     "ChallengeResponse",

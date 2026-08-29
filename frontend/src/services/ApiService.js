@@ -92,6 +92,10 @@ class ApiService {
     return this.#handleResponse(res);
   }
 
+  async getBestSubmissions(challengeId, userId) {
+    return this.get(`/challenges/${challengeId}/users/${userId}/best-submissions`);
+  }
+
   async post(path, body) {
     return this.#csrfAwareRequest(
       'POST',

@@ -1109,3 +1109,90 @@ class TestStreamSubmissionLogs:
         data = resp.data.decode("utf-8")
         assert "data: " in data
         assert "info" in data
+
+
+class TestGetUserBestSubmissions:
+    @pytest.fixture(autouse=True)
+    def setup(self, db_session, client, auth_headers):
+        self.client = client
+        self._auth = auth_headers
+        self.challenge = Challenge(
+            title="Best submissions",
+            start_time=utcnow() - timedelta(hours=2),
+            end_time=utcnow() + timedelta(hours=2),
+        )
+        db.session.add(self.challenge)
+        db.session.flush()
+
+        self.tasks = [
+            Task(title="First", challenge_id=self.challenge.id),
+            Task(title="Second", challenge_id=self.challenge.id),
+        ]
+        self.admin = User(username="best_admin", password_hash="x", role="admin", alias_id="BA")
+        self.competitor = User(
+            username="best_competitor",
+            password_hash="x",
+            role="competitor",
+            alias_id="BC",
+            challenge_id=self.challenge.id,
+        )
+        self.other_competitor = User(
+            username="other_best_competitor",
+            password_hash="x",
+            role="competitor",
+            alias_id="OB",
+        )
+        db.session.add_all([*self.tasks, self.admin, self.competitor, self.other_competitor])
+        db.session.flush()
+
+        for index in range(101):
+            db.session.add(
+                Submission(
+                    user_id=self.competitor.id,
+                    challenge_id=self.challenge.id,
+                    task_id=self.tasks[0].id,
+                    status="completed",
+                    public_score=float(index),
+                )
+            )
+        selected = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=self.tasks[1].id,
+            status="completed",
+            public_score=1.0,
+            is_final_selection=True,
+        )
+        db.session.add(selected)
+        db.session.commit()
+        self.admin_token = generate_token(self.admin.id, role="admin")
+        self.competitor_token = generate_token(self.competitor.id, role="competitor")
+
+    def test_returns_one_canonical_result_per_task_without_pagination(self):
+        response = self.client.get(
+            f"/api/challenges/{self.challenge.id}/users/{self.competitor.id}/best-submissions",
+            headers=self._auth(self.admin_token),
+        )
+
+        assert response.status_code == 200
+        items = response.get_json()["items"]
+        assert [item["task_id"] for item in items] == [str(task.id) for task in self.tasks]
+        assert items[0]["public_score"] == 100.0
+        assert items[1]["is_final_selection"] is True
+
+    def test_rejects_competitors(self):
+        response = self.client.get(
+            f"/api/challenges/{self.challenge.id}/users/{self.competitor.id}/best-submissions",
+            headers=self._auth(self.competitor_token),
+        )
+
+        assert response.status_code == 403
+
+    def test_hides_users_outside_the_challenge(self):
+        response = self.client.get(
+            f"/api/challenges/{self.challenge.id}/users/{self.other_competitor.id}/best-submissions",
+            headers=self._auth(self.admin_token),
+        )
+
+        assert response.status_code == 404
+        assert response.get_json()["code"] == "ERR_USER_NOT_FOUND"
