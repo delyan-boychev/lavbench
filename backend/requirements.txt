@@ -14,6 +14,8 @@ aiohttp==3.14.3
     #   fsspec
 aiosignal==1.4.0
     # via aiohttp
+alembic==1.19.1
+    # via -r requirements.in
 amqp==5.3.1
     # via kombu
 annotated-doc==0.0.4
@@ -132,12 +134,15 @@ kombu==5.6.2
     # via celery
 lazy-loader==0.5
     # via scikit-image
+mako==1.4.1
+    # via alembic
 markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.3
     # via
     #   flask
     #   jinja2
+    #   mako
     #   werkzeug
 mdurl==0.1.2
     # via markdown-it-py
@@ -257,7 +262,9 @@ six==1.17.0
 spectree==2.0.1
     # via -r requirements.in
 sqlalchemy==2.0.51
-    # via flask-sqlalchemy
+    # via
+    #   alembic
+    #   flask-sqlalchemy
 threadpoolctl==3.6.0
     # via scikit-learn
 tifffile==2025.5.10
@@ -273,6 +280,7 @@ typing-extensions==4.15.0
     # via
     #   aiohttp
     #   aiosignal
+    #   alembic
     #   anyio
     #   huggingface-hub
     #   pydantic

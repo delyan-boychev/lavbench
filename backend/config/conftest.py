@@ -117,9 +117,7 @@ def redis_flush():
         for r in clients:
             if not r:
                 continue
-            worker_id = os.environ.get("PYTEST_XDIST_WORKER")
-            pattern = f"*{worker_id}*" if worker_id else "*"
-            for key in r.scan_iter(pattern):
+            for key in r.scan_iter("*"):
                 key_str = key.decode() if isinstance(key, bytes) else key
                 if key_str.startswith(("celery", "_kombu", "unacked")):
                     continue
