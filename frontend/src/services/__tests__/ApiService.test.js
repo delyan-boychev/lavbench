@@ -51,6 +51,23 @@ describe('ApiService', () => {
     });
   });
 
+  describe('getBestSubmissions()', () => {
+    it('requests one aggregate challenge endpoint for a competitor', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ items: [] }),
+      });
+
+      await api.getBestSubmissions('challenge-1', 'user-1');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/challenges/challenge-1/users/user-1/best-submissions',
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('post()', () => {
     it('sends POST with JSON body', async () => {
       mockFetch.mockResolvedValue({
