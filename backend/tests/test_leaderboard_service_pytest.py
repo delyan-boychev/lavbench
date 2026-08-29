@@ -13,6 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from config import Config
 from models import Challenge, Stage, Submission, Task, User, db
 from services.leaderboard_service import (
     build_and_cache_leaderboard,
@@ -165,8 +166,11 @@ class TestBuildAndCacheLeaderboard:
         self.task.stage_id = stage.id
         db.session.commit()
         comp = self._create_competitor("alice")
-        self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        public_best = self._create_submission(comp.id, self.task.id, 0.9, 0.1)
         private_best = self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+        public_best.created_at = stage.end_time - timedelta(minutes=1)
+        private_best.created_at = stage.end_time - timedelta(minutes=1)
+        db.session.commit()
 
         result = build_and_cache_leaderboard(self.challenge.id)
 
@@ -245,6 +249,32 @@ class TestBuildAndCacheLeaderboard:
     def test_invalid_challenge_id_returns_none(self):
         result = build_and_cache_leaderboard(99999)
         assert result is None
+
+    def test_submission_inside_grace_period_ranks_and_later_one_is_excluded(self):
+        """Eligibility must span the grace period the UI advertises, and stop there.
+
+        Competitors see the strict ``end_time`` as the deadline, but the submit form
+        and ``validate_submission_allowed`` both stay open for
+        ``DEADLINE_GRACE_PERIOD_SECONDS`` afterwards. A submission accepted in that
+        window must still rank; one made after it must not.
+        """
+        self.challenge.start_time = utcnow() - timedelta(hours=4)
+        self.challenge.end_time = utcnow() - timedelta(minutes=10)
+        db.session.commit()
+        comp = self._create_competitor("alice")
+        grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+
+        in_grace = self._create_submission(comp.id, self.task.id, 0.5, 0.5)
+        too_late = self._create_submission(comp.id, self.task.id, 0.99, 0.99)
+        in_grace.created_at = self.challenge.end_time + (grace / 2)
+        too_late.created_at = self.challenge.end_time + grace + timedelta(seconds=1)
+        db.session.commit()
+
+        result = build_and_cache_leaderboard(self.challenge.id)
+
+        task_score = result[0]["task_scores"][str(self.task.id)]
+        assert task_score["submission_id"] == in_grace.id
+        assert task_score["public_score"] == 0.5
 
 
 class TestGetTaskLeaderboardData:

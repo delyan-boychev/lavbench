@@ -10,7 +10,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from utils.cache_utils import (
     DIRTY_CHALLENGES_SET,
+    DIRTY_LEADERBOARD_VERSIONS,
+    clear_dirty_leaderboard_version,
     get_coordination_client,
+    get_dirty_leaderboard_versions,
     get_queue_depth,
     get_redis_client,
     invalidate_leaderboard_cache,
@@ -81,14 +84,34 @@ class TestInvalidateLeaderboardCache:
     def test_marks_challenge_dirty(self, redis_flush):
         invalidate_leaderboard_cache(123)
         r = _coordination()
-        members = {
-            m.decode() if isinstance(m, bytes) else m for m in r.smembers(DIRTY_CHALLENGES_SET)
-        }
-        assert "123" in members
+        assert int(r.hget(DIRTY_LEADERBOARD_VERSIONS, "123")) == 1
+
+    def test_invalidation_increments_version(self, redis_flush):
+        invalidate_leaderboard_cache(123)
+        invalidate_leaderboard_cache(123)
+        r = _coordination()
+        assert int(r.hget(DIRTY_LEADERBOARD_VERSIONS, "123")) == 2
+
+    def test_clear_preserves_newer_invalidation(self, redis_flush):
+        invalidate_leaderboard_cache(123)
+        r = _coordination()
+        versions = get_dirty_leaderboard_versions(r)
+        invalidate_leaderboard_cache(123)
+
+        assert clear_dirty_leaderboard_version(r, 123, versions["123"]) is False
+        assert int(r.hget(DIRTY_LEADERBOARD_VERSIONS, "123")) == 2
+
+    def test_consumes_legacy_dirty_set(self, redis_flush):
+        r = _coordination()
+        r.sadd(DIRTY_CHALLENGES_SET, "123")
+
+        assert get_dirty_leaderboard_versions(r)["123"] == 1
+        assert not r.exists(DIRTY_CHALLENGES_SET)
 
     def test_delete_only_clears_dirty_and_cache_keys(self, redis_flush):
         co = _coordination()
         co.sadd(DIRTY_CHALLENGES_SET, "123")
+        co.hset(DIRTY_LEADERBOARD_VERSIONS, "123", 2)
         set_cached("leaderboard:raw:123:frozen", {"x": 1})
         set_cached("leaderboard:raw:123:unfrozen", {"x": 1})
         set_cached("leaderboard:pending:123", {"x": 1})
@@ -99,6 +122,7 @@ class TestInvalidateLeaderboardCache:
             m.decode() if isinstance(m, bytes) else m for m in co.smembers(DIRTY_CHALLENGES_SET)
         }
         assert "123" not in members
+        assert co.hget(DIRTY_LEADERBOARD_VERSIONS, "123") is None
         r = get_redis_client()
         if not r:
             pytest.skip("Redis unavailable")
@@ -161,3 +185,6 @@ class TestKeyHelpers:
 
     def test_dirty_challenges_set_constant(self):
         assert DIRTY_CHALLENGES_SET == "leaderboard:dirty_challenges"
+
+    def test_dirty_versions_constant(self):
+        assert DIRTY_LEADERBOARD_VERSIONS == "leaderboard:dirty_versions"

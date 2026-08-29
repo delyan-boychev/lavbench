@@ -741,7 +741,7 @@ class TestRouteLevelLogic:
         assert data["connected_workers_count"] == 1
         assert any("celery.stats failed" in msg for msg in data["partial_failures"])
 
-    def test_leaderboard_late_processed_submission_override(self):
+    def test_leaderboard_final_selection_wins_when_another_submission_finishes_late(self):
         self.challenge.end_time = utcnow() - timedelta(minutes=15)
         self.challenge.scores_finalized = False
         db.session.commit()
@@ -782,7 +782,7 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
         leaderboard = res.get_json()["leaderboard"]
         comp_item = next(item for item in leaderboard if item["user"]["id"] == self.competitor.id)
-        assert comp_item["public_score"] == 0.95
+        assert comp_item["public_score"] == 0.75
 
     def test_task_creation_parameter_validation(self):
         admin_header = self.get_auth_header(self.admin_token)

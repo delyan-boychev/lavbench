@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from flask import Response
@@ -292,6 +292,40 @@ def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:
     return bool(stage and stage.is_finalized and stage.reveal_results)
 
 
+def submission_deadline(task: Task, challenge: Challenge) -> datetime | None:
+    """Return the deadline that controls a task's leaderboard eligibility.
+
+    Includes ``DEADLINE_GRACE_PERIOD_SECONDS`` so eligibility matches the window
+    ``validate_submission_allowed`` accepts and the countdown UI advertises as the
+    grace period. Competitors are shown the strict stage/challenge end time as the
+    deadline; the grace only exists so a delay does not cost them a submission.
+    """
+    stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
+    if stage is None and task.stage_id:
+        stage = db.session.get(Stage, task.stage_id)
+    base: datetime | None
+    if stage is not None and stage.end_time is not None:
+        base = stage.end_time
+    else:
+        base = challenge.end_time
+    if base is None:
+        return None
+    deadline: datetime = base + timedelta(seconds=int(Config.DEADLINE_GRACE_PERIOD_SECONDS))
+    return deadline
+
+
+def is_submission_eligible(submission: Submission, task: Task, challenge: Challenge) -> bool:
+    """Return whether a submission was created within the task's submission window.
+
+    The window is the official deadline plus the grace period — the same window
+    ``validate_submission_allowed`` accepts submissions in.
+    """
+    deadline = submission_deadline(task, challenge)
+    return deadline is None or (
+        submission.created_at is not None and submission.created_at <= deadline
+    )
+
+
 def get_best_submission(
     task: Task, user_subs: list[Submission], challenge: Challenge
 ) -> Submission | None:
@@ -299,17 +333,13 @@ def get_best_submission(
     Given a task, a list of completed submissions for a single user, and the challenge,
     resolves the best submission according to final selection, deadline, metrics, and tie-breakers.
     """
-    if not user_subs:
+    eligible_subs = [s for s in user_subs if is_submission_eligible(s, task, challenge)]
+    if not eligible_subs:
         return None
 
-    # Check for late submissions if the challenge has ended
-    has_late_sub = False
-    if challenge.end_time:
-        has_late_sub = any(s.executed_at and s.executed_at > challenge.end_time for s in user_subs)
-
     # 1. Final selection logic
-    final_sub = next((s for s in user_subs if s.is_final_selection), None)
-    if final_sub and not has_late_sub:
+    final_sub = next((s for s in eligible_subs if s.is_final_selection), None)
+    if final_sub:
         return final_sub
 
     # 2. Automatic selection logic
@@ -317,7 +347,7 @@ def get_best_submission(
     use_private_score = uses_private_score_for_selection(task, challenge)
 
     subs_sorted = sorted(
-        user_subs,
+        eligible_subs,
         key=lambda x: (
             (
                 x.private_score

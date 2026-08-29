@@ -30,6 +30,8 @@ from services.file_validation import validate_extension, validate_notebook_conte
 from services.submission_service import (
     check_execution_rules,
     get_best_submission,
+    is_submission_eligible,
+    submission_deadline,
     validate_submission_allowed,
 )
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -185,12 +187,10 @@ def submit_code(
             return err("ERR_SUBMIT_LOCKED", 429)
 
         today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        # Exclude "failed" submissions so a broken run doesn't consume the daily quota
         submission_count = Submission.query.filter(
             Submission.user_id == user_id,
             Submission.challenge_id == challenge_id,
             Submission.created_at >= today_start,
-            Submission.status != "failed",
         ).count()
 
         if submission_count >= challenge.max_eval_requests:
@@ -400,30 +400,24 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
             return err("ERR_COMPETITION_FINALIZED", 403)
 
         task = db.session.get(Task, submission.task_id)
-        if task and task.stage_id:
-            from models import Stage
+        if task and challenge:
+            from datetime import timedelta
 
-            stage = db.session.get(Stage, task.stage_id)
-            if stage:
-                from datetime import timedelta
+            if not is_submission_eligible(submission, task, challenge):
+                return err("ERR_SUBMISSION_LATE", 400)
 
+            deadline = submission_deadline(task, challenge)
+            if deadline is not None:
                 now = utcnow()
-                if submission.created_at > stage.end_time:
-                    return err("ERR_SUBMISSION_LATE", 400)
-
-                t_base_select = stage.end_time + timedelta(seconds=300)
-
-                # Fetch all pre-deadline submissions for this task
+                t_final_select = deadline + timedelta(seconds=300)
                 user_subs = Submission.query.filter(
                     Submission.user_id == user_id,
                     Submission.task_id == submission.task_id,
-                    Submission.created_at <= stage.end_time,
+                    Submission.created_at <= deadline,
                 ).all()
-
-                t_final_select = t_base_select
-                for s in user_subs:
-                    if s.executed_at:
-                        t_select = s.executed_at + timedelta(seconds=300)
+                for candidate in user_subs:
+                    if candidate.executed_at:
+                        t_select = candidate.executed_at + timedelta(seconds=300)
                         if t_select > t_final_select:
                             t_final_select = t_select
 

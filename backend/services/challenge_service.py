@@ -27,29 +27,9 @@ def generate_scores_csv(challenge: Challenge) -> str:
     tasks: list[Task] = challenge.tasks  # type: ignore[assignment]
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
 
-    # Determine users who have late submissions
-    late_users = set()
-    if challenge.end_time:
-        late_user_ids = (
-            db.session.query(Submission.user_id)
-            .filter(
-                Submission.challenge_id == challenge.id,
-                Submission.executed_at > challenge.end_time,
-            )
-            .distinct()
-            .all()
-        )
-        late_users = {uid[0] for uid in late_user_ids}
+    from sqlalchemy import and_, case, func, or_
 
-    from sqlalchemy import case, func
-
-    if late_users:
-        is_final_active = case(
-            (Submission.user_id.in_(late_users), False),
-            else_=Submission.is_final_selection,
-        )
-    else:
-        is_final_active = Submission.is_final_selection
+    from services.submission_service import submission_deadline
 
     private_score_task_ids = [
         task.id for task in tasks if uses_private_score_for_selection(task, challenge)
@@ -65,6 +45,16 @@ def generate_scores_csv(challenge: Challenge) -> str:
     else:
         selection_score = Submission.public_score
 
+    eligible_clauses = []
+    for task in tasks:
+        deadline = submission_deadline(task, challenge)
+        if deadline is None:
+            eligible_clauses.append(Submission.task_id == task.id)
+        else:
+            eligible_clauses.append(
+                and_(Submission.task_id == task.id, Submission.created_at <= deadline)
+            )
+
     subq = (
         db.session.query(
             Submission.id.label("sub_id"),
@@ -72,14 +62,18 @@ def generate_scores_csv(challenge: Challenge) -> str:
             .over(
                 partition_by=(Submission.user_id, Submission.task_id),
                 order_by=(
-                    is_final_active.desc(),
+                    Submission.is_final_selection.desc(),
                     selection_score.desc(),
                     Submission.execution_time_ms.asc(),
                 ),
             )
             .label("rn"),
         )
-        .filter(Submission.challenge_id == challenge.id, Submission.status == "completed")
+        .filter(
+            Submission.challenge_id == challenge.id,
+            Submission.status == "completed",
+            or_(*eligible_clauses) if eligible_clauses else False,
+        )
         .subquery()
     )
 
