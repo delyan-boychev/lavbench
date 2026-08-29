@@ -148,6 +148,19 @@ class Config:
         os.path.abspath(os.path.dirname(__file__)), "uploads"
     )
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB limit
+    CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES = int(
+        os.environ.get("CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES", 200 * 1024 * 1024)
+    )
+    CHALLENGE_ARCHIVE_MAX_UNCOMPRESSED_BYTES = int(
+        os.environ.get("CHALLENGE_ARCHIVE_MAX_UNCOMPRESSED_BYTES", 2 * 1024 * 1024 * 1024)
+    )
+    CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES = int(
+        os.environ.get("CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES", 500 * 1024 * 1024)
+    )
+    CHALLENGE_ARCHIVE_MAX_MEMBERS = int(os.environ.get("CHALLENGE_ARCHIVE_MAX_MEMBERS", 1000))
+    CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO = int(
+        os.environ.get("CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO", 100)
+    )
 
     # Hugging Face Settings
     HF_CACHE_DIR = os.environ.get(

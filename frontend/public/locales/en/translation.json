@@ -147,6 +147,7 @@
     "ERR_INVALID_DATE": "Invalid date.",
     "ERR_INVALID_DATE_FORMAT": "Invalid date format.",
     "ERR_INVALID_DATE_RANGE": "End time must be after start time.",
+    "ERR_INVALID_TIMEZONE": "Timezone must be a valid IANA timezone name.",
     "ERR_INVALID_DOCKER_IMAGE": "Invalid Docker image format.",
     "ERR_INVALID_FILENAME": "Invalid filename",
     "ERR_INVALID_FILE_TYPE": "Only Jupyter Notebook (.ipynb) files are supported.",

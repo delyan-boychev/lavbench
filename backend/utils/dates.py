@@ -39,7 +39,21 @@ def to_tz_iso(dt: datetime, timezone_str: str = "UTC") -> str:
     """Convert a naive UTC datetime to the given timezone and return ISO string with offset."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
-    return dt.astimezone(zoneinfo.ZoneInfo(timezone_str)).isoformat()
+    try:
+        timezone = zoneinfo.ZoneInfo(timezone_str)
+    except zoneinfo.ZoneInfoNotFoundError:
+        logger.warning("Invalid stored timezone %r; serializing in UTC", timezone_str)
+        timezone = zoneinfo.ZoneInfo("UTC")
+    return dt.astimezone(timezone).isoformat()
+
+
+def is_valid_timezone(timezone_str: str) -> bool:
+    """Return whether a string identifies an installed IANA timezone."""
+    try:
+        zoneinfo.ZoneInfo(timezone_str)
+    except (TypeError, ValueError, zoneinfo.ZoneInfoNotFoundError):
+        return False
+    return True
 
 
 def utcnow() -> datetime:

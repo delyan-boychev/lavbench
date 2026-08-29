@@ -69,6 +69,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_STAGE_NOT_ENDED": "Cannot finalize the stage before its end time.",
     "ERR_INVALID_DATE_FORMAT": "Invalid date format.",
     "ERR_INVALID_DATE_RANGE": "End time must be after start time.",
+    "ERR_INVALID_TIMEZONE": "Timezone must be a valid IANA timezone name.",
     "ERR_INVALID_DATE": "Invalid date.",
     "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS": "Stage time must be within the competition timeframe.",
     "ERR_COMPETITION_STARTED": "Cannot create a test stage after the competition has started.",
