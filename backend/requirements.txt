@@ -14,7 +14,7 @@ aiohttp==3.14.3
     #   fsspec
 aiosignal==1.4.0
     # via aiohttp
-alembic==1.19.1
+alembic==1.20.0
     # via -r requirements.in
 amqp==5.3.1
     # via kombu
@@ -58,7 +58,7 @@ click-repl==0.3.0
     # via celery
 concurrent-log-handler==0.9.29
     # via -r requirements.in
-cryptography==50.0.0
+cryptography==50.0.1
     # via -r requirements.in
 datasets==5.0.1
     # via -r requirements.in
@@ -68,7 +68,7 @@ dill==0.4.0
     # via
     #   datasets
     #   multiprocess
-docker==7.1.0
+docker==7.2.0
     # via -r requirements.in
 filelock==3.32.2
     # via
@@ -92,11 +92,13 @@ fsspec[http]==2025.10.0
     # via
     #   datasets
     #   huggingface-hub
-gevent==26.5.0
+gevent==26.9.0
     # via -r requirements.in
 greenlet==3.2.5
-    # via gevent
-gunicorn==26.0.0
+    # via
+    #   gevent
+    #   sqlalchemy
+gunicorn==26.2.0
     # via -r requirements.in
 h11==0.16.0
     # via httpcore
@@ -156,11 +158,11 @@ narwhals==2.22.1
     # via scikit-learn
 networkx==3.4.2
     # via scikit-image
-nltk==3.10.2
+nltk==3.10.3
     # via
     #   -r requirements.in
     #   rouge-score
-numpy==2.0.2
+numpy==2.2.6
     # via
     #   -r requirements.in
     #   datasets
@@ -174,7 +176,6 @@ numpy==2.0.2
 packaging==26.2
     # via
     #   datasets
-    #   gunicorn
     #   huggingface-hub
     #   kombu
     #   lazy-loader
@@ -198,32 +199,32 @@ propcache==0.4.1
     #   yarl
 psutil==7.2.2
     # via -r requirements.in
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
     # via -r requirements.in
-pyarrow==25.0.0
+pyarrow==25.0.1
     # via
     #   -r requirements.in
     #   datasets
 pycparser==2.23
     # via cffi
-pydantic==2.13.4
+pydantic==2.13.5
     # via
     #   -r requirements.in
     #   pydantic-extra-types
     #   spectree
-pydantic-core==2.46.4
+pydantic-core==2.46.5
     # via pydantic
 pydantic-extra-types==2.11.1
     # via -r requirements.in
 pygments==2.20.0
     # via rich
-pyjwt==2.13.0
+pyjwt==2.15.0
     # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via
     #   celery
     #   pandas
-python-dotenv==1.2.2
+python-dotenv==1.2.3
     # via -r requirements.in
 pytz==2026.2
     # via pandas
@@ -231,7 +232,7 @@ pyyaml==6.0.3
     # via
     #   datasets
     #   huggingface-hub
-redis==8.0.1
+redis==8.1.0
     # via -r requirements.in
 regex==2026.5.9
     # via nltk
@@ -244,11 +245,11 @@ rich==15.0.0
     # via typer
 rouge-score==0.1.2
     # via -r requirements.in
-scikit-image==0.25.2
+scikit-image==0.26.0
     # via -r requirements.in
-scikit-learn==1.9.0
+scikit-learn==1.9.1
     # via -r requirements.in
-scipy==1.13.1
+scipy==1.18.1
     # via
     #   -r requirements.in
     #   scikit-image
@@ -298,7 +299,7 @@ tzlocal==5.3.1
     # via celery
 unidecode==1.4.0
     # via -r requirements.in
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   -r requirements.in
     #   docker
