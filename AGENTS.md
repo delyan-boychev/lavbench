@@ -61,7 +61,7 @@ lavbench/
 │   │   ├── components/, pages/, services/, context/, hooks/
 │   │   └── types/api.d.ts             # Auto-generated from OpenAPI
 │   ├── scripts/check_translations.py  # i18n key parity checker
-│   └── public/locales/{en,bg}/translation.json  # 930 keys, always symmetrical
+│   └── public/locales/{en,bg}/translation.json  # ~1030 keys, always symmetrical
 ├── guides/                            # User docs (admin, competitor, jury — en/bg)
 ├── docs/                              # Sphinx documentation
 ├── .github/workflows/ci.yml
@@ -406,10 +406,11 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - Dot-notation keys: `section.subsection.key`
 - Backend `ERR_*` codes under `api.ERR_*` namespace
 - Frontend: `t('key')` or `t('key', 'fallback')`; dynamic: `t('api.' + errorCode)`
-- ~147 orphaned keys exist (safe to keep for future use)
+- Plurals use i18next suffixes: define `key_one` / `key_other` (both locales) and call `t('key', { count })`; `check_translations.py` treats a plural variant as used when its base key is used
+- ~141 orphaned keys exist (safe to keep for future use)
 
 ### Adding a New Translation Key
-1. Add key + value to **both** `en/translation.json` and `bg/translation.json`
+1. Add key + value to **both** `en/translation.json` and `bg/translation.json` (for counts, add `_one` / `_other` variants instead of a single key)
 2. If it's an `ERR_*` code, also add to `DEFAULT_ERROR_MESSAGES` in `backend/utils/error_utils.py`
 3. Run both checkers: `python backend/scripts/check_error_codes.py && python frontend/scripts/check_translations.py`
 
