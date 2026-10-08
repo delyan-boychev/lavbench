@@ -6,6 +6,8 @@ import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
 import NotebookSubmit from '../components/challenge/NotebookSubmit';
 import EmptyState from '../components/ui/EmptyState';
+import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
+import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import { useTranslation } from 'react-i18next';
 import { FileText, AlertTriangle } from 'lucide-react';
 
@@ -13,6 +15,7 @@ export default function Home() {
   const { challengeId } = useParams();
   const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask } = useApp();
   const { t } = useTranslation();
+  const notFound = useChallengeNotFound(challengeId);
 
   useEffect(() => {
     if (challengeId) {
@@ -26,6 +29,8 @@ export default function Home() {
       setSelectedTask(selectedChallenge.tasks[0]);
     }
   }, [selectedChallenge, selectedTask, setSelectedTask]);
+
+  if (notFound) return <ChallengeNotFound />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }} className="animate-fadein">

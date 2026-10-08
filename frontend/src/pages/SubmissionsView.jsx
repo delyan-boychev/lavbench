@@ -17,6 +17,8 @@ import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import Badge from '../components/ui/Badge';
 import Pagination from '../components/ui/Pagination';
 import EmptyState from '../components/ui/EmptyState';
+import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
+import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import BestSubmissionCard from '../components/submissions/BestSubmissionCard';
 import StageGroup from '../components/submissions/StageGroup';
 import { formatLocalizedDate } from '../utils/formatDate';
@@ -25,6 +27,7 @@ import { requireOk } from '../services/apiResult';
 import LoadingIndicator from '../components/ui/LoadingIndicator';
 import QueryErrorState from '../components/ui/QueryErrorState';
 import { saveBlob } from '../utils/download';
+import { formatScore } from '../utils/formatScore';
 
 const EMPTY_BEST_SUBS = {};
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
@@ -93,6 +96,7 @@ export default function SubmissionsView() {
     showToast,
   } = useApp();
   const { showApiError } = useApiError();
+  const challengeNotFound = useChallengeNotFound(challengeId);
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const selectFinalMutation = useSelectFinal();
@@ -450,6 +454,8 @@ export default function SubmissionsView() {
     return result;
   }, [selectedChallenge]);
 
+  if (challengeNotFound) return <ChallengeNotFound />;
+
   if (!selectedChallenge)
     return <EmptyState message={t('submissions.no_competition_selected')} minHeight={200} />;
 
@@ -568,7 +574,7 @@ export default function SubmissionsView() {
                             </span>
                             {sub.public_score != null && (
                               <span className="font-mono text-xs font-bold text-indigo-400">
-                                {Number(sub.public_score).toFixed(4)}
+                                {formatScore(sub.public_score)}
                               </span>
                             )}
                           </div>
@@ -637,7 +643,7 @@ export default function SubmissionsView() {
                   </span>
                   {!baselineExpanded && baselineSubmissions.length > 0 && (
                     <span className="text-[10px] text-slate-500 font-semibold">
-                      {baselineSubmissions.length} {t('submissions.task_count', 'tasks')}
+                      {t('submissions.task_count', { count: baselineSubmissions.length })}
                     </span>
                   )}
                 </div>
@@ -688,7 +694,7 @@ export default function SubmissionsView() {
                             </span>
                             {sub.public_score != null && (
                               <span className="font-mono text-xs font-bold text-indigo-400">
-                                {Number(sub.public_score).toFixed(4)}
+                                {formatScore(sub.public_score)}
                               </span>
                             )}
                           </div>
@@ -724,6 +730,7 @@ export default function SubmissionsView() {
               />
               <input
                 type="text"
+                aria-label={t('submissions.search_competitor_label')}
                 value={competitorSearch}
                 onChange={(e) => {
                   setCompetitorSearch(e.target.value);
@@ -880,10 +887,10 @@ export default function SubmissionsView() {
                   adminSubmissions.map((sub) => {
                     const isSel = selectedSubmission?.id === sub.id;
                     return (
-                      <button
+                      // View and download are sibling buttons, never nested
+                      <div
                         key={sub.id}
-                        onClick={() => handleAdminViewSubmission(sub)}
-                        className={`flex flex-col gap-1.5 p-3 rounded-lg text-left w-full transition-all duration-150 border cursor-pointer ${
+                        className={`relative flex items-start gap-2 p-3 rounded-lg w-full transition-all duration-150 border ${
                           isSel
                             ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100'
                             : sub.is_final_selection
@@ -891,71 +898,68 @@ export default function SubmissionsView() {
                               : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
                         }`}
                       >
-                        <div className="flex justify-between items-center gap-2 w-full">
-                          <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
-                            #{sub.id}
-                            {sub.is_final_selection && (
-                              <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
-                                <Star className="w-3 h-3" />
-                                {t('submissions.final_selection_label')}
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <Badge status={sub.status} />
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadSubmission(
-                                  adminActiveTask,
-                                  sub.user?.id || selectedCompetitor.id,
-                                );
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.stopPropagation();
-                                  handleDownloadSubmission(
-                                    adminActiveTask,
-                                    sub.user?.id || selectedCompetitor.id,
-                                  );
-                                }
-                              }}
-                              className="p-1 rounded text-slate-500 hover:text-indigo-400 transition-colors cursor-pointer"
-                              title={t('submissions.download')}
-                            >
-                              <Download size={12} />
+                        <button
+                          type="button"
+                          onClick={() => handleAdminViewSubmission(sub)}
+                          aria-pressed={isSel}
+                          className="flex flex-col gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
+                        >
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
+                              #{sub.id}
+                              {sub.is_final_selection && (
+                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                                  <Star className="w-3 h-3" />
+                                  {t('submissions.final_selection_label')}
+                                </span>
+                              )}
                             </span>
+                            <div className="flex items-center gap-2">
+                              <Badge status={sub.status} />
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex justify-between items-center gap-2 w-full">
-                          <span className="text-xs text-slate-400">
-                            {sub.created_at
-                              ? `${formatLocalizedDate(sub.created_at, { timeZone: selectedChallenge.timezone || 'UTC' })}`
-                              : '—'}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            {sub.public_score != null && (
-                              <span className="font-mono text-xs font-bold text-indigo-400">
-                                <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
-                                  {t('submissions.public_score')}:
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="text-xs text-slate-400">
+                              {sub.created_at
+                                ? `${formatLocalizedDate(sub.created_at, { timeZone: selectedChallenge.timezone || 'UTC' })}`
+                                : '—'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              {sub.public_score != null && (
+                                <span className="font-mono text-xs font-bold text-indigo-400">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
+                                    {t('submissions.public_score')}:
+                                  </span>
+                                  {formatScore(sub.public_score)}
                                 </span>
-                                {Number(sub.public_score).toFixed(4)}
-                              </span>
-                            )}
-                            {sub.private_score != null && (
-                              <span className="font-mono text-xs font-bold text-emerald-400">
-                                <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
-                                  {t('submissions.private_score')}:
+                              )}
+                              {sub.private_score != null && (
+                                <span className="font-mono text-xs font-bold text-emerald-400">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
+                                    {t('submissions.private_score')}:
+                                  </span>
+                                  {formatScore(sub.private_score)}
                                 </span>
-                                {Number(sub.private_score).toFixed(4)}
-                              </span>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDownloadSubmission(
+                              adminActiveTask,
+                              sub.user?.id || selectedCompetitor.id,
+                            )
+                          }
+                          className="inline-flex items-center justify-center min-h-8 min-w-8 -my-1 rounded text-slate-500 hover:text-indigo-400 transition-colors cursor-pointer flex-shrink-0"
+                          title={t('submissions.download')}
+                          aria-label={t('submissions.download')}
+                        >
+                          <Download size={12} />
+                        </button>
+                      </div>
                     );
                   })
                 )}

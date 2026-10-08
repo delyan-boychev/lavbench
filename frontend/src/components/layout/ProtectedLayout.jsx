@@ -5,6 +5,7 @@ import { useAuth } from '../../AuthContext';
 import Navbar from './Navbar';
 import CompetitionBar from './CompetitionBar';
 import LoadingIndicator from '../ui/LoadingIndicator';
+import ErrorBoundary from '../ErrorBoundary';
 
 export default function ProtectedLayout() {
   const { t } = useTranslation();
@@ -64,7 +65,7 @@ export default function ProtectedLayout() {
     );
   }
 
-  if (!currentUser) return <Navigate to="/login" replace />;
+  if (!currentUser) return <Navigate to="/login" replace state={{ from: location }} />;
 
   return (
     <div
@@ -87,9 +88,10 @@ export default function ProtectedLayout() {
         }}
       >
         <div key={location.pathname} className="animate-fadein">
-          {' '}
-          {}
-          <Outlet />
+          {/* A page crash keeps the navbar usable and resets on navigation */}
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
       <footer

@@ -90,7 +90,10 @@
     "failed_fetch_docs": "Грешка при извличане на документацията.",
     "failed_fetch_docs_network": "Грешка при извличане на документацията поради мрежова грешка.",
     "switch_light": "Превключи към светъл режим",
-    "switch_dark": "Превключи към тъмен режим"
+    "switch_dark": "Превключи към тъмен режим",
+    "offline": "Офлайн",
+    "open_menu": "Отвори менюто",
+    "close_menu": "Затвори менюто"
   },
   "api": {
     "ERR_ACCESS_DENIED": "Отказан достъп. Нямате необходимите права.",
@@ -290,7 +293,15 @@
     "execution_time_heading": "Изпълнение",
     "download_error": "Грешка при изтеглянето на решението",
     "download_failed": "Изтеглянето бе неуспешно",
-    "task_count": "задачи"
+    "task_count": "{{count}} задачи",
+    "task_count_one": "{{count}} задача",
+    "task_count_other": "{{count}} задачи",
+    "score": "Резултат",
+    "select_cell": "Избери клетка {{id}} за изпращане",
+    "cell_lines": "{{count}} реда",
+    "cell_lines_one": "{{count}} ред",
+    "cell_lines_other": "{{count}} реда",
+    "search_competitor_label": "Търсене на състезатели"
   },
   "challenge": {
     "judge_session_active": "Активна сесия на жури / администратор",
@@ -312,6 +323,8 @@
     "network_error_submit": "Мрежова грешка при изпращането на решението.",
     "submit_solution": "Изпрати решение",
     "submissions_day_limit": "Ограничение от {{count}} решения/ден",
+    "submissions_day_limit_one": "Ограничение от {{count}} решение/ден",
+    "submissions_day_limit_other": "Ограничение от {{count}} решения/ден",
     "parsing_notebook": "Разпознаване на бележника...",
     "click_to_replace": "Кликнете за замяна",
     "upload_jupyter_notebook": "Качете Jupyter Notebook (.ipynb)",
@@ -374,7 +387,9 @@
     "expand": "разгъни",
     "collapse": "свий",
     "default_value": "{{value}} (по подразбиране)",
-    "local_timezone": "(местно време)"
+    "local_timezone": "(местно време)",
+    "not_found": "Това състезание не съществува или нямате достъп до него.",
+    "back_to_challenges": "Към състезанията"
   },
   "common": {
     "cancel": "Отказ",
@@ -408,7 +423,9 @@
     "required_field_input": "Това поле е задължително",
     "next": "Напред",
     "previous": "Назад",
-    "searching": "Търсене..."
+    "searching": "Търсене...",
+    "not_available": "Няма данни",
+    "remove_file": "Премахни {{name}}"
   },
   "leaderboard": {
     "loading": "Зареждане на класацията...",
@@ -426,6 +443,8 @@
     "private_score_short": "Частн.:",
     "manual_points_label": "Точки:",
     "points_short": "{{count}} т.",
+    "points_short_one": "{{count}} т.",
+    "points_short_other": "{{count}} т.",
     "title": "Класация",
     "refresh": "Обнови",
     "normalized": "(нормализиран)",
@@ -657,7 +676,9 @@
       "status_header": "Статус",
       "created_header": "Създадено на",
       "actions_header": "Действия",
-      "queue_description": "{{count}} решение(я) в опашката"
+      "queue_description": "{{count}} решения в опашката",
+      "queue_description_one": "{{count}} решение в опашката",
+      "queue_description_other": "{{count}} решения в опашката"
     },
     "stages": {
       "stages_in_competition": "Етапи в това състезание ({{count}})",
@@ -934,7 +955,12 @@
       "evaluator_err_missing_metric_name": "METRIC_NAME: липсва или е празно",
       "evaluator_err_missing_sub_columns": "SUBMISSION_COLUMNS: липсва или е невалидно",
       "evaluator_err_missing_lbl_columns": "LABELS_COLUMNS: липсва или е невалидно",
-      "evaluator_err_metric_not_in_return": "METRIC_NAME \"{{name}}\" не е намерен във върнатите ключове на evaluate(): {{keys}}"
+      "evaluator_err_metric_not_in_return": "METRIC_NAME \"{{name}}\" не е намерен във върнатите ключове на evaluate(): {{keys}}",
+      "validation_invalid_docker_image": "Невалиден формат на Docker образ.",
+      "validation_invalid_apt": "Невалидни APT пакети: {{packages}}",
+      "validation_invalid_pip": "Невалидни pip зависимости: {{requirements}}",
+      "validation_too_many_hf_datasets": "HF набори от данни: позволени са най-много {{max}}, подадени са {{count}}.",
+      "validation_too_many_hf_models": "HF модели: позволени са най-много {{max}}, подадени са {{count}}."
     },
     "notifications": {
       "competition_created": "Състезанието е създадено успешно!",
@@ -1000,6 +1026,8 @@
       "bulk_reset_failed": "Неуспешно нулиране на паролите.",
       "network_error_bulk_reset": "Мрежова грешка при нулиране на паролите.",
       "imported_competitors_success": "Успешно бяха импортирани {{count}} състезатели!",
+      "imported_competitors_success_one": "Успешно беше импортиран {{count}} състезател!",
+      "imported_competitors_success_other": "Успешно бяха импортирани {{count}} състезатели!",
       "import_csv_failed": "Неуспешно импортиране на CSV.",
       "backup_failed": "Неуспешно създаване на резервно копие.",
       "backup_success": "SQL файлът с резервно копие беше изтеглен.",
@@ -1012,7 +1040,13 @@
       "clear_queue_failed": "Неуспешно изчистване на опашката.",
       "clear_queue_network_error": "Мрежова грешка при изчистване на опашката.",
       "stage_results_hidden": "Резултатите от етапа са скрити.",
-      "stage_results_revealed": "Резултатите от етапа са разкрити."
+      "stage_results_revealed": "Резултатите от етапа са разкрити.",
+      "toggle_reveal_failed": "Неуспешна промяна на видимостта на резултатите.",
+      "toggle_stage_reveal_failed": "Неуспешна промяна на видимостта на резултатите от етапа.",
+      "export_challenge_failed": "Неуспешен експорт на състезанието.",
+      "challenge_exported": "Състезанието е експортирано.",
+      "challenge_imported": "Състезанието е импортирано успешно.",
+      "import_challenge_failed": "Неуспешен импорт на състезанието."
     },
     "confirm": {
       "delete_competition_title": "Изтриване на състезание",

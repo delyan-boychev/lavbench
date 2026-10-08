@@ -5,6 +5,7 @@ import { useNotifications } from '../../context/NotificationsContext';
 import { saveBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Download, Pencil } from 'lucide-react';
+import { formatScore } from '../../utils/formatScore';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
@@ -96,87 +97,60 @@ export default function Row({
 
   const [downloadingId, setDownloadingId] = useState(null);
 
-  const prevPublicRef = React.useRef(displayPublic);
-  const prevPrivateRef = React.useRef(displayPrivate);
-  const prevPointsRef = React.useRef(displayPoints);
+  // Last seen values per tab, so switching tabs never replays a highlight
+  const prevByTabRef = React.useRef(
+    /** @type {Record<string, {public: any, private: any, points: any}>} */ ({}),
+  );
+  const lastTabRef = React.useRef(activeTab);
+  const flashTimersRef = React.useRef(
+    /** @type {Record<string, ReturnType<typeof setTimeout> | null>} */ ({
+      public: null,
+      private: null,
+      points: null,
+    }),
+  );
 
-  const prevTaskPublicRef = React.useRef(scoreObj.public_score);
-  const prevTaskPrivateRef = React.useRef(scoreObj.private_score);
+  const isAggregateTab = activeTab === 'general' || isStageTab;
+  const currentPublic = isAggregateTab ? displayPublic : scoreObj.public_score;
+  const currentPrivate = isAggregateTab ? displayPrivate : scoreObj.private_score;
+  const currentPoints = isAggregateTab ? displayPoints : undefined;
 
   useEffect(() => {
-    let t1, t2, t3;
-    if (activeTab === 'general' || isStageTab) {
-      if (displayPublic !== prevPublicRef.current) {
-        if (
-          prevPublicRef.current !== undefined &&
-          prevPublicRef.current !== null &&
-          displayPublic !== null
-        ) {
-          setFlashPublic(true);
-          t1 = setTimeout(() => setFlashPublic(false), 2000);
-        }
-        prevPublicRef.current = displayPublic;
-      }
-      if (displayPrivate !== prevPrivateRef.current) {
-        if (
-          prevPrivateRef.current !== undefined &&
-          prevPrivateRef.current !== null &&
-          displayPrivate !== null
-        ) {
-          setFlashPrivate(true);
-          t2 = setTimeout(() => setFlashPrivate(false), 2000);
-        }
-        prevPrivateRef.current = displayPrivate;
-      }
-      if (displayPoints !== prevPointsRef.current) {
-        if (
-          prevPointsRef.current !== undefined &&
-          prevPointsRef.current !== null &&
-          displayPoints !== null
-        ) {
-          setFlashPoints(true);
-          t3 = setTimeout(() => setFlashPoints(false), 2000);
-        }
-        prevPointsRef.current = displayPoints;
-      }
-    } else {
-      if (scoreObj.public_score !== prevTaskPublicRef.current) {
-        if (
-          prevTaskPublicRef.current !== undefined &&
-          prevTaskPublicRef.current !== null &&
-          scoreObj.public_score !== null
-        ) {
-          setFlashPublic(true);
-          t1 = setTimeout(() => setFlashPublic(false), 2000);
-        }
-        prevTaskPublicRef.current = scoreObj.public_score;
-      }
-      if (scoreObj.private_score !== prevTaskPrivateRef.current) {
-        if (
-          prevTaskPrivateRef.current !== undefined &&
-          prevTaskPrivateRef.current !== null &&
-          scoreObj.private_score !== null
-        ) {
-          setFlashPrivate(true);
-          t2 = setTimeout(() => setFlashPrivate(false), 2000);
-        }
-        prevTaskPrivateRef.current = scoreObj.private_score;
-      }
-    }
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+    const setters = { public: setFlashPublic, private: setFlashPrivate, points: setFlashPoints };
+    const triggerFlash = (/** @type {'public' | 'private' | 'points'} */ field) => {
+      const timers = flashTimersRef.current;
+      if (timers[field]) clearTimeout(timers[field]);
+      setters[field](true);
+      timers[field] = setTimeout(() => {
+        timers[field] = null;
+        setters[field](false);
+      }, 2000);
     };
-  }, [
-    displayPublic,
-    displayPrivate,
-    displayPoints,
-    scoreObj.public_score,
-    scoreObj.private_score,
-    activeTab,
-    isStageTab,
-  ]);
+
+    const tabKey = String(activeTab);
+    const current = { public: currentPublic, private: currentPrivate, points: currentPoints };
+    const prev = prevByTabRef.current[tabKey];
+    const tabChanged = lastTabRef.current !== activeTab;
+    lastTabRef.current = activeTab;
+    prevByTabRef.current[tabKey] = current;
+    if (!prev || tabChanged) return;
+
+    for (const field of /** @type {const} */ (['public', 'private', 'points'])) {
+      const before = prev[field];
+      const after = current[field];
+      if (after !== before && before != null && after != null) triggerFlash(field);
+    }
+  }, [currentPublic, currentPrivate, currentPoints, activeTab]);
+
+  useEffect(() => {
+    const timers = flashTimersRef.current;
+    return () => {
+      for (const key of Object.keys(timers)) {
+        if (timers[key]) clearTimeout(timers[key]);
+        timers[key] = null;
+      }
+    };
+  }, []);
 
   const activeTasks = React.useMemo(() => {
     if (activeTab === 'general') {
@@ -340,13 +314,13 @@ export default function Row({
             <td
               className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
             >
-              {displayPublic != null ? displayPublic.toFixed(4) : '—'}
+              {formatScore(displayPublic)}
             </td>
             {showPrivateCols && (
               <td
                 className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
               >
-                {displayPrivate != null ? displayPrivate.toFixed(4) : '—'}
+                {formatScore(displayPrivate)}
               </td>
             )}
             {showPointsCols && (
@@ -365,14 +339,14 @@ export default function Row({
               <td
                 className={`px-4 py-3 text-right font-mono text-indigo-400 text-xs transition-all duration-300 ${flashPublic ? 'animate-pulse-highlight' : ''}`}
               >
-                {scoreObj.public_score != null ? scoreObj.public_score.toFixed(4) : '—'}
+                {formatScore(scoreObj.public_score)}
               </td>
             )}
             {perTaskShowPrivateCols && (
               <td
                 className={`px-4 py-3 text-right font-mono text-emerald-400 text-xs transition-all duration-300 ${flashPrivate ? 'animate-pulse-highlight' : ''}`}
               >
-                {scoreObj.private_score != null ? scoreObj.private_score.toFixed(4) : '—'}
+                {formatScore(scoreObj.private_score)}
               </td>
             )}
             {perTaskShowPointsCols && (
@@ -460,7 +434,7 @@ export default function Row({
                               <div>
                                 {t('leaderboard.public_score_short')}{' '}
                                 <span className="text-indigo-400">
-                                  {scObj.public_score != null ? scObj.public_score.toFixed(4) : '—'}
+                                  {formatScore(scObj.public_score)}
                                 </span>
                               </div>
                             )}
@@ -468,9 +442,7 @@ export default function Row({
                               <div>
                                 {t('leaderboard.private_score_short')}{' '}
                                 <span className="text-emerald-400">
-                                  {scObj.private_score != null
-                                    ? scObj.private_score.toFixed(4)
-                                    : '—'}
+                                  {formatScore(scObj.private_score)}
                                 </span>
                               </div>
                             )}

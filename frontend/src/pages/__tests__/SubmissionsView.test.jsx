@@ -964,7 +964,7 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('Task 2')).toBeInTheDocument();
       });
 
-      const task1Card = screen.getByText('Task 1').closest('[role="button"]');
+      const task1Card = screen.getByText('Task 1').closest('button');
       fireEvent.click(task1Card);
 
       await waitFor(() => {
@@ -1039,7 +1039,7 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('Task 1')).toBeInTheDocument();
       });
 
-      const task1Card = screen.getByText('Task 1').closest('[role="button"]');
+      const task1Card = screen.getByText('Task 1').closest('button');
       fireEvent.click(task1Card);
 
       await waitFor(() => {

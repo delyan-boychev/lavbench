@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import CodeHighlight from './CodeHighlight';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -68,6 +69,7 @@ function CodeCellView({
   selected,
   onToggleSelect,
 }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const source = cell.source || '';
   const cellType = cell.type || 'code';
@@ -110,6 +112,7 @@ function CodeCellView({
               type="checkbox"
               checked={selected}
               onChange={() => onToggleSelect?.(id)}
+              aria-label={t('submissions.select_cell', { id: idx })}
               className="sr-only peer"
             />
             <div className="relative w-7 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-[12px] peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 peer-checked:after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all" />
@@ -117,7 +120,9 @@ function CodeCellView({
         )}
         {selectable && !isCode && <div style={{ width: 7, flexShrink: 0 }} />}
         <button
+          type="button"
           onClick={() => setCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -133,13 +138,11 @@ function CodeCellView({
           }}
         >
           {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-          <span>
-            Cell [{idx}] — {cellType}
-          </span>
+          <span>{t('submissions.cell_label', { id: idx, type: cellType })}</span>
         </button>
         {hasMore && (
           <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: '10px' }}>
-            {totalLines} lines
+            {t('submissions.cell_lines', { count: totalLines })}
           </span>
         )}
       </div>

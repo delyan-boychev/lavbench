@@ -90,7 +90,10 @@
     "failed_fetch_docs": "Failed to fetch documentation.",
     "failed_fetch_docs_network": "Failed to fetch documentation due to a network error.",
     "switch_light": "Switch to light mode",
-    "switch_dark": "Switch to dark mode"
+    "switch_dark": "Switch to dark mode",
+    "offline": "Offline",
+    "open_menu": "Open menu",
+    "close_menu": "Close menu"
   },
   "api": {
     "ERR_ACCESS_DENIED": "Access denied. You do not have the required permissions.",
@@ -290,7 +293,15 @@
     "execution_time_heading": "Execution",
     "download_error": "Error downloading submission",
     "download_failed": "Download failed",
-    "task_count": "tasks"
+    "task_count": "{{count}} tasks",
+    "task_count_one": "{{count}} task",
+    "task_count_other": "{{count}} tasks",
+    "score": "Score",
+    "select_cell": "Select cell {{id}} for submission",
+    "cell_lines": "{{count}} lines",
+    "cell_lines_one": "{{count}} line",
+    "cell_lines_other": "{{count}} lines",
+    "search_competitor_label": "Search competitors"
   },
   "challenge": {
     "judge_session_active": "Judge / Admin Session Active",
@@ -312,6 +323,8 @@
     "network_error_submit": "Network error during submission.",
     "submit_solution": "Submit Solution",
     "submissions_day_limit": "{{count}} submissions/day limit",
+    "submissions_day_limit_one": "{{count}} submission/day limit",
+    "submissions_day_limit_other": "{{count}} submissions/day limit",
     "parsing_notebook": "Parsing notebook...",
     "click_to_replace": "Click to replace",
     "upload_jupyter_notebook": "Upload Jupyter Notebook (.ipynb)",
@@ -374,7 +387,9 @@
     "expand": "expand",
     "collapse": "collapse",
     "default_value": "{{value}} (default)",
-    "local_timezone": "(Local)"
+    "local_timezone": "(Local)",
+    "not_found": "This competition does not exist or you do not have access to it.",
+    "back_to_challenges": "Back to competitions"
   },
   "common": {
     "cancel": "Cancel",
@@ -408,7 +423,9 @@
     "required_field_input": "This field is required",
     "next": "Next",
     "previous": "Previous",
-    "searching": "Searching..."
+    "searching": "Searching...",
+    "not_available": "N/A",
+    "remove_file": "Remove {{name}}"
   },
   "leaderboard": {
     "loading": "Loading leaderboard...",
@@ -426,6 +443,8 @@
     "private_score_short": "Priv:",
     "manual_points_label": "Points:",
     "points_short": "{{count}} pts",
+    "points_short_one": "{{count}} pt",
+    "points_short_other": "{{count}} pts",
     "title": "Leaderboard",
     "refresh": "Refresh",
     "normalized": "(normalized)",
@@ -657,7 +676,9 @@
       "status_header": "Status",
       "created_header": "Created",
       "actions_header": "Actions",
-      "queue_description": "{{count}} submission(s) in queue"
+      "queue_description": "{{count}} submissions in queue",
+      "queue_description_one": "{{count}} submission in queue",
+      "queue_description_other": "{{count}} submissions in queue"
     },
     "stages": {
       "stages_in_competition": "Stages in this Competition ({{count}})",
@@ -934,7 +955,12 @@
       "evaluator_err_missing_metric_name": "METRIC_NAME: missing or empty",
       "evaluator_err_missing_sub_columns": "SUBMISSION_COLUMNS: missing or malformed",
       "evaluator_err_missing_lbl_columns": "LABELS_COLUMNS: missing or malformed",
-      "evaluator_err_metric_not_in_return": "METRIC_NAME \"{{name}}\" not found in evaluate() return keys: {{keys}}"
+      "evaluator_err_metric_not_in_return": "METRIC_NAME \"{{name}}\" not found in evaluate() return keys: {{keys}}",
+      "validation_invalid_docker_image": "Invalid Docker image format.",
+      "validation_invalid_apt": "Invalid APT package(s): {{packages}}",
+      "validation_invalid_pip": "Invalid pip requirement(s): {{requirements}}",
+      "validation_too_many_hf_datasets": "HF datasets: maximum {{max}} allowed, got {{count}}.",
+      "validation_too_many_hf_models": "HF models: maximum {{max}} allowed, got {{count}}."
     },
     "notifications": {
       "competition_created": "Competition created successfully!",
@@ -1000,6 +1026,8 @@
       "bulk_reset_failed": "Failed to reset passwords.",
       "network_error_bulk_reset": "Network error resetting passwords.",
       "imported_competitors_success": "Imported {{count}} competitors successfully!",
+      "imported_competitors_success_one": "Imported {{count}} competitor successfully!",
+      "imported_competitors_success_other": "Imported {{count}} competitors successfully!",
       "import_csv_failed": "Failed to import CSV.",
       "backup_failed": "Backup failed.",
       "backup_success": "Backup SQL downloaded.",
@@ -1012,7 +1040,13 @@
       "clear_queue_failed": "Failed to clear queue.",
       "clear_queue_network_error": "Network error clearing queue.",
       "stage_results_hidden": "Stage results hidden.",
-      "stage_results_revealed": "Stage results revealed."
+      "stage_results_revealed": "Stage results revealed.",
+      "toggle_reveal_failed": "Failed to change result visibility.",
+      "toggle_stage_reveal_failed": "Failed to change stage result visibility.",
+      "export_challenge_failed": "Failed to export competition.",
+      "challenge_exported": "Competition exported.",
+      "challenge_imported": "Competition imported successfully.",
+      "import_challenge_failed": "Failed to import competition."
     },
     "confirm": {
       "delete_competition_title": "Delete Competition",

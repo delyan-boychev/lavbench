@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Modal from '../Modal';
+import SelectField from '../SelectField';
 
 describe('Modal Component', () => {
   it('renders nothing when isOpen is false', () => {
@@ -100,5 +101,72 @@ describe('Modal Component', () => {
 
     unmount();
     expect(document.body.style.overflow).toBe('');
+  });
+
+  it('closes only the topmost modal on Escape', () => {
+    const closeOuter = vi.fn();
+    const closeInner = vi.fn();
+    const { rerender } = render(
+      <Modal isOpen={true} onClose={closeOuter} title="Outer">
+        <div>Outer body</div>
+      </Modal>,
+    );
+    rerender(
+      <>
+        <Modal isOpen={true} onClose={closeOuter} title="Outer">
+          <div>Outer body</div>
+        </Modal>
+        <Modal isOpen={true} onClose={closeInner} title="Inner">
+          <div>Inner body</div>
+        </Modal>
+      </>,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(closeInner).toHaveBeenCalledTimes(1);
+    expect(closeOuter).not.toHaveBeenCalled();
+
+    rerender(
+      <>
+        <Modal isOpen={true} onClose={closeOuter} title="Outer">
+          <div>Outer body</div>
+        </Modal>
+        <Modal isOpen={false} onClose={closeInner} title="Inner">
+          <div>Inner body</div>
+        </Modal>
+      </>,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(closeOuter).toHaveBeenCalledTimes(1);
+    expect(closeInner).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not close when an open dropdown inside it consumes Escape', () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={handleClose} title="Title">
+        <SelectField
+          label="Pick"
+          value=""
+          onChange={() => {}}
+          options={[
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta' },
+          ]}
+        />
+      </Modal>,
+    );
+
+    const trigger = screen.getByRole('combobox');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(handleClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(handleClose).toHaveBeenCalledTimes(1);
   });
 });

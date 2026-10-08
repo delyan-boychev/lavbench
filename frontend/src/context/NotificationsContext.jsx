@@ -80,6 +80,7 @@ function ConfirmModal({ config }) {
 export const NotificationsProvider = ({ children }) => {
   const { t } = useTranslation();
   const toastTimeoutRef = useRef(null);
+  const pendingCancelRef = useRef(/** @type {(() => void) | null} */ (null));
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [confirmConfig, setConfirmConfig] = useState({
     isOpen: false,
@@ -122,7 +123,20 @@ export const NotificationsProvider = ({ children }) => {
       isPrompt = false,
       placeholder = '',
     }) => {
+      // A newer dialog replaces the open one; settle the old caller as cancelled
+      // so its await never hangs
+      pendingCancelRef.current?.();
       return new Promise((resolve) => {
+        const cancelValue = isPrompt ? null : false;
+        let settled = false;
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          if (pendingCancelRef.current === cancel) pendingCancelRef.current = null;
+          resolve(value);
+        };
+        const cancel = () => settle(cancelValue);
+        pendingCancelRef.current = cancel;
         setConfirmConfig({
           isOpen: true,
           title,
@@ -133,11 +147,11 @@ export const NotificationsProvider = ({ children }) => {
           placeholder,
           onConfirm: (val) => {
             setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
-            resolve(isPrompt ? val : true);
+            settle(isPrompt ? val : true);
           },
           onCancel: () => {
             setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
-            resolve(isPrompt ? null : false);
+            cancel();
           },
         });
       });

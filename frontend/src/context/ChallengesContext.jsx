@@ -71,7 +71,9 @@ export const ChallengesProvider = ({ children, userId }) => {
         setSelectedTask(null);
         return;
       }
-      const c = challenges.find((ch) => ch.id === id);
+      // Unknown ids keep the current selection; pages render a not-found state via
+      // useChallengeNotFound instead of silently showing another challenge
+      const c = challenges.find((ch) => String(ch.id) === String(id));
       if (c) {
         setSelectedChallengeState(c);
         setSelectedTask(c.tasks?.[0] || null);
@@ -89,8 +91,9 @@ export const ChallengesProvider = ({ children, userId }) => {
       selectedTask,
       setSelectedTask,
       fetchChallenges: noop,
+      challengesLoading: isLoading,
     }),
-    [challenges, selectedChallenge, setSelectedChallengeById, selectedTask],
+    [challenges, selectedChallenge, setSelectedChallengeById, selectedTask, isLoading],
   );
 
   return <ChallengesContext.Provider value={value}>{children}</ChallengesContext.Provider>;

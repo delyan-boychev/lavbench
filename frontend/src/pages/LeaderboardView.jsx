@@ -6,6 +6,8 @@ import useThrottledCallback from '../hooks/useThrottledCallback';
 import { useLeaderboardQuery } from '../hooks/useLeaderboardQuery';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
 import EmptyState from '../components/ui/EmptyState';
+import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
+import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import QueryErrorState from '../components/ui/QueryErrorState';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +18,7 @@ export default function LeaderboardView() {
   const { challengeId } = useParams();
   const { selectedChallenge, setSelectedChallengeById } = useApp();
   const { t } = useTranslation();
+  const notFound = useChallengeNotFound(challengeId);
 
   const [useSse, setUseSse] = useState(true);
   const activeId = challengeId || selectedChallenge?.id;
@@ -55,12 +58,16 @@ export default function LeaderboardView() {
     return () => clearTimeout(timer);
   }, [hasSse, useSse]);
 
+  if (notFound) return <ChallengeNotFound />;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }} className="animate-fadein">
       {selectedChallenge && isError ? (
         <QueryErrorState onRetry={refetch} />
       ) : selectedChallenge ? (
         <LeaderboardTable
+          // Remount per challenge so tab state from another challenge never leaks in
+          key={selectedChallenge.id}
           data={data?.leaderboard || []}
           tasks={data?.tasks || []}
           challenge={selectedChallenge}

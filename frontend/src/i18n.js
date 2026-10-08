@@ -23,4 +23,13 @@ i18n
     },
   });
 
+// Keep <html lang> in step with the UI language for screen readers and hyphenation
+function syncHtmlLang(lng) {
+  if (typeof document === 'undefined' || !lng) return;
+  document.documentElement.lang = lng.split('-')[0];
+}
+
+i18n.on('languageChanged', syncHtmlLang);
+syncHtmlLang(i18n.resolvedLanguage || i18n.language);
+
 export default i18n;

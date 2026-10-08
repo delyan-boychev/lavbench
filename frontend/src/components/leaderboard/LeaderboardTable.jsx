@@ -271,7 +271,9 @@ export default function LeaderboardTable({
                 </span>
               )}
               {' · '}
-              {t('leaderboard.participants', { count: data.length })}
+              {t('leaderboard.participants', {
+                count: data.filter((e) => !e.is_baseline_entry).length,
+              })}
               <span className="ml-2">
                 <Badge status={competitionStatus} />
               </span>

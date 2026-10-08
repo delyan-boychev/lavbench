@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 import api from '../../services/ApiService';
 import { appendCappedLog } from '../../utils/logBuffer';
+import { formatScore } from '../../utils/formatScore';
 
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
@@ -219,7 +220,7 @@ function SubmissionViewer({
                   {t('submissions.public_score')}
                 </div>
                 <div className="font-mono text-base font-bold text-indigo-400">
-                  {Number(displaySubmission.public_score).toFixed(4)}
+                  {formatScore(displaySubmission.public_score)}
                 </div>
               </div>
             )}
@@ -229,7 +230,7 @@ function SubmissionViewer({
                   {t('submissions.private_score')}
                 </div>
                 <div className="font-mono text-base font-bold text-emerald-400">
-                  {Number(displaySubmission.private_score).toFixed(4)}
+                  {formatScore(displaySubmission.private_score)}
                 </div>
               </div>
             )}

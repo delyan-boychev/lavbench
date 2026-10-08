@@ -6,6 +6,7 @@ import { Star, FileText } from 'lucide-react';
 import { formatLocalizedDate } from '../../utils/formatDate';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
+import { formatScore } from '../../utils/formatScore';
 
 export default function SubmissionList({
   submissions,
@@ -88,7 +89,7 @@ export default function SubmissionList({
                 <span className="text-xs text-slate-400">{fmtTime(sub.created_at)}</span>
                 {sub.public_score != null && (
                   <span className="font-mono text-xs font-bold text-indigo-400">
-                    {Number(sub.public_score).toFixed(4)}
+                    {formatScore(sub.public_score)}
                   </span>
                 )}
               </div>

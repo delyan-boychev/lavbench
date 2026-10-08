@@ -138,8 +138,12 @@ def check_orphaned(en_keys, used_keys, dynamic_prefixes):
     en_set = set(en_keys.keys())
     orphaned = []
 
+    plural_suffixes = ("_zero", "_one", "_two", "_few", "_many", "_other")
     for k in sorted(en_set):
         if k in used_keys:
+            continue
+        # i18next resolves t('key', {count}) to key_one / key_other etc.
+        if k.endswith(plural_suffixes) and k.rsplit("_", 1)[0] in used_keys:
             continue
         for prefix in dynamic_prefixes:
             if k.startswith(prefix):
