@@ -38,16 +38,11 @@ export default function Home() {
         <>
           <ChallengeOverview challenge={selectedChallenge} />
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr',
-              gap: 24,
-            }}
-            className="lg:grid-cols-[300px_1fr] items-start"
-          >
+          {/* minmax(0, 1fr) lets wide task content (tables, code) scroll instead of
+              stretching the page; an inline gridTemplateColumns would override lg: */}
+          <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[300px_minmax(0,1fr)]">
             {/* Sidebar with tasks */}
-            <div>
+            <div className="min-w-0">
               <TaskSidebar
                 tasks={selectedChallenge.tasks}
                 selectedTask={selectedTask}
@@ -59,7 +54,7 @@ export default function Home() {
             <div
               key={selectedTask?.id || 'no-task'}
               style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
-              className="animate-fadein"
+              className="animate-fadein min-w-0"
             >
               {selectedTask ? (
                 <>
