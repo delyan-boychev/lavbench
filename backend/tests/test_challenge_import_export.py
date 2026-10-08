@@ -9,6 +9,8 @@ Covers:
 
 import io
 import json
+import os
+import zipfile
 from datetime import timedelta
 
 import pytest
@@ -139,12 +141,104 @@ class TestExportChallenge:
         )
         assert res.status_code == 404
 
+    def test_round_trip_preserves_same_named_notebooks(
+        self, client, db_session, auth_headers, tokens, sample_challenge
+    ):
+        task = Task(challenge_id=sample_challenge.id, title="Notebook round trip")
+        db_session.add(task)
+        db_session.commit()
+        task_dir = os.path.join(client.application.config["UPLOAD_FOLDER"], f"task_{task.id}")
+        baseline_dir = os.path.join(task_dir, "baseline-" + "a" * 32)
+        solution_dir = os.path.join(task_dir, "solution-" + "b" * 32)
+        os.makedirs(baseline_dir)
+        os.makedirs(solution_dir)
+        task.baseline_notebook_path = os.path.join(baseline_dir, "answer.ipynb")
+        task.solution_notebook_path = os.path.join(solution_dir, "answer.ipynb")
+        with open(task.baseline_notebook_path, "wb") as baseline:
+            baseline.write(b"public notebook")
+        with open(task.solution_notebook_path, "wb") as solution:
+            solution.write(b"private solution")
+        db_session.commit()
+
+        exported = client.get(
+            f"/api/challenges/{sample_challenge.id}/export",
+            headers=auth_headers(tokens.admin),
+        )
+        assert exported.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            names = archive.namelist()
+            assert f"tasks/{task.id}/baseline-{'a' * 32}/answer.ipynb" in names
+            assert f"tasks/{task.id}/solution-{'b' * 32}/answer.ipynb" in names
+
+        imported = client.post(
+            "/api/challenges/import",
+            data={"file": (io.BytesIO(exported.data), "challenge.zip")},
+            headers=auth_headers(tokens.admin),
+        )
+        assert imported.status_code == 201
+        imported_challenge = db_session.get(Challenge, imported.get_json()["id"])
+        assert imported_challenge is not None
+        imported_task = imported_challenge.tasks[0]
+        assert imported_task.baseline_notebook_path != imported_task.solution_notebook_path
+        with open(imported_task.baseline_notebook_path, "rb") as baseline:
+            assert baseline.read() == b"public notebook"
+        with open(imported_task.solution_notebook_path, "rb") as solution:
+            assert solution.read() == b"private solution"
+
 
 # ── Import challenge (POST /api/challenges/import) ──
 
 
 class TestImportChallenge:
     """POST /api/challenges/import"""
+
+    def test_import_rejects_unexpected_nested_file_area(self, client, tokens):
+        task_id = "019efa69-ec26-718d-9fbc-d05408b246f3"
+        payload = dict(self.EXPORT_PAYLOAD)
+        payload["tasks"] = [{"id": task_id, "title": "Task"}]
+        archive_bytes = io.BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("challenge.json", json.dumps(payload))
+            archive.writestr(f"tasks/{task_id}/other/answer.ipynb", b"data")
+        archive_bytes.seek(0)
+        response = client.post(
+            "/api/challenges/import",
+            data={"file": (archive_bytes, "challenge.zip")},
+            headers={"Authorization": f"Bearer {tokens.admin}"},
+        )
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "ERR_INVALID_ARCHIVE"
+
+    def test_import_cannot_use_solution_as_baseline(self, client, db_session, tokens):
+        task_id = "019efa69-ec26-718d-9fbc-d05408b246f3"
+        solution_path = f"/old/task_{task_id}/solution-{'b' * 32}/answer.ipynb"
+        payload = dict(self.EXPORT_PAYLOAD)
+        payload["tasks"] = [
+            {
+                "id": task_id,
+                "title": "Task",
+                "baseline_notebook_path": solution_path,
+                "solution_notebook_path": solution_path,
+            }
+        ]
+        archive_bytes = io.BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("challenge.json", json.dumps(payload))
+            archive.writestr(f"tasks/{task_id}/solution-{'b' * 32}/answer.ipynb", b"private")
+        archive_bytes.seek(0)
+        response = client.post(
+            "/api/challenges/import",
+            data={"file": (archive_bytes, "challenge.zip")},
+            headers={"Authorization": f"Bearer {tokens.admin}"},
+        )
+        assert response.status_code == 201
+        imported = db_session.get(Challenge, response.get_json()["id"])
+        assert imported is not None
+        task = imported.tasks[0]
+        assert task.baseline_notebook_path is None
+        assert task.solution_notebook_path is not None
+        with open(task.solution_notebook_path, "rb") as solution:
+            assert solution.read() == b"private"
 
     EXPORT_PAYLOAD = {  # noqa: RUF012
         "title": "Imported Challenge",

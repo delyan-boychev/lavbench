@@ -96,7 +96,7 @@ edit_server() {
           set_val "$ENV_FILE" "MAIN_SERVER_URL" "https://${addr}"
           set_val "$ENV_FILE" "CORS_ORIGINS" "https://${addr}:443"
           echo "  ✔ HTTPS → ON"
-          echo "  Note: Place server.crt + server.key in certs/ or regenerate (option 8)"
+          echo "  Note: Place lavbench.crt + lavbench.key in certs/web/ or regenerate (option 8)"
         fi
         ;;
       3)
@@ -161,11 +161,12 @@ edit_server() {
       8)
         if command -v openssl &>/dev/null; then
           local addr="$(get_val "$ENV_FILE" "SERVER_ADDRESS")"
-          mkdir -p certs
-          openssl genrsa -out certs/server.key 2048 2>/dev/null
-          openssl req -new -x509 -key certs/server.key -out certs/server.crt \
+          mkdir -p certs/web
+          openssl genrsa -out certs/web/lavbench.key 2048 2>/dev/null
+          chmod 600 certs/web/lavbench.key
+          openssl req -new -x509 -key certs/web/lavbench.key -out certs/web/lavbench.crt \
             -days 365 -subj "/CN=${addr}" 2>/dev/null
-          echo "  ✔ Self-signed HTTPS certs regenerated in certs/"
+          echo "  ✔ Self-signed HTTPS certs regenerated in certs/web/"
         else
           echo "  [ERROR] openssl not found"
         fi

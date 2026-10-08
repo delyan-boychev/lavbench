@@ -61,7 +61,17 @@ export default function CompetitorManager({
 
     const csvContent = [
       headers.join(','),
-      ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(',')),
+      ...rows.map((row) =>
+        row
+          .map((val) => {
+            const text = String(val);
+            let first = 0;
+            while (first < text.length && text.charCodeAt(first) <= 32) first += 1;
+            const safe = '=+@-'.includes(text.slice(first).trimStart()[0]) ? `'${text}` : text;
+            return `"${safe.replace(/"/g, '""')}"`;
+          })
+          .join(','),
+      ),
     ].join('\n');
 
     const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {

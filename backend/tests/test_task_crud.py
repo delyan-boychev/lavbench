@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -40,6 +41,37 @@ def _make_parquet_with_id():
 
 class TestCreateTask:
     """POST /api/challenges/<challenge_id>/tasks"""
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    def test_same_named_solution_cannot_replace_downloadable_baseline(
+        self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        response = client.post(
+            f"/api/challenges/{sample_challenge.id}/tasks",
+            data={
+                "title": "Same names",
+                "baseline_notebook": (_make_notebook("print('public')"), "answer.ipynb"),
+                "solution_notebook": (_make_notebook("print('secret')"), "answer.ipynb"),
+            },
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 201
+        body = response.get_json()
+        baseline_path = body["baseline_notebook_path"]
+        solution_path = body["solution_notebook_path"]
+        assert baseline_path != solution_path
+        with open(baseline_path, "rb") as baseline_file:
+            assert b"public" in baseline_file.read()
+        with open(solution_path, "rb") as solution_file:
+            assert b"secret" in solution_file.read()
+        download = client.get(
+            f"/api/tasks/{body['id']}/download/{os.path.basename(baseline_path)}",
+            headers=auth_headers(tokens.competitor),
+        )
+        assert download.status_code == 200
+        assert b"public" in download.data
+        assert b"secret" not in download.data
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
@@ -528,6 +560,112 @@ class TestCreateTask:
 
 class TestUpdateTask:
     """PUT /api/tasks/<task_id>"""
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    def test_rejected_update_preserves_existing_files_and_fields(
+        self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        from models import Task
+
+        task = Task(
+            title="Unchanged",
+            challenge_id=sample_challenge.id,
+            files=json.dumps([{"filename": "data.csv", "saved_name": "data.csv", "size_bytes": 3}]),
+        )
+        db_session.add(task)
+        db_session.commit()
+        upload_dir = os.path.join(client.application.config["UPLOAD_FOLDER"], f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        baseline_path = os.path.join(upload_dir, "baseline.ipynb")
+        evaluator_path = os.path.join(upload_dir, "evaluator.py")
+        data_path = os.path.join(upload_dir, "data.csv")
+        for path, content in (
+            (baseline_path, b"old baseline"),
+            (evaluator_path, b"old evaluator"),
+            (data_path, b"old data"),
+        ):
+            with open(path, "wb") as output:
+                output.write(content)
+        task.baseline_notebook_path = baseline_path
+        task.evaluator_script_path = evaluator_path
+        db_session.commit()
+
+        response = client.put(
+            f"/api/tasks/{task.id}",
+            data={
+                "title": "Changed",
+                "delete_baseline": "true",
+                "delete_evaluator": "true",
+                "deleted_files": json.dumps(["data.csv"]),
+                "solution_notebook": (_make_notebook("print('staged')"), "solution.ipynb"),
+                "file0": (io.BytesIO(b"bad"), "unsafe.exe"),
+            },
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "ERR_INVALID_FILE_TYPE"
+        db_session.refresh(task)
+        assert task.title == "Unchanged"
+        assert task.baseline_notebook_path == baseline_path
+        assert task.evaluator_script_path == evaluator_path
+        assert task.solution_notebook_path is None
+        assert json.loads(task.files)[0]["filename"] == "data.csv"
+        for path, content in (
+            (baseline_path, b"old baseline"),
+            (evaluator_path, b"old evaluator"),
+            (data_path, b"old data"),
+        ):
+            with open(path, "rb") as saved:
+                assert saved.read() == content
+        assert sorted(os.listdir(upload_dir)) == ["baseline.ipynb", "data.csv", "evaluator.py"]
+
+    def test_non_literal_evaluator_returns_validation_error(
+        self, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        from models import Task
+
+        task = Task(title="Evaluator", challenge_id=sample_challenge.id)
+        db_session.add(task)
+        db_session.commit()
+        response = client.put(
+            f"/api/tasks/{task.id}",
+            data={"evaluator_script": (io.BytesIO(b"METRIC_NAME = get_name()\n"), "eval.py")},
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    def test_upload_and_delete_baseline_removes_both_versions(
+        self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        from models import Task
+
+        task = Task(title="Delete wins", challenge_id=sample_challenge.id)
+        db_session.add(task)
+        db_session.commit()
+        upload_dir = os.path.join(client.application.config["UPLOAD_FOLDER"], f"task_{task.id}")
+        os.makedirs(upload_dir, exist_ok=True)
+        old_path = os.path.join(upload_dir, "old.ipynb")
+        with open(old_path, "wb") as output:
+            output.write(b"old")
+        task.baseline_notebook_path = old_path
+        db_session.commit()
+
+        response = client.put(
+            f"/api/tasks/{task.id}",
+            data={
+                "baseline_notebook": (_make_notebook("print('new')"), "new.ipynb"),
+                "delete_baseline": "true",
+            },
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200
+        assert response.get_json()["baseline_notebook_path"] is None
+        assert os.listdir(upload_dir) == []
 
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")

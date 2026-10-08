@@ -224,6 +224,7 @@ const mockSystemStats = {
 vi.mock('../../services/ApiService', () => ({
   default: {
     get: vi.fn(),
+    getBlob: vi.fn(),
     fetch: vi.fn(),
     postForm: vi.fn(() => Promise.resolve({ ok: true })),
     post: vi.fn(() => Promise.resolve({ ok: true })),
@@ -260,6 +261,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    api.getBlob.mockResolvedValue({ ok: true, status: 200, blob: async () => new Blob(['zip']) });
     useApp.mockReturnValue({
       challenges: [],
       selectedChallenge: null,
@@ -1355,7 +1357,7 @@ describe('AdminPanel – handler coverage', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(api.get).toHaveBeenCalledWith('/challenges/1/export');
+    expect(api.getBlob).toHaveBeenCalledWith('/challenges/1/export');
   });
 
   // ── Error paths ──────────────────────────────────────────────────────────

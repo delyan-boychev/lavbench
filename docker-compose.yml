@@ -151,6 +151,7 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
       - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - HF_CACHE_DIR=/app/hf_cache
+      - UPLOAD_FOLDER=/app/uploads
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:80}
       - WORKER_PUBLIC_KEYS_JSON=${WORKER_PUBLIC_KEYS_JSON:?WORKER_PUBLIC_KEYS_JSON must be set in .env}
       - WORKER_CAPABILITY_SECRET=${WORKER_CAPABILITY_SECRET:?WORKER_CAPABILITY_SECRET must be set in .env}
@@ -273,6 +274,7 @@ services:
       - HF_CACHE_DIR=/var/lib/lavbench/hf_cache
       - TASK_IMAGES_DIR=/var/lib/lavbench/task_images
       - LAVBENCH_WORKSPACE_DIR=/var/lib/lavbench/workspace
+      - UPLOAD_FOLDER=/app/uploads
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}

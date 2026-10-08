@@ -147,7 +147,7 @@ cp .env.example .env
 | `REDIS_HEALTH_MIN_FREE_PERCENT` | Minimum Redis maxmemory headroom before health reports degraded. | `10` |
 | `SECURE_COOKIES` | `true` when serving over HTTPS (Secure-flag auth cookie). | `true` (set `false` for plain HTTP) |
 | `NGINX_PORT` | Host port mapped to the frontend/nginx container. | `80` |
-| `HTTPS_PORT` | Host port mapped to the optional nginx TLS listener (auto-enabled when `certs/web/server.crt` exists). | `443` |
+| `HTTPS_PORT` | Host port mapped to the optional nginx TLS listener (auto-enabled when `certs/web/lavbench.crt` and `certs/web/lavbench.key` exist). | `443` |
 | `CORS_ORIGINS` | Allowed browser origins (comma-separated). | `http://localhost:80` |
 | `WORKER_MEM_LIMIT` | Memory limit for the compose internal-worker container. | `1g` |
 | `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
