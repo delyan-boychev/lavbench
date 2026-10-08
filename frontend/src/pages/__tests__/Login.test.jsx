@@ -8,9 +8,11 @@ import Login from '../Login';
 
 const mockNavigate = vi.fn();
 const mockLogin = vi.fn();
+let mockLocationState = null;
 
 vi.mock('react-router', () => ({
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: '/login', search: '', hash: '', state: mockLocationState }),
 }));
 
 vi.mock('../../AuthContext', () => ({
@@ -32,6 +34,45 @@ vi.mock('../../context/AppContext', () => ({
 describe('Login Page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLocationState = null;
+  });
+
+  it('returns to the deep link it was redirected from after login', async () => {
+    mockLocationState = {
+      from: { pathname: '/challenges/abc/submissions', search: '?task=2', hash: '' },
+    };
+    mockLogin.mockResolvedValue({ success: true });
+    render(<Login />);
+
+    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), {
+      target: { value: 'testuser' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Sign In'));
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/challenges/abc/submissions?task=2', {
+      replace: true,
+    });
+  });
+
+  it('ignores redirect targets that are not in-app paths', async () => {
+    mockLocationState = { from: { pathname: '//evil.example.com/x', search: '' } };
+    mockLogin.mockResolvedValue({ success: true });
+    render(<Login />);
+
+    fireEvent.change(screen.getByPlaceholderText('comp_ali_lov_3812, jury, or admin_...'), {
+      target: { value: 'testuser' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Sign In'));
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/challenges', { replace: true });
   });
 
   it('redirects to /challenges when already authenticated', () => {

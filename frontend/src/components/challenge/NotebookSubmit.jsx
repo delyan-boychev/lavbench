@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
@@ -9,13 +9,25 @@ import CodePreview from '../ui/CodePreview';
 import { Book, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+// Large notebooks start collapsed so uploading does not syntax-highlight every cell at once
+const COLLAPSE_THRESHOLD = 20;
+const EMPTY_SET = new Set();
+
 export default function NotebookSubmit({ task, challenge }) {
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
 
   const [cells, setCells] = useState([]);
-  const [selectedCellIds, setSelectedCellIds] = useState([]);
+  const [selectedCellIds, setSelectedCellIds] = useState(() => EMPTY_SET);
+  const toggleCellSelection = useCallback((id) => {
+    setSelectedCellIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const [fileName, setFileName] = useState('');
 
   const parseMutation = useMutation({
@@ -29,14 +41,20 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const isCompetitor = currentUser?.role === 'competitor';
   const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
-  const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
-  const stageEnded = stage
-    ? new Date().getTime() > new Date(stage.end_time).getTime() + graceMs
-    : false;
-  const challengeEnded =
-    !stage &&
-    challenge?.end_time &&
-    new Date().getTime() > new Date(challenge.end_time).getTime() + graceMs;
+  const graceMs = (challenge?.deadline_grace_period_seconds ?? 60) * 1000;
+  const deadlineBase = stage ? stage.end_time : challenge?.end_time;
+  const closesAtMs = deadlineBase ? new Date(deadlineBase).getTime() + graceMs : null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Re-render once when the window closes instead of ticking every second
+  useEffect(() => {
+    if (closesAtMs === null) return;
+    const remaining = closesAtMs - Date.now();
+    if (remaining > 2 ** 31 - 1) return;
+    const timer = setTimeout(() => setNowMs(Date.now()), Math.max(0, remaining) + 50);
+    return () => clearTimeout(timer);
+  }, [closesAtMs]);
+  const stageEnded = stage && closesAtMs !== null ? nowMs > closesAtMs : false;
+  const challengeEnded = !stage && closesAtMs !== null && nowMs > closesAtMs;
   const isClosed =
     !challenge?.is_active ||
     challenge?.is_archived ||
@@ -100,7 +118,7 @@ export default function NotebookSubmit({ task, challenge }) {
       showToast(t('challenge.only_ipynb_supported'), 'error');
       return;
     }
-    setSelectedCellIds([]);
+    setSelectedCellIds(EMPTY_SET);
     setCells([]);
     try {
       const res = await parseMutation.mutateAsync({ challengeId: challenge.id, file });
@@ -116,7 +134,7 @@ export default function NotebookSubmit({ task, challenge }) {
           .map((c) => c.id);
 
         if (autoSelectedIds.length > 0) {
-          setSelectedCellIds(autoSelectedIds);
+          setSelectedCellIds(new Set(autoSelectedIds));
           showToast(
             t('challenge.parsed_cells_auto_selected', {
               total: parsedCells.length,
@@ -141,17 +159,17 @@ export default function NotebookSubmit({ task, challenge }) {
   };
 
   const handleSubmit = async () => {
-    if (selectedCellIds.length === 0) {
+    if (selectedCellIds.size === 0) {
       showToast(t('challenge.select_cells_to_submit'), 'error');
       return;
     }
-    const selected = cells.filter((c) => selectedCellIds.includes(c.id));
+    const selected = cells.filter((c) => selectedCellIds.has(c.id));
     try {
       const res = await submitMutation.mutateAsync({ taskId: task.id, selected });
       if (res.ok) {
         showToast(t('challenge.submission_queued'));
         setCells([]);
-        setSelectedCellIds([]);
+        setSelectedCellIds(EMPTY_SET);
         setFileName('');
       } else {
         const errData = /** @type {any} */ (res.data);
@@ -267,13 +285,13 @@ export default function NotebookSubmit({ task, challenge }) {
               }}
             >
               {t('challenge.select_cells_count', {
-                selected: selectedCellIds.length,
+                selected: selectedCellIds.size,
                 total: cells.filter((c) => c.type === 'code').length,
               })}
             </h4>
             <button
               onClick={() =>
-                setSelectedCellIds(cells.filter((c) => c.type === 'code').map((c) => c.id))
+                setSelectedCellIds(new Set(cells.filter((c) => c.type === 'code').map((c) => c.id)))
               }
               className="btn btn-secondary"
             >
@@ -290,8 +308,8 @@ export default function NotebookSubmit({ task, challenge }) {
               cells={cells}
               selectable={true}
               selectedIds={selectedCellIds}
-              onSelectionChange={setSelectedCellIds}
-              defaultCollapsed={false}
+              onToggleSelect={toggleCellSelection}
+              defaultCollapsed={cells.length > COLLAPSE_THRESHOLD}
               maxHeight="300px"
             />
           </div>
@@ -302,7 +320,7 @@ export default function NotebookSubmit({ task, challenge }) {
       {cells.length > 0 && (
         <Button
           onClick={handleSubmit}
-          disabled={submitMutation.isPending || selectedCellIds.length === 0}
+          disabled={submitMutation.isPending || selectedCellIds.size === 0}
           size="lg"
           className="w-full"
         >
@@ -321,7 +339,7 @@ export default function NotebookSubmit({ task, challenge }) {
               {t('challenge.submitting')}
             </>
           ) : (
-            t('challenge.submit_cells_for_evaluation', { count: selectedCellIds.length })
+            t('challenge.submit_cells_for_evaluation', { count: selectedCellIds.size })
           )}
         </Button>
       )}

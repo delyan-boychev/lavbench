@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
@@ -130,7 +130,12 @@ export default function AdminPanel() {
   const [userSearch, setUserSearch] = useState('');
   const debouncedUserSearch = useDebounce(userSearch, 300);
   const [usersPage, setUsersPage] = useState(1);
-  const { data: usersData } = useUsersQuery(usersPage, debouncedUserSearch);
+  const isAdmin = currentUser?.role === 'admin';
+  const isAdminOrJury = isAdmin || currentUser?.role === 'jury';
+  // Only fetch data for the visible sub-tab and endpoints the role may call
+  const { data: usersData } = useUsersQuery(usersPage, debouncedUserSearch, 10, {
+    enabled: isAdmin && adminSubTab === 'user-management',
+  });
   const allUsers = usersData?.items || [];
   const usersTotal = usersData?.total || 0;
   const usersPages = usersData?.pages || 1;
@@ -185,6 +190,8 @@ export default function AdminPanel() {
     selectedChallenge?.id,
     competitorsPage,
     debouncedCompetitorSearch,
+    10,
+    { enabled: isAdminOrJury && adminSubTab === 'competitor-reg' },
   );
   const competitorsList = competitorsData?.items || [];
   const competitorsTotal = competitorsData?.total || 0;
@@ -195,28 +202,53 @@ export default function AdminPanel() {
   const [workerStatsLoading, setWorkerStatsLoading] = useState(false);
   const [workerStatsError, setWorkerStatsError] = useState(null);
 
-  const { data: availableMetricsData } = useAdminMetricsQuery();
+  const { data: availableMetricsData } = useAdminMetricsQuery({
+    enabled: isAdminOrJury && adminSubTab === 'competition-mgmt',
+  });
   const availableMetrics = availableMetricsData || {};
 
   // Worker stats via SSE
-  useSSE(adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '', {
-    storeData: false,
-    onMessage: (data) => {
-      if (data && !data.error) {
-        setWorkerStats(data);
-        setWorkerStatsError(null);
-      } else if (data?.error) {
-        setWorkerStatsError(data.error);
-      }
-      setWorkerStatsLoading(false);
+  const { reconnect: reconnectWorkerStats } = useSSE(
+    adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '',
+    {
+      storeData: false,
+      onMessage: (data) => {
+        if (data && !data.error) {
+          setWorkerStats(data);
+          setWorkerStatsError(null);
+        } else if (data?.error) {
+          setWorkerStatsError(data.error);
+        }
+        setWorkerStatsLoading(false);
+      },
+      onError: () => {
+        setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
+        setWorkerStatsLoading(false);
+      },
     },
-    onError: () => {
-      setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
-      setWorkerStatsLoading(false);
-    },
-  });
+  );
 
-  const fetchWorkerStats = () => setWorkerStatsLoading(true);
+  // A manual refresh reopens the stream; the first snapshot (or error) clears the
+  // spinner, and the timeout guarantees it never spins forever on a silent stream
+  const workerStatsRefreshTimerRef = useRef(
+    /** @type {ReturnType<typeof setTimeout> | null} */ (null),
+  );
+  const fetchWorkerStats = useCallback(() => {
+    setWorkerStatsLoading(true);
+    reconnectWorkerStats();
+    if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
+    workerStatsRefreshTimerRef.current = setTimeout(() => {
+      workerStatsRefreshTimerRef.current = null;
+      setWorkerStatsLoading(false);
+    }, 10000);
+  }, [reconnectWorkerStats]);
+
+  useEffect(
+    () => () => {
+      if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     setUsersPage(1);

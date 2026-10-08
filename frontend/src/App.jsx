@@ -1,18 +1,17 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
-import { useApp } from './context/AppContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { NotificationsProvider } from './context/NotificationsContext';
+import { NotificationsProvider, useToast } from './context/NotificationsContext';
 import { ChallengesProvider } from './context/ChallengesContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedLayout from './components/layout/ProtectedLayout';
 import Login from './pages/Login';
-import Home from './pages/Home';
-import LeaderboardView from './pages/LeaderboardView';
-import LeaderboardDemo from './pages/LeaderboardDemo';
 import { useAuth } from './AuthContext';
 import LoadingIndicator from './components/ui/LoadingIndicator';
 
+const Home = lazy(() => import('./pages/Home'));
+const LeaderboardView = lazy(() => import('./pages/LeaderboardView'));
+const LeaderboardDemo = lazy(() => import('./pages/LeaderboardDemo'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
 
@@ -25,7 +24,7 @@ function LoadingFallback() {
 }
 
 function ToastContainer() {
-  const { toast } = useApp();
+  const toast = useToast();
   if (!toast?.show) return null;
   const isError = toast.type === 'rose' || toast.type === 'error';
 
@@ -54,12 +53,37 @@ export default function App() {
               <Routes>
                 <Route element={<ProtectedLayout />}>
                   <Route path="/" element={<Navigate to="/challenges" replace />} />
-                  <Route path="/challenges" element={<Home />} />
-                  <Route path="/challenges/:challengeId" element={<Home />} />
-                  <Route path="/leaderboard" element={<LeaderboardView />} />
+                  <Route
+                    path="/challenges"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <Home />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/challenges/:challengeId"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <Home />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/leaderboard"
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <LeaderboardView />
+                      </Suspense>
+                    }
+                  />
                   <Route
                     path="/challenges/:challengeId/leaderboard"
-                    element={<LeaderboardView />}
+                    element={
+                      <Suspense fallback={<LoadingFallback />}>
+                        <LeaderboardView />
+                      </Suspense>
+                    }
                   />
                   <Route
                     path="/submissions"
@@ -89,7 +113,14 @@ export default function App() {
 
                 <Route path="/login" element={<Login />} />
 
-                <Route path="/demo/leaderboard" element={<LeaderboardDemo />} />
+                <Route
+                  path="/demo/leaderboard"
+                  element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      <LeaderboardDemo />
+                    </Suspense>
+                  }
+                />
 
                 <Route path="*" element={<Navigate to="/challenges" replace />} />
               </Routes>

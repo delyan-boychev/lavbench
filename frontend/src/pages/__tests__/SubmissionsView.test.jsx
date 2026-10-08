@@ -210,7 +210,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
     });
 
@@ -330,7 +330,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
     });
 
@@ -432,7 +432,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
 
       const submissionButton = await screen.findByText('#100');
@@ -495,7 +495,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
 
       const submissionButton = await screen.findByText('#100');
@@ -964,7 +964,7 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('Task 2')).toBeInTheDocument();
       });
 
-      const task1Card = screen.getByText('Task 1').closest('[role="button"]');
+      const task1Card = screen.getByText('Task 1').closest('button');
       fireEvent.click(task1Card);
 
       await waitFor(() => {
@@ -1039,7 +1039,7 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('Task 1')).toBeInTheDocument();
       });
 
-      const task1Card = screen.getByText('Task 1').closest('[role="button"]');
+      const task1Card = screen.getByText('Task 1').closest('button');
       fireEvent.click(task1Card);
 
       await waitFor(() => {

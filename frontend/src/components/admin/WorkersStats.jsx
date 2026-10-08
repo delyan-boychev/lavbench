@@ -256,7 +256,9 @@ export default function WorkersStats({
                   <div className="flex items-center gap-4 text-xs font-mono">
                     <div className="text-slate-500">
                       {t('admin.workers.pid_label')}{' '}
-                      <span className="text-slate-300 font-bold">{worker.pid || 'N/A'}</span>
+                      <span className="text-slate-300 font-bold">
+                        {worker.pid || t('common.not_available')}
+                      </span>
                     </div>
                     <div className="text-slate-500">
                       {t('admin.workers.uptime_label', { time: '' })}
@@ -297,7 +299,9 @@ export default function WorkersStats({
                         <div className="flex justify-between">
                           <span className="text-slate-500">{t('admin.workers.max_ram_usage')}</span>
                           <span className="font-bold text-slate-300">
-                            {worker.rusage?.maxrss_mb ? `${worker.rusage.maxrss_mb} MB` : 'N/A'}
+                            {worker.rusage?.maxrss_mb
+                              ? `${worker.rusage.maxrss_mb} MB`
+                              : t('common.not_available')}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -305,17 +309,17 @@ export default function WorkersStats({
                           <span className="font-mono font-bold text-slate-300">
                             {worker.rusage?.utime_sec !== undefined
                               ? `${worker.rusage.utime_sec.toFixed(2)}s`
-                              : 'N/A'}
+                              : t('common.not_available')}
                             {' / '}
                             {worker.rusage?.stime_sec !== undefined
                               ? `${worker.rusage.stime_sec.toFixed(2)}s`
-                              : 'N/A'}
+                              : t('common.not_available')}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500">{t('admin.workers.gpu_model')}</span>
                           <span className="font-bold text-slate-300">
-                            {worker.gpu_type || 'N/A'}
+                            {worker.gpu_type || t('common.not_available')}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -323,13 +327,15 @@ export default function WorkersStats({
                           <span className="font-bold text-slate-300">
                             {worker.vram_gb !== 'N/A' && worker.vram_gb != null
                               ? `${worker.vram_gb} GB`
-                              : 'N/A'}
+                              : t('common.not_available')}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500">{t('admin.workers.ram')}</span>
                           <span className="font-bold text-slate-300">
-                            {worker.ram_gb != null ? `${worker.ram_gb} GB` : 'N/A'}
+                            {worker.ram_gb != null
+                              ? `${worker.ram_gb} GB`
+                              : t('common.not_available')}
                           </span>
                         </div>
                       </div>
@@ -343,15 +349,15 @@ export default function WorkersStats({
                       <div className="bg-slate-900/20 border border-white/5 p-4 rounded-xl flex flex-col gap-2 font-mono text-[11px] text-slate-400">
                         <div>
                           <span className="text-slate-600">{t('admin.workers.transport')}</span>{' '}
-                          {worker.broker?.transport || 'N/A'}
+                          {worker.broker?.transport || t('common.not_available')}
                         </div>
                         <div>
                           <span className="text-slate-600">{t('admin.workers.hostname')}</span>{' '}
-                          {worker.broker?.hostname || 'N/A'}
+                          {worker.broker?.hostname || t('common.not_available')}
                         </div>
                         <div>
                           <span className="text-slate-600">{t('admin.workers.port')}</span>{' '}
-                          {worker.broker?.port || 'N/A'}
+                          {worker.broker?.port || t('common.not_available')}
                         </div>
                       </div>
                     </div>
@@ -381,7 +387,7 @@ export default function WorkersStats({
                               {t('admin.workers.no_active_tasks')}
                             </div>
                           ) : (
-                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
+                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-x-auto">
                               <table className="w-full text-left border-collapse text-[10px]">
                                 <thead>
                                   <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
@@ -395,7 +401,7 @@ export default function WorkersStats({
                                       key={task.id}
                                       className="border-b border-white/5 last:border-0 hover:bg-white/5"
                                     >
-                                      <td className="p-3 font-mono text-slate-300 font-semibold">
+                                      <td className="p-3 font-mono text-slate-300 font-semibold break-all">
                                         {task.id}
                                       </td>
                                       <td className="p-3 font-mono text-indigo-400">{task.name}</td>
@@ -420,7 +426,7 @@ export default function WorkersStats({
                               {t('admin.workers.queue_empty')}
                             </div>
                           ) : (
-                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-hidden">
+                            <div className="bg-slate-900/20 border border-white/5 rounded-xl overflow-x-auto">
                               <table className="w-full text-left border-collapse text-[10px]">
                                 <thead>
                                   <tr className="bg-slate-900/50 text-slate-400 font-bold uppercase border-b border-white/5">
@@ -434,7 +440,7 @@ export default function WorkersStats({
                                       key={task.id}
                                       className="border-b border-white/5 last:border-0 hover:bg-white/5"
                                     >
-                                      <td className="p-3 font-mono text-slate-300 font-semibold">
+                                      <td className="p-3 font-mono text-slate-300 font-semibold break-all">
                                         {task.id}
                                       </td>
                                       <td className="p-3 font-mono text-amber-400">{task.name}</td>

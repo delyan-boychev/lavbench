@@ -186,7 +186,7 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 1. Open the **Leaderboard** tab.
 2. Locate the competitor row and task column.
 3. Click the score field to open the manual scoring input modal.
-4. Enter a point value between **0 and 100**.
+4. Enter a point value between **0 and 100**, with up to 2 decimal places (e.g. `87.5` or `12.25`).
 5. Save the score — it will be weighted into the competitor's composite stage total according to task rules.
 
 > [!NOTE]

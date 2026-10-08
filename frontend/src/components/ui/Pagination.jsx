@@ -72,10 +72,11 @@ export default function Pagination({
         {/* Previous Button */}
         <Button
           variant="secondary"
-          className="btn-sm px-2.5 py-1.5"
+          className="btn-sm px-2.5 py-1.5 min-h-8 min-w-8"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
           title={t('common.prev_page')}
+          aria-label={t('common.prev_page')}
         >
           <ChevronLeft size={14} />
         </Button>
@@ -97,7 +98,8 @@ export default function Pagination({
                 key={`page-${p}`}
                 type="button"
                 onClick={() => onPageChange(p)}
-                className={`w-7 h-7 flex items-center justify-center rounded-lg font-semibold border text-[11px] transition-all cursor-pointer ${
+                aria-current={isCurrent ? 'page' : undefined}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg font-semibold border text-[11px] transition-all cursor-pointer ${
                   isCurrent
                     ? 'bg-indigo-600 border-indigo-500/30 text-white font-bold'
                     : 'bg-slate-900/60 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-slate-100'
@@ -112,10 +114,11 @@ export default function Pagination({
         {/* Next Button */}
         <Button
           variant="secondary"
-          className="btn-sm px-2.5 py-1.5"
+          className="btn-sm px-2.5 py-1.5 min-h-8 min-w-8"
           disabled={page >= pages}
           onClick={() => onPageChange(page + 1)}
           title={t('common.next_page')}
+          aria-label={t('common.next_page')}
         >
           <ChevronRight size={14} />
         </Button>

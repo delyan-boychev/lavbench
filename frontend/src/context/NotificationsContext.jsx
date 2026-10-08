@@ -1,8 +1,19 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../components/ui/Modal';
 
 const NotificationsContext = createContext(null);
+// Toast state lives in its own context so showing a toast only re-renders the toast UI,
+// not every component that merely needs the stable showToast/confirm actions
+const ToastStateContext = createContext(null);
 
 function ConfirmModal({ config }) {
   const [val, setVal] = useState('');
@@ -69,6 +80,7 @@ function ConfirmModal({ config }) {
 export const NotificationsProvider = ({ children }) => {
   const { t } = useTranslation();
   const toastTimeoutRef = useRef(null);
+  const pendingCancelRef = useRef(/** @type {(() => void) | null} */ (null));
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [confirmConfig, setConfirmConfig] = useState({
     isOpen: false,
@@ -111,7 +123,20 @@ export const NotificationsProvider = ({ children }) => {
       isPrompt = false,
       placeholder = '',
     }) => {
+      // A newer dialog replaces the open one; settle the old caller as cancelled
+      // so its await never hangs
+      pendingCancelRef.current?.();
       return new Promise((resolve) => {
+        const cancelValue = isPrompt ? null : false;
+        let settled = false;
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          if (pendingCancelRef.current === cancel) pendingCancelRef.current = null;
+          resolve(value);
+        };
+        const cancel = () => settle(cancelValue);
+        pendingCancelRef.current = cancel;
         setConfirmConfig({
           isOpen: true,
           title,
@@ -122,11 +147,11 @@ export const NotificationsProvider = ({ children }) => {
           placeholder,
           onConfirm: (val) => {
             setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
-            resolve(isPrompt ? val : true);
+            settle(isPrompt ? val : true);
           },
           onCancel: () => {
             setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
-            resolve(isPrompt ? null : false);
+            cancel();
           },
         });
       });
@@ -134,10 +159,14 @@ export const NotificationsProvider = ({ children }) => {
     [t],
   );
 
+  const actions = useMemo(() => ({ showToast, confirm }), [showToast, confirm]);
+
   return (
-    <NotificationsContext.Provider value={{ toast, showToast, confirm }}>
-      {children}
-      <ConfirmModal config={confirmConfig} />
+    <NotificationsContext.Provider value={actions}>
+      <ToastStateContext.Provider value={toast}>
+        {children}
+        <ConfirmModal config={confirmConfig} />
+      </ToastStateContext.Provider>
     </NotificationsContext.Provider>
   );
 };
@@ -145,5 +174,11 @@ export const NotificationsProvider = ({ children }) => {
 export const useNotifications = () => {
   const ctx = useContext(NotificationsContext);
   if (!ctx) throw new Error('useNotifications must be used within NotificationsProvider');
+  return ctx;
+};
+
+export const useToast = () => {
+  const ctx = useContext(ToastStateContext);
+  if (!ctx) throw new Error('useToast must be used within NotificationsProvider');
   return ctx;
 };

@@ -183,31 +183,56 @@ describe('LeaderboardView', () => {
     });
   });
 
-  it('polls leaderboard every 15 seconds', async () => {
-    let refetchCalls = 0;
-    const refetchFn = () => {
-      refetchCalls++;
-    };
-    useLeaderboardQuery.mockReturnValue({
-      data: defaultQueryData,
-      isLoading: false,
-      refetch: refetchFn,
-    });
-
-    vi.useFakeTimers();
+  it('polls leaderboard every 15 seconds via React Query when SSE is unavailable', async () => {
     vi.stubGlobal('EventSource', undefined);
     render(<LeaderboardView />);
     await act(async () => {});
+    expect(useLeaderboardQuery).toHaveBeenLastCalledWith('42', { refetchInterval: 15000 });
+  });
 
-    vi.advanceTimersByTime(15000);
+  it('does not poll while the live stream is available', async () => {
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        close = vi.fn();
+      },
+    );
+    render(<LeaderboardView />);
     await act(async () => {});
-    expect(refetchCalls).toBe(1);
+    expect(useLeaderboardQuery).toHaveBeenLastCalledWith('42', { refetchInterval: false });
+  });
 
-    vi.advanceTimersByTime(15000);
+  it('throttles refetches from bursts of live messages and ignores lifecycle messages', async () => {
+    const instances = [];
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        constructor() {
+          instances.push(this);
+        }
+        close = vi.fn();
+      },
+    );
+    vi.useFakeTimers();
+    render(<LeaderboardView />);
     await act(async () => {});
-    expect(refetchCalls).toBe(2);
+    const es = instances[instances.length - 1];
+    const send = (payload) => act(() => es.onmessage({ data: JSON.stringify(payload) }));
 
+    send({ info: 'connected' });
+    expect(mockRefetch).not.toHaveBeenCalled();
+
+    send({ leaderboard: [] });
+    send({ leaderboard: [] });
+    send({ leaderboard: [] });
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+
+    act(() => vi.advanceTimersByTime(1500));
+    expect(mockRefetch).toHaveBeenCalledTimes(2);
+
+    send({ event: 'timeout' });
+    act(() => vi.advanceTimersByTime(1500));
+    expect(mockRefetch).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
-    await act(async () => {});
   });
 });

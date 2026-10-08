@@ -3,9 +3,9 @@ import { screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders } from '../test-utils';
 
-vi.mock('../context/AppContext', () => ({
-  AppProvider: ({ children }) => <div>{children}</div>,
-  useApp: vi.fn(),
+vi.mock('../context/NotificationsContext', () => ({
+  NotificationsProvider: ({ children }) => <div>{children}</div>,
+  useToast: vi.fn(),
 }));
 
 vi.mock('../AuthContext', () => ({
@@ -59,7 +59,7 @@ vi.mock('react-router', () => ({
   Link: ({ children, to }) => <a href={to}>{children}</a>,
 }));
 
-import { useApp } from '../context/AppContext';
+import { useToast } from '../context/NotificationsContext';
 import App from '../App';
 
 describe('App', () => {
@@ -68,20 +68,22 @@ describe('App', () => {
   });
 
   it('renders without crashing', () => {
-    vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
+    vi.mocked(useToast).mockReturnValue({ show: false });
     renderWithProviders(<App />);
     expect(screen.getByTestId('protected-layout')).toBeTruthy();
   });
 
   it('does not render toast when toast.show is false', () => {
-    vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
+    vi.mocked(useToast).mockReturnValue({ show: false });
     renderWithProviders(<App />);
     expect(screen.queryByText(/toast/i)).toBeNull();
   });
 
   it('renders toast when toast.show is true with success styling', () => {
-    vi.mocked(useApp).mockReturnValue({
-      toast: { show: true, message: 'Operation successful', type: 'success' },
+    vi.mocked(useToast).mockReturnValue({
+      show: true,
+      message: 'Operation successful',
+      type: 'success',
     });
     renderWithProviders(<App />);
     const toast = screen.getByRole('status');
@@ -91,8 +93,10 @@ describe('App', () => {
   });
 
   it('renders toast with error styling for rose type', () => {
-    vi.mocked(useApp).mockReturnValue({
-      toast: { show: true, message: 'Something went wrong', type: 'rose' },
+    vi.mocked(useToast).mockReturnValue({
+      show: true,
+      message: 'Something went wrong',
+      type: 'rose',
     });
     renderWithProviders(<App />);
     const toast = screen.getByRole('alert');
@@ -101,15 +105,13 @@ describe('App', () => {
   });
 
   it('renders toast with error styling for error type', () => {
-    vi.mocked(useApp).mockReturnValue({
-      toast: { show: true, message: 'Error occurred', type: 'error' },
-    });
+    vi.mocked(useToast).mockReturnValue({ show: true, message: 'Error occurred', type: 'error' });
     renderWithProviders(<App />);
     expect(screen.getByText('Error occurred')).toBeTruthy();
   });
 
   it('contains the Navigate to /challenges as a protected route', () => {
-    vi.mocked(useApp).mockReturnValue({ toast: { show: false } });
+    vi.mocked(useToast).mockReturnValue({ show: false });
     renderWithProviders(<App />);
     const navigates = screen.getAllByTestId('navigate');
     expect(navigates.some((n) => n.textContent === '/challenges')).toBe(true);

@@ -6,6 +6,8 @@ import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
 import NotebookSubmit from '../components/challenge/NotebookSubmit';
 import EmptyState from '../components/ui/EmptyState';
+import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
+import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import { useTranslation } from 'react-i18next';
 import { FileText, AlertTriangle } from 'lucide-react';
 
@@ -13,6 +15,7 @@ export default function Home() {
   const { challengeId } = useParams();
   const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask } = useApp();
   const { t } = useTranslation();
+  const notFound = useChallengeNotFound(challengeId);
 
   useEffect(() => {
     if (challengeId) {
@@ -27,22 +30,19 @@ export default function Home() {
     }
   }, [selectedChallenge, selectedTask, setSelectedTask]);
 
+  if (notFound) return <ChallengeNotFound />;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }} className="animate-fadein">
       {selectedChallenge ? (
         <>
           <ChallengeOverview challenge={selectedChallenge} />
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr',
-              gap: 24,
-            }}
-            className="lg:grid-cols-[300px_1fr] items-start"
-          >
+          {/* minmax(0, 1fr) lets wide task content (tables, code) scroll instead of
+              stretching the page; an inline gridTemplateColumns would override lg: */}
+          <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[300px_minmax(0,1fr)]">
             {/* Sidebar with tasks */}
-            <div>
+            <div className="min-w-0">
               <TaskSidebar
                 tasks={selectedChallenge.tasks}
                 selectedTask={selectedTask}
@@ -54,7 +54,7 @@ export default function Home() {
             <div
               key={selectedTask?.id || 'no-task'}
               style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
-              className="animate-fadein"
+              className="animate-fadein min-w-0"
             >
               {selectedTask ? (
                 <>

@@ -30,11 +30,12 @@ import ToggleField from '../ui/ToggleField';
 import { Plus, AlertTriangle } from 'lucide-react';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime } from '../../utils/formatDate';
+import { saveBlob } from '../../utils/download';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
   const { t } = useTranslation();
   const { showToast, confirm, selectedChallenge } = useApp();
-  const { mutateAsync: updateChallengeAct } = useUpdateChallenge();
+  const { mutateAsync: updateChallengeAct, isPending: isUpdatingChallenge } = useUpdateChallenge();
   const { mutateAsync: deleteChallengeAct, isPending: isDeletingChallenge } = useDeleteChallenge();
   const { mutateAsync: finalizeChallengeAct, isPending: isFinalizingChallenge } =
     useFinalizeChallenge();
@@ -164,7 +165,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             : t('admin.notifications.results_hidden', 'Results hidden successfully.'),
         );
       } else {
-        showApiError(res.data, '', 'Failed to toggle reveal');
+        showApiError(res.data, '', t('admin.notifications.toggle_reveal_failed'));
       }
     } catch (error) {
       showApiError(error, 'admin.notifications.network_error');
@@ -182,7 +183,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             : t('admin.notifications.stage_results_hidden', 'Stage results hidden.'),
         );
       } else {
-        showApiError(res.data, '', 'Failed to toggle stage reveal');
+        showApiError(res.data, '', t('admin.notifications.toggle_stage_reveal_failed'));
       }
     } catch (error) {
       showApiError(error, 'admin.notifications.network_error');
@@ -350,12 +351,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       }
       const blob = await res.blob();
       const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(t('admin.notifications.scores_csv_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_scores_failed'), 'rose');
@@ -381,12 +377,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
       if (stageTitle) filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
       filename += '.zip';
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(t('admin.notifications.submissions_zip_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_submissions_failed'), 'rose');
@@ -406,12 +397,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       }
       const blob = await res.blob();
       const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(
         t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
       );
@@ -429,20 +415,15 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     try {
       const result = await exportChallengeAct(challengeId);
       if (!result.ok) {
-        showToast('Failed to export challenge.', 'rose');
+        showToast(t('admin.notifications.export_challenge_failed'), 'rose');
         return;
       }
       const blob = await result.res.blob();
       const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast('Challenge exported.');
+      saveBlob(blob, filename);
+      showToast(t('admin.notifications.challenge_exported'));
     } catch {
-      showToast('Failed to export challenge.', 'rose');
+      showToast(t('admin.notifications.export_challenge_failed'), 'rose');
     }
   };
 
@@ -454,12 +435,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     try {
       const res = await importChallengeAct(formData);
       if (res.ok) {
-        showToast('Challenge imported successfully.');
+        showToast(t('admin.notifications.challenge_imported'));
       } else {
-        showApiError(res.data, '', 'Failed to import challenge.');
+        showApiError(res.data, '', t('admin.notifications.import_challenge_failed'));
       }
     } catch (error) {
-      showApiError(error, '', 'Failed to import challenge.');
+      showApiError(error, '', t('admin.notifications.import_challenge_failed'));
     }
     e.target.value = '';
   };
@@ -478,6 +459,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (isUpdatingChallenge) return;
                 const res = await handleUpdateChallenge(editingChallenge.id, editingChallenge);
                 if (res.success) setEditingChallenge(null);
               }}
@@ -494,7 +476,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               <InputField
                 multiline
                 label={t('admin.description')}
-                value={editingChallenge.description}
+                value={editingChallenge.description ?? ''}
                 onChange={(e) =>
                   setEditingChallenge({ ...editingChallenge, description: e.target.value })
                 }
@@ -515,7 +497,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 <InputField
                   label={t('admin.ram_limit_override')}
                   type="number"
-                  value={editingChallenge.ram_limit_mb}
+                  value={editingChallenge.ram_limit_mb ?? ''}
                   onChange={(e) =>
                     setEditingChallenge({
                       ...editingChallenge,
@@ -526,7 +508,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 <InputField
                   label={t('admin.time_limit_override')}
                   type="number"
-                  value={editingChallenge.time_limit_sec}
+                  value={editingChallenge.time_limit_sec ?? ''}
                   onChange={(e) =>
                     setEditingChallenge({
                       ...editingChallenge,
@@ -634,7 +616,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 />
               </div>
               <div className="flex gap-3 mt-4">
-                <Button type="submit" variant="primary">
+                <Button type="submit" variant="primary" isLoading={isUpdatingChallenge}>
                   {t('admin.stages.save_changes_btn')}
                 </Button>
                 <Button onClick={() => setEditingChallenge(null)} variant="secondary">

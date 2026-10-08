@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import api from './services/ApiService';
 
@@ -60,7 +60,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [clearSession]);
 
-  const login = async (identifier, password) => {
+  const login = useCallback(async (identifier, password) => {
     setAuthError('');
     try {
       let finalPassword = password || '';
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
       setAuthError('auth.unreachable');
       return { success: false, error: 'auth.network_error' };
     }
-  };
+  }, []);
 
   // On mount: check if there's an active session via cookie and refresh CSRF token
   useEffect(() => {
@@ -95,22 +95,21 @@ export const AuthProvider = ({ children }) => {
     api.refreshCsrfToken();
   }, [fetchUser]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        authLoading,
-        authError,
-        authCheckError,
-        login,
-        logout,
-        setAuthError,
-        fetchUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      currentUser,
+      authLoading,
+      authError,
+      authCheckError,
+      login,
+      logout,
+      setAuthError,
+      fetchUser,
+    }),
+    [currentUser, authLoading, authError, authCheckError, login, logout, fetchUser],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { formatScore } from '../utils/formatScore';
 
 const NAMES = [
   'Alpha-Titan',
@@ -96,7 +97,7 @@ export default function LeaderboardDemo() {
 
               {/* Score */}
               <span className="w-20 text-right font-mono text-indigo-400 font-bold">
-                {entry.score.toFixed(4)}
+                {formatScore(entry.score)}
               </span>
 
               {/* Delta */}

@@ -9,6 +9,7 @@ export default function Button({
   isLoading = false,
   className = '',
   title = '',
+  'aria-label': ariaLabel = undefined,
   // eslint-disable-next-line no-unused-vars
   size = 'md',
 }) {
@@ -31,6 +32,7 @@ export default function Button({
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}
       title={title}
+      aria-label={ariaLabel}
       className={`${baseStyle} ${variants[variant] || variants.primary} ${className}`}
     >
       {isLoading && (

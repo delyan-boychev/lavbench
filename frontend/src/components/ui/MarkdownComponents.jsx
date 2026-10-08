@@ -194,6 +194,11 @@ export const markdownComponents = {
       </blockquote>
     );
   },
+  table: ({ node: _node, ...props }) => (
+    <div className="overflow-x-auto">
+      <table {...props} />
+    </div>
+  ),
   h1: ({ children }) => <h1 id={stringToSlug(getRawText(children))}>{children}</h1>,
   h2: ({ children }) => <h2 id={stringToSlug(getRawText(children))}>{children}</h2>,
   h3: ({ children }) => <h3 id={stringToSlug(getRawText(children))}>{children}</h3>,

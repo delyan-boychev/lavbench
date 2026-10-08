@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { formatLocalizedDate } from '../../utils/formatDate';
 import { Star, Download, ChevronRight } from 'lucide-react';
+import { formatScore } from '../../utils/formatScore';
 
 export default function BestSubmissionCard({
   sub,
@@ -17,16 +18,13 @@ export default function BestSubmissionCard({
     : '—';
 
   return (
-    <div
-      onClick={() => onView(sub)}
-      className="flex items-center justify-between p-3 rounded-lg bg-slate-900/40 border border-slate-800 hover:bg-slate-800/60 hover:border-indigo-500/40 transition-all cursor-pointer text-left w-full"
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onView(sub);
-      }}
-    >
-      <div className="flex items-center gap-3 min-w-0 flex-1">
+    // The row is two sibling buttons (view, download) so no control is nested in another
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-900/40 border border-slate-800 hover:bg-slate-800/60 hover:border-indigo-500/40 transition-all w-full">
+      <button
+        type="button"
+        onClick={() => onView(sub)}
+        className="flex items-center justify-between gap-3 min-w-0 flex-1 text-left cursor-pointer"
+      >
         <div className="flex flex-col gap-0.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-slate-200 truncate">{task.title}</span>
@@ -42,49 +40,42 @@ export default function BestSubmissionCard({
             <span>{timeStr}</span>
           </div>
         </div>
-      </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {sub.public_score != null && (
-          <div className="text-right">
-            <div className="text-[9px] text-slate-500 uppercase tracking-wider">
-              {t('submissions.public_score')}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {sub.public_score != null && (
+            <div className="text-right">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">
+                {t('submissions.public_score')}
+              </div>
+              <div className="font-mono text-xs font-bold text-indigo-400">
+                {formatScore(sub.public_score)}
+              </div>
             </div>
-            <div className="font-mono text-xs font-bold text-indigo-400">
-              {Number(sub.public_score).toFixed(4)}
+          )}
+          {showPrivate && sub.private_score != null && (
+            <div className="text-right">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">
+                {t('submissions.private_score')}
+              </div>
+              <div className="font-mono text-xs font-bold text-emerald-400">
+                {formatScore(sub.private_score)}
+              </div>
             </div>
-          </div>
-        )}
-        {showPrivate && sub.private_score != null && (
-          <div className="text-right">
-            <div className="text-[9px] text-slate-500 uppercase tracking-wider">
-              {t('submissions.private_score')}
-            </div>
-            <div className="font-mono text-xs font-bold text-emerald-400">
-              {Number(sub.private_score).toFixed(4)}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
+      </button>
+      <div className="flex items-center gap-1 flex-shrink-0">
         {onDownload && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onDownload(sub);
-            }}
-            className="p-1.5 rounded text-slate-500 hover:text-indigo-400 hover:bg-slate-800 transition-colors cursor-pointer"
+          <button
+            type="button"
+            onClick={() => onDownload(sub)}
+            className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-indigo-400 hover:bg-slate-800 transition-colors cursor-pointer"
             title={t('submissions.download')}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.stopPropagation();
-                onDownload(sub);
-              }
-            }}
+            aria-label={t('submissions.download')}
           >
             <Download size={14} />
-          </span>
+          </button>
         )}
-        <ChevronRight size={14} className="text-slate-500" />
+        <ChevronRight size={14} className="text-slate-500" aria-hidden="true" />
       </div>
     </div>
   );

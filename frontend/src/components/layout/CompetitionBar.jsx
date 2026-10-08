@@ -107,7 +107,16 @@ export default function CompetitionBar() {
         }}
       >
         {/* Competition selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: '0 1 auto',
+            minWidth: 0,
+            maxWidth: '100%',
+          }}
+        >
           <span
             style={{
               fontSize: '0.72rem',
@@ -134,12 +143,13 @@ export default function CompetitionBar() {
                 fontWeight: 700,
                 color: 'rgb(129, 140, 248)',
                 userSelect: 'none',
+                minWidth: 0,
               }}
               title={t('nav.assigned_competition_tooltip')}
               data-testid="competitor-competition-label"
             >
-              <Flag size={12} strokeWidth={2.5} />
-              <span>
+              <Flag size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+              <span className="truncate">
                 {selectedChallenge ? selectedChallenge.title : t('nav.no_competition_assigned')}
               </span>
             </div>
@@ -152,6 +162,7 @@ export default function CompetitionBar() {
               value={selectedChallenge?.id || ''}
               onChange={handleChallengeChange}
               placeholder={t('nav.no_competitions_placeholder')}
+              className="min-w-0 max-w-[60vw] md:max-w-md"
             />
           )}
           {selectedChallenge?.is_archived && (

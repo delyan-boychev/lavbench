@@ -4,15 +4,14 @@ import { useApp } from '../../context/AppContext';
 import Logo from '../ui/Logo';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
+
+const DocsMarkdown = React.lazy(() => import('./DocsMarkdown'));
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -27,7 +26,7 @@ export default function Navbar() {
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const [workerStatus, setWorkerStatus] = React.useState('online');
+  const [reportedStatus, setReportedStatus] = React.useState('online');
   const [clusters, setClusters] = React.useState([]);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
@@ -68,20 +67,26 @@ export default function Navbar() {
     showToast(t('nav.signed_out_success'));
   };
 
-  useSSE('/api/worker-status/live', {
+  const {
+    connected: statusConnected,
+    retrying: statusRetrying,
+    error: statusError,
+  } = useSSE('/api/worker-status/live', {
     storeData: false,
     reconnect: true,
     reconnectDelay: 10000,
     maxReconnects: Infinity,
     onMessage: (msg) => {
-      setWorkerStatus(msg.status);
+      setReportedStatus(msg.status);
       setClusters(msg.clusters || []);
     },
-    onError: () => {
-      setWorkerStatus('offline');
-      setClusters([]);
-    },
   });
+
+  // The stream retries forever, so a dropped connection never reaches onError;
+  // treat any disconnect that is being retried (or gave up) as offline
+  const streamDown = !statusConnected && (statusRetrying || Boolean(statusError));
+  const isOnline = !streamDown && reportedStatus === 'online';
+  const visibleClusters = streamDown ? [] : clusters;
 
   React.useEffect(() => {
     const mq = window.matchMedia('(max-width: 450px)');
@@ -120,7 +125,7 @@ export default function Navbar() {
         }}
       >
         {/* Left: Logo */}
-        <Logo size="lg" />
+        <Logo size={isNarrow ? 'md' : 'lg'} />
 
         {/* Center: Timer + Cluster + Docs (hidden on mobile) */}
         <div className="hidden lg:flex" style={{ gap: 10, alignItems: 'center' }}>
@@ -132,13 +137,12 @@ export default function Navbar() {
               alignItems: 'center',
               gap: 6,
               padding: '4px 12px',
-              background:
-                workerStatus === 'online' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-              border: `1px solid ${workerStatus === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+              background: isOnline ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              border: `1px solid ${isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
               borderRadius: 'var(--radius-sm)',
               fontSize: '0.72rem',
               fontWeight: 700,
-              color: workerStatus === 'online' ? '#10b981' : '#ef4444',
+              color: isOnline ? '#10b981' : '#ef4444',
               cursor: 'pointer',
               outline: 'none',
               transition: 'all 0.2s ease',
@@ -154,11 +158,11 @@ export default function Navbar() {
                 height: 8,
               }}
             >
-              {workerStatus === 'online' && (
+              {isOnline && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               )}
               <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${workerStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                className={`relative inline-flex rounded-full h-2 w-2 ${isOnline ? 'bg-emerald-500' : 'bg-rose-500'}`}
               ></span>
             </span>
             {t('nav.cluster')}
@@ -192,14 +196,16 @@ export default function Navbar() {
         </div>
 
         {/* Right: user + controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           {/* User info (mobile — name / role / alias; hidden under 450px) */}
           {currentUser && !isNarrow && (
             <div
-              className="flex lg:hidden"
+              className="flex lg:hidden min-w-0 max-w-[40vw] sm:max-w-[220px]"
               style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 2, padding: '2px 0' }}
             >
               <span
+                className="truncate max-w-full"
+                title={displayName}
                 style={{
                   fontSize: '0.75rem',
                   fontWeight: 600,
@@ -211,6 +217,8 @@ export default function Navbar() {
               </span>
               <Badge status={currentUser.role} />
               <span
+                className="truncate max-w-full"
+                title={currentUser.alias_id}
                 style={{
                   fontSize: '0.65rem',
                   color: 'var(--text-muted)',
@@ -255,8 +263,12 @@ export default function Navbar() {
 
           {/* Mobile menu toggle */}
           <button
+            type="button"
             className="flex lg:hidden"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? t('nav.close_menu') : t('nav.open_menu')}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav-menu"
             style={{
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border)',
@@ -364,6 +376,7 @@ export default function Navbar() {
       {/* Mobile dropdown menu */}
       {mobileMenuOpen && (
         <div
+          id="mobile-nav-menu"
           className="flex lg:hidden"
           style={{
             background: 'var(--bg-nav)',
@@ -442,7 +455,7 @@ export default function Navbar() {
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: workerStatus === 'online' ? '#10b981' : '#ef4444',
+                background: isOnline ? '#10b981' : '#ef4444',
               }}
             ></span>
             {t('nav.cluster')}
@@ -519,17 +532,19 @@ export default function Navbar() {
             <div className="flex flex-col gap-2.5 text-slate-300">
               <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.system_status')}</span>
-                <span className="font-bold text-emerald-400">{t('nav.active')}</span>
+                <span className={`font-bold ${isOnline ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {isOnline ? t('nav.active') : t('nav.offline')}
+                </span>
               </div>
               <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.total_nodes')}</span>
-                <span className="font-bold text-slate-100">{clusters.length}</span>
+                <span className="font-bold text-slate-100">{visibleClusters.length}</span>
               </div>
               <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">{t('nav.global_concurrency')}</span>
                 <span className="font-bold text-slate-100 text-right">
                   {t('nav.global_parallel_tasks', {
-                    count: clusters.reduce((acc, c) => acc + (c.concurrency || 0), 0),
+                    count: visibleClusters.reduce((acc, c) => acc + (c.concurrency || 0), 0),
                   })}
                 </span>
               </div>
@@ -542,13 +557,13 @@ export default function Navbar() {
             </div>
           </div>
 
-          {clusters.length === 0 ? (
+          {visibleClusters.length === 0 ? (
             <div className="text-center py-8 text-slate-500 italic bg-slate-950/20 border border-white/5 rounded-xl">
               {t('nav.no_nodes_connected')}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {clusters.map((cluster, idx) => (
+              {visibleClusters.map((cluster, idx) => (
                 <div
                   key={cluster.name || idx}
                   className="bg-slate-950/40 border border-white/5 p-4 rounded-xl flex flex-col gap-3"
@@ -593,7 +608,7 @@ export default function Navbar() {
                       <span className="font-bold text-slate-200">
                         {cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null
                           ? `${cluster.vram_gb} GB`
-                          : 'N/A'}
+                          : t('common.not_available')}
                       </span>
                     </div>
                   </div>
@@ -653,9 +668,9 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {docContent}
-                </ReactMarkdown>
+                <React.Suspense fallback={null}>
+                  <DocsMarkdown content={docContent} />
+                </React.Suspense>
               </div>
             )}
           </div>

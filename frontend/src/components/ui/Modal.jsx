@@ -11,6 +11,15 @@ const SIZES = {
   '2xl': 'max-w-7xl',
 };
 
+// Open modals in mount order; only the topmost one reacts to Escape and Tab so a
+// nested dialog closes alone instead of taking its parent down with it
+/** @type {object[]} */
+const openModalStack = [];
+
+function isTopModal(token) {
+  return openModalStack[openModalStack.length - 1] === token;
+}
+
 export default function Modal({
   isOpen,
   onClose,
@@ -28,6 +37,12 @@ export default function Modal({
   const dialogRef = useRef(null);
   const previouslyFocusedRef = useRef(null);
   const titleId = useId();
+  const stackTokenRef = useRef({});
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Handle opening and closing transition state
 
@@ -45,8 +60,16 @@ export default function Modal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const token = stackTokenRef.current;
+    openModalStack.push(token);
     const handler = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (!isTopModal(token)) return;
+      if (e.key === 'Escape') {
+        // A child widget (e.g. an open dropdown) already handled this Escape
+        if (e.defaultPrevented) return;
+        onCloseRef.current?.();
+        return;
+      }
       if (e.key !== 'Tab' || !dialogRef.current) return;
 
       const focusable = Array.from(
@@ -70,8 +93,12 @@ export default function Modal({
       }
     };
     document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+    return () => {
+      document.removeEventListener('keydown', handler);
+      const index = openModalStack.lastIndexOf(token);
+      if (index !== -1) openModalStack.splice(index, 1);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;

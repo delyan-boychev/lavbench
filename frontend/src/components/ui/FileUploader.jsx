@@ -164,7 +164,8 @@ export default function FileUploader({
               <button
                 type="button"
                 onClick={() => removeFile(i)}
-                className="text-slate-500 hover:text-rose-400 transition-colors ml-1"
+                className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-1"
+                aria-label={t('common.remove_file', { name: f.name })}
               >
                 <X size={14} />
               </button>

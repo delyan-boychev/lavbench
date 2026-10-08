@@ -90,7 +90,7 @@ export default function UserManager({
       }
     }
     try {
-      await onUpdateUserSubmit(editingUser.id, {
+      const result = await onUpdateUserSubmit(editingUser.id, {
         username: editUserForm.username,
         email: editUserForm.email || null,
         password: editUserForm.password || null,
@@ -106,6 +106,16 @@ export default function UserManager({
         role: editUserForm.role,
         jury_challenges: editUserForm.jury_challenges,
       });
+      if (!result?.ok) {
+        const fallback = t('admin.notifications.competitor_update_failed');
+        showToast(
+          result?.data?.code
+            ? t('api.' + result.data.code, result.data.error || fallback)
+            : fallback,
+          'rose',
+        );
+        return;
+      }
       showToast(t('admin.notifications.competitor_updated'));
       setEditingUser(null);
     } catch {

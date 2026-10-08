@@ -5,7 +5,8 @@ import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
-import useSSE from '../hooks/useSSE';
+import useSSE, { isLifecycleMessage } from '../hooks/useSSE';
+import useThrottledCallback from '../hooks/useThrottledCallback';
 import useDebounce from '../hooks/useDebounce';
 import { useApiError } from '../hooks/useApiError';
 import { useSubmissionsQuery } from '../hooks/useSubmissionsQuery';
@@ -16,6 +17,8 @@ import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import Badge from '../components/ui/Badge';
 import Pagination from '../components/ui/Pagination';
 import EmptyState from '../components/ui/EmptyState';
+import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
+import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import BestSubmissionCard from '../components/submissions/BestSubmissionCard';
 import StageGroup from '../components/submissions/StageGroup';
 import { formatLocalizedDate } from '../utils/formatDate';
@@ -23,6 +26,62 @@ import { Star, Download, ChevronRight, Search, X } from 'lucide-react';
 import { requireOk } from '../services/apiResult';
 import LoadingIndicator from '../components/ui/LoadingIndicator';
 import QueryErrorState from '../components/ui/QueryErrorState';
+import { saveBlob } from '../utils/download';
+import { formatScore } from '../utils/formatScore';
+
+const EMPTY_BEST_SUBS = {};
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+function formatRemaining(diff) {
+  const totalSecs = Math.ceil(diff / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const min = Math.floor((totalSecs % 3600) / 60);
+  const sec = totalSecs % 60;
+  const pad = (n) => n.toString().padStart(2, '0');
+  return hours > 0 ? `${pad(hours)}:${pad(min)}:${pad(sec)}` : `${pad(min)}:${pad(sec)}`;
+}
+
+// Owns the per-second tick so only the countdown re-renders, not the whole page
+function SelectionTimer({ finalSelectDeadline, hasRunningPreDeadline }) {
+  const { t } = useTranslation();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const ticking = !hasRunningPreDeadline && !!finalSelectDeadline && finalSelectDeadline > nowMs;
+
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+
+  let timerText = '';
+  let isExpired = false;
+  if (hasRunningPreDeadline) timerText = t('submissions.waiting_for_evaluation');
+  else if (finalSelectDeadline) {
+    const diff = finalSelectDeadline - nowMs;
+    if (diff <= 0) {
+      timerText = t('submissions.selection_closed');
+      isExpired = true;
+    } else {
+      timerText = t('submissions.time_remaining_select_final', { time: formatRemaining(diff) });
+    }
+  }
+  return (
+    <div
+      style={{
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        color: isExpired ? 'var(--danger)' : 'var(--warning)',
+        background: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+        border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
+        borderRadius: 'var(--radius-md)',
+        padding: '10px 14px',
+        textAlign: 'center',
+      }}
+    >
+      {timerText}
+    </div>
+  );
+}
 
 export default function SubmissionsView() {
   const { t } = useTranslation();
@@ -37,6 +96,7 @@ export default function SubmissionsView() {
     showToast,
   } = useApp();
   const { showApiError } = useApiError();
+  const challengeNotFound = useChallengeNotFound(challengeId);
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const selectFinalMutation = useSelectFinal();
@@ -71,7 +131,7 @@ export default function SubmissionsView() {
     isError: submissionsError,
     refetch: refetchSubmissions,
   } = useSubmissionsQuery(selectedTask?.id, submissionsPage, 10);
-  const submissions = subsData?.items || [];
+  const submissions = useMemo(() => subsData?.items || [], [subsData]);
   const submissionsPages = subsData?.pages || 1;
   const submissionsTotal = subsData?.total || 0;
 
@@ -80,7 +140,9 @@ export default function SubmissionsView() {
     isLoading: searching,
     isError: competitorSearchError,
     refetch: refetchCompetitors,
-  } = useCompetitorSearchQuery(selectedChallenge?.id, debouncedCompetitorSearch, competitorPage);
+  } = useCompetitorSearchQuery(selectedChallenge?.id, debouncedCompetitorSearch, competitorPage, {
+    enabled: currentUser?.role === 'admin' || currentUser?.role === 'jury',
+  });
   const competitorResults = competitorData?.items || [];
   const competitorPages = competitorData?.pages || 1;
   const competitorTotal = competitorData?.total || 0;
@@ -163,18 +225,24 @@ export default function SubmissionsView() {
     if (challengeId) setSelectedChallengeById(challengeId);
   }, [challengeId, setSelectedChallengeById]);
 
+  // Competitor and task selections belong to one challenge; carrying them over
+  // mixes IDs from two challenges in the admin queries
+  const prevChallengeIdRef = useRef(selectedChallenge?.id);
+  useEffect(() => {
+    const id = selectedChallenge?.id;
+    if (prevChallengeIdRef.current === id) return;
+    prevChallengeIdRef.current = id;
+    setSelectedCompetitor(null);
+    setAdminActiveTask(null);
+    setAdminSubPage(1);
+    setSelectedSubmission(null);
+  }, [selectedChallenge?.id]);
+
   useEffect(() => {
     if (selectedChallenge?.tasks?.length > 0 && !selectedTask) {
       setSelectedTask(selectedChallenge.tasks[0]);
     }
   }, [selectedChallenge, selectedTask, setSelectedTask]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     setSubmissionsPage(1);
@@ -187,31 +255,23 @@ export default function SubmissionsView() {
   const taskId = selectedTask?.id;
   const page = submissionsPage;
 
-  const throttleTimerRef = useRef(null);
+  const invalidateSubmissions = useThrottledCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['submissions'] });
+  }, 1500);
   useSSE(taskId ? `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10` : '', {
     storeData: false,
-    onMessage: () => {
-      if (throttleTimerRef.current) return;
-      throttleTimerRef.current = setTimeout(() => {
-        throttleTimerRef.current = null;
-        queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      }, 1500);
+    onMessage: (data) => {
+      if (!isLifecycleMessage(data)) invalidateSubmissions();
     },
     onError: () => {},
   });
-  useEffect(() => {
-    return () => {
-      if (throttleTimerRef.current) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
-    };
-  }, []);
 
   const handleSelectFinal = async (submissionId) => {
     try {
       await selectFinalMutation.mutateAsync(submissionId);
-      setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
+      setSelectedSubmission((prev) =>
+        prev && prev.id === submissionId ? { ...prev, is_final_selection: true } : prev,
+      );
     } catch (err) {
       await confirm({
         title: t('submissions.selection_error'),
@@ -254,32 +314,39 @@ export default function SubmissionsView() {
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
+  // Mirrors backend submission_deadline(): stage end (or challenge end) plus grace
+  const deadlineBase = stage?.end_time ?? selectedChallenge?.end_time ?? null;
+  const graceMs = (selectedChallenge?.deadline_grace_period_seconds ?? 60) * 1000;
+  const submissionDeadlineMs = deadlineBase ? new Date(deadlineBase).getTime() + graceMs : null;
   let finalSelectDeadline = null;
   let hasRunningPreDeadline = false;
-  if (stage) {
-    const stageEndTimeMs = new Date(stage.end_time).getTime();
-    finalSelectDeadline = stageEndTimeMs + 300000;
-    if (submissions && submissions.length > 0) {
-      for (const sub of submissions) {
-        const createdAtMs = new Date(sub.created_at).getTime();
-        if (createdAtMs <= stageEndTimeMs) {
-          if (sub.executed_at) {
-            const executedAtMs = new Date(sub.executed_at).getTime();
-            const tSelect = executedAtMs + 300000;
-            if (tSelect > finalSelectDeadline) finalSelectDeadline = tSelect;
-          } else if (sub.status === 'queued' || sub.status === 'running') {
-            hasRunningPreDeadline = true;
-          }
+  if (submissionDeadlineMs !== null) {
+    finalSelectDeadline = submissionDeadlineMs + 300000;
+    for (const sub of submissions) {
+      const createdAtMs = new Date(sub.created_at).getTime();
+      if (createdAtMs <= submissionDeadlineMs) {
+        if (sub.executed_at) {
+          const tSelect = new Date(sub.executed_at).getTime() + 300000;
+          if (tSelect > finalSelectDeadline) finalSelectDeadline = tSelect;
+        } else if (sub.status === 'queued' || sub.status === 'running') {
+          hasRunningPreDeadline = true;
         }
       }
     }
   }
-  const isSelectionDisabled = stage
-    ? !hasRunningPreDeadline && finalSelectDeadline !== null && nowMs > finalSelectDeadline
-    : false;
+  // A single timeout flips selection off at the deadline instead of re-rendering every second
+  useEffect(() => {
+    if (finalSelectDeadline === null) return;
+    const delay = finalSelectDeadline - Date.now() + 1;
+    if (delay > MAX_TIMEOUT_MS) return;
+    const timer = setTimeout(() => setNowMs(Date.now()), Math.max(0, delay));
+    return () => clearTimeout(timer);
+  }, [finalSelectDeadline]);
+  const isSelectionDisabled =
+    finalSelectDeadline !== null && !hasRunningPreDeadline && nowMs > finalSelectDeadline;
   const isSubmissionAfterDeadline =
-    stage && selectedSubmission
-      ? new Date(selectedSubmission.created_at).getTime() > new Date(stage.end_time).getTime()
+    submissionDeadlineMs !== null && selectedSubmission
+      ? new Date(selectedSubmission.created_at).getTime() > submissionDeadlineMs
       : false;
 
   const bestSubmission = useMemo(() => {
@@ -302,7 +369,7 @@ export default function SubmissionsView() {
 
   // Admin: fetch best submissions across all tasks for the selected competitor
   const {
-    data: bestSubs = {},
+    data: bestSubs = EMPTY_BEST_SUBS,
     isError: bestSubsError,
     refetch: refetchBestSubmissions,
   } = useQuery({
@@ -317,8 +384,17 @@ export default function SubmissionsView() {
     staleTime: 10_000,
   });
 
+  // Auto-select when the competitor changes, and once more when their best
+  // submissions first load; re-running on every refetch would yank the admin
+  // back to the first task and page 1
+  const autoSelectedRef = useRef({ key: null, withData: false });
   useEffect(() => {
     if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) return;
+    const autoKey = `${selectedChallenge.id}:${selectedCompetitor.id}`;
+    const hasData = bestSubs !== EMPTY_BEST_SUBS;
+    const prev = autoSelectedRef.current;
+    if (prev.key === autoKey && (prev.withData || !hasData)) return;
+    autoSelectedRef.current = { key: autoKey, withData: hasData };
     const bestTaskIds = Object.keys(bestSubs);
     const allTaskIds = (selectedChallenge.tasks || []).map((t) => t.id);
     const resolvedTaskId = bestTaskIds[0] || allTaskIds[0];
@@ -353,12 +429,7 @@ export default function SubmissionsView() {
       );
       if (res.ok) {
         const blob = await res.blob();
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.download = `submission_${taskId}_${userId}.ipynb`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        saveBlob(blob, `submission_${taskId}_${userId}.ipynb`);
       } else {
         showToast(t('submissions.download_failed', 'Download failed'), 'rose');
       }
@@ -383,46 +454,7 @@ export default function SubmissionsView() {
     return result;
   }, [selectedChallenge]);
 
-  const renderTimer = () => {
-    if (!stage) return null;
-    let timerText = '';
-    let isExpired = false;
-    if (hasRunningPreDeadline) timerText = t('submissions.waiting_for_evaluation');
-    else if (finalSelectDeadline) {
-      const diff = finalSelectDeadline - nowMs;
-      if (diff <= 0) {
-        timerText = t('submissions.selection_closed');
-        isExpired = true;
-      } else {
-        const totalSecs = Math.ceil(diff / 1000);
-        const hours = Math.floor(totalSecs / 3600);
-        const min = Math.floor((totalSecs % 3600) / 60);
-        const sec = totalSecs % 60;
-        timerText = t('submissions.time_remaining_select_final', {
-          time:
-            hours > 0
-              ? `${hours.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-              : `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`,
-        });
-      }
-    }
-    return (
-      <div
-        style={{
-          fontSize: '0.8rem',
-          fontWeight: 600,
-          color: isExpired ? 'var(--danger)' : 'var(--warning)',
-          background: isExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-          border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
-          borderRadius: 'var(--radius-md)',
-          padding: '10px 14px',
-          textAlign: 'center',
-        }}
-      >
-        {timerText}
-      </div>
-    );
-  };
+  if (challengeNotFound) return <ChallengeNotFound />;
 
   if (!selectedChallenge)
     return <EmptyState message={t('submissions.no_competition_selected')} minHeight={200} />;
@@ -470,7 +502,12 @@ export default function SubmissionsView() {
 
         {selectedTask ? (
           <div key={selectedTask.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {renderTimer()}
+            {stage && (
+              <SelectionTimer
+                finalSelectDeadline={finalSelectDeadline}
+                hasRunningPreDeadline={hasRunningPreDeadline}
+              />
+            )}
 
             {bestSubmission && (
               <div className="flex flex-col gap-1.5">
@@ -537,7 +574,7 @@ export default function SubmissionsView() {
                             </span>
                             {sub.public_score != null && (
                               <span className="font-mono text-xs font-bold text-indigo-400">
-                                {Number(sub.public_score).toFixed(4)}
+                                {formatScore(sub.public_score)}
                               </span>
                             )}
                           </div>
@@ -606,7 +643,7 @@ export default function SubmissionsView() {
                   </span>
                   {!baselineExpanded && baselineSubmissions.length > 0 && (
                     <span className="text-[10px] text-slate-500 font-semibold">
-                      {baselineSubmissions.length} {t('submissions.task_count', 'tasks')}
+                      {t('submissions.task_count', { count: baselineSubmissions.length })}
                     </span>
                   )}
                 </div>
@@ -657,7 +694,7 @@ export default function SubmissionsView() {
                             </span>
                             {sub.public_score != null && (
                               <span className="font-mono text-xs font-bold text-indigo-400">
-                                {Number(sub.public_score).toFixed(4)}
+                                {formatScore(sub.public_score)}
                               </span>
                             )}
                           </div>
@@ -693,6 +730,7 @@ export default function SubmissionsView() {
               />
               <input
                 type="text"
+                aria-label={t('submissions.search_competitor_label')}
                 value={competitorSearch}
                 onChange={(e) => {
                   setCompetitorSearch(e.target.value);
@@ -813,7 +851,7 @@ export default function SubmissionsView() {
                   onView={handleAdminViewSubmission}
                   onDownload={(sub) =>
                     handleDownloadSubmission(
-                      adminActiveTask || sub.task_id,
+                      sub.task_id || adminActiveTask,
                       sub.user?.id || selectedCompetitor.id,
                     )
                   }
@@ -849,10 +887,10 @@ export default function SubmissionsView() {
                   adminSubmissions.map((sub) => {
                     const isSel = selectedSubmission?.id === sub.id;
                     return (
-                      <button
+                      // View and download are sibling buttons, never nested
+                      <div
                         key={sub.id}
-                        onClick={() => handleAdminViewSubmission(sub)}
-                        className={`flex flex-col gap-1.5 p-3 rounded-lg text-left w-full transition-all duration-150 border cursor-pointer ${
+                        className={`relative flex items-start gap-2 p-3 rounded-lg w-full transition-all duration-150 border ${
                           isSel
                             ? 'bg-indigo-500/10 border-indigo-500/40 text-slate-100'
                             : sub.is_final_selection
@@ -860,71 +898,68 @@ export default function SubmissionsView() {
                               : 'bg-slate-900/40 border-slate-800 hover:bg-slate-800/60 text-slate-300'
                         }`}
                       >
-                        <div className="flex justify-between items-center gap-2 w-full">
-                          <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
-                            #{sub.id}
-                            {sub.is_final_selection && (
-                              <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
-                                <Star className="w-3 h-3" />
-                                {t('submissions.final_selection_label')}
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <Badge status={sub.status} />
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadSubmission(
-                                  adminActiveTask,
-                                  sub.user?.id || selectedCompetitor.id,
-                                );
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.stopPropagation();
-                                  handleDownloadSubmission(
-                                    adminActiveTask,
-                                    sub.user?.id || selectedCompetitor.id,
-                                  );
-                                }
-                              }}
-                              className="p-1 rounded text-slate-500 hover:text-indigo-400 transition-colors cursor-pointer"
-                              title={t('submissions.download')}
-                            >
-                              <Download size={12} />
+                        <button
+                          type="button"
+                          onClick={() => handleAdminViewSubmission(sub)}
+                          aria-pressed={isSel}
+                          className="flex flex-col gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
+                        >
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
+                              #{sub.id}
+                              {sub.is_final_selection && (
+                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                                  <Star className="w-3 h-3" />
+                                  {t('submissions.final_selection_label')}
+                                </span>
+                              )}
                             </span>
+                            <div className="flex items-center gap-2">
+                              <Badge status={sub.status} />
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex justify-between items-center gap-2 w-full">
-                          <span className="text-xs text-slate-400">
-                            {sub.created_at
-                              ? `${formatLocalizedDate(sub.created_at, { timeZone: selectedChallenge.timezone || 'UTC' })}`
-                              : '—'}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            {sub.public_score != null && (
-                              <span className="font-mono text-xs font-bold text-indigo-400">
-                                <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
-                                  {t('submissions.public_score')}:
+                          <div className="flex justify-between items-center gap-2 w-full">
+                            <span className="text-xs text-slate-400">
+                              {sub.created_at
+                                ? `${formatLocalizedDate(sub.created_at, { timeZone: selectedChallenge.timezone || 'UTC' })}`
+                                : '—'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              {sub.public_score != null && (
+                                <span className="font-mono text-xs font-bold text-indigo-400">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
+                                    {t('submissions.public_score')}:
+                                  </span>
+                                  {formatScore(sub.public_score)}
                                 </span>
-                                {Number(sub.public_score).toFixed(4)}
-                              </span>
-                            )}
-                            {sub.private_score != null && (
-                              <span className="font-mono text-xs font-bold text-emerald-400">
-                                <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
-                                  {t('submissions.private_score')}:
+                              )}
+                              {sub.private_score != null && (
+                                <span className="font-mono text-xs font-bold text-emerald-400">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">
+                                    {t('submissions.private_score')}:
+                                  </span>
+                                  {formatScore(sub.private_score)}
                                 </span>
-                                {Number(sub.private_score).toFixed(4)}
-                              </span>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDownloadSubmission(
+                              adminActiveTask,
+                              sub.user?.id || selectedCompetitor.id,
+                            )
+                          }
+                          className="inline-flex items-center justify-center min-h-8 min-w-8 -my-1 rounded text-slate-500 hover:text-indigo-400 transition-colors cursor-pointer flex-shrink-0"
+                          title={t('submissions.download')}
+                          aria-label={t('submissions.download')}
+                        >
+                          <Download size={12} />
+                        </button>
+                      </div>
                     );
                   })
                 )}

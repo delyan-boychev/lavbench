@@ -295,6 +295,50 @@
   color: #4338ca !important;
 }
 
+/* Darker accent text so score/status colors keep contrast on light backgrounds */
+[data-theme='light'] .text-emerald-400:not([data-theme='dark'] *) {
+  color: #047857 !important;
+}
+[data-theme='light'] .text-emerald-300:not([data-theme='dark'] *) {
+  color: #065f46 !important;
+}
+[data-theme='light'] .text-amber-400:not([data-theme='dark'] *) {
+  color: #b45309 !important;
+}
+[data-theme='light'] .text-amber-300:not([data-theme='dark'] *) {
+  color: #92400e !important;
+}
+[data-theme='light'] .text-rose-400:not([data-theme='dark'] *) {
+  color: #e11d48 !important;
+}
+[data-theme='light'] .text-rose-300:not([data-theme='dark'] *) {
+  color: #be123c !important;
+}
+[data-theme='light'] .text-red-400:not([data-theme='dark'] *) {
+  color: #dc2626 !important;
+}
+[data-theme='light'] .text-red-300:not([data-theme='dark'] *) {
+  color: #b91c1c !important;
+}
+[data-theme='light'] .text-blue-400:not([data-theme='dark'] *) {
+  color: #2563eb !important;
+}
+[data-theme='light'] .text-purple-400:not([data-theme='dark'] *) {
+  color: #9333ea !important;
+}
+[data-theme='light'] .text-violet-400:not([data-theme='dark'] *) {
+  color: #7c3aed !important;
+}
+[data-theme='light'] .text-violet-300:not([data-theme='dark'] *) {
+  color: #6d28d9 !important;
+}
+[data-theme='light'] .text-cyan-400:not([data-theme='dark'] *) {
+  color: #0e7490 !important;
+}
+[data-theme='light'] .text-sky-400:not([data-theme='dark'] *) {
+  color: #0369a1 !important;
+}
+
 [data-theme='light'] .border-slate-800:not([data-theme='dark'] *) {
   border-color: var(--color-slate-700) !important;
 }
@@ -503,12 +547,10 @@ body {
 
 @keyframes fadeIn {
   from {
-    filter: blur(10px);
     opacity: 0;
     transform: translateY(2px);
   }
   to {
-    filter: blur(0px);
     opacity: 1;
     transform: translateY(0);
   }

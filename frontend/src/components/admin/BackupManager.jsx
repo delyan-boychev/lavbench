@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import { useApp } from '../../context/AppContext';
-import useSSE from '../../hooks/useSSE';
+import useSSE, { isLifecycleMessage } from '../../hooks/useSSE';
+import useThrottledCallback from '../../hooks/useThrottledCallback';
 import { useBackupsQuery } from '../../hooks/useBackupsQuery';
 import { useDeleteBackup, useForceBackup } from '../../hooks/useBackupMutations';
 import { formatDateTime } from '../../utils/formatDate';
@@ -23,13 +24,14 @@ export default function BackupManager() {
   const backups = data?.backups || [];
   const downloadBase = '/api/admin/backups';
 
+  const throttledRefetch = useThrottledCallback(() => {
+    refetch();
+  }, 1500);
+
   useSSE('/api/admin/backups/live', {
     storeData: false,
     onMessage: (msg) => {
-      if (msg.event?.status === 'completed') {
-        refetch();
-      }
-      refetch();
+      if (!isLifecycleMessage(msg)) throttledRefetch();
     },
   });
 

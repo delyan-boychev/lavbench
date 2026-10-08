@@ -271,4 +271,74 @@ describe('ApiService', () => {
       expect(result.data).toBeNull();
     });
   });
+
+  describe('signals and timeouts', () => {
+    const okResponse = () => ({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    it('forwards a caller signal on get() and applies a timeout signal by default', async () => {
+      mockFetch.mockResolvedValue(okResponse());
+      const controller = new AbortController();
+      await api.get('/with-signal', { signal: controller.signal });
+      const { signal } = mockFetch.mock.calls[0][1];
+      expect(signal).toBeDefined();
+      controller.abort();
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('does not apply a default timeout to JSON mutations', async () => {
+      mockFetch.mockResolvedValue(okResponse());
+      await api.post('/create', { a: 1 });
+      expect(mockFetch.mock.calls[0][1].signal).toBeUndefined();
+    });
+
+    it('applies an explicit timeout to JSON mutations', async () => {
+      mockFetch.mockResolvedValue(okResponse());
+      await api.post('/create', { a: 1 }, { timeoutMs: 5000 });
+      expect(mockFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('does not apply a timeout to uploads', async () => {
+      mockFetch.mockResolvedValue(okResponse());
+      await api.postForm('/upload', new FormData());
+      await api.putForm('/upload', new FormData());
+      expect(mockFetch.mock.calls[0][1].signal).toBeUndefined();
+      expect(mockFetch.mock.calls[1][1].signal).toBeUndefined();
+    });
+
+    it('withTimeout returns the caller signal when AbortSignal.timeout is unavailable', async () => {
+      const { withTimeout } = await import('../../services/ApiService');
+      const original = AbortSignal.timeout;
+      // @ts-ignore
+      AbortSignal.timeout = undefined;
+      try {
+        const controller = new AbortController();
+        expect(withTimeout(controller.signal, 1000)).toBe(controller.signal);
+        expect(withTimeout(undefined, 1000)).toBeUndefined();
+      } finally {
+        AbortSignal.timeout = original;
+      }
+    });
+  });
+
+  describe('refreshCsrfToken()', () => {
+    it('shares one in-flight request between concurrent callers', async () => {
+      let resolveToken;
+      mockFetch.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveToken = () =>
+              resolve({ ok: true, json: () => Promise.resolve({ csrf_token: 'tok' }) });
+          }),
+      );
+      const first = api.refreshCsrfToken();
+      const second = api.refreshCsrfToken();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      resolveToken();
+      await Promise.all([first, second]);
+
+      mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ csrf_token: 't2' }) });
+      await api.refreshCsrfToken();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
 });

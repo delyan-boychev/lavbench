@@ -13,6 +13,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../../hooks/useSSE', () => ({
   default: () => ({ data: null, error: null, connected: true, reconnect: vi.fn() }),
+  isLifecycleMessage: () => false,
 }));
 
 vi.mock('../../../hooks/useQueueQuery', () => ({

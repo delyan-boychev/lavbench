@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import TaskDetail from '../TaskDetail';
 import TaskService from '../../../services/TaskService';
 
@@ -71,24 +71,10 @@ describe('TaskDetail Component', () => {
     expect(screen.getByText('40% of Private Dataset')).toBeInTheDocument();
   });
 
-  it('renders files, calculates megabytes, and calls authenticated download endpoint', async () => {
-    const mockBlob = new Blob(['csv_data'], { type: 'text/csv' });
-    const mockUrl = 'blob:http://localhost/mock-blob-url';
-
-    // Mock window.URL.createObjectURL and revokeObjectURL
-    window.URL.createObjectURL = vi.fn().mockReturnValue(mockUrl);
-    window.URL.revokeObjectURL = vi.fn();
-
-    // Mock fetch for file download
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        blob: async () => mockBlob,
-      }),
-    );
-
-    TaskService.getDownloadUrl.mockReturnValue('/api/tasks/5/files/data_sample.csv');
+  it('renders files, calculates megabytes, and links directly to the download endpoint', () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    TaskService.getDownloadUrl.mockReturnValue('/api/tasks/5/download/data_sample.csv');
 
     render(<TaskDetail task={taskMock} />);
 
@@ -97,17 +83,14 @@ describe('TaskDetail Component', () => {
     expect(screen.getByText('data_sample.csv')).toBeInTheDocument();
     expect(screen.getByText('2.00 MB')).toBeInTheDocument(); // 2097152 bytes = 2 MB
 
-    // Trigger download click
-    const downloadBtn = screen.getByTitle('Download data_sample.csv');
-    fireEvent.click(downloadBtn);
-
+    // The browser streams the file itself instead of buffering it into a Blob
+    const downloadLink = screen.getByTitle('Download data_sample.csv');
+    expect(downloadLink.tagName).toBe('A');
+    expect(downloadLink).toHaveAttribute('href', '/api/tasks/5/download/data_sample.csv');
+    expect(downloadLink).toHaveAttribute('download', 'data_sample.csv');
     expect(TaskService.getDownloadUrl).toHaveBeenCalledWith(5, 'data_sample.csv');
-
-    // Wait for the async download actions to finish
-    await vi.waitFor(() => {
-      expect(window.URL.createObjectURL).toHaveBeenCalled();
-      expect(window.URL.revokeObjectURL).toHaveBeenCalled();
-    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it('renders jury custom evaluator notice when evaluator_script_path is present', () => {

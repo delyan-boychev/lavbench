@@ -157,6 +157,11 @@ export default function SelectField({
     }
 
     if (event.key === 'Escape') {
+      if (isOpen) {
+        // Keep the Escape from also closing an enclosing modal
+        event.stopPropagation();
+        event.preventDefault();
+      }
       setIsOpen(false);
       triggerRef.current?.focus();
       return;

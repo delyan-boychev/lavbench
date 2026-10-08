@@ -835,7 +835,10 @@ export default function TaskForm({
                       setEvalParsedData(null);
                       removeMetricFromConfig(editingTask?.evaluator_metric_name);
                     }}
-                    className="text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                    className="inline-flex items-center justify-center min-h-8 min-w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                    aria-label={t('common.remove_file', {
+                      name: t('admin.tasks.custom_evaluator_script'),
+                    })}
                   >
                     <X size={14} />
                   </button>
@@ -894,7 +897,8 @@ export default function TaskForm({
                         setEvalParsedData(null);
                         removeMetricFromConfig(evaluatorMetricName);
                       }}
-                      className="text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                      className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                      aria-label={t('common.remove_file', { name: evaluatorScript.name })}
                     >
                       <X size={14} />
                     </button>
@@ -1195,7 +1199,8 @@ export default function TaskForm({
                     <button
                       type="button"
                       onClick={() => setBaselineFile(null)}
-                      className="text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                      className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                      aria-label={t('common.remove_file', { name: baselineFile.name })}
                     >
                       <X size={14} />
                     </button>
@@ -1350,7 +1355,8 @@ export default function TaskForm({
                         <button
                           type="button"
                           onClick={() => setTaskFiles((prev) => prev.filter((_, i) => i !== idx))}
-                          className="text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                          className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                          aria-label={t('common.remove_file', { name: file.name })}
                         >
                           <X size={14} />
                         </button>

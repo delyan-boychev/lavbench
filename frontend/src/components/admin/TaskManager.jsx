@@ -111,7 +111,7 @@ export default function TaskManager({
       /^\s*([a-zA-Z0-9_.-]+)\s*(([><=!~]+)\s*[\w.*-]+(?:\s*,\s*[><=!~]+\s*[\w.*-]+)*)?\s*(#.*)?$/;
 
     if (taskForm.base_docker_image && !DOCKER_IMAGE_RE.test(taskForm.base_docker_image)) {
-      errors.push('Invalid Docker image format.');
+      errors.push(t('admin.tasks.validation_invalid_docker_image'));
     }
 
     if (taskForm.apt_packages) {
@@ -121,7 +121,11 @@ export default function TaskManager({
         .filter(Boolean);
       const invalid = packages.filter((p) => !APT_PACKAGE_RE.test(p));
       if (invalid.length > 0) {
-        errors.push(`Invalid APT package(s): ${invalid.join(', ')}`);
+        errors.push(
+          t('admin.tasks.validation_invalid_apt', {
+            packages: invalid.join(', '),
+          }),
+        );
       }
     }
 
@@ -131,7 +135,11 @@ export default function TaskManager({
         .filter((l) => l.trim() && !l.trim().startsWith('#'));
       const invalid = lines.filter((l) => !PIP_REQUIREMENT_RE.test(l.trim()));
       if (invalid.length > 0) {
-        errors.push(`Invalid pip requirement(s): ${invalid.join('; ')}`);
+        errors.push(
+          t('admin.tasks.validation_invalid_pip', {
+            requirements: invalid.join('; '),
+          }),
+        );
       }
     }
 
@@ -140,7 +148,8 @@ export default function TaskManager({
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean).length;
-      if (count > 5) errors.push(`HF datasets: maximum 5 allowed, got ${count}.`);
+      if (count > 5)
+        errors.push(t('admin.tasks.validation_too_many_hf_datasets', { max: 5, count }));
     }
 
     if (taskForm.hf_models_raw) {
@@ -148,7 +157,7 @@ export default function TaskManager({
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean).length;
-      if (count > 5) errors.push(`HF models: maximum 5 allowed, got ${count}.`);
+      if (count > 5) errors.push(t('admin.tasks.validation_too_many_hf_models', { max: 5, count }));
     }
 
     return errors;

@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/ApiService';
 
-export function useCompetitorSearchQuery(challengeId, search = '', page = 1) {
+export function useCompetitorSearchQuery(challengeId, search = '', page = 1, options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: ['competitor-search', challengeId, search, page],
     queryFn: async () => {
@@ -16,7 +17,7 @@ export function useCompetitorSearchQuery(challengeId, search = '', page = 1) {
       if (!res.ok) throw new Error(res.data?.error || 'Failed to search competitors');
       return res.data;
     },
-    enabled: !!challengeId,
+    enabled: enabled && !!challengeId,
     staleTime: 15_000,
   });
 }

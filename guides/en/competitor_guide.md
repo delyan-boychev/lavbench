@@ -224,8 +224,9 @@ You can submit multiple solutions during a competition stage. To designate which
 
 ### Tie-Breaking Rules
 
-When two competitors achieve identical score values:
-1. **Inference Wall-Clock Runtime**: The submission with the shorter execution runtime in the sandbox ranks higher.
+When two competitors achieve identical score values, they share the same rank number on the
+leaderboard (e.g. 1, 1, 3). The rules below only decide which of them is listed first:
+1. **Inference Wall-Clock Runtime**: The submission with the shorter execution runtime in the sandbox is listed first.
 2. **Submission Timestamp**: If execution times are identical, the earlier submission timestamp wins.
 
 ---

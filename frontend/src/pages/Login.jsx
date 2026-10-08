@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
 import Logo from '../components/ui/Logo';
 import { Sun, Moon } from 'lucide-react';
+import { resolveLoginRedirect } from '../utils/loginRedirect';
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -20,6 +21,8 @@ export default function Login() {
   const { currentUser, login, authError } = useAuth();
   const { theme, toggleTheme } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = resolveLoginRedirect(location.state?.from);
   const { t, i18n } = useTranslation();
 
   const [authEmail, setAuthEmail] = useState('');
@@ -29,9 +32,9 @@ export default function Login() {
   useEffect(() => {
     // If already authenticated, redirect to home
     if (currentUser) {
-      navigate('/challenges', { replace: true });
+      navigate(redirectTo, { replace: true });
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, redirectTo]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -40,7 +43,7 @@ export default function Login() {
     setLoading(false);
     if (result.success) {
       setAuthPassword('');
-      navigate('/challenges', { replace: true });
+      navigate(redirectTo, { replace: true });
     }
   };
 

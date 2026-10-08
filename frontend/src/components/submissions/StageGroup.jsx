@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Badge from '../ui/Badge';
 import BestSubmissionCard from './BestSubmissionCard';
 
@@ -11,6 +12,7 @@ export default function StageGroup({
   showPrivate,
   onTaskClick,
 }) {
+  const { t } = useTranslation();
   if (!tasks || tasks.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -67,7 +69,9 @@ export default function StageGroup({
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <div className="text-right">
-                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">Score</div>
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider">
+                    {t('submissions.score')}
+                  </div>
                   <div className="font-mono text-xs text-slate-600">—</div>
                 </div>
               </div>

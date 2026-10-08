@@ -278,7 +278,7 @@ def _get_leaderboard_payload(
             entry_copy["task_scores"] = filtered_task_scores
             entry_copy["public_score"] = tot_pub if has_pub_sum else None
             entry_copy["private_score"] = tot_priv if has_priv_sum else None
-            entry_copy["total_points"] = tot_pts
+            entry_copy["total_points"] = round(tot_pts, 2)
             entry_copy["has_submitted"] = has_pub_sum
 
             show_details = challenge.scores_finalized or is_self if challenge.double_blind else True
