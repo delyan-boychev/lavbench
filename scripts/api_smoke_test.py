@@ -664,6 +664,10 @@ def main() -> int:
                            {"user_id": comp_id, "points": {tid: 150}, "reason": "smoke"})
     check("manual points > 100 → 422 ERR_POINTS_OUT_OF_BOUNDS",
           code == 422 and expect_error(data, "ERR_POINTS_OUT_OF_BOUNDS"))
+    code, data = jury.send("POST", f"/api/challenges/{cid}/manual-points",
+                           {"user_id": comp_id, "points": {tid: 12.345}, "reason": "smoke"})
+    check("manual points with 3 decimals → 422 ERR_POINTS_INVALID",
+          code == 422 and expect_error(data, "ERR_POINTS_INVALID"))
     code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": []})
     check("empty selected_cells → 422 ERR_VALIDATION", code == 422 and expect_error(data, "ERR_VALIDATION"))
     if fname:
