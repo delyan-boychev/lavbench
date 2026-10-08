@@ -598,6 +598,18 @@ class TestManualPointsEndpoint:
         )
         assert res.status_code == 200
 
+    @pytest.mark.parametrize(("value", "stored"), [(87.5, 87.5), (12.34, 12.34), (40.0, 40)])
+    def test_jury_saves_decimal_manual_points(self, client, db_session, value, stored):
+        self._seed_completed_submission(db_session)
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): value}}
+        res = client.post(
+            f"/api/challenges/{self.challenge.id}/manual-points",
+            headers=self._auth(self.jury_token),
+            json=payload,
+        )
+        assert res.status_code == 200
+        assert res.get_json()["manual_points"][str(self.task.id)] == stored
+
     def test_competitor_cannot_save_manual_points(self, client):
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50}}
         res = client.post(
@@ -689,15 +701,16 @@ class TestManualPointsEndpoint:
         assert res.status_code == 400
         assert "does not belong" in res.get_json()["error"].lower()
 
-    def test_points_must_be_integer_returns_400(self, client):
-        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 50.5}}
+    @pytest.mark.parametrize("value", [50.555, "50", True, None])
+    def test_points_must_be_number_with_two_decimals(self, client, value):
+        payload = {"user_id": self.competitor.id, "points": {str(self.task.id): value}}
         res = client.post(
             f"/api/challenges/{self.challenge.id}/manual-points",
             headers=self._auth(self.jury_token),
             json=payload,
         )
         assert res.status_code == 422
-        assert res.get_json()["code"] == "ERR_POINTS_MUST_BE_INT"
+        assert res.get_json()["code"] == "ERR_POINTS_INVALID"
 
     def test_points_out_of_bounds_returns_400(self, client):
         payload = {"user_id": self.competitor.id, "points": {str(self.task.id): 150}}

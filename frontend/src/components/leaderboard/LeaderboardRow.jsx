@@ -6,6 +6,7 @@ import { saveBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Download, Pencil } from 'lucide-react';
 import { formatScore } from '../../utils/formatScore';
+import { roundPoints } from '../../utils/points';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-amber-400 to-amber-600 text-amber-950 border-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]',
@@ -58,7 +59,7 @@ export default function Row({
 
   let displayPublic = entry.public_score;
   let displayPrivate = entry.private_score;
-  let displayPoints = entry.total_points;
+  let displayPoints = roundPoints(entry.total_points);
 
   if (isStageTab) {
     let hasPublic = false;
@@ -84,7 +85,7 @@ export default function Row({
 
     displayPublic = hasPublic ? pubSum : null;
     displayPrivate = hasPrivate ? privSum : null;
-    displayPoints = ptsSum;
+    displayPoints = roundPoints(ptsSum);
   }
 
   const activeTask =
@@ -200,14 +201,14 @@ export default function Row({
           title={t('leaderboard.edit_points_tooltip', 'Click to edit manual points')}
         >
           <Pencil size={10} className="stroke-[2.5]" />
-          {t('leaderboard.points_short', { count: pts })}
+          {t('leaderboard.points_short', { count: roundPoints(pts) })}
         </button>
       );
     }
 
     return (
       <span className="text-amber-400 font-semibold font-mono">
-        {t('leaderboard.points_short', { count: pts })}
+        {t('leaderboard.points_short', { count: roundPoints(pts) })}
       </span>
     );
   };

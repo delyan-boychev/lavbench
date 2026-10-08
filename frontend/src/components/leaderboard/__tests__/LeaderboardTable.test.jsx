@@ -312,7 +312,7 @@ describe('LeaderboardTable Component', () => {
     expect(screen.getByText('Task Alpha').closest('button')).toHaveClass('bg-indigo-600/20');
   });
 
-  it('saves manual points via modal', async () => {
+  it('saves decimal manual points via modal', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
     ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });
     const onRefresh = vi.fn();
@@ -348,14 +348,14 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
 
     const pointsInput = screen.getByPlaceholderText('Enter score');
-    fireEvent.change(pointsInput, { target: { value: '85' } });
+    fireEvent.change(pointsInput, { target: { value: '87.5' } });
 
     fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
     await waitFor(() => {
       expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
         user_id: 5,
-        points: { 10: 85 },
+        points: { 10: 87.5 },
         reason: undefined,
       });
     });
@@ -396,7 +396,7 @@ describe('LeaderboardTable Component', () => {
 
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Points must be an integer between 0 and 100',
+        'Points must be between 0 and 100, with at most 2 decimal places',
         'error',
       );
     });

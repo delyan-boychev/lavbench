@@ -201,7 +201,8 @@ def build_and_cache_leaderboard(
                         )
                         manual_points_dict = {}
 
-            total_points = sum(manual_points_dict.get(str(t.id), 0) for t in tasks)
+            # Points may have 2 decimals; rounding keeps float noise out of rank ties
+            total_points = round(sum(manual_points_dict.get(str(t.id), 0) for t in tasks), 2)
 
             total_exec_time = 0
             sub_dates: list[Any] = []

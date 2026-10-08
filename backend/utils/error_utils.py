@@ -121,7 +121,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_HF_DATASETS": "Invalid Hugging Face datasets configuration.",
     "ERR_INVALID_HF_MODELS": "Invalid Hugging Face models configuration.",
     "ERR_INVALID_SELECTED_CELLS": "Each selected cell must be an object with id, type, and source.",
-    "ERR_POINTS_MUST_BE_INT": "Points must be integers.",
+    "ERR_POINTS_INVALID": "Points must be a number with at most 2 decimal places.",
     "ERR_POINTS_OUT_OF_BOUNDS": "Points must be between 0 and 100.",
     "ERR_INVALID_STAGE_ID": "Invalid stage_id for this challenge.",
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",

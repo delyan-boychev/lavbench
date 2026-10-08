@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, BarChart3, Layers, CheckSquare } from 'lucide-react';
 import Badge from '../ui/Badge';
 import { compactRanks } from '../../utils/ranking';
+import { parsePoints } from '../../utils/points';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
@@ -77,8 +78,8 @@ export default function LeaderboardTable({
   }, [challenge]);
 
   const handleSavePointsSubmit = async () => {
-    const pts = parseInt(scoringPoints);
-    if (isNaN(pts) || pts < 0 || pts > 100) {
+    const pts = parsePoints(scoringPoints);
+    if (pts === null) {
       showToast(t('leaderboard.save_points_error'), 'error');
       return;
     }
@@ -601,6 +602,8 @@ export default function LeaderboardTable({
               type="number"
               min="0"
               max="100"
+              step="0.01"
+              inputMode="decimal"
               value={scoringPoints}
               onChange={(e) => setScoringPoints(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300"
