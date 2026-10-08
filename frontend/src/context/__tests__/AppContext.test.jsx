@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider, useApp } from '../AppContext';
+import { useToast } from '../NotificationsContext';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
@@ -36,15 +37,16 @@ const emptyChallenges = [];
 
 function TestConsumer() {
   const app = useApp();
+  const toast = useToast();
   return (
     <div>
       <span data-testid="challenges-count">{app.challenges.length}</span>
       <span data-testid="selected-challenge">{app.selectedChallenge?.name || 'none'}</span>
       <span data-testid="selected-task">{app.selectedTask?.title || 'none'}</span>
       <span data-testid="theme">{app.theme}</span>
-      <span data-testid="toast-show">{String(app.toast.show)}</span>
-      <span data-testid="toast-message">{app.toast.message}</span>
-      <span data-testid="toast-type">{app.toast.type}</span>
+      <span data-testid="toast-show">{String(toast.show)}</span>
+      <span data-testid="toast-message">{toast.message}</span>
+      <span data-testid="toast-type">{toast.type}</span>
       <button data-testid="fetch-btn" onClick={app.fetchChallenges}>
         Fetch
       </button>

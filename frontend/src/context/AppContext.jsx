@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ThemeProvider } from './ThemeContext';
 import { NotificationsProvider } from './NotificationsContext';
 import { ChallengesProvider } from './ChallengesContext';
@@ -19,9 +19,13 @@ export const AppProvider = ({ children }) => {
   );
 };
 
+// Toast state is intentionally excluded; read it with useToast() from NotificationsContext
 export const useApp = () => {
   const theme = useTheme();
   const notifications = useNotifications();
   const challenges = useChallenges();
-  return { ...theme, ...notifications, ...challenges };
+  return useMemo(
+    () => ({ ...theme, ...notifications, ...challenges }),
+    [theme, notifications, challenges],
+  );
 };

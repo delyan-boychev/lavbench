@@ -4,15 +4,14 @@ import { useApp } from '../../context/AppContext';
 import Logo from '../ui/Logo';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { markdownComponents } from '../ui/MarkdownComponents';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
+
+const DocsMarkdown = React.lazy(() => import('./DocsMarkdown'));
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -653,9 +652,9 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {docContent}
-                </ReactMarkdown>
+                <React.Suspense fallback={null}>
+                  <DocsMarkdown content={docContent} />
+                </React.Suspense>
               </div>
             )}
           </div>

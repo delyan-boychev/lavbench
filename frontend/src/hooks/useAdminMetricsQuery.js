@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/ApiService';
 
-export function useAdminMetricsQuery() {
+export function useAdminMetricsQuery(options = {}) {
+  const { enabled = true } = options;
   return useQuery({
     queryKey: ['admin-metrics'],
     queryFn: async () => {
@@ -10,5 +11,6 @@ export function useAdminMetricsQuery() {
       return res.data;
     },
     staleTime: 30_000,
+    enabled,
   });
 }

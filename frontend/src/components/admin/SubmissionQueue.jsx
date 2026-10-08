@@ -7,7 +7,8 @@ import Button from '../ui/Button';
 import Pagination from '../ui/Pagination';
 import EmptyState from '../ui/EmptyState';
 import { FileText } from 'lucide-react';
-import useSSE from '../../hooks/useSSE';
+import useSSE, { isLifecycleMessage } from '../../hooks/useSSE';
+import useThrottledCallback from '../../hooks/useThrottledCallback';
 import { useQueueQuery } from '../../hooks/useQueueQuery';
 import { useClearQueue, useKillSubmission } from '../../hooks/useSubmissionMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
@@ -28,10 +29,14 @@ export default function SubmissionQueue() {
   const clearQueueMutation = useClearQueue();
   const killMutation = useKillSubmission();
 
+  const throttledRefetch = useThrottledCallback(() => {
+    refetch();
+  }, 1500);
+
   useSSE('/api/admin/submissions/queue/live', {
     storeData: false,
-    onMessage: () => {
-      refetch();
+    onMessage: (msg) => {
+      if (!isLifecycleMessage(msg)) throttledRefetch();
     },
   });
 

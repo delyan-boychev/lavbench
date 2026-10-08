@@ -154,4 +154,36 @@ describe('SubmissionViewer Component', () => {
     expect(screen.getByText(/Building docker sandbox/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
+
+  it('batches bursts of live log lines into a single delayed flush', () => {
+    vi.useFakeTimers();
+    const instances = [];
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        constructor() {
+          instances.push(this);
+        }
+        close = vi.fn();
+      },
+    );
+    const submission = { id: 7, status: 'running', code_cells: '[]' };
+    render(<SubmissionViewer submission={submission} currentUser={{ role: 'competitor' }} />);
+    const es = instances[instances.length - 1];
+    const send = (log) => act(() => es.onmessage({ data: JSON.stringify({ log }) }));
+
+    send('first line');
+    expect(screen.getByText(/first line/)).toBeInTheDocument();
+
+    send('second line');
+    send('third line');
+    expect(screen.queryByText(/second line/)).toBeNull();
+
+    act(() => vi.advanceTimersByTime(250));
+    expect(screen.getByText(/third line/)).toBeInTheDocument();
+    expect(screen.getByText(/second line/)).toBeInTheDocument();
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 });

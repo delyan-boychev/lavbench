@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useRef } from 'react';
+import React, { useState, useLayoutEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Button from '../ui/Button';
@@ -111,9 +111,42 @@ export default function LeaderboardTable({
     }
   };
 
+  // 1. Sort and rank display data dynamically based on active tab
+  const displayData = useMemo(() => {
+    let rows = [...(data || [])];
+
+    // Baseline entries never appear in general or stage tabs (only per-task)
+    if (activeTab === 'general' || isStageTab) {
+      rows = rows.filter((e) => !e.is_baseline_entry);
+    } else {
+      rows = rows.filter((e) => {
+        if (!e.is_baseline_entry) return true;
+        return e.task_scores?.[activeTab.toString()]?.submission_id != null;
+      });
+    }
+
+    rows = compactRanks(rows);
+
+    if (activeTab !== 'general') {
+      const rankMap = isStageTab ? 'stage_ranks' : 'task_ranks';
+      const rankKey = isStageTab ? activeTab : activeTab.toString();
+      rows = rows.map((entry) => ({ ...entry, rank: entry[rankMap]?.[rankKey] ?? null }));
+      rows.sort((a, b) => {
+        if (a.rank != null && b.rank != null) return a.rank - b.rank;
+        if (a.rank != null) return -1;
+        if (b.rank != null) return 1;
+        return 0;
+      });
+    }
+    return rows;
+  }, [data, activeTab, isStageTab]);
+
+  const rowOrderSignature = `${activeTab}|${displayData.map((e) => e.user?.id ?? e.id).join(',')}`;
+
   const rowElementsRef = useRef({});
   const rowPositionsRef = useRef({});
 
+  // Measuring every row is costly, so only re-measure when row order, tab or expansion changes
   useLayoutEffect(() => {
     const oldPositions = rowPositionsRef.current;
     const newPositions = {};
@@ -141,7 +174,7 @@ export default function LeaderboardTable({
     });
 
     rowPositionsRef.current = newPositions;
-  });
+  }, [rowOrderSignature, expandedUserIds, loading]);
 
   const handleToggleExpand = (userId) => {
     setExpandedUserIds((prev) => {
@@ -219,46 +252,6 @@ export default function LeaderboardTable({
       : challenge?.end_time && new Date() > new Date(challenge.end_time)
         ? 'grading'
         : 'active';
-  // 1. Sort and rank display data dynamically based on active tab
-  let displayData = [...data];
-
-  // Baseline entries never appear in general or stage tabs (only per-task)
-  if (activeTab === 'general' || isStageTab) {
-    displayData = displayData.filter((e) => !e.is_baseline_entry);
-  } else if (activeTab !== 'general') {
-    displayData = displayData.filter((e) => {
-      if (!e.is_baseline_entry) return true;
-      return e.task_scores?.[activeTab.toString()]?.submission_id != null;
-    });
-  }
-
-  displayData = compactRanks(displayData);
-
-  if (isStageTab) {
-    displayData = displayData.map((entry) => ({
-      ...entry,
-      rank: entry.stage_ranks?.[activeTab] ?? null,
-    }));
-    displayData.sort((a, b) => {
-      if (a.rank != null && b.rank != null) return a.rank - b.rank;
-      if (a.rank != null) return -1;
-      if (b.rank != null) return 1;
-      return 0;
-    });
-  } else if (activeTab !== 'general') {
-    const activeTaskIdStr = activeTab.toString();
-    displayData = displayData.map((entry) => ({
-      ...entry,
-      rank: entry.task_ranks?.[activeTaskIdStr] ?? null,
-    }));
-    displayData.sort((a, b) => {
-      if (a.rank != null && b.rank != null) return a.rank - b.rank;
-      if (a.rank != null) return -1;
-      if (b.rank != null) return 1;
-      return 0;
-    });
-  }
-
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}

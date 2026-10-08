@@ -6,8 +6,12 @@ function isServerTerminal(msg) {
   return msg?.event === 'evicted' || msg?.code === 'ERR_SSE_SOCKET_LIMIT';
 }
 
-function isControlMessage(msg) {
-  return msg?.info != null || msg?.event != null || msg?.code != null;
+// Stream lifecycle notices carry no data; some streams use `event` for real payloads
+// (queue snapshots, backup events), so only the known lifecycle values are matched
+export function isLifecycleMessage(msg) {
+  return (
+    msg?.info != null || msg?.code != null || msg?.event === 'timeout' || msg?.event === 'evicted'
+  );
 }
 
 export default function useSSE(url, opts = {}) {
@@ -82,7 +86,7 @@ export default function useSSE(url, opts = {}) {
         const parsed = JSON.parse(event.data);
         // Opening alone does not prove the stream is healthy: a server that
         // replays and closes would otherwise reconnect forever at the base delay
-        if (!isControlMessage(parsed) || parsed.event === 'timeout') {
+        if (!isLifecycleMessage(parsed) || parsed.event === 'timeout') {
           retryCountRef.current = 0;
         }
         if (onMessageRef.current) {

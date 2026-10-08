@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/ApiService';
 
-export function useUsersQuery(page = 1, search = '', perPage = 10) {
+export function useUsersQuery(page = 1, search = '', perPage = 10, options = {}) {
+  const { enabled = true } = options;
   const params = new URLSearchParams({
     page: String(page),
     per_page: String(perPage),
@@ -17,5 +18,6 @@ export function useUsersQuery(page = 1, search = '', perPage = 10) {
     },
     placeholderData: (prev) => prev,
     staleTime: 15_000,
+    enabled,
   });
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Badge from '../ui/Badge';
 import CodePreview from '../ui/CodePreview';
 import EmptyState from '../ui/EmptyState';
@@ -8,7 +8,24 @@ import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 import api from '../../services/ApiService';
-export default function SubmissionViewer({
+import { appendCappedLog } from '../../utils/logBuffer';
+
+// Live log lines are batched so a chatty submission does not re-render once per line
+const LOG_FLUSH_MS = 250;
+
+function parseCells(codeCells) {
+  let cells;
+  try {
+    cells = typeof codeCells === 'string' ? JSON.parse(codeCells) : codeCells || [];
+  } catch {
+    cells = [];
+  }
+  return (Array.isArray(cells) ? cells : []).map((cell) =>
+    typeof cell === 'string' ? { type: 'code', source: cell } : cell,
+  );
+}
+
+function SubmissionViewer({
   submission,
   currentUser,
   onSelectFinal,
@@ -24,6 +41,42 @@ export default function SubmissionViewer({
   const [currentId, setCurrentId] = useState(null);
   const [completedData, setCompletedData] = useState(null);
   const logRef = useRef(null);
+  const pendingLogRef = useRef('');
+  const flushTimerRef = useRef(null);
+  const lastFlushRef = useRef(0);
+
+  const cancelLogFlush = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }, []);
+
+  const flushLogs = useCallback(() => {
+    cancelLogFlush();
+    lastFlushRef.current = Date.now();
+    const chunk = pendingLogRef.current;
+    if (!chunk) return;
+    pendingLogRef.current = '';
+    setLiveLogs((prev) => appendCappedLog(prev, chunk));
+  }, [cancelLogFlush]);
+
+  // Leading flush shows the first line immediately; later lines wait for the trailing flush
+  const queueLogLine = useCallback(
+    (line) => {
+      pendingLogRef.current += line + '\n';
+      if (flushTimerRef.current !== null) return;
+      const wait = LOG_FLUSH_MS - (Date.now() - lastFlushRef.current);
+      if (wait <= 0) {
+        flushLogs();
+      } else {
+        flushTimerRef.current = setTimeout(flushLogs, wait);
+      }
+    },
+    [flushLogs],
+  );
+
+  useEffect(() => cancelLogFlush, [cancelLogFlush]);
 
   const displaySubmission = completedData ? { ...completedData, ...submission } : submission;
   const isTerminal =
@@ -44,6 +97,8 @@ export default function SubmissionViewer({
   useEffect(() => {
     if (submission && submission.id !== currentId) {
       setCurrentId(submission.id);
+      cancelLogFlush();
+      pendingLogRef.current = '';
       setLiveLogs('');
       setCompletedData(null);
     }
@@ -61,8 +116,9 @@ export default function SubmissionViewer({
     isTerminal: (data) => data.status === 'completed' || data.status === 'failed',
     onMessage: (data) => {
       if (data.log) {
-        setLiveLogs((prev) => prev + data.log + '\n');
+        queueLogLine(data.log);
       } else if (data.status) {
+        flushLogs();
         const alreadyFinished = submission.status === 'completed' || submission.status === 'failed';
         if ((data.status === 'completed' || data.status === 'failed') && !alreadyFinished) {
           const requestedId = submission.id;
@@ -85,6 +141,11 @@ export default function SubmissionViewer({
     },
   });
 
+  const cells = useMemo(
+    () => parseCells(displaySubmission?.code_cells),
+    [displaySubmission?.code_cells],
+  );
+
   if (!displaySubmission) {
     return (
       <EmptyState
@@ -94,19 +155,6 @@ export default function SubmissionViewer({
       />
     );
   }
-
-  let cells;
-  try {
-    cells =
-      typeof displaySubmission.code_cells === 'string'
-        ? JSON.parse(displaySubmission.code_cells)
-        : displaySubmission.code_cells || [];
-  } catch {
-    cells = [];
-  }
-  cells = (cells || []).map((cell) =>
-    typeof cell === 'string' ? { type: 'code', source: cell } : cell,
-  );
 
   const isCompetitor = currentUser?.role === 'competitor';
   const isAdminOrJury = currentUser?.role === 'admin' || currentUser?.role === 'jury';
@@ -313,3 +361,5 @@ export default function SubmissionViewer({
     </div>
   );
 }
+
+export default React.memo(SubmissionViewer);

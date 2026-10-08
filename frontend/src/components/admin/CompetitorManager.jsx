@@ -6,6 +6,7 @@ import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import Pagination from '../ui/Pagination';
 import FileUploader from '../ui/FileUploader';
+import { saveBlob } from '../../utils/download';
 
 export default function CompetitorManager({
   challenges,
@@ -77,10 +78,6 @@ export default function CompetitorManager({
     const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {
       type: 'text/csv;charset=utf-8;',
     });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-
     const compName = selectedChallenge?.title
       ? selectedChallenge.title
           .toLowerCase()
@@ -93,11 +90,7 @@ export default function CompetitorManager({
     const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
     const fileName = `${compName}_competitors_credentials_${dateStr}.csv`;
 
-    link.setAttribute('download', fileName);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    saveBlob(blob, fileName);
   };
 
   return (

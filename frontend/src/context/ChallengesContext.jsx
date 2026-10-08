@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChallengesQuery } from '../hooks/useChallengesQuery';
 
@@ -20,6 +20,9 @@ function nextBoundaryMs(challenges, now) {
 }
 
 const ChallengesContext = createContext(null);
+
+// TanStack Query handles refetching; kept for API compatibility
+const noop = () => {};
 
 export const ChallengesProvider = ({ children, userId }) => {
   const { data: challenges = [], isLoading } = useChallengesQuery(userId);
@@ -77,23 +80,20 @@ export const ChallengesProvider = ({ children, userId }) => {
     [challenges],
   );
 
-  return (
-    <ChallengesContext.Provider
-      value={{
-        challenges,
-        selectedChallenge,
-        setSelectedChallengeById,
-        setSelectedChallenge: setSelectedChallengeState,
-        selectedTask,
-        setSelectedTask,
-        fetchChallenges: () => {
-          /* no-op: TanStack Query handles refetching */
-        },
-      }}
-    >
-      {children}
-    </ChallengesContext.Provider>
+  const value = useMemo(
+    () => ({
+      challenges,
+      selectedChallenge,
+      setSelectedChallengeById,
+      setSelectedChallenge: setSelectedChallengeState,
+      selectedTask,
+      setSelectedTask,
+      fetchChallenges: noop,
+    }),
+    [challenges, selectedChallenge, setSelectedChallengeById, selectedTask],
   );
+
+  return <ChallengesContext.Provider value={value}>{children}</ChallengesContext.Provider>;
 };
 
 export const useChallenges = () => {

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../AuthContext';
 import ChallengeService from '../../services/ChallengeService';
-import { useApp } from '../../context/AppContext';
+import { useNotifications } from '../../context/NotificationsContext';
+import { saveBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Download, Pencil } from 'lucide-react';
 
@@ -32,7 +33,7 @@ export default function Row({
   onEditPoints,
 }) {
   const { currentUser } = useAuth();
-  const { showToast } = useApp();
+  const { showToast } = useNotifications();
   const { t } = useTranslation();
   const isAdmin = currentUser?.role === 'admin';
   const isJury = currentUser?.role === 'jury';
@@ -251,12 +252,7 @@ export default function Row({
       }
       const blob = await res.blob();
       const filename = `submission_${entry.user.username || entry.user.alias_id}_task_${taskId}.ipynb`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(t('leaderboard.submission_downloaded', 'Submission downloaded successfully'));
     } catch {
       showToast(

@@ -130,7 +130,12 @@ export default function AdminPanel() {
   const [userSearch, setUserSearch] = useState('');
   const debouncedUserSearch = useDebounce(userSearch, 300);
   const [usersPage, setUsersPage] = useState(1);
-  const { data: usersData } = useUsersQuery(usersPage, debouncedUserSearch);
+  const isAdmin = currentUser?.role === 'admin';
+  const isAdminOrJury = isAdmin || currentUser?.role === 'jury';
+  // Only fetch data for the visible sub-tab and endpoints the role may call
+  const { data: usersData } = useUsersQuery(usersPage, debouncedUserSearch, 10, {
+    enabled: isAdmin && adminSubTab === 'user-management',
+  });
   const allUsers = usersData?.items || [];
   const usersTotal = usersData?.total || 0;
   const usersPages = usersData?.pages || 1;
@@ -185,6 +190,8 @@ export default function AdminPanel() {
     selectedChallenge?.id,
     competitorsPage,
     debouncedCompetitorSearch,
+    10,
+    { enabled: isAdminOrJury && adminSubTab === 'competitor-reg' },
   );
   const competitorsList = competitorsData?.items || [];
   const competitorsTotal = competitorsData?.total || 0;
@@ -195,7 +202,9 @@ export default function AdminPanel() {
   const [workerStatsLoading, setWorkerStatsLoading] = useState(false);
   const [workerStatsError, setWorkerStatsError] = useState(null);
 
-  const { data: availableMetricsData } = useAdminMetricsQuery();
+  const { data: availableMetricsData } = useAdminMetricsQuery({
+    enabled: isAdminOrJury && adminSubTab === 'competition-mgmt',
+  });
   const availableMetrics = availableMetricsData || {};
 
   // Worker stats via SSE

@@ -30,6 +30,7 @@ import ToggleField from '../ui/ToggleField';
 import { Plus, AlertTriangle } from 'lucide-react';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime } from '../../utils/formatDate';
+import { saveBlob } from '../../utils/download';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
   const { t } = useTranslation();
@@ -350,12 +351,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       }
       const blob = await res.blob();
       const filename = `scores_${challengeTitle.replace(/\s+/g, '_')}.csv`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(t('admin.notifications.scores_csv_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_scores_failed'), 'rose');
@@ -381,12 +377,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       let filename = `submissions_${challengeTitle.replace(/\s+/g, '_')}`;
       if (stageTitle) filename += `_stage_${stageTitle.replace(/\s+/g, '_')}`;
       filename += '.zip';
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(t('admin.notifications.submissions_zip_downloaded'));
     } catch {
       showToast(t('admin.notifications.download_submissions_failed'), 'rose');
@@ -406,12 +397,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       }
       const blob = await res.blob();
       const filename = `audits_${challengeTitle.replace(/\s+/g, '_')}.json`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast(
         t('admin.notifications.audits_json_downloaded', 'Audit logs downloaded successfully'),
       );
@@ -434,12 +420,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       }
       const blob = await result.res.blob();
       const filename = `challenge_${challengeTitle.replace(/\s+/g, '_')}.zip`;
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      saveBlob(blob, filename);
       showToast('Challenge exported.');
     } catch {
       showToast('Failed to export challenge.', 'rose');

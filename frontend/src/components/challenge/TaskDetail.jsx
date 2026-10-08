@@ -1,5 +1,4 @@
 import React from 'react';
-import api from '../../services/ApiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
@@ -9,32 +8,6 @@ import { FileText, Download, Lightbulb } from 'lucide-react';
 
 function FileCard({ file, taskId }) {
   const { t } = useTranslation();
-
-  const handleDownload = () => {
-    const url = TaskService.getDownloadUrl(taskId, file.filename);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.filename;
-    /** @type {Promise<Response>} */
-    api
-      .fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Download failed: ${r.status}`);
-        return r.blob();
-      })
-      .then((blob) => {
-        const objUrl = URL.createObjectURL(blob);
-        a.href = objUrl;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(objUrl);
-      })
-      .catch((err) => {
-        console.error('File download failed:', err);
-        alert('Failed to download file. Please try again.');
-      });
-  };
 
   const sizeMB = file.size_bytes ? (file.size_bytes / (1024 * 1024)).toFixed(2) : null;
 
@@ -71,14 +44,16 @@ function FileCard({ file, taskId }) {
           </span>
         )}
       </div>
-      <button
+      {/* A plain same-origin link lets the browser stream large datasets to disk with the auth cookie */}
+      <a
         className="btn btn-ghost btn-sm"
-        onClick={handleDownload}
+        href={TaskService.getDownloadUrl(taskId, file.filename)}
+        download={file.filename}
         title={t('challenge.download_file_tooltip', { filename: file.filename })}
       >
         <Download size={12} />
         {t('challenge.download_button')}
-      </button>
+      </a>
     </div>
   );
 }

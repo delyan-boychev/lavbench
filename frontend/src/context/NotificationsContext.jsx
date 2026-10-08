@@ -1,8 +1,19 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../components/ui/Modal';
 
 const NotificationsContext = createContext(null);
+// Toast state lives in its own context so showing a toast only re-renders the toast UI,
+// not every component that merely needs the stable showToast/confirm actions
+const ToastStateContext = createContext(null);
 
 function ConfirmModal({ config }) {
   const [val, setVal] = useState('');
@@ -134,10 +145,14 @@ export const NotificationsProvider = ({ children }) => {
     [t],
   );
 
+  const actions = useMemo(() => ({ showToast, confirm }), [showToast, confirm]);
+
   return (
-    <NotificationsContext.Provider value={{ toast, showToast, confirm }}>
-      {children}
-      <ConfirmModal config={confirmConfig} />
+    <NotificationsContext.Provider value={actions}>
+      <ToastStateContext.Provider value={toast}>
+        {children}
+        <ConfirmModal config={confirmConfig} />
+      </ToastStateContext.Provider>
     </NotificationsContext.Provider>
   );
 };
@@ -145,5 +160,11 @@ export const NotificationsProvider = ({ children }) => {
 export const useNotifications = () => {
   const ctx = useContext(NotificationsContext);
   if (!ctx) throw new Error('useNotifications must be used within NotificationsProvider');
+  return ctx;
+};
+
+export const useToast = () => {
+  const ctx = useContext(ToastStateContext);
+  if (!ctx) throw new Error('useToast must be used within NotificationsProvider');
   return ctx;
 };
