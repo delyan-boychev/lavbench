@@ -24,6 +24,8 @@ import { requireOk } from '../services/apiResult';
 import LoadingIndicator from '../components/ui/LoadingIndicator';
 import QueryErrorState from '../components/ui/QueryErrorState';
 
+const EMPTY_BEST_SUBS = {};
+
 export default function SubmissionsView() {
   const { t } = useTranslation();
   const { challengeId } = useParams();
@@ -163,6 +165,19 @@ export default function SubmissionsView() {
     if (challengeId) setSelectedChallengeById(challengeId);
   }, [challengeId, setSelectedChallengeById]);
 
+  // Competitor and task selections belong to one challenge; carrying them over
+  // mixes IDs from two challenges in the admin queries
+  const prevChallengeIdRef = useRef(selectedChallenge?.id);
+  useEffect(() => {
+    const id = selectedChallenge?.id;
+    if (prevChallengeIdRef.current === id) return;
+    prevChallengeIdRef.current = id;
+    setSelectedCompetitor(null);
+    setAdminActiveTask(null);
+    setAdminSubPage(1);
+    setSelectedSubmission(null);
+  }, [selectedChallenge?.id]);
+
   useEffect(() => {
     if (selectedChallenge?.tasks?.length > 0 && !selectedTask) {
       setSelectedTask(selectedChallenge.tasks[0]);
@@ -211,7 +226,9 @@ export default function SubmissionsView() {
   const handleSelectFinal = async (submissionId) => {
     try {
       await selectFinalMutation.mutateAsync(submissionId);
-      setSelectedSubmission((prev) => (prev ? { ...prev, is_final_selection: true } : prev));
+      setSelectedSubmission((prev) =>
+        prev && prev.id === submissionId ? { ...prev, is_final_selection: true } : prev,
+      );
     } catch (err) {
       await confirm({
         title: t('submissions.selection_error'),
@@ -254,32 +271,31 @@ export default function SubmissionsView() {
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
+  // Mirrors backend submission_deadline(): stage end (or challenge end) plus grace
+  const deadlineBase = stage?.end_time ?? selectedChallenge?.end_time ?? null;
+  const graceMs = (selectedChallenge?.deadline_grace_period_seconds ?? 60) * 1000;
+  const submissionDeadlineMs = deadlineBase ? new Date(deadlineBase).getTime() + graceMs : null;
   let finalSelectDeadline = null;
   let hasRunningPreDeadline = false;
-  if (stage) {
-    const stageEndTimeMs = new Date(stage.end_time).getTime();
-    finalSelectDeadline = stageEndTimeMs + 300000;
-    if (submissions && submissions.length > 0) {
-      for (const sub of submissions) {
-        const createdAtMs = new Date(sub.created_at).getTime();
-        if (createdAtMs <= stageEndTimeMs) {
-          if (sub.executed_at) {
-            const executedAtMs = new Date(sub.executed_at).getTime();
-            const tSelect = executedAtMs + 300000;
-            if (tSelect > finalSelectDeadline) finalSelectDeadline = tSelect;
-          } else if (sub.status === 'queued' || sub.status === 'running') {
-            hasRunningPreDeadline = true;
-          }
+  if (submissionDeadlineMs !== null) {
+    finalSelectDeadline = submissionDeadlineMs + 300000;
+    for (const sub of submissions) {
+      const createdAtMs = new Date(sub.created_at).getTime();
+      if (createdAtMs <= submissionDeadlineMs) {
+        if (sub.executed_at) {
+          const tSelect = new Date(sub.executed_at).getTime() + 300000;
+          if (tSelect > finalSelectDeadline) finalSelectDeadline = tSelect;
+        } else if (sub.status === 'queued' || sub.status === 'running') {
+          hasRunningPreDeadline = true;
         }
       }
     }
   }
-  const isSelectionDisabled = stage
-    ? !hasRunningPreDeadline && finalSelectDeadline !== null && nowMs > finalSelectDeadline
-    : false;
+  const isSelectionDisabled =
+    finalSelectDeadline !== null && !hasRunningPreDeadline && nowMs > finalSelectDeadline;
   const isSubmissionAfterDeadline =
-    stage && selectedSubmission
-      ? new Date(selectedSubmission.created_at).getTime() > new Date(stage.end_time).getTime()
+    submissionDeadlineMs !== null && selectedSubmission
+      ? new Date(selectedSubmission.created_at).getTime() > submissionDeadlineMs
       : false;
 
   const bestSubmission = useMemo(() => {
@@ -302,7 +318,7 @@ export default function SubmissionsView() {
 
   // Admin: fetch best submissions across all tasks for the selected competitor
   const {
-    data: bestSubs = {},
+    data: bestSubs = EMPTY_BEST_SUBS,
     isError: bestSubsError,
     refetch: refetchBestSubmissions,
   } = useQuery({
@@ -317,8 +333,17 @@ export default function SubmissionsView() {
     staleTime: 10_000,
   });
 
+  // Auto-select when the competitor changes, and once more when their best
+  // submissions first load; re-running on every refetch would yank the admin
+  // back to the first task and page 1
+  const autoSelectedRef = useRef({ key: null, withData: false });
   useEffect(() => {
     if (!isAdminOrJury || !selectedCompetitor || !selectedChallenge) return;
+    const autoKey = `${selectedChallenge.id}:${selectedCompetitor.id}`;
+    const hasData = bestSubs !== EMPTY_BEST_SUBS;
+    const prev = autoSelectedRef.current;
+    if (prev.key === autoKey && (prev.withData || !hasData)) return;
+    autoSelectedRef.current = { key: autoKey, withData: hasData };
     const bestTaskIds = Object.keys(bestSubs);
     const allTaskIds = (selectedChallenge.tasks || []).map((t) => t.id);
     const resolvedTaskId = bestTaskIds[0] || allTaskIds[0];
@@ -813,7 +838,7 @@ export default function SubmissionsView() {
                   onView={handleAdminViewSubmission}
                   onDownload={(sub) =>
                     handleDownloadSubmission(
-                      adminActiveTask || sub.task_id,
+                      sub.task_id || adminActiveTask,
                       sub.user?.id || selectedCompetitor.id,
                     )
                   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
@@ -29,14 +29,20 @@ export default function NotebookSubmit({ task, challenge }) {
 
   const isCompetitor = currentUser?.role === 'competitor';
   const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
-  const graceMs = (challenge?.deadline_grace_period_seconds || 60) * 1000;
-  const stageEnded = stage
-    ? new Date().getTime() > new Date(stage.end_time).getTime() + graceMs
-    : false;
-  const challengeEnded =
-    !stage &&
-    challenge?.end_time &&
-    new Date().getTime() > new Date(challenge.end_time).getTime() + graceMs;
+  const graceMs = (challenge?.deadline_grace_period_seconds ?? 60) * 1000;
+  const deadlineBase = stage ? stage.end_time : challenge?.end_time;
+  const closesAtMs = deadlineBase ? new Date(deadlineBase).getTime() + graceMs : null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Re-render once when the window closes instead of ticking every second
+  useEffect(() => {
+    if (closesAtMs === null) return;
+    const remaining = closesAtMs - Date.now();
+    if (remaining > 2 ** 31 - 1) return;
+    const timer = setTimeout(() => setNowMs(Date.now()), Math.max(0, remaining) + 50);
+    return () => clearTimeout(timer);
+  }, [closesAtMs]);
+  const stageEnded = stage && closesAtMs !== null ? nowMs > closesAtMs : false;
+  const challengeEnded = !stage && closesAtMs !== null && nowMs > closesAtMs;
   const isClosed =
     !challenge?.is_active ||
     challenge?.is_archived ||

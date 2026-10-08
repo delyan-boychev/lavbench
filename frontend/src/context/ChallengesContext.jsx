@@ -1,5 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useChallengesQuery } from '../hooks/useChallengesQuery';
+
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+// The backend only returns tasks of started challenges/stages, so the list must
+// be refetched when the next start or end time passes
+function nextBoundaryMs(challenges, now) {
+  let next = Infinity;
+  for (const c of Array.isArray(challenges) ? challenges : []) {
+    const times = [c.start_time, c.end_time];
+    for (const st of c.stages || []) times.push(st.start_time, st.end_time);
+    for (const time of times) {
+      const ms = time ? new Date(time).getTime() : NaN;
+      if (ms > now && ms < next) next = ms;
+    }
+  }
+  return next;
+}
 
 const ChallengesContext = createContext(null);
 
@@ -7,6 +25,19 @@ export const ChallengesProvider = ({ children, userId }) => {
   const { data: challenges = [], isLoading } = useChallengesQuery(userId);
   const [selectedChallenge, setSelectedChallengeState] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const delay = nextBoundaryMs(challenges, Date.now()) - Date.now();
+    if (!Number.isFinite(delay) || delay > MAX_TIMEOUT_MS) return;
+    // Jitter spreads the refetch so every open tab does not hit the API at once
+    const jitter = 500 + Math.random() * 2500;
+    const timer = setTimeout(
+      () => queryClient.invalidateQueries({ queryKey: ['challenges'] }),
+      delay + jitter,
+    );
+    return () => clearTimeout(timer);
+  }, [challenges, queryClient]);
 
   // Auto-select first challenge when data loads
   useEffect(() => {

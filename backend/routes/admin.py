@@ -16,7 +16,7 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Generator
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -82,7 +82,7 @@ from utils.cache_utils import (
     worker_spec_key,
 )
 from utils.competitor import check_duplicate_demographics, demographics_tuple
-from utils.dates import utcnow
+from utils.dates import to_tz_iso, utcnow
 from utils.error_utils import err
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
@@ -809,7 +809,7 @@ def _list_backup_files(directory: str) -> list[dict[str, Any]]:
                 "size_mb": (
                     round(os.path.getsize(path) / (1024 * 1024), 2) if os.path.isfile(path) else 0
                 ),
-                "created_at": datetime.utcfromtimestamp(os.path.getctime(path)).isoformat(),
+                "created_at": datetime.fromtimestamp(os.path.getctime(path), UTC).isoformat(),
                 "type": ftype,
             }
         )
@@ -1885,7 +1885,7 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
                 task_id=sub.task_id,
                 task_title=task_title,
                 challenge_id=sub.challenge_id,
-                created_at=sub.created_at.isoformat() if sub.created_at else None,
+                created_at=to_tz_iso(sub.created_at) if sub.created_at else None,
                 celery_task_id=sub.celery_task_id,
             )
         )
@@ -1918,7 +1918,7 @@ def _queue_snapshot(challenge_ids: set[Any] | None = None) -> list[dict[str, Any
                 "task_id": str(sub.task_id) if sub.task_id else None,
                 "task_title": task_title,
                 "challenge_id": str(sub.challenge_id) if sub.challenge_id else None,
-                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                "created_at": to_tz_iso(sub.created_at) if sub.created_at else None,
                 "celery_task_id": sub.celery_task_id,
             }
         )

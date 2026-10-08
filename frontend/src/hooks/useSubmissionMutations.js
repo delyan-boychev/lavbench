@@ -9,7 +9,12 @@ export function useSelectFinal() {
       TaskService.selectFinal(submissionId)
         .then(requireOk)
         .then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['submissions'] });
+      qc.invalidateQueries({ queryKey: ['admin-submissions'] });
+      qc.invalidateQueries({ queryKey: ['admin-best-subs'] });
+      qc.invalidateQueries({ queryKey: ['leaderboard'] });
+    },
   });
 }
 

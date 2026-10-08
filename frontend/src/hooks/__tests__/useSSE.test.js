@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { StrictMode } from 'react';
 import { renderHook, act } from '@testing-library/react';
 import useSSE from '../useSSE';
 
@@ -405,5 +406,93 @@ describe('useSSE', () => {
       triggerMessage({ after: 'unmount' });
     });
     expect(result.current.data).toBeNull();
+  });
+
+  it('does not reconnect after a terminal message from isTerminal', () => {
+    const onMessage = vi.fn();
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { onMessage, isTerminal: (m) => m.status === 'completed' }),
+    );
+    act(() => {
+      triggerOpen();
+    });
+    const terminalSource = mockEventSourceInstance;
+    act(() => {
+      triggerMessage({ status: 'completed' });
+    });
+    expect(onMessage).toHaveBeenCalledWith({ status: 'completed' });
+    expect(terminalSource.readyState).toBe(2);
+    expect(result.current.connected).toBe(false);
+    act(() => {
+      triggerError();
+      vi.advanceTimersByTime(60000);
+    });
+    expect(mockEventSourceInstance).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
+  it.each([[{ event: 'evicted' }], [{ code: 'ERR_SSE_SOCKET_LIMIT', error: 'too many' }]])(
+    'stops on server terminal message %j',
+    (msg) => {
+      renderHook(() => useSSE('/api/test'));
+      act(() => {
+        triggerOpen();
+        triggerMessage(msg);
+      });
+      act(() => {
+        triggerError();
+        vi.advanceTimersByTime(60000);
+      });
+      expect(mockEventSourceInstance).toBeNull();
+    },
+  );
+
+  it('backs off when the server keeps closing right after opening', () => {
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 2 }),
+    );
+    // Open + control message + close, repeatedly: must not reset the retry budget
+    for (const delay of [1000, 2000]) {
+      act(() => {
+        triggerOpen();
+        triggerMessage({ info: 'connected' });
+        triggerError();
+      });
+      act(() => {
+        vi.advanceTimersByTime(delay);
+      });
+    }
+    act(() => {
+      triggerOpen();
+      triggerMessage({ info: 'connected' });
+      triggerError();
+    });
+    expect(result.current.error).toBe('Connection lost');
+  });
+
+  it('resets the retry budget after a data message', () => {
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 1 }),
+    );
+    act(() => {
+      triggerOpen();
+      triggerError();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    act(() => {
+      triggerOpen();
+      triggerMessage({ foo: 'bar' });
+      triggerError();
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.retrying).toBe(true);
+  });
+
+  it('connects under StrictMode double mount', () => {
+    renderHook(() => useSSE('/api/strict'), { wrapper: StrictMode });
+    expect(mockEventSourceInstance).not.toBeNull();
+    expect(mockEventSourceInstance.url).toBe('/api/strict');
   });
 });

@@ -8,6 +8,7 @@ import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, BarChart3, Layers, CheckSquare } from 'lucide-react';
 import Badge from '../ui/Badge';
+import { compactRanks } from '../../utils/ranking';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
@@ -231,14 +232,7 @@ export default function LeaderboardTable({
     });
   }
 
-  // Renumber ranks sequentially after baseline removal. Backend provides correct ranks.
-  let rankAcc = 0;
-  displayData = displayData.map((entry) => {
-    if (entry.has_submitted && entry.rank != null) {
-      return { ...entry, rank: ++rankAcc };
-    }
-    return { ...entry, rank: null };
-  });
+  displayData = compactRanks(displayData);
 
   if (isStageTab) {
     displayData = displayData.map((entry) => ({

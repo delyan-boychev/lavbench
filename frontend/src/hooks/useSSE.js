@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+// Server control messages that end a stream for good: reconnecting after an
+// eviction or a per-user socket limit only evicts another of the user's streams.
+function isServerTerminal(msg) {
+  return msg?.event === 'evicted' || msg?.code === 'ERR_SSE_SOCKET_LIMIT';
+}
+
+function isControlMessage(msg) {
+  return msg?.info != null || msg?.event != null || msg?.code != null;
+}
+
 export default function useSSE(url, opts = {}) {
   const {
     reconnect = true,
@@ -8,6 +18,7 @@ export default function useSSE(url, opts = {}) {
     maxReconnects = 5,
     onMessage,
     onError,
+    isTerminal,
     storeData = true,
   } = opts;
 
@@ -23,11 +34,14 @@ export default function useSSE(url, opts = {}) {
   const timeoutRef = useRef(null);
   const onMessageRef = useRef(onMessage);
   const onErrorRef = useRef(onError);
+  const isTerminalRef = useRef(isTerminal);
+  const stoppedRef = useRef(false);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
     onErrorRef.current = onError;
-  }, [onMessage, onError]);
+    isTerminalRef.current = isTerminal;
+  }, [onMessage, onError, isTerminal]);
 
   const clearConnection = useCallback(() => {
     if (timeoutRef.current) {
@@ -46,6 +60,7 @@ export default function useSSE(url, opts = {}) {
     if (!urlRef.current || !mountedRef.current) return;
 
     clearConnection();
+    stoppedRef.current = false;
     setError(null);
 
     const es = new EventSource(urlRef.current, { withCredentials: true });
@@ -56,7 +71,6 @@ export default function useSSE(url, opts = {}) {
         es.close();
         return;
       }
-      retryCountRef.current = 0;
       setConnected(true);
       setRetrying(false);
       setError(null);
@@ -66,11 +80,23 @@ export default function useSSE(url, opts = {}) {
       if (!mountedRef.current) return;
       try {
         const parsed = JSON.parse(event.data);
+        // Opening alone does not prove the stream is healthy: a server that
+        // replays and closes would otherwise reconnect forever at the base delay
+        if (!isControlMessage(parsed) || parsed.event === 'timeout') {
+          retryCountRef.current = 0;
+        }
         if (onMessageRef.current) {
           onMessageRef.current(parsed);
         }
         if (storeData) {
           setData(parsed);
+        }
+        if (isServerTerminal(parsed) || isTerminalRef.current?.(parsed)) {
+          stoppedRef.current = true;
+          es.close();
+          if (esRef.current === es) esRef.current = null;
+          setConnected(false);
+          setRetrying(false);
         }
       } catch (err) {
         console.warn('Failed to parse SSE JSON payload:', err, event.data);
@@ -78,7 +104,7 @@ export default function useSSE(url, opts = {}) {
     };
 
     es.onerror = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || stoppedRef.current) return;
       setConnected(false);
       es.close();
       if (reconnect && retryCountRef.current < maxReconnects) {
@@ -109,6 +135,8 @@ export default function useSSE(url, opts = {}) {
   }, [connect]);
 
   useEffect(() => {
+    // StrictMode remounts run this effect before the mount effect below
+    mountedRef.current = true;
     urlRef.current = url;
     retryCountRef.current = 0;
     if (url) {

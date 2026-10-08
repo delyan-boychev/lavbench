@@ -50,20 +50,30 @@ export default function SubmissionViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission?.id]);
 
+  const submissionIdRef = useRef(submission?.id);
+  useEffect(() => {
+    submissionIdRef.current = submission?.id;
+  }, [submission?.id]);
+
   useSSE(submission ? `/api/submissions/${submission.id}/logs/live` : '', {
     storeData: false,
+    // The server replays logs then sends the final status and closes the stream
+    isTerminal: (data) => data.status === 'completed' || data.status === 'failed',
     onMessage: (data) => {
       if (data.log) {
         setLiveLogs((prev) => prev + data.log + '\n');
       } else if (data.status) {
-        if (data.status === 'completed' || data.status === 'failed') {
+        const alreadyFinished = submission.status === 'completed' || submission.status === 'failed';
+        if ((data.status === 'completed' || data.status === 'failed') && !alreadyFinished) {
+          const requestedId = submission.id;
           api
-            .fetch(`/api/submissions/${submission.id}`)
+            .fetch(`/api/submissions/${requestedId}`)
             .then((r) => {
               if (!r.ok) throw new Error(`HTTP ${r.status}`);
               return r.json();
             })
             .then((freshData) => {
+              if (submissionIdRef.current !== requestedId) return;
               setCompletedData(freshData);
               onSubmissionUpdate?.(freshData);
             })

@@ -24,7 +24,7 @@ export default function CountdownTimer({ selectedChallenge }) {
   const activeStage = React.useMemo(() => {
     if (!selectedChallenge?.stages || selectedChallenge.stages.length === 0) return null;
     const now = nowMs;
-    const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
+    const graceMs = (selectedChallenge.deadline_grace_period_seconds ?? 60) * 1000;
     return selectedChallenge.stages.find((st) => {
       const start = new Date(st.start_time).getTime();
       const end = new Date(st.end_time).getTime();
@@ -54,7 +54,7 @@ export default function CountdownTimer({ selectedChallenge }) {
     if (selectedChallenge?.end_time) {
       const start = new Date(selectedChallenge.start_time).getTime();
       const end = new Date(selectedChallenge.end_time).getTime();
-      const graceMs = (selectedChallenge.deadline_grace_period_seconds || 60) * 1000;
+      const graceMs = (selectedChallenge.deadline_grace_period_seconds ?? 60) * 1000;
       if (now >= start && now <= end + graceMs && !selectedChallenge.scores_finalized) {
         return end - now;
       }
@@ -79,7 +79,7 @@ export default function CountdownTimer({ selectedChallenge }) {
   }, [upcomingStage, nowMs]);
 
   if (timeRemainingMs !== null) {
-    const graceMs = (selectedChallenge?.deadline_grace_period_seconds || 60) * 1000;
+    const graceMs = (selectedChallenge?.deadline_grace_period_seconds ?? 60) * 1000;
     const isGracePeriod = timeRemainingMs < 0;
 
     let color = '#10b981'; // Green

@@ -210,7 +210,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
     });
 
@@ -330,7 +330,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
     });
 
@@ -432,7 +432,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
 
       const submissionButton = await screen.findByText('#100');
@@ -495,7 +495,7 @@ describe('SubmissionsView Page', () => {
       renderWithProviders(<SubmissionsView />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Time remaining to select final: 10:00/i)).toBeInTheDocument();
+        expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
 
       const submissionButton = await screen.findByText('#100');
