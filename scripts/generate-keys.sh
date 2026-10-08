@@ -165,7 +165,7 @@ if [ "$HTTP_CHOICE" = "2" ]; then
   GENERATE_HTTPS_CERTS=false
   echo ""
   echo "  Generate self-signed HTTPS certificates?"
-  echo "    (or choose No to place your own in certs/ later)"
+  echo "    (or choose No to place your own in certs/web/ later)"
   read -p "  Generate now? (Y/n): " GEN_HTTPS_CHOICE
   if [ "$GEN_HTTPS_CHOICE" != "n" ] && [ "$GEN_HTTPS_CHOICE" != "N" ]; then
     GENERATE_HTTPS_CERTS=true
@@ -300,26 +300,12 @@ chmod 0600 "$ENV_FILE" "$WORKER_ENV"
 echo "  ✔ worker.env created"
 echo ""
 
-# ── Generate HTTPS (server) certificates ─────────────────────────────
+# ── Show the certificate path used by the frontend nginx listener ───
 mkdir -p certs
-if [ "$GENERATE_HTTPS_CERTS" = true ]; then
-  echo "  Generating self-signed HTTPS certificates..."
-  echo ""
-  openssl genrsa -out certs/server.key 2048 2>/dev/null
-  openssl req -new -x509 -key certs/server.key -out certs/server.crt \
-    -days 365 -subj "/CN=${SERVER_ADDR}" 2>/dev/null
-  echo "  ✔ Generated in certs/:"
-  echo "      ├── server.crt   ← HTTPS certificate"
-  echo "      └── server.key   ← HTTPS private key"
-  echo ""
-  echo "  → Configure your web server (nginx / caddy) to use:"
-  echo "      certs/server.crt"
-  echo "      certs/server.key"
-  echo ""
-elif [ "$HTTP_CHOICE" = "2" ]; then
-  echo "  ✔ certs/ directory ready — place your HTTPS certificates in it:"
-  echo "      certs/server.crt"
-  echo "      certs/server.key"
+if [ "$HTTP_CHOICE" = "2" ] && [ "$GENERATE_HTTPS_CERTS" = false ]; then
+  echo "  Place your HTTPS certificates at:"
+  echo "      certs/web/lavbench.crt"
+  echo "      certs/web/lavbench.key"
   echo ""
 fi
 

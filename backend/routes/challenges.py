@@ -94,13 +94,18 @@ def _validate_challenge_archive(archive: zipfile.ZipFile) -> None:
         if not info.is_dir():
             if name == "challenge.json":
                 pass
-            elif len(path.parts) == 3 and path.parts[0] == "tasks":
-                safe_name = secure_filename(path.parts[2])
-                if not safe_name:
-                    raise ValueError(f"Invalid archive filename {path.parts[2]!r}.")
-                target = (path.parts[1], safe_name)
+            elif path.parts[0] == "tasks" and len(path.parts) in (3, 4):
+                relative_parts = path.parts[2:]
+                if len(relative_parts) == 2 and not relative_parts[0].startswith(
+                    ("baseline-", "solution-")
+                ):
+                    raise ValueError(f"Unexpected archive member {name!r}.")
+                safe_parts = tuple(secure_filename(part) for part in relative_parts)
+                if not all(safe_parts):
+                    raise ValueError(f"Invalid archive filename {name!r}.")
+                target = (path.parts[1], "/".join(safe_parts))
                 if target in targets:
-                    raise ValueError(f"Archive members resolve to duplicate target {safe_name!r}.")
+                    raise ValueError(f"Archive members resolve to duplicate target {name!r}.")
                 targets.add(target)
             else:
                 raise ValueError(f"Unexpected archive member {name!r}.")
@@ -1233,10 +1238,17 @@ def export_challenge(
                 for task in challenge.tasks:
                     task_dir = os.path.join(upload_folder, f"task_{task.id}")
                     if os.path.isdir(task_dir):
-                        for filename in os.listdir(task_dir):
-                            file_path = os.path.join(task_dir, filename)
-                            if os.path.isfile(file_path) and not os.path.islink(file_path):
-                                zf.write(file_path, f"tasks/{task.id}/{filename}")
+                        for root, directories, filenames in os.walk(task_dir, followlinks=False):
+                            directories[:] = [
+                                name
+                                for name in directories
+                                if not os.path.islink(os.path.join(root, name))
+                            ]
+                            for filename in filenames:
+                                file_path = os.path.join(root, filename)
+                                if os.path.isfile(file_path) and not os.path.islink(file_path):
+                                    relative = os.path.relpath(file_path, task_dir)
+                                    zf.write(file_path, f"tasks/{task.id}/{relative}")
     except Exception:
         with contextlib.suppress(OSError):
             os.unlink(archive_path)

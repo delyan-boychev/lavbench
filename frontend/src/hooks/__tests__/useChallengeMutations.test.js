@@ -11,6 +11,7 @@ import {
   useToggleRevealChallenge,
   useArchiveToggle,
   useImportChallenge,
+  useExportChallenge,
 } from '../useChallengeMutations';
 
 vi.mock('../../services/ApiService', () => ({
@@ -19,6 +20,7 @@ vi.mock('../../services/ApiService', () => ({
     put: vi.fn(),
     delete: vi.fn(),
     get: vi.fn(),
+    getBlob: vi.fn(),
     postForm: vi.fn(),
   },
 }));
@@ -92,6 +94,34 @@ describe('useChallengeMutations', () => {
     const { result } = renderHook(() => useImportChallenge(), { wrapper: createWrapper() });
     result.current.mutate(fd);
     await waitFor(() => expect(api.postForm).toHaveBeenCalledWith('/challenges/import', fd));
+  });
+
+  it('keeps the ZIP response unread for the download handler', async () => {
+    const zip = new Blob(['zip bytes'], { type: 'application/zip' });
+    const response = {
+      ok: true,
+      status: 200,
+      json: vi.fn(),
+      blob: vi.fn().mockResolvedValue(zip),
+    };
+    api.getBlob.mockResolvedValue(response);
+    const { result } = renderHook(() => useExportChallenge(), { wrapper: createWrapper() });
+    const exportResult = await result.current.mutateAsync('c1');
+
+    expect(api.getBlob).toHaveBeenCalledWith('/challenges/c1/export');
+    expect(response.json).not.toHaveBeenCalled();
+    expect(await exportResult.res.blob()).toBe(zip);
+  });
+
+  it('invalidates public challenge data after an admin update', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData(['challenges', 'user-1'], [{ id: 'c1', title: 'Old' }]);
+    const wrapper = ({ children }) =>
+      React.createElement(QueryClientProvider, { client: qc }, children);
+    const { result } = renderHook(() => useUpdateChallenge(), { wrapper });
+    await result.current.mutateAsync({ id: 'c1', title: 'New' });
+
+    expect(qc.getQueryState(['challenges', 'user-1']).isInvalidated).toBe(true);
   });
 
   it('preserves backend errors and enters the error state', async () => {

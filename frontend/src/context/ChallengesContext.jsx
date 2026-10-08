@@ -11,10 +11,9 @@ export const ChallengesProvider = ({ children, userId }) => {
   // Auto-select first challenge when data loads
   useEffect(() => {
     if (challenges.length > 0) {
-      setSelectedChallengeState((prev) => {
-        if (prev && challenges.find((c) => c.id === prev.id)) return prev;
-        return challenges[0];
-      });
+      setSelectedChallengeState(
+        (prev) => challenges.find((c) => c.id === prev?.id) || challenges[0],
+      );
     } else if (!isLoading) {
       setSelectedChallengeState(null);
       setSelectedTask(null);

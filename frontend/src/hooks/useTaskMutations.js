@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/ApiService';
 
+const invalidateChallenges = (qc) => {
+  qc.invalidateQueries({ queryKey: ['admin-challenges'] });
+  qc.invalidateQueries({ queryKey: ['challenges'] });
+};
+
 export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
@@ -8,7 +13,7 @@ export function useCreateTask() {
       const { challengeId, formData } = variables;
       return api.postForm(`/challenges/${challengeId}/tasks`, formData);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
+    onSuccess: () => invalidateChallenges(qc),
   });
 }
 
@@ -19,7 +24,7 @@ export function useUpdateTask() {
       const { taskId, formData } = variables;
       return api.putForm(`/tasks/${taskId}`, formData);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
+    onSuccess: () => invalidateChallenges(qc),
   });
 }
 
@@ -27,6 +32,6 @@ export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (/** @type {any} */ taskId) => api.delete(`/tasks/${taskId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-challenges'] }),
+    onSuccess: () => invalidateChallenges(qc),
   });
 }

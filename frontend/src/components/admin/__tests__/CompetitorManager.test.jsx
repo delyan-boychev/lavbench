@@ -356,6 +356,35 @@ describe('CompetitorManager', () => {
     clickSpy.mockRestore();
   });
 
+  it('neutralizes spreadsheet formulas in imported credentials', async () => {
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    window.URL.createObjectURL = createObjectURL;
+    const clickSpy = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    render(
+      <CompetitorManager
+        {...baseProps}
+        importedCompetitors={[
+          {
+            id: '1',
+            name: '=HYPERLINK("evil")',
+            generated_username: ' +SUM(1,1)',
+            generated_password: '@cmd',
+          },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByText('Download Credentials (CSV)'));
+
+    const csv = await createObjectURL.mock.calls[0][0].text();
+    expect(csv).toContain('"\'=HYPERLINK(""evil"")"');
+    expect(csv).toContain('"\' +SUM(1,1)"');
+    expect(csv).toContain('"\'@cmd"');
+    clickSpy.mockRestore();
+  });
+
   it('dismisses bulk reset success banner', () => {
     const setBulkResetMessage = vi.fn();
     render(

@@ -11,6 +11,7 @@ import shutil
 import uuid
 import zipfile
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -395,17 +396,58 @@ def import_challenge_from_dict(
         if s_data.get("id"):
             old_to_new_stage[s_data["id"]] = stage.id
 
+    def restored_path(
+        stored_path: str,
+        old_task_id: str,
+        extracted_paths: dict[str, str],
+        role: str | None = None,
+    ) -> str | None:
+        """Resolve a stored path only within its expected archive area."""
+        path_parts = str(stored_path).replace("\\", "/").split("/")
+        old_dir = f"task_{old_task_id}"
+        relative_parts = (
+            path_parts[path_parts.index(old_dir) + 1 :]
+            if old_dir in path_parts
+            else path_parts[-1:]
+        )
+        if len(relative_parts) == 2:
+            if role is None or not relative_parts[0].startswith(f"{role}-"):
+                return None
+        elif len(relative_parts) != 1:
+            return None
+        safe_parts = [secure_filename(part) for part in relative_parts]
+        if not all(safe_parts):
+            return None
+        return extracted_paths.get("/".join(safe_parts))
+
     created_task_dirs: list[str] = []
     for t_data in data.get("tasks", []):
         if not t_data.get("title"):
             continue
         files_data = t_data.get("files", [])
         if isinstance(files_data, list):
-            files_str = json.dumps(files_data)
+            files_str = json.dumps(
+                [
+                    entry
+                    for entry in files_data
+                    if isinstance(entry, dict) and entry.get("type") not in ("baseline", "solution")
+                ]
+            )
         elif isinstance(files_data, str):
             try:
                 parsed = json.loads(files_data)
-                files_str = files_data if isinstance(parsed, list) else json.dumps([])
+                files_str = (
+                    json.dumps(
+                        [
+                            entry
+                            for entry in parsed
+                            if isinstance(entry, dict)
+                            and entry.get("type") not in ("baseline", "solution")
+                        ]
+                    )
+                    if isinstance(parsed, list)
+                    else json.dumps([])
+                )
             except Exception:
                 files_str = json.dumps([])
         else:
@@ -447,21 +489,25 @@ def import_challenge_from_dict(
                 task_dir = os.path.join(upload_folder, f"task_{task.id}")
                 os.makedirs(task_dir, exist_ok=True)
                 created_task_dirs.append(task_dir)
+                extracted_paths: dict[str, str] = {}
 
                 for member in zip_ref.namelist():
                     if member.startswith(prefix):
-                        basename = os.path.basename(member)
-                        if not basename:
+                        relative_parts = PurePosixPath(member[len(prefix) :]).parts
+                        if not relative_parts or member.endswith("/"):
                             continue
-
-                        if ".." in member or member.startswith("/") or member.startswith("\\"):
+                        if len(relative_parts) not in (1, 2) or any(
+                            part in ("", ".", "..") for part in relative_parts
+                        ):
                             continue
-
-                        safe_name = secure_filename(basename)
-                        if not safe_name:
+                        safe_parts = tuple(secure_filename(part) for part in relative_parts)
+                        if not all(safe_parts):
                             continue
-
-                        target_path = os.path.join(task_dir, safe_name)
+                        relative_name = "/".join(safe_parts)
+                        if relative_name in extracted_paths:
+                            raise ValueError(f"Duplicate archive target: {relative_name}")
+                        basename = safe_parts[-1]
+                        target_path = os.path.join(task_dir, *safe_parts)
                         try:
                             info = zip_ref.getinfo(member)
                             if info.file_size > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
@@ -470,9 +516,10 @@ def import_challenge_from_dict(
                                     "the configured per-file size limit."
                                 )
 
-                            if check_dangerous_extension(safe_name):
-                                raise ValueError(f"Dangerous file extension: {safe_name}")
+                            if check_dangerous_extension(basename):
+                                raise ValueError(f"Dangerous file extension: {basename}")
 
+                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
                             with (
                                 zip_ref.open(member) as source,
                                 open(target_path, "wb") as target,
@@ -485,6 +532,7 @@ def import_challenge_from_dict(
                                             f"File {basename} exceeds the configured size limit."
                                         )
                                     target.write(block)
+                            extracted_paths[relative_name] = target_path
                         except Exception as e:
                             db.session.rollback()
                             for created_dir in created_task_dirs:
@@ -492,9 +540,10 @@ def import_challenge_from_dict(
                             raise ValueError(f"Failed to extract {basename} from ZIP") from e
 
                 if t_data.get("evaluator_script_path"):
-                    eval_base = os.path.basename(t_data["evaluator_script_path"])
-                    eval_path = os.path.join(task_dir, secure_filename(eval_base))
-                    if os.path.isfile(eval_path):
+                    eval_path = restored_path(
+                        t_data["evaluator_script_path"], str(old_task_id), extracted_paths
+                    )
+                    if eval_path and os.path.isfile(eval_path):
                         task.evaluator_script_path = eval_path
                         try:
                             with open(eval_path, encoding="utf-8") as ef:
@@ -514,16 +563,24 @@ def import_challenge_from_dict(
                             pass
 
                 if t_data.get("baseline_notebook_path"):
-                    base_base = os.path.basename(t_data["baseline_notebook_path"])
-                    base_path = os.path.join(task_dir, secure_filename(base_base))
-                    if os.path.isfile(base_path):
+                    base_path = restored_path(
+                        t_data["baseline_notebook_path"],
+                        str(old_task_id),
+                        extracted_paths,
+                        role="baseline",
+                    )
+                    if base_path and os.path.isfile(base_path):
                         task.baseline_notebook_path = base_path
                         task.baseline_notebook_size = os.path.getsize(base_path)
 
                 if t_data.get("solution_notebook_path"):
-                    sol_base = os.path.basename(t_data["solution_notebook_path"])
-                    sol_path = os.path.join(task_dir, secure_filename(sol_base))
-                    if os.path.isfile(sol_path):
+                    sol_path = restored_path(
+                        t_data["solution_notebook_path"],
+                        str(old_task_id),
+                        extracted_paths,
+                        role="solution",
+                    )
+                    if sol_path and os.path.isfile(sol_path):
                         task.solution_notebook_path = sol_path
                         task.solution_notebook_size = os.path.getsize(sol_path)
 

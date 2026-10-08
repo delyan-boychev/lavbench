@@ -129,6 +129,24 @@ describe('AppContext', () => {
     expect(screen.getByTestId('selected-challenge').textContent).toBe('Challenge 1');
   });
 
+  it('refreshes selected challenge and task objects when query data changes', async () => {
+    mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
+    renderWithProvider();
+    await waitFor(() => expect(screen.getByTestId('selected-task')).toHaveTextContent('Task 1'));
+
+    act(() => {
+      queryClient.setQueryData(
+        ['challenges', 1],
+        [{ id: 1, name: 'Updated Challenge', tasks: [{ id: 10, title: 'Updated Task' }] }],
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-challenge')).toHaveTextContent('Updated Challenge');
+      expect(screen.getByTestId('selected-task')).toHaveTextContent('Updated Task');
+    });
+  });
+
   it('setSelectedChallengeById selects correct challenge', async () => {
     mockGet.mockResolvedValue({ ok: true, data: mockChallenges });
     renderWithProvider();

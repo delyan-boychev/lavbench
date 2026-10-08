@@ -109,6 +109,13 @@ def _unique_saved_name(original_name: str) -> str:
     return f"{uuid.uuid4().hex}-{secure_filename(original_name) or 'file'}"
 
 
+def _notebook_save_path(task_upload_dir: str, role: str, original_name: str) -> str:
+    """Keep the public notebook filename while isolating each stored version."""
+    directory = os.path.join(task_upload_dir, f"{role}-{uuid.uuid4().hex}")
+    os.makedirs(directory, exist_ok=True)
+    return os.path.join(directory, secure_filename(original_name) or "notebook.ipynb")
+
+
 def _worker_token_identity() -> str:
     return request.remote_addr or "unknown"
 
@@ -190,7 +197,10 @@ def _validate_evaluator_script(code: str) -> tuple[dict[str, Any] | None, str | 
                 and isinstance(node.targets[0], ast.Name)
                 and node.targets[0].id == var_name
             ):
-                return ast.literal_eval(node.value)
+                try:
+                    return ast.literal_eval(node.value)
+                except (ValueError, TypeError, SyntaxError, RecursionError):
+                    return None
         return None
 
     metric_name = _get_value("METRIC_NAME")
@@ -447,7 +457,12 @@ def create_task(
     if "evaluator_script" in request.files:
         f = request.files["evaluator_script"]
         if f and f.filename != "":
-            evaluator_code = f.read().decode("utf-8")
+            try:
+                evaluator_code = f.read().decode("utf-8")
+            except UnicodeDecodeError:
+                return err(
+                    "ERR_EVALUATOR_SCRIPT_INVALID", 400, message="Evaluator must be UTF-8 text"
+                )
             f.seek(0)
             eval_result, eval_err = _validate_evaluator_script(evaluator_code)
             if eval_result is None:
@@ -565,8 +580,7 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
+            save_path = _notebook_save_path(task_upload_dir, "baseline", f.filename)
             f.save(save_path)
             task.baseline_notebook_path = save_path
             task.baseline_notebook_size = os.path.getsize(save_path)
@@ -584,8 +598,7 @@ def create_task(
 
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
+            save_path = _notebook_save_path(task_upload_dir, "solution", f.filename)
             f.save(save_path)
             task.solution_notebook_path = save_path
             task.solution_notebook_size = os.path.getsize(save_path)
@@ -741,6 +754,7 @@ def update_task(
         "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
         "files": task.files,
         "custom_eval_code": task.custom_eval_code,
+        "baseline_notebook_path": task.baseline_notebook_path,
     }
 
     if request.user.get("role") != "admin":
@@ -754,6 +768,8 @@ def update_task(
                         403,
                         message="Only administrators are allowed to configure custom environments.",
                     )
+
+    update_savepoint = db.session.begin_nested()
 
     if "title" in fields:
         task.title = form.title
@@ -818,8 +834,10 @@ def update_task(
         old_stage = db.session.get(Stage, task.stage_id) if task.stage_id else None
         if stage_id_val is not None and old_stage:
             if old_stage.is_finalized:
+                update_savepoint.rollback()
                 return err("ERR_CANNOT_MOVE_FINALIZED", 400)
             if old_stage.end_time and old_stage.end_time <= utcnow():
+                update_savepoint.rollback()
                 return err("ERR_CANNOT_MOVE_ENDED", 400)
 
         if stage_id_val is not None and stage_id_val != task.stage_id:
@@ -833,11 +851,13 @@ def update_task(
                     has_manual_points = True
                     break
             if has_manual_points:
+                update_savepoint.rollback()
                 return err("ERR_CANNOT_MOVE_HAS_MANUAL_POINTS", 400)
 
         if stage_id_val:
             st = Stage.query.filter_by(id=stage_id_val, challenge_id=task.challenge_id).first()
             if not st:
+                update_savepoint.rollback()
                 return err("ERR_INVALID_STAGE_ID", 400)
             task.stage_id = stage_id_val
         else:
@@ -845,6 +865,7 @@ def update_task(
                 challenge_id=task.challenge_id, is_test=False
             ).count()
             if regular_stage_count > 0:
+                update_savepoint.rollback()
                 return err(
                     "ERR_STAGE_REQUIRED",
                     400,
@@ -854,20 +875,40 @@ def update_task(
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     os.makedirs(task_upload_dir, exist_ok=True)
+    newly_saved_paths: list[str] = []
+    replaced_paths: list[str] = []
+
+    def discard_uploads() -> None:
+        for path in newly_saved_paths:
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            if os.path.dirname(path) != task_upload_dir:
+                with contextlib.suppress(OSError):
+                    os.rmdir(os.path.dirname(path))
+        update_savepoint.rollback()
 
     if "evaluator_script" in request.files:
         f = request.files["evaluator_script"]
         if f and f.filename != "":
-            safe_name = "evaluator.py"
-            save_path = os.path.join(task_upload_dir, safe_name)
-            f.save(save_path)
-            task.evaluator_script_path = save_path
-            with open(save_path, encoding="utf-8") as ef:
-                code = ef.read()
-            task.custom_eval_code = code
+            try:
+                code = f.read().decode("utf-8")
+            except UnicodeDecodeError:
+                discard_uploads()
+                return err(
+                    "ERR_EVALUATOR_SCRIPT_INVALID", 400, message="Evaluator must be UTF-8 text"
+                )
+            f.seek(0)
             eval_result, eval_err = _validate_evaluator_script(code)
             if eval_result is None:
+                discard_uploads()
                 return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
+            save_path = os.path.join(task_upload_dir, _unique_saved_name("evaluator.py"))
+            f.save(save_path)
+            newly_saved_paths.append(save_path)
+            if task.evaluator_script_path:
+                replaced_paths.append(task.evaluator_script_path)
+            task.evaluator_script_path = save_path
+            task.custom_eval_code = code
             task.evaluator_metric_name = eval_result["metric_name"]
 
     if "baseline_notebook" in request.files:
@@ -877,10 +918,13 @@ def update_task(
 
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
+                discard_uploads()
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
+            save_path = _notebook_save_path(task_upload_dir, "baseline", f.filename)
             f.save(save_path)
+            newly_saved_paths.append(save_path)
+            if task.baseline_notebook_path:
+                replaced_paths.append(task.baseline_notebook_path)
             task.baseline_notebook_path = save_path
             task.baseline_notebook_size = os.path.getsize(save_path)
 
@@ -891,10 +935,13 @@ def update_task(
 
             valid_ext, ext_err = validate_extension(f.filename, {".ipynb"})
             if not valid_ext:
+                discard_uploads()
                 return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
-            safe_name = secure_filename(f.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
+            save_path = _notebook_save_path(task_upload_dir, "solution", f.filename)
             f.save(save_path)
+            newly_saved_paths.append(save_path)
+            if task.solution_notebook_path:
+                replaced_paths.append(task.solution_notebook_path)
             task.solution_notebook_path = save_path
             task.solution_notebook_size = os.path.getsize(save_path)
 
@@ -908,8 +955,7 @@ def update_task(
             for f in current_files:
                 if f["filename"] in deleted_filenames:
                     file_path = os.path.join(task_upload_dir, f["saved_name"])
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
+                    replaced_paths.append(file_path)
                 else:
                     updated_files.append(f)
             current_files = updated_files
@@ -917,23 +963,20 @@ def update_task(
             logger.warning("Failed to process deleted_files for task %s: %s", task.id, e)
 
     if form.delete_evaluator and task.evaluator_script_path:
-        if os.path.exists(task.evaluator_script_path):
-            os.remove(task.evaluator_script_path)
+        replaced_paths.append(task.evaluator_script_path)
         task.evaluator_script_path = None
         task.custom_eval_code = None
         task.evaluator_metric_name = None
     if form.delete_baseline and task.baseline_notebook_path:
-        if os.path.exists(task.baseline_notebook_path):
-            os.remove(task.baseline_notebook_path)
+        replaced_paths.append(task.baseline_notebook_path)
         task.baseline_notebook_path = None
         task.baseline_notebook_size = None
 
     new_files_keys = [k for k in request.files if k.startswith("file")]
     if len(current_files) + len(new_files_keys) > 5:
+        discard_uploads()
         return err("ERR_TOO_MANY_FILES", 400)
 
-    newly_saved_paths: list[str] = []
-    replaced_paths: list[str] = []
     total_update_size = 0
 
     for key in new_files_keys:
@@ -942,9 +985,7 @@ def update_task(
             from services.file_validation import check_dangerous_extension
 
             if check_dangerous_extension(uploaded_file.filename):
-                for p in newly_saved_paths:
-                    if os.path.exists(p):
-                        os.remove(p)
+                discard_uploads()
                 return err(
                     "ERR_INVALID_FILE_TYPE",
                     400,
@@ -957,9 +998,7 @@ def update_task(
 
             total_update_size += size
             if total_update_size > MAX_TOTAL_UPLOAD_BYTES:
-                for p in newly_saved_paths:
-                    if os.path.exists(p):
-                        os.remove(p)
+                discard_uploads()
                 return err(
                     "ERR_TOTAL_SIZE_EXCEEDED",
                     400,
@@ -967,9 +1006,7 @@ def update_task(
                 )
 
             if size > MAX_FILE_SIZE_BYTES:
-                for p in newly_saved_paths:
-                    if os.path.exists(p):
-                        os.remove(p)
+                discard_uploads()
                 return err(
                     "ERR_TASK_FILE_TOO_LARGE",
                     400,
@@ -993,18 +1030,14 @@ def update_task(
                         columns, is_submission=False
                     )
                     if not is_valid:
-                        for p in newly_saved_paths:
-                            if os.path.exists(p):
-                                os.remove(p)
+                        discard_uploads()
                         return err(
                             "ERR_INVALID_LABELS_SCHEMA",
                             400,
                             message=f"Invalid labels.parquet schema: {schema_err}",
                         )
                 except Exception as e:
-                    for p in newly_saved_paths:
-                        if os.path.exists(p):
-                            os.remove(p)
+                    discard_uploads()
                     return err(
                         "ERR_LABELS_PARSE_FAILED",
                         400,
@@ -1032,11 +1065,36 @@ def update_task(
                 }
             )
     task.files = json.dumps(current_files)
-    db.session.commit()
+    try:
+        update_savepoint.commit()
+        db.session.commit()
+    except Exception:
+        for path in newly_saved_paths:
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            if os.path.dirname(path) != task_upload_dir:
+                with contextlib.suppress(OSError):
+                    os.rmdir(os.path.dirname(path))
+        db.session.rollback()
+        raise
 
+    referenced_paths = {
+        path
+        for path in (
+            task.evaluator_script_path,
+            task.baseline_notebook_path,
+            task.solution_notebook_path,
+        )
+        if path
+    }
+    referenced_paths.update(os.path.join(task_upload_dir, f["saved_name"]) for f in current_files)
     for old_path in replaced_paths:
-        with contextlib.suppress(OSError):
-            os.remove(old_path)
+        if old_path not in referenced_paths:
+            with contextlib.suppress(OSError):
+                os.remove(old_path)
+            if os.path.dirname(old_path).startswith(f"{task_upload_dir}{os.sep}"):
+                with contextlib.suppress(OSError):
+                    os.rmdir(os.path.dirname(old_path))
 
     log_audit(
         request.user["user_id"],
@@ -1061,6 +1119,7 @@ def update_task(
         "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
         "files": task.files,
         "custom_eval_code": task.custom_eval_code,
+        "baseline_notebook_path": task.baseline_notebook_path,
     }
     semantic_changed = any(semantic_before[k] != semantic_now[k] for k in semantic_before)
     scoring_fields = {
