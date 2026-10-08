@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=dev-requirements.txt dev-requirements.in
 #
-ast-serialize==0.6.0
+ast-serialize==0.12.1
     # via mypy
 boolean-py==5.0
     # via license-expression
@@ -26,7 +26,7 @@ charset-normalizer==3.4.7
     #   requests
 coverage[toml]==7.14.1
     # via pytest-cov
-cryptography==50.0.0
+cryptography==50.0.2
     # via
     #   -c requirements.txt
     #   types-pyopenssl
@@ -39,7 +39,7 @@ defusedxml==0.7.1
     #   py-serializable
 execnet==2.1.2
     # via pytest-xdist
-faker==40.23.0
+faker==40.40.0
     # via -r dev-requirements.in
 filelock==3.32.2
     # via
@@ -51,7 +51,7 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-librt==0.12.0
+librt==0.16.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
@@ -65,7 +65,7 @@ mdurl==0.1.2
     #   markdown-it-py
 msgpack==1.2.1
     # via cachecontrol
-mypy==2.1.0
+mypy==2.4.0
     # via -r dev-requirements.in
 mypy-extensions==1.1.0
     # via mypy
@@ -104,7 +104,7 @@ pygments==2.20.0
     #   rich
 pyparsing==3.3.2
     # via pip-requirements-parser
-pytest==9.1.0
+pytest==9.1.1
     # via
     #   -r dev-requirements.in
     #   pytest-cov
@@ -113,7 +113,7 @@ pytest==9.1.0
     #   pytest-xdist
 pytest-cov==7.1.0
     # via -r dev-requirements.in
-pytest-mock==3.15.1
+pytest-mock==3.16.0
     # via -r dev-requirements.in
 pytest-timeout==2.4.0
     # via -r dev-requirements.in
@@ -146,7 +146,7 @@ types-requests==2.33.0.20260518
     # via -r dev-requirements.in
 types-setuptools==82.0.0.20260518
     # via types-cffi
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   -c requirements.txt
     #   cyclonedx-python-lib
