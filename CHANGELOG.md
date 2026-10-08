@@ -2,241 +2,355 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2026-08-05
+## [1.1.1] - 2026-10-08
 
 
 ### <!-- 0 -->🚀 Features
 
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Refresh vulnerable dependencies and scan stacked PRs (#147) by @delyan-boychev
 
 ### <!-- 10 -->💼 Other
 
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Ruff + format clean, mypy 0 issues (81 files), check_error_codes by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Remove task_images build artifacts tracked before gitignore (#128) by @delyan-boychev
-- Remove task_images build artifacts tracked before gitignore (#128) by @delyan-boychev
-- Remove task_images build artifacts tracked before gitignore (#128) by @delyan-boychev
-- Remove task_images build artifacts tracked before gitignore (#128) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Faithful generator-based get_archive mock, and assert the seed by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Run the smoke test with python3 -u — the eval section polls silently by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
-- Worker asset pipeline + BG translations & docs i18n (#123) by @delyan-boychev
+- Frontend audit: fix SSE reconnect loops, performance, responsiveness and a11y (#166) by @delyan-boychev
+- * fix(frontend): stop SSE reconnect loops and correct contest-state bugs by @delyan-boychev
+- - useSSE: treat evicted/socket-limit (and caller-defined) messages as by @delyan-boychev
+-   terminal, only reset backoff after real data, and connect under StrictMode by @delyan-boychev
+- - Submission log stream closes after the final status instead of replaying by @delyan-boychev
+-   logs every second; ignore stale follow-up fetches by @delyan-boychev
+- - Leaderboard keeps tied ranks when compacting after baseline removal by @delyan-boychev
+- - Final-selection window mirrors backend deadline (grace period, challenge by @delyan-boychev
+-   end fallback); grace of 0 is no longer treated as 60s by @delyan-boychev
+- - Refetch challenges when the next challenge/stage boundary passes by @delyan-boychev
+- - Admin submissions: stop per-second auto-select reset, reset selection on by @delyan-boychev
+-   challenge switch, download the card's own task by @delyan-boychev
+- - Surface failed user edits; invalidate all user lists and best-subs/ by @delyan-boychev
+-   leaderboard after final selection by @delyan-boychev
+- - Admin queue/backup timestamps are serialized with a UTC offset by @delyan-boychev
+- * perf(frontend): cut re-renders, throttle live refetches, split bundles by @delyan-boychev
+- - Memoize context values and move toast state into its own context so a by @delyan-boychev
+-   toast no longer re-renders every useApp() consumer by @delyan-boychev
+- - Leaderboard: memoize display data, measure row positions only when order by @delyan-boychev
+-   changes by @delyan-boychev
+- - Submission logs: buffer SSE lines (250ms flush, ~500KB cap), memoize cells; by @delyan-boychev
+-   move the per-second selection countdown into a child component by @delyan-boychev
+- - Throttle SSE-driven refetches (leaderboard, queue, backups) and ignore by @delyan-boychev
+-   lifecycle messages; leaderboard falls back to refetchInterval and retries SSE by @delyan-boychev
+- - Gate role/tab-specific queries so competitors and jury stop hitting by @delyan-boychev
+-   admin-only endpoints by @delyan-boychev
+- - Lazy-load Home, leaderboard pages and the docs markdown; fix manualChunks by @delyan-boychev
+-   matching every package with "react" in its path by @delyan-boychev
+- - Notebook cell selection uses a Set with memoized cells; large notebooks by @delyan-boychev
+-   start collapsed by @delyan-boychev
+- - Revoke object URLs after downloads; stream task datasets via a direct link by @delyan-boychev
+- - ApiService: forward abort signals, 30s default timeout on GETs, single-flight by @delyan-boychev
+-   CSRF refresh by @delyan-boychev
+- * fix(frontend): responsive layout, a11y, i18n and UI state fixes by @delyan-boychev
+- - Light-theme contrast for accent score/points text; fadeIn no longer blurs by @delyan-boychev
+- - Markdown tables scroll horizontally; competition bar, navbar and worker by @delyan-boychev
+-   tables no longer overflow on phones by @delyan-boychev
+- - Shared score formatter (tiny values keep significant digits, missing by @delyan-boychev
+-   scores show a dash); participant count excludes baselines by @delyan-boychev
+- - Navbar shows offline while the worker stream is down; "Refresh now" by @delyan-boychev
+-   reconnects the worker stats stream by @delyan-boychev
+- - Leaderboard rows no longer flash on tab switch or keep stuck highlights; by @delyan-boychev
+-   table resets when switching challenge by @delyan-boychev
+- - Unknown challenge ids show a not-found state; login returns to the by @delyan-boychev
+-   original deep link (in-app paths only) by @delyan-boychev
+- - Only the topmost modal closes on Escape; route-level error boundary keeps by @delyan-boychev
+-   the navbar and recovers on navigation; overlapping confirm() resolves the by @delyan-boychev
+-   earlier prompt by @delyan-boychev
+- - Remove nested interactive controls, add aria labels, enlarge touch targets by @delyan-boychev
+- - Translate remaining hardcoded strings, add plural forms, sync <html lang>; by @delyan-boychev
+-   translation checker recognizes plural variants by @delyan-boychev
+- * fix(frontend): keep wide task content from stretching the challenge page by @delyan-boychev
+- The task grid used 1fr columns, so a wide markdown table widened the page by @delyan-boychev
+- (370px overflow on desktop, 1400px on phones). An inline by @delyan-boychev
+- GridTemplateColumns also overrode lg:grid-cols, so the task sidebar layout by @delyan-boychev
+- Never applied on desktop. by @delyan-boychev
+- * docs: describe shared tie ranks and i18n plural keys by @delyan-boychev
+- - Competitor guide (en/bg): equal scores share a rank number; tie-breakers by @delyan-boychev
+-   only decide listing order by @delyan-boychev
+- - AGENTS.md: update locale key and orphan counts, document _one/_other by @delyan-boychev
+-   plural keys and how check_translations.py treats them by @delyan-boychev
+- * feat: allow manual points with up to 2 decimal places by @delyan-boychev
+- - Backend accepts 0-100 with at most 2 decimals (ERR_POINTS_INVALID by @delyan-boychev
+-   replaces ERR_POINTS_MUST_BE_INT); totals are rounded to 2 decimals so by @delyan-boychev
+-   float noise cannot break rank ties by @delyan-boychev
+- - Points modal parses decimals (comma or dot) instead of parseInt, which by @delyan-boychev
+-   silently truncated values like 10.5 despite the "e.g. 10.5" hint by @delyan-boychev
+- - Points display is rounded to 2 decimals by @delyan-boychev
+- - Jury guide (en/bg) documents decimal points by @delyan-boychev
+- * test: cover two-decimal manual points rule in API smoke test by @delyan-boychev
+- Fix upload persistence, notebook isolation, and challenge export (#163) by @delyan-boychev
+- * fix: protect uploads and repair challenge exports by @delyan-boychev
+- * Update vulnerable Python dependencies and scope NLTK audit exception by @delyan-boychev
+- * Update vulnerable npm dependencies by @delyan-boychev
+- Bump i18next-http-backend to 4.0.2 (GHSA-xvq9-wjp8-hwqf) and by @delyan-boychev
+- Source-map-js to 1.2.2 (GHSA-68fv-2mgg-jv7q) so the production by @delyan-boychev
+- Npm audit gate passes. by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Responsive grid/table fixes, and useSSE reconnects by default with by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Add aggregate best-submissions endpoint (#143) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Harden challenge archive handling and validate timezones (#144) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Claude Sonnet 5 <noreply@anthropic.com> by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
+- Claude Sonnet 5 <noreply@anthropic.com> by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Claude Sonnet 5 <noreply@anthropic.com> by @delyan-boychev
+- Harden Redis, PostgreSQL, health checks, and sandbox quotas (#145) by @delyan-boychev
+- Claude Sonnet 5 <noreply@anthropic.com> by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
+- Replace startup schema creation with Alembic migrations (#149) by @delyan-boychev
 
 ### <!-- 2 -->🚜 Refactor
 
-- Move evaluation engine into services/evaluation, spec into utils (#131) by @delyan-boychev
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Propagate mutation errors, add a11y, share loading/error states (#142) by @delyan-boychev
 
 ### <!-- 3 -->📚 Documentation
 
-- Package tasks as tasks/ package, move auth_utils into utils/ (#130) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Fix language switcher links and button contrast (#124) by @delyan-boychev
+- Synchronize operations and behavior guidance (#148) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
 
 ### <!-- 6 -->🧪 Testing
 
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
 
 ### <!-- 7 -->⚙️ Miscellaneous Tasks
 
-- Remove task_images build artifacts tracked before gitignore (#128) by @delyan-boychev
+- Correct submission eligibility, quotas, and leaderboard invalidation (#141) by @delyan-boychev
 
 ### <!-- 8 -->🛡️ Security
 
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Worker sandbox hardening + custom-evaluator smoke E2E (#126) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
-- Extract hardened run_sandbox entry point (#125) by @delyan-boychev
+- Refresh vulnerable dependencies and scan stacked PRs (#147) by @delyan-boychev
+- Refresh vulnerable dependencies and scan stacked PRs (#147) by @delyan-boychev
+- Refresh vulnerable dependencies and scan stacked PRs (#147) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
+- App hardening (#133) by @delyan-boychev
 
 
