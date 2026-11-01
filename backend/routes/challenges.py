@@ -42,6 +42,7 @@ from schemas.stage import (
     RevealResultsSchema,
     UpdateStageSchema,
 )
+from services import compute_service
 from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
 from utils.audit import log_audit
@@ -910,7 +911,7 @@ def create_stage(
 @jury_access_required
 @api.validate(
     json=UpdateStageSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -935,6 +936,10 @@ def update_stage(
         effective_end = _to_utc(json.end_time, challenge.timezone or "UTC")
     if effective_end <= effective_start:
         return err("ERR_INVALID_DATE_RANGE", 400)
+
+    locked = compute_service.stage_edit_blocked(stage, effective_start, effective_end)
+    if locked:
+        return locked
 
     if challenge.start_time and effective_start < challenge.start_time:
         return err(
@@ -974,6 +979,7 @@ def update_stage(
     )
     db.session.commit()
 
+    compute_service.sync_stage(stage, request.user["user_id"])
     invalidate_entity_cache(challenge_id)
 
     return stage.to_dict(challenge.timezone or "UTC")
@@ -1013,13 +1019,18 @@ def toggle_stage_reveal_results(
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+    resp=Response(HTTP_200=MessageResponse, HTTP_409=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
 )
 def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a stage from a challenge."""
     db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    locked = compute_service.stage_delete_blocked(stage)
+    if locked:
+        return locked
 
     # Nullify stage_id for tasks belonging to this stage
     tasks = Task.query.filter_by(stage_id=stage_id).all()

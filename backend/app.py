@@ -107,6 +107,7 @@ def create_app() -> Flask:
     from routes.auth import auth_bp
     from routes.challenges import challenges_bp
     from routes.docs import docs_bp
+    from routes.environment import environment_bp
     from routes.leaderboard import leaderboard_bp
     from routes.submissions import submissions_bp
     from routes.tasks import tasks_bp
@@ -117,6 +118,7 @@ def create_app() -> Flask:
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(leaderboard_bp, url_prefix="/api")
     app.register_blueprint(tasks_bp, url_prefix="/api")
+    app.register_blueprint(environment_bp, url_prefix="/api")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")
 
     @app.before_request

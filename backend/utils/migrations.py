@@ -18,7 +18,6 @@ from models import db
 
 logger = logging.getLogger(__name__)
 
-BASELINE_REVISION = "20260829_01"
 MIGRATION_LOCK_ID = 727376317
 _EXPRESSION_INDEXES = {
     "idx_sub_challenge_created",
@@ -119,8 +118,8 @@ def _adopt_legacy_schema(engine: Engine, alembic_config: AlembicConfig) -> None:
             f"Existing unversioned database does not match the LavBench baseline schema: {details}"
         )
         raise RuntimeError(msg)
-    logger.info("Adopting compatible pre-Alembic database at revision %s", BASELINE_REVISION)
-    command.stamp(alembic_config, BASELINE_REVISION)
+    logger.info("Adopting compatible pre-Alembic database at the current head revision")
+    command.stamp(alembic_config, "head")
 
 
 def migrate_database(engine: Engine) -> None:

@@ -40,6 +40,7 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
+from services import compute_service
 from services.leaderboard_service import get_task_leaderboard_data
 from services.submission_service import (
     calculate_submission_priority,
@@ -409,7 +410,12 @@ def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
 @jury_access_required
 @api.validate(
     form=CreateTaskMetaSchema,
-    resp=Response(HTTP_201=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    resp=Response(
+        HTTP_201=TaskAdminResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_409=ErrorResponse,
+    ),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
@@ -495,6 +501,9 @@ def create_task(
         st = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first()
         if not st:
             return err("ERR_INVALID_STAGE_ID", 400)
+        locked = compute_service.task_files_locked([stage_id])
+        if locked:
+            return locked
     else:
         regular_stage_count = Stage.query.filter_by(
             challenge_id=challenge_id, is_test=False
@@ -727,12 +736,27 @@ def create_task(
     return task.to_dict(view_role=request.user["role"]), 201
 
 
+def _changes_package(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> bool:
+    uploads = any(key.startswith("file") and request.files[key].filename for key in request.files)
+    baseline = "baseline_notebook" in request.files and bool(
+        request.files["baseline_notebook"].filename
+    )
+    deleted = bool(safe_json_loads(form.deleted_files, [])) if form.deleted_files else False
+    moved = "stage_id" in fields and str(form.stage_id or "") != str(task.stage_id or "")
+    return uploads or baseline or bool(form.delete_baseline) or deleted or moved
+
+
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
     form=UpdateTaskMetaSchema,
-    resp=Response(HTTP_200=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    resp=Response(
+        HTTP_200=TaskAdminResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_409=ErrorResponse,
+    ),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
@@ -768,6 +792,12 @@ def update_task(
                         403,
                         message="Only administrators are allowed to configure custom environments.",
                     )
+
+    if _changes_package(task, form, fields):
+        target_stage = (form.stage_id or None) if "stage_id" in fields else task.stage_id
+        locked = compute_service.task_files_locked([task.stage_id, target_stage])
+        if locked:
+            return locked
 
     update_savepoint = db.session.begin_nested()
 
@@ -1155,13 +1185,16 @@ def update_task(
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=MessageResponse),
+    resp=Response(HTTP_200=MessageResponse, HTTP_409=ErrorResponse),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
 def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a task and all its submissions from a challenge."""
     task = db.get_or_404(Task, task_id)
+    locked = compute_service.task_files_locked([task.stage_id])
+    if locked:
+        return locked
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     # Collect file paths before bulk delete for cleanup

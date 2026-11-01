@@ -7,7 +7,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 
 from models import db
-from utils.migrations import BASELINE_REVISION, _render_database_url, migrate_database
+from utils.migrations import _render_database_url, expected_database_heads, migrate_database
 
 
 def _sqlite_engine(tmp_path, name):
@@ -22,7 +22,7 @@ def test_migrate_database_creates_fresh_schema(tmp_path):
     with engine.connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
         tables = set(inspect(connection).get_table_names())
-    assert revision == BASELINE_REVISION
+    assert {revision} == expected_database_heads()
     assert set(db.metadata.tables) <= tables
     engine.dispose()
 
@@ -35,7 +35,7 @@ def test_migrate_database_adopts_matching_legacy_schema(tmp_path):
 
     with engine.connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
-    assert revision == BASELINE_REVISION
+    assert {revision} == expected_database_heads()
     engine.dispose()
 
 

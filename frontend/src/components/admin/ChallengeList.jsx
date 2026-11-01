@@ -28,6 +28,7 @@ import SelectField from '../ui/SelectField';
 import Pagination from '../ui/Pagination';
 import ToggleField from '../ui/ToggleField';
 import { Plus, AlertTriangle } from 'lucide-react';
+import StageComputePanel from './StageComputePanel';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
@@ -1075,6 +1076,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               </Button>
             </div>
           </form>
+          {editingStage && (
+            <StageComputePanel
+              challengeId={stageChallengeId}
+              stage={editingStage}
+              tasks={
+                paginatedChallengesList.find((c) => String(c.id) === String(stageChallengeId))
+                  ?.tasks || []
+              }
+            />
+          )}
         </div>
       ) : null}
 

@@ -35,6 +35,8 @@ class TaskResponse(BaseModel):
     max_submissions_per_period: int | None = None
     submission_period_hours: int | None = None
     stage_id: UUID | None = None
+    workspace_submission_path: str | None = None
+    workspace_notebook_path: str | None = None
     evaluator_script_path: str | None = None
     evaluator_metric_name: str | None = None
     evaluator_options_schema: str | None = None

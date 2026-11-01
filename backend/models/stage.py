@@ -40,4 +40,7 @@ class Stage(db.Model):  # type: ignore[misc, name-defined]
             "is_finalized": self.is_finalized,
             "reveal_results": self.reveal_results,
             "is_test": self.is_test,
+            "compute_enabled": bool(
+                self.compute and self.compute.enabled and self.compute.published
+            ),
         }

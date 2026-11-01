@@ -9,6 +9,26 @@ from flask import Response, jsonify
 # ruff: noqa: E501
 
 DEFAULT_ERROR_MESSAGES = {
+    # environment.py — notebook environments
+    "ERR_COMPUTE_NOT_ENABLED": "Notebook environments are not enabled for this stage.",
+    "ERR_COMPUTE_UNAVAILABLE": "The notebook service is unavailable. Please try again shortly.",
+    "ERR_COMPUTE_SYNC_FAILED": "The stage could not be synchronised with the notebook service.",
+    "ERR_STAGE_COMPUTE_LOCKED": "This stage's notebook environment is published: only a later end time is allowed.",
+    "ERR_ENVIRONMENT_NOT_OPEN": "The notebook environment is not open right now.",
+    "ERR_ENVIRONMENT_PREPARING": "The notebook environment is being prepared. Please wait.",
+    "ERR_ENVIRONMENT_FULL": "The notebook environment has reached its maximum number of participants.",
+    "ERR_WORKSPACE_NOT_FOUND": "No workspace was found. Open your environment first.",
+    "ERR_WORKSPACE_FILE_MISSING": "The submission file was not found in your workspace.",
+    "ERR_WORKSPACE_FILE_TOO_LARGE": "The submission file is too large.",
+    "ERR_WORKSPACE_EXPORT_UNAVAILABLE": "Your workspace cannot be read right now. Please try again shortly.",
+    "ERR_WORKSPACE_EXPORT_INTEGRITY": "The file read from your workspace failed an integrity check.",
+    "ERR_TASK_NOT_WORKSPACE_BACKED": "This task does not accept submissions from a workspace.",
+    "ERR_INVALID_WORKSPACE_IMAGE": "Choose an environment from the list.",
+    "ERR_TASK_FILES_LOCKED": "This stage's notebook environment is published, so its task files are locked.",
+    "ERR_STAGE_PACKAGE_NOT_READY": "Task files are still being prepared. Publish again in a minute.",
+    "ERR_STAGE_PACKAGE_INVALID": "The task files could not be packaged for the notebook environment. See the error in the panel.",
+    "ERR_STAGE_PACKAGE_EMPTY": "Add a task with files to this stage before enabling the notebook environment.",
+    "ERR_INVALID_WORKSPACE_PATH": "The workspace path must be a relative file path.",
     # utils/auth_utils.py
     "ERR_TOKEN_INVALID": "Unauthorized access. Token is missing, expired, or invalid.",
     "ERR_AUTH_UNAVAILABLE": "Authentication is temporarily unavailable. Please try again.",

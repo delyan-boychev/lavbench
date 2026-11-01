@@ -235,6 +235,11 @@ class Config:
     # Grace period (seconds) for submissions after the official deadline
     DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
 
+    NANOCOLAB_API_URL = os.environ.get("NANOCOLAB_API_URL", "").rstrip("/")
+    NANOCOLAB_API_KEY = os.environ.get("NANOCOLAB_API_KEY", "")
+    NANOCOLAB_TIMEOUT_SECONDS = float(os.environ.get("NANOCOLAB_TIMEOUT_SECONDS", 10))
+    NANOCOLAB_EXPORT_MAX_BYTES = int(os.environ.get("NANOCOLAB_EXPORT_MAX_BYTES", 20 * 1024 * 1024))
+
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
     # So the server JWT key never leaves the server host

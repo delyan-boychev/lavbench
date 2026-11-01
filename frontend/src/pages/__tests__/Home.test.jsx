@@ -32,8 +32,21 @@ vi.mock('../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
+vi.mock('../../AuthContext', () => ({
+  useAuth: vi.fn(),
+}));
+
+vi.mock('../../components/challenge/EnvironmentCard', () => ({
+  default: () => <div data-testid="environment-card">Environment</div>,
+}));
+
+vi.mock('../../components/challenge/WorkspaceSubmit', () => ({
+  default: () => <div data-testid="workspace-submit">Workspace Submit</div>,
+}));
+
 import { useParams } from 'react-router';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../AuthContext';
 
 describe('Home Page', () => {
   const mockSetSelectedChallengeById = vi.fn();
@@ -42,6 +55,53 @@ describe('Home Page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useParams.mockReturnValue({ challengeId: undefined });
+    useAuth.mockReturnValue({ currentUser: { role: 'admin' } });
+  });
+
+  const workspaceChallenge = {
+    id: 'c1',
+    stages: [{ id: 's1', compute_enabled: true }],
+    tasks: [{ id: 't1', stage_id: 's1', workspace_submission_path: 'task1/submission.csv' }],
+  };
+
+  it('shows the environment card and workspace submit for competitors on workspace tasks', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    useApp.mockReturnValue({
+      selectedChallenge: workspaceChallenge,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      selectedTask: workspaceChallenge.tasks[0],
+      setSelectedTask: mockSetSelectedTask,
+    });
+    render(<Home />);
+    expect(screen.getByTestId('environment-card')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-submit')).toBeInTheDocument();
+    expect(screen.queryByTestId('notebook-submit')).not.toBeInTheDocument();
+  });
+
+  it('keeps notebook upload when the stage has no published compute', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    const challenge = { ...workspaceChallenge, stages: [{ id: 's1', compute_enabled: false }] };
+    useApp.mockReturnValue({
+      selectedChallenge: challenge,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      selectedTask: challenge.tasks[0],
+      setSelectedTask: mockSetSelectedTask,
+    });
+    render(<Home />);
+    expect(screen.getByTestId('notebook-submit')).toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-submit')).not.toBeInTheDocument();
+  });
+
+  it('hides the environment card and workspace submit from admins and jury', () => {
+    useApp.mockReturnValue({
+      selectedChallenge: workspaceChallenge,
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      selectedTask: workspaceChallenge.tasks[0],
+      setSelectedTask: mockSetSelectedTask,
+    });
+    render(<Home />);
+    expect(screen.queryByTestId('environment-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('notebook-submit')).toBeInTheDocument();
   });
 
   it('renders EmptyState when no selectedChallenge and no URL param', () => {

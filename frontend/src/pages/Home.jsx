@@ -5,16 +5,26 @@ import ChallengeOverview from '../components/challenge/ChallengeOverview';
 import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
 import NotebookSubmit from '../components/challenge/NotebookSubmit';
+import EnvironmentCard from '../components/challenge/EnvironmentCard';
+import WorkspaceSubmit from '../components/challenge/WorkspaceSubmit';
+import { useAuth } from '../AuthContext';
 import EmptyState from '../components/ui/EmptyState';
 import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
 import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import { useTranslation } from 'react-i18next';
 import { FileText, AlertTriangle } from 'lucide-react';
 
+function isWorkspaceTask(task, challenge) {
+  const stage = challenge?.stages?.find((s) => s.id === task?.stage_id);
+  return Boolean(task?.workspace_submission_path && stage?.compute_enabled);
+}
+
 export default function Home() {
   const { challengeId } = useParams();
   const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask } = useApp();
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
+  const isCompetitor = currentUser?.role === 'competitor';
   const notFound = useChallengeNotFound(challengeId);
 
   useEffect(() => {
@@ -37,6 +47,7 @@ export default function Home() {
       {selectedChallenge ? (
         <>
           <ChallengeOverview challenge={selectedChallenge} />
+          {isCompetitor && <EnvironmentCard challenge={selectedChallenge} />}
 
           {/* minmax(0, 1fr) lets wide task content (tables, code) scroll instead of
               stretching the page; an inline gridTemplateColumns would override lg: */}
@@ -59,7 +70,11 @@ export default function Home() {
               {selectedTask ? (
                 <>
                   <TaskDetail task={selectedTask} />
-                  <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
+                  {isCompetitor && isWorkspaceTask(selectedTask, selectedChallenge) ? (
+                    <WorkspaceSubmit task={selectedTask} />
+                  ) : (
+                    <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
+                  )}
                 </>
               ) : (
                 <EmptyState

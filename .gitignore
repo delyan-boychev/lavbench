@@ -97,3 +97,4 @@ backend/examples/
 
 #Gemini key for translations
 .gemini-api-key
+.local-nanocolab/

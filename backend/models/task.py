@@ -57,6 +57,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     public_eval_percentage = db.Column(db.Integer, default=30)
     max_submissions_per_period = db.Column(db.Integer, nullable=True)
     submission_period_hours = db.Column(db.Integer, nullable=True)
+    workspace_submission_path = db.Column(db.String(512), nullable=True)
+    workspace_notebook_path = db.Column(db.String(512), nullable=True)
 
     submissions = db.relationship(
         "Submission", backref="task", lazy=True, cascade="all, delete-orphan"
@@ -170,4 +172,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "submission_period_hours": self.submission_period_hours,
             "problem_codes": (self.problem_codes or []) if show_internal else None,
             "stage_id": self.stage_id,
+            "workspace_submission_path": self.workspace_submission_path,
+            "workspace_notebook_path": self.workspace_notebook_path,
         }

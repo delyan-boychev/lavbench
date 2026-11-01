@@ -23,6 +23,7 @@ class StageResponse(BaseModel):
     is_finalized: bool | None = None
     reveal_results: bool | None = None
     is_test: bool | None = None
+    compute_enabled: bool | None = None
 
     model_config = RESPONSE_CONFIG
 
