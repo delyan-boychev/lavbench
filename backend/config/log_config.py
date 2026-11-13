@@ -21,6 +21,7 @@ def setup_logging(
 
     root = logging.getLogger()
     root.setLevel(level)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     os.makedirs(log_dir, exist_ok=True)
 

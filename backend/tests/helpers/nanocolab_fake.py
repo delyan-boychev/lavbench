@@ -65,17 +65,17 @@ class FakeNanoColab:
                 "upload": None,
             }
         self.assets[version] = {"state": "UPLOADING", "sha256": sha256, "size": size_bytes}
-        url = f"{Config.NANOCOLAB_API_URL}/v1/assets/{version}/content"
+        url = f"{Config.NANOCOLAB_API_URL}/v1/objects/{version}.signature"
         return {
             "version": version,
             "state": "UPLOADING",
-            "upload": {"url": url, "method": "PUT", "auth": "api_key"},
+            "upload": {"url": url, "method": "PUT", "auth": "none", "headers": {}},
         }
 
     def upload_asset(self, target: dict[str, Any], path: str) -> None:
         if self.upload_failure:
             raise self.upload_failure
-        version = target["url"].split("/v1/assets/")[1].split("/")[0]
+        version = target["url"].rsplit("/", 1)[1].split(".")[0]
         with open(path, "rb") as handle:
             data = handle.read()
         assert hashlib.sha256(data).hexdigest() == self.assets[version]["sha256"]

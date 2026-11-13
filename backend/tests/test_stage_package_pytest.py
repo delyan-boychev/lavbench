@@ -374,7 +374,7 @@ class Reply:
         self.status_code = status
 
 
-def test_client_sends_key_only_to_its_own_host(monkeypatch, tmp_path):
+def test_client_never_sends_its_api_key_with_an_upload(monkeypatch, tmp_path):
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         requests, "put", lambda url, **kwargs: calls.append({"url": url, **kwargs}) or Reply(204)
@@ -383,43 +383,78 @@ def test_client_sends_key_only_to_its_own_host(monkeypatch, tmp_path):
     path.write_bytes(b"PK")
     client = NanoColabClient("http://nanocolab.test", "ncak_test0000_" + "k" * 40, 5.0)
     client.upload_asset(
-        {"url": "http://nanocolab.test/v1/assets/lb-a-v1/content", "auth": "api_key"}, str(path)
+        {"url": "http://nanocolab.test/v1/objects/abc.sig", "auth": "none", "headers": {}},
+        str(path),
     )
-    assert calls[-1]["headers"]["Authorization"].startswith("Bearer ncak_")
-    assert calls[-1]["allow_redirects"] is False
-    with pytest.raises(NanoColabError):
-        client.upload_asset(
-            {"url": "http://evil.test/v1/assets/x/content", "auth": "api_key"}, str(path)
-        )
-    with pytest.raises(NanoColabError):
-        client.upload_asset(
-            {"url": "http://nanocolab.test.evil.test/x", "auth": "api_key"}, str(path)
-        )
-    assert len(calls) == 1
+    client.upload_asset(
+        {
+            "url": "https://storage.test/upload?session=abc",
+            "auth": "none",
+            "headers": {"x-goog-meta-a": "1"},
+        },
+        str(path),
+    )
+    assert [call["url"] for call in calls] == [
+        "http://nanocolab.test/v1/objects/abc.sig",
+        "https://storage.test/upload?session=abc",
+    ]
+    assert all("Authorization" not in call["headers"] for call in calls)
+    assert calls[-1]["headers"] == {"x-goog-meta-a": "1", "Content-Type": "application/zip"}
+    assert all(call["allow_redirects"] is False for call in calls)
 
 
-def test_client_storage_upload_has_no_api_key(monkeypatch, tmp_path):
-    calls: list[dict[str, Any]] = []
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"url": "http://storage.test/upload", "auth": "none"},
+        {"url": "http://127.0.0.1.evil.test:9000/bucket/key", "auth": "none"},
+        {"url": "http://user@127.0.0.1:9000/bucket/key", "auth": "none"},
+        {"url": "ftp://127.0.0.1/bucket/key", "auth": "none"},
+        {"url": "http://nanocolab.test.evil.test/v1/objects/a.b", "auth": "none"},
+        {"url": "", "auth": "none"},
+        {
+            "url": "https://storage.test/upload",
+            "auth": "none",
+            "headers": {"authorization": "Bearer x"},
+        },
+    ],
+)
+def test_client_refuses_unsafe_upload_targets(monkeypatch, tmp_path, target):
+    calls: list[str] = []
+    monkeypatch.setattr(requests, "put", lambda url, **kwargs: calls.append(url) or Reply(200))
+    path = tmp_path / "p.zip"
+    path.write_bytes(b"PK")
+    client = NanoColabClient("http://nanocolab.test", "ncak_test0000_" + "k" * 40, 5.0)
+    with pytest.raises(NanoColabError):
+        client.upload_asset(target, str(path))
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:9000/nanocolab-uploads/a.zip?X-Amz-Signature=s",
+        "http://localhost:9000/nanocolab-uploads/a.zip",
+        "http://[::1]:9000/nanocolab-uploads/a.zip",
+    ],
+)
+def test_client_accepts_plain_http_storage_on_loopback(monkeypatch, tmp_path, url):
+    calls: list[str] = []
     monkeypatch.setattr(
-        requests, "put", lambda url, **kwargs: calls.append({"url": url, **kwargs}) or Reply(200)
+        requests, "put", lambda target, **kwargs: calls.append(target) or Reply(200)
     )
     path = tmp_path / "p.zip"
     path.write_bytes(b"PK")
     client = NanoColabClient("http://nanocolab.test", "ncak_test0000_" + "k" * 40, 5.0)
-    client.upload_asset(
-        {"url": "https://storage.test/upload?session=abc", "auth": "none"}, str(path)
-    )
-    assert "Authorization" not in calls[-1]["headers"]
-    with pytest.raises(NanoColabError):
-        client.upload_asset({"url": "http://storage.test/upload", "auth": "none"}, str(path))
-    assert len(calls) == 1
+    client.upload_asset({"url": url, "auth": "none", "headers": {}}, str(path))
+    assert calls == [url]
 
 
 def test_client_upload_errors(monkeypatch, tmp_path):
     path = tmp_path / "p.zip"
     path.write_bytes(b"PK")
     client = NanoColabClient("http://nanocolab.test", "ncak_test0000_" + "k" * 40, 5.0)
-    target = {"url": "http://nanocolab.test/v1/assets/lb-a-v1/content", "auth": "api_key"}
+    target = {"url": "http://nanocolab.test/v1/objects/abc.sig", "auth": "none", "headers": {}}
     monkeypatch.setattr(requests, "put", lambda url, **kwargs: Reply(409))
     with pytest.raises(NanoColabError) as rejected:
         client.upload_asset(target, str(path))

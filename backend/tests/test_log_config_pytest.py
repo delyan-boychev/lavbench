@@ -29,6 +29,39 @@ def _save_root_handlers():
 
 
 class TestSetupLogging:
+    def test_signed_urls_from_http_clients_stay_out_of_debug_logs(self, tmp_path, caplog):
+        from config.log_config import setup_logging
+
+        root = logging.getLogger()
+        before = root.level
+        root.handlers.clear()
+        try:
+            setup_logging("test", log_dir=str(tmp_path), level=logging.DEBUG)
+            caplog.set_level(logging.DEBUG)
+            logging.getLogger("urllib3.connectionpool").debug(
+                '%s://%s:%s "%s %s %s" %s',
+                "https",
+                "storage.example",
+                443,
+                "PUT",
+                "/bucket/key?X-Goog-Signature=secret-signature",
+                "HTTP/1.1",
+                200,
+            )
+            assert logging.getLogger("urllib3").getEffectiveLevel() == logging.WARNING
+            assert "secret-signature" not in caplog.text
+            for handler in root.handlers:
+                handler.flush()
+            logging.getLogger("lavbench.check").debug("debug lines still reach the file")
+            for handler in root.handlers:
+                handler.flush()
+            written = (tmp_path / "test.log").read_text()
+            assert "debug lines still reach the file" in written
+            assert "secret-signature" not in written
+        finally:
+            root.setLevel(before)
+            logging.getLogger("urllib3").setLevel(logging.NOTSET)
+
     def test_creates_log_dir(self):
         root = logging.getLogger()
         root.handlers.clear()

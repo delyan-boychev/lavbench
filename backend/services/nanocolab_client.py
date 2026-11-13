@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
@@ -15,6 +16,16 @@ logger = logging.getLogger(__name__)
 
 RETRY_STATUS = frozenset({502, 503, 504})
 RETRY_DELAYS = (0.5, 1.5)
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _is_loopback_http(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+        hostname = parts.hostname
+    except ValueError:
+        return False
+    return parts.scheme == "http" and hostname in LOOPBACK_HOSTS and not parts.username
 
 
 class NanoColabError(Exception):
@@ -91,13 +102,17 @@ class NanoColabClient:
 
     def upload_asset(self, target: dict[str, Any], path: str) -> None:
         url = str(target.get("url") or "")
-        headers = {"Content-Type": "application/zip"}
-        if target.get("auth") == "api_key":
-            if not url.startswith(f"{self.base_url}/"):
-                raise NanoColabError(502, "Refusing to send the API key to another host")
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        elif not url.startswith("https://"):
+        if not (
+            url.startswith("https://")
+            or url.startswith(f"{self.base_url}/")
+            or _is_loopback_http(url)
+        ):
             raise NanoColabError(502, "Storage upload URL must use HTTPS")
+        extra = target.get("headers") or {}
+        headers = {str(name): str(value) for name, value in extra.items()}
+        if any(name.lower() == "authorization" for name in headers):
+            raise NanoColabError(502, "Storage upload URL must not carry credentials")
+        headers.setdefault("Content-Type", "application/zip")
         try:
             with open(path, "rb") as body:
                 response = requests.put(
