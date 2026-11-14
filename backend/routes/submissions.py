@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Generator
 from typing import Any
 
 from flask import Blueprint, request
@@ -600,6 +601,50 @@ def _relay_log_message(raw: Any) -> tuple[list[str], bool]:
     return [f"data: {data_str}\n\n"], finished
 
 
+def _follow_live_logs(
+    pubsub: Any | None, submission_id: Any, member: str, user_id: Any
+) -> Generator[str, None, None]:
+    """Relay published log lines until a final status, the idle timeout or eviction.
+
+    Queued messages are relayed before the stored final status is consulted, so the
+    last lines before the end are never dropped. The caller owns ``pubsub``.
+    """
+    deadline = time.monotonic() + jittered_idle_timeout()
+    # The first idle moment checks the stored final status: a stream that subscribed
+    # After the final publish ends there
+    next_status_check = time.monotonic()
+    try:
+        while True:
+            if time.monotonic() >= deadline:
+                yield sse_data({"event": "timeout"})
+                return
+            if member and not sse_heartbeat(member, user_id):
+                yield sse_data({"event": "evicted"})
+                return
+            message = None
+            if pubsub is None:
+                time.sleep(_LOG_MESSAGE_WAIT_SECONDS)
+            else:
+                message = pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=_LOG_MESSAGE_WAIT_SECONDS
+                )
+            if message:
+                events, finished = _relay_log_message(message["data"])
+                yield from events
+                if finished:
+                    return
+                continue
+            if time.monotonic() >= next_status_check:
+                next_status_check = time.monotonic() + _LOG_STATUS_CHECK_SECONDS
+                final_status = get_submission_final_status(submission_id)
+                if final_status:
+                    yield sse_data({"status": final_status})
+                    return
+            yield ": keep-alive\n\n"
+    except Exception as e:
+        logger.warning("SSE log stream for submission %s ended: %s", submission_id, e)
+
+
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
 @login_required
 @jury_access_required
@@ -639,61 +684,36 @@ def stream_submission_logs(
     # Everything the stream needs is read now: the session is released before
     # Streaming and the generator never queries the database
     initial_status = submission.status
-    replay = _log_replay(submission)
+    pubsub = None
+    if initial_status not in _TERMINAL_STATUSES:
+        # Subscribe before reading the replay, so a line published in between still
+        # Arrives; one published right between the two calls may appear twice
+        pubsub = subscribe_channel(submission_logs_channel(submission_id))
+    try:
+        replay = _log_replay(submission)
+    except Exception:
+        close_pubsub(pubsub)
+        raise
 
     def event_generator():
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                yield sse_data(SSE_SOCKET_LIMIT_PAYLOAD)
-                return
-            yield sse_retry_field()
-            yield sse_data({"info": "connected"})
-            for line in replay:
-                yield sse_data({"log": line})
-            if initial_status in _TERMINAL_STATUSES:
-                yield sse_data({"status": initial_status})
-                return
+        try:
+            with sse_connection_limit(user_id=user_id) as (allowed, member):
+                if not allowed:
+                    yield sse_data(SSE_SOCKET_LIMIT_PAYLOAD)
+                    return
+                yield sse_retry_field()
+                yield sse_data({"info": "connected"})
+                for line in replay:
+                    yield sse_data({"log": line})
+                if initial_status in _TERMINAL_STATUSES:
+                    yield sse_data({"status": initial_status})
+                    return
+                yield from _follow_live_logs(pubsub, submission_id, member, user_id)
+        finally:
+            close_pubsub(pubsub)
 
-            pubsub = subscribe_channel(submission_logs_channel(submission_id))
-            deadline = time.monotonic() + jittered_idle_timeout()
-            # Check the stored final status right away: it closes the gap between
-            # Reading the submission and subscribing
-            next_status_check = time.monotonic()
-            try:
-                while True:
-                    now = time.monotonic()
-                    if now >= deadline:
-                        yield sse_data({"event": "timeout"})
-                        return
-                    if member and not sse_heartbeat(member, user_id):
-                        yield sse_data({"event": "evicted"})
-                        return
-                    if now >= next_status_check:
-                        next_status_check = now + _LOG_STATUS_CHECK_SECONDS
-                        final_status = get_submission_final_status(submission_id)
-                        if final_status:
-                            yield sse_data({"status": final_status})
-                            return
-                    if pubsub is None:
-                        time.sleep(_LOG_MESSAGE_WAIT_SECONDS)
-                        yield ": keep-alive\n\n"
-                        continue
-                    message = pubsub.get_message(
-                        ignore_subscribe_messages=True, timeout=_LOG_MESSAGE_WAIT_SECONDS
-                    )
-                    if not message:
-                        yield ": keep-alive\n\n"
-                        continue
-                    events, finished = _relay_log_message(message["data"])
-                    yield from events
-                    if finished:
-                        return
-            except Exception as e:
-                logger.warning("SSE log stream for submission %s ended: %s", submission_id, e)
-            finally:
-                close_pubsub(pubsub)
-
-    return sse_response(event_generator)
+    # Also closed when the client leaves before the generator ever starts
+    return sse_response(event_generator, on_close=lambda: close_pubsub(pubsub))
 
 
 @submissions_bp.route(
