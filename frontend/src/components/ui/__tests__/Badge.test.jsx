@@ -51,6 +51,20 @@ describe('Badge Component', () => {
     expect(badge).toBeInTheDocument();
   });
 
+  it.each([
+    ['operational', 'Operational'],
+    ['degraded_performance', 'Degraded performance'],
+    ['partial_outage', 'Partial outage'],
+    ['major_outage', 'Major outage'],
+    ['under_maintenance', 'Under maintenance'],
+    ['online', 'Online'],
+    ['stale', 'Stale'],
+  ])('renders the %s status as text with an icon', (status, label) => {
+    const { container } = render(<Badge status={status} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(container.querySelector('svg')).toBeInTheDocument();
+  });
+
   it('handles null/undefined status gracefully', () => {
     const { container } = render(<Badge status={null} />);
     const badge = container.querySelector('span');

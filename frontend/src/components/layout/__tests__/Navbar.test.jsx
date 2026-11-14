@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
@@ -43,12 +43,6 @@ describe('Navbar Component', () => {
       toggleTheme: mockToggleTheme,
       showToast: mockShowToast,
     });
-    global.EventSource = class {
-      constructor(url) {
-        this.url = url;
-        this.close = vi.fn();
-      }
-    };
   });
 
   it('renders logo and user info when logged in', async () => {
@@ -72,126 +66,29 @@ describe('Navbar Component', () => {
     expect(badges.some((b) => b.textContent === 'competitor')).toBe(true);
   });
 
-  it('polls worker status endpoint and displays online badge', async () => {
-    useAuth.mockReturnValue({
-      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      logout: mockLogout,
-    });
-
-    let eventSourceInstance;
-    global.EventSource = class {
-      constructor(url) {
-        this.url = url;
-        this.close = vi.fn();
-        eventSourceInstance = this;
-      }
-    };
-
-    renderWithProviders(<Navbar />);
-
-    expect(eventSourceInstance.url).toBe('/api/worker-status/live');
-
-    // Simulate SSE data arriving
-    act(() => {
-      eventSourceInstance.onmessage({ data: JSON.stringify({ status: 'online', clusters: [] }) });
-    });
-
-    await vi.waitFor(() => {
-      expect(screen.getByText('Cluster')).toBeInTheDocument();
-    });
-  });
-
-  it('handles offline worker status gracefully', async () => {
-    useAuth.mockReturnValue({
-      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      logout: mockLogout,
-    });
-
-    global.EventSource = class {
-      constructor() {
-        this.close = vi.fn();
-        this.onmessage = null;
-        this.onerror = () => {};
-        // Simulate error immediately
-        setTimeout(() => {
-          if (this.onerror) {
-            act(() => {
-              this.onerror();
-            });
-          }
-        }, 0);
-      }
-    };
-
-    renderWithProviders(<Navbar />);
-
-    await vi.waitFor(() => {
-      expect(screen.getByText('Cluster')).toBeInTheDocument();
-    });
-  });
-
-  it('opens clusters modal on status button click', async () => {
-    useAuth.mockReturnValue({
-      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
-      logout: mockLogout,
-    });
-
-    let eventSourceInstance;
-    global.EventSource = class {
-      constructor(url) {
-        this.url = url;
-        this.close = vi.fn();
-        this.onmessage = vi.fn();
-        eventSourceInstance = this;
-      }
-    };
-
-    renderWithProviders(<Navbar />);
-
-    // Simulate SSE with cluster data
-    act(() => {
-      eventSourceInstance.onmessage({
-        data: JSON.stringify({
-          status: 'online',
-          clusters: [
-            {
-              name: 'celery@cpu-worker',
-              type: 'CPU',
-              concurrency: 4,
-              gpu_type: 'N/A',
-              ram_gb: 16,
-              vram_gb: 'N/A',
-            },
-          ],
-        }),
+  it.each(['competitor', 'jury', 'admin'])(
+    'shows no cluster status pill and opens no live stream for the %s role',
+    (role) => {
+      useAuth.mockReturnValue({
+        currentUser: { username: 'testuser', role, alias_id: 'Alias-123' },
+        logout: mockLogout,
       });
-    });
+      const streams = [];
+      global.EventSource = class {
+        constructor(url) {
+          streams.push(url);
+        }
+        close() {}
+      };
 
-    const statusBtn = screen.getByText('Cluster');
-    await act(async () => {
-      fireEvent.click(statusBtn);
-      await new Promise((r) => setTimeout(r, 20));
-    });
+      renderWithProviders(<Navbar />);
 
-    expect(screen.getByText('Cluster Info & Active Node Specifications')).toBeInTheDocument();
-
-    await vi.waitFor(() => {
-      expect(screen.getByText('celery@cpu-worker')).toBeInTheDocument();
-      expect(screen.getByText('4 tasks')).toBeInTheDocument();
-      expect(screen.getByText('16 GB')).toBeInTheDocument();
-    });
-
-    // Click again to close (toggle)
-    await act(async () => {
-      fireEvent.click(statusBtn);
-      await new Promise((r) => setTimeout(r, 220));
-    });
-    await vi.waitFor(() => {
-      expect(
-        screen.queryByText('Cluster Info & Active Node Specifications'),
-      ).not.toBeInTheDocument();
-    });
-  });
+      expect(streams).toEqual([]);
+      expect(screen.queryByText('Cluster')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+      expect(screen.queryByText('Cluster')).not.toBeInTheDocument();
+    },
+  );
 
   it('triggers theme toggle on clicking the theme button', () => {
     useAuth.mockReturnValue({
@@ -243,7 +140,7 @@ describe('Navbar Component', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ status: 'online', clusters: [] }),
+          json: () => Promise.resolve({}),
         });
       }),
     );
@@ -279,7 +176,7 @@ describe('Navbar Component', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ status: 'online', clusters: [] }),
+          json: () => Promise.resolve({}),
         });
       }),
     );
