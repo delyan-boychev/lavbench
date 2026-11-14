@@ -14,6 +14,7 @@
 | **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Администратори и организатори | Жизнен цикъл на състезанията, отстраняване на проблеми с компилирането на Docker, настройка на изпълнителите (workers) и правила за архивиране. |
 | **Jury Portal Guide** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Жури на състезанието | Мониторинг на решенията, диагностика на сглобяването, поверителност с двоен сляп метод и ръчно оценяване. |
 | **Competitor Guide** | [`../guides/en/competitor_guide.md`](../guides/en/competitor_guide.md) | Участници | Изпращане на бележници, предварителна AST валидация, конвейер на състоянието и отстраняване на проблеми. |
+| **nanoColab Integration Contract** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | Екипът на nanoColab и DevOps | Вход в Hub чрез LavBench (OIDC), токени между услугите, синхронизация на етапите, пакети с данни за етапите, статус и избор на файлове от работната среда. |
 
 ---
 
