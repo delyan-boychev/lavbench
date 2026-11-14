@@ -234,7 +234,7 @@ import AdminPanel from '../AdminPanel';
 import { formatMetricName } from '../../utils/metrics';
 import api from '../../services/ApiService';
 
-describe('AdminPanel Page - Workers & Resources', () => {
+describe('AdminPanel Page - Workers and queues', () => {
   const mockShowToast = vi.fn();
   const mockSetSelectedChallengeById = vi.fn();
   const mockFetchChallenges = vi.fn();
@@ -271,17 +271,17 @@ describe('AdminPanel Page - Workers & Resources', () => {
     });
   });
 
-  it('renders sidebar options including Workers & Resources for admin', async () => {
+  it('renders sidebar options including Workers and queues for admin', async () => {
     renderWithProviders(<AdminPanel />);
     expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
-    expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
+    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
   });
 
-  it('polls the system status on the Workers & Resources tab without a live stream', async () => {
+  it('polls the system status on the Workers and queues tab without a live stream', async () => {
     const streams = [];
     vi.stubGlobal(
       'EventSource',
@@ -295,7 +295,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     renderWithProviders(<AdminPanel />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Workers & Resources'));
+      fireEvent.click(screen.getByText('Workers and queues'));
     });
 
     expect(await screen.findByText('celery@gpu-worker-test')).toBeInTheDocument();
@@ -317,7 +317,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     renderWithProviders(<AdminPanel />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Workers & Resources'));
+      fireEvent.click(screen.getByText('Workers and queues'));
     });
 
     expect(
@@ -366,7 +366,7 @@ describe('AdminPanel component', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
+    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
   });
 });
 
@@ -763,7 +763,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
     expect(screen.getByText('Register User Account')).toBeInTheDocument();
   });
 
-  it('switches to Workers & Resources tab and renders WorkersStats', async () => {
+  it('switches to Workers and queues tab and renders WorkersStats', async () => {
     const defaultGet = api.get.getMockImplementation();
     api.get.mockImplementation((url, ...rest) =>
       url === '/admin/system-status'
@@ -775,7 +775,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    fireEvent.click(screen.getByText('Workers & Resources'));
+    fireEvent.click(screen.getByText('Workers and queues'));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
