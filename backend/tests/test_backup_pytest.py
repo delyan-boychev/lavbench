@@ -318,6 +318,39 @@ def test_resolve_backup_path_accepts_contained_backup(tmp_path):
         assert _resolve_backup_path(backup.name) == backup.resolve()
 
 
+def test_backup_list_is_newest_first_by_modification_time(tmp_path):
+    from routes.admin import _list_backup_files
+
+    # By name, every auto_db_* would sort above every auto_2026...; by time they interleave
+    written = [
+        ("auto_20261114_060000.tar.gz", 1_000),
+        ("auto_db_20261114_062000.tar.gz", 2_000),
+        ("manual_20261114_063000.tar.gz", 3_000),
+        ("auto_db_20261114_064000.tar.gz", 4_000),
+        ("auto_20261114_120000.tar.gz", 5_000),
+        ("auto_db_20261114_120000.tar.gz", 5_000),
+    ]
+    for name, mtime in written:
+        path = tmp_path / name
+        path.write_bytes(b"x")
+        os.utime(path, (mtime, mtime))
+    (tmp_path / "notes.txt").write_text("not a backup")
+
+    listed = [entry["filename"] for entry in _list_backup_files(str(tmp_path))]
+    assert listed == [
+        # Same modification time: the filename breaks the tie, newest first
+        "auto_db_20261114_120000.tar.gz",
+        "auto_20261114_120000.tar.gz",
+        "auto_db_20261114_064000.tar.gz",
+        "manual_20261114_063000.tar.gz",
+        "auto_db_20261114_062000.tar.gz",
+        "auto_20261114_060000.tar.gz",
+    ]
+    types = {entry["filename"]: entry["type"] for entry in _list_backup_files(str(tmp_path))}
+    assert types["manual_20261114_063000.tar.gz"] == "manual"
+    assert types["auto_db_20261114_064000.tar.gz"] == "auto"
+
+
 def _fake_backup_commands(args, **kwargs):
     """Stand in for pg_dump and tar; tar still leaves the archive it would have written."""
     if "tar" in args:

@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import stat
 import string
 import tempfile
 import time
@@ -779,13 +780,26 @@ def _resolve_backup_path(filename: str) -> Path | None:
 
 
 def _list_backup_files(directory: str) -> list[dict[str, Any]]:
+    """List the backups newest first by modification time, filename breaking ties.
+
+    Sorting by name alone put every ``auto_db_*`` above every ``auto_2026...`` backup.
+    """
     if not os.path.isdir(directory):
         return []
-    files = []
-    for f in sorted(os.listdir(directory), reverse=True):
+    entries: list[tuple[float, str, os.stat_result]] = []
+    for f in os.listdir(directory):
         if not f.endswith(".tar.gz"):
             continue
-        path = os.path.join(directory, f)
+        try:
+            st = os.stat(os.path.join(directory, f))
+        except FileNotFoundError:
+            # Rotated away between the listing and the stat
+            continue
+        entries.append((st.st_mtime, f, st))
+    entries.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+
+    files = []
+    for _mtime, f, st in entries:
         ftype = "manual"
         if f.startswith("auto_"):
             ftype = "auto"
@@ -799,9 +813,9 @@ def _list_backup_files(directory: str) -> list[dict[str, Any]]:
             {
                 "filename": f,
                 "size_mb": (
-                    round(os.path.getsize(path) / (1024 * 1024), 2) if os.path.isfile(path) else 0
+                    round(st.st_size / (1024 * 1024), 2) if stat.S_ISREG(st.st_mode) else 0
                 ),
-                "created_at": datetime.fromtimestamp(os.path.getctime(path), UTC).isoformat(),
+                "created_at": datetime.fromtimestamp(st.st_ctime, UTC).isoformat(),
                 "type": ftype,
             }
         )
