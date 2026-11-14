@@ -123,13 +123,25 @@ class Config:
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
+    # Web process only: abort transactions left idle (e.g. a request blocked on a slow body)
+    PG_IDLE_IN_TRANSACTION_TIMEOUT_MS = int(
+        os.environ.get("PG_IDLE_IN_TRANSACTION_TIMEOUT_MS", 60000)
+    )
+    DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", 10))
+    DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", 10))
 
     # SSE (Server-Sent Events) connection limits
     SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
     SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 2000))
     SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", 1800))
-    SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 86400))
-    SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 10000))
+    SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 3600))
+    SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 500))
+
+    # Worker heartbeat and status reporting (GET /api/status, /api/admin/system-status)
+    WORKER_HEARTBEAT_SECONDS = int(os.environ.get("WORKER_HEARTBEAT_SECONDS", 30))
+    WORKER_HEARTBEAT_STALE_SECONDS = int(os.environ.get("WORKER_HEARTBEAT_STALE_SECONDS", 90))
+    STATUS_CACHE_SECONDS = int(os.environ.get("STATUS_CACHE_SECONDS", 30))
+    STATUS_QUEUE_DEGRADED_SECONDS = int(os.environ.get("STATUS_QUEUE_DEGRADED_SECONDS", 600))
 
     # Admin search / pagination limits
     USER_SEARCH_LIMIT = int(os.environ.get("USER_SEARCH_LIMIT", 500))
@@ -138,6 +150,9 @@ class Config:
     # Backup (Postgres + audit log dump) settings
     MIN_BACKUP_DISK_GB = int(os.environ.get("MIN_BACKUP_DISK_GB", 1))
     BACKUP_TIMEOUT = int(os.environ.get("BACKUP_TIMEOUT", 600))
+    BACKUP_RETENTION_COUNT = int(os.environ.get("BACKUP_RETENTION_COUNT", 3))
+    # During a contest the database is backed up every 20 min, uploads only this often
+    BACKUP_UPLOADS_INTERVAL_SECONDS = int(os.environ.get("BACKUP_UPLOADS_INTERVAL_SECONDS", 21600))
 
     # Docker image builder settings
     MIN_BUILD_DISK_GB = int(os.environ.get("MIN_BUILD_DISK_GB", 5))
@@ -293,7 +308,8 @@ class Config:
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
     # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
-    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 10000))
+    # 0 disables worker recycling, which would drop every open SSE stream at once
+    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
     GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
     GUNICORN_ACCESS_LOGFILE = os.environ.get(
