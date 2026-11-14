@@ -61,6 +61,9 @@ def _sign_worker_token(submission_id: Any = None) -> str:
 
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
+# Working directories run_sandbox mounts a fresh volume on: /app for submissions,
+# /work for the custom evaluator. Task images must own each one (image_builder)
+SANDBOX_WORKING_DIRS = ("/app", "/work")
 
 
 def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -201,8 +204,8 @@ def run_command_streaming(
                 # And the non-root sandbox user could not write outputs
                 # A leading '/' entry makes older daemons chown/chmod the
                 # Volume root (/app) itself before the seed contents. Newer
-                # Daemons ignore it; task images own /app (image_builder),
-                # Which the empty volume inherits
+                # Daemons ignore it; task images own every directory in
+                # SANDBOX_WORKING_DIRS, which the empty volume inherits
                 root_entry = tarfile.TarInfo("/")
                 root_entry.type = tarfile.DIRTYPE
                 root_entry.mode = 0o777

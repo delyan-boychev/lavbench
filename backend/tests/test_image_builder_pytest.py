@@ -312,9 +312,11 @@ class TestDoBuild:
         assert (task_dir / "requirements.txt").exists()
         assert not (task_dir / "evaluator_script.py").exists()
         assert "evaluator_script.py" not in (task_dir / "Dockerfile").read_text()
-        # /app must be owned by the sandbox user so the per-run volume is writable
+        # Sandbox working dirs must be owned by the sandbox user so per-run volumes are writable
         last_line = (task_dir / "Dockerfile").read_text().strip().splitlines()[-1]
-        assert last_line == "RUN mkdir -p /app && chown 65534:65534 /app && chmod 0755 /app"
+        assert last_line == (
+            "RUN mkdir -p /app /work && chown 65534:65534 /app /work && chmod 0755 /app /work"
+        )
         meta = json.loads((task_dir / "hf_meta.json").read_text())
         assert meta["hash"]
         mock_report.assert_called_once_with(42, "", "", None)
