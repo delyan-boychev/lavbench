@@ -244,6 +244,7 @@ make html        # Generates HTML documentation at docs/build/index.html
 | [Admin Guide](guides/en/admin_guide.md) | Administrators | Full setup, TLS/HTTPS, worker nodes, task image builds, backups, audit trails. |
 | [Custom Evaluators Guide](docs/custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
 | [System Architecture](docs/source/architecture.md) | Developers & DevOps | Architectural overview, sandbox security, worker budgeting, SSE telemetry. |
+| [nanoColab Integration Contract](docs/source/ops/nanocolab-integration.md) | nanoColab team & DevOps | Hub sign-in through LavBench, service tokens, stage sync and bags, status, workspace file picker. |
 | [API Swagger Documentation](http://localhost:5001/apidoc/swagger/) | Developers | Interactive OpenAPI 3.0 documentation for all backend endpoints. |
 
 ---

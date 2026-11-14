@@ -13,6 +13,12 @@ LavBench Documentation
    api_reference
    api_spec
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Operations and integration:
+
+   ops/nanocolab-integration
+
 Indices and tables
 ==================
 
