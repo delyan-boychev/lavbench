@@ -241,33 +241,33 @@ def clear_submission_logs(submission_id: Any) -> None:
 def publish_submission_status(submission_id: Any, status: str) -> None:
     """Publish the final status of a submission to its SSE channel.
 
-    The status is also stored on the cache instance, so a log stream that missed
-    the publish (or subscribed just after it) can still end without a DB query.
+    A terminal status is also stored on the broker instance, so a log stream that
+    missed the publish (or subscribed just after it) can still end without a DB
+    query. The broker never evicts; the cache instance (volatile-lru) could drop it.
     """
     if not submission_id or not status:
         return
+    r = _redis()
+    if not r:
+        return
     if status in TERMINAL_STATUSES:
         try:
-            cache_r = get_redis_client()
-            if cache_r:
-                cache_r.set(submission_status_key(submission_id), status, ex=Config.SSE_LOG_TTL)
+            r.set(submission_status_key(submission_id), status, ex=Config.SSE_LOG_TTL)
         except Exception:
             logger.warning("Redis store of final status failed for submission %s", submission_id)
     try:
-        r = _redis()
-        if r:
-            r.publish(submission_logs_channel(submission_id), json.dumps({"status": status}))
+        r.publish(submission_logs_channel(submission_id), json.dumps({"status": status}))
     except Exception:
         logger.exception("Redis publish submission status error for submission %s", submission_id)
 
 
 def get_submission_final_status(submission_id: Any) -> str | None:
-    """Return the stored terminal status of a submission, or None when unknown."""
+    """Return the terminal status stored on the broker instance, or None when unknown."""
     try:
-        cache_r = get_redis_client()
-        if not cache_r:
+        r = _redis()
+        if not r:
             return None
-        value = cache_r.get(submission_status_key(submission_id))
+        value = r.get(submission_status_key(submission_id))
     except Exception:
         logger.warning("Redis read of submission status failed for %s", submission_id)
         return None

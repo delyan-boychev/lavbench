@@ -286,29 +286,32 @@ class TestPublishSubmissionStatus:
         publish_submission_status(submission_id=1, status="completed")
 
     def test_final_status_is_stored_for_streams_that_missed_the_publish(self, fredis):
-        with (
-            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
-            patch("utils.sse_utils.get_redis_client", return_value=fredis),
-        ):
+        with patch("utils.sse_utils.get_coordination_client", return_value=fredis):
             publish_submission_status(submission_id=5, status="failed")
             assert get_submission_final_status(5) == "failed"
             assert get_submission_final_status(6) is None
 
-    def test_store_failure_still_publishes(self, fredis):
-        broken_cache = MagicMock()
-        broken_cache.set.side_effect = Exception("cache down")
+    def test_final_status_lives_on_the_broker_not_the_evicting_cache(self, fredis):
+        cache = MagicMock()
         with (
             patch("utils.sse_utils.get_coordination_client", return_value=fredis),
-            patch("utils.sse_utils.get_redis_client", return_value=broken_cache),
+            patch("utils.sse_utils.get_redis_client", return_value=cache),
         ):
+            publish_submission_status(submission_id=5, status="completed")
+            assert get_submission_final_status(5) == "completed"
+        assert fredis.get("submission:5:status") == "completed"
+        cache.set.assert_not_called()
+        cache.get.assert_not_called()
+
+    def test_store_failure_still_publishes(self, fredis):
+        broker = MagicMock(wraps=fredis)
+        broker.set.side_effect = Exception("store failed")
+        with patch("utils.sse_utils.get_coordination_client", return_value=broker):
             publish_submission_status(submission_id=5, status="completed")
         assert fredis.published_messages == [("submission_5_logs", '{"status": "completed"}')]
 
     def test_non_terminal_status_is_not_stored(self, fredis):
-        with (
-            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
-            patch("utils.sse_utils.get_redis_client", return_value=fredis),
-        ):
+        with patch("utils.sse_utils.get_coordination_client", return_value=fredis):
             publish_submission_status(submission_id=5, status="running")
             assert get_submission_final_status(5) is None
 
