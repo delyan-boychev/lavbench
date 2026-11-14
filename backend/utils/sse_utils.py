@@ -33,7 +33,6 @@ SSE_MAX_GLOBAL = Config.SSE_MAX_GLOBAL
 _CONNECTIONS_KEY = "sse:connections"
 _STALE_TTL = 120
 
-CHANNEL_TASK_REBUILD = "task_rebuild"
 CHANNEL_BACKUPS = "backup_status"
 CHANNEL_QUEUE = "queue_updates"
 
@@ -169,30 +168,6 @@ def cap_log_line(line: str) -> str:
     marker = _TRUNCATION_MARKER.encode("utf-8")
     kept = encoded[: max(0, limit - len(marker))].decode("utf-8", errors="ignore")
     return kept + _TRUNCATION_MARKER
-
-
-def publish_submission_log(submission_id: Any, log_line: str) -> None:
-    """Append a log line to the submission's Redis list and publish to its SSE channel.
-
-    Log storage lives on the redis-cache instance so the broker's
-    small noeviction quota is never consumed by user-triggerable log volume;
-    the SSE publish itself goes over the coordination (broker) channel.
-    """
-    if not submission_id:
-        return
-    log_line = cap_log_line(log_line)
-    try:
-        cache_r = get_redis_client()
-        if cache_r:
-            log_key = submission_logs_key(submission_id)
-            cache_r.rpush(log_key, log_line)
-            cache_r.ltrim(log_key, -Config.SSE_LOG_MAX_LINES, -1)
-            cache_r.expire(log_key, Config.SSE_LOG_TTL)
-        r = get_coordination_client()
-        if r:
-            r.publish(submission_logs_channel(submission_id), json.dumps({"log": log_line}))
-    except Exception:
-        logger.exception("Redis publish submission log error for submission %s", submission_id)
 
 
 def publish_submission_log_batch(submission_id: Any, log_lines: list[str]) -> None:

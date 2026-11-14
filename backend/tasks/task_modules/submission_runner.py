@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import functools
 import json
 import logging
 import math
@@ -18,7 +17,6 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
-import redis
 import requests
 from celery.signals import worker_ready
 
@@ -50,11 +48,10 @@ from .docker_utils import image_exists as _image_exists_docker
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache of the worker spec, used to recreate the Redis key
-# After a Redis restart without re-running nvidia-smi
+# In-memory copy of the worker spec; the heartbeat rewrites the Redis key from it,
+# Which also recreates the key after a Redis restart without re-running nvidia-smi
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
-_spec_reconnect_needed = False
 
 # Long enough to ride out a Redis hiccup, short enough that a dead worker's entry
 # Disappears within a day; whether a worker is online is decided by ``last_seen``
@@ -97,42 +94,6 @@ def _write_worker_spec(r: Any, worker_name: str, spec: dict[str, Any]) -> dict[s
     stamped = {**spec, "last_seen": redis_time(r)}
     r.set(worker_spec_key(worker_name), json.dumps(stamped), ex=WORKER_SPEC_TTL_SECONDS)
     return stamped
-
-
-def _recreate_spec_on_reconnect() -> None:
-    global _spec_reconnect_needed
-    _spec_reconnect_needed = False
-    if not _cached_worker_spec or not _cached_worker_name:
-        return
-    r = get_coordination_client()
-    if not r:
-        return
-    try:
-        _write_worker_spec(r, _cached_worker_name, _cached_worker_spec)
-        logger.info("Recreated worker spec for %s after Redis reconnect", _cached_worker_name)
-    except Exception as e:
-        logger.debug("Failed to recreate worker spec on reconnect: %s", e)
-
-
-def _install_reconnect_guard() -> None:
-    _orig_exec = redis.client.Redis.execute_command
-
-    @functools.wraps(_orig_exec)
-    def _guard(self: Any, *args: Any, **options: Any) -> Any:
-        global _spec_reconnect_needed
-        try:
-            result = _orig_exec(self, *args, **options)
-            if _spec_reconnect_needed:
-                _recreate_spec_on_reconnect()
-            return result
-        except redis.exceptions.ConnectionError:
-            _spec_reconnect_needed = True
-            raise
-
-    redis.client.Redis.execute_command = _guard
-
-
-_install_reconnect_guard()
 
 
 def _fetch_hf_key_from_server(
@@ -1298,10 +1259,9 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "queues": _consumer_queue_names(sender),
         }
-        global _cached_worker_spec, _cached_worker_name, _spec_reconnect_needed
+        global _cached_worker_spec, _cached_worker_name
         _cached_worker_spec = _write_worker_spec(r, worker_name, spec)
         _cached_worker_name = worker_name
-        _spec_reconnect_needed = False
         logger.info("Worker specs registered: %s", spec)
         _start_heartbeat(sender)
 

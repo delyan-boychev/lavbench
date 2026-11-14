@@ -124,7 +124,7 @@ Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` 
 1. Open **Admin Panel** → **Tasks** → select the failing task.
 2. The UI highlights a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
 3. Fix the base image, APT package string, or Pip requirements in the task edit modal.
-4. Saving the task re-triggers worker notification over Redis pub/sub (`task_rebuild`). The rebuild listener bypasses the config-hash fast path (`force_rebuild=True`), so the image is rebuilt and HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only). A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
+4. Saving a change to the base image, packages, HuggingFace settings, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that the save queues, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
 5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (snapshotted into the per-run sandbox at `/app/data` at launch) and re-bakes the image — students always see the current file, never a stale copy.
 
 ---
@@ -357,7 +357,7 @@ Workers are configured **individually** in `worker.env` — there is no server-s
 
 | Variable | Purpose |
 | :--- | :--- |
-| `WORKER_GPU_IDS` | Comma-separated GPU IDs (e.g. `0,1,3`) enabled for **round-robin pinning** of GPU sandboxes (`DeviceRequest(device_ids=[...])`). When unset, a task uses its pinned `WORKER_GPU_ID`; if neither is set the sandbox falls back to `count=-1` (requests all GPUs) with a warning. |
+| `WORKER_GPU_ID` | Comma-separated GPU IDs this worker may use (e.g. `0,1,3`), written by `scripts/setup-worker.sh`. Each GPU sandbox locks one free device in Redis and pins it (`DeviceRequest(device_ids=[...])`). When unset, a GPU sandbox uses `count=-1` (requests all GPUs) and logs a warning. |
 | `WORKER_SANDBOX_STORAGE_OPT`, `MAX_COLLECT_BUFFER_BYTES`, `MAX_EXTRACT_MEMBER_BYTES` | Per-worker task-execution caps mirroring the server defaults. All are hard limits; the Docker storage driver must enforce `storage-opt`. |
 | `MAX_WORKER_LOG_BYTES` | Rotation threshold for the worker remote log (`worker_remote.log` shipped to the server via `/api/workers/logs`). Default 10 MB. |
 

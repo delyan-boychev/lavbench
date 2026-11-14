@@ -161,7 +161,6 @@ services:
       - WORKER_ROLE=server
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
@@ -228,7 +227,6 @@ services:
       # only runs beat (no app / no DB / no secrets), so it gets broker access
       # only.
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ROLE=scheduler
       - HF_CACHE_DIR=/app/hf_cache
@@ -288,7 +286,6 @@ services:
       # must never be interpolated into the compose network.
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY:-${ENCRYPTION_KEY}}
       - HF_CACHE_DIR=/var/lib/lavbench/hf_cache

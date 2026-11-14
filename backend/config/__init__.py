@@ -122,12 +122,10 @@ class Config:
 
     # Celery configuration
     CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     # Dedicated cache instance (defaults to broker when unset, e.g. dev/tests)
     CACHE_REDIS_URL = os.environ.get("CACHE_REDIS_URL", "")
     _warn_insecure_redis(CELERY_BROKER_URL, "CELERY_BROKER_URL")
     _warn_insecure_redis(CACHE_REDIS_URL, "CACHE_REDIS_URL")
-    CELERY_RESULT_EXPIRES = int(os.environ.get("CELERY_RESULT_EXPIRES", 3600))
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
@@ -190,8 +188,6 @@ class Config:
     BACKUP_UPLOADS_INTERVAL_SECONDS = int(os.environ.get("BACKUP_UPLOADS_INTERVAL_SECONDS", 21600))
 
     # Docker image builder settings
-    MIN_BUILD_DISK_GB = int(os.environ.get("MIN_BUILD_DISK_GB", 5))
-    BUILD_LOCK_EXPIRY = int(os.environ.get("BUILD_LOCK_EXPIRY", 3600))
 
     # Upload folder
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or os.path.join(
@@ -271,9 +267,6 @@ class Config:
     MAX_WORKER_LOG_SHIP_BYTES = int(os.environ.get("MAX_WORKER_LOG_SHIP_BYTES", 1024 * 1024))
     # Comma-separated GPU device ids exposed to sandboxes. When set, the
     # Worker pins a specific device per run instead of requesting every GPU
-    WORKER_GPU_IDS: ClassVar[list[str]] = [
-        id_.strip() for id_ in os.environ.get("WORKER_GPU_IDS", "").split(",") if id_.strip()
-    ]
 
     # Caps for sandbox output collection: never buffer
     # More than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never

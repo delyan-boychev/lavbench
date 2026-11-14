@@ -14,6 +14,7 @@ from celery import Celery
 from celery import Task as CeleryTask
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.signals import celeryd_init, worker_process_init
+from flask import current_app, has_app_context
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
@@ -40,7 +41,13 @@ logger = logging.getLogger(__name__)
 os.environ["TZ"] = "UTC"
 time.tzset()
 
-setup_logging("celery")
+# Imported inside an app context means a request handler in the web server, which
+# Only dispatches tasks: reuse its app and logging instead of building a second app,
+# DB engine and celery.log handler in every gunicorn process
+DISPATCH_ONLY = has_app_context()
+
+if not DISPATCH_ONLY:
+    setup_logging("celery")
 
 # Worker role capabilities (see Config._worker_role). Only 'server' and
 # 'internal' boot a full app; 'eval' and 'scheduler' run a bare Celery
@@ -63,9 +70,7 @@ if not HAS_APP:
     celery = Celery(
         "tasks",
         broker=Config.CELERY_BROKER_URL,
-        backend=Config.CELERY_RESULT_BACKEND,
         task_serializer="json",
-        result_serializer="json",
         accept_content=["json"],
     )
     app = None
@@ -73,24 +78,25 @@ if not HAS_APP:
     Submission = None
     Challenge = None
 else:
-    from app import create_app
     from models import Challenge, Submission, db
 
-    app = create_app()
+    if DISPATCH_ONLY:
+        app = current_app._get_current_object()
+    else:
+        from app import create_app
+
+        app = create_app()
     celery = Celery(
         "tasks",
         broker=app.config["CELERY_BROKER_URL"],
-        backend=app.config["CELERY_RESULT_BACKEND"],
         task_serializer="json",
-        result_serializer="json",
         accept_content=["json"],
     )
 
 
 def configure_celery_ssl(celery_app: Celery) -> None:
     broker_url = celery_app.conf.broker_url or ""
-    result_backend = celery_app.conf.result_backend or ""
-    if broker_url.startswith("rediss://") or result_backend.startswith("rediss://"):
+    if broker_url.startswith("rediss://"):
         import ssl
 
         ssl_ca_certs = Config.REDIS_SSL_CA_CERTS or None
@@ -112,7 +118,7 @@ def configure_celery_ssl(celery_app: Celery) -> None:
         if ssl_keyfile:
             ssl_opts["ssl_keyfile"] = ssl_keyfile
 
-        celery_app.conf.update(broker_use_ssl=ssl_opts, redis_backend_use_ssl=ssl_opts)
+        celery_app.conf.update(broker_use_ssl=ssl_opts)
 
 
 configure_celery_ssl(celery)
@@ -122,7 +128,8 @@ celery.conf.update(
     worker_max_tasks_per_child=50,
     worker_concurrency=Config.CELERY_WORKER_CONCURRENCY,
     worker_prefetch_multiplier=1,  # Never hoard long-running evals per worker
-    result_expires=Config.CELERY_RESULT_EXPIRES,
+    # Results travel over HTTP and the DB, never through Celery, so no result backend
+    task_ignore_result=True,
     broker_transport_options={
         "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
         "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
@@ -239,30 +246,6 @@ def evaluate_submission(
             error=e,
         )
         raise
-
-
-@celery.task
-def recalculate_all_leaderboards() -> None:
-    """Celery task: rebuild leaderboard cache for all active challenges."""
-    if not RUNS_INTERNAL:
-        return
-    from .task_modules.leaderboard import run_recalculate_all_leaderboards
-
-    return run_recalculate_all_leaderboards(app)
-
-
-@celery.task
-def recalculate_leaderboard(challenge_id: Any) -> None:
-    """Celery task: rebuild leaderboard cache for a specific challenge."""
-    if not RUNS_INTERNAL:
-        return
-    if not app:
-        return
-    from utils.cache_utils import invalidate_leaderboard_cache
-
-    # Leaderboard SSE updates are published only by recalculate_dirty_leaderboards,
-    # So this task just queues the challenge for that rebuild
-    invalidate_leaderboard_cache(challenge_id)
 
 
 @celery.task
@@ -626,9 +609,7 @@ celery.conf.beat_schedule = {
 # 'eval' workers handle only evaluation/image tasks; the main server runs all
 INTERNAL_TASKS = {
     "tasks.check_and_backup",
-    "tasks.recalculate_all_leaderboards",
     "tasks.recalculate_dirty_leaderboards",
-    "tasks.recalculate_leaderboard",
     "tasks.run_backup",
     "tasks.watchdog_stuck_submissions",
 }

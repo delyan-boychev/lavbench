@@ -130,7 +130,6 @@
     "ERR_INVALID_CHALLENGE_ID": "Невалиден challenge_id.",
     "ERR_INVALID_CREDENTIALS": "Невалидни данни за достъп.",
     "ERR_CREDENTIALS_NOT_AVAILABLE": "Файлът с данни за достъп не е наличен или вече е изтеглен.",
-    "ERR_INVALID_DATE": "Невалидна дата.",
     "ERR_INVALID_DATE_FORMAT": "Невалиден формат на датата.",
     "ERR_INVALID_DATE_RANGE": "Крайният час трябва да бъде след началния час.",
     "ERR_INVALID_TIMEZONE": "Часовата зона трябва да бъде валидно име от базата IANA.",

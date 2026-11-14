@@ -68,21 +68,6 @@ class TestServiceSandboxAndPriority:
         assert calculate_submission_priority(1, "admin") == 0
         assert calculate_submission_priority(2, "jury") == 0
 
-    def test_evaluation_templates_formatting(self):
-        from tasks.task_modules.templates import (
-            DEFAULT_EVALUATION_TEMPLATE,
-            render_eval_template,
-        )
-
-        formatted_default = render_eval_template(
-            DEFAULT_EVALUATION_TEMPLATE,
-            user_code="print('user default')",
-            public_eval_percentage=30,
-            hf_dataset_split="test",
-            metrics_config_str='{"accuracy": {"weight": 1.0, "higher_is_better": true}}',
-        )
-        assert "load_dataset" in formatted_default
-
     def test_get_best_submission_higher_better(self):
         from models import Challenge, Submission
         from services.submission_service import get_best_submission

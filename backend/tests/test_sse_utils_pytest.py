@@ -13,14 +13,12 @@ from tests.helpers.sse_test_utils import _FakeRedis, fake_redis
 from utils.sse_utils import (
     CHANNEL_BACKUPS,
     CHANNEL_QUEUE,
-    CHANNEL_TASK_REBUILD,
     cap_log_line,
     clear_submission_logs,
     get_submission_final_status,
     leaderboard_channel,
     publish_leaderboard_update,
     publish_queue_update,
-    publish_submission_log,
     publish_submission_log_batch,
     publish_submission_status,
     sse_connection_limit,
@@ -50,15 +48,15 @@ class TestChannelHelpers:
 
 class TestChannelConstants:
     def test_documented_constants(self):
-        assert CHANNEL_TASK_REBUILD == "task_rebuild"
         assert CHANNEL_BACKUPS == "backup_status"
         assert CHANNEL_QUEUE == "queue_updates"
 
     def test_never_published_channels_removed(self):
-        for name in ("CHANNEL_WORKER_STATS", "CHANNEL_WORKER_STATUS"):
+        for name in ("CHANNEL_WORKER_STATS", "CHANNEL_WORKER_STATUS", "CHANNEL_TASK_REBUILD"):
             assert not hasattr(sse_utils_module, name)
         assert not hasattr(sse_utils_module, "publish_submissions_update")
         assert not hasattr(sse_utils_module, "submissions_channel")
+        assert not hasattr(sse_utils_module, "publish_submission_log")
 
 
 # ── publish_leaderboard_update ──
@@ -109,53 +107,6 @@ class TestPublishLeaderboardUpdate:
         with patch("utils.sse_utils.get_coordination_client", return_value=fredis):
             publish_leaderboard_update(challenge_id=42)
         assert fredis.published_messages == [("leaderboard_42", '{"event": "update"}')]
-
-
-# ── publish_submission_log ──
-
-
-class TestPublishSubmissionLog:
-    @patch("utils.sse_utils.get_coordination_client")
-    @patch("utils.sse_utils.get_redis_client")
-    def test_storage_on_cache_publish_on_coordination(self, mock_cache, mock_coord):
-        cache_redis = MagicMock()
-        mock_cache.return_value = cache_redis
-        coord_redis = MagicMock()
-        mock_coord.return_value = coord_redis
-        publish_submission_log(submission_id=99, log_line="starting eval")
-
-        cache_redis.rpush.assert_called_once()
-        cache_redis.ltrim.assert_called_once()
-        cache_redis.expire.assert_called_once_with("submission:99:logs", Config.SSE_LOG_TTL)
-        cache_redis.publish.assert_not_called()
-
-        rpush_args = cache_redis.rpush.call_args[0]
-        assert rpush_args[0] == "submission:99:logs"
-        assert rpush_args[1] == "starting eval"
-
-        coord_redis.publish.assert_called_once()
-        publish_args = coord_redis.publish.call_args[0]
-        assert publish_args[0] == "submission_99_logs"
-
-    @patch("utils.sse_utils.get_redis_client")
-    def test_none_submission_id_does_nothing(self, mock_cache):
-        publish_submission_log(submission_id=None, log_line="test")
-        mock_cache.return_value.rpush.assert_not_called()
-
-    @patch("utils.sse_utils.get_coordination_client")
-    @patch("utils.sse_utils.get_redis_client")
-    def test_redis_none_no_error(self, mock_cache, mock_coord):
-        mock_cache.return_value = None
-        mock_coord.return_value = None
-        publish_submission_log(submission_id=1, log_line="test")
-
-    def test_publishes_to_fakeredis_channel(self, fredis):
-        with (
-            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
-            patch("utils.sse_utils.get_redis_client", return_value=fredis),
-        ):
-            publish_submission_log(submission_id=99, log_line="starting eval")
-        assert fredis.published_messages == [("submission_99_logs", '{"log": "starting eval"}')]
 
 
 class TestPublishSubmissionLogBatch:
