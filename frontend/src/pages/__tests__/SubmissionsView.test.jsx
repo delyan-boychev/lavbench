@@ -1629,6 +1629,66 @@ describe('SubmissionsView Page', () => {
         });
       });
 
+      it('keeps polling the detail of a running submission for admin', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          api.get.mockResolvedValue({
+            ok: true,
+            data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+          });
+          const running = {
+            id: 300,
+            task_id: 10,
+            status: 'running',
+            created_at: '2026-06-13T11:00:00Z',
+          };
+          TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: running });
+          api.fetch.mockReset();
+          api.fetch.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+            blob: () => Promise.resolve(new Blob(['test'])),
+          });
+          api.fetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve({ items: [running], total: 1, pages: 1 }),
+            blob: () => Promise.resolve(new Blob(['test'])),
+          });
+          useApp.mockReturnValue({
+            selectedChallenge: mockChallenge,
+            selectedTask: null,
+            setSelectedChallengeById: mockSetSelectedChallengeById,
+            setSelectedTask: mockSetSelectedTask,
+            confirm: mockConfirm,
+          });
+
+          renderWithProviders(<SubmissionsView />);
+          await act(async () => {
+            fireEvent.click(screen.getByText('Baseline Solutions'));
+          });
+          await waitFor(() => {
+            expect(screen.getByText('Task 1')).toBeInTheDocument();
+          });
+          await act(async () => {
+            fireEvent.click(screen.getByText('Task 1'));
+          });
+          await waitFor(() => {
+            expect(TaskService.getSubmissionDetail).toHaveBeenCalledWith(300);
+          });
+          const callsBefore = TaskService.getSubmissionDetail.mock.calls.length;
+
+          // The log stream can end without a final status, so the detail keeps polling
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(5_000);
+          });
+          await waitFor(() => {
+            expect(TaskService.getSubmissionDetail.mock.calls.length).toBeGreaterThan(callsBefore);
+          });
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it('hides SubmissionViewer when baseline section is collapsed', async () => {
         api.get.mockResolvedValue({
           ok: true,

@@ -7,7 +7,11 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import useDebounce from '../hooks/useDebounce';
 import { useApiError } from '../hooks/useApiError';
-import { useSubmissionsQuery, ACTIVE_SUBMISSION_POLL_MS } from '../hooks/useSubmissionsQuery';
+import {
+  useSubmissionsQuery,
+  ACTIVE_SUBMISSION_POLL_MS,
+  isActiveSubmission,
+} from '../hooks/useSubmissionsQuery';
 import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
 import { useCompetitorSearchQuery } from '../hooks/useCompetitorSearchQuery';
 import { useSelectFinal, useKillSubmission } from '../hooks/useSubmissionMutations';
@@ -382,9 +386,10 @@ export default function SubmissionsView() {
       ].find((s) => s?.id === selectedSubmissionId) ?? null)
     : null;
   const { data: submissionDetail } = useSubmissionDetailQuery(selectedSubmissionId, {
-    // Admin and jury lists do not poll, so a queued submission polls its own detail
+    // Admin and jury lists do not poll, so an active submission polls its own detail.
+    // The log stream can end without a final status (eviction, broker outage)
     refetchInterval: (query) =>
-      isAdminOrJury && query.state.data?.status === 'queued' ? ACTIVE_SUBMISSION_POLL_MS : false,
+      isAdminOrJury && isActiveSubmission(query.state.data) ? ACTIVE_SUBMISSION_POLL_MS : false,
   });
   const selectedSubmission = submissionDetail ?? listedSubmission;
 
