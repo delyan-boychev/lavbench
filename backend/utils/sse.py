@@ -129,8 +129,9 @@ def signal_stream(channel: str, user_id: Any) -> Callable[[], Generator[str, Non
     """Build a stream that turns every message on ``channel`` into ``{"event": "update"}``.
 
     Clients refetch over REST when signalled, so the stream builds no payload and
-    never touches the database. Without a broker connection it degrades to one
-    signal per keep-alive interval, which keeps clients polling.
+    never touches the database. Without a broker connection it sends only keep-alive
+    comments until the idle timeout: a signal every interval would make every client
+    refetch in a loop during a broker outage.
     """
 
     def generate() -> Generator[str, None, None]:
@@ -152,7 +153,7 @@ def signal_stream(channel: str, user_id: Any) -> Callable[[], Generator[str, Non
                         return
                     if pubsub is None:
                         time.sleep(SSE_KEEPALIVE_SECONDS)
-                        yield sse_data(SSE_UPDATE_PAYLOAD)
+                        yield ": keep-alive\n\n"
                         continue
                     message = pubsub.get_message(
                         ignore_subscribe_messages=True, timeout=SSE_KEEPALIVE_SECONDS

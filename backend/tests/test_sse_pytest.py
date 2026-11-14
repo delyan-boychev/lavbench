@@ -104,7 +104,7 @@ class TestSignalStream:
             chunks = list(sse.signal_stream("queue_updates", user_id="u1")())
         assert {"event": "update"} in _events(chunks)
 
-    def test_without_broker_degrades_to_periodic_signals(self, app_ctx):
+    def test_without_broker_sends_only_keep_alives_until_the_idle_timeout(self, app_ctx):
         with (
             patch("utils.sse_utils.get_coordination_client", return_value=None),
             patch("utils.sse.get_sse_client", return_value=None),
@@ -113,8 +113,10 @@ class TestSignalStream:
         ):
             chunks = list(sse.signal_stream("backup_status", user_id="u1")())
         events = _events(chunks)
-        assert {"event": "update"} in events
-        assert events[-1] == {"event": "timeout"}
+        # An update signal per interval would make every client refetch in a loop
+        assert {"event": "update"} not in events
+        assert chunks.count(": keep-alive\n\n") >= 2
+        assert events == [{"info": "connected"}, {"event": "timeout"}]
 
 
 class TestSignalOnlyRoutes:
