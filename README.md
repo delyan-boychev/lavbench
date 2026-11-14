@@ -55,6 +55,8 @@ Press `Ctrl+C` to stop all services.
 
 See the [Admin Guide](guides/en/admin_guide.md) for prerequisites, TLS/HTTPS setup, Docker Compose deployment, remote worker nodes, and configuration editing (`make edit`).
 
+The Docker Compose deployment needs Docker Compose 2.24 or later; `scripts/deploy-server.sh` checks the version before it starts.
+
 ---
 
 ## Architecture Overview
@@ -151,6 +153,8 @@ cp .env.example .env
 | `CORS_ORIGINS` | Allowed browser origins (comma-separated). | `http://localhost:80` |
 | `WORKER_MEM_LIMIT` | Memory limit for the compose internal-worker container. | `1g` |
 | `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
+| `BACKEND_CPUS` | CPU limit for the backend container, as a whole number; may exceed the host's CPU count. | `4` |
+| `BACKEND_MEMORY` | Memory limit for the backend container. | `3g` |
 | `WORKER_GPU_IDS` | Comma-separated GPU device IDs available for round-robin pinning on eval workers (e.g. `0,1,3`). Unset → `count=-1` fallback. | unset |
 | `WORKER_ROLE` | Unified worker role. `server` = full API (default; requires `SECRET_KEY`/`DATABASE_URL`/`ENCRYPTION_KEY`); `scheduler` = Celery beat only (no app, no secrets); `internal` = app booted for system tasks (DB only, never evaluates); `eval` = remote evaluation worker (no DB, Ed25519 nonce auth, runs eval/image tasks only). | `server` |
 | `WORKER_SANDBOX_STORAGE_OPT` | Mandatory `--storage-opt size` cap for a sandbox container's root writable layer. Workers fail closed if the Docker storage driver cannot enforce it. The disposable anonymous volume mounted at `/app` is separate and is not covered by this quota. | `8g` |
