@@ -103,5 +103,5 @@ def get_admin_doc() -> DocContentResponse:
     """Get the admin documentation guide."""
     lang = get_request_lang()
     content = read_doc_file("admin_guide.md", lang)
-    title = {"bg": "Админ ръководство", "en": "Admin Guide"}.get(lang, "Admin Guide")
+    title = {"bg": "Ръководство за администратора", "en": "Admin Guide"}.get(lang, "Admin Guide")
     return DocContentResponse(title=title, content=content)

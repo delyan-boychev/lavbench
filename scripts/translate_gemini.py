@@ -10,8 +10,8 @@ Translates:
     guide symlinks are mirrored, only real files are translated)
 
 The API key is read from the .gemini-api-key file in the repo root
-(the value after '=', e.g. `GEMINI-API-KEY=AQ...`), which is then
-exported as GEMINI_API_KEY for the API call.
+(the value after '=', e.g. `GEMINI-API-KEY=AQ...`), exported as GEMINI_API_KEY,
+and sent in the x-goog-api-key header (never in the URL).
 
 Only changed sources are translated: git compares the working-tree EN
 file against the EN version at the last commit that touched the BG
@@ -30,7 +30,13 @@ Usage:
   python3 scripts/translate_gemini.py --force        # re-translate everything (skip git change detection)
   python3 scripts/translate_gemini.py --only readme  # just the docs README
   python3 scripts/translate_gemini.py --dry-run      # preview only
-  python3 scripts/translate_gemini.py --model gemini-3.6-flash
+  python3 scripts/translate_gemini.py --model gemini-4-carbon
+  python3 scripts/translate_gemini.py --check        # terminology gate only, no API calls
+
+Terminology lives in SYSTEM_PROMPT and is shared by the UI strings and every
+document. After translating, a consistency gate fails on banned variants
+(BANNED_TERMS) and warns about English prose left untranslated. Documents also
+receive the real Bulgarian UI labels for the interface elements they mention.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -102,60 +109,87 @@ def source_changed_since_last_translation(src: Path, out: Path) -> bool:
         return True
     return en_at_last != src.read_text(encoding="utf-8")
 
-APP_CONTEXT = """
-CONTEXT — LavBench (ЛавБенч) is a machine-learning competition platform.
-Core concepts (keep these terms consistent across ALL translations):
+# Single source of Bulgarian terminology for the UI strings and every document.
+# Change a term here, then re-run with --force so all outputs follow it
+SYSTEM_PROMPT = """You are a senior technical translator from English to Bulgarian for LavBench, the scoring platform of the Bulgarian national AI olympiad. Your readers are Bulgarian administrators, jury members, school students and developers. The Bulgarian must read as if a careful Bulgarian engineer wrote it originally, not as a translation.
+
+TERMINOLOGY (mandatory; the same English term always maps to the same Bulgarian term, in every file and every UI string):
 - challenge = състезание; stage = етап; task = задача
-- submission = решение/изпълнение (a competitor's executed notebook)
-- baseline notebook = базов бележник (reference solution)
-- selected cells = избрани клетки; execution logs = журнали на изпълнението
-- leaderboard = класация; public/private score = публичен/частен резултат
-- evaluation = оценяване; metric = метрика; parquet = parquet (keep as-is)
-- Hugging Face, GPU, CPU, Docker, Jupyter — keep as-is
+- submission = решение (a competitor's submitted notebook or file); to submit = изпращам решение; submitting = изпращане
+- notebook (Jupyter) = бележник; cell = клетка; baseline notebook = базов бележник
+- leaderboard = класация; public / private score = публичен / частен резултат
+- evaluation = оценяване; to evaluate = оценявам; custom evaluator = персонализиран оценител; metric = метрика
+- labels / ground truth = етикети / еталонни стойности
 - jury = жури; competitor = състезател; admin = администратор
-- sandbox = пясъчна среда (isolated execution environment)
-- role: admin manages challenges/stages, jury evaluates and monitors,
-  competitor participates by submitting notebooks.
-Translate naturally and idiomatically into professional Bulgarian; do not
-transliterate English words when a good Bulgarian term exists.
+- deadline = краен срок; grace period = гратисен период (never "толерансен период"); quota = квота; rate limit = ограничение на честотата
+- final selection = финален избор; final submission = финално решение; to star a submission = маркирам решение със звезда
+- double-blind = двойно сляпо; alias = псевдоним; finalization = финализиране
+- worker / worker node / evaluation worker = работен възел (plural: работни възли); never "уъркър" or "работник"
+- queue = опашка; heartbeat = сигнал за активност; consumer (of a queue) = консуматор
+- backup = резервно копие (plural: резервни копия); never "архив" for a backup
+- archive (a ZIP file) = архив; archived challenge = архивирано състезание
+- sandbox = изолирана среда; never "пясъчна среда"
+- container = контейнер; Docker image = Docker образ; image build = изграждане на образ
+- pipeline = конвейер; never "пайплайн"
+- endpoint = крайна точка; request = заявка; response = отговор
+- logs = журнали; log line = ред от журнала; never "логове"
+- live / real time = на живо / в реално време; stream (SSE) = поток; streaming = поточно предаване
+- cache = кеш; lock = заключване; broker = брокер; outage = прекъсване
+- upload = качване; download = изтегляне; panel = панел; dashboard = табло
+- environment variable = променлива на средата; configuration = конфигурация; settings = настройки
+- deploy / deployment = внедряване; health check = проверка за изправност; lifecycle = жизнен цикъл
+- workspace (nanoColab) = работно пространство; task package = пакет на задачата; manifest = манифест
+- wizard = съветник; dry run = пробно изпълнение; draft = чернова; publish = публикувам
+- authentication = автентификация; authorization = оторизация; login / sign in = вход
+- encryption / encrypted = криптиране / криптиран; never "шифрован"
+- online / stale (worker state) = на линия / без сигнал
+
+KEEP EXACTLY AS IN THE SOURCE (never translate or transliterate):
+- code blocks, inline code in backticks, file names and paths, URLs, API paths, HTTP methods and status codes
+- environment variable names, config keys, error codes (ERR_*, WARN_*), JSON keys, status values shown in backticks
+- the word "traceback"
+- product and technology names (never transliterate, never write ЛавБенч): LavBench, nanoColab, JupyterHub, Jupyter, Docker, Docker Compose, Redis, PostgreSQL, Celery, Flask, nginx, Gemini, Hugging Face, Statuspage, GitHub, GCP, GPU, CPU, RAM, SSE, JWT, OIDC, ZIP, Parquet, parquet
+- placeholders such as {{count}}, {name}, %s, <id>, and HTML or Markdown markup
+
+STYLE:
+- Formal, clear technical Bulgarian with natural Bulgarian word order. Avoid calques and English sentence structure; restructure the sentence when a literal rendering sounds foreign.
+- Do not transliterate English words when an established Bulgarian term exists.
+- Address the reader with polite plural imperatives: "Натиснете", "Изберете", "Качете".
+- Use Bulgarian quotation marks „…“ in running text; leave quotes inside code untouched.
+- Keep numbers, units and limits exactly as in the source (30 s, 10 MB, 2 GB, 180).
+- Translate every sentence. Never leave English prose untranslated; only the items listed under KEEP stay in English.
+- Do not add, remove, merge or reorder content. Do not add explanations or notes of your own.
+- Avoid tautologies (for example "изолация на изолираната среда"); rephrase instead.
+- Before answering, check your whole output against TERMINOLOGY: every listed English term must use its mandated Bulgarian term, even inside UI labels and headings. If a UI label in UI LABELS conflicts with TERMINOLOGY, follow TERMINOLOGY.
 """
-
-SYSTEM_LOCALES = (
-    "You are a professional translator for the LavBench ML competition platform "
-    "UI (English -> Bulgarian)." + APP_CONTEXT
-)
-
-SYSTEM_GUIDES = (
-    "You are a professional technical documentation translator for the LavBench "
-    "ML competition platform (English -> Bulgarian)." + APP_CONTEXT
-)
 
 ROLE_CONTEXT = {
     "admin_guide": (
-        "This document is the ADMINISTRATOR guide: it explains challenge/stage "
-        "lifecycle management, sandbox customization and Docker image build error "
-        "remediation, Hugging Face pre-fetching, AST security validation, dynamic "
-        "metrics engine and leaderboard management. Write for a system "
-        "administrator with technical expertise."
+        "This document is the ADMINISTRATOR guide: challenge and stage lifecycle, task setup, "
+        "sandbox and image builds, metrics and evaluators, users and credentials, backups, "
+        "worker nodes and the system status panel, audit logs. Write for a technical "
+        "administrator."
     ),
     "jury_guide": (
-        "This document is the JURY guide: it explains the jury permission matrix, "
-        "competitor onboarding with credential slips, live submission tracking, "
-        "baseline verification, build error diagnostics and leaderboard "
-        "inspection. Write for a jury member who evaluates competitors."
+        "This document is the JURY guide: the jury permission matrix, onboarding competitors "
+        "and their credentials, live submission tracking, baseline checks, diagnosing task "
+        "problems, scores and manual points, exports. Write for a jury member."
     ),
     "competitor_guide": (
-        "This document is the COMPETITOR guide: it explains how to log in, "
-        "navigate stages and tasks, use baseline notebooks, produce the "
-        "submission.parquet output schema and submit Jupyter notebooks. Write "
-        "for a data-science competitor participating in the competition."
+        "This document is the COMPETITOR guide, read by school students taking part in the "
+        "olympiad: logging in, stages and tasks, baseline notebooks, producing "
+        "submission.parquet, submitting and tracking submissions, the leaderboard. Write "
+        "clearly for students."
+    ),
+    "architecture.md": (
+        "This document is the ARCHITECTURE reference: components, the submission pipeline, "
+        "sandbox isolation, image builds, the evaluation engine, live updates, backups, worker "
+        "budgeting and the status endpoints. Write for developers and operators."
     ),
     "README.md": (
-        "This is the README of the docs/ folder of the LavBench repository: a "
-        "developer & documentation guide with quick-access sitemap, frontend "
-        "developer guidelines (API type pipeline, i18n parity), backend "
-        "endpoint patterns, custom evaluator templates and Sphinx build "
-        "instructions. Write for a developer contributing to the project."
+        "This is the README of the docs/ folder: a developer and documentation guide with a "
+        "sitemap, frontend and backend guidelines, evaluator templates and the Sphinx build. "
+        "Write for a developer contributing to the project."
     ),
 }
 
@@ -182,13 +216,14 @@ def gemini_call(
     key: str, model: str, prompt: str, retries: int = 2, system: str | None = None
 ) -> str:
     """Run one prompt against the Gemini API and return the raw text."""
-    url = API_URL.format(model=urllib.parse.quote(model)) + f"?key={urllib.parse.quote(key)}"
+    # The key travels in a header, never in the URL, so it cannot leak into logs
+    url = API_URL.format(model=urllib.parse.quote(model))
     payload: dict = {"contents": [{"parts": [{"text": prompt}]}]}
     if system:
         payload["systemInstruction"] = {"parts": [{"text": system}]}
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json"}
+        url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key}
     )
     for attempt in range(1, retries + 1):
         try:
@@ -196,9 +231,14 @@ def gemini_call(
                 data = json.load(resp)
             parts = data["candidates"][0]["content"]["parts"]
             return "".join(p.get("text", "") for p in parts).strip()
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            if attempt >= retries:
+                raise RuntimeError(f"Gemini API HTTP {e.code}: {detail}") from None
+            time.sleep(2 * attempt)
         except Exception as e:  # noqa: BLE001
             if attempt >= retries:
-                raise
+                raise RuntimeError(f"Gemini API call failed: {type(e).__name__}") from None
             time.sleep(2 * attempt)
     raise RuntimeError("unreachable")
 
@@ -247,31 +287,13 @@ def translate_flat_batch(
         entry = {"en": v}
         if p in prev_bg:
             entry["bg"] = prev_bg[p]
+        else:
+            entry["bg"] = "(none)"
         payload[p] = entry
     src = json.dumps(payload, ensure_ascii=False, indent=1)
-    prompt = (
-        "Translate the following JSON object of UI/message strings from English "
-        "to Bulgarian.\n"
-        "Each entry has two fields: 'en' (the English source) and 'bg' (the "
-        "existing Bulgarian translation, or the marker \u00abno previous "
-        "translation\u00bb for new keys).\n"
-        "Rules:\n"
-        "- Return ONLY a flat JSON object of the form "
-        '{"dot.path": "bulgarian"} with the exact same keys — no markdown '
-        "fences, no comments, no nested objects.\n"
-        "- Keep the exact same keys (dot notation); do not add, remove or reorder keys.\n"
-        "- Keep placeholders ({{name}}, {count}, %s, $1) and HTML/JSX untouched.\n"
-        "- Keep proper nouns/technical terms as-is (Hugging Face, parquet, LavBench, GPU...).\n"
-        "- Use natural, idiomatic, professional Bulgarian.\n"
-        "- CONSISTENCY: when an entry has an existing 'bg' value, REUSE it "
-        "verbatim when it is already correct and idiomatic. Only revise it if "
-        "the English text changed, the existing translation is inaccurate or "
-        "unnatural, or it conflicts with the terminology in CONTEXT. The same "
-        "English term must map to the same Bulgarian term in every key.\n"
-        "JSON:\n" + src
-    )
+    prompt = UI_PROMPT + "\n" + src
     text = gemini_call(
-        os.environ["GEMINI_API_KEY"], key, prompt, system=SYSTEM_LOCALES
+        os.environ["GEMINI_API_KEY"], key, prompt, system=SYSTEM_PROMPT
     )
     try:
         translated = json.loads(_strip_fences(text))
@@ -281,7 +303,7 @@ def translate_flat_batch(
             os.environ["GEMINI_API_KEY"],
             key,
             prompt + "\n\nIMPORTANT: reply with raw JSON only, no code fences.",
-            system=SYSTEM_LOCALES,
+            system=SYSTEM_PROMPT,
         )
         try:
             translated = json.loads(_strip_fences(text))
@@ -357,26 +379,46 @@ def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
     print(f"  wrote {LOCALES_BG} ({ok}/{len(flat_en)} strings updated)")
 
 
-MD_PROMPT = (
-    "Translate the following Markdown document from English to Bulgarian.\n"
-    "Rules:\n"
-    "- Return ONLY the translated document, no markdown fences around it.\n"
-    "- Preserve ALL Markdown syntax, headings, lists, tables, links, images,\n"
-    "  and the exact same section structure — nothing may be omitted or added.\n"
-    "- Do NOT translate code blocks, inline code, URLs, file paths or YAML front matter.\n"
-    "- Keep the same line structure where possible.\n"
-    "- Use natural, idiomatic, professional Bulgarian.\n"
-    "- CONSISTENCY: treat the EXISTING BULGARIAN TRANSLATION below as a reference "
-    "for terminology and style. Reuse its wording verbatim wherever the English "
-    "source is unchanged. Revise only what changed in the English DOCUMENT above "
-    "or any part that is inaccurate, unnatural, or conflicts with the terminology "
-    "in CONTEXT. The same English term must map to the same Bulgarian term "
-    "everywhere in the document.\n\n"
-    "ROLE CONTEXT:\n{role}\n\n"
-    "EXISTING BULGARIAN TRANSLATION (reference for consistency — update only "
-    "changed or inconsistent sections):\n{previous}\n\n"
-    "DOCUMENT:\n{text}"
-)
+UI_PROMPT = """Translate the interface strings in the JSON object below from English to Bulgarian, following every rule in your instructions.
+
+Each entry has "en" (the English source) and "bg" (the existing Bulgarian translation, or "(none)" for a new key).
+
+Output rules:
+- Return only a flat JSON object {"dot.path": "Bulgarian text"} with exactly the same keys. No code fences, no comments, no nested objects.
+- Keep placeholders ({{count}}, {{name}}, {name}, %s, $1), HTML and JSX tags exactly.
+- Keys ending in _one and _other are plural forms; give each the correct Bulgarian form for that count.
+
+Interface style:
+- Buttons and short actions use the singular imperative usual in Bulgarian interfaces: „Запази“, „Изтрий“, „Опитай отново“, „Изпрати решение“.
+- Messages that address the user use polite plural: „Моля, изберете…“, „Качете файл…“.
+- Bulgarian does not use title case: capitalize only the first word and proper nouns ("Public Score" = „Публичен резултат“). Keep ALL CAPS only where the English is ALL CAPS.
+- Keep strings about as short as the English; interface space is limited.
+
+Reuse the existing "bg" value verbatim when it is correct, natural and matches the TERMINOLOGY. Change it when the English changed, when it is inaccurate or unnatural, or when it uses a term other than the TERMINOLOGY (for example „толерансен период“ must become „гратисен период“, and every "final selection" must be „финален избор“).
+
+JSON:
+"""
+
+MD_PROMPT = """Translate the Markdown document below from English to Bulgarian, following every rule in your instructions.
+
+Output rules:
+- Return only the translated document, without code fences around it.
+- Preserve all Markdown exactly: headings, lists, tables (same number of columns and rows), links, images, bold and italics, blank lines and line breaks.
+- Translate headings, table text, link text and image alt text; never change link targets.
+
+ROLE CONTEXT:
+{role}
+
+UI LABELS: the application's real Bulgarian interface labels. When the document refers to one of these interface elements, use exactly this Bulgarian label (inside „…“ or bold, as in the source); inflect it
+(for example add the definite article) only where Bulgarian grammar requires it:
+{ui_labels}
+
+EXISTING BULGARIAN TRANSLATION (reference only). Reuse its wording where it is correct and matches the TERMINOLOGY. Wherever it uses a different term than the TERMINOLOGY (for example "уъркър", "архив" for a backup, "пясъчна среда", "пайплайн", "логове"), replace it with the mandated term. Retranslate anything that is unnatural, inaccurate or left in English:
+{previous}
+
+DOCUMENT:
+{text}
+"""
 
 
 def _gh_slug(heading: str) -> str:
@@ -412,6 +454,27 @@ def _relink_anchors(src: str, translated: str) -> str:
     return translated
 
 
+def ui_labels(text: str) -> str:
+    """List the real Bulgarian UI labels for bold or quoted phrases that are UI strings."""
+    try:
+        en = flatten(json.loads(LOCALES_EN.read_text(encoding="utf-8")))
+        bg = flatten(json.loads(LOCALES_BG.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return "(none)"
+    by_text: dict[str, str] = {}
+    for path, value in en.items():
+        if path in bg and 2 < len(value) <= 80:
+            by_text.setdefault(value.strip().lower(), bg[path])
+    phrases = set(re.findall(r"\*\*([^*\n]{3,80})\*\*", text))
+    phrases |= set(re.findall(r'"([^"\n]{3,80})"', text))
+    lines = [
+        f"- {p.strip()} = {by_text[p.strip().lower()]}"
+        for p in sorted(phrases)
+        if p.strip().lower() in by_text
+    ]
+    return "\n".join(lines) or "(none)"
+
+
 def translate_markdown(
     model: str,
     text: str,
@@ -427,12 +490,15 @@ def translate_markdown(
             "This document is platform documentation for LavBench, an ML "
             "competition platform. Write clearly and professionally."
         )
-    previous = previous_bg or "\u00abno previous translation — new document\u00bb"
+    previous = previous_bg or "(no previous translation; translate from scratch)"
     prompt = MD_PROMPT.format(
-        role=role, previous=previous[:90000], text=text[:90000]
+        role=role,
+        ui_labels=ui_labels(text),
+        previous=previous[:90000],
+        text=text[:90000],
     )
     translated = _strip_fences(
-        gemini_call(os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_GUIDES)
+        gemini_call(os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_PROMPT)
     )
     return _relink_anchors(text, translated)
 
@@ -491,6 +557,53 @@ def translate_dir(
         time.sleep(SLEEP_BETWEEN_CALLS)
 
 
+# Variants that must never appear in Bulgarian output: pattern -> mandated term
+BANNED_TERMS = {
+    r"уъркър": "работен възел",
+    r"пясъчн\w* сред": "изолирана среда",
+    r"пайплайн": "конвейер",
+    r"логов[еи]": "журнали",
+    r"толерансн\w* период": "гратисен период",
+    r"житейск\w* цикъл|житейск\w* цикли": "жизнен цикъл",
+    r"ЛавБенч": "LavBench",
+    r"шифрова\w*": "криптиран",
+}
+ENGLISH_RUN = re.compile(r"(?:\b[A-Za-z][a-z'-]+\b[\s,]+){4,}")
+
+
+def _bg_outputs() -> list[Path]:
+    files = [LOCALES_BG, README_BG]
+    files += sorted(GUIDES_BG.glob("*.md"))
+    files += [f for f in sorted(DOCS_BG.glob("*.md")) if not f.is_symlink()]
+    return [f for f in files if f.exists()]
+
+
+def check_consistency() -> int:
+    """Report banned terminology variants (errors) and leftover English prose (warnings)."""
+    errors = 0
+    warnings = 0
+    for path in _bg_outputs():
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".json":
+            lines = [f"{k}: {v}" for k, v in flatten(json.loads(text)).items()]
+        else:
+            lines = re.sub(r"```.*?```", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+            lines = lines.splitlines()
+        rel = path.relative_to(ROOT)
+        for no, line in enumerate(lines, 1):
+            for pattern, mandated in BANNED_TERMS.items():
+                for m in re.finditer(pattern, line, re.IGNORECASE):
+                    errors += 1
+                    print(f"  ERROR {rel}:{no}: \"{m.group(0)}\" -> use \"{mandated}\"")
+            if path.suffix == ".md":
+                prose = re.sub(r"`[^`]*`|\]\([^)]*\)|https?://\S+", " ", line)
+                if ENGLISH_RUN.search(prose):
+                    warnings += 1
+                    print(f"  warning {rel}:{no}: possible untranslated English: {line.strip()[:120]}")
+    print(f"consistency: {errors} error(s), {warnings} warning(s)")
+    return errors
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Translate LavBench content EN -> BG with Gemini")
     parser.add_argument("--docs", action="store_true", help="also translate docs/source/*.md")
@@ -503,9 +616,17 @@ def main() -> None:
     parser.add_argument(
         "--only", choices=["locales", "guides", "docs", "readme"], help="translate only this target"
     )
-    parser.add_argument("--model", default="gemini-3.6-flash", help="Gemini model id")
+    parser.add_argument("--model", default="gemini-4-carbon", help="Gemini model id")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="only check the Bulgarian outputs for banned terms (no API calls)",
+    )
     parser.add_argument("--key-file", default=str(KEY_FILE), help="path to the API key file")
     args = parser.parse_args()
+
+    if args.check:
+        sys.exit(1 if check_consistency() else 0)
 
     load_api_key(Path(args.key_file))
     print(f"model: {args.model}  dry-run: {args.dry_run}  force: {args.force}")
@@ -537,6 +658,11 @@ def main() -> None:
     if args.only == "docs" or (args.docs and not args.only):
         print("== docs ==")
         translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run, force=args.force)
+
+    if not args.dry_run:
+        print("== consistency ==")
+        if check_consistency():
+            sys.exit(1)
 
 
 if __name__ == "__main__":
