@@ -141,6 +141,7 @@ TERMINOLOGY (mandatory; the same English term always maps to the same Bulgarian 
 - workspace (nanoColab) = работно пространство; task package = пакет на задачата; manifest = манифест
 - wizard = съветник; dry run = пробно изпълнение; draft = чернова; publish = публикувам
 - authentication = автентификация; authorization = оторизация; login / sign in = вход
+- encryption / encrypted = криптиране / криптиран; never "шифрован"
 - online / stale (worker state) = на линия / без сигнал
 
 KEEP EXACTLY AS IN THE SOURCE (never translate or transliterate):
@@ -158,6 +159,7 @@ STYLE:
 - Keep numbers, units and limits exactly as in the source (30 s, 10 MB, 2 GB, 180).
 - Translate every sentence. Never leave English prose untranslated; only the items listed under KEEP stay in English.
 - Do not add, remove, merge or reorder content. Do not add explanations or notes of your own.
+- Avoid tautologies (for example "изолация на изолираната среда"); rephrase instead.
 - Before answering, check your whole output against TERMINOLOGY: every listed English term must use its mandated Bulgarian term, even inside UI labels and headings. If a UI label in UI LABELS conflicts with TERMINOLOGY, follow TERMINOLOGY.
 """
 
@@ -407,7 +409,8 @@ Output rules:
 ROLE CONTEXT:
 {role}
 
-UI LABELS: the application's real Bulgarian interface labels. When the document refers to one of these interface elements, use exactly this Bulgarian label (inside „…“ or bold, as in the source):
+UI LABELS: the application's real Bulgarian interface labels. When the document refers to one of these interface elements, use exactly this Bulgarian label (inside „…“ or bold, as in the source); inflect it
+(for example add the definite article) only where Bulgarian grammar requires it:
 {ui_labels}
 
 EXISTING BULGARIAN TRANSLATION (reference only). Reuse its wording where it is correct and matches the TERMINOLOGY. Wherever it uses a different term than the TERMINOLOGY (for example "уъркър", "архив" for a backup, "пясъчна среда", "пайплайн", "логове"), replace it with the mandated term. Retranslate anything that is unnatural, inaccurate or left in English:
@@ -563,6 +566,7 @@ BANNED_TERMS = {
     r"толерансн\w* период": "гратисен период",
     r"житейск\w* цикъл|житейск\w* цикли": "жизнен цикъл",
     r"ЛавБенч": "LavBench",
+    r"шифрова\w*": "криптиран",
 }
 ENGLISH_RUN = re.compile(r"(?:\b[A-Za-z][a-z'-]+\b[\s,]+){4,}")
 
