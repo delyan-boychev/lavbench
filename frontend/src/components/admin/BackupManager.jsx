@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import EmptyState from '../ui/EmptyState';
 import { useApp } from '../../context/AppContext';
-import useSSE, { isLifecycleMessage } from '../../hooks/useSSE';
-import useThrottledCallback from '../../hooks/useThrottledCallback';
+import useSSEInvalidation from '../../hooks/useSSEInvalidation';
 import { useBackupsQuery } from '../../hooks/useBackupsQuery';
 import { useDeleteBackup, useForceBackup } from '../../hooks/useBackupMutations';
 import { formatDateTime } from '../../utils/formatDate';
@@ -16,24 +15,14 @@ export default function BackupManager() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
   const { showApiError } = useApiError();
-  const { data, isLoading, isError, refetch } = useBackupsQuery();
+  const { refetchInterval } = useSSEInvalidation('/api/admin/backups/live', ['backups']);
+  const { data, isLoading, isError, refetch } = useBackupsQuery({ refetchInterval });
 
   const deleteBackupMutation = useDeleteBackup();
   const forceBackupMutation = useForceBackup();
 
   const backups = data?.backups || [];
   const downloadBase = '/api/admin/backups';
-
-  const throttledRefetch = useThrottledCallback(() => {
-    refetch();
-  }, 1500);
-
-  useSSE('/api/admin/backups/live', {
-    storeData: false,
-    onMessage: (msg) => {
-      if (!isLifecycleMessage(msg)) throttledRefetch();
-    },
-  });
 
   const handleForce = async () => {
     try {

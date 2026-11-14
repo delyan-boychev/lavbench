@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('react-router', () => ({
   useParams: vi.fn(),
@@ -12,6 +12,10 @@ vi.mock('../../context/AppContext', () => ({
 
 vi.mock('../../hooks/useLeaderboardQuery', () => ({
   useLeaderboardQuery: vi.fn(),
+}));
+
+vi.mock('../../hooks/useSSEInvalidation', () => ({
+  default: vi.fn(),
 }));
 
 vi.mock('../../components/leaderboard/LeaderboardTable', () => ({
@@ -38,6 +42,7 @@ vi.mock('../../components/ui/EmptyState', () => ({
 import { useParams } from 'react-router';
 import { useApp } from '../../context/AppContext';
 import { useLeaderboardQuery } from '../../hooks/useLeaderboardQuery';
+import useSSEInvalidation from '../../hooks/useSSEInvalidation';
 import LeaderboardView from '../LeaderboardView';
 
 const mockSetSelectedChallengeById = vi.fn();
@@ -74,10 +79,7 @@ describe('LeaderboardView', () => {
       isLoading: false,
       refetch: mockRefetch,
     });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    useSSEInvalidation.mockReturnValue({ connected: true, refetchInterval: false });
   });
 
   it('sets selected challenge by id from params on mount', async () => {
@@ -183,56 +185,33 @@ describe('LeaderboardView', () => {
     });
   });
 
-  it('polls leaderboard every 15 seconds via React Query when SSE is unavailable', async () => {
-    vi.stubGlobal('EventSource', undefined);
+  it('invalidates the challenge leaderboard from its signal-only stream', async () => {
+    render(<LeaderboardView />);
+    await act(async () => {});
+    expect(useSSEInvalidation).toHaveBeenLastCalledWith('/api/challenges/42/leaderboard/live', [
+      'leaderboard',
+      '42',
+    ]);
+  });
+
+  it('opens no stream without an active challenge', async () => {
+    useParams.mockReturnValue({});
+    useApp.mockReturnValue({ ...defaultUseApp, selectedChallenge: null });
+    render(<LeaderboardView />);
+    await act(async () => {});
+    expect(useSSEInvalidation).toHaveBeenLastCalledWith('', ['leaderboard', undefined]);
+  });
+
+  it('polls the leaderboard while the stream is down', async () => {
+    useSSEInvalidation.mockReturnValue({ connected: false, refetchInterval: 15000 });
     render(<LeaderboardView />);
     await act(async () => {});
     expect(useLeaderboardQuery).toHaveBeenLastCalledWith('42', { refetchInterval: 15000 });
   });
 
-  it('does not poll while the live stream is available', async () => {
-    vi.stubGlobal(
-      'EventSource',
-      class {
-        close = vi.fn();
-      },
-    );
+  it('does not poll while the stream is connected', async () => {
     render(<LeaderboardView />);
     await act(async () => {});
     expect(useLeaderboardQuery).toHaveBeenLastCalledWith('42', { refetchInterval: false });
-  });
-
-  it('throttles refetches from bursts of live messages and ignores lifecycle messages', async () => {
-    const instances = [];
-    vi.stubGlobal(
-      'EventSource',
-      class {
-        constructor() {
-          instances.push(this);
-        }
-        close = vi.fn();
-      },
-    );
-    vi.useFakeTimers();
-    render(<LeaderboardView />);
-    await act(async () => {});
-    const es = instances[instances.length - 1];
-    const send = (payload) => act(() => es.onmessage({ data: JSON.stringify(payload) }));
-
-    send({ info: 'connected' });
-    expect(mockRefetch).not.toHaveBeenCalled();
-
-    send({ leaderboard: [] });
-    send({ leaderboard: [] });
-    send({ leaderboard: [] });
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-
-    act(() => vi.advanceTimersByTime(1500));
-    expect(mockRefetch).toHaveBeenCalledTimes(2);
-
-    send({ event: 'timeout' });
-    act(() => vi.advanceTimersByTime(1500));
-    expect(mockRefetch).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 });
