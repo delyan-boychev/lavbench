@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, get_args
@@ -43,6 +44,12 @@ _STATUS_LOCK_SECONDS = 30
 
 _WORKER_SPEC_PATTERN = "worker_spec:*"
 _RECENT_WINDOW = timedelta(minutes=15)
+
+# First-level cache: the last snapshot this process saw, kept for what remains of its
+# STATUS_CACHE_SECONDS, so requests do not recompute while the cache Redis is down
+_local_lock = threading.Lock()
+_local_snapshot: dict[str, Any] | None = None
+_local_expires_at = 0.0
 
 
 def _rfc3339(moment: datetime) -> str:
@@ -232,13 +239,53 @@ def compute_system_status() -> dict[str, Any]:
     }
 
 
+def _snapshot_age_seconds(snapshot: dict[str, Any]) -> float:
+    """Seconds since the snapshot was computed, from its ``updated_at``; inf if unreadable."""
+    try:
+        updated = datetime.fromisoformat(str(snapshot["updated_at"]).removesuffix("Z"))
+    except (KeyError, ValueError):
+        return float("inf")
+    return (utcnow() - updated).total_seconds()
+
+
+def _local_get() -> dict[str, Any] | None:
+    with _local_lock:
+        if _local_snapshot is not None and time.monotonic() < _local_expires_at:
+            return _local_snapshot
+    return None
+
+
+def _local_put(snapshot: dict[str, Any]) -> None:
+    """Keep the snapshot in this process for the rest of its STATUS_CACHE_SECONDS."""
+    global _local_snapshot, _local_expires_at
+    remaining = Config.STATUS_CACHE_SECONDS - _snapshot_age_seconds(snapshot)
+    if remaining <= 0:
+        return
+    with _local_lock:
+        _local_snapshot = snapshot
+        _local_expires_at = time.monotonic() + remaining
+
+
 def system_status() -> dict[str, Any]:
     """Return the snapshot, cached for STATUS_CACHE_SECONDS and computed by one process at a time.
 
     ``GET /api/status`` needs no login, so a cache miss must not let every request run
-    the database aggregates and broker reads at once. A request that misses while
-    another process computes gets the previous snapshot; only when there is none does
-    it compute as well, so the endpoint always answers.
+    the database aggregates and broker reads at once. The process-local copy answers
+    first, also while the cache Redis is down; the shared Redis cache and its lock
+    are the second level.
+    """
+    snapshot = _local_get()
+    if snapshot is None:
+        snapshot = _shared_status()
+        _local_put(snapshot)
+    return snapshot
+
+
+def _shared_status() -> dict[str, Any]:
+    """Read the shared snapshot, or compute it under the broker lock.
+
+    A request that misses while another process computes gets the previous snapshot;
+    only when there is none does it compute as well, so the endpoint always answers.
     """
     cached: dict[str, Any] | None = get_cached(STATUS_CACHE_KEY)
     if cached is not None:

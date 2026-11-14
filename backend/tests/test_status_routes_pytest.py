@@ -85,6 +85,7 @@ def status_env(db_session, redis_flush):
 
     delete_cached(STATUS_CACHE_KEY)
     delete_cached(STATUS_LAST_KEY)
+    _forget_local_snapshot()
     with (
         patch.object(status_service, "get_coordination_client", _broker),
         patch.object(status_service, "get_queue_depths", _depths),
@@ -92,9 +93,22 @@ def status_env(db_session, redis_flush):
         yield env
     delete_cached(STATUS_CACHE_KEY)
     delete_cached(STATUS_LAST_KEY)
+    _forget_local_snapshot()
     broker = get_coordination_client()
     if broker is not None:
         broker.delete("lock:status:system")
+
+
+def _forget_local_snapshot() -> None:
+    """Drop this process's first-level copy, as a fresh process would start."""
+    status_service._local_snapshot = None
+    status_service._local_expires_at = 0.0
+
+
+def _forget_snapshots() -> None:
+    """Expire every cached snapshot except the previous one kept for lock losers."""
+    delete_cached(STATUS_CACHE_KEY)
+    _forget_local_snapshot()
 
 
 def _cache_redis():
@@ -218,7 +232,7 @@ class TestPublicStatus:
         status_env["broker"] = FakeBroker({})
         assert client.get("/api/status").get_json() == first
 
-        delete_cached(STATUS_CACHE_KEY)
+        _forget_snapshots()
         assert client.get("/api/status").get_json()["status"] == "major_outage"
 
     def test_cache_uses_status_cache_seconds(self, status_env):
@@ -238,7 +252,7 @@ class TestStatusSingleFlight:
         assert previous["status"] == "operational"
 
         # The fresh snapshot expired and another process is computing the next one
-        delete_cached(STATUS_CACHE_KEY)
+        _forget_snapshots()
         _hold_status_lock()
         status_env["broker"] = FakeBroker({})
         with patch.object(
@@ -269,13 +283,49 @@ class TestStatusSingleFlight:
     ):
         status_env["broker"] = FakeBroker({"cpu@w1": _spec(["cpu_queue"])})
         first = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
-        delete_cached(STATUS_CACHE_KEY)
+        _forget_snapshots()
         _hold_status_lock()
         with patch.object(
             status_service, "compute_system_status", side_effect=AssertionError("computed")
         ):
             again = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
         assert again.get_json() == first.get_json()
+
+
+class TestProcessLocalSnapshot:
+    """The first-level copy in each process answers even while the cache Redis is down."""
+
+    def test_cache_redis_down_computes_once_per_window(self, status_env):
+        status_env["broker"] = FakeBroker({"cpu@w1": _spec(["cpu_queue"])})
+        with (
+            patch("utils.cache_utils.get_redis_client", return_value=None),
+            patch.object(
+                status_service,
+                "compute_system_status",
+                wraps=status_service.compute_system_status,
+            ) as compute,
+        ):
+            first = status_service.system_status()
+            assert status_service.system_status() is first
+            assert compute.call_count == 1
+
+            # Once the window has passed, the next request computes again
+            status_service._local_expires_at = 0.0
+            status_service.system_status()
+            assert compute.call_count == 2
+
+    def test_local_copy_lives_only_for_the_rest_of_the_snapshot_window(self, status_env):
+        recent = {"updated_at": status_service._rfc3339(utcnow() - timedelta(seconds=25))}
+        status_service._local_put(recent)
+        remaining = status_service._local_expires_at - time.monotonic()
+        assert 0 < remaining <= Config.STATUS_CACHE_SECONDS - 24
+        assert status_service._local_get() is recent
+
+    def test_previous_snapshot_served_to_lock_losers_is_not_kept_locally(self, status_env):
+        _forget_local_snapshot()
+        stale = {"updated_at": status_service._rfc3339(utcnow() - timedelta(minutes=3))}
+        status_service._local_put(stale)
+        assert status_service._local_get() is None
 
 
 class TestBrokerClock:
