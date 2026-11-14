@@ -23,7 +23,6 @@ import requests
 from celery.signals import worker_ready
 
 from config import Config
-from models import TERMINAL_STATUSES
 from utils.cache_utils import (
     get_coordination_client,
     redis_time,
@@ -31,6 +30,7 @@ from utils.cache_utils import (
     worker_spec_key,
 )
 from utils.dates import utcnow
+from utils.submission_status import TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
     fetch_submission_capabilities,

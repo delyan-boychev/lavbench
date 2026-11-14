@@ -17,8 +17,8 @@ from celery.signals import celeryd_init, worker_process_init
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
-from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
 from utils.dates import utcnow
+from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
 
 from .task_modules.submission_runner import run_eval_submission
 from .task_modules.system import (

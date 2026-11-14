@@ -58,6 +58,25 @@ def test_scheduler_registration():
         assert tname not in res
 
 
+def test_scheduler_boots_without_server_secrets():
+    # Compose gives beat no DB URL and no secrets, so importing tasks must not need them
+    env = os.environ.copy()
+    env["WORKER_ROLE"] = "scheduler"
+    for key in (
+        "DATABASE_URL",
+        "SECRET_KEY",
+        "ENCRYPTION_KEY",
+        "WORKER_ENCRYPTION_KEY",
+        "EVALUATION_SPLIT_SECRET",
+        "WORKER_CAPABILITY_SECRET",
+    ):
+        env.pop(key, None)
+    res = _registered_tasks(env)
+
+    for tname in INTERNAL_TASKS | EVALUATION_TASKS:
+        assert tname not in res
+
+
 def test_default_registration():
     env = os.environ.copy()
     env.pop("WORKER_ROLE", None)

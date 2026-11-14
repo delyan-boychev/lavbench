@@ -14,15 +14,12 @@ from models.naming import (
     to_base36,
 )
 from models.stage import Stage
-from models.submission import (
-    ACTIVE_STATUSES,
-    RUNNING_STATUSES,
-    TERMINAL_STATUSES,
-    Submission,
-    _delete_submission_files,
-)
+from models.submission import Submission, _delete_submission_files
 from models.task import Task
 from models.user import JuryChallenge, User
+
+# Re-exported so route modules can import them with the models
+from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
 
 __all__ = [
     "ACTIVE_STATUSES",

@@ -16,7 +16,6 @@ from contextlib import contextmanager
 from typing import Any
 
 from config import Config
-from models import TERMINAL_STATUSES
 from models.base import uuid7
 from utils.cache_utils import (
     get_coordination_client,
@@ -24,6 +23,7 @@ from utils.cache_utils import (
     submission_logs_key,
     submission_status_key,
 )
+from utils.submission_status import TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
