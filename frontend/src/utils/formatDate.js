@@ -30,6 +30,27 @@ export function formatLocalizedDate(dateVal, options = {}) {
 }
 
 /**
+ * Formats the time of day in UTC with seconds, independent of any challenge timezone.
+ * Output example: "14:03:27 UTC"
+ *
+ * @param {string|Date|number} dateVal
+ * @returns {string}
+ */
+export function formatUtcTime(dateVal) {
+  if (!dateVal) return '—';
+  const date = new Date(dateVal);
+  if (isNaN(date.getTime())) return '—';
+  const time = new Intl.DateTimeFormat(i18n.language || 'en', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+  return `${time} UTC`;
+}
+
+/**
  * Formats a date/time string for display with timezone label.
  * Locale-aware (uses the active i18n language).
  * Output example: "25 Jun 2026, 18:30 (Europe Sofia)"

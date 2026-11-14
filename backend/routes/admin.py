@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import secrets
-import shutil
+import stat
 import string
 import tempfile
 import time
@@ -24,6 +24,7 @@ from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy import or_
+from sqlalchemy.orm import contains_eager
 from werkzeug.security import generate_password_hash
 
 from config import Config
@@ -61,10 +62,8 @@ from schemas.responses import (
     ResetPasswordResponse,
     UpdateUserResponse,
     UserResponse,
-    WorkerStatsResponse,
 )
 from services.challenge_service import generate_scores_csv
-from services.evaluation import AVAILABLE_METRICS
 from services.file_validation import validate_csv_content, validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import (
@@ -74,31 +73,21 @@ from utils.auth_utils import (
     rate_limit,
     role_required,
 )
-from utils.cache_helpers import cached_or_compute_unless_testing
-from utils.cache_utils import (
-    get_coordination_client,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    worker_spec_key,
-)
+from utils.cache_utils import get_coordination_client, invalidate_leaderboard_cache
 from utils.competitor import check_duplicate_demographics, demographics_tuple
 from utils.dates import to_tz_iso, utcnow
 from utils.error_utils import err
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
+from utils.request_helpers import release_db_before_body
 from utils.spec import api
-from utils.sse import sse_response
+from utils.sse import signal_stream, sse_response
 from utils.sse_utils import (
     CHANNEL_BACKUPS,
     CHANNEL_QUEUE,
-    CHANNEL_WORKER_STATS,
-    SSE_IDLE_TIMEOUT,
     clear_submission_logs,
     publish_queue_update,
     publish_submission_status,
-    publish_submissions_update,
-    sse_connection_limit,
-    sse_heartbeat,
 )
 from utils.streaming import stream_file_response, stream_open_handle_response
 
@@ -112,6 +101,9 @@ admin_bp = Blueprint("admin", __name__)
     tags=["Admin"], security=[{"cookieAuth": []}], resp=Response(HTTP_200=AvailableMetricsResponse)
 )
 def get_available_metrics() -> AvailableMetricsResponse:
+    # Imported here so web workers never load pandas, numpy and sklearn at startup
+    from services.evaluation import AVAILABLE_METRICS
+
     return AvailableMetricsResponse(root=AVAILABLE_METRICS)
 
 
@@ -541,6 +533,7 @@ def register_user(
 @admin_bp.route("/import-competitors-csv", methods=["POST"])
 @role_required(["admin", "jury"])
 @rate_limit(max_requests=10, window_seconds=60)
+@release_db_before_body
 @api.validate(
     form=ImportCompetitorsForm,
     tags=["Admin"],
@@ -787,13 +780,26 @@ def _resolve_backup_path(filename: str) -> Path | None:
 
 
 def _list_backup_files(directory: str) -> list[dict[str, Any]]:
+    """List the backups newest first by modification time, filename breaking ties.
+
+    Sorting by name alone put every ``auto_db_*`` above every ``auto_2026...`` backup.
+    """
     if not os.path.isdir(directory):
         return []
-    files = []
-    for f in sorted(os.listdir(directory), reverse=True):
+    entries: list[tuple[float, str, os.stat_result]] = []
+    for f in os.listdir(directory):
         if not f.endswith(".tar.gz"):
             continue
-        path = os.path.join(directory, f)
+        try:
+            st = os.stat(os.path.join(directory, f))
+        except FileNotFoundError:
+            # Rotated away between the listing and the stat
+            continue
+        entries.append((st.st_mtime, f, st))
+    entries.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+
+    files = []
+    for _mtime, f, st in entries:
         ftype = "manual"
         if f.startswith("auto_"):
             ftype = "auto"
@@ -807,9 +813,9 @@ def _list_backup_files(directory: str) -> list[dict[str, Any]]:
             {
                 "filename": f,
                 "size_mb": (
-                    round(os.path.getsize(path) / (1024 * 1024), 2) if os.path.isfile(path) else 0
+                    round(st.st_size / (1024 * 1024), 2) if stat.S_ISREG(st.st_mode) else 0
                 ),
-                "created_at": datetime.fromtimestamp(os.path.getctime(path), UTC).isoformat(),
+                "created_at": datetime.fromtimestamp(st.st_ctime, UTC).isoformat(),
                 "type": ftype,
             }
         )
@@ -844,56 +850,8 @@ def force_backup() -> BackupStartResponse | tuple[BackupStartResponse, int]:
 @role_required(["admin"])
 @api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
 def stream_backup_status() -> tuple[FlaskResponse, int, dict[str, str]]:
-
-    def event_generator():
-        user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            with current_app.app_context():
-                yield f"data: {json.dumps({'backups': _list_backup_files(BACKUPS_DIR)})}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(CHANNEL_BACKUPS)
-            start_time = time.time()
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
-                        if message:
-                            with current_app.app_context():
-                                data = {
-                                    "backups": _list_backup_files(BACKUPS_DIR),
-                                    "event": json.loads(message["data"]),
-                                }
-                                yield f"data: {json.dumps(data)}\n\n"
-                                continue
-                    else:
-                        time.sleep(10.0)
-                    yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
+    """SSE endpoint: signal ``{"event": "update"}`` when a backup finishes."""
+    return sse_response(signal_stream(CHANNEL_BACKUPS, request.user["user_id"]))
 
 
 @admin_bp.route("/backups/<path:filename>/download", methods=["GET"])
@@ -1504,328 +1462,6 @@ def download_submissions_zip(
     return stream_open_handle_response(zip_handle, "application/zip", zip_filename)
 
 
-@admin_bp.route("/workers/stats", methods=["GET"])
-@role_required(["admin", "jury"])
-@api.validate(
-    resp=Response(HTTP_200=WorkerStatsResponse), tags=["Admin"], security=[{"cookieAuth": []}]
-)
-def get_detailed_worker_stats() -> dict[str, Any]:
-    return _get_worker_stats_response()
-
-
-@admin_bp.route("/workers/stats/live", methods=["GET"])
-@role_required(["admin", "jury"])
-@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_worker_stats() -> tuple[FlaskResponse, int, dict[str, str]]:
-
-    def event_generator():
-        user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            with current_app.app_context():
-                res_data = _get_worker_stats_response()
-                yield f"data: {json.dumps(res_data)}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(CHANNEL_WORKER_STATS)
-            start_time = time.time()
-
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            with current_app.app_context():
-                                res_data = _get_worker_stats_response()
-                                yield f"data: {json.dumps(res_data)}\n\n"
-                                continue
-                    else:
-                        time.sleep(2.0)
-                    with current_app.app_context():
-                        res_data = _get_worker_stats_response()
-                        yield f"data: {json.dumps(res_data)}\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Worker stats SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
-def _get_worker_stats_response() -> dict[str, Any]:
-
-    def _compute():
-        import platform
-        import subprocess
-
-        # 1. Collect Host System Resources
-        system_resources = {
-            "cpu_count": os.cpu_count(),
-            "load_avg": [0.0, 0.0, 0.0],
-            "memory": {
-                "total_gb": 0.0,
-                "used_gb": 0.0,
-                "free_gb": 0.0,
-                "percent_used": 0.0,
-            },
-            "disk": {
-                "total_gb": 0.0,
-                "used_gb": 0.0,
-                "free_gb": 0.0,
-                "percent_used": 0.0,
-            },
-            "os": platform.system(),
-            "platform_release": platform.release(),
-            "python_version": platform.python_version(),
-        }
-
-        # Load average
-        try:
-            if hasattr(os, "getloadavg"):
-                system_resources["load_avg"] = list(os.getloadavg())
-        except Exception as e:
-            logger.warning("Failed to get load average: %s", e)
-
-        # Disk usage
-        try:
-            total, used, free = shutil.disk_usage("/")
-            system_resources["disk"] = {
-                "total_gb": round(total / (1024**3), 2),
-                "used_gb": round(used / (1024**3), 2),
-                "free_gb": round(free / (1024**3), 2),
-                "percent_used": round((used / total) * 100, 1) if total > 0 else 0,
-            }
-        except Exception as e:
-            logger.warning("Failed to get disk usage: %s", e)
-
-        # Memory usage
-        try:
-            if platform.system() == "Linux":
-                if os.path.exists("/proc/meminfo"):
-                    with open("/proc/meminfo") as f:
-                        lines = f.readlines()
-                    mem_info = {}
-                    for line in lines:
-                        parts = line.split(":")
-                        if len(parts) == 2:
-                            name = parts[0].strip()
-                            val_parts = parts[1].strip().split()
-                            if val_parts:
-                                mem_info[name] = int(val_parts[0])
-
-                    total_kb = mem_info.get("MemTotal", 0)
-                    free_kb = mem_info.get("MemFree", 0)
-                    available_kb = mem_info.get("MemAvailable", total_kb - free_kb)
-                    used_kb = total_kb - available_kb
-
-                    system_resources["memory"] = {
-                        "total_gb": round(total_kb / (1024**2), 2),
-                        "used_gb": round(used_kb / (1024**2), 2),
-                        "free_gb": round(available_kb / (1024**2), 2),
-                        "percent_used": round((used_kb / total_kb) * 100, 1) if total_kb > 0 else 0,
-                    }
-            elif platform.system() == "Darwin":
-                total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())  # noqa: S607
-                total_gb = total_bytes / (1024**3)
-
-                vm_stat = subprocess.check_output(["vm_stat"]).decode("utf-8")  # noqa: S607
-                pages_free = 0
-                pages_active = 0
-                pages_inactive = 0
-                pages_speculative = 0
-                pages_wire = 0
-                page_size = 4096
-
-                for line in vm_stat.split("\n"):
-                    if "page size of" in line:
-                        with contextlib.suppress(Exception):
-                            page_size = int(line.split("page size of")[1].split("bytes")[0].strip())
-                    elif "Pages free:" in line:
-                        pages_free = int(line.split(":")[1].strip().replace(".", ""))
-                    elif "Pages active:" in line:
-                        pages_active = int(line.split(":")[1].strip().replace(".", ""))
-                    elif "Pages inactive:" in line:
-                        pages_inactive = int(line.split(":")[1].strip().replace(".", ""))
-                    elif "Pages speculative:" in line:
-                        pages_speculative = int(line.split(":")[1].strip().replace(".", ""))
-                    elif "Pages wired down:" in line:
-                        pages_wire = int(line.split(":")[1].strip().replace(".", ""))
-
-                used_bytes = (pages_active + pages_wire) * page_size
-                free_bytes = (pages_free + pages_speculative + pages_inactive) * page_size
-
-                system_resources["memory"] = {
-                    "total_gb": round(total_gb, 2),
-                    "used_gb": round(used_bytes / (1024**3), 2),
-                    "free_gb": round(free_bytes / (1024**3), 2),
-                    "percent_used": (
-                        round((used_bytes / total_bytes) * 100, 1) if total_bytes > 0 else 0
-                    ),
-                }
-        except Exception as e:
-            logger.warning("Failed to get memory usage: %s", e)
-
-        # 2. Collect Celery Worker Statistics
-        from tasks import celery
-
-        partial_failures: list[str] = []
-
-        def _safe_inspect(call_name: str, value: Any | None) -> Any:
-            if value is None:
-                partial_failures.append(f"celery.{call_name} returned no data")
-            return value or {}
-
-        inspect = celery.control.inspect(timeout=1.0)
-        try:
-            pings = _safe_inspect("ping", inspect.ping())
-        except Exception as e:
-            logger.warning("Celery inspect.ping failed: %s", e)
-            pings, partial_failures = {}, [f"celery.ping failed: {e}"]
-        try:
-            stats = _safe_inspect("stats", inspect.stats())
-        except Exception as e:
-            logger.warning("Celery inspect.stats failed: %s", e)
-            stats, partial_failures = {}, [*partial_failures, f"celery.stats failed: {e}"]
-        try:
-            active = _safe_inspect("active", inspect.active())
-        except Exception as e:
-            logger.warning("Celery inspect.active failed: %s", e)
-            active, partial_failures = {}, [*partial_failures, f"celery.active failed: {e}"]
-        try:
-            reserved = _safe_inspect("reserved", inspect.reserved())
-        except Exception as e:
-            logger.warning("Celery inspect.reserved failed: %s", e)
-            reserved, partial_failures = {}, [*partial_failures, f"celery.reserved failed: {e}"]
-        try:
-            registered = _safe_inspect("registered", inspect.registered())
-        except Exception as e:
-            logger.warning("Celery inspect.registered failed: %s", e)
-            registered, partial_failures = {}, [*partial_failures, f"celery.registered failed: {e}"]
-
-        r = None
-        try:
-            from utils.cache_utils import get_coordination_client
-
-            r = get_coordination_client()
-        except Exception:
-            r = None
-
-        workers_list = []
-        for worker_name in pings:
-            w_stats = stats.get(worker_name, {})
-            w_active = active.get(worker_name, [])
-            w_reserved = reserved.get(worker_name, [])
-            w_registered = registered.get(worker_name, [])
-
-            pool = w_stats.get("pool", {})
-            broker = w_stats.get("broker", {})
-            total_tasks = w_stats.get("total", {})
-            w_rusage = w_stats.get("rusage", {})
-
-            rusage_formatted = {}
-            if w_rusage:
-                maxrss = w_rusage.get("maxrss", 0)
-                maxrss_mb = (
-                    round(maxrss / (1024 * 1024), 2)
-                    if platform.system() == "Darwin"
-                    else round(maxrss / 1024, 2)
-                )
-                rusage_formatted = {
-                    "utime_sec": w_rusage.get("utime"),
-                    "stime_sec": w_rusage.get("stime"),
-                    "maxrss_mb": maxrss_mb,
-                }
-
-            spec = None
-            if r:
-                try:
-                    spec_data = r.get(worker_spec_key(worker_name))
-                    if spec_data:
-                        spec = json.loads(spec_data)
-                except Exception as e:
-                    logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
-
-            has_gpu = "gpu" in worker_name.lower()
-            if spec:
-                gpu_type = spec.get("gpu_type", "NVIDIA GPU" if has_gpu else "N/A")
-                vram_gb = spec.get("vram_gb", 8.0 if has_gpu else "N/A")
-                ram_gb = spec.get("ram_gb", 16.0 if has_gpu else 8.0)
-                worker_type = spec.get("type", "GPU" if has_gpu else "CPU")
-            else:
-                gpu_type = "NVIDIA GPU" if has_gpu else "N/A"
-                vram_gb = 8.0 if has_gpu else "N/A"
-                ram_gb = 16.0 if has_gpu else 8.0
-                worker_type = "GPU" if has_gpu else "CPU"
-
-            workers_list.append(
-                {
-                    "name": worker_name,
-                    "status": "online",
-                    "type": worker_type,
-                    "gpu_type": gpu_type,
-                    "vram_gb": vram_gb,
-                    "ram_gb": ram_gb,
-                    "pid": w_stats.get("pid"),
-                    "uptime": w_stats.get("uptime"),
-                    "pool_size": pool.get("max-concurrency", 0),
-                    "total_tasks_processed": sum(total_tasks.values()) if total_tasks else 0,
-                    "active_tasks_count": len(w_active),
-                    "reserved_tasks_count": len(w_reserved),
-                    "active_tasks": w_active,
-                    "reserved_tasks": w_reserved,
-                    "registered_tasks": w_registered,
-                    "rusage": rusage_formatted,
-                    "broker": {
-                        "transport": broker.get("transport"),
-                        "hostname": broker.get("hostname"),
-                        "port": broker.get("port"),
-                    },
-                }
-            )
-
-        return {
-            "connected_workers_count": len(workers_list),
-            "workers": workers_list,
-            "system": system_resources,
-            "partial_failures": partial_failures,
-        }
-
-    try:
-        return cached_or_compute_unless_testing("worker:status:detailed", _compute, timeout=10)
-    except Exception as e:
-        return {
-            "connected_workers_count": 0,
-            "workers": [],
-            "system": {
-                "cpu_count": os.cpu_count(),
-                "load_avg": [0.0, 0.0, 0.0],
-                "memory": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
-                "disk": {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0, "percent_used": 0.0},
-            },
-            "error": str(e),
-        }
-
-
 @admin_bp.route("/dead-letters", methods=["GET"])
 @role_required(["admin"])
 @api.validate(
@@ -1854,10 +1490,12 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Get paginated queue of queued and running submissions in execution order."""
     page, per_page = extract_pagination(request, default_per_page=20, max_per_page=100)
 
+    # One joined query: the task and user rows load with each submission (no N+1)
     query = (
         Submission.query.filter(Submission.status.in_(["queued", "running"]))
         .outerjoin(Task, Submission.task_id == Task.id)
         .outerjoin(User, Submission.user_id == User.id)
+        .options(contains_eager(Submission.task), contains_eager(Submission.user))
         .order_by(Submission.created_at.asc())
     )
     if request.user["role"] == "jury":
@@ -1868,12 +1506,8 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
 
     items = []
     for sub in pagination.items:
-        task_title = None
-        if sub.task:
-            task_title = sub.task.title
-        user_alias = None
-        if sub.user:
-            user_alias = sub.user.alias_id
+        task_title = sub.task.title if sub.task else None
+        user_alias = sub.user.alias_id if sub.user else None
 
         items.append(
             QueueItemResponse(
@@ -1893,38 +1527,6 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
     return paginated_response(items, pagination.total, pagination.page, pagination.pages)
 
 
-def _queue_snapshot(challenge_ids: set[Any] | None = None) -> list[dict[str, Any]]:
-    """Return full unpaginated list of queued/running submissions."""
-    query = (
-        Submission.query.filter(Submission.status.in_(["queued", "running"]))
-        .outerjoin(Task, Submission.task_id == Task.id)
-        .outerjoin(User, Submission.user_id == User.id)
-        .order_by(Submission.created_at.asc())
-    )
-    if challenge_ids is not None:
-        query = query.filter(Submission.challenge_id.in_(challenge_ids))
-    subs = query.all()
-    snapshot = []
-    for sub in subs:
-        task_title = sub.task.title if sub.task else None
-        user_alias = sub.user.alias_id if sub.user else None
-        snapshot.append(
-            {
-                "id": str(sub.id),
-                "status": sub.status,
-                "detailed_status": sub.detailed_status,
-                "user_id": str(sub.user_id) if sub.user_id else None,
-                "user_alias": user_alias,
-                "task_id": str(sub.task_id) if sub.task_id else None,
-                "task_title": task_title,
-                "challenge_id": str(sub.challenge_id) if sub.challenge_id else None,
-                "created_at": to_tz_iso(sub.created_at) if sub.created_at else None,
-                "celery_task_id": sub.celery_task_id,
-            }
-        )
-    return snapshot
-
-
 @admin_bp.route("/submissions/queue/live", methods=["GET"])
 @role_required(["admin", "jury"])
 @api.validate(
@@ -1932,72 +1534,12 @@ def _queue_snapshot(challenge_ids: set[Any] | None = None) -> list[dict[str, Any
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
-def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """SSE endpoint: stream real-time queue updates."""
-    accessible_challenge_ids = None
-    if request.user["role"] == "jury":
-        accessible_challenge_ids = jury_challenge_ids(request.user["user_id"])
+def stream_queue() -> tuple[FlaskResponse, int, dict[str, str]]:
+    """SSE endpoint: signal ``{"event": "update"}`` whenever the queue may have changed.
 
-    def event_generator():
-        user_id = request.user["user_id"]
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            with current_app.app_context():
-                snapshot = _queue_snapshot(accessible_challenge_ids)
-                yield f"data: {json.dumps({'items': snapshot, 'event': 'snapshot'})}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(CHANNEL_QUEUE)
-            start_time = time.time()
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
-                        if message:
-                            with current_app.app_context():
-                                payload = json.dumps(
-                                    {
-                                        "items": _queue_snapshot(accessible_challenge_ids),
-                                        "event": "update",
-                                    }
-                                )
-                                yield f"data: {payload}\n\n"
-                                continue
-                    else:
-                        time.sleep(10.0)
-                        with current_app.app_context():
-                            payload = json.dumps(
-                                {
-                                    "items": _queue_snapshot(accessible_challenge_ids),
-                                    "event": "update",
-                                }
-                            )
-                            yield f"data: {payload}\n\n"
-                    yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
+    Clients refetch GET /submissions/queue, which applies the jury challenge filter.
+    """
+    return sse_response(signal_stream(CHANNEL_QUEUE, request.user["user_id"]))
 
 
 @admin_bp.route("/submissions/queue/clear", methods=["POST"])
@@ -2023,12 +1565,14 @@ def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
         log_line = f"[{utcnow().isoformat()}] Submission killed by admin queue clear"
         existing_logs = sub.logs or ""
         sub.logs = f"{existing_logs}\n{log_line}".strip()
-        publish_submissions_update(sub.task_id, sub.challenge_id)
-        publish_queue_update()
-        publish_submission_status(sub.id, "failed")
-        clear_submission_logs(sub.id)
         count += 1
 
     db.session.commit()
+
+    # Signal only after the commit so refetching clients see the new state
+    for sub in subs:
+        publish_submission_status(sub.id, "failed")
+        clear_submission_logs(sub.id)
+    publish_queue_update()
 
     return MessageResponse(message=f"Cleared {count} submission(s) from the queue.")

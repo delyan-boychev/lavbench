@@ -132,13 +132,16 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"__error__": f"{type(e).__name__}: {e}"}
 
-    def sse_roundtrip(self, path: str, trigger, timeout: float = 40.0) -> tuple[bool, list[dict], str]:
-        """SSE publish→subscribe round-trip: open a stream, wait for the first
-        data payloads, then call *trigger* (zero-arg callable that publishes to
-        the stream's Redis channel) until a second leaderboard payload arrives.
+    def sse_roundtrip(self, path: str, trigger, timeout: float = 75.0) -> tuple[bool, list[dict], str]:
+        """SSE publish→subscribe round-trip on a signal-only stream.
 
-        Returns ``(ok, payloads, detail)``. Streams here carry no ``event:``
-        lines — updates arrive as full JSON ``data:`` payloads.
+        Waits for the opening ``{"info": "connected"}`` event, calls *trigger*
+        (a zero-arg callable that changes the leaderboard), then waits for
+        ``{"event": "update"}``. Leaderboard updates are published only by the
+        rebuild beat task, which runs every 20 s, so the default timeout covers
+        several beat intervals; the trigger is repeated every 25 s, up to 3 times.
+
+        Returns ``(ok, payloads, detail)``.
         """
         try:
             with self.opener.open(self._req("GET", path), timeout=timeout) as r:
@@ -146,10 +149,14 @@ class Api:
                     return False, [], f"not SSE: Content-Type={r.headers.get('Content-Type', '')}"
                 deadline = time.time() + timeout
                 payloads: list[dict] = []
-                updates = 0
                 triggered = 0
                 last_trigger_at = 0.0
                 while time.time() < deadline:
+                    if triggered and triggered < 3 and time.time() - last_trigger_at >= 25.0:
+                        trigger()
+                        triggered += 1
+                        last_trigger_at = time.time()
+                    # Keep-alive comments arrive every ~10 s, so this never blocks for long
                     line = r.readline()
                     if not line:
                         return False, payloads, "stream EOF before update"
@@ -160,18 +167,29 @@ class Api:
                         continue
                     payload = json.loads(raw)
                     payloads.append(payload)
-                    if "leaderboard" not in payload:
-                        continue
-                    updates += 1
-                    if updates >= 2:
-                        return True, payloads, f"update received (payloads={len(payloads)}, triggers={triggered})"
-                    if triggered < 5 and time.time() - last_trigger_at >= 5.0:
+                    if payload.get("info") == "connected" and not triggered:
                         trigger()
-                        triggered += 1
+                        triggered = 1
                         last_trigger_at = time.time()
-                return False, payloads, f"timeout (payloads={len(payloads)}, updates={updates}, triggers={triggered})"
+                    elif payload == {"event": "update"}:
+                        return True, payloads, f"update received (triggers={triggered})"
+                return False, payloads, f"timeout (payloads={len(payloads)}, triggers={triggered})"
         except Exception as e:  # noqa: BLE001
             return False, [], f"{type(e).__name__}: {e}"
+
+
+def live_cpu_workers(client: "Api") -> tuple[int, list[dict]]:
+    """Return (status, workers with a fresh heartbeat consuming cpu_queue) from system-status."""
+    code, data = client.send("GET", "/api/admin/system-status")
+    workers = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
+    return code, [
+        w for w in workers
+        if isinstance(w, dict) and w.get("online") and "cpu_queue" in (w.get("queues") or [])
+    ]
+
+
+STATUS_WORDS = {"operational", "degraded_performance", "partial_outage", "major_outage",
+                "under_maintenance"}
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -215,6 +233,7 @@ def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, so
         "POST", f"/api/challenges/{cid}/submit",
         {"task_id": tid, "selected_cells": [{"id": 0, "type": "code", "source": source}]})
     if code != 202 or not isinstance(data, dict) or not data.get("submission_id"):
+        print(f"    submit not accepted: HTTP {code} {str(data)[:300]}")
         return False, {"submit_status": code, **(data if isinstance(data, dict) else {})}
     sid = data["submission_id"]
     deadline = time.time() + poll_timeout
@@ -389,6 +408,12 @@ def main() -> int:
     code, data = api.send("GET", "/api/health")
     check("GET /api/health 200 ok", code == 200 and isinstance(data, dict)
           and data.get("status") == "ok", json.dumps(data) if isinstance(data, dict) else "")
+    code, data = Api(args.base).send("GET", "/api/status")
+    check("GET /api/status 200 without login (Statuspage words)",
+          code == 200 and isinstance(data, dict) and data.get("status") in STATUS_WORDS
+          and set(data.get("components", {})) == {"api", "scoring"}
+          and str(data.get("updated_at", "")).endswith("Z"),
+          json.dumps(data)[:200] if isinstance(data, dict) else str(data)[:200])
     code, data = api.send("GET", "/apidoc/swagger/")
     check("GET /apidoc/swagger/ 200 HTML", code == 200 and isinstance(data, str) and "<html" in data.lower())
     code, data = api.send("GET", "/apidoc/openapi.json")
@@ -547,24 +572,28 @@ def main() -> int:
     check("GET /api/admin/dead-letters 200", code == 200 and isinstance(data, dict) and isinstance(data.get("items"), list))
     code, data = api.send("GET", "/api/admin/submissions/queue")
     check("GET /api/admin/submissions/queue 200", code == 200 and isinstance(data, dict) and isinstance(data.get("items"), list))
-    code, data = api.send("GET", "/api/admin/workers/stats")
-    check("GET /api/admin/workers/stats 200", code == 200 and isinstance(data, dict))
-    wstats = data if code == 200 and isinstance(data, dict) else {}
-    wlist = wstats.get("workers", [])
-    check("workers/stats shape (workers list + count)",
-          isinstance(wlist, list) and isinstance(wstats.get("connected_workers_count"), int),
-          f"keys={sorted(wstats.keys())[:6] if isinstance(wstats, dict) else wstats}")
-    spec_keys = ("name", "status", "type", "gpu_type", "ram_gb", "vram_gb")
+    code, data = api.send("GET", "/api/admin/system-status")
+    sstatus = data if code == 200 and isinstance(data, dict) else {}
+    check("GET /api/admin/system-status 200 (admin)",
+          code == 200 and sstatus.get("status") in STATUS_WORDS
+          and isinstance(sstatus.get("queues"), list) and isinstance(sstatus.get("workers"), list)
+          and isinstance(sstatus.get("submissions"), dict),
+          f"keys={sorted(sstatus.keys())[:8]}")
+    queue_names = [q.get("name") for q in sstatus.get("queues", []) if isinstance(q, dict)]
+    check("system-status lists cpu_queue and gpu_queue first",
+          queue_names[:2] == ["cpu_queue", "gpu_queue"], f"queues={queue_names}")
+    wlist = sstatus.get("workers", [])
+    spec_keys = ("name", "type", "queues", "online", "last_seen")
     if wlist:
-        check("worker entries carry worker_spec fields (hostname/type/gpu/ram)",
+        check("worker heartbeats carry name/type/queues/online/last_seen",
               all(isinstance(w, dict) and all(k in w for k in spec_keys) for w in wlist),
               f"workers={len(wlist)}")
-        check("a CPU worker type is registered (worker_spec registry)",
-              any(w.get("type") == "CPU" for w in wlist),
+        check("a CPU worker heartbeat reports cpu_queue",
+              any(w.get("type") == "cpu" and "cpu_queue" in (w.get("queues") or []) for w in wlist),
               f"types={sorted({w.get('type') for w in wlist if isinstance(w, dict)})}")
     else:
-        warn("worker_spec registration",
-             "no workers connected (external machines absent) — verified endpoint shape only")
+        warn("worker heartbeats",
+             "no worker heartbeats (external machines absent) — verified endpoint shape only")
     code, data = api.send("GET", "/api/admin/backups")
     known_backups = data.get("backups", []) if isinstance(data, dict) else []
     check("GET /api/admin/backups 200", code == 200 and isinstance(known_backups, list))
@@ -590,18 +619,16 @@ def main() -> int:
 
     # ── 11. SSE streams through nginx ──────────────────────────────────
     print("\n== 11. SSE ==")
+    # Streams are signal-only: they open with {"info": "connected"} and later send
+    # Only {"event": "update"}; clients refetch over REST
     sse = [
-        ("leaderboard/live (admin)", f"/api/challenges/{cid}/leaderboard/live", api, ("leaderboard", "info")),
-        ("task submissions/live (admin)", f"/api/tasks/{tid}/submissions/live", api, ("items", "info")),
-        ("submission logs/live (admin)", f"/api/submissions/{sid}/logs/live", api, ("info", "log", "status")),
-        ("admin backups/live", "/api/admin/backups/live", api, ("backups",)),
-        ("admin queue/live", "/api/admin/submissions/queue/live", api, ("items", "event")),
-        ("admin workers/stats/live", "/api/admin/workers/stats/live", api, ()),
-        ("worker-status/live", "/api/worker-status/live", api, ()),
-        ("worker-status/live (competitor)", "/api/worker-status/live", comp, ()),
-        ("leaderboard/live (competitor)", f"/api/challenges/{cid}/leaderboard/live", comp, ("leaderboard", "info")),
+        ("leaderboard/live (admin)", f"/api/challenges/{cid}/leaderboard/live", api),
+        ("submission logs/live (admin)", f"/api/submissions/{sid}/logs/live", api),
+        ("admin backups/live", "/api/admin/backups/live", api),
+        ("admin queue/live", "/api/admin/submissions/queue/live", api),
+        ("leaderboard/live (competitor)", f"/api/challenges/{cid}/leaderboard/live", comp),
     ]
-    for name, path, client, keys in sse:
+    for name, path, client in sse:
         payload = client.sse_first_data(path)
         if "__not_sse__" in payload:
             check(f"SSE {name}", False, f"Content-Type={payload['__not_sse__']}")
@@ -610,28 +637,29 @@ def main() -> int:
         elif not isinstance(payload, dict):
             check(f"SSE {name}", False, f"non-JSON payload: {payload}")
         else:
-            ok = any(k in payload for k in keys) if keys else len(payload) > 0
-            check(f"SSE {name}", ok, f"keys={sorted(payload.keys())[:6]}")
+            check(f"SSE {name}", payload == {"info": "connected"}, f"first={payload}")
 
     # ── 11b. SSE round-trips (coordination pub/sub over the broker Redis) ──
     print("\n== 11b. SSE round-trips ==")
-    # queue_updates channel: initial payload only — no deterministic trigger
-    # exists (kill/clear only publish when submissions are still queued, which
-    # is worker-timing dependent), so assert snapshot + connection.
+    # queue_updates channel: connection only — no deterministic trigger exists
+    # (kill/clear only publish when submissions are still queued, which is
+    # worker-timing dependent)
     payload = api.sse_first_data("/api/admin/submissions/queue/live")
-    check("SSE queue/live snapshot event (queue_updates channel)",
-          isinstance(payload, dict) and payload.get("event") == "snapshot"
-          and isinstance(payload.get("items"), list),
-          f"keys={sorted(payload.keys())[:6] if isinstance(payload, dict) else payload}")
-    # leaderboard live round-trip: select-final always republishes
-    # publish_leaderboard_update → the stream must deliver a second payload.
+    check("SSE queue/live opens with the connected signal (queue_updates channel)",
+          payload == {"info": "connected"}, f"first={payload}")
+    # leaderboard live round-trip: select-final marks the leaderboard dirty; the
+    # 20 s rebuild beat rebuilds it and publishes {"event": "update"}
     if sid:
         def _trigger_leaderboard_update() -> None:
             api.send("POST", f"/api/submissions/{sid}/select-final")
 
         ok, payloads, detail = api.sse_roundtrip(
             f"/api/challenges/{cid}/leaderboard/live", _trigger_leaderboard_update)
-        check("SSE leaderboard/live round-trip (publish → update received)", ok, detail)
+        check("SSE leaderboard/live round-trip (beat rebuild → {\"event\": \"update\"})",
+              ok, detail)
+        check("SSE leaderboard/live sends no payload (signal-only)",
+              all(set(p) <= {"info", "event"} for p in payloads),
+              str(payloads)[:160])
         check("SSE leaderboard/live initial 'info: connected' event",
               bool(payloads) and payloads[0].get("info") == "connected",
               str(payloads[0])[:120] if payloads else "no payloads collected")
@@ -722,8 +750,10 @@ def main() -> int:
          {"j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/admin/submissions/queue", "GET", "/api/admin/submissions/queue", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("GET /api/admin/workers/stats", "GET", "/api/admin/workers/stats", None,
+        ("GET /api/admin/system-status", "GET", "/api/admin/system-status", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
+        ("GET /api/status", "GET", "/api/status", None,
+         {"j": (200, None), "c": (200, None), "n": (200, None)}),
         ("GET scores CSV (not finalized)", "GET", f"/api/admin/challenges/{cid}/download-scores-csv", None,
          {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET submissions zip", "GET", f"/api/admin/challenges/{cid}/download-submissions-zip", None,
@@ -850,15 +880,10 @@ def main() -> int:
             warn("eval worker E2E",
                  f"pandas/pyarrow not importable on smoke host ({e}) — skipped")
         if have_parquet:
-            code, data = api.send("GET", "/api/admin/workers/stats")
-            wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
-            partial_failures = data.get("partial_failures") if code == 200 and isinstance(data, dict) else None
-            check("eval: worker stats expose partial_failures list",
-                  isinstance(partial_failures, list), f"partial_failures={partial_failures}")
-            worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
-            check("eval: CPU worker connected (worker_spec)",
-                  worker_ok,
-                  f"types={sorted({w.get('type') for w in wlist if isinstance(w, dict)})}")
+            code, live = live_cpu_workers(api)
+            worker_ok = bool(live)
+            check("eval: live CPU worker heartbeat on cpu_queue (system-status)",
+                  worker_ok, f"status={code} live={[w.get('name') for w in live]}")
             if not worker_ok:
                 warn("eval worker E2E",
                      "no CPU worker registered — submission E2E skipped (SMOKE_EVALUATE=1 requires one)")
@@ -1653,9 +1678,8 @@ def main() -> int:
             check("15f: competitor login 200", code == 200 and isinstance(data, dict))
             code, data = ocomp.send("GET", "/api/auth/csrf-token")
             ocomp.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
-            code, data = api.send("GET", "/api/admin/workers/stats")
-            wlist = data.get("workers", []) if code == 200 and isinstance(data, dict) else []
-            worker_ok = any(w.get("type") == "CPU" for w in wlist if isinstance(w, dict))
+            _code, live = live_cpu_workers(api)
+            worker_ok = bool(live)
             if not worker_ok:
                 warn("15f oversized-archive",
                      "no CPU worker registered — oversized-collect E2E skipped (needs SMOKE_EVALUATE=1 topology)")

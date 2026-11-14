@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import TaskService from '../services/TaskService';
 
-export function useSubmissionDetailQuery(submissionId) {
+/**
+ * @param {string | null | undefined} submissionId
+ * @param {{ refetchInterval?: number | false | ((query: any) => number | false) }} [options]
+ */
+export function useSubmissionDetailQuery(submissionId, options = {}) {
+  const { refetchInterval = false } = options;
   return useQuery({
     queryKey: ['submission-detail', submissionId],
     queryFn: async () => {
@@ -11,5 +16,6 @@ export function useSubmissionDetailQuery(submissionId) {
     },
     enabled: !!submissionId,
     staleTime: 10_000,
+    refetchInterval,
   });
 }

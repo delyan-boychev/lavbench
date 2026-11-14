@@ -6,7 +6,6 @@ import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
-import useSSE from '../../hooks/useSSE';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
@@ -26,9 +25,6 @@ export default function Navbar() {
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const [reportedStatus, setReportedStatus] = React.useState('online');
-  const [clusters, setClusters] = React.useState([]);
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
@@ -66,27 +62,6 @@ export default function Navbar() {
     logout();
     showToast(t('nav.signed_out_success'));
   };
-
-  const {
-    connected: statusConnected,
-    retrying: statusRetrying,
-    error: statusError,
-  } = useSSE('/api/worker-status/live', {
-    storeData: false,
-    reconnect: true,
-    reconnectDelay: 10000,
-    maxReconnects: Infinity,
-    onMessage: (msg) => {
-      setReportedStatus(msg.status);
-      setClusters(msg.clusters || []);
-    },
-  });
-
-  // The stream retries forever, so a dropped connection never reaches onError;
-  // treat any disconnect that is being retried (or gave up) as offline
-  const streamDown = !statusConnected && (statusRetrying || Boolean(statusError));
-  const isOnline = !streamDown && reportedStatus === 'online';
-  const visibleClusters = streamDown ? [] : clusters;
 
   React.useEffect(() => {
     const mq = window.matchMedia('(max-width: 450px)');
@@ -127,47 +102,9 @@ export default function Navbar() {
         {/* Left: Logo */}
         <Logo size={isNarrow ? 'md' : 'lg'} />
 
-        {/* Center: Timer + Cluster + Docs (hidden on mobile) */}
+        {/* Center: Timer + Docs (hidden on mobile) */}
         <div className="hidden lg:flex" style={{ gap: 10, alignItems: 'center' }}>
           <CountdownTimer selectedChallenge={selectedChallenge} />
-          <button
-            onClick={() => setIsModalOpen((prev) => !prev)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 12px',
-              background: isOnline ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-              border: `1px solid ${isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              color: isOnline ? '#10b981' : '#ef4444',
-              cursor: 'pointer',
-              outline: 'none',
-              transition: 'all 0.2s ease',
-            }}
-            className="hover:scale-[1.02] active:scale-[0.98] select-none"
-            title={t('nav.cluster_info_title')}
-          >
-            <span
-              style={{
-                position: 'relative',
-                display: 'flex',
-                width: 8,
-                height: 8,
-              }}
-            >
-              {isOnline && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              )}
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${isOnline ? 'bg-emerald-500' : 'bg-rose-500'}`}
-              ></span>
-            </span>
-            {t('nav.cluster')}
-          </button>
-
           {currentUser && (
             <button
               onClick={() => setIsDocsModalOpen(true)}
@@ -429,37 +366,6 @@ export default function Navbar() {
             </div>
           )}
           <CountdownTimer selectedChallenge={selectedChallenge} />
-          <button
-            onClick={() => {
-              setIsModalOpen(true);
-              setMobileMenuOpen(false);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 14px',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              width: '100%',
-              justifyContent: 'center',
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: isOnline ? '#10b981' : '#ef4444',
-              }}
-            ></span>
-            {t('nav.cluster')}
-          </button>
           {currentUser && (
             <button
               onClick={() => {
@@ -509,115 +415,6 @@ export default function Navbar() {
           </button>
         </div>
       )}
-
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={t('nav.cluster_info_title')}
-        size="md"
-        footer={
-          <button className="btn btn-secondary btn-sm px-4" onClick={() => setIsModalOpen(false)}>
-            {t('nav.close')}
-          </button>
-        }
-      >
-        <div className="flex flex-col gap-4 text-xs text-left">
-          <p className="text-slate-400">{t('nav.cluster_info_desc')}</p>
-
-          {/* Cluster Status Summary Info Card */}
-          <div className="bg-slate-950/60 border border-indigo-500/10 p-4 rounded-xl flex flex-col gap-2">
-            <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-1 text-indigo-400">
-              {t('nav.cluster_status_summary')}
-            </h4>
-            <div className="flex flex-col gap-2.5 text-slate-300">
-              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">{t('nav.system_status')}</span>
-                <span className={`font-bold ${isOnline ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {isOnline ? t('nav.active') : t('nav.offline')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">{t('nav.total_nodes')}</span>
-                <span className="font-bold text-slate-100">{visibleClusters.length}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">{t('nav.global_concurrency')}</span>
-                <span className="font-bold text-slate-100 text-right">
-                  {t('nav.global_parallel_tasks', {
-                    count: visibleClusters.reduce((acc, c) => acc + (c.concurrency || 0), 0),
-                  })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">{t('nav.resource_routing')}</span>
-                <span className="font-bold text-indigo-400 text-right">
-                  {t('nav.auto_load_balanced')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {visibleClusters.length === 0 ? (
-            <div className="text-center py-8 text-slate-500 italic bg-slate-950/20 border border-white/5 rounded-xl">
-              {t('nav.no_nodes_connected')}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {visibleClusters.map((cluster, idx) => (
-                <div
-                  key={cluster.name || idx}
-                  className="bg-slate-950/40 border border-white/5 p-4 rounded-xl flex flex-col gap-3"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-mono text-indigo-400 font-bold text-sm">
-                      {cluster.name}
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
-                        cluster.type === 'GPU'
-                          ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-                          : 'bg-slate-800 border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {t('nav.node_type', { type: cluster.type })}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-2.5 text-slate-300 font-medium text-xs">
-                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                      <span className="text-slate-500 font-semibold">{t('nav.concurrency')}</span>
-                      <span className="font-bold text-slate-200">
-                        {t('nav.parallel_tasks', { count: cluster.concurrency })}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                      <span className="text-slate-500 font-semibold">{t('nav.ram_limit')}</span>
-                      <span className="font-bold text-slate-200">{cluster.ram_gb} GB</span>
-                    </div>
-                    <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                      <span className="text-slate-500 font-semibold">{t('nav.gpu_model')}</span>
-                      <span
-                        className="font-bold text-slate-200 truncate max-w-[220px] text-right"
-                        title={cluster.gpu_type}
-                      >
-                        {cluster.gpu_type}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-semibold">{t('nav.vram_limit')}</span>
-                      <span className="font-bold text-slate-200">
-                        {cluster.vram_gb !== 'N/A' && cluster.vram_gb !== null
-                          ? `${cluster.vram_gb} GB`
-                          : t('common.not_available')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>
 
       {/* System Documentation Modal */}
       <Modal

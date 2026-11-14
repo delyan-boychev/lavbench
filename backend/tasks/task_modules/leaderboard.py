@@ -14,7 +14,4 @@ def run_recalculate_all_leaderboards(app: Flask) -> None:
         # Get active or recent challenges
         active_challenges = Challenge.query.filter_by(is_archived=False).all()
         for challenge in active_challenges:
-            # Rebuild both frozen and unfrozen versions to keep both warm!
-            build_and_cache_leaderboard(challenge.id, is_frozen_view=False)
-            if challenge.is_frozen:
-                build_and_cache_leaderboard(challenge.id, is_frozen_view=True)
+            build_and_cache_leaderboard(challenge.id)

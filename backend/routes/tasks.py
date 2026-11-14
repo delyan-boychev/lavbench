@@ -9,7 +9,6 @@ import json
 import logging
 import math
 import os
-import time
 import uuid
 from collections.abc import Generator
 from datetime import timedelta
@@ -21,7 +20,7 @@ from spectree import Response
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import Challenge, Stage, Submission, Task, db
+from models import TERMINAL_STATUSES, Challenge, Stage, Submission, Task, db
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
@@ -36,7 +35,6 @@ from schemas.responses import (
     WorkerLogsResponse,
     WorkerReportResponse,
     WorkerRunContentResponse,
-    WorkerStatusResponse,
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
@@ -59,32 +57,17 @@ from utils.auth_utils import (
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
     cache_lock,
-    get_cached,
     get_coordination_client,
     get_queue_depth,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    set_cached,
-    worker_spec_key,
 )
 from utils.dates import utcnow
 from utils.error_utils import err
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
+from utils.request_helpers import release_db_before_body
 from utils.spec import api
-from utils.sse import sse_response
-from utils.sse_utils import (
-    CHANNEL_TASK_REBUILD,
-    CHANNEL_WORKER_STATUS,
-    SSE_IDLE_TIMEOUT,
-    publish_leaderboard_update,
-    publish_queue_update,
-    publish_submissions_update,
-    sse_connection_limit,
-    sse_heartbeat,
-    submissions_channel,
-)
+from utils.sse_utils import CHANNEL_TASK_REBUILD, publish_queue_update
 from utils.streaming import stream_file_response
 from utils.worker_auth import (
     build_submission_capabilities,
@@ -317,9 +300,7 @@ def queue_system_submission(
     db.session.add(submission)
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
 
     from tasks import evaluate_submission
 
@@ -350,7 +331,7 @@ def queue_system_submission(
         args=[submission.id, metadata],
         priority=priority,
         queue=queue_name,
-        countdown=1,
+        expires=Config.CELERY_MESSAGE_EXPIRES,
         task_id=attempt_id,
     )
 
@@ -407,6 +388,7 @@ def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@release_db_before_body
 @api.validate(
     form=CreateTaskMetaSchema,
     resp=Response(HTTP_201=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
@@ -730,6 +712,7 @@ def create_task(
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@release_db_before_body
 @api.validate(
     form=UpdateTaskMetaSchema,
     resp=Response(HTTP_200=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
@@ -1380,9 +1363,7 @@ def submit_task(
             )
             db.session.add(submission)
             db.session.commit()
-            publish_submissions_update(submission.task_id, submission.challenge_id)
             publish_queue_update()
-            publish_leaderboard_update(submission.challenge_id)
             return err(
                 "ERR_AST_RULE_FAILED",
                 400,
@@ -1404,11 +1385,9 @@ def submit_task(
         db.session.add(submission)
         db.session.commit()
 
-    invalidate_leaderboard_cache(submission.challenge_id)
-
-    publish_submissions_update(submission.task_id, submission.challenge_id)
+    # A queued submission cannot change the leaderboard, which counts completed
+    # Submissions only; the results path invalidates it when the score arrives
     publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
     from tasks import evaluate_submission
 
     # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
@@ -1431,7 +1410,6 @@ def submit_task(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
-            countdown=1,
             expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=attempt_id,
         )
@@ -1558,263 +1536,6 @@ def get_task_leaderboard(
     )
 
 
-@tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-)
-def stream_task_submissions(
-    task_id: Any,
-) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live task submission updates via SSE."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    page = request.args.get("page", type=int)
-    per_page = min(request.args.get("per_page", 10, type=int), 100)
-
-    task = db.session.get(Task, task_id)
-    if not task:
-        return err("ERR_NOT_FOUND", 404)
-    challenge_id = task.challenge_id
-
-    if user_role == "competitor":
-        if not check_task_started(task, user_role, current_user_id):
-            return err("ERR_NOT_AVAILABLE", 403)
-        if task.challenge and task.challenge.scores_finalized:
-            return err(
-                "ERR_COMPETITION_FINALIZED",
-                403,
-                message="Access denied. Submissions are hidden for finalized competitions.",
-            )
-
-    def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
-            yield f"data: {json.dumps(data)}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-
-            if pubsub:
-                pubsub.subscribe(submissions_channel(task_id, challenge_id))
-
-            start_time = time.time()
-            last_query_at = 0.0
-            pending_update = False
-            debounce_seconds = 2.0
-
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, current_user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    message = None
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    else:
-                        time.sleep(2.0)
-                    if message:
-                        pending_update = True
-                    # Debounce the DB re-query so a burst of channel
-                    # Messages coalesces into at most one query per 2s instead
-                    # Of re-reading all submissions per message. Any update
-                    # Suppressed while in the window is delivered after it
-                    now = time.time()
-                    if pending_update and (now - last_query_at) >= debounce_seconds:
-                        data = _get_task_submissions_data(
-                            task_id, user_role, current_user_id, page, per_page
-                        )
-                        yield f"data: {json.dumps(data)}\n\n"
-                        last_query_at = now
-                        pending_update = False
-                    else:
-                        yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Submissions SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
-@tasks_bp.route("/worker-status", methods=["GET"])
-@login_required
-@api.validate(
-    resp=Response(HTTP_200=WorkerStatusResponse),
-    tags=["Tasks"],
-    security=[{"cookieAuth": []}],
-)
-def get_worker_status() -> dict[str, Any]:
-    """Get worker cluster health status with specs (details admin/jury only)."""
-    return _get_worker_status_data(request.user["role"])
-
-
-@tasks_bp.route("/worker-status/live", methods=["GET"])
-@login_required
-@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
-    """Stream worker cluster health status via SSE (details admin/jury only)."""
-
-    def event_generator():
-        user_id = request.user["user_id"]
-        user_role = request.user["role"]
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            res_data = _get_worker_status_data(user_role)
-            yield f"data: {json.dumps(res_data)}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(CHANNEL_WORKER_STATUS)
-
-            last_sent = time.time()
-            start_time = time.time()
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    got_message = False
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                        got_message = bool(message)
-                    else:
-                        time.sleep(5.0)
-                    now = time.time()
-                    if got_message or (now - last_sent) >= 10:
-                        res_data = _get_worker_status_data(user_role)
-                        yield f"data: {json.dumps(res_data)}\n\n"
-                        last_sent = now
-                    else:
-                        yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
-def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
-    """Worker cluster summary.
-
-    Admin/jury receive full per-worker specs (hostnames, GPU/VRAM, resource
-    budgets). Other authenticated roles receive general availability only.
-    """
-
-    def _compute():
-        import json as json_lib
-
-        from tasks import celery
-
-        inspect = celery.control.inspect(timeout=1.0)
-        pings = inspect.ping() or {}
-        stats = inspect.stats() or {}
-        registered = inspect.registered() or {}
-
-        r = None
-        try:
-            from utils.cache_utils import get_coordination_client
-
-            r = get_coordination_client()
-        except Exception as e:
-            logger.warning("Failed to get Redis client for worker status: %s", e)
-            r = None
-
-        clusters = []
-        for worker_name in pings:
-            w_registered = registered.get(worker_name, []) if registered else []
-            if "tasks.evaluate_submission" not in w_registered:
-                continue
-
-            spec = None
-            if r:
-                try:
-                    spec_data = r.get(worker_spec_key(worker_name))
-                    if spec_data:
-                        spec = json_lib.loads(spec_data)
-                except Exception as e:
-                    logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
-
-            if not spec:
-                w_stats = stats.get(worker_name, {}) if stats else {}
-                pool = w_stats.get("pool", {}) if w_stats else {}
-                concurrency = pool.get("max-concurrency", 1) if pool else 1
-                try:
-                    concurrency = int(concurrency)
-                except Exception:
-                    concurrency = 1
-                has_gpu = "gpu" in worker_name.lower()
-                spec = {
-                    "name": worker_name,
-                    "type": "GPU" if has_gpu else "CPU",
-                    "concurrency": concurrency,
-                    "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
-                    "ram_gb": 16.0 if has_gpu else 8.0,
-                    "vram_gb": 8.0 if has_gpu else "N/A",
-                }
-            clusters.append(spec)
-
-        is_online = len(clusters) > 0
-        if view_role in ("admin", "jury"):
-            return {"status": "online" if is_online else "offline", "clusters": clusters}
-        return {
-            "status": "online" if is_online else "offline",
-            "online_workers": len(clusters),
-            "clusters": [],
-        }
-
-    cache_key = f"worker:status:summary:{view_role or 'user'}"
-    if current_app.config.get("TESTING", False):
-        return _compute()
-    cached = get_cached(cache_key)
-    if cached is not None:
-        return cached
-    # Single-flight recompute — each expiry triggers exactly one
-    # Cluster-wide inspect.ping/stats/registered instead of one per SSE
-    # Client; every concurrent reader shares the freshly cached result
-    with cache_lock(f"lock:{cache_key}", ttl=30):
-        cached = get_cached(cache_key)
-        if cached is not None:
-            return cached
-        result = _compute()
-        set_cached(cache_key, result, timeout=30)
-        return result
-
-
 @tasks_bp.route("/worker/capabilities/<uuid:submission_id>", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
@@ -1930,7 +1651,7 @@ def report_worker_progress(
         status_val = data["status"]
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
-        if submission.status in ("completed", "failed"):
+        if submission.status in TERMINAL_STATUSES:
             if status_val == submission.status:
                 return {"message": "Status already applied"}, 200
             return err("ERR_STALE_WORKER_ATTEMPT", 409)
@@ -2048,11 +1769,9 @@ def report_worker_progress(
 
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
 
-    if submission.status in ("completed", "failed"):
+    if submission.status in TERMINAL_STATUSES:
         from utils.sse_utils import publish_submission_status
 
         publish_submission_status(submission.id, submission.status)

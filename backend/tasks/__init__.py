@@ -13,17 +13,25 @@ from typing import Any
 from celery import Celery
 from celery import Task as CeleryTask
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import celeryd_init
+from celery.signals import celeryd_init, worker_process_init
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
 from utils.dates import utcnow
+from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
 
 from .task_modules.submission_runner import run_eval_submission
 from .task_modules.system import (
+    BACKUP_DISPATCH_KEY,
+    LAST_AUTO_BACKUP_KEY,
+    LAST_FULL_BACKUP_KEY,
+    backup_dispatch_ttl,
+    release_backup_dispatch,
+    run_docker_prune,
+)
+from .task_modules.system import (
     run_backup as _do_backup,
 )
-from .task_modules.system import run_docker_prune
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +130,25 @@ celery.conf.update(
     },
 )
 
+# The watchdog fails a submission whose container has not started after this long;
+# Config.CELERY_MESSAGE_EXPIRES must stay at least 15 min below it, because a worker
+# That takes a message just before it expires still has to build the image
+NEVER_PICKED_UP_CUTOFF = timedelta(hours=1)
+
+
+@worker_process_init.connect
+def _dispose_inherited_db_connections(**kwargs: Any) -> None:
+    """Drop pooled DB connections a prefork child inherited from its parent.
+
+    The parent opened them at startup (schema revision check); sharing those
+    sockets across processes corrupts the protocol stream. ``close=False`` leaves
+    them open for the parent and only resets this child's pool.
+    """
+    if not HAS_APP or app is None:
+        return
+    with app.app_context():
+        db.engine.dispose(close=False)
+
 
 @celeryd_init.connect
 def _configure_worker_logging(sender: str, conf: Any, **kwargs: Any) -> None:
@@ -184,7 +211,7 @@ def evaluate_submission(
         if HAS_APP and app:
             with app.app_context():
                 sub = db.session.get(Submission, submission_id)
-                if sub and sub.status not in ("completed", "failed"):
+                if sub and sub.status not in TERMINAL_STATUSES:
                     sub.status = "failed"
                     sub.detailed_status = "failed"
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
@@ -231,34 +258,61 @@ def recalculate_leaderboard(challenge_id: Any) -> None:
         return
     if not app:
         return
-    from services.leaderboard_service import build_and_cache_leaderboard
+    from utils.cache_utils import invalidate_leaderboard_cache
 
-    with app.app_context():
-        challenge = Challenge.query.get(challenge_id)
-        if not challenge:
-            return
-        build_and_cache_leaderboard(challenge_id, is_frozen_view=False, force_rebuild=True)
-        if challenge.is_frozen:
-            build_and_cache_leaderboard(challenge_id, is_frozen_view=True, force_rebuild=True)
-
-        from utils.sse_utils import publish_leaderboard_update
-
-        publish_leaderboard_update(challenge_id)
+    # Leaderboard SSE updates are published only by recalculate_dirty_leaderboards,
+    # So this task just queues the challenge for that rebuild
+    invalidate_leaderboard_cache(challenge_id)
 
 
 @celery.task
-def run_backup(auto: bool = True, db_only: bool = False) -> Any:
-    """Celery task: create a pg_dump+uploads tarball backup."""
-    if not RUNS_INTERNAL:
-        return {"skipped": "role_not_internal"}
-    if not app:
-        return {"error": "no_app"}
-    return _do_backup(app, auto=auto, db_only=db_only)
+def run_backup(auto: bool = True, db_only: bool = False, scheduled_at: str | None = None) -> Any:
+    """Celery task: create a pg_dump+uploads tarball backup.
+
+    ``scheduled_at`` is set by ``check_and_backup``; the claim it identifies is
+    released however the backup ends, so a failed backup is retried at the next check.
+    """
+    try:
+        if not RUNS_INTERNAL:
+            return {"skipped": "role_not_internal"}
+        if not app:
+            return {"error": "no_app"}
+        return _do_backup(app, auto=auto, db_only=db_only, scheduled_at=scheduled_at)
+    finally:
+        if scheduled_at:
+            release_backup_dispatch(scheduled_at)
+
+
+_ACTIVE_BACKUP_INTERVAL = timedelta(minutes=20)
+_IDLE_BACKUP_INTERVAL = timedelta(hours=6)
+# The check itself runs every 20 min; the slack keeps beat jitter from skipping a run
+_BACKUP_SCHEDULE_SLACK = timedelta(minutes=1)
+
+
+def _backup_due(last_ts: Any, now: datetime, interval: timedelta) -> bool:
+    if isinstance(last_ts, bytes):
+        last_ts = last_ts.decode("utf-8")
+    if not isinstance(last_ts, str):
+        return True
+    try:
+        last = datetime.fromisoformat(last_ts)
+    except ValueError:
+        return True
+    return now - last >= interval - _BACKUP_SCHEDULE_SLACK
 
 
 @celery.task
 def check_and_backup() -> dict[str, Any]:
-    """Celery beat task: check deadlines and trigger backups (20min active / 6h idle)."""
+    """Celery beat task: schedule automatic backups.
+
+    The database is backed up every 20 min while a contest is active (every 6 h
+    otherwise); the uploads folder is included only every
+    BACKUP_UPLOADS_INTERVAL_SECONDS, because it dominates the backup size.
+
+    The schedule markers record successful backups only (the backup writes them),
+    so a failed backup is retried at the next check. While one is queued or running,
+    the dispatch claim keeps further checks from queueing a duplicate.
+    """
     if not RUNS_INTERNAL:
         return {"skipped": "role_not_internal"}
     if not app:
@@ -275,32 +329,36 @@ def check_and_backup() -> dict[str, Any]:
             (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
         ).count()
 
-        # General auto backup: every 20min when active, every 6h when idle
-        last_key = "backup:last_auto"
-        from utils.cache_utils import get_cached, get_redis_client, set_cached
+        from utils.cache_utils import get_coordination_client
 
-        r = get_redis_client()
-        if r:
-            last_ts = get_cached(last_key)
-            should_run = False
-            if last_ts:
-                last = (
-                    datetime.fromisoformat(last_ts)
-                    if isinstance(last_ts, str)
-                    else datetime.utcfromtimestamp(float(last_ts))
-                )
-                interval = timedelta(hours=6)
-                if active_count > 0:
-                    interval = timedelta(minutes=20)
-                if now - last >= interval:
-                    should_run = True
-            else:
-                should_run = True
-            if should_run:
-                set_cached(last_key, now.isoformat(), timeout=86400)
-                run_backup.delay(auto=True, db_only=False)
+        result: dict[str, Any] = {"active_competitions": active_count}
+        # The markers and the claim prevent duplicate backups, so they live on the
+        # Broker instance, which never evicts (the cache instance runs volatile-lru)
+        r = get_coordination_client()
+        if not r:
+            return result
+        scheduled_at = now.isoformat()
+        try:
+            interval = _ACTIVE_BACKUP_INTERVAL if active_count > 0 else _IDLE_BACKUP_INTERVAL
+            if not _backup_due(r.get(LAST_AUTO_BACKUP_KEY), now, interval):
+                return result
+            uploads_interval = timedelta(seconds=Config.BACKUP_UPLOADS_INTERVAL_SECONDS)
+            include_uploads = _backup_due(r.get(LAST_FULL_BACKUP_KEY), now, uploads_interval)
+            claimed = r.set(BACKUP_DISPATCH_KEY, scheduled_at, nx=True, ex=backup_dispatch_ttl())
+        except Exception as e:
+            logger.warning("check_and_backup: backup markers unavailable, skipping: %s", e)
+            return result
+        if not claimed:
+            result["backup"] = "in_progress"
+            return result
+        try:
+            run_backup.delay(auto=True, db_only=not include_uploads, scheduled_at=scheduled_at)
+        except Exception:
+            release_backup_dispatch(scheduled_at)
+            raise
+        result["backup"] = "full" if include_uploads else "db_only"
 
-    return {"active_competitions": active_count}
+    return result
 
 
 # Periodic watchdog: marks submissions as failed if stuck in queued/running for too long
@@ -354,7 +412,12 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         bound_worker = r.get(f"worker:attempt:{sub.celery_task_id}")
                         if isinstance(bound_worker, bytes):
                             bound_worker = bound_worker.decode()
-                        if not bound_worker or fb.get("worker_id") != bound_worker:
+                        # The lease expires after WORKER_ATTEMPT_LEASE_TTL without
+                        # Server contact, which is exactly when a worker falls back
+                        # To Redis; only a lease held by another worker disowns it
+                        if not fb.get("worker_id") or (
+                            bound_worker and fb.get("worker_id") != bound_worker
+                        ):
                             logger.warning(
                                 "Discarding unowned fallback for submission %s (worker %s)",
                                 sub.id,
@@ -400,14 +463,12 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
         # 2. Time out stuck submissions with dynamic per-task timeout
         timed_out_candidates = Submission.query.filter(
-            Submission.status.in_(
-                ["queued", "running", "building_env", "running_inference", "evaluating"]
-            ),
+            Submission.status.in_(ACTIVE_STATUSES),
             Submission.executed_at.is_(None),
         ).yield_per(500)
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
+            Submission.status.in_(RUNNING_STATUSES),
             Submission.executed_at.isnot(None),
         ).yield_per(500)
         now = utcnow()
@@ -426,7 +487,9 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     continue
                 reason = f"task time limit ({task_time_limit}s) exceeded"
             else:
-                if now - sub.created_at <= timedelta(hours=1):
+                # Config.CELERY_MESSAGE_EXPIRES stays at least 15 min below this cutoff,
+                # So a late pickup still has time for its image build and first report
+                if now - sub.created_at <= NEVER_PICKED_UP_CUTOFF:
                     continue
                 reason = "never picked up by a worker (1h+ queued)"
             sub.status = "failed"
@@ -488,7 +551,7 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
         recalculated_count = 0
 
         from models import Challenge
-        from services.leaderboard_service import build_and_cache_leaderboard
+        from services.leaderboard_service import rebuild_leaderboard
         from utils.sse_utils import publish_leaderboard_update
 
         with app.app_context():
@@ -499,12 +562,11 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
                         clear_dirty_leaderboard_version(r, cid, dirty_version)
                         continue
 
-                    # Rebuild cache
-                    build_and_cache_leaderboard(cid, is_frozen_view=False, force_rebuild=True)
-                    if challenge.is_frozen:
-                        build_and_cache_leaderboard(cid, is_frozen_view=True, force_rebuild=True)
+                    if not rebuild_leaderboard(cid):
+                        # Another rebuild holds the lock; keep the marker for the next run
+                        continue
 
-                    # Publish event for live SSE updates
+                    # The only publisher of leaderboard SSE updates
                     publish_leaderboard_update(cid)
                     clear_dirty_leaderboard_version(r, cid, dirty_version)
                     recalculated_count += 1
@@ -535,42 +597,29 @@ def sweep_stale_task_dirs() -> dict[str, Any]:
     return {"removed": run_stale_dir_sweep()}
 
 
+def _beat_entry(task: str, every_seconds: float, queue: str) -> dict[str, Any]:
+    """Schedule a periodic task whose message expires before the next run is sent.
+
+    Runs that wait behind slow work (or on a queue with no consumer) are dropped
+    instead of piling up and executing back to back.
+    """
+    return {
+        "task": task,
+        "schedule": every_seconds,
+        "options": {"queue": queue, "expires": every_seconds * 0.75},
+    }
+
+
 celery.conf.beat_schedule = {
-    "watchdog-every-5m": {
-        "task": "tasks.watchdog_stuck_submissions",
-        "schedule": 300.0,
-        "options": {"queue": "internal"},
-    },
-    "backup-check-every-20m": {
-        "task": "tasks.check_and_backup",
-        "schedule": 1200.0,
-        "options": {"queue": "internal"},
-    },
-    "recalculate-dirty-leaderboards-every-20s": {
-        "task": "tasks.recalculate_dirty_leaderboards",
-        "schedule": 20.0,
-        "options": {"queue": "internal"},
-    },
-    "docker-prune-weekly-cpu": {
-        "task": "tasks.prune_docker_images",
-        "schedule": 604800.0,  # Once a week (7 days)
-        "options": {"queue": "cpu_queue"},
-    },
-    "docker-prune-weekly-gpu": {
-        "task": "tasks.prune_docker_images",
-        "schedule": 604800.0,  # Once a week (7 days)
-        "options": {"queue": "gpu_queue"},
-    },
-    "task-dir-sweep-daily-cpu": {
-        "task": "tasks.sweep_stale_task_dirs",
-        "schedule": 86400.0,  # Once a day
-        "options": {"queue": "cpu_queue"},
-    },
-    "task-dir-sweep-daily-gpu": {
-        "task": "tasks.sweep_stale_task_dirs",
-        "schedule": 86400.0,  # Once a day
-        "options": {"queue": "gpu_queue"},
-    },
+    "watchdog-every-5m": _beat_entry("tasks.watchdog_stuck_submissions", 300.0, "internal"),
+    "backup-check-every-20m": _beat_entry("tasks.check_and_backup", 1200.0, "internal"),
+    "recalculate-dirty-leaderboards-every-20s": _beat_entry(
+        "tasks.recalculate_dirty_leaderboards", 20.0, "internal"
+    ),
+    "docker-prune-weekly-cpu": _beat_entry("tasks.prune_docker_images", 604800.0, "cpu_queue"),
+    "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
+    "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
+    "task-dir-sweep-daily-gpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "gpu_queue"),
 }
 
 # Role-gated task registration. 'internal' workers handle only system tasks;

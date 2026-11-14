@@ -7,7 +7,6 @@ import ToggleField from '../ui/ToggleField';
 import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
-import api from '../../services/ApiService';
 import { appendCappedLog } from '../../utils/logBuffer';
 import { formatScore } from '../../utils/formatScore';
 
@@ -38,9 +37,8 @@ function SubmissionViewer({
   killing = false,
 }) {
   const { t } = useTranslation();
+  // Parents key the viewer by submission id, so this state never leaks between submissions
   const [liveLogs, setLiveLogs] = useState('');
-  const [currentId, setCurrentId] = useState(null);
-  const [completedData, setCompletedData] = useState(null);
   const logRef = useRef(null);
   const pendingLogRef = useRef('');
   const flushTimerRef = useRef(null);
@@ -79,12 +77,10 @@ function SubmissionViewer({
 
   useEffect(() => cancelLogFlush, [cancelLogFlush]);
 
-  const displaySubmission = completedData ? { ...completedData, ...submission } : submission;
-  const isTerminal =
-    displaySubmission?.status === 'completed' || displaySubmission?.status === 'failed';
-  const displayLogs = isTerminal
-    ? displaySubmission?.logs || liveLogs
-    : liveLogs || displaySubmission?.logs;
+  const submissionId = submission?.id;
+  const isTerminal = submission?.status === 'completed' || submission?.status === 'failed';
+  // Finished submissions show the stored log from the REST detail
+  const displayLogs = isTerminal ? submission?.logs || liveLogs : liveLogs || submission?.logs;
 
   useEffect(() => {
     if (logRef.current) {
@@ -93,61 +89,35 @@ function SubmissionViewer({
         behavior: 'smooth',
       });
     }
-  }, [liveLogs, displaySubmission?.logs]);
+  }, [liveLogs, submission?.logs]);
 
-  useEffect(() => {
-    if (submission && submission.id !== currentId) {
-      setCurrentId(submission.id);
-      cancelLogFlush();
-      pendingLogRef.current = '';
-      setLiveLogs('');
-      setCompletedData(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submission?.id]);
-
-  const submissionIdRef = useRef(submission?.id);
-  useEffect(() => {
-    submissionIdRef.current = submission?.id;
-  }, [submission?.id]);
-
-  useSSE(submission ? `/api/submissions/${submission.id}/logs/live` : '', {
-    storeData: false,
+  // Only a running submission has a live log; a queued one opens the stream once the
+  // parent's poll sees it start, and a finished one is never replayed over SSE
+  const streamUrl =
+    submission?.status === 'running' ? `/api/submissions/${submissionId}/logs/live` : '';
+  useSSE(streamUrl, {
     // The server replays logs then sends the final status and closes the stream
     isTerminal: (data) => data.status === 'completed' || data.status === 'failed',
     onMessage: (data) => {
-      if (data.log) {
+      if (data.info === 'connected') {
+        // Every connection, including the browser's own reconnect, replays the whole log
+        cancelLogFlush();
+        pendingLogRef.current = '';
+        setLiveLogs('');
+      } else if (data.log) {
         queueLogLine(data.log);
       } else if (data.status) {
         flushLogs();
-        const alreadyFinished = submission.status === 'completed' || submission.status === 'failed';
-        if ((data.status === 'completed' || data.status === 'failed') && !alreadyFinished) {
-          const requestedId = submission.id;
-          api
-            .fetch(`/api/submissions/${requestedId}`)
-            .then((r) => {
-              if (!r.ok) throw new Error(`HTTP ${r.status}`);
-              return r.json();
-            })
-            .then((freshData) => {
-              if (submissionIdRef.current !== requestedId) return;
-              setCompletedData(freshData);
-              onSubmissionUpdate?.(freshData);
-            })
-            .catch((err) => {
-              console.error('Failed to fetch completed submission:', err);
-            });
+        if (data.status === 'completed' || data.status === 'failed') {
+          onSubmissionUpdate?.(submissionId);
         }
       }
     },
   });
 
-  const cells = useMemo(
-    () => parseCells(displaySubmission?.code_cells),
-    [displaySubmission?.code_cells],
-  );
+  const cells = useMemo(() => parseCells(submission?.code_cells), [submission?.code_cells]);
 
-  if (!displaySubmission) {
+  if (!submission) {
     return (
       <EmptyState
         minHeight={300}
@@ -160,9 +130,7 @@ function SubmissionViewer({
   const isCompetitor = currentUser?.role === 'competitor';
   const isAdminOrJury = currentUser?.role === 'admin' || currentUser?.role === 'jury';
   const showUserDemographics =
-    isAdminOrJury &&
-    displaySubmission.user &&
-    (displaySubmission.user.name || displaySubmission.user.username);
+    isAdminOrJury && submission.user && (submission.user.name || submission.user.username);
 
   return (
     <div className="flex flex-col gap-4">
@@ -171,33 +139,32 @@ function SubmissionViewer({
           <div>
             <div className="flex items-center gap-2.5 mb-1">
               <span className="font-mono text-xs text-slate-500">
-                {t('submissions.submission_id', { id: displaySubmission.id })}
+                {t('submissions.submission_id', { id: submission.id })}
               </span>
-              <Badge status={displaySubmission.status} />
-              {displaySubmission.detailed_status &&
-                displaySubmission.detailed_status !== displaySubmission.status && (
-                  <Badge status={displaySubmission.detailed_status} />
-                )}
-              {displaySubmission.is_baseline && (
+              <Badge status={submission.status} />
+              {submission.detailed_status && submission.detailed_status !== submission.status && (
+                <Badge status={submission.detailed_status} />
+              )}
+              {submission.is_baseline && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
                   {t('submissions.baseline_label')}
                 </span>
               )}
-              {displaySubmission.is_final_selection && (
+              {submission.is_final_selection && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
                   <Star className="w-3 h-3" />
                   {t('submissions.final_selection_star')}
                 </span>
               )}
-              {(displaySubmission.status === 'queued' || displaySubmission.status === 'running') &&
+              {(submission.status === 'queued' || submission.status === 'running') &&
                 (currentUser?.role === 'admin' ||
                   currentUser?.role === 'jury' ||
                   (currentUser?.role === 'competitor' &&
-                    displaySubmission.user?.id === currentUser?.id)) && (
+                    submission.user?.id === currentUser?.id)) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onKill && onKill(displaySubmission.id);
+                      onKill && onKill(submission.id);
                     }}
                     disabled={killing}
                     className="text-xs font-semibold px-3 py-1 rounded-lg border border-rose-600 bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -207,52 +174,50 @@ function SubmissionViewer({
                 )}
             </div>
 
-            {displaySubmission.user?.alias_id && (
+            {submission.user?.alias_id && (
               <span className="text-[11px] text-slate-400 font-mono">
-                {t('submissions.alias', { alias: displaySubmission.user?.alias_id })}
+                {t('submissions.alias', { alias: submission.user?.alias_id })}
               </span>
             )}
           </div>
           <div className="flex gap-4 items-start">
-            {displaySubmission.public_score != null && (
+            {submission.public_score != null && (
               <div className="text-right">
                 <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">
                   {t('submissions.public_score')}
                 </div>
                 <div className="font-mono text-base font-bold text-indigo-400">
-                  {formatScore(displaySubmission.public_score)}
+                  {formatScore(submission.public_score)}
                 </div>
               </div>
             )}
-            {displaySubmission.private_score != null && (
+            {submission.private_score != null && (
               <div className="text-right">
                 <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">
                   {t('submissions.private_score')}
                 </div>
                 <div className="font-mono text-base font-bold text-emerald-400">
-                  {formatScore(displaySubmission.private_score)}
+                  {formatScore(submission.private_score)}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {isCompetitor && displaySubmission.status === 'completed' && (
+        {isCompetitor && submission.status === 'completed' && (
           <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
             <ToggleField
-              id={`final-check-${displaySubmission.id}`}
-              checked={displaySubmission.is_final_selection}
-              disabled={
-                selectingFinal || displaySubmission.is_final_selection || isSelectionDisabled
-              }
-              onChange={() => onSelectFinal && onSelectFinal(displaySubmission.id)}
+              id={`final-check-${submission.id}`}
+              checked={submission.is_final_selection}
+              disabled={selectingFinal || submission.is_final_selection || isSelectionDisabled}
+              onChange={() => onSelectFinal && onSelectFinal(submission.id)}
               label={
-                displaySubmission.is_final_selection
+                submission.is_final_selection
                   ? t('submissions.selected_final_help')
                   : t('submissions.select_final_label')
               }
             />
-            {isSelectionDisabled && !displaySubmission.is_final_selection && (
+            {isSelectionDisabled && !submission.is_final_selection && (
               <p className="text-[10px] text-rose-400 mt-1.5 font-semibold">
                 {isSubmissionAfterDeadline
                   ? t('submissions.cannot_select_late')
@@ -269,39 +234,39 @@ function SubmissionViewer({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
               <div>
-                <strong>{t('submissions.name')}</strong> {displaySubmission.user.name}{' '}
-                {displaySubmission.user.surname}
+                <strong>{t('submissions.name')}</strong> {submission.user.name}{' '}
+                {submission.user.surname}
               </div>
               <div>
-                <strong>{t('submissions.username')}</strong> {displaySubmission.user.username}
+                <strong>{t('submissions.username')}</strong> {submission.user.username}
               </div>
-              {displaySubmission.user.grade && (
+              {submission.user.grade && (
                 <div>
-                  <strong>{t('submissions.grade')}</strong> {displaySubmission.user.grade}
+                  <strong>{t('submissions.grade')}</strong> {submission.user.grade}
                 </div>
               )}
-              {displaySubmission.user.school && (
+              {submission.user.school && (
                 <div>
-                  <strong>{t('submissions.school')}</strong> {displaySubmission.user.school}
+                  <strong>{t('submissions.school')}</strong> {submission.user.school}
                 </div>
               )}
-              {displaySubmission.user.city && (
+              {submission.user.city && (
                 <div>
-                  <strong>{t('submissions.city')}</strong> {displaySubmission.user.city}
+                  <strong>{t('submissions.city')}</strong> {submission.user.city}
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {displaySubmission.execution_time_ms != null && (
+        {submission.execution_time_ms != null && (
           <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
               {t('submissions.execution_time_heading') || 'Execution'}
             </div>
             <div className="text-xs text-slate-300">
               <strong>{t('submissions.execution_time')}</strong>{' '}
-              {`${displaySubmission.execution_time_ms} ms`}
+              {`${submission.execution_time_ms} ms`}
             </div>
           </div>
         )}
@@ -315,7 +280,7 @@ function SubmissionViewer({
               <div>
                 <strong>{t('submissions.celery_task_id')}</strong>{' '}
                 <span className="font-mono text-[11px] text-slate-400">
-                  {displaySubmission.celery_task_id || t('common.none')}
+                  {submission.celery_task_id || t('common.none')}
                 </span>
               </div>
             </div>
@@ -325,16 +290,16 @@ function SubmissionViewer({
         {displayLogs ? (
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              {displaySubmission.status === 'completed' || displaySubmission.status === 'failed'
+              {submission.status === 'completed' || submission.status === 'failed'
                 ? t('submissions.execution_log', 'Execution Log')
                 : t('submissions.execution_log_live', 'Execution Log (Live)')}
             </div>
             <pre
               ref={logRef}
               className={`code-panel text-xs font-mono ${
-                displaySubmission.status === 'completed'
+                submission.status === 'completed'
                   ? 'text-slate-200'
-                  : displaySubmission.status === 'failed'
+                  : submission.status === 'failed'
                     ? 'text-rose-400'
                     : 'text-indigo-300'
               }`}
