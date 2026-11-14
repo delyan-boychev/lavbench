@@ -21,9 +21,16 @@ from utils.dates import utcnow
 
 from .task_modules.submission_runner import run_eval_submission
 from .task_modules.system import (
+    BACKUP_DISPATCH_KEY,
+    LAST_AUTO_BACKUP_KEY,
+    LAST_FULL_BACKUP_KEY,
+    backup_dispatch_ttl,
+    release_backup_dispatch,
+    run_docker_prune,
+)
+from .task_modules.system import (
     run_backup as _do_backup,
 )
-from .task_modules.system import run_docker_prune
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +129,9 @@ celery.conf.update(
     },
 )
 
-# The watchdog fails a submission still queued after this long
+# The watchdog fails a submission whose container has not started after this long;
+# Config.CELERY_MESSAGE_EXPIRES must stay at least 15 min below it, because a worker
+# That takes a message just before it expires still has to build the image
 NEVER_PICKED_UP_CUTOFF = timedelta(hours=1)
 
 
@@ -256,17 +265,23 @@ def recalculate_leaderboard(challenge_id: Any) -> None:
 
 
 @celery.task
-def run_backup(auto: bool = True, db_only: bool = False) -> Any:
-    """Celery task: create a pg_dump+uploads tarball backup."""
-    if not RUNS_INTERNAL:
-        return {"skipped": "role_not_internal"}
-    if not app:
-        return {"error": "no_app"}
-    return _do_backup(app, auto=auto, db_only=db_only)
+def run_backup(auto: bool = True, db_only: bool = False, scheduled_at: str | None = None) -> Any:
+    """Celery task: create a pg_dump+uploads tarball backup.
+
+    ``scheduled_at`` is set by ``check_and_backup``; the claim it identifies is
+    released however the backup ends, so a failed backup is retried at the next check.
+    """
+    try:
+        if not RUNS_INTERNAL:
+            return {"skipped": "role_not_internal"}
+        if not app:
+            return {"error": "no_app"}
+        return _do_backup(app, auto=auto, db_only=db_only, scheduled_at=scheduled_at)
+    finally:
+        if scheduled_at:
+            release_backup_dispatch(scheduled_at)
 
 
-_LAST_BACKUP_KEY = "backup:last_auto"
-_LAST_FULL_BACKUP_KEY = "backup:last_auto_full"
 _ACTIVE_BACKUP_INTERVAL = timedelta(minutes=20)
 _IDLE_BACKUP_INTERVAL = timedelta(hours=6)
 # The check itself runs every 20 min; the slack keeps beat jitter from skipping a run
@@ -292,6 +307,10 @@ def check_and_backup() -> dict[str, Any]:
     The database is backed up every 20 min while a contest is active (every 6 h
     otherwise); the uploads folder is included only every
     BACKUP_UPLOADS_INTERVAL_SECONDS, because it dominates the backup size.
+
+    The schedule markers record successful backups only (the backup writes them),
+    so a failed backup is retried at the next check. While one is queued or running,
+    the dispatch claim keeps further checks from queueing a duplicate.
     """
     if not RUNS_INTERNAL:
         return {"skipped": "role_not_internal"}
@@ -312,26 +331,30 @@ def check_and_backup() -> dict[str, Any]:
         from utils.cache_utils import get_coordination_client
 
         result: dict[str, Any] = {"active_competitions": active_count}
-        # The markers prevent duplicate backups, so they live on the broker
-        # Instance, which never evicts (the cache instance runs volatile-lru)
+        # The markers and the claim prevent duplicate backups, so they live on the
+        # Broker instance, which never evicts (the cache instance runs volatile-lru)
         r = get_coordination_client()
         if not r:
             return result
+        scheduled_at = now.isoformat()
         try:
             interval = _ACTIVE_BACKUP_INTERVAL if active_count > 0 else _IDLE_BACKUP_INTERVAL
-            if not _backup_due(r.get(_LAST_BACKUP_KEY), now, interval):
+            if not _backup_due(r.get(LAST_AUTO_BACKUP_KEY), now, interval):
                 return result
             uploads_interval = timedelta(seconds=Config.BACKUP_UPLOADS_INTERVAL_SECONDS)
-            include_uploads = _backup_due(r.get(_LAST_FULL_BACKUP_KEY), now, uploads_interval)
-
-            marker_ttl = max(86400, 2 * Config.BACKUP_UPLOADS_INTERVAL_SECONDS)
-            r.set(_LAST_BACKUP_KEY, now.isoformat(), ex=marker_ttl)
-            if include_uploads:
-                r.set(_LAST_FULL_BACKUP_KEY, now.isoformat(), ex=marker_ttl)
+            include_uploads = _backup_due(r.get(LAST_FULL_BACKUP_KEY), now, uploads_interval)
+            claimed = r.set(BACKUP_DISPATCH_KEY, scheduled_at, nx=True, ex=backup_dispatch_ttl())
         except Exception as e:
             logger.warning("check_and_backup: backup markers unavailable, skipping: %s", e)
             return result
-        run_backup.delay(auto=True, db_only=not include_uploads)
+        if not claimed:
+            result["backup"] = "in_progress"
+            return result
+        try:
+            run_backup.delay(auto=True, db_only=not include_uploads, scheduled_at=scheduled_at)
+        except Exception:
+            release_backup_dispatch(scheduled_at)
+            raise
         result["backup"] = "full" if include_uploads else "db_only"
 
     return result
@@ -465,7 +488,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     continue
                 reason = f"task time limit ({task_time_limit}s) exceeded"
             else:
-                # Config.CELERY_MESSAGE_EXPIRES must stay at least this long
+                # Config.CELERY_MESSAGE_EXPIRES stays at least 15 min below this cutoff,
+                # So a late pickup still has time for its image build and first report
                 if now - sub.created_at <= NEVER_PICKED_UP_CUTOFF:
                     continue
                 reason = "never picked up by a worker (1h+ queued)"
