@@ -7,9 +7,16 @@ server {
     # no longer exhaust the browser's 6-connection HTTP/1.1 limit
     http2 on;
     server_name localhost;
-    # Default request body cap. Only the admin upload location inside /api
-    # raises it; the backend enforces each route's exact limit
+    # Default request body cap. Only the admin upload and worker report
+    # locations inside /api raise it; the backend enforces each route's limit
     client_max_body_size 10m;
+
+    # Answer oversized bodies in the API's error shape instead of nginx's HTML page
+    error_page 413 = @request_too_large;
+    location @request_too_large {
+        default_type application/json;
+        return 413 '{"error": "Request payload too large", "code": "ERR_PAYLOAD_TOO_LARGE"}';
+    }
 
     ssl_certificate     /etc/nginx/ssl/lavbench.crt;
     ssl_certificate_key /etc/nginx/ssl/lavbench.key;
@@ -60,6 +67,13 @@ server {
         # request URI then passes through unchanged
         location ~ "^/api/(challenges/[0-9a-fA-F-]{36}/tasks|tasks/[0-9a-fA-F-]{36}|challenges/import|admin/import-competitors-csv)$" {
             client_max_body_size 2g;
+            proxy_pass http://backend:5001;
+        }
+
+        # Evaluation workers post results and logs here. The backend truncates
+        # logs on receipt, but a verbose run's report can exceed the default cap
+        location ~ "^/api/(worker/|workers/logs$)" {
+            client_max_body_size 100m;
             proxy_pass http://backend:5001;
         }
     }
