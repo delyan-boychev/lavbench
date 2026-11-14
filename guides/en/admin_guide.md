@@ -310,12 +310,15 @@ The file is encrypted at rest with Fernet and never included in backups; a 404 m
 
 ## 7. Automated and Manual Backup Retention Rules
 
-LavBench maintains an automated backup subsystem to safeguard competition data. Each backup archive contains a complete PostgreSQL database dump along with compressed `uploads/` assets in a `.tar.gz` format.
+LavBench maintains an automated backup subsystem to safeguard competition data. Full archives contain a complete PostgreSQL database dump along with the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone.
 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
-| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Keeps the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
+
+A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). Rotated log files are not backed up.
 
 ---
 

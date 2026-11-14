@@ -23,8 +23,8 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Frontend** | React 19 + Vite + Vanilla/Tailwind CSS | SPA with SSE live updates, i18n (en/bg), JSDoc `@type` validation (`tsc --noEmit`). |
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API endpoints, Pydantic v2 request/response validation, SSE event streaming. |
 | **Primary Database** | PostgreSQL 15 | Users, challenges, stages, tasks, submissions, audit logs (`AuditLog`). |
-| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks. AOF persistence and `noeviction` protect queued work. |
-| **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Private, server-only cache: leaderboard caches, distributed locks, rate-limit counters, and JWT token blacklist (`CACHE_REDIS_URL`). Internal container — no host port; external workers never receive this URL. |
+| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks, distributed locks (submit, leaderboard), rate-limit counters, login failures, JWT revocations and backup markers. AOF persistence and `noeviction` protect queued work and these guarantees. |
+| **Dedicated Cache** | Redis (DB 1, `volatile-lru`, no persistence) | Private, server-only cache for recomputable data: leaderboard and status caches, SSE log replay lists and submission status (`CACHE_REDIS_URL`). When full it evicts the least recently used keys that have a TTL, so nothing stored here may be needed for correctness. Internal container — no host port; external workers never receive this URL. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
 | **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
@@ -226,10 +226,11 @@ SSE capacity is governed by `SSE_MAX_GLOBAL` (default `2000` concurrent connecti
 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
-| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Retains the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-Each backup archive contains a complete PostgreSQL database dump (`pg_dump`) along with compressed `uploads/` assets in a `.tar.gz` format.
+Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out. Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`.
 
 ---
 
@@ -249,7 +250,7 @@ else:
     reject task → Celery retry → dead-letter queue (/api/admin/dead-letters)
 ```
 
-On the `worker_ready` signal, workers write their hardware specifications to the Redis coordination client (`worker_spec:<hostname>`, 24h TTL), which are served via `/api/admin/workers/stats` and displayed in the Admin navbar. Worker registration is fully signal-driven — no registration task exists anymore.
+On the `worker_ready` signal, workers write their hardware specification to the Redis coordination client (`worker_spec:<hostname>`) and a background thread refreshes it every `WORKER_HEARTBEAT_SECONDS` (default 30), together with the queues the worker consumes and `last_seen`. The key expires after one day; a worker counts as online while its last heartbeat is younger than `WORKER_HEARTBEAT_STALE_SECONDS` (default 90). The heartbeats feed `GET /api/status` and `GET /api/admin/system-status` (section 11). Worker registration is fully signal-driven — no registration task exists.
 
 ---
 
