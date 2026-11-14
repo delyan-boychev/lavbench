@@ -409,6 +409,14 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - Plurals use i18next suffixes: define `key_one` / `key_other` (both locales) and call `t('key', { count })`; `check_translations.py` treats a plural variant as used when its base key is used
 - ~141 orphaned keys exist (safe to keep for future use)
 
+### Bulgarian Translations (`scripts/translate_gemini.py`)
+- Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon`; the key lives in the git-ignored `.gemini-api-key` and is sent in a header
+- `SYSTEM_PROMPT` in the script is the **single source of Bulgarian terminology** for the UI and every document (for example worker = работен възел, backup = резервно копие, sandbox = изолирана среда, grace period = гратисен период). To change a term, edit it there and re-run with `--force`
+- Documents automatically receive the real Bulgarian UI labels for the interface elements they mention, so guides match the app
+- The run ends with a consistency gate that fails on banned variants (`BANNED_TERMS`) and warns about untranslated English; run it alone with `--check`
+- The script only re-translates English files changed since their Bulgarian copy was last committed; use `--force` after editing English and Bulgarian in the same commit
+- Always review the Bulgarian diff before committing
+
 ### Adding a New Translation Key
 1. Add key + value to **both** `en/translation.json` and `bg/translation.json` (for counts, add `_one` / `_other` variants instead of a single key)
 2. If it's an `ERR_*` code, also add to `DEFAULT_ERROR_MESSAGES` in `backend/utils/error_utils.py`
