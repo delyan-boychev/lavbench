@@ -60,7 +60,3 @@ class SelectedCellsSchema(BaseModel):
                     f"Submission code may contain at most {Config.MAX_CODE_CELLS_CHARS} bytes.",
                 )
         return v
-
-
-class SubmitCodeSchema(SelectedCellsSchema):
-    task_id: str = Field(..., min_length=1)

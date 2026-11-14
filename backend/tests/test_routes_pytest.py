@@ -16,6 +16,7 @@ from config import Config
 from models import Challenge, Submission, Task, User, db
 from services.submission_service import calculate_submission_priority
 from utils.auth_utils import generate_token
+from utils.cache_utils import invalidate_leaderboard_cache
 
 
 class TestRouteLevelLogic:
@@ -327,7 +328,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 200
@@ -381,7 +382,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 200
@@ -407,7 +408,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 200
@@ -600,7 +601,7 @@ class TestRouteLevelLogic:
         jury_token = generate_token(jury_user.id, jury_user.role)
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 200
@@ -620,9 +621,11 @@ class TestRouteLevelLogic:
         other_comp.set_demographics("OtherName", "OtherSurname", "12", "OtherSchool", "OtherCity")
         db.session.add(other_comp)
         db.session.commit()
+        # Added straight to the DB, so drop the cached leaderboard the first request built
+        invalidate_leaderboard_cache(self.challenge.id, delete_only=True)
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         leaderboard = res.get_json()["leaderboard"]
@@ -632,7 +635,7 @@ class TestRouteLevelLogic:
         assert other_item["user"]["alias_id"] == "Other-Pseudonym"
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(jury_token),
         )
         assert res.status_code == 200
@@ -657,8 +660,8 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res_submit = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": [{"source": "cell"}]},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": [{"source": "cell"}]},
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res_submit.status_code == 403
@@ -715,7 +718,7 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
+            f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self.get_auth_header(self.competitor_token),
         )
         assert res.status_code == 200
@@ -892,36 +895,15 @@ class TestRouteLevelLogic:
         mock_delete.assert_any_call(f"challenge:{self.challenge.id}")
 
     @patch("tasks.evaluate_submission.delay")
-    def test_challenge_submission_route_and_ast_rule_engine(self, mock_celery):
+    def test_submission_route_and_ast_rule_engine(self, mock_celery):
         comp_header = self.get_auth_header(self.competitor_token)
-
-        payload = {"selected_cells": [{"source": "print('hello')"}]}
-        res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json=payload,
-            headers=comp_header,
-        )
-        assert res.status_code == 422
-        assert res.get_json()["code"] == "ERR_VALIDATION"
-
-        payload = {"selected_cells": [{"source": "print('hello')"}], "task_id": "99999"}
-        res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json=payload,
-            headers=comp_header,
-        )
-        assert res.status_code == 400
-        assert "Invalid task_id" in res.get_json()["error"]
 
         self.task.banned_imports = "os,sys,subprocess"
         db.session.commit()
 
-        payload = {
-            "selected_cells": [{"source": "import os\nprint('hack')"}],
-            "task_id": self.task.id,
-        }
+        payload = {"selected_cells": [{"source": "import os\nprint('hack')"}]}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
+            f"/api/tasks/{self.task.id}/submit",
             json=payload,
             headers=comp_header,
         )
@@ -932,21 +914,18 @@ class TestRouteLevelLogic:
         self.task.banned_imports = ""
         db.session.commit()
 
-        payload = {"selected_cells": [{"source": "!pip install requests"}], "task_id": self.task.id}
+        payload = {"selected_cells": [{"source": "!pip install requests"}]}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
+            f"/api/tasks/{self.task.id}/submit",
             json=payload,
             headers=comp_header,
         )
         assert res.status_code == 400
         assert "magic commands" in res.get_json()["error"]
 
-        payload = {
-            "selected_cells": [{"source": "# SUBMIT\nprint('hello')"}],
-            "task_id": self.task.id,
-        }
+        payload = {"selected_cells": [{"source": "# SUBMIT\nprint('hello')"}]}
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
+            f"/api/tasks/{self.task.id}/submit",
             json=payload,
             headers=comp_header,
         )
@@ -1358,13 +1337,8 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            data=json.dumps(
-                {
-                    "task_id": self.task.id,
-                    "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}],
-                }
-            ),
+            f"/api/tasks/{self.task.id}/submit",
+            data=json.dumps({"selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]}),
             content_type="application/json",
             headers=self.get_auth_header(self.competitor_token),
         )
@@ -1517,13 +1491,8 @@ class TestRouteLevelLogic:
         assert res.status_code in [403, 404]
 
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            data=json.dumps(
-                {
-                    "task_id": self.task.id,
-                    "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}],
-                }
-            ),
+            f"/api/tasks/{self.task.id}/submit",
+            data=json.dumps({"selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]}),
             content_type="application/json",
             headers=self.get_auth_header(self.competitor_token),
         )
@@ -1558,13 +1527,8 @@ class TestRouteLevelLogic:
         assert len(res.get_json()["tasks"]) == 1
 
         res = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            data=json.dumps(
-                {
-                    "task_id": self.task.id,
-                    "selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}],
-                }
-            ),
+            f"/api/tasks/{self.task.id}/submit",
+            data=json.dumps({"selected_cells": [{"id": 1, "type": "code", "source": "print(1)"}]}),
             content_type="application/json",
             headers=self.get_auth_header(self.competitor_token),
         )
@@ -1744,23 +1708,6 @@ class TestRouteLevelLogic:
             log["target_user_id"] == str(self.competitor.id) and log["new_score"] == 60
             for log in listed
         )
-
-    def test_results_export(self):
-        res_comp = self.client.get(
-            f"/api/challenges/{self.challenge.id}/export-results",
-            headers=self.get_auth_header(self.competitor_token),
-        )
-        assert res_comp.status_code == 403
-
-        res_admin = self.client.get(
-            f"/api/challenges/{self.challenge.id}/export-results",
-            headers=self.get_auth_header(self.admin_token),
-        )
-        assert res_admin.status_code == 200
-        assert res_admin.mimetype == "text/csv"
-        csv_data = res_admin.data.decode("utf-8")
-        assert "Rank,Username,Alias ID" in csv_data
-        assert "--- SCORE CORRECTION AUDIT LOG ---" in csv_data
 
     def test_stream_submission_logs(self):
         sub = Submission(

@@ -38,11 +38,9 @@ from schemas.responses import (
 )
 from schemas.stage import (
     CreateStageSchema,
-    CreateTestStageSchema,
     RevealResultsSchema,
     UpdateStageSchema,
 )
-from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -1125,86 +1123,6 @@ def finalize_stage(
     invalidate_entity_cache(challenge_id)
 
     return stage.to_dict(challenge.timezone or "UTC")
-
-
-@challenges_bp.route("/<uuid:challenge_id>/test-stage", methods=["POST"])
-@login_required
-@role_required(["admin", "jury"])
-@jury_access_required
-@api.validate(
-    json=CreateTestStageSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
-    tags=["Challenges"],
-    security=[{"cookieAuth": []}],
-)
-def create_test_stage(
-    challenge_id: Any, json: CreateTestStageSchema
-) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
-    """Create a test stage before the competition starts for testing purposes."""
-    challenge = db.get_or_404(Challenge, challenge_id)
-
-    start_time = json.start_time
-    end_time = json.end_time
-
-    if not start_time or not end_time:
-        return err("ERR_MISSING_DATES", 400, message="start_time and end_time are required.")
-
-    if start_time.tzinfo is not None:
-        start_time = start_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-    if end_time.tzinfo is not None:
-        end_time = end_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-
-    now = utcnow()
-
-    if now >= challenge.start_time:
-        return err(
-            "ERR_COMPETITION_STARTED",
-            400,
-            message="Cannot create a test stage after the competition has started.",
-        )
-
-    if end_time > challenge.start_time:
-        return err(
-            "ERR_TEST_STAGE_AFTER_COMP_START",
-            400,
-            message="Test stage must end before the competition starts.",
-        )
-
-    if any(s.is_test for s in challenge.stages):
-        return err(
-            "ERR_TEST_STAGE_EXISTS",
-            400,
-            message="A test stage already exists for this competition.",
-        )
-
-    try:
-        stage = _create_test_stage_for_challenge(challenge, start_time, end_time)
-    except ValueError as e:
-        return err("ERR_INVALID_DATE", 400, message=str(e))
-
-    invalidate_challenge_cache(challenge_id)
-
-    return stage.to_dict(challenge.timezone or "UTC"), 201
-
-
-@challenges_bp.route("/<uuid:challenge_id>/export-results", methods=["GET"])
-@login_required
-@role_required(["admin", "jury"])
-@jury_access_required
-@api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
-def export_results(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
-    """Export comprehensive competition results as CSV with ranks, scores, and audit log."""
-    challenge = db.get_or_404(Challenge, challenge_id)
-    csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
-
-    response = FlaskResponse(
-        csv_data,
-        mimetype="text/csv",
-        headers={
-            "Content-disposition": f"attachment; filename=challenge_{challenge_id}_export.csv"
-        },
-    )
-    return response
 
 
 @challenges_bp.route("/<uuid:challenge_id>/export", methods=["GET"])

@@ -159,10 +159,7 @@ class TestServiceSandboxAndPriority:
 
     def test_challenge_csv_generation(self):
         from models import Challenge, Submission, User
-        from services.challenge_service import (
-            generate_exported_results_csv,
-            generate_scores_csv,
-        )
+        from services.challenge_service import generate_scores_csv
 
         challenge = Challenge(
             title="Test Challenge",
@@ -205,7 +202,3 @@ class TestServiceSandboxAndPriority:
         csv_scores = generate_scores_csv(challenge)
         assert "competitor1" in csv_scores
         assert "Total Score" in csv_scores
-
-        csv_exported = generate_exported_results_csv(challenge)
-        assert "competitor1" in csv_exported
-        assert "Aggregated Private Score" in csv_exported

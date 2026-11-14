@@ -5,26 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-EXTENSION_MAP = {
-    ".ipynb": "notebook",
-    ".csv": "csv",
-    ".py": "python",
-    ".parquet": "parquet",
-    ".json": "json",
-    ".txt": "text",
-    ".tsv": "tsv",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".md": "markdown",
-    ".png": "image",
-    ".jpg": "image",
-    ".jpeg": "image",
-    ".gif": "image",
-    ".svg": "image",
-    ".pdf": "pdf",
-    ".zip": "archive",
-}
-
 KNOWN_DANGEROUS_EXTENSIONS = {
     ".exe",
     ".com",
@@ -47,20 +27,6 @@ KNOWN_DANGEROUS_EXTENSIONS = {
     ".bin",
 }
 
-KNOWN_DANGEROUS_MAGIC = [
-    (b"MZ", "Windows executable"),
-    (b"\x7fELF", "ELF binary"),
-    (b"\xca\xfe\xba\xbe", "Java class"),
-    (b"\x50\x4b\x03\x04", "ZIP archive"),
-    (b"\x1f\x8b", "GZip archive"),
-    (b"\x42\x5a\x68", "BZip2 archive"),
-    (b"\x52\x61\x72\x21\x1a\x07", "RAR archive"),
-    (b"\x25\x50\x44\x46", "PDF"),
-    (b"\x89\x50\x4e\x47", "PNG image"),
-    (b"\xff\xd8\xff", "JPEG image"),
-    (b"#!", "Shebang script"),
-]
-
 
 def validate_extension(filename: str, allowed_extensions: set[str]) -> tuple[bool, str | None]:
     """Case-insensitive extension check. Returns (is_valid, error_msg)."""
@@ -73,15 +39,6 @@ def validate_extension(filename: str, allowed_extensions: set[str]) -> tuple[boo
             False,
             f"File extension '.{ext}' is not allowed. Allowed: {', '.join(allowed_extensions)}",
         )
-    return True, None
-
-
-def validate_mime_type(mimetype: str, allowed_mime_types: set[str]) -> tuple[bool, str | None]:
-    """Validate MIME type from request.files[].mimetype."""
-    if not mimetype or mimetype == "application/octet-stream":
-        return True, None
-    if allowed_mime_types and mimetype not in allowed_mime_types:
-        return False, f"MIME type '{mimetype}' is not allowed."
     return True, None
 
 
@@ -126,16 +83,6 @@ def validate_csv_content(content_bytes: bytes) -> tuple[bool, str | None, str | 
     if not text.strip():
         return False, "CSV file is empty.", None
     return True, None, text
-
-
-def check_dangerous_magic(content_bytes: bytes) -> tuple[bool, str | None]:
-    """Check file header bytes for known dangerous signatures.
-    Returns (is_dangerous, description) or (False, None) if safe."""
-    header = content_bytes[:8]
-    for magic, desc in KNOWN_DANGEROUS_MAGIC:
-        if header.startswith(magic):
-            return True, desc
-    return False, None
 
 
 def check_dangerous_extension(filename: str) -> bool:

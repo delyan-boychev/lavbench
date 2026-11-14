@@ -745,61 +745,6 @@ class TestGetTaskSubmissions:
         assert resp.status_code == 401
 
 
-class TestGetTaskLeaderboard:
-    @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, auth_headers, redis_flush):
-        self.client = client
-        self._auth = auth_headers
-        self.challenge = Challenge(
-            title="Test",
-            description="Test",
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=2),
-            end_time=utcnow() + timedelta(hours=2),
-            is_frozen=False,
-        )
-        db.session.add(self.challenge)
-        db.session.flush()
-        self.task = Task(
-            title="Task 1",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            max_submissions_per_period=10,
-            gpu_required=False,
-        )
-        db.session.add(self.task)
-        self.admin = User(username="admin", password_hash="x", role="admin", alias_id="A1")
-        db.session.add(self.admin)
-        db.session.commit()
-        self.admin_token = generate_token(self.admin.id, role="admin")
-
-    @patch("routes.tasks.get_task_leaderboard_data")
-    def test_returns_leaderboard_data(self, mock_get_data):
-        mock_get_data.return_value = {"leaderboard": [{"rank": 1, "score": 0.95}]}
-        resp = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
-            headers=self._auth(self.admin_token),
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "leaderboard" in data
-
-    @patch("routes.tasks.get_task_leaderboard_data")
-    def test_returns_403_on_error(self, mock_get_data):
-        mock_get_data.return_value = {"error": "Access denied"}
-        resp = self.client.get(
-            f"/api/tasks/{self.task.id}/leaderboard",
-            headers=self._auth(self.admin_token),
-        )
-        assert resp.status_code == 403
-
-    def test_unauthenticated_returns_401(self):
-        resp = self.client.get(f"/api/tasks/{self.task.id}/leaderboard")
-        assert resp.status_code == 401
-
-
 class TestWorkerDownloadTaskFile:
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush, app):

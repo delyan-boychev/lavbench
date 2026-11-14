@@ -15,7 +15,6 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
-from config import Config
 from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
@@ -26,30 +25,22 @@ from schemas.responses import (
     SubmissionLightResponse,
     SubmissionResponse,
     SubmissionsListResponse,
-    SubmitResponse,
 )
-from schemas.submission import SubmitCodeSchema
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import (
-    check_execution_rules,
     get_best_submission,
     is_submission_eligible,
     submission_deadline,
-    validate_submission_allowed,
 )
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
-    cache_lock,
-    get_queue_depth,
     get_redis_client,
     invalidate_leaderboard_cache,
     submission_logs_key,
 )
 from utils.dates import utcnow
-from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
+from utils.error_utils import err
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
-from utils.json_utils import safe_json_loads
-from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
 from utils.request_helpers import end_db_transaction
 from utils.spec import api
@@ -126,160 +117,6 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
         cells.append({"id": idx, "type": cell_type, "source": source})
 
     return ParseNotebookResponse(filename=file.filename, cells=cells)
-
-
-@submissions_bp.route("/challenges/<uuid:challenge_id>/submit", methods=["POST"])
-@login_required
-@jury_access_required
-@rate_limit(max_requests=30, window_seconds=60)
-@api.validate(
-    json=SubmitCodeSchema,
-    tags=["Submissions"],
-    security=[{"cookieAuth": []}],
-    resp=Response(HTTP_202=SubmitResponse, HTTP_422=ErrorResponse),
-)
-def submit_code(
-    challenge_id: Any, json: SubmitCodeSchema
-) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
-    """Submit parsed code cells for a task."""
-    import json as jsonlib
-
-    user_id = request.user["user_id"]
-    user_role = request.user["role"]
-
-    if user_role == "competitor":
-        from utils.access import ensure_registered
-
-        if not ensure_registered(user_id, challenge_id):
-            return err("ERR_NOT_REGISTERED", 403)
-
-    challenge = db.get_or_404(Challenge, challenge_id)
-
-    task_id = json.task_id
-    selected_cells = json.selected_cells
-
-    task = db.session.get(Task, task_id)
-
-    blocked = validate_submission_allowed(user_id, user_role, task, challenge)
-    if blocked:
-        return blocked
-
-    if task and task.problem_codes:
-        # Strict readiness gate: any build/labels/HF/baseline problem blocks
-        # Submissions and reports every root cause (translated client-side)
-        codes = {c for c in task.problem_codes if isinstance(c, str)}
-        problems = [
-            {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}
-            for code in sorted(codes)
-        ]
-        return err("ERR_TASK_NOT_READY", 403, problems=problems)
-
-    if not task or str(task.challenge_id) != str(challenge_id):
-        return err("ERR_INVALID_TASK_ID", 400)
-
-    # AST and general rule validation
-
-    passed, err_msg = check_execution_rules(task, selected_cells)
-    if not passed:
-        return err("ERR_AST_RULE_FAILED", 400, message=err_msg)
-
-    # Atomic rate-limited submission creation via Redis lock
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge_id}"
-
-    with cache_lock(lock_key, ttl=10) as acquired:
-        if not acquired:
-            return err("ERR_SUBMIT_LOCKED", 429)
-
-        today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        submission_count = Submission.query.filter(
-            Submission.user_id == user_id,
-            Submission.challenge_id == challenge_id,
-            Submission.created_at >= today_start,
-        ).count()
-
-        if submission_count >= challenge.max_eval_requests:
-            return err(
-                "ERR_DAILY_LIMIT_REACHED",
-                429,
-                message=(
-                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
-                ),
-            )
-
-        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-            return err(
-                "ERR_QUEUE_FULL",
-                429,
-                message=(
-                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                    "Please try again later."
-                ),
-            )
-
-        # Create submission
-        submission = Submission(
-            user_id=user_id,
-            challenge_id=challenge_id,
-            task_id=task.id,
-            status="queued",
-            code_cells=jsonlib.dumps(selected_cells),
-        )
-        db.session.add(submission)
-        db.session.commit()
-
-    # Trigger Celery Task asynchronously
-    from services.submission_service import (
-        calculate_submission_priority,
-    )
-    from tasks import evaluate_submission
-
-    task_files_list = safe_json_loads(task.files, [])
-
-    task.get_hf_api_key() or ""
-
-    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
-    submission.celery_task_id = attempt_id
-    db.session.commit()
-
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=task_files_list,
-        gpu_required=gpu_required,
-    )
-
-    priority = calculate_submission_priority(user_id, user_role)
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-
-    try:
-        evaluate_submission.apply_async(
-            args=[submission.id, metadata],
-            priority=priority,
-            queue=queue_name,
-            expires=Config.CELERY_MESSAGE_EXPIRES,
-            task_id=attempt_id,
-        )
-    except Exception as e:
-        submission.status = "failed"
-        submission.detailed_status = "failed"
-        submission.logs = f"Submission queue unavailable: {e}"
-        db.session.commit()
-        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
-
-    return SubmitResponse(
-        message="Submission received and queued for execution.",
-        submission_id=submission.id,
-        status=submission.status,
-    ), 202
 
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])

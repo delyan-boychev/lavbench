@@ -49,23 +49,5 @@ class UpdateStageSchema(BaseModel):
         return self
 
 
-class CreateTestStageSchema(BaseModel):
-    start_time: datetime = Field(...)
-    end_time: datetime = Field(...)
-
-    @field_validator("start_time", "end_time", mode="before")
-    @classmethod
-    def _parse_dt(cls, v: Any) -> datetime | None:
-        return _parse_datetime_strict(v)
-
-    @model_validator(mode="after")
-    def check_dates(self) -> Self:
-        if self.end_time and self.start_time and self.end_time <= self.start_time:
-            raise SchemaError(
-                "ERR_INVALID_DATE_RANGE", "Test stage end_time must be after start_time."
-            )
-        return self
-
-
 class RevealResultsSchema(BaseModel):
     reveal_results: bool | None = Field(default=None)
