@@ -11,10 +11,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from utils.cache_utils import (
     DIRTY_CHALLENGES_SET,
     DIRTY_LEADERBOARD_VERSIONS,
+    KOMBU_PRIORITY_SEP,
+    KOMBU_PRIORITY_STEPS,
     clear_dirty_leaderboard_version,
     get_coordination_client,
     get_dirty_leaderboard_versions,
     get_queue_depth,
+    get_queue_depths,
     get_redis_client,
     invalidate_leaderboard_cache,
     log_dead_letter,
@@ -64,20 +67,81 @@ class TestQueueDepth:
             if before == 0:
                 r.delete("celery")
 
-    def test_counts_priority_subqueues(self, redis_flush):
-        """Celery stores priority>0 messages under `{queue}@N` keys."""
+    def test_counts_messages_kombu_puts_on_priority_lists(self, redis_flush):
+        """Messages sent with priority 3..9 land on separate lists, which count too."""
+        from kombu import Connection, Exchange, Queue
+
+        from config import Config
+
         r = _coordination()
-        base = r.llen("mtest_queue")
-        svc_keys = [k.decode() for k in r.keys("mtest_queue@*")] if r.keys("mtest_queue@*") else []
+        queue = Queue("mtest_queue", Exchange("mtest_queue", type="direct"), "mtest_queue")
+        with Connection(Config.CELERY_BROKER_URL) as conn:
+            producer = conn.Producer()
+            for priority in (0, 1, 3, 5, 8, 9):
+                producer.publish(
+                    {"priority": priority},
+                    exchange=queue.exchange,
+                    routing_key="mtest_queue",
+                    declare=[queue],
+                    priority=priority,
+                )
         try:
-            r.rpush("mtest_queue", "base-msg")
-            r.rpush("mtest_queue@8", "prio-msg-1")
-            r.rpush("mtest_queue@0", "prio-msg-2")
-            assert get_queue_depth("mtest_queue") == base + 3
+            assert len(r.keys("mtest_queue*")) > 1, "kombu used no separate priority list"
+            assert get_queue_depth("mtest_queue") == 6
+            assert get_queue_depths(["mtest_queue", "mtest_other"]) == {
+                "mtest_queue": 6,
+                "mtest_other": 0,
+            }
         finally:
-            r.delete("mtest_queue")
-            for k in svc_keys:
-                r.delete(k)
+            for key in r.keys("mtest_queue*"):
+                r.delete(key)
+
+    def test_priority_layout_matches_kombu_and_the_celery_app(self):
+        from kombu.transport.redis import Channel
+
+        import tasks
+
+        assert Channel.sep == KOMBU_PRIORITY_SEP
+        assert tuple(Channel.priority_steps) == KOMBU_PRIORITY_STEPS
+        overrides = tasks.celery.conf.broker_transport_options
+        assert "sep" not in overrides
+        assert "priority_steps" not in overrides
+
+    def test_all_queues_are_read_in_one_round_trip_without_a_scan(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        broker = MagicMock()
+        pipe = broker.pipeline.return_value
+        pipe.execute.return_value = [2, 0, 1, 0, 5, 1, 0, 0]
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
+
+        assert get_queue_depths(["cpu_queue", "gpu_queue"]) == {"cpu_queue": 3, "gpu_queue": 6}
+        pipe.execute.assert_called_once_with()
+        keys = [call.args[0] for call in pipe.llen.call_args_list]
+        assert keys == [
+            "cpu_queue",
+            "cpu_queue\x06\x163",
+            "cpu_queue\x06\x166",
+            "cpu_queue\x06\x169",
+            "gpu_queue",
+            "gpu_queue\x06\x163",
+            "gpu_queue\x06\x166",
+            "gpu_queue\x06\x169",
+        ]
+        broker.scan.assert_not_called()
+        broker.scan_iter.assert_not_called()
+        broker.keys.assert_not_called()
+
+    def test_depths_fail_open(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: None)
+        assert get_queue_depths(["cpu_queue"]) == {"cpu_queue": 0}
+
+        broker = MagicMock()
+        broker.pipeline.return_value.execute.side_effect = ConnectionError("down")
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
+        assert get_queue_depths(["cpu_queue", "gpu_queue"]) == {"cpu_queue": 0, "gpu_queue": 0}
 
 
 class TestInvalidateLeaderboardCache:

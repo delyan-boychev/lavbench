@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager, suppress
 from typing import Any
 
@@ -26,6 +26,12 @@ _sse_pools_pid: int | None = None
 DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
 
+# Kombu's Redis transport keeps one list per priority step: step 0 is the bare queue
+# Name, the others are "{queue}\x06\x16{step}". These are kombu's defaults, which the
+# Celery app does not override (tests pin both against kombu)
+KOMBU_PRIORITY_SEP = "\x06\x16"
+KOMBU_PRIORITY_STEPS = (0, 3, 6, 9)
+
 _MIGRATE_DIRTY_SET_SCRIPT = """
 local members = redis.call('smembers', KEYS[1])
 for _, challenge_id in ipairs(members) do
@@ -35,6 +41,13 @@ if #members > 0 then
     redis.call('del', KEYS[1])
 end
 return #members
+"""
+
+_DELETE_IF_VALUE_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
 """
 
 _CLEAR_DIRTY_VERSION_SCRIPT = """
@@ -199,6 +212,11 @@ def get_sse_client() -> redis_lib.Redis[Any] | None:
     return redis_lib.Redis(connection_pool=pool)
 
 
+def delete_if_value(r: redis_lib.Redis[Any], key: str, value: str) -> bool:
+    """Atomically delete ``key`` only while it still holds ``value`` (its owner token)."""
+    return bool(r.eval(_DELETE_IF_VALUE_SCRIPT, 1, key, value))  # type: ignore[no-untyped-call]
+
+
 @contextmanager
 def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     """Context manager: acquires a Redis lock (SET NX), releases on exit.
@@ -221,13 +239,7 @@ def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     finally:
         if got and r:
             try:
-                lua_script = """
-                if redis.call('get', KEYS[1]) == ARGV[1] then
-                    return redis.call('del', KEYS[1])
-                end
-                return 0
-                """
-                r.eval(lua_script, 1, lock_key, owner)  # type: ignore[no-untyped-call]
+                delete_if_value(r, lock_key, owner)
             except Exception as e:
                 logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
 
@@ -253,31 +265,43 @@ def log_dead_letter(
         logger.exception("log_dead_letter failed")
 
 
-def get_queue_depth(queue_name: str) -> int:
-    """Return the number of messages currently pending on a Celery queue.
+def _priority_list_keys(queue_name: str) -> list[str]:
+    """Return the broker lists holding one queue's messages, one per priority step."""
+    return [
+        queue_name if step == 0 else f"{queue_name}{KOMBU_PRIORITY_SEP}{step}"
+        for step in KOMBU_PRIORITY_STEPS
+    ]
 
-    Includes priority sub-queues (Celery stores messages with ``priority=N``
-    under ``{queue}@{N}`` keys, e.g. ``cpu_queue@0`` / ``cpu_queue@8``, so the
-    bare key alone would undercount). Fails open (returns 0) when Redis is
-    unavailable so submissions are never rejected because of a monitoring
-    hiccup.
+
+def get_queue_depths(queue_names: Iterable[str]) -> dict[str, int]:
+    """Return the number of messages pending on each Celery queue, in one round trip.
+
+    The priority lists have fixed names, so one pipelined LLEN per list replaces a
+    keyspace SCAN. Fails open (every queue reads 0) when Redis is unavailable, so
+    submissions are never rejected because of a monitoring hiccup.
     """
+    names = list(dict.fromkeys(queue_names))
+    depths = dict.fromkeys(names, 0)
     r = get_coordination_client()
-    if not r:
-        return 0
+    if not r or not names:
+        return depths
     try:
-        total = int(r.llen(queue_name) or 0)
-        cursor = 0
-        while True:
-            cursor, keys = r.scan(cursor=cursor, match=f"{queue_name}@*", count=500)
-            for k in keys:
-                total += int(r.llen(k) or 0)
-            if cursor == 0:
-                break
-        return total
+        pipe = r.pipeline(transaction=False)
+        for name in names:
+            for key in _priority_list_keys(name):
+                pipe.llen(key)
+        lengths = iter(pipe.execute())
+        for name in names:
+            depths[name] = sum(int(next(lengths) or 0) for _ in KOMBU_PRIORITY_STEPS)
     except Exception:
-        logger.exception("Failed to read queue depth for %s", queue_name)
-        return 0
+        logger.exception("Failed to read queue depths for %s", ", ".join(names))
+        return dict.fromkeys(names, 0)
+    return depths
+
+
+def get_queue_depth(queue_name: str) -> int:
+    """Return the number of messages pending on one Celery queue (see ``get_queue_depths``)."""
+    return get_queue_depths([queue_name])[queue_name]
 
 
 def get_dirty_leaderboard_versions(r: redis_lib.Redis[Any]) -> dict[str, int]:
