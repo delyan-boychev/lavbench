@@ -378,7 +378,7 @@ make edit-worker
 
 ### System Status Panel
 
-The **Workers** panel in the Admin Panel (admins and jury) polls `GET /api/admin/system-status` every 15 seconds. It never queries the workers directly; everything comes from worker heartbeats, the broker and the database:
+The **Workers and queues** panel in the Admin Panel (admins and jury) polls `GET /api/admin/system-status` every 15 seconds. It never queries the workers directly; everything comes from worker heartbeats, the broker and the database:
 - **Status**: the overall status and its `api` and `scoring` components, in Statuspage terms (`operational`, `degraded_performance`, `partial_outage`, `major_outage`).
 - **Queues**: live consumers and pending messages for each evaluation queue (`cpu_queue`, `gpu_queue`).
 - **Workers**: every worker that has sent a heartbeat, with its queues, online or stale state, last heartbeat, concurrency, CPU cores, RAM and GPU. Workers send a heartbeat every 30 seconds (`WORKER_HEARTBEAT_SECONDS`) and count as stale after 90 seconds (`WORKER_HEARTBEAT_STALE_SECONDS`).

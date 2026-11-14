@@ -537,7 +537,7 @@
     "competitor_registrations": "Competitor Registrations",
     "database_backup": "Database Backup",
     "user_management": "User Management",
-    "workers_resources": "Workers & Resources",
+    "workers_resources": "Workers and queues",
     "edit_competition": "Edit Competition: {{title}}",
     "active_competitions": "Active Competitions",
     "competitions_pagination_item": "competitions",

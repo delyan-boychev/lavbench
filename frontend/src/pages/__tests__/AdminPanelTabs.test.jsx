@@ -119,7 +119,7 @@ describe('AdminPanel – tab navigation', () => {
     expect(btn).toBeInTheDocument();
   });
 
-  it('clicking "Workers & Resources" polls the system status and opens no stream', async () => {
+  it('clicking "Workers and queues" polls the system status and opens no stream', async () => {
     const streams = [];
     global.EventSource = class {
       constructor(url) {
@@ -134,7 +134,7 @@ describe('AdminPanel – tab navigation', () => {
         : Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } }),
     );
     renderWithProviders(<AdminPanel />);
-    const btn = screen.getByText('Workers & Resources');
+    const btn = screen.getByText('Workers and queues');
     await act(async () => fireEvent.click(btn));
     expect(api.get).toHaveBeenCalledWith('/admin/system-status', expect.anything());
     expect(streams).toEqual([]);
@@ -234,7 +234,7 @@ describe('AdminPanel – workers tab polling', () => {
       ),
     );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
+    await act(async () => fireEvent.click(screen.getByText('Workers and queues')));
     expect(await screen.findByText('celery@gpu-0')).toBeInTheDocument();
     expect(screen.getByText('Stale')).toBeInTheDocument();
   });
@@ -248,7 +248,7 @@ describe('AdminPanel – workers tab polling', () => {
       ),
     );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
+    await act(async () => fireEvent.click(screen.getByText('Workers and queues')));
     expect(await screen.findByRole('alert')).toHaveTextContent('An unexpected error occurred');
   });
 });

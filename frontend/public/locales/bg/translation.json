@@ -537,7 +537,7 @@
     "competitor_registrations": "Регистрации на състезатели",
     "database_backup": "Резервно копие на базата данни",
     "user_management": "Управление на потребители",
-    "workers_resources": "Работни възли и ресурси",
+    "workers_resources": "Работни възли и опашки",
     "edit_competition": "Редактиране на състезание: {{title}}",
     "active_competitions": "Активни състезания",
     "competitions_pagination_item": "състезания",

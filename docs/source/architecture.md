@@ -259,7 +259,7 @@ On the `worker_ready` signal, workers write their hardware specifications to the
 | :--- | :--- | :--- |
 | `GET /api/health` | Public | Liveness: database, cache Redis, broker Redis and disk. Returns 200 or 503 and is used by the container health checks. It never checks workers, so a missing worker cannot make the API look down. |
 | `GET /api/status` | Public | Coarse status for uptime checks, using the Statuspage words `operational`, `degraded_performance`, `partial_outage` and `major_outage`. Cached for `STATUS_CACHE_SECONDS` (default 30). |
-| `GET /api/admin/system-status` | Admin, jury | The detail behind the status: queues, workers and submission counts. Shown in the Admin Panel's Workers panel, which polls it every 15 seconds. |
+| `GET /api/admin/system-status` | Admin, jury | The detail behind the status: queues, workers and submission counts. Shown in the Admin Panel's **Workers and queues** panel, which polls it every 15 seconds. |
 
 Both status endpoints are computed from worker heartbeats, broker queue lengths and the database. Web processes never call Celery `inspect`.
 
