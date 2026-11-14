@@ -1,6 +1,7 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, Upload, X } from 'lucide-react';
+import FileDropZone from './FileDropZone';
 
 export default function FileUploader({
   files = [],
@@ -18,15 +19,13 @@ export default function FileUploader({
   hideFileList = false,
 }) {
   const { t } = useTranslation();
-  const inputRef = useRef(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     if (files.length > 0 || existingFiles.length > 0) setError(false);
   }, [files, existingFiles]);
 
-  const handleFiles = (e) => {
-    const incoming = Array.from(e.target.files);
+  const handleFiles = (incoming) => {
     if (multiple) {
       onChange((prev) => {
         const existingNames = new Set(prev.map((f) => f.name));
@@ -38,7 +37,6 @@ export default function FileUploader({
     } else {
       onChange(incoming.slice(0, 1));
     }
-    e.target.value = '';
   };
 
   const removeFile = (index) => {
@@ -115,7 +113,13 @@ export default function FileUploader({
       )}
 
       {!isOverLimit && (
-        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group">
+        <FileDropZone
+          onFiles={handleFiles}
+          accept={accept}
+          multiple={multiple}
+          className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group"
+          draggingClassName="!border-indigo-500 !bg-slate-900"
+        >
           <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
             <Upload
               size={32}
@@ -129,15 +133,7 @@ export default function FileUploader({
             </p>
             <p className="text-xs text-slate-500">{acceptedFormats}</p>
           </div>
-          <input
-            ref={inputRef}
-            type="file"
-            className="sr-only"
-            multiple={multiple}
-            accept={accept}
-            onChange={handleFiles}
-          />
-        </label>
+        </FileDropZone>
       )}
 
       {isOverLimit && maxFiles && (

@@ -4,10 +4,7 @@ vi.mock('../ApiService.js', () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-    postForm: vi.fn(),
-    putForm: vi.fn(),
+    getBlob: vi.fn(),
   },
 }));
 
@@ -17,54 +14,6 @@ import api from '../ApiService.js';
 describe('TaskService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('create', () => {
-    it('creates a task with FormData', async () => {
-      const fd = new FormData();
-      fd.append('title', 'Test Task');
-      const created = { id: 1, title: 'Test Task' };
-      api.postForm.mockResolvedValue({ ok: true, status: 201, data: created });
-
-      const result = await TaskService.create(1, fd);
-
-      expect(api.postForm).toHaveBeenCalledWith('/challenges/1/tasks', fd);
-      expect(result.data).toEqual(created);
-    });
-
-    it('handles creation error', async () => {
-      const fd = new FormData();
-      api.postForm.mockResolvedValue({ ok: false, status: 422, data: { error: 'Invalid' } });
-
-      const result = await TaskService.create(1, fd);
-
-      expect(result.ok).toBe(false);
-      expect(result.status).toBe(422);
-    });
-  });
-
-  describe('update', () => {
-    it('updates a task with FormData', async () => {
-      const fd = new FormData();
-      fd.append('title', 'Updated');
-      api.putForm.mockResolvedValue({ ok: true, status: 200, data: { id: 1, title: 'Updated' } });
-
-      const result = await TaskService.update(1, fd);
-
-      expect(api.putForm).toHaveBeenCalledWith('/tasks/1', fd);
-      expect(result.data.title).toBe('Updated');
-    });
-  });
-
-  describe('delete', () => {
-    it('deletes a task', async () => {
-      api.delete.mockResolvedValue({ ok: true, status: 204, data: null });
-
-      const result = await TaskService.delete(1);
-
-      expect(api.delete).toHaveBeenCalledWith('/tasks/1');
-      expect(result.ok).toBe(true);
-    });
   });
 
   describe('submit', () => {
@@ -121,15 +70,23 @@ describe('TaskService', () => {
     });
   });
 
-  describe('getDownloadUrl', () => {
-    it('returns a download URL string for the given filename', () => {
-      const url = TaskService.getDownloadUrl(1, 'solution.ipynb');
-      expect(url).toBe('/api/tasks/1/download/solution.ipynb');
+  describe('downloadFile', () => {
+    it('fetches the task file as a blob response', async () => {
+      const response = { ok: true, status: 200 };
+      api.getBlob.mockResolvedValue(response);
+
+      const result = await TaskService.downloadFile(1, 'train.csv');
+
+      expect(api.getBlob).toHaveBeenCalledWith('/tasks/1/download/train.csv');
+      expect(result).toBe(response);
     });
 
-    it('encodes special characters in filename', () => {
-      const url = TaskService.getDownloadUrl(1, 'my file.ipynb');
-      expect(url).toBe('/api/tasks/1/download/my%20file.ipynb');
+    it('encodes special characters in filename', async () => {
+      api.getBlob.mockResolvedValue({ ok: true, status: 200 });
+
+      await TaskService.downloadFile(1, 'my file.ipynb');
+
+      expect(api.getBlob).toHaveBeenCalledWith('/tasks/1/download/my%20file.ipynb');
     });
   });
 

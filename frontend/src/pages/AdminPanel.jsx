@@ -286,21 +286,9 @@ export default function AdminPanel() {
     }
     setGeneratedUserCredentials(null);
 
-    const hashPassword = async (p) => {
-      const msgBuffer = new TextEncoder().encode(p);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-      return Array.from(new Uint8Array(hashBuffer))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-    };
-
-    const requestBody = { ...newUser };
-    if (newUser.password) {
-      requestBody.password = await hashPassword(newUser.password);
-    }
-
     try {
-      const result = await handleRegisterUserAction(requestBody);
+      // The password goes as typed: login sends plaintext and the server hashes it once
+      const result = await handleRegisterUserAction(newUser);
       if (result.ok) {
         showToast(t('admin.notifications.user_registered'));
         setGeneratedUserCredentials({

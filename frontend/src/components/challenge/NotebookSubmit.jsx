@@ -6,6 +6,7 @@ import ChallengeService from '../../services/ChallengeService';
 import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
 import CodePreview from '../ui/CodePreview';
+import FileDropZone from '../ui/FileDropZone';
 import { Book, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -111,8 +112,7 @@ export default function NotebookSubmit({ task, challenge }) {
     );
   }
 
-  const handleUpload = async (e) => {
-    const file = e.target.files[0];
+  const handleUpload = async ([file]) => {
     if (!file) return;
     if (!file.name.endsWith('.ipynb')) {
       showToast(t('challenge.only_ipynb_supported'), 'error');
@@ -199,8 +199,7 @@ export default function NotebookSubmit({ task, challenge }) {
       </div>
 
       {/* Upload zone */}
-      <label className="file-drop-zone">
-        <input type="file" accept=".ipynb" className="sr-only" onChange={handleUpload} />
+      <FileDropZone className="file-drop-zone" accept=".ipynb" onFiles={handleUpload}>
         {parseMutation.isPending ? (
           <div
             className="pointer-events-none"
@@ -262,7 +261,7 @@ export default function NotebookSubmit({ task, challenge }) {
             </span>
           </div>
         )}
-      </label>
+      </FileDropZone>
 
       {/* Cell picker */}
       {cells.length > 0 && (

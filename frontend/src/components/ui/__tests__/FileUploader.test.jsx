@@ -89,6 +89,37 @@ describe('FileUploader Component', () => {
     expect(handleRemoveExisting).toHaveBeenCalledWith('existing1.txt');
   });
 
+  it('accepts the same file picked twice in a row', () => {
+    const handleChange = vi.fn();
+    const file = createFile('train.csv');
+    render(<FileUploader onChange={handleChange} />);
+
+    const fileInput = document.querySelector('input[type="file"]');
+    const setValue = vi.spyOn(fileInput, 'value', 'set');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    expect(setValue).toHaveBeenCalledWith('');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(handleChange).toHaveBeenCalledTimes(2);
+    expect(handleChange).toHaveBeenLastCalledWith([file]);
+  });
+
+  it('adds dropped files without duplicating names already selected', () => {
+    const existing = createFile('train.csv');
+    const dropped = [createFile('train.csv'), createFile('test.csv')];
+    let next;
+    const handleChange = vi.fn((update) => {
+      next = update([existing]);
+    });
+    render(<FileUploader multiple files={[existing]} onChange={handleChange} />);
+
+    const zone = document.querySelector('input[type="file"]').closest('label');
+    fireEvent.drop(zone, { dataTransfer: { types: ['Files'], files: dropped } });
+
+    expect(handleChange).toHaveBeenCalledTimes(1);
+    expect(next.map((f) => f.name)).toEqual(['train.csv', 'test.csv']);
+  });
+
   it('validates required files', () => {
     render(<FileUploader required />);
 

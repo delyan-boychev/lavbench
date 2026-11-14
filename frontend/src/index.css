@@ -489,6 +489,9 @@ body {
 .file-drop-zone {
   @apply border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer transition-colors bg-slate-900/50 hover:bg-indigo-500/5;
 }
+.file-drop-zone.is-dragging {
+  @apply border-indigo-500 bg-indigo-500/5;
+}
 
 .toast {
   @apply fixed bottom-6 right-6 flex items-center gap-3 bg-slate-900 border border-slate-800 p-4 rounded-lg shadow-2xl z-50 transition-all duration-300;

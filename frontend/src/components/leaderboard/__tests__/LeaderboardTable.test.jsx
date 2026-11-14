@@ -17,7 +17,6 @@ vi.mock('../../../context/AppContext', () => ({
 
 vi.mock('../../../services/ChallengeService', () => ({
   default: {
-    finalize: vi.fn(),
     saveManualPoints: vi.fn(),
   },
 }));

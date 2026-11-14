@@ -763,6 +763,51 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
     expect(screen.getByText('Register User Account')).toBeInTheDocument();
   });
 
+  it('posts the register-user body exactly as entered, without hashing anything', async () => {
+    const digestSpy = vi.spyOn(globalThis.crypto.subtle, 'digest');
+    api.post.mockImplementation((url) =>
+      Promise.resolve(
+        url === '/admin/register-user'
+          ? { ok: true, data: { generated_username: 'jury.one', generated_password: 'pw' } }
+          : { ok: true },
+      ),
+    );
+
+    renderWithProviders(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    fireEvent.click(screen.getByText('User Management'));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'jury' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'jury@test.com' },
+    });
+    fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Jury' } });
+    fireEvent.change(screen.getByLabelText('Last Name'), { target: { value: 'One' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register User' }));
+    });
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/admin/register-user',
+        expect.objectContaining({
+          email: 'jury@test.com',
+          name: 'Jury',
+          surname: 'One',
+          role: 'jury',
+          password: '',
+        }),
+      ),
+    );
+    expect(digestSpy).not.toHaveBeenCalled();
+    digestSpy.mockRestore();
+  });
+
   it('switches to Workers and queues tab and renders WorkersStats', async () => {
     const defaultGet = api.get.getMockImplementation();
     api.get.mockImplementation((url, ...rest) =>

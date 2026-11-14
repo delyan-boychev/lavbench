@@ -1,14 +1,26 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TaskDetail from '../TaskDetail';
 import TaskService from '../../../services/TaskService';
+import { useAuth } from '../../../AuthContext';
+import { saveBlob } from '../../../utils/download';
 
-// Mock TaskService
+const mockShowToast = vi.fn();
+
 vi.mock('../../../services/TaskService', () => ({
   default: {
-    getDownloadUrl: vi.fn(),
+    downloadFile: vi.fn(),
   },
+}));
+vi.mock('../../../AuthContext', () => ({
+  useAuth: vi.fn(),
+}));
+vi.mock('../../../context/NotificationsContext', () => ({
+  useNotifications: () => ({ showToast: mockShowToast }),
+}));
+vi.mock('../../../utils/download', () => ({
+  saveBlob: vi.fn(),
 }));
 
 // Mock ReactMarkdown and remark-gfm to simplify formatting tests
@@ -39,6 +51,7 @@ describe('TaskDetail Component', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
   });
 
   it('renders nothing when task is not provided', () => {
@@ -71,26 +84,83 @@ describe('TaskDetail Component', () => {
     expect(screen.getByText('40% of Private Dataset')).toBeInTheDocument();
   });
 
-  it('renders files, calculates megabytes, and links directly to the download endpoint', () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
-    TaskService.getDownloadUrl.mockReturnValue('/api/tasks/5/download/data_sample.csv');
-
+  it('renders files and their size without fetching anything', () => {
     render(<TaskDetail task={taskMock} />);
 
-    // File card check
     expect(screen.getByText('Task Files (1)')).toBeInTheDocument();
     expect(screen.getByText('data_sample.csv')).toBeInTheDocument();
     expect(screen.getByText('2.00 MB')).toBeInTheDocument(); // 2097152 bytes = 2 MB
+    expect(TaskService.downloadFile).not.toHaveBeenCalled();
+  });
 
-    // The browser streams the file itself instead of buffering it into a Blob
-    const downloadLink = screen.getByTitle('Download data_sample.csv');
-    expect(downloadLink.tagName).toBe('A');
-    expect(downloadLink).toHaveAttribute('href', '/api/tasks/5/download/data_sample.csv');
-    expect(downloadLink).toHaveAttribute('download', 'data_sample.csv');
-    expect(TaskService.getDownloadUrl).toHaveBeenCalledWith(5, 'data_sample.csv');
-    expect(fetchSpy).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+  it('downloads a file through the API and saves the blob', async () => {
+    const blob = new Blob(['a,b']);
+    TaskService.downloadFile.mockResolvedValue({ ok: true, blob: async () => blob });
+
+    render(<TaskDetail task={taskMock} />);
+    fireEvent.click(screen.getByTitle('Download data_sample.csv'));
+
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(blob, 'data_sample.csv'));
+    expect(TaskService.downloadFile).toHaveBeenCalledWith(5, 'data_sample.csv');
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('shows the translated API error instead of saving an error response', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 2, role: 'jury' } });
+    TaskService.downloadFile.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ code: 'ERR_LABELS_NOT_AVAILABLE', error: 'server text' }),
+    });
+    const task = {
+      ...taskMock,
+      files: JSON.stringify([{ filename: 'labels.parquet', size_bytes: 10 }]),
+    };
+
+    render(<TaskDetail task={task} />);
+    fireEvent.click(screen.getByTitle('Download labels.parquet'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Labels are not available yet for this challenge.',
+        'rose',
+      ),
+    );
+    expect(saveBlob).not.toHaveBeenCalled();
+  });
+
+  it('shows a generic error when the download request fails', async () => {
+    TaskService.downloadFile.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(<TaskDetail task={taskMock} />);
+    fireEvent.click(screen.getByTitle('Download data_sample.csv'));
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Download failed', 'rose'));
+    expect(saveBlob).not.toHaveBeenCalled();
+  });
+
+  it('hides the solution from everyone and the labels from competitors', () => {
+    const task = {
+      ...taskMock,
+      files: [
+        { filename: 'train.csv', size_bytes: 10 },
+        { filename: 'labels.parquet', size_bytes: 10 },
+        { filename: 'solution.ipynb', size_bytes: 10, type: 'solution' },
+      ],
+    };
+
+    const { unmount } = render(<TaskDetail task={task} />);
+    expect(screen.getByText('Task Files (1)')).toBeInTheDocument();
+    expect(screen.getByText('train.csv')).toBeInTheDocument();
+    expect(screen.queryByText('labels.parquet')).not.toBeInTheDocument();
+    expect(screen.queryByText('solution.ipynb')).not.toBeInTheDocument();
+    unmount();
+
+    useAuth.mockReturnValue({ currentUser: { id: 2, role: 'jury' } });
+    render(<TaskDetail task={task} />);
+    expect(screen.getByText('Task Files (2)')).toBeInTheDocument();
+    expect(screen.getByText('labels.parquet')).toBeInTheDocument();
+    expect(screen.queryByText('solution.ipynb')).not.toBeInTheDocument();
   });
 
   it('renders jury custom evaluator notice when evaluator_script_path is present', () => {
