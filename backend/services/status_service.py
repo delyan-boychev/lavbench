@@ -22,6 +22,7 @@ from utils.cache_utils import (
     get_cached,
     get_coordination_client,
     get_queue_depths,
+    redis_time,
     set_cached,
 )
 from utils.dates import utcnow
@@ -204,9 +205,10 @@ def scoring_status(queues: list[dict[str, Any]], oldest_queued_seconds: int | No
 def compute_system_status() -> dict[str, Any]:
     """Compute a fresh snapshot shaped like ``SystemStatusResponse``."""
     now = utcnow()
-    now_epoch = time.time()
     database_ok = _database_ok()
     client = _broker_client()
+    # Heartbeats carry the broker's clock, so liveness is judged against the same clock
+    now_epoch = redis_time(client) if client is not None else time.time()
 
     specs = _read_worker_specs(client) if client is not None else []
     workers = sorted(

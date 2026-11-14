@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import uuid
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager, suppress
@@ -144,6 +145,19 @@ def get_redis_client() -> redis_lib.Redis[Any] | None:
 def get_coordination_client() -> redis_lib.Redis[Any] | None:
     """Returns a Redis client bound to the Celery broker (shared across machines)."""
     return _client_for(Config.CELERY_BROKER_URL or "redis://localhost:6379/0")
+
+
+def redis_time(r: Any) -> float:
+    """Return the Redis server clock in epoch seconds; the local clock if Redis fails.
+
+    Worker heartbeats and the status check both read the broker's clock, so a
+    machine whose own clock drifts never makes a live worker look stale.
+    """
+    try:
+        seconds, microseconds = r.time()
+        return int(seconds) + int(microseconds) / 1_000_000
+    except Exception:
+        return time.time()
 
 
 def redis_dependency_is_healthy(client: redis_lib.Redis[Any] | None, *, require_aof: bool) -> bool:

@@ -26,13 +26,28 @@ from utils.dates import utcnow
 class FakeBroker:
     """Broker Redis double holding ``worker_spec:*`` heartbeats."""
 
-    def __init__(self, specs: dict[str, dict] | None = None, healthy: bool = True) -> None:
+    def __init__(
+        self,
+        specs: dict[str, dict] | None = None,
+        healthy: bool = True,
+        clock: float | None = None,
+    ) -> None:
         self.specs = {name: {**spec, "name": name} for name, spec in (specs or {}).items()}
         self.healthy = healthy
+        self.clock = clock
 
     def ping(self) -> bool:
         if not self.healthy:
             raise ConnectionError("broker down")
+        return True
+
+    def time(self) -> tuple[int, int]:
+        """The broker's clock, as Redis TIME returns it (seconds, microseconds)."""
+        now = self.clock if self.clock is not None else time.time()
+        return int(now), int((now % 1) * 1_000_000)
+
+    def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        self.specs[key.removeprefix("worker_spec:")] = json.loads(value)
         return True
 
     def scan_iter(self, match: str | None = None, count: int | None = None):
@@ -261,6 +276,34 @@ class TestStatusSingleFlight:
         ):
             again = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
         assert again.get_json() == first.get_json()
+
+
+class TestBrokerClock:
+    """Liveness compares two readings of the broker's clock, never machine clocks."""
+
+    def test_worker_clock_five_minutes_behind_still_counts_as_online(
+        self, client, status_env, tokens, auth_headers
+    ):
+        from tasks.task_modules import submission_runner as sr
+
+        broker = FakeBroker(clock=time.time())
+        # The worker's own clock runs 5 min behind when it writes its heartbeat
+        with patch.object(sr.time, "time", return_value=broker.clock - 300):
+            sr._write_worker_spec(broker, "cpu@w1", {"type": "CPU", "queues": ["cpu_queue"]})
+        status_env["broker"] = broker
+
+        res = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
+        workers = {w["name"]: w for w in res.get_json()["workers"]}
+        assert workers["cpu@w1"]["online"] is True
+        assert res.get_json()["components"]["scoring"] == "operational"
+
+    def test_server_clock_drift_does_not_mark_a_live_worker_stale(self, status_env):
+        broker_now = time.time()
+        spec = {**_spec(["cpu_queue"]), "last_seen": broker_now - 5}
+        status_env["broker"] = FakeBroker({"cpu@w1": spec}, clock=broker_now)
+        with patch.object(status_service.time, "time", return_value=broker_now + 300):
+            snapshot = status_service.compute_system_status()
+        assert snapshot["workers"][0]["online"] is True
 
 
 class TestSystemStatus:

@@ -183,11 +183,13 @@ class TestRefreshWorkerSpec:
 
     def test_writes_last_seen_and_current_queues(self, mocker):
         mock_r = mocker.MagicMock()
+        # The broker's clock, not the worker's, stamps the heartbeat
+        mock_r.time.return_value = (1234, 500000)
         mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
         mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1", "last_seen": 1.0})
         mocker.patch.object(sr, "_cached_worker_name", "w1")
         mocker.patch.object(sr, "_heartbeat_consumer", self._consumer("gpu_queue", "cpu_queue"))
-        mocker.patch.object(sr.time, "time", return_value=1234.5)
+        mocker.patch.object(sr.time, "time", return_value=999.0)
 
         _refresh_worker_spec()
 

@@ -16,8 +16,34 @@ from utils.cache_utils import (
     get_coordination_client,
     get_redis_client,
     log_dead_letter,
+    redis_time,
     set_cached,
 )
+
+
+class TestRedisTime:
+    def test_reads_the_server_clock(self):
+        import time
+
+        r = get_coordination_client()
+        if r is None:
+            pytest.skip("Redis unavailable")
+        assert abs(redis_time(r) - time.time()) < 5
+
+    def test_combines_seconds_and_microseconds(self):
+        from unittest.mock import MagicMock
+
+        r = MagicMock()
+        r.time.return_value = (1700000000, 250000)
+        assert redis_time(r) == 1700000000.25
+
+    def test_falls_back_to_the_local_clock(self):
+        from unittest.mock import MagicMock, patch
+
+        r = MagicMock()
+        r.time.side_effect = ConnectionError("broker down")
+        with patch("utils.cache_utils.time.time", return_value=42.0):
+            assert redis_time(r) == 42.0
 
 
 class TestCacheLock:

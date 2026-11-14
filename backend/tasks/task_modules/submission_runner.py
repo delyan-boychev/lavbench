@@ -24,7 +24,12 @@ from celery.signals import worker_ready
 
 from config import Config
 from models import TERMINAL_STATUSES
-from utils.cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
+from utils.cache_utils import (
+    get_coordination_client,
+    redis_time,
+    submission_fallback_key,
+    worker_spec_key,
+)
 from utils.dates import utcnow
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
@@ -84,12 +89,12 @@ def _report_runtime_sync_failure(
 
 
 def _write_worker_spec(r: Any, worker_name: str, spec: dict[str, Any]) -> dict[str, Any]:
-    """Store a copy of the spec stamped with ``last_seen``; returns the stored copy.
+    """Store a copy of the spec stamped with the broker clock as ``last_seen``; return it.
 
     Copying (instead of mutating the shared dict) keeps the heartbeat thread and
     the reconnect guard from serializing a dict another thread is changing.
     """
-    stamped = {**spec, "last_seen": time.time()}
+    stamped = {**spec, "last_seen": redis_time(r)}
     r.set(worker_spec_key(worker_name), json.dumps(stamped), ex=WORKER_SPEC_TTL_SECONDS)
     return stamped
 
