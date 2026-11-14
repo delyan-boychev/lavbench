@@ -306,6 +306,7 @@ services:
       # Allowlisted settings for the system tasks this worker runs (backups,
       # leaderboard recalculation, watchdog); everything else keeps its default
       - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-3}
+      - BACKUP_DB_RETENTION_COUNT=${BACKUP_DB_RETENTION_COUNT:-18}
       - BACKUP_UPLOADS_INTERVAL_SECONDS=${BACKUP_UPLOADS_INTERVAL_SECONDS:-21600}
       - MIN_BACKUP_DISK_GB=${MIN_BACKUP_DISK_GB:-1}
       - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}

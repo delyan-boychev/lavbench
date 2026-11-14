@@ -315,10 +315,10 @@ LavBench maintains an automated backup subsystem to safeguard competition data. 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
 | **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
-| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). Rotated log files are not backed up.
+A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). A skipped or failed automatic backup is retried at the next 20-minute check. Rotated log files are not backed up.
 
 ---
 

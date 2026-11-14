@@ -29,7 +29,7 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 - **Multi-Stage Competitions:** Support for stage lifecycles with independent start/end times, grace periods, and visibility controls.
 - **Custom Evaluators:** Jury members can upload Python evaluation scripts (`evaluator.py`) with per-metric weighting, schema validation, and custom option schemas.
 - **Intelligent Worker Routing:** Celery queue routing dispatches evaluation workloads to external evaluation workers on `cpu_queue`, while system tasks stay on the internal `celery` queue consumed only by the in-compose worker.
-- **Automated Backups:** During active competitions the database is dumped (`pg_dump`) every 20 minutes and a full backup with the uploaded assets runs every 6 hours (also every 6 hours when idle); the newest 3 of each kind are kept.
+- **Automated Backups:** During active competitions the database is dumped (`pg_dump`) every 20 minutes and a full backup with the uploaded assets runs every 6 hours (also every 6 hours when idle); the newest 18 database dumps (about 6 hours) and the newest 3 full backups are kept.
 - **Audit Logs:** Complete logging of administrative actions (creating/deleting challenges, resetting passwords, editing finalized scores) with mandatory justification prompts logged to `AuditLog`.
 - **i18n Support:** Full internationalization in English and Bulgarian across the web app and user guides.
 - **Strict Security:** Includes httpOnly cookie authentication, JWT token revocation with a Redis blacklist, atomic rate limiting, encrypted PII, and ProxyFix middleware.

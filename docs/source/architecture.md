@@ -227,10 +227,10 @@ SSE capacity is governed by `SSE_MAX_GLOBAL` (default `2000` concurrent connecti
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
 | **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
-| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out. Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`.
+Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out. Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
 
 ---
 
