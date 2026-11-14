@@ -1091,7 +1091,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               <ToggleField
                 label={t(
                   'admin.stages.reveal_results_and_points_desc',
-                  'Разкриване на резултатите и точките за състезателите (в противен случай завършването е само вътрешно за журито)',
+                  'Reveal results and points to competitors (otherwise finalization is jury-internal only)',
                 )}
                 id="stage-reveal-results-and-points"
                 checked={stageFinalizeForm.reveal_results}
