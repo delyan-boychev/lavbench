@@ -18,11 +18,17 @@ from models.submission import Submission, _delete_submission_files
 from models.task import Task
 from models.user import JuryChallenge, User
 
+# Re-exported so route modules can import them with the models
+from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
+
 __all__ = [
+    "ACTIVE_STATUSES",
     "ADJECTIVES",
     "GUID",
     "METRIC_LOWER_IS_BETTER",
     "NOUNS",
+    "RUNNING_STATUSES",
+    "TERMINAL_STATUSES",
     "AuditLog",
     "Challenge",
     "JuryChallenge",

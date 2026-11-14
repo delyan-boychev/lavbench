@@ -21,9 +21,21 @@ fi
 
 # Build extra gunicorn args from env vars (only for gunicorn commands)
 if echo "$*" | grep -qE 'gunicorn'; then
+  # Recycling a worker drops every SSE stream open on it, so it is off by
+  # default (0). A positive GUNICORN_MAX_REQUESTS turns it back on.
+  max_requests="${GUNICORN_MAX_REQUESTS:-0}"
+  case "$max_requests" in
+    *[!0-9]*)
+      echo "ERROR: GUNICORN_MAX_REQUESTS must be a non-negative integer, got '$max_requests'" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$max_requests" -gt 0 ]; then
+    set -- "$@" \
+      --max-requests "$max_requests" \
+      --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}"
+  fi
   set -- "$@" \
-    --max-requests "${GUNICORN_MAX_REQUESTS:-10000}" \
-    --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}" \
     --access-logfile "${GUNICORN_ACCESS_LOGFILE:--}" \
     --error-logfile "${GUNICORN_ERROR_LOGFILE:--}"
 fi

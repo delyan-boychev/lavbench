@@ -3,496 +3,330 @@ import { StrictMode } from 'react';
 import { renderHook, act } from '@testing-library/react';
 import useSSE from '../useSSE';
 
-let mockEventSourceInstance;
-let onOpenCallback;
-let onMessageCallback;
-let onErrorCallback;
-let closeCount;
+const CONNECTING = 0;
+const OPEN = 1;
+const CLOSED = 2;
+
+/** @type {MockEventSource[]} */
+let instances = [];
 
 class MockEventSource {
   constructor(url, options) {
     this.url = url;
     this.options = options;
-    this.readyState = 0;
-    mockEventSourceInstance = this;
-    onOpenCallback = null;
-    onMessageCallback = null;
-    onErrorCallback = null;
-    Object.defineProperty(this, 'onopen', {
-      set(fn) {
-        onOpenCallback = fn;
-      },
-      get() {
-        return onOpenCallback;
-      },
-    });
-    Object.defineProperty(this, 'onmessage', {
-      set(fn) {
-        onMessageCallback = fn;
-      },
-      get() {
-        return onMessageCallback;
-      },
-    });
-    Object.defineProperty(this, 'onerror', {
-      set(fn) {
-        onErrorCallback = fn;
-      },
-      get() {
-        return onErrorCallback;
-      },
-    });
+    this.readyState = CONNECTING;
+    this.closed = false;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onerror = null;
+    instances.push(this);
   }
+
   close() {
-    closeCount += 1;
-    this.readyState = 2;
-    mockEventSourceInstance = null;
+    this.closed = true;
+    this.readyState = CLOSED;
+  }
+
+  open() {
+    this.readyState = OPEN;
+    this.onopen?.();
+  }
+
+  message(data, lastEventId = '') {
+    this.onmessage?.({ data: typeof data === 'string' ? data : JSON.stringify(data), lastEventId });
+  }
+
+  // The browser keeps the source and reconnects on its own after a dropped connection
+  drop() {
+    this.readyState = CONNECTING;
+    this.onerror?.();
+  }
+
+  // HTTP 204, any other non-200 answer, or a wrong Content-Type
+  fail() {
+    this.readyState = CLOSED;
+    this.onerror?.();
   }
 }
 
-function triggerOpen() {
-  if (onOpenCallback) onOpenCallback();
-}
-
-function triggerMessage(data) {
-  if (onMessageCallback) onMessageCallback({ data: JSON.stringify(data) });
-}
-
-function triggerError() {
-  if (onErrorCallback) onErrorCallback();
-}
+const latest = () => instances[instances.length - 1];
 
 describe('useSSE', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    closeCount = 0;
-    mockEventSourceInstance = null;
-    onOpenCallback = null;
-    onMessageCallback = null;
-    onErrorCallback = null;
+    instances = [];
     global.EventSource = MockEventSource;
+    // Math.random() = 0.5 makes the jitter factor exactly 1
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     global.EventSource = undefined;
   });
 
-  it('connects when url is provided', () => {
+  it('connects with credentials when a url is given', () => {
     renderHook(() => useSSE('/api/test'));
-    expect(mockEventSourceInstance).not.toBeNull();
-    expect(mockEventSourceInstance.url).toBe('/api/test');
-    expect(mockEventSourceInstance.options.withCredentials).toBe(true);
+    expect(instances).toHaveLength(1);
+    expect(latest().url).toBe('/api/test');
+    expect(latest().options.withCredentials).toBe(true);
   });
 
-  it('does not connect when url is empty', () => {
+  it('does not connect when the url is empty', () => {
     renderHook(() => useSSE(''));
-    expect(mockEventSourceInstance).toBeNull();
+    expect(instances).toHaveLength(0);
   });
 
-  it('sets connected=true on open', () => {
-    const { result } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
+  it('reports connected on open and calls onOpen', () => {
+    const onOpen = vi.fn();
+    const { result } = renderHook(() => useSSE('/api/test', { onOpen }));
+    act(() => latest().open());
     expect(result.current.connected).toBe(true);
+    expect(result.current.retrying).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('sets data from parsed JSON messages', () => {
-    const { result } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerMessage({ foo: 'bar' });
-    });
-    expect(result.current.data).toEqual({ foo: 'bar' });
-  });
-
-  it('replaces data on each new message', () => {
-    const { result } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerMessage({ step: 1 });
-    });
-    expect(result.current.data).toEqual({ step: 1 });
-    act(() => {
-      triggerMessage({ step: 2 });
-    });
-    expect(result.current.data).toEqual({ step: 2 });
-  });
-
-  it('sets connected=false and error on error when reconnect=false', () => {
-    const { result } = renderHook(() => useSSE('/api/test', { reconnect: false }));
-    act(() => {
-      triggerOpen();
-    });
-    expect(result.current.connected).toBe(true);
-    act(() => {
-      triggerError();
-    });
-    expect(result.current.connected).toBe(false);
-    expect(result.current.error).toBe('Connection lost');
-  });
-
-  it('does not reconnect when reconnect=false', () => {
-    renderHook(() => useSSE('/api/test', { reconnect: false }));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerError();
-    });
-    expect(mockEventSourceInstance).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(10000);
-    });
-    expect(mockEventSourceInstance).toBeNull();
-  });
-
-  it('reconnects with exponential delay when reconnect=true', () => {
-    renderHook(() =>
-      useSSE('/api/test', { reconnect: true, reconnectDelay: 5000, maxReconnects: 3 }),
-    );
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerError();
-    });
-
-    expect(mockEventSourceInstance).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(4999);
-    });
-    expect(mockEventSourceInstance).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-    expect(mockEventSourceInstance).not.toBeNull();
-    expect(mockEventSourceInstance.url).toBe('/api/test');
-  });
-
-  it('stops reconnecting after maxReconnects consecutive failures', () => {
-    const { result } = renderHook(() =>
-      useSSE('/api/test', {
-        reconnect: true,
-        reconnectDelay: 1000,
-        maxReconnects: 2,
-      }),
-    );
-
-    act(() => {
-      triggerOpen();
-    });
-
-    // 1st error → reconnect
-    act(() => {
-      triggerError();
-    });
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    // 2nd error (without open in between) → last allowed reconnect
-    act(() => {
-      triggerError();
-    });
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    expect(mockEventSourceInstance).toBeNull();
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    // 3rd error → exhausted, no reconnect
-    act(() => {
-      triggerError();
-    });
-    expect(result.current.error).toBe('Connection lost');
-    act(() => {
-      vi.advanceTimersByTime(10000);
-    });
-    expect(mockEventSourceInstance).toBeNull();
-  });
-
-  it('calls onMessage callback with parsed data', () => {
+  it('passes parsed JSON payloads to onMessage', () => {
     const onMessage = vi.fn();
     renderHook(() => useSSE('/api/test', { onMessage }));
     act(() => {
-      triggerOpen();
+      latest().open();
+      latest().message({ event: 'update' });
     });
-    act(() => {
-      triggerMessage({ key: 'val' });
-    });
-    expect(onMessage).toHaveBeenCalledWith({ key: 'val' });
+    expect(onMessage).toHaveBeenCalledWith({ event: 'update' });
   });
 
-  it('calls onError callback on connection error', () => {
-    const onError = vi.fn();
-    renderHook(() => useSSE('/api/test', { onError, reconnect: false }));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerError();
-    });
-    expect(onError).toHaveBeenCalledWith('Connection lost');
-  });
-
-  it('closes connection on unmount', () => {
-    const { unmount } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    expect(closeCount).toBe(0);
-    unmount();
-    expect(closeCount).toBe(1);
-  });
-
-  it('reconnects when url changes', () => {
-    const { rerender } = renderHook(({ url }) => useSSE(url), {
-      initialProps: { url: '/api/first' },
-    });
-    const firstInstance = mockEventSourceInstance;
-    expect(firstInstance.url).toBe('/api/first');
-    act(() => {
-      triggerOpen();
-    });
-
-    rerender({ url: '/api/second' });
-    // old instance should be closed, new one created
-    expect(firstInstance.readyState).toBe(2);
-    expect(mockEventSourceInstance.url).toBe('/api/second');
-  });
-
-  it('clears state when url changes to empty', () => {
-    const { result, rerender } = renderHook(({ url }) => useSSE(url, { onError: () => {} }), {
-      initialProps: { url: '/api/test' },
-    });
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerMessage({ x: 1 });
-    });
-    expect(result.current.data).toEqual({ x: 1 });
-
-    rerender({ url: '' });
-    expect(result.current.data).toBeNull();
-    expect(result.current.connected).toBe(false);
-    expect(result.current.error).toBeNull();
-  });
-
-  it('recovers state from error when reconnecting', () => {
-    const { result } = renderHook(() =>
-      useSSE('/api/test', {
-        reconnect: true,
-        reconnectDelay: 1000,
-        maxReconnects: 3,
-      }),
-    );
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerError();
-    });
-    expect(result.current.connected).toBe(false);
-
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    act(() => {
-      triggerOpen();
-    });
-    expect(result.current.connected).toBe(true);
-    expect(result.current.error).toBeNull();
-  });
-
-  it('reconnect function resets retry count from exhausted state', () => {
-    const { result } = renderHook(() =>
-      useSSE('/api/test', {
-        reconnect: true,
-        reconnectDelay: 1000,
-        maxReconnects: 2,
-      }),
-    );
-    act(() => {
-      triggerOpen();
-    });
-
-    // Exhaust retries without any successful open
-    act(() => {
-      triggerError();
-    });
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    act(() => {
-      triggerError();
-    });
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    act(() => {
-      triggerError();
-    });
-    expect(result.current.error).toBe('Connection lost');
-
-    // Manual reconnect resets retry count
-    act(() => {
-      result.current.reconnect();
-    });
-    expect(mockEventSourceInstance).not.toBeNull();
-    act(() => {
-      triggerOpen();
-    });
-    expect(result.current.connected).toBe(true);
-    expect(result.current.error).toBeNull();
-  });
-
-  it('warns on non-JSON messages without setting data', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { result } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      if (onMessageCallback) onMessageCallback({ data: 'not-json' });
-    });
-    expect(warnSpy).toHaveBeenCalled();
-    expect(result.current.data).toBeNull();
-    warnSpy.mockRestore();
-  });
-
-  it('calls onMessage but does not store data when storeData=false', () => {
+  it('warns on a non-JSON payload without calling onMessage', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const onMessage = vi.fn();
-    const { result } = renderHook(() => useSSE('/api/test', { onMessage, storeData: false }));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerMessage({ foo: 'bar' });
-    });
-    expect(onMessage).toHaveBeenCalledWith({ foo: 'bar' });
-    expect(result.current.data).toBeNull();
+    renderHook(() => useSSE('/api/test', { onMessage }));
+    act(() => latest().message('not-json'));
+    expect(warn).toHaveBeenCalled();
+    expect(onMessage).not.toHaveBeenCalled();
   });
 
-  it('stores data by default', () => {
-    const { result } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    act(() => {
-      triggerMessage({ foo: 'bar' });
-    });
-    expect(result.current.data).toEqual({ foo: 'bar' });
+  it('leaves a dropped connection to the browser instead of recreating the source', () => {
+    const onOpen = vi.fn();
+    const { result } = renderHook(() => useSSE('/api/test', { onOpen }));
+    const source = latest();
+    act(() => source.open());
+    act(() => source.drop());
+
+    expect(source.closed).toBe(false);
+    expect(result.current.connected).toBe(false);
+    expect(result.current.retrying).toBe(true);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(1);
+
+    // The native reconnect succeeds on the same source
+    act(() => source.open());
+    expect(result.current.connected).toBe(true);
+    expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
-  it('ignores messages after unmount', () => {
-    const { result, unmount } = renderHook(() => useSSE('/api/test'));
-    act(() => {
-      triggerOpen();
-    });
-    unmount();
-    act(() => {
-      triggerMessage({ after: 'unmount' });
-    });
-    expect(result.current.data).toBeNull();
+  it('reconnects manually after a fatal close, with exponential backoff', () => {
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { reconnectDelay: 1000, maxReconnectDelay: 3000 }),
+    );
+    const first = latest();
+    act(() => first.fail());
+    expect(first.closed).toBe(true);
+    expect(result.current.retrying).toBe(true);
+
+    act(() => vi.advanceTimersByTime(999));
+    expect(instances).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(instances).toHaveLength(2);
+
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(1999));
+    expect(instances).toHaveLength(2);
+    act(() => vi.advanceTimersByTime(1));
+    expect(instances).toHaveLength(3);
+
+    // Capped at maxReconnectDelay
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(2999));
+    expect(instances).toHaveLength(3);
+    act(() => vi.advanceTimersByTime(1));
+    expect(instances).toHaveLength(4);
   });
 
-  it('does not reconnect after a terminal message from isTerminal', () => {
+  it.each([
+    [0, 700],
+    [0.999999, 1300],
+  ])('jitters the manual reconnect delay by 30%% (random %s)', (random, delay) => {
+    Math.random.mockReturnValue(random);
+    renderHook(() => useSSE('/api/test', { reconnectDelay: 1000 }));
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(delay - 1));
+    expect(instances).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(instances).toHaveLength(2);
+  });
+
+  it('passes the last event id as a query parameter on a manual reconnect', () => {
+    const { rerender } = renderHook(({ url }) => useSSE(url, { reconnectDelay: 1000 }), {
+      initialProps: { url: '/api/logs?page=1' },
+    });
+    act(() => {
+      latest().open();
+      latest().message({ log: 'a' }, 'evt 41');
+      latest().message({ log: 'b' }, '');
+    });
+    act(() => latest().drop());
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(latest().url).toBe('/api/logs?page=1&lastEventId=evt%2041');
+
+    // A new stream URL starts without a resume id
+    rerender({ url: '/api/other' });
+    expect(latest().url).toBe('/api/other');
+  });
+
+  it('uses ? for the first query parameter', () => {
+    renderHook(() => useSSE('/api/test', { reconnectDelay: 1000 }));
+    act(() => latest().message({ log: 'a' }, '7'));
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(latest().url).toBe('/api/test?lastEventId=7');
+  });
+
+  it('gives up after maxReconnects fatal closes with a translated error', () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 2, onError }),
+    );
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(2000));
+    expect(instances).toHaveLength(3);
+    act(() => latest().fail());
+
+    expect(result.current.error).toBe('Connection lost');
+    expect(result.current.retrying).toBe(false);
+    expect(onError).toHaveBeenCalledWith('Connection lost');
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(3);
+  });
+
+  it('does not reconnect after a fatal close when reconnect is false', () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useSSE('/api/test', { reconnect: false, onError }));
+    act(() => latest().fail());
+    expect(result.current.error).toBe('Connection lost');
+    expect(onError).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(1);
+  });
+
+  it('resets the backoff budget after a successful open', () => {
+    const { result } = renderHook(() =>
+      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 1 }),
+    );
+    act(() => latest().fail());
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => latest().open());
+    act(() => latest().fail());
+    expect(result.current.error).toBeNull();
+    expect(result.current.retrying).toBe(true);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(instances).toHaveLength(3);
+  });
+
+  it('stops for good on a message accepted by isTerminal', () => {
     const onMessage = vi.fn();
     const { result } = renderHook(() =>
       useSSE('/api/test', { onMessage, isTerminal: (m) => m.status === 'completed' }),
     );
+    const source = latest();
     act(() => {
-      triggerOpen();
-    });
-    const terminalSource = mockEventSourceInstance;
-    act(() => {
-      triggerMessage({ status: 'completed' });
+      source.open();
+      source.message({ status: 'completed' });
     });
     expect(onMessage).toHaveBeenCalledWith({ status: 'completed' });
-    expect(terminalSource.readyState).toBe(2);
+    expect(source.closed).toBe(true);
+    expect(source.onerror).toBeNull();
     expect(result.current.connected).toBe(false);
-    act(() => {
-      triggerError();
-      vi.advanceTimersByTime(60000);
-    });
-    expect(mockEventSourceInstance).toBeNull();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(1);
     expect(result.current.error).toBeNull();
   });
 
   it.each([[{ event: 'evicted' }], [{ code: 'ERR_SSE_SOCKET_LIMIT', error: 'too many' }]])(
-    'stops on server terminal message %j',
+    'stops on the server terminal message %j',
     (msg) => {
       renderHook(() => useSSE('/api/test'));
       act(() => {
-        triggerOpen();
-        triggerMessage(msg);
+        latest().open();
+        latest().message(msg);
       });
-      act(() => {
-        triggerError();
-        vi.advanceTimersByTime(60000);
-      });
-      expect(mockEventSourceInstance).toBeNull();
+      expect(latest().closed).toBe(true);
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(instances).toHaveLength(1);
     },
   );
 
-  it('backs off when the server keeps closing right after opening', () => {
-    const { result } = renderHook(() =>
-      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 2 }),
-    );
-    // Open + control message + close, repeatedly: must not reset the retry budget
-    for (const delay of [1000, 2000]) {
-      act(() => {
-        triggerOpen();
-        triggerMessage({ info: 'connected' });
-        triggerError();
-      });
-      act(() => {
-        vi.advanceTimersByTime(delay);
-      });
-    }
-    act(() => {
-      triggerOpen();
-      triggerMessage({ info: 'connected' });
-      triggerError();
+  it('closes the source on unmount and cancels a pending reconnect', () => {
+    const { unmount } = renderHook(() => useSSE('/api/test', { reconnectDelay: 1000 }));
+    act(() => latest().fail());
+    unmount();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(1);
+
+    const second = renderHook(() => useSSE('/api/test'));
+    const source = latest();
+    second.unmount();
+    expect(source.closed).toBe(true);
+  });
+
+  it('ignores messages after unmount', () => {
+    const onMessage = vi.fn();
+    const { unmount } = renderHook(() => useSSE('/api/test', { onMessage }));
+    const source = latest();
+    unmount();
+    source.onmessage?.({ data: '{"event":"update"}', lastEventId: '' });
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
+  it('switches streams when the url changes and resets on an empty url', () => {
+    const { result, rerender } = renderHook(({ url }) => useSSE(url, { reconnect: false }), {
+      initialProps: { url: '/api/first' },
     });
+    const first = latest();
+    act(() => first.open());
+    rerender({ url: '/api/second' });
+    expect(first.closed).toBe(true);
+    expect(latest().url).toBe('/api/second');
+    expect(result.current.connected).toBe(false);
+
+    act(() => latest().fail());
     expect(result.current.error).toBe('Connection lost');
-  });
-
-  it('resets the retry budget after a data message', () => {
-    const { result } = renderHook(() =>
-      useSSE('/api/test', { reconnectDelay: 1000, maxReconnects: 1 }),
-    );
-    act(() => {
-      triggerOpen();
-      triggerError();
-    });
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    act(() => {
-      triggerOpen();
-      triggerMessage({ foo: 'bar' });
-      triggerError();
-    });
+    rerender({ url: '' });
     expect(result.current.error).toBeNull();
-    expect(result.current.retrying).toBe(true);
+    expect(result.current.connected).toBe(false);
+    expect(result.current.retrying).toBe(false);
   });
 
-  it('connects under StrictMode double mount', () => {
+  it('reconnect() starts a fresh session after giving up', () => {
+    const { result } = renderHook(() => useSSE('/api/test', { reconnect: false }));
+    act(() => latest().fail());
+    expect(result.current.error).toBe('Connection lost');
+
+    act(() => result.current.reconnect());
+    expect(instances).toHaveLength(2);
+    expect(result.current.error).toBeNull();
+    act(() => latest().open());
+    expect(result.current.connected).toBe(true);
+  });
+
+  it('connects under a StrictMode double mount', () => {
     renderHook(() => useSSE('/api/strict'), { wrapper: StrictMode });
-    expect(mockEventSourceInstance).not.toBeNull();
-    expect(mockEventSourceInstance.url).toBe('/api/strict');
+    expect(latest().url).toBe('/api/strict');
+    expect(latest().closed).toBe(false);
+    expect(instances.filter((s) => !s.closed)).toHaveLength(1);
   });
 });

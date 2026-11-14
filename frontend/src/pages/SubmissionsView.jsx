@@ -5,11 +5,13 @@ import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
-import useSSE, { isLifecycleMessage } from '../hooks/useSSE';
-import useThrottledCallback from '../hooks/useThrottledCallback';
 import useDebounce from '../hooks/useDebounce';
 import { useApiError } from '../hooks/useApiError';
-import { useSubmissionsQuery } from '../hooks/useSubmissionsQuery';
+import {
+  useSubmissionsQuery,
+  ACTIVE_SUBMISSION_POLL_MS,
+  isActiveSubmission,
+} from '../hooks/useSubmissionsQuery';
 import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
 import { useCompetitorSearchQuery } from '../hooks/useCompetitorSearchQuery';
 import { useSelectFinal, useKillSubmission } from '../hooks/useSubmissionMutations';
@@ -98,13 +100,12 @@ export default function SubmissionsView() {
   const { showApiError } = useApiError();
   const challengeNotFound = useChallengeNotFound(challengeId);
 
-  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const selectFinalMutation = useSelectFinal();
   const killSubmissionMutation = useKillSubmission();
 
   const [submissionsPage, setSubmissionsPage] = useState(1);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const taskIdRef = useRef(selectedTask?.id);
 
   const isCompetitor = currentUser?.role === 'competitor';
   const isAdminOrJury = !isCompetitor;
@@ -115,10 +116,6 @@ export default function SubmissionsView() {
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
 
   const [adminActiveTask, setAdminActiveTask] = useState(null);
-  const adminActiveTaskRef = useRef(adminActiveTask);
-  useEffect(() => {
-    adminActiveTaskRef.current = adminActiveTask;
-  }, [adminActiveTask]);
   const [adminSubPage, setAdminSubPage] = useState(1);
 
   const [baselineExpanded, setBaselineExpanded] = useState(false);
@@ -130,7 +127,7 @@ export default function SubmissionsView() {
     isLoading: loading,
     isError: submissionsError,
     refetch: refetchSubmissions,
-  } = useSubmissionsQuery(selectedTask?.id, submissionsPage, 10);
+  } = useSubmissionsQuery(selectedTask?.id, submissionsPage, 10, { enabled: isCompetitor });
   const submissions = useMemo(() => subsData?.items || [], [subsData]);
   const submissionsPages = subsData?.pages || 1;
   const submissionsTotal = subsData?.total || 0;
@@ -196,30 +193,17 @@ export default function SubmissionsView() {
     staleTime: 30_000,
   });
 
-  const { data: submissionDetail } = useSubmissionDetailQuery(selectedSubmission?.id);
-  useEffect(() => {
-    if (submissionDetail && selectedSubmission) {
-      setSelectedSubmission((prev) =>
-        prev && prev.id === submissionDetail.id ? { ...prev, ...submissionDetail } : prev,
-      );
-    }
-  }, [submissionDetail, selectedSubmission?.id]);
-
+  // The log stream reported a final status: refetch the detail and every list showing it
   const handleSubmissionUpdate = useCallback(
-    (updated) => {
-      setSelectedSubmission((prev) =>
-        prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
-      );
+    (submissionId) => {
+      queryClient.invalidateQueries({ queryKey: ['submission-detail', submissionId] });
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['admin-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-best-subs'] });
       queryClient.invalidateQueries({ queryKey: ['baselines'] });
     },
     [queryClient],
   );
-
-  useEffect(() => {
-    taskIdRef.current = selectedTask?.id;
-  }, [selectedTask]);
 
   useEffect(() => {
     if (challengeId) setSelectedChallengeById(challengeId);
@@ -235,7 +219,7 @@ export default function SubmissionsView() {
     setSelectedCompetitor(null);
     setAdminActiveTask(null);
     setAdminSubPage(1);
-    setSelectedSubmission(null);
+    setSelectedSubmissionId(null);
   }, [selectedChallenge?.id]);
 
   useEffect(() => {
@@ -252,26 +236,9 @@ export default function SubmissionsView() {
     setCompetitorPage(1);
   }, [competitorSearch]);
 
-  const taskId = selectedTask?.id;
-  const page = submissionsPage;
-
-  const invalidateSubmissions = useThrottledCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['submissions'] });
-  }, 1500);
-  useSSE(taskId ? `/api/tasks/${taskId}/submissions/live?page=${page}&per_page=10` : '', {
-    storeData: false,
-    onMessage: (data) => {
-      if (!isLifecycleMessage(data)) invalidateSubmissions();
-    },
-    onError: () => {},
-  });
-
   const handleSelectFinal = async (submissionId) => {
     try {
       await selectFinalMutation.mutateAsync(submissionId);
-      setSelectedSubmission((prev) =>
-        prev && prev.id === submissionId ? { ...prev, is_final_selection: true } : prev,
-      );
     } catch (err) {
       await confirm({
         title: t('submissions.selection_error'),
@@ -294,11 +261,6 @@ export default function SubmissionsView() {
     try {
       await killSubmissionMutation.mutateAsync(submissionId);
       showToast(t('submissions.kill_success'), 'emerald');
-      setSelectedSubmission((prev) =>
-        prev && prev.id === submissionId
-          ? { ...prev, status: 'failed', detailed_status: 'killed' }
-          : prev,
-      );
     } catch (err) {
       console.error(err);
       showApiError(err, 'submissions.kill_failed');
@@ -306,11 +268,7 @@ export default function SubmissionsView() {
   };
 
   const handleSelectSubmission = (sub) => {
-    if (!sub) {
-      setSelectedSubmission(null);
-      return;
-    }
-    setSelectedSubmission(sub);
+    setSelectedSubmissionId(sub?.id ?? null);
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
@@ -344,10 +302,6 @@ export default function SubmissionsView() {
   }, [finalSelectDeadline]);
   const isSelectionDisabled =
     finalSelectDeadline !== null && !hasRunningPreDeadline && nowMs > finalSelectDeadline;
-  const isSubmissionAfterDeadline =
-    submissionDeadlineMs !== null && selectedSubmission
-      ? new Date(selectedSubmission.created_at).getTime() > submissionDeadlineMs
-      : false;
 
   const bestSubmission = useMemo(() => {
     if (!submissions.length) return null;
@@ -363,7 +317,7 @@ export default function SubmissionsView() {
   const handleSelectCompetitor = (competitor) => {
     setSelectedCompetitor(competitor);
     setBaselineExpanded(false);
-    setSelectedSubmission(null);
+    setSelectedSubmissionId(null);
     setCompetitorSearch('');
   };
 
@@ -402,16 +356,16 @@ export default function SubmissionsView() {
       setAdminActiveTask(resolvedTaskId);
       setAdminSubPage(1);
       const sub = bestSubs[resolvedTaskId];
-      if (sub) setSelectedSubmission(sub);
+      if (sub) setSelectedSubmissionId(sub.id);
     }
   }, [bestSubs, selectedChallenge, selectedCompetitor, isAdminOrJury]);
 
   const handleAdminViewSubmission = (sub) => {
     if (!sub) {
-      setSelectedSubmission(null);
+      setSelectedSubmissionId(null);
       return;
     }
-    setSelectedSubmission(sub);
+    setSelectedSubmissionId(sub.id);
     if (sub.task_id) {
       const taskChanged = sub.task_id !== adminActiveTask;
       setAdminActiveTask(sub.task_id);
@@ -420,6 +374,38 @@ export default function SubmissionsView() {
       }
     }
   };
+
+  // The viewer reads the submission by id from the loaded data, never from a copy, so a
+  // status picked up by polling or a refetch reaches it
+  const listedSubmission = selectedSubmissionId
+    ? ([
+        ...submissions,
+        ...adminSubmissions,
+        ...baselineSubmissions.map((b) => b.submission),
+        ...Object.values(bestSubs),
+      ].find((s) => s?.id === selectedSubmissionId) ?? null)
+    : null;
+  const { data: submissionDetail } = useSubmissionDetailQuery(selectedSubmissionId, {
+    // Admin and jury lists do not poll, so an active submission polls its own detail.
+    // The log stream can end without a final status (eviction, broker outage)
+    refetchInterval: (query) =>
+      isAdminOrJury && isActiveSubmission(query.state.data) ? ACTIVE_SUBMISSION_POLL_MS : false,
+  });
+  const selectedSubmission = submissionDetail ?? listedSubmission;
+
+  // A list poll saw a newer status than the detail shows: refetch the detail
+  const listedStatus = listedSubmission?.status;
+  const detailStatus = submissionDetail?.status;
+  useEffect(() => {
+    if (selectedSubmissionId && listedStatus && detailStatus && listedStatus !== detailStatus) {
+      queryClient.invalidateQueries({ queryKey: ['submission-detail', selectedSubmissionId] });
+    }
+  }, [queryClient, selectedSubmissionId, listedStatus, detailStatus]);
+
+  const isSubmissionAfterDeadline =
+    submissionDeadlineMs !== null && selectedSubmission
+      ? new Date(selectedSubmission.created_at).getTime() > submissionDeadlineMs
+      : false;
 
   const handleDownloadSubmission = async (taskId, userId) => {
     if (!selectedChallenge) return;
@@ -487,7 +473,7 @@ export default function SubmissionsView() {
                     key={task.id}
                     onClick={() => {
                       setSelectedTask(task);
-                      setSelectedSubmission(null);
+                      setSelectedSubmissionId(null);
                     }}
                     className={`nav-tab flex-shrink-0 ${selectedTask?.id === task.id ? 'active' : ''}`}
                     style={{ padding: '4px 12px', fontSize: '0.75rem' }}
@@ -541,7 +527,7 @@ export default function SubmissionsView() {
                     <EmptyState minHeight={200} message={t('submissions.none_found')} />
                   ) : (
                     submissions.map((sub) => {
-                      const isSel = selectedSubmission?.id === sub.id;
+                      const isSel = selectedSubmissionId === sub.id;
                       return (
                         <button
                           key={sub.id}
@@ -600,6 +586,7 @@ export default function SubmissionsView() {
                 </div>
               </div>
               <SubmissionViewer
+                key={selectedSubmission?.id}
                 submission={selectedSubmission}
                 currentUser={currentUser}
                 onSelectFinal={handleSelectFinal}
@@ -631,7 +618,7 @@ export default function SubmissionsView() {
               <button
                 onClick={() => {
                   if (baselineExpanded) {
-                    setSelectedSubmission(null);
+                    setSelectedSubmissionId(null);
                   }
                   setBaselineExpanded(!baselineExpanded);
                 }}
@@ -664,7 +651,7 @@ export default function SubmissionsView() {
                     </div>
                   ) : (
                     baselineSubmissions.map(({ task, submission: sub }) => {
-                      const isSel = selectedSubmission?.id === sub.id;
+                      const isSel = selectedSubmissionId === sub.id;
                       return (
                         <button
                           key={task.id}
@@ -710,6 +697,7 @@ export default function SubmissionsView() {
           {/* SubmissionViewer for selected baseline */}
           {selectedSubmission && !selectedCompetitor && (
             <SubmissionViewer
+              key={selectedSubmission.id}
               submission={selectedSubmission}
               currentUser={currentUser}
               onSelectFinal={() => {}}
@@ -827,7 +815,7 @@ export default function SubmissionsView() {
                 setCompetitorSearch('');
                 setSelectedCompetitor(null);
                 setAdminActiveTask(null);
-                setSelectedSubmission(null);
+                setSelectedSubmissionId(null);
               }}
               className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-100 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700 hover:border-slate-500 transition-all px-3 py-1.5 rounded-lg flex-shrink-0"
             >
@@ -858,7 +846,7 @@ export default function SubmissionsView() {
                   showPrivate={true}
                   onTaskClick={(taskId) => {
                     setAdminActiveTask(taskId);
-                    setSelectedSubmission(null);
+                    setSelectedSubmissionId(null);
                     setAdminSubPage(1);
                   }}
                 />
@@ -885,7 +873,7 @@ export default function SubmissionsView() {
                   </div>
                 ) : (
                   adminSubmissions.map((sub) => {
-                    const isSel = selectedSubmission?.id === sub.id;
+                    const isSel = selectedSubmissionId === sub.id;
                     return (
                       // View and download are sibling buttons, never nested
                       <div
@@ -982,6 +970,7 @@ export default function SubmissionsView() {
           {/* Selected submission detail */}
           {selectedSubmission && (
             <SubmissionViewer
+              key={selectedSubmission.id}
               submission={selectedSubmission}
               currentUser={currentUser}
               onSelectFinal={handleSelectFinal}

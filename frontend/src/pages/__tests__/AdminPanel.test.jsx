@@ -173,52 +173,32 @@ describe('ChallengeConfig — test stage fields', () => {
 
 // ── AdminPanel smoke test ──────────────────────────────────────────────────
 
-const mockSystemStats = {
-  connected_workers_count: 1,
+const mockSystemStatus = {
+  status: 'degraded_performance',
+  components: { api: 'operational', scoring: 'degraded_performance' },
+  queues: [{ name: 'evaluation_gpu', consumers: 1, queued: 4 }],
   workers: [
     {
       name: 'celery@gpu-worker-test',
-      status: 'online',
-      pid: 9999,
-      uptime: 3600,
-      pool_size: 8,
-      total_tasks_processed: 42,
-      active_tasks_count: 1,
-      reserved_tasks_count: 0,
-      active_tasks: [{ id: 'test-task-1', name: 'tasks.evaluate_submission' }],
-      reserved_tasks: [],
-      registered_tasks: ['tasks.evaluate_submission'],
-      rusage: {
-        maxrss_mb: 256.5,
-        utime_sec: 1.25,
-        stime_sec: 0.75,
-      },
-      broker: {
-        transport: 'redis',
-        hostname: 'localhost',
-        port: 6379,
-      },
+      type: 'gpu',
+      queues: ['evaluation_gpu'],
+      online: true,
+      last_seen: '2026-11-14T10:00:00Z',
+      concurrency: 2,
+      cpu_cores: 16,
+      ram_gb: 64,
+      gpu_type: 'NVIDIA L4',
+      vram_gb: 24,
     },
   ],
-  system: {
-    cpu_count: 16,
-    load_avg: [1.2, 0.95, 0.8],
-    memory: {
-      total_gb: 32.0,
-      used_gb: 16.0,
-      free_gb: 16.0,
-      percent_used: 50.0,
-    },
-    disk: {
-      total_gb: 500.0,
-      used_gb: 250.0,
-      free_gb: 250.0,
-      percent_used: 50.0,
-    },
-    os: 'Linux',
-    platform_release: '5.15.0',
-    python_version: '3.10.5',
+  submissions: {
+    queued: 4,
+    running: 2,
+    oldest_queued_seconds: 130,
+    completed_last_15m: 9,
+    failed_last_15m: 1,
   },
+  updated_at: '2026-11-14T10:00:12Z',
 };
 
 vi.mock('../../services/ApiService', () => ({
@@ -254,13 +234,15 @@ import AdminPanel from '../AdminPanel';
 import { formatMetricName } from '../../utils/metrics';
 import api from '../../services/ApiService';
 
-describe('AdminPanel Page - Workers & Resources', () => {
+describe('AdminPanel Page - Workers and queues', () => {
   const mockShowToast = vi.fn();
   const mockSetSelectedChallengeById = vi.fn();
   const mockFetchChallenges = vi.fn();
+  let systemStatusResult;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    systemStatusResult = { ok: true, status: 200, data: mockSystemStatus };
     api.getBlob.mockResolvedValue({ ok: true, status: 200, blob: async () => new Blob(['zip']) });
     useApp.mockReturnValue({
       challenges: [],
@@ -275,6 +257,7 @@ describe('AdminPanel Page - Workers & Resources', () => {
     });
 
     api.get.mockImplementation((url) => {
+      if (url === '/admin/system-status') return Promise.resolve(systemStatusResult);
       if (url.includes('/admin/metrics')) {
         return Promise.resolve({ ok: true, data: { metrics: {} } });
       }
@@ -286,106 +269,61 @@ describe('AdminPanel Page - Workers & Resources', () => {
       }
       return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0, pages: 1 }) });
     });
+  });
 
+  it('renders sidebar options including Workers and queues for admin', async () => {
+    renderWithProviders(<AdminPanel />);
+    expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workers and queues' })).toBeInTheDocument();
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  });
+
+  it('polls the system status on the Workers and queues tab without a live stream', async () => {
+    const streams = [];
     vi.stubGlobal(
       'EventSource',
       class {
         constructor(url) {
-          this.url = url;
-          this.close = vi.fn();
-          setTimeout(() => {
-            if (this.onmessage) {
-              act(() => {
-                this.onmessage({ data: JSON.stringify(mockSystemStats) });
-              });
-            }
-          }, 10);
+          streams.push(url);
         }
+        close() {}
       },
     );
-  });
-
-  it('renders sidebar options including Workers & Resources for admin', async () => {
-    renderWithProviders(<AdminPanel />);
-    expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
-    expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
-
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-  });
-
-  it('switches to Workers & Resources tab and fetches detailed stats', async () => {
     renderWithProviders(<AdminPanel />);
 
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     });
 
-    const workersTabBtn = screen.getByText('Workers & Resources');
-
-    await act(async () => {
-      fireEvent.click(workersTabBtn);
-    });
-
-    await vi.waitFor(() => {
-      expect(screen.getByText('System Resources & Worker Status')).toBeInTheDocument();
-      expect(screen.getByText('Host CPU Utilization')).toBeInTheDocument();
-      expect(screen.getByText('Host Memory Usage')).toBeInTheDocument();
-      expect(screen.getByText('Host Disk Capacity')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText('16 Cores')).toBeInTheDocument();
-    expect(screen.getAllByText('50%')).toHaveLength(2);
-    expect(screen.getByText('16 GB / 32 GB')).toBeInTheDocument();
-    expect(screen.getByText('250 GB / 500 GB')).toBeInTheDocument();
-
-    expect(screen.getByText('celery@gpu-worker-test')).toBeInTheDocument();
-    expect(screen.getByText('8 processes')).toBeInTheDocument();
-    expect(screen.getByText('256.5 MB')).toBeInTheDocument();
-    expect(screen.getByText('1h 0s')).toBeInTheDocument();
-    expect(screen.getByText('test-task-1')).toBeInTheDocument();
-
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    expect(await screen.findByText('celery@gpu-worker-test')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Workers and queues' })).toBeInTheDocument();
+    // Once in the queues table and once in the worker's queue list
+    expect(screen.getAllByText('evaluation_gpu')).toHaveLength(2);
+    expect(screen.getAllByText('Degraded performance')).toHaveLength(2);
+    expect(screen.queryByText(/Host CPU Utilization/)).not.toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/admin/system-status', expect.anything());
+    expect(streams).toEqual([]);
   });
 
-  it('handles SSE errors gracefully', async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal(
-      'EventSource',
-      class {
-        constructor() {
-          this.close = vi.fn();
-          setTimeout(() => {
-            if (this.onerror) {
-              act(() => {
-                this.onerror(new Event('error'));
-              });
-            }
-          }, 10);
-        }
-      },
-    );
-
+  it('shows the translated API error when the status request fails', async () => {
+    systemStatusResult = {
+      ok: false,
+      status: 403,
+      data: { code: 'ERR_ACCESS_DENIED', error: 'Access denied' },
+    };
     renderWithProviders(<AdminPanel />);
 
-    const workersTabBtn = screen.getByText('Workers & Resources');
-
     await act(async () => {
-      fireEvent.click(workersTabBtn);
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     });
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(31_000);
-    });
-
-    try {
-      expect(screen.getByText(/Network error fetching stats/i)).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(
+      await screen.findByText('Access denied. You do not have the required permissions.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 });
 
@@ -428,7 +366,7 @@ describe('AdminPanel component', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workers and queues' })).toBeInTheDocument();
   });
 });
 
@@ -825,18 +763,24 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
     expect(screen.getByText('Register User Account')).toBeInTheDocument();
   });
 
-  it('switches to Workers & Resources tab and renders WorkersStats', async () => {
+  it('switches to Workers and queues tab and renders WorkersStats', async () => {
+    const defaultGet = api.get.getMockImplementation();
+    api.get.mockImplementation((url, ...rest) =>
+      url === '/admin/system-status'
+        ? Promise.resolve({ ok: true, status: 200, data: mockSystemStatus })
+        : defaultGet(url, ...rest),
+    );
     renderWithProviders(<AdminPanel />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    fireEvent.click(screen.getByText('Workers & Resources'));
+    fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(screen.getByText('System Resources & Worker Status')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Workers and queues' })).toBeInTheDocument();
   });
 
   it('switches to Audit Logs tab and renders AuditLogViewer', async () => {

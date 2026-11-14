@@ -310,12 +310,15 @@ The file is encrypted at rest with Fernet and never included in backups; a 404 m
 
 ## 7. Automated and Manual Backup Retention Rules
 
-LavBench maintains an automated backup subsystem to safeguard competition data. Each backup archive contains a complete PostgreSQL database dump along with compressed `uploads/` assets in a `.tar.gz` format.
+LavBench maintains an automated backup subsystem to safeguard competition data. Full archives contain a complete PostgreSQL database dump along with the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone.
 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
-| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Keeps the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
+
+A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). A skipped or failed automatic backup is retried at the next 20-minute check. Rotated log files are not backed up.
 
 ---
 
@@ -376,12 +379,18 @@ make edit-worker
 > [!WARNING]
 > When running an evaluation worker on the primary web server host, reserve at least 2 CPU cores for Gunicorn, PostgreSQL, and Redis processes.
 
-### SSE Cluster Telemetry
+### System Status Panel
 
-Real-time worker cluster health is streamed to the administrator navbar via Server-Sent Events (SSE):
-- **Status Indicator**: Green badge (workers connected and healthy) / Red badge (workers disconnected).
-- **Cluster Modal**: Clicking the indicator displays live worker telemetry, including CPU cores, RAM, GPU model, VRAM usage, and active execution slots.
+The **Workers and queues** panel in the Admin Panel (admins and jury) polls `GET /api/admin/system-status` every 15 seconds. It never queries the workers directly; everything comes from worker heartbeats, the broker and the database:
+- **Status**: the overall status and its `api` and `scoring` components, in Statuspage terms (`operational`, `degraded_performance`, `partial_outage`, `major_outage`).
+- **Queues**: live consumers and pending messages for each evaluation queue (`cpu_queue`, `gpu_queue`).
+- **Workers**: every worker that has sent a heartbeat, with its queues, online or stale state, last heartbeat, concurrency, CPU cores, RAM and GPU. Workers send a heartbeat every 30 seconds (`WORKER_HEARTBEAT_SECONDS`) and count as stale after 90 seconds (`WORKER_HEARTBEAT_STALE_SECONDS`).
+- **Submissions**: queued and running submissions, how long the oldest queued one has waited, and completions and failures in the last 15 minutes.
 - **Dead Letter Queue (`/api/admin/dead-letters`)**: Displays permanently failed Celery evaluation tasks with complete error tracebacks for diagnostic debugging.
+
+Scoring is `major_outage` when no live worker consumes `cpu_queue`, `partial_outage` when another queue has pending work but no consumer, and `degraded_performance` when the oldest queued submission has waited longer than 10 minutes (`STATUS_QUEUE_DEGRADED_SECONDS`).
+
+`GET /api/status` is a public, unauthenticated summary with the same status words, cached for 30 seconds. Point an external uptime check at it and alert on `major_outage`. `GET /api/health` stays a liveness check (database, both Redis instances, disk) for the container health checks.
 
 ---
 

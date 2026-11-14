@@ -16,8 +16,34 @@ from utils.cache_utils import (
     get_coordination_client,
     get_redis_client,
     log_dead_letter,
+    redis_time,
     set_cached,
 )
+
+
+class TestRedisTime:
+    def test_reads_the_server_clock(self):
+        import time
+
+        r = get_coordination_client()
+        if r is None:
+            pytest.skip("Redis unavailable")
+        assert abs(redis_time(r) - time.time()) < 5
+
+    def test_combines_seconds_and_microseconds(self):
+        from unittest.mock import MagicMock
+
+        r = MagicMock()
+        r.time.return_value = (1700000000, 250000)
+        assert redis_time(r) == 1700000000.25
+
+    def test_falls_back_to_the_local_clock(self):
+        from unittest.mock import MagicMock, patch
+
+        r = MagicMock()
+        r.time.side_effect = ConnectionError("broker down")
+        with patch("utils.cache_utils.time.time", return_value=42.0):
+            assert redis_time(r) == 42.0
 
 
 class TestCacheLock:
@@ -146,3 +172,49 @@ class TestCacheOperations:
         assert get_cached("test:cache:key") is not None
         delete_cached("test:cache:key")
         assert get_cached("test:cache:key") is None
+
+
+class TestCacheLockStore:
+    def test_locks_live_on_the_broker_redis(self):
+        from unittest.mock import MagicMock, patch
+
+        broker, cache = MagicMock(), MagicMock()
+        broker.set.return_value = True
+        with (
+            patch("utils.cache_utils.get_coordination_client", return_value=broker),
+            patch("utils.cache_utils.get_redis_client", return_value=cache),
+            cache_lock("submit_lock:user_1:challenge_1", ttl=10) as got,
+        ):
+            assert got is True
+        assert broker.set.call_args.args[0] == "submit_lock:user_1:challenge_1"
+        assert broker.set.call_args.kwargs == {"nx": True, "ex": 10}
+        cache.set.assert_not_called()
+
+    def test_submit_route_takes_its_lock_on_the_broker(
+        self, client, tokens, auth_headers, sample_task, monkeypatch
+    ):
+        from unittest.mock import MagicMock
+
+        broker = MagicMock()
+        broker.exists.return_value = 0
+        broker.eval.return_value = [1, 60]
+        broker.set.return_value = False  # Another request holds the submit lock
+        cache = MagicMock()
+        cache.get.return_value = None
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
+        monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
+
+        res = client.post(
+            f"/api/tasks/{sample_task.id}/submit",
+            json={"selected_cells": [{"source": "print(1)"}]},
+            headers=auth_headers(tokens.competitor),
+        )
+
+        assert res.status_code == 429
+        assert res.get_json()["code"] == "ERR_SUBMIT_LOCKED"
+        assert any(
+            str(call.args[0]).startswith("submit_lock:") for call in broker.set.call_args_list
+        )
+        assert not any(
+            str(call.args[0]).startswith("submit_lock:") for call in cache.set.call_args_list
+        )

@@ -23,7 +23,7 @@ from schemas.responses import (
 )
 from utils import client_ip
 from utils.auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
-from utils.error_utils import err
+from utils.error_utils import err, with_retry_after
 from utils.spec import api
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,11 @@ auth_bp = Blueprint("auth", __name__)
 # Work as a real one (~100-200ms). Without this, the short-circuit leaks
 # Whether a username exists via response timing (username enumeration)
 _DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
+
+
+LOGIN_FAILURE_WINDOW_SECONDS = 60
+LOGIN_USER_MAX_FAILURES = 5
+LOGIN_IP_MAX_FAILURES = 300
 
 
 def _verify_password(user: User | None, password: str) -> bool:
@@ -46,20 +51,22 @@ def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
     """
     Two-tier sliding window rate limiting:
     - Per-username: max 5 failures per 60s
-    - Per-IP: max 30 failures per 60s (accommodates school NAT)
+    - Per-IP: max 300 failures per 60s (a whole school behind one NAT address
+      must not lock everyone out at the contest start)
 
-    Falls back to an in-process sliding window when Redis is unavailable so a
+    Failures are tracked on the broker Redis, which never evicts keys. Falls back
+    to an in-process sliding window when Redis is unavailable so a
     monitoring/backend hiccup does not silently disable throttling entirely.
     """
     try:
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return _local_failure_exceeded(username, ip)
 
         now = time.time()
-        window = 60
+        window = LOGIN_FAILURE_WINDOW_SECONDS
 
         user_key = f"login_failures:user:{username}"
         ip_key = f"login_failures:ip:{ip}"
@@ -70,14 +77,14 @@ def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
         user_failures = r.zcard(user_key)
         ip_failures = r.zcard(ip_key)
 
-        return user_failures >= 5 or ip_failures >= 30
+        return user_failures >= LOGIN_USER_MAX_FAILURES or ip_failures >= LOGIN_IP_MAX_FAILURES
     except Exception:
         return _local_failure_exceeded(username, ip)
 
 
-_LOCAL_LOGIN_WINDOW = 60.0
-_LOCAL_LOGIN_USER_MAX = 5
-_LOCAL_LOGIN_IP_MAX = 30
+_LOCAL_LOGIN_WINDOW = float(LOGIN_FAILURE_WINDOW_SECONDS)
+_LOCAL_LOGIN_USER_MAX = LOGIN_USER_MAX_FAILURES
+_LOCAL_LOGIN_IP_MAX = LOGIN_IP_MAX_FAILURES
 _LOCAL_LOGIN_FAILURES: dict[str, list[float]] = {}
 
 
@@ -104,9 +111,9 @@ def _record_login_failure(username: str, ip: str) -> None:
         kept.append(now)
         _LOCAL_LOGIN_FAILURES[key] = kept
     try:
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
         r.zadd(f"login_failures:user:{username}", {str(now): now})
@@ -122,9 +129,9 @@ def _clear_login_failures(username: str, ip: str) -> None:
     _LOCAL_LOGIN_FAILURES.pop(f"user:{username}", None)
     _LOCAL_LOGIN_FAILURES.pop(f"ip:{ip}", None)
     try:
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if not r:
             return
         r.delete(f"login_failures:user:{username}")
@@ -155,7 +162,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
     ip = get_client_ip()
 
     if _login_rate_limit_exceeded(username, ip):
-        return err("ERR_RATE_LIMIT_EXCEEDED", 429)
+        return with_retry_after(err("ERR_RATE_LIMIT_EXCEEDED", 429), LOGIN_FAILURE_WINDOW_SECONDS)
 
     user = User.query.filter(User.username == username).first()
 

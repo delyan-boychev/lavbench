@@ -36,26 +36,6 @@ vi.mock('../../services/ApiService', () => ({
   },
 }));
 
-// Helper to mock EventSource
-function mockEventSource(initialData, shouldError = false) {
-  return class MockEventSource {
-    constructor(_url) {
-      this.close = vi.fn();
-      setTimeout(() => {
-        if (shouldError) {
-          if (this.onerror) this.onerror(new Event('error'));
-        } else {
-          if (this.onmessage) {
-            this.onmessage({
-              data: JSON.stringify(initialData),
-            });
-          }
-        }
-      }, 10);
-    }
-  };
-}
-
 describe('SubmissionsView Page', () => {
   const mockSetSelectedChallengeById = vi.fn();
   const mockSetSelectedTask = vi.fn();
@@ -154,7 +134,6 @@ describe('SubmissionsView Page', () => {
       });
 
       const mockSubmissions = [{ id: 100, status: 'queued', created_at: '2026-06-13T11:50:00Z' }];
-      global.EventSource = mockEventSource(mockSubmissions);
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
@@ -203,7 +182,10 @@ describe('SubmissionsView Page', () => {
           executed_at: '2026-06-13T11:52:00Z',
         },
       ];
-      global.EventSource = mockEventSource(mockSubmissions);
+      TaskService.getSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: mockSubmissions, total: 1, pages: 1 },
+      });
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
@@ -245,7 +227,10 @@ describe('SubmissionsView Page', () => {
           executed_at: '2026-06-13T11:52:00Z',
         },
       ];
-      global.EventSource = mockEventSource(mockSubmissions);
+      TaskService.getSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: mockSubmissions, total: 1, pages: 1 },
+      });
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:06:00Z').getTime());
 
@@ -292,7 +277,7 @@ describe('SubmissionsView Page', () => {
       expect(mockSetSelectedTask).toHaveBeenCalledWith(mockTask2);
     });
 
-    it('renders timer and submissions after SSE onmessage loads data', async () => {
+    it('renders the selection timer and submissions from the REST list', async () => {
       const mockStage = {
         id: 5,
         title: 'Stage 1',
@@ -323,8 +308,11 @@ describe('SubmissionsView Page', () => {
           executed_at: '2026-06-13T11:52:00Z',
         },
       ];
-      global.EventSource = mockEventSource({ items: mockSubmissions, total: 1, pages: 1 });
 
+      TaskService.getSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: mockSubmissions, total: 1, pages: 1 },
+      });
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
       renderWithProviders(<SubmissionsView />);
@@ -332,56 +320,89 @@ describe('SubmissionsView Page', () => {
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
       });
+      expect(await screen.findByText('#200')).toBeInTheDocument();
     });
 
-    it('falls back to api.fetch when SSE errors', async () => {
-      api.fetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+    describe('live status (polling, no list stream)', () => {
+      const task = { id: 10, title: 'Task 1' };
+      let streams;
+
+      beforeEach(() => {
+        useApp.mockReturnValue({
+          selectedChallenge: { id: 1, title: 'Challenge Alpha', stages: [], tasks: [task] },
+          selectedTask: task,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+        streams = [];
+        global.EventSource = class {
+          constructor(url) {
+            this.url = url;
+            this.close = vi.fn();
+            streams.push(this);
+          }
+        };
       });
 
-      const mockStage = {
-        id: 5,
-        title: 'Stage 1',
-        stage_number: 1,
-        start_time: '2026-06-13T10:00:00Z',
-        end_time: '2026-06-13T12:00:00Z',
-      };
-      const mockTask = { id: 10, title: 'Task 1', stage_id: 5 };
-
-      useApp.mockReturnValue({
-        selectedChallenge: {
-          id: 1,
-          title: 'Challenge Alpha',
-          stages: [mockStage],
-          tasks: [mockTask],
-        },
-        selectedTask: mockTask,
-        setSelectedChallengeById: mockSetSelectedChallengeById,
-        setSelectedTask: mockSetSelectedTask,
-        confirm: mockConfirm,
+      it('opens no submissions list stream', async () => {
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: {
+            items: [{ id: 300, status: 'queued', created_at: '2026-06-13T11:50:00Z' }],
+            total: 1,
+            pages: 1,
+          },
+        });
+        renderWithProviders(<SubmissionsView />);
+        expect(await screen.findByText('#300')).toBeInTheDocument();
+        expect(TaskService.getSubmissions).toHaveBeenCalledWith(10, 1, 10);
+        expect(streams).toEqual([]);
       });
 
-      const mockSubmissions = [
-        {
-          id: 100,
-          status: 'completed',
-          created_at: '2026-06-13T11:50:00Z',
-          public_score: 0.95,
-          private_score: 0.92,
-        },
-      ];
-      TaskService.getSubmissions.mockResolvedValue({
-        ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+      it('refetches the selected submission when the list shows a newer status', async () => {
+        const listed = { id: 301, status: 'completed', created_at: '2026-06-13T11:50:00Z' };
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: { items: [listed], total: 1, pages: 1 },
+        });
+        TaskService.getSubmissionDetail
+          .mockResolvedValueOnce({ ok: true, data: { ...listed, status: 'running' } })
+          .mockResolvedValue({ ok: true, data: { ...listed, logs: 'stored final log' } });
+
+        renderWithProviders(<SubmissionsView />);
+        fireEvent.click(await screen.findByText('#301'));
+
+        expect(await screen.findByText('stored final log')).toBeInTheDocument();
+        expect(TaskService.getSubmissionDetail).toHaveBeenCalledTimes(2);
       });
 
-      global.EventSource = mockEventSource(null, true);
+      it('reloads the selected submission after its log stream reports a final status', async () => {
+        const running = { id: 302, status: 'running', created_at: '2026-06-13T11:50:00Z' };
+        const finished = { ...running, status: 'completed', logs: 'stored final log' };
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: { items: [running], total: 1, pages: 1 },
+        });
+        TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: running });
 
-      renderWithProviders(<SubmissionsView />);
+        renderWithProviders(<SubmissionsView />);
+        fireEvent.click(await screen.findByText('#302'));
 
-      await waitFor(() => {
-        expect(TaskService.getSubmissions).toHaveBeenCalled();
+        await waitFor(() => {
+          expect(streams.map((es) => es.url)).toContain('/api/submissions/302/logs/live');
+        });
+        const logStream = streams.find((es) => es.url === '/api/submissions/302/logs/live');
+
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: { items: [finished], total: 1, pages: 1 },
+        });
+        TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: finished });
+        act(() => logStream.onmessage({ data: JSON.stringify({ status: 'completed' }) }));
+
+        expect(await screen.findByText('stored final log')).toBeInTheDocument();
+        expect(logStream.close).toHaveBeenCalled();
       });
     });
 
@@ -416,7 +437,6 @@ describe('SubmissionsView Page', () => {
           executed_at: '2026-06-13T11:52:00Z',
         },
       ];
-      global.EventSource = mockEventSource(mockSubmissions);
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
@@ -478,7 +498,6 @@ describe('SubmissionsView Page', () => {
           executed_at: '2026-06-13T11:52:00Z',
         },
       ];
-      global.EventSource = mockEventSource(mockSubmissions);
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
@@ -551,7 +570,6 @@ describe('SubmissionsView Page', () => {
         public_score: 0.8765,
       };
       const mockSubmissions = [bestSubmission, otherSubmission];
-      global.EventSource = mockEventSource(mockSubmissions);
 
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
@@ -589,8 +607,6 @@ describe('SubmissionsView Page', () => {
         setSelectedTask: mockSetSelectedTask,
         confirm: mockConfirm,
       });
-
-      global.EventSource = mockEventSource([]);
 
       renderWithProviders(<SubmissionsView />);
 
@@ -660,6 +676,21 @@ describe('SubmissionsView Page', () => {
         school: 'School B',
       },
     ];
+
+    it('does not load the competitor submissions list for admin or jury', async () => {
+      useApp.mockReturnValue({
+        selectedChallenge: mockChallenge,
+        selectedTask: mockChallenge.tasks[0],
+        setSelectedChallengeById: mockSetSelectedChallengeById,
+        setSelectedTask: mockSetSelectedTask,
+        confirm: mockConfirm,
+      });
+      renderWithProviders(<SubmissionsView />);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(TaskService.getSubmissions).not.toHaveBeenCalled();
+    });
 
     it('renders competitor search interface when no competitor selected', async () => {
       useApp.mockReturnValue({
@@ -1596,6 +1627,66 @@ describe('SubmissionsView Page', () => {
           expect(TaskService.getSubmissionDetail).toHaveBeenCalledWith(300);
           expect(screen.getByText(/Submission #300/i)).toBeInTheDocument();
         });
+      });
+
+      it('keeps polling the detail of a running submission for admin', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+          api.get.mockResolvedValue({
+            ok: true,
+            data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+          });
+          const running = {
+            id: 300,
+            task_id: 10,
+            status: 'running',
+            created_at: '2026-06-13T11:00:00Z',
+          };
+          TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: running });
+          api.fetch.mockReset();
+          api.fetch.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
+            blob: () => Promise.resolve(new Blob(['test'])),
+          });
+          api.fetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve({ items: [running], total: 1, pages: 1 }),
+            blob: () => Promise.resolve(new Blob(['test'])),
+          });
+          useApp.mockReturnValue({
+            selectedChallenge: mockChallenge,
+            selectedTask: null,
+            setSelectedChallengeById: mockSetSelectedChallengeById,
+            setSelectedTask: mockSetSelectedTask,
+            confirm: mockConfirm,
+          });
+
+          renderWithProviders(<SubmissionsView />);
+          await act(async () => {
+            fireEvent.click(screen.getByText('Baseline Solutions'));
+          });
+          await waitFor(() => {
+            expect(screen.getByText('Task 1')).toBeInTheDocument();
+          });
+          await act(async () => {
+            fireEvent.click(screen.getByText('Task 1'));
+          });
+          await waitFor(() => {
+            expect(TaskService.getSubmissionDetail).toHaveBeenCalledWith(300);
+          });
+          const callsBefore = TaskService.getSubmissionDetail.mock.calls.length;
+
+          // The log stream can end without a final status, so the detail keeps polling
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(5_000);
+          });
+          await waitFor(() => {
+            expect(TaskService.getSubmissionDetail.mock.calls.length).toBeGreaterThan(callsBefore);
+          });
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it('hides SubmissionViewer when baseline section is collapsed', async () => {

@@ -62,7 +62,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** stream_backup_status <GET> */
+        /** SSE endpoint: signal ``{"event": "update"}`` when a backup finishes. */
         get: operations["get__api_admin_backups_live"];
         put?: never;
         post?: never;
@@ -306,8 +306,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** SSE endpoint: stream real-time queue updates. */
+        /**
+         * SSE endpoint: signal ``{"event": "update"}`` whenever the queue may have changed.
+         * @description Clients refetch GET /submissions/queue, which applies the jury challenge filter.
+         */
         get: operations["get__api_admin_submissions_queue_live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/system-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-queue consumers, worker heartbeats and submission counts (admin and jury). */
+        get: operations["get__api_admin_system-status"];
         put?: never;
         post?: never;
         delete?: never;
@@ -362,40 +382,6 @@ export interface paths {
         put?: never;
         /** reset_user_password <POST> */
         post: operations["post__api_admin_users_{user_id}_reset-password"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/workers/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** get_detailed_worker_stats <GET> */
-        get: operations["get__api_admin_workers_stats"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/workers/stats/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** stream_worker_stats <GET> */
-        get: operations["get__api_admin_workers_stats_live"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -633,7 +619,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream live updates to the challenge leaderboard using Server-Sent Events (SSE). */
+        /**
+         * Signal ``{"event": "update"}`` after each leaderboard rebuild (SSE).
+         * @description The client refetches GET /leaderboard, which applies its role's visibility rules.
+         */
         get: operations["get__api_challenges_{challenge_id}_leaderboard_live"];
         put?: never;
         post?: never;
@@ -936,6 +925,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Coarse service status in Statuspage component words. No login required. */
+        get: operations["get__api_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/submissions/{submission_id}": {
         parameters: {
             query?: never;
@@ -1074,23 +1080,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{task_id}/submissions/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream live task submission updates via SSE. */
-        get: operations["get__api_tasks_{task_id}_submissions_live"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/tasks/{task_id}/submit": {
         parameters: {
             query?: never;
@@ -1102,40 +1091,6 @@ export interface paths {
         put?: never;
         /** Submit code cells for execution under a specific task. */
         post: operations["post__api_tasks_{task_id}_submit"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/worker-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get worker cluster health status with specs (details admin/jury only). */
-        get: operations["get__api_worker-status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/worker-status/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream worker cluster health status via SSE (details admin/jury only). */
-        get: operations["get__api_worker-status_live"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4135,6 +4090,36 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** PublicStatusResponse */
+        "PublicStatusResponse.a74769c": {
+            components: components["schemas"]["PublicStatusResponse.a74769c.StatusComponents"];
+            /**
+             * Status
+             * @description Worst status across components
+             * @enum {string}
+             */
+            status: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+            /**
+             * Updated At
+             * @description RFC 3339 UTC time the status was computed
+             */
+            updated_at: string;
+        };
+        /** StatusComponents */
+        "PublicStatusResponse.a74769c.StatusComponents": {
+            /**
+             * Api
+             * @description Database and broker reachable
+             * @enum {string}
+             */
+            api: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+            /**
+             * Scoring
+             * @description Live consumers on the evaluation queues and queue age
+             * @enum {string}
+             */
+            scoring: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+        };
         /** RegisterCompetitorSchema */
         "RegisterCompetitorSchema.e1ac751": {
             /** Birth Date */
@@ -5368,6 +5353,117 @@ export interface components {
              */
             submission_id: string;
         };
+        /** SystemStatusResponse */
+        "SystemStatusResponse.a74769c": {
+            components: components["schemas"]["SystemStatusResponse.a74769c.StatusComponents"];
+            /** Queues */
+            queues: components["schemas"]["SystemStatusResponse.a74769c.QueueStatus"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+            submissions: components["schemas"]["SystemStatusResponse.a74769c.SubmissionCounts"];
+            /** Updated At */
+            updated_at: string;
+            /** Workers */
+            workers: components["schemas"]["SystemStatusResponse.a74769c.WorkerHeartbeat"][];
+        };
+        /** QueueStatus */
+        "SystemStatusResponse.a74769c.QueueStatus": {
+            /**
+             * Consumers
+             * @description Workers with a fresh heartbeat consuming this queue
+             */
+            consumers: number;
+            /** Name */
+            name: string;
+            /**
+             * Queued
+             * @description Messages pending on the broker queue
+             */
+            queued: number;
+        };
+        /** StatusComponents */
+        "SystemStatusResponse.a74769c.StatusComponents": {
+            /**
+             * Api
+             * @description Database and broker reachable
+             * @enum {string}
+             */
+            api: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+            /**
+             * Scoring
+             * @description Live consumers on the evaluation queues and queue age
+             * @enum {string}
+             */
+            scoring: "operational" | "degraded_performance" | "partial_outage" | "major_outage" | "under_maintenance";
+        };
+        /** SubmissionCounts */
+        "SystemStatusResponse.a74769c.SubmissionCounts": {
+            /** Completed Last 15M */
+            completed_last_15m: number;
+            /** Failed Last 15M */
+            failed_last_15m: number;
+            /**
+             * Oldest Queued Seconds
+             * @description Age of the oldest queued submission, or null when none is queued
+             * @default null
+             */
+            oldest_queued_seconds: number | null;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+        };
+        /** WorkerHeartbeat */
+        "SystemStatusResponse.a74769c.WorkerHeartbeat": {
+            /**
+             * Concurrency
+             * @default null
+             */
+            concurrency: number | null;
+            /**
+             * Cpu Cores
+             * @default null
+             */
+            cpu_cores: number | null;
+            /**
+             * Gpu Type
+             * @default null
+             */
+            gpu_type: string | null;
+            /**
+             * Last Seen
+             * @description RFC 3339 UTC time of the last heartbeat
+             * @default null
+             */
+            last_seen: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Online
+             * @description Heartbeat younger than WORKER_HEARTBEAT_STALE_SECONDS
+             */
+            online: boolean;
+            /** Queues */
+            queues: string[];
+            /**
+             * Ram Gb
+             * @default null
+             */
+            ram_gb: number | null;
+            /**
+             * Type
+             * @description 'cpu' or 'gpu'
+             */
+            type: string;
+            /**
+             * Vram Gb
+             * @default null
+             */
+            vram_gb: number | null;
+        };
         /**
          * TaskAdminResponse
          * @description All fields — visible to admin/jury only.
@@ -5980,13 +6076,6 @@ export interface components {
              */
             user_code: string | null;
         };
-        /**
-         * WorkerStatsResponse
-         * @description Free-form worker stats dict.
-         */
-        "WorkerStatsResponse.febf810": Record<string, never>;
-        /** WorkerStatusResponse */
-        "WorkerStatusResponse.6bc6f68": Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -6602,6 +6691,53 @@ export interface operations {
             };
         };
     };
+    "get__api_admin_system-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatusResponse.a74769c"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     get__api_admin_users: {
         parameters: {
             query?: never;
@@ -6716,62 +6852,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResetPasswordResponse.febf810"];
                 };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    get__api_admin_workers_stats: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkerStatsResponse.febf810"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    get__api_admin_workers_stats_live: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Unprocessable Content */
             422: {
@@ -8121,6 +8201,35 @@ export interface operations {
             };
         };
     };
+    get__api_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicStatusResponse.a74769c"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "get__api_submissions_{submission_id}": {
         parameters: {
             query?: never;
@@ -8540,44 +8649,6 @@ export interface operations {
             };
         };
     };
-    "get__api_tasks_{task_id}_submissions_live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
     "post__api_tasks_{task_id}_submit": {
         parameters: {
             query?: never;
@@ -8640,62 +8711,6 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "get__api_worker-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkerStatusResponse.6bc6f68"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "get__api_worker-status_live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unprocessable Content */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

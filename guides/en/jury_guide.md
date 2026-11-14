@@ -29,7 +29,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
 | Download one-time credentials archive (`/api/admin/challenges/<id>/credentials`) | **No** | **Yes** |
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
-| Monitor live submission progress via SSE & inspect cluster telemetry | **Yes** | **Yes** |
+| Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
 | Disqualify submissions or competitors (`is_disqualified`) | **Yes** | **Yes** |
 | Assign manual score points (0–100) per task | **Yes** | **Yes** |

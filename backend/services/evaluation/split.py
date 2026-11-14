@@ -13,16 +13,7 @@ import pandas as pd
 
 from services.evaluation.exceptions import EvaluationError
 from services.evaluation.validation import validate_evaluation_frames
-
-
-def derive_task_split_key(secret: str, task_id: Any) -> str:
-    """Derive a task-scoped key without disclosing the root split secret."""
-    if not secret:
-        raise EvaluationError(
-            "EVALUATION_SPLIT_SECRET_MISSING",
-            "Evaluation split secret is not configured.",
-        )
-    return hmac.new(secret.encode(), str(task_id).encode(), hashlib.sha256).hexdigest()
+from utils.split_key import derive_task_split_key as derive_task_split_key
 
 
 def _identifier_bytes(value: Any) -> bytes:

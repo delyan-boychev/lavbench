@@ -8,7 +8,7 @@ absl-py==2.4.0
     # via rouge-score
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.5
     # via
     #   -r requirements.in
     #   fsspec
@@ -34,7 +34,7 @@ blinker==1.9.0
     # via flask
 celery==5.6.3
     # via -r requirements.in
-certifi==2026.5.20
+certifi==2026.10.23
     # via
     #   httpcore
     #   httpx
@@ -72,7 +72,7 @@ dill==0.4.0
     #   multiprocess
 docker==7.1.0
     # via -r requirements.in
-filelock==3.32.2
+filelock==4.2.10
     # via
     #   -r requirements.in
     #   datasets
@@ -162,7 +162,7 @@ narwhals==2.22.1
     # via scikit-learn
 networkx==3.4.2
     # via scikit-image
-nltk==3.10.3
+nltk==3.10.4
     # via
     #   -r requirements.in
     #   rouge-score
@@ -189,7 +189,7 @@ pandas==2.3.3
     # via
     #   -r requirements.in
     #   datasets
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   -r requirements.in
     #   imageio
@@ -203,6 +203,8 @@ propcache==0.4.1
     #   aiohttp
     #   yarl
 psutil==7.2.2
+    # via -r requirements.in
+psycogreen==1.0.2
     # via -r requirements.in
 psycopg2-binary==2.9.12
     # via -r requirements.in
@@ -323,7 +325,7 @@ werkzeug==3.1.9
     #   flask-cors
 xxhash==3.7.0
     # via datasets
-yarl==1.22.0
+yarl==1.25.1
     # via aiohttp
 zope-event==6.0
     # via gevent

@@ -24,6 +24,15 @@ if ! docker info &>/dev/null; then
 fi
 echo "  ✔ Docker daemon running"
 
+# ── Preflight: Docker Compose 2.24+ (optional env_file entries) ──────
+COMPOSE_VERSION=$(docker compose version --short 2>/dev/null | sed 's/^v//') || true
+if [ -z "$COMPOSE_VERSION" ] \
+  || [ "$(printf '%s\n' 2.24.0 "$COMPOSE_VERSION" | sort -V | head -1)" != "2.24.0" ]; then
+  echo "  [ERROR] Docker Compose 2.24 or later is required (found: ${COMPOSE_VERSION:-none})." >&2
+  exit 1
+fi
+echo "  ✔ Docker Compose ${COMPOSE_VERSION}"
+
 # ── Preflight: .env exists with required vars ──────────────────────
 if [ ! -f ".env" ]; then
   echo "  [ERROR] .env not found. Run: make setup-server"

@@ -23,8 +23,8 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Frontend** | React 19 + Vite + Vanilla/Tailwind CSS | SPA with SSE live updates, i18n (en/bg), JSDoc `@type` validation (`tsc --noEmit`). |
 | **API Server** | Flask 3.1 + Gunicorn + gevent + spectree | REST API endpoints, Pydantic v2 request/response validation, SSE event streaming. |
 | **Primary Database** | PostgreSQL 15 | Users, challenges, stages, tasks, submissions, audit logs (`AuditLog`). |
-| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks. AOF persistence and `noeviction` protect queued work. |
-| **Dedicated Cache** | Redis (DB 1, `noeviction`, no persistence) | Private, server-only cache: leaderboard caches, distributed locks, rate-limit counters, and JWT token blacklist (`CACHE_REDIS_URL`). Internal container — no host port; external workers never receive this URL. |
+| **Cache & Broker** | Redis | Celery task broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry (`worker_spec:<hostname>`), submission fallback key, versioned leaderboard invalidations, dead-letter queue, GPU/build locks, distributed locks (submit, leaderboard), rate-limit counters, login failures, JWT revocations and backup markers. AOF persistence and `noeviction` protect queued work and these guarantees. |
+| **Dedicated Cache** | Redis (DB 1, `volatile-lru`, no persistence) | Private, server-only cache for recomputable data: leaderboard and status caches, SSE log replay lists and submission status (`CACHE_REDIS_URL`). When full it evicts the least recently used keys that have a TTL, so nothing stored here may be needed for correctness. Internal container — no host port; external workers never receive this URL. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
 | **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
@@ -205,19 +205,20 @@ All backend API error responses use `err("ERR_CODE", status_code)` returning `{"
 
 ## 8. SSE Real-Time Streaming Architecture
 
-7 backend endpoints utilize Server-Sent Events (SSE) for real-time telemetry and data streaming:
+Four backend endpoints use Server-Sent Events (SSE):
 
-| Endpoint | Streamed Data | Trigger Event |
+| Endpoint | Event | Trigger |
 | :--- | :--- | :--- |
-| `/api/challenges/<id>/leaderboard/live` | Live Challenge Leaderboard JSON | Submission score computed or manual score edited. |
-| `/api/tasks/<id>/submissions/live` | Submission List Updates | New submission queued or state transition. |
-| `/api/submissions/<id>/logs/live` | Execution Log Lines | Live stdout/stderr log output from worker sandbox. |
-| `/api/admin/workers/stats/live` | Worker Cluster Telemetry | Worker connection/disconnection or slot update. |
-| `/api/admin/backups/live` | Backup Archives List | Automated or manual backup completion. |
-| `/api/admin/submissions/queue/live` | Live Submission Queue State | Queue enqueue/acknowledge/reject events. |
-| `/api/worker-status/live` | Cluster Health (Navbar Badge) | Worker heartbeats and status changes. |
+| `/api/challenges/<id>/leaderboard/live` | `{"event": "update"}` | The leaderboard beat (every 20 s) recalculated a challenge whose scores changed. |
+| `/api/submissions/<id>/logs/live` | Execution log lines | Live stdout/stderr from the worker sandbox, streamed only while the submission is running. |
+| `/api/admin/backups/live` | `{"event": "update"}` | An automatic or manual backup finished. |
+| `/api/admin/submissions/queue/live` | `{"event": "update"}` | The evaluation queue changed. |
 
-SSE capacity is governed by two environment variables: `SSE_MAX_GLOBAL` (default `2000` concurrent connections platform-wide) and `SSE_MAX_PER_USER` (default `15` per client), both overridable via `.env`.
+Events other than log lines carry no data. On each event the client refetches the matching REST endpoint through TanStack Query, throttled so that a burst of events causes one refetch, and the server never builds a payload per viewer. Every stream sends a `retry:` field and a keep-alive comment, the idle timeout has jitter so that streams do not expire together, and the request's database session is released before streaming starts.
+
+Submission lists are not streamed. A competitor's list is polled every 5 seconds while one of their submissions is queued or running, and not at all otherwise. A finished submission shows its stored logs; for running submissions, Redis keeps the last `SSE_LOG_MAX_LINES` log lines (default 500) for `SSE_LOG_TTL` seconds (default 3600) so that a reconnecting viewer can catch up.
+
+SSE capacity is governed by `SSE_MAX_GLOBAL` (default `2000` concurrent connections platform-wide) and `SSE_MAX_PER_USER` (default `15` per client). Docker Compose loads `.env` into the services, so both can be overridden there.
 
 ---
 
@@ -225,10 +226,11 @@ SSE capacity is governed by two environment variables: `SSE_MAX_GLOBAL` (default
 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
-| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Retains the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-Each backup archive contains a complete PostgreSQL database dump (`pg_dump`) along with compressed `uploads/` assets in a `.tar.gz` format.
+Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out. Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
 
 ---
 
@@ -248,4 +250,23 @@ else:
     reject task → Celery retry → dead-letter queue (/api/admin/dead-letters)
 ```
 
-On the `worker_ready` signal, workers write their hardware specifications to the Redis coordination client (`worker_spec:<hostname>`, 24h TTL), which are served via `/api/admin/workers/stats` and displayed in the Admin navbar. Worker registration is fully signal-driven — no registration task exists anymore.
+On the `worker_ready` signal, workers write their hardware specification to the Redis coordination client (`worker_spec:<hostname>`) and a background thread refreshes it every `WORKER_HEARTBEAT_SECONDS` (default 30), together with the queues the worker consumes and `last_seen`. The key expires after one day; a worker counts as online while its last heartbeat is younger than `WORKER_HEARTBEAT_STALE_SECONDS` (default 90). The heartbeats feed `GET /api/status` and `GET /api/admin/system-status` (section 11). Worker registration is fully signal-driven — no registration task exists.
+
+---
+
+## 11. Status and Health Endpoints
+
+| Endpoint | Access | Purpose |
+| :--- | :--- | :--- |
+| `GET /api/health` | Public | Liveness: database, cache Redis, broker Redis and disk. Returns 200 or 503 and is used by the container health checks. It never checks workers, so a missing worker cannot make the API look down. |
+| `GET /api/status` | Public | Coarse status for uptime checks, using the Statuspage words `operational`, `degraded_performance`, `partial_outage` and `major_outage`. Cached for `STATUS_CACHE_SECONDS` (default 30). |
+| `GET /api/admin/system-status` | Admin, jury | The detail behind the status: queues, workers and submission counts. Shown in the Admin Panel's **Workers and queues** panel, which polls it every 15 seconds. |
+
+Both status endpoints are computed from worker heartbeats, broker queue lengths and the database. Web processes never call Celery `inspect`.
+
+| Component | Rule |
+| :--- | :--- |
+| `api` | `major_outage` when the database or the broker Redis is unreachable, otherwise `operational`. |
+| `scoring` | `major_outage` when no live worker consumes `cpu_queue`; `partial_outage` when another evaluation queue has pending messages but no live consumer; `degraded_performance` when the oldest queued submission has waited longer than `STATUS_QUEUE_DEGRADED_SECONDS` (default 600); otherwise `operational`. |
+
+The overall `status` is the worst component. A worker counts as live when its last heartbeat is younger than `WORKER_HEARTBEAT_STALE_SECONDS` (default 90); workers send one every `WORKER_HEARTBEAT_SECONDS` (default 30).
