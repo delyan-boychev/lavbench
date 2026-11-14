@@ -363,7 +363,8 @@ class TestSubmissionStatusGroups:
 
         assert TERMINAL_STATUSES == ("completed", "failed")
         assert RUNNING_STATUSES == ("running", "building_env", "running_inference", "evaluating")
-        assert ACTIVE_STATUSES == ("queued", *RUNNING_STATUSES)
+        assert ACTIVE_STATUSES[0] == "queued"
+        assert ACTIVE_STATUSES[1:] == RUNNING_STATUSES
         assert not set(ACTIVE_STATUSES) & set(TERMINAL_STATUSES)
         assert set(VALID_STATUSES) <= set(ACTIVE_STATUSES) | set(TERMINAL_STATUSES)
 
