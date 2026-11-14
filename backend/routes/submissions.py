@@ -16,7 +16,7 @@ from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from config import Config
-from models import Challenge, Submission, Task, User, db, decrypt_field
+from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
     ErrorResponse,
@@ -566,7 +566,6 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     return MessageResponse(message="Submission killed successfully.")
 
 
-_TERMINAL_STATUSES = ("completed", "failed")
 _LOG_MESSAGE_WAIT_SECONDS = 2.0
 _LOG_STATUS_CHECK_SECONDS = 10.0
 
@@ -597,7 +596,7 @@ def _relay_log_message(raw: Any) -> tuple[list[str], bool]:
         parsed = None
     if isinstance(parsed, dict) and isinstance(parsed.get("logs"), list):
         return [sse_data({"log": line}) for line in parsed["logs"]], False
-    finished = isinstance(parsed, dict) and parsed.get("status") in _TERMINAL_STATUSES
+    finished = isinstance(parsed, dict) and parsed.get("status") in TERMINAL_STATUSES
     return [f"data: {data_str}\n\n"], finished
 
 
@@ -685,7 +684,7 @@ def stream_submission_logs(
     # Streaming and the generator never queries the database
     initial_status = submission.status
     pubsub = None
-    if initial_status not in _TERMINAL_STATUSES:
+    if initial_status not in TERMINAL_STATUSES:
         # Subscribe before reading the replay, so a line published in between still
         # Arrives; one published right between the two calls may appear twice
         pubsub = subscribe_channel(submission_logs_channel(submission_id))
@@ -705,7 +704,7 @@ def stream_submission_logs(
                 yield sse_data({"info": "connected"})
                 for line in replay:
                     yield sse_data({"log": line})
-                if initial_status in _TERMINAL_STATUSES:
+                if initial_status in TERMINAL_STATUSES:
                     yield sse_data({"status": initial_status})
                     return
                 yield from _follow_live_logs(pubsub, submission_id, member, user_id)

@@ -12,6 +12,12 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
+# Submission status groups. A terminal status never changes again; a running one means
+# A worker took the submission; an active one is queued or running
+TERMINAL_STATUSES: tuple[str, ...] = ("completed", "failed")
+RUNNING_STATUSES: tuple[str, ...] = ("running", "building_env", "running_inference", "evaluating")
+ACTIVE_STATUSES: tuple[str, ...] = ("queued", *RUNNING_STATUSES)
+
 
 class Submission(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "submissions"

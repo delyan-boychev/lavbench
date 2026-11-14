@@ -23,6 +23,7 @@ import requests
 from celery.signals import worker_ready
 
 from config import Config
+from models import TERMINAL_STATUSES
 from utils.cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
 from utils.dates import utcnow
 from utils.worker_auth import (
@@ -409,7 +410,7 @@ def run_eval_submission(
             if not db_submission:
                 return f"Submission {submission_id} not found."
             # Idempotency: skip if already in a terminal state
-            if db_submission.status in ("completed", "failed"):
+            if db_submission.status in TERMINAL_STATUSES:
                 return (
                     f"Submission {submission_id} already in terminal state: {db_submission.status}"
                 )
@@ -525,7 +526,7 @@ def run_eval_submission(
                 gpu_node=submission.gpu_node,
             )
             if not success:
-                if status_val in ("completed", "failed"):
+                if status_val in TERMINAL_STATUSES:
                     # Final status: critical — must persist via Redis fallback
                     fallback = {
                         "submission_id": submission_id,
@@ -604,7 +605,7 @@ def run_eval_submission(
                         sub.metrics_payload_private = m_priv
                     db.session.commit()
 
-                    if status_val in ("completed", "failed"):
+                    if status_val in TERMINAL_STATUSES:
                         try:
                             from utils.cache_utils import invalidate_leaderboard_cache
 

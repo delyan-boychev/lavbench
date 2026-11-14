@@ -17,6 +17,7 @@ from celery.signals import celeryd_init, worker_process_init
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
+from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
 from utils.dates import utcnow
 
 from .task_modules.submission_runner import run_eval_submission
@@ -210,7 +211,7 @@ def evaluate_submission(
         if HAS_APP and app:
             with app.app_context():
                 sub = db.session.get(Submission, submission_id)
-                if sub and sub.status not in ("completed", "failed"):
+                if sub and sub.status not in TERMINAL_STATUSES:
                     sub.status = "failed"
                     sub.detailed_status = "failed"
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
@@ -462,14 +463,12 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
         # 2. Time out stuck submissions with dynamic per-task timeout
         timed_out_candidates = Submission.query.filter(
-            Submission.status.in_(
-                ["queued", "running", "building_env", "running_inference", "evaluating"]
-            ),
+            Submission.status.in_(ACTIVE_STATUSES),
             Submission.executed_at.is_(None),
         ).yield_per(500)
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(["running", "building_env", "running_inference", "evaluating"]),
+            Submission.status.in_(RUNNING_STATUSES),
             Submission.executed_at.isnot(None),
         ).yield_per(500)
         now = utcnow()

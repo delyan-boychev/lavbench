@@ -20,7 +20,7 @@ from spectree import Response
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import Challenge, Stage, Submission, Task, db
+from models import TERMINAL_STATUSES, Challenge, Stage, Submission, Task, db
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
@@ -1653,7 +1653,7 @@ def report_worker_progress(
         status_val = data["status"]
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
-        if submission.status in ("completed", "failed"):
+        if submission.status in TERMINAL_STATUSES:
             if status_val == submission.status:
                 return {"message": "Status already applied"}, 200
             return err("ERR_STALE_WORKER_ATTEMPT", 409)
@@ -1773,7 +1773,7 @@ def report_worker_progress(
 
     publish_queue_update()
 
-    if submission.status in ("completed", "failed"):
+    if submission.status in TERMINAL_STATUSES:
         from utils.sse_utils import publish_submission_status
 
         publish_submission_status(submission.id, submission.status)

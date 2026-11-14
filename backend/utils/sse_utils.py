@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from config import Config
+from models import TERMINAL_STATUSES
 from models.base import uuid7
 from utils.cache_utils import (
     get_coordination_client,
@@ -31,7 +32,6 @@ SSE_MAX_GLOBAL = Config.SSE_MAX_GLOBAL
 
 _CONNECTIONS_KEY = "sse:connections"
 _STALE_TTL = 120
-_TERMINAL_STATUSES = ("completed", "failed")
 
 CHANNEL_TASK_REBUILD = "task_rebuild"
 CHANNEL_BACKUPS = "backup_status"
@@ -246,7 +246,7 @@ def publish_submission_status(submission_id: Any, status: str) -> None:
     """
     if not submission_id or not status:
         return
-    if status in _TERMINAL_STATUSES:
+    if status in TERMINAL_STATUSES:
         try:
             cache_r = get_redis_client()
             if cache_r:
@@ -273,7 +273,7 @@ def get_submission_final_status(submission_id: Any) -> str | None:
         return None
     if isinstance(value, bytes):
         value = value.decode("utf-8")
-    return value if value in _TERMINAL_STATUSES else None
+    return value if value in TERMINAL_STATUSES else None
 
 
 def publish_queue_update() -> None:

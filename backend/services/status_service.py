@@ -15,7 +15,7 @@ from typing import Any, get_args
 from sqlalchemy import func
 
 from config import Config
-from models import Submission, db
+from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES, Submission, db
 from schemas.responses.status import StatusWord
 from utils.cache_utils import (
     cache_lock,
@@ -41,8 +41,6 @@ _STATUS_LOCK_KEY = "lock:status:system"
 _STATUS_LOCK_SECONDS = 30
 
 _WORKER_SPEC_PATTERN = "worker_spec:*"
-_RUNNING_STATUSES = ("running", "building_env", "running_inference", "evaluating")
-_FINISHED_STATUSES = ("completed", "failed")
 _RECENT_WINDOW = timedelta(minutes=15)
 
 
@@ -144,7 +142,7 @@ def _queue_entries(client: Any | None, workers: list[dict[str, Any]]) -> list[di
 def _submission_counts(now: datetime) -> dict[str, Any]:
     active = dict(
         db.session.query(Submission.status, func.count())
-        .filter(Submission.status.in_(("queued", *_RUNNING_STATUSES)))
+        .filter(Submission.status.in_(ACTIVE_STATUSES))
         .group_by(Submission.status)
         .all()
     )
@@ -159,7 +157,7 @@ def _submission_counts(now: datetime) -> dict[str, Any]:
     recent = dict(
         db.session.query(Submission.status, func.count())
         .filter(
-            Submission.status.in_(_FINISHED_STATUSES),
+            Submission.status.in_(TERMINAL_STATUSES),
             finished_since >= now - _RECENT_WINDOW,
         )
         .group_by(Submission.status)
@@ -167,7 +165,7 @@ def _submission_counts(now: datetime) -> dict[str, Any]:
     )
     return {
         "queued": int(active.get("queued", 0)),
-        "running": int(sum(active.get(status, 0) for status in _RUNNING_STATUSES)),
+        "running": int(sum(active.get(status, 0) for status in RUNNING_STATUSES)),
         "oldest_queued_seconds": (
             max(0, int((now - oldest_queued).total_seconds())) if oldest_queued else None
         ),
