@@ -134,7 +134,7 @@ describe('AdminPanel – tab navigation', () => {
         : Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } }),
     );
     renderWithProviders(<AdminPanel />);
-    const btn = screen.getByText('Workers and queues');
+    const btn = screen.getByRole('button', { name: 'Workers and queues' });
     await act(async () => fireEvent.click(btn));
     expect(api.get).toHaveBeenCalledWith('/admin/system-status', expect.anything());
     expect(streams).toEqual([]);
@@ -234,7 +234,9 @@ describe('AdminPanel – workers tab polling', () => {
       ),
     );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers and queues')));
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' })),
+    );
     expect(await screen.findByText('celery@gpu-0')).toBeInTheDocument();
     expect(screen.getByText('Stale')).toBeInTheDocument();
   });
@@ -248,7 +250,9 @@ describe('AdminPanel – workers tab polling', () => {
       ),
     );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers and queues')));
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' })),
+    );
     expect(await screen.findByRole('alert')).toHaveTextContent('An unexpected error occurred');
   });
 });

@@ -274,7 +274,7 @@ describe('AdminPanel Page - Workers and queues', () => {
   it('renders sidebar options including Workers and queues for admin', async () => {
     renderWithProviders(<AdminPanel />);
     expect(screen.getByText('Jury Control Hub')).toBeInTheDocument();
-    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workers and queues' })).toBeInTheDocument();
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
@@ -295,11 +295,11 @@ describe('AdminPanel Page - Workers and queues', () => {
     renderWithProviders(<AdminPanel />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Workers and queues'));
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     });
 
     expect(await screen.findByText('celery@gpu-worker-test')).toBeInTheDocument();
-    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Workers and queues' })).toBeInTheDocument();
     // Once in the queues table and once in the worker's queue list
     expect(screen.getAllByText('evaluation_gpu')).toHaveLength(2);
     expect(screen.getAllByText('Degraded performance')).toHaveLength(2);
@@ -317,7 +317,7 @@ describe('AdminPanel Page - Workers and queues', () => {
     renderWithProviders(<AdminPanel />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Workers and queues'));
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     });
 
     expect(
@@ -366,7 +366,7 @@ describe('AdminPanel component', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workers and queues' })).toBeInTheDocument();
   });
 });
 
@@ -775,12 +775,12 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    fireEvent.click(screen.getByText('Workers and queues'));
+    fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' }));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(screen.getByText('Workers and queues')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Workers and queues' })).toBeInTheDocument();
   });
 
   it('switches to Audit Logs tab and renders AuditLogViewer', async () => {
