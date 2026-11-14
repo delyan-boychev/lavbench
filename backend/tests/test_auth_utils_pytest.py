@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask, jsonify, request
@@ -265,6 +265,33 @@ class TestRateLimit:
             assert res.status_code == 200
         res = rate_limit_client.get("/test-rl2", environ_base={"REMOTE_ADDR": unique_ip})
         assert res.status_code == 429
+        assert res.get_json()["code"] == "ERR_RATE_LIMITED"
+        # RFC 6585: seconds until the current window ends
+        assert 1 <= int(res.headers["Retry-After"]) <= 60
+
+    @pytest.mark.parametrize(
+        ("eval_result", "expected"),
+        [([3, 17], "17"), ([3, -1], "60"), (3, "60")],
+    )
+    def test_retry_after_is_window_remaining_or_window_length(
+        self, rate_limit_client, eval_result, expected
+    ):
+        fake = MagicMock()
+        fake.eval.return_value = eval_result
+        with patch("utils.auth_utils._redis_client", return_value=fake):
+            res = rate_limit_client.get("/test-rl2")
+        assert res.status_code == 429
+        assert res.headers["Retry-After"] == expected
+
+    def test_counters_live_on_the_broker_redis(self):
+        from utils.auth_utils import _redis_client
+
+        broker, cache = MagicMock(), MagicMock()
+        with (
+            patch("utils.cache_utils.get_coordination_client", return_value=broker),
+            patch("utils.cache_utils.get_redis_client", return_value=cache),
+        ):
+            assert _redis_client() is broker
 
     def test_per_user_keying(self, rate_limit_client):
         import uuid
@@ -319,3 +346,26 @@ class TestRateLimit:
             pytest.skip("Redis unavailable")
         keys = [k.decode() if isinstance(k, bytes) else k for k in r.scan_iter("rate:*")]
         assert any(f"rate:{ident}:test_route_identity" in k for k in keys)
+
+
+class TestTokenRevocationStore:
+    """Revocations must survive cache eviction, so they live on the broker Redis."""
+
+    def test_revocation_is_written_to_and_read_from_the_broker(self):
+        from utils.auth_utils import _LOCAL_REVOKED_TOKENS, _is_token_revoked, revoke_token
+
+        broker, cache = MagicMock(), MagicMock()
+        token = _token(user_id="revoked-user")
+        with (
+            patch("utils.cache_utils.get_coordination_client", return_value=broker),
+            patch("utils.cache_utils.get_redis_client", return_value=cache),
+        ):
+            revoke_token(token)
+            jti = broker.set.call_args.args[0].removeprefix("revoked:")
+            _LOCAL_REVOKED_TOKENS.pop(jti, None)
+            broker.exists.return_value = 1
+            assert _is_token_revoked(jti) is True
+        assert broker.set.call_args.args[0].startswith("revoked:")
+        broker.exists.assert_called_with(f"revoked:{jti}")
+        cache.set.assert_not_called()
+        cache.exists.assert_not_called()

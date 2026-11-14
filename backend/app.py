@@ -108,6 +108,7 @@ def create_app() -> Flask:
     from routes.challenges import challenges_bp
     from routes.docs import docs_bp
     from routes.leaderboard import leaderboard_bp
+    from routes.status import status_bp
     from routes.submissions import submissions_bp
     from routes.tasks import tasks_bp
 
@@ -117,6 +118,7 @@ def create_app() -> Flask:
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(leaderboard_bp, url_prefix="/api")
     app.register_blueprint(tasks_bp, url_prefix="/api")
+    app.register_blueprint(status_bp, url_prefix="/api")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")
 
     @app.before_request
@@ -162,12 +164,13 @@ def create_app() -> Flask:
             checks["database"] = "degraded"
 
         try:
-            from utils.cache_utils import get_redis_client, redis_dependency_is_healthy
+            from utils.cache_utils import get_redis_client
 
+            # The cache evicts under memory pressure by design (volatile-lru), so
+            # Running near maxmemory is normal there: only reachability counts
+            cache_client = get_redis_client()
             checks["redis_cache"] = (
-                "ok"
-                if redis_dependency_is_healthy(get_redis_client(), require_aof=False)
-                else "degraded"
+                "ok" if cache_client is not None and cache_client.ping() else "degraded"
             )
         except Exception:
             checks["redis_cache"] = "degraded"

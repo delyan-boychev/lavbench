@@ -27,6 +27,7 @@ def _mock_redis():
     with (
         patch("utils.sse_utils.get_coordination_client", _mock_get_redis),
         patch("utils.cache_utils.get_coordination_client", _mock_get_redis),
+        patch("utils.sse.get_sse_client", _mock_get_redis),
     ):
         yield
 
@@ -44,24 +45,6 @@ class TestStreamSubmissionLogs:
         )
         try:
             assert res.status_code in (200, 404)
-        finally:
-            res.close()
-
-
-class TestStreamTaskSubmissions:
-    def test_requires_auth(self, client):
-        res = client.get("/api/tasks/00000000-0000-0000-0000-000000000000/submissions/live")
-        assert res.status_code in (401, 302)
-
-    def test_returns_event_stream_with_auth(self, client, tokens, auth_headers):
-        res = client.get(
-            "/api/tasks/00000000-0000-0000-0000-000000000000/submissions/live",
-            headers=auth_headers(tokens.admin),
-            buffered=False,
-        )
-        try:
-            if res.status_code == 200:
-                assert res.mimetype == "text/event-stream"
         finally:
             res.close()
 
@@ -90,25 +73,15 @@ class TestStreamBackupStatus:
         assert res.status_code in (401, 302, 403)
 
 
-class TestStreamWorkerStats:
-    def test_requires_auth(self, client):
-        res = client.get("/api/admin/workers/stats/live")
-        assert res.status_code in (401, 302, 403)
-
-
-class TestStreamWorkerStatus:
-    def test_requires_auth(self, client):
-        res = client.get("/api/worker-status/live")
-        assert res.status_code in (401, 302)
-
-    def test_returns_event_stream_with_auth(self, client, tokens, auth_headers):
-        res = client.get(
+class TestRemovedStreams:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/tasks/00000000-0000-0000-0000-000000000000/submissions/live",
             "/api/worker-status/live",
-            headers=auth_headers(tokens.admin),
-            buffered=False,
-        )
-        try:
-            if res.status_code == 200:
-                assert res.mimetype == "text/event-stream"
-        finally:
-            res.close()
+            "/api/admin/workers/stats/live",
+        ],
+    )
+    def test_removed_stream_returns_404(self, client, tokens, auth_headers, path):
+        res = client.get(path, headers=auth_headers(tokens.admin))
+        assert res.status_code == 404

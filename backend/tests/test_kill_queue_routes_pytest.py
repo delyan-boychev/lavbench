@@ -432,6 +432,51 @@ class TestSubmissionQueue:
         assert data["page"] == 1
         assert data["pages"] == 2
 
+    def test_queue_listing_query_count_does_not_grow_with_rows(self, app):
+        from sqlalchemy import event
+
+        def count_queries() -> int:
+            statements: list[str] = []
+
+            def record(conn, cursor, statement, *args):
+                statements.append(statement)
+
+            engine = db.engine
+            event.listen(engine, "before_cursor_execute", record)
+            try:
+                db.session.expire_all()
+                resp = self.client.get(
+                    "/api/admin/submissions/queue?page=1&per_page=50",
+                    headers=self._auth(self.admin_token),
+                )
+                assert resp.status_code == 200
+            finally:
+                event.remove(engine, "before_cursor_execute", record)
+            return len(statements)
+
+        baseline = count_queries()
+        for i in range(5):
+            user = User(
+                username=f"qcomp-extra-{i}",
+                password_hash="x",
+                role="competitor",
+                alias_id=f"QExtra{i}",
+                challenge_id=self.challenge.id,
+            )
+            db.session.add(user)
+            db.session.flush()
+            db.session.add(
+                Submission(
+                    user_id=user.id,
+                    challenge_id=self.challenge.id,
+                    task_id=self.task.id,
+                    status="queued",
+                )
+            )
+        db.session.commit()
+
+        assert count_queries() == baseline
+
     def test_queue_only_queued_and_running(self):
         resp = self.client.get(
             "/api/admin/submissions/queue?page=1&per_page=10",

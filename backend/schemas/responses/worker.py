@@ -27,10 +27,6 @@ class WorkerHfKeyResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
-class WorkerStatusResponse(BaseModel):
-    model_config = RESPONSE_CONFIG
-
-
 class WorkerReportResponse(BaseModel):
     message: str
 

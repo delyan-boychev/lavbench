@@ -41,7 +41,6 @@ from utils.cache_utils import (
     cache_lock,
     get_queue_depth,
     get_redis_client,
-    get_sse_client,
     invalidate_leaderboard_cache,
     submission_logs_key,
 )
@@ -51,15 +50,22 @@ from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_co
 from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.pagination import extract_pagination
+from utils.request_helpers import end_db_transaction
 from utils.spec import api
-from utils.sse import sse_response
+from utils.sse import (
+    SSE_SOCKET_LIMIT_PAYLOAD,
+    close_pubsub,
+    jittered_idle_timeout,
+    sse_data,
+    sse_response,
+    sse_retry_field,
+    subscribe_channel,
+)
 from utils.sse_utils import (
-    SSE_IDLE_TIMEOUT,
     clear_submission_logs,
-    publish_leaderboard_update,
+    get_submission_final_status,
     publish_queue_update,
     publish_submission_status,
-    publish_submissions_update,
     sse_connection_limit,
     sse_heartbeat,
     submission_logs_channel,
@@ -90,6 +96,8 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
         if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
+    # Reading the upload can be slow; do it outside a transaction
+    end_db_transaction()
     if "file" not in request.files:
         return err("ERR_NO_FILE_UPLOADED", 400)
     file = request.files["file"]
@@ -256,7 +264,6 @@ def submit_code(
             args=[submission.id, metadata],
             priority=priority,
             queue=queue_name,
-            countdown=1,
             expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=attempt_id,
         )
@@ -492,10 +499,8 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
     submission.is_final_selection = True
     db.session.commit()
 
+    # The leaderboard beat task rebuilds and signals live viewers
     invalidate_leaderboard_cache(submission.challenge_id)
-
-    publish_submissions_update(submission.task_id, submission.challenge_id)
-    publish_leaderboard_update(submission.challenge_id)
 
     return SelectFinalResponse(
         message="Submission selected as final.",
@@ -553,12 +558,46 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
 
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
     publish_submission_status(submission.id, "failed")
     clear_submission_logs(submission.id)
 
     return MessageResponse(message="Submission killed successfully.")
+
+
+_TERMINAL_STATUSES = ("completed", "failed")
+_LOG_MESSAGE_WAIT_SECONDS = 2.0
+_LOG_STATUS_CHECK_SECONDS = 10.0
+
+
+def _log_replay(submission: Submission) -> list[str]:
+    """Return the lines a new log stream replays: the live Redis list, else stored logs."""
+    cache_r = get_redis_client()
+    if cache_r:
+        try:
+            cached = cache_r.lrange(submission_logs_key(submission.id), 0, -1)
+        except Exception as e:
+            logger.warning("Failed to read live logs for submission %s: %s", submission.id, e)
+            cached = None
+        if cached:
+            return [
+                line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line)
+                for line in cached
+            ]
+    return (submission.logs or "").splitlines()
+
+
+def _relay_log_message(raw: Any) -> tuple[list[str], bool]:
+    """Turn one pub/sub message into SSE events; True when it carries a final status."""
+    data_str = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+    try:
+        parsed: Any = json.loads(data_str)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("logs"), list):
+        return [sse_data({"log": line}) for line in parsed["logs"]], False
+    finished = isinstance(parsed, dict) and parsed.get("status") in _TERMINAL_STATUSES
+    return [f"data: {data_str}\n\n"], finished
 
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/logs/live", methods=["GET"])
@@ -573,8 +612,6 @@ def stream_submission_logs(
     submission_id: Any,
 ) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Stream live logs for a submission using Server-Sent Events (SSE)."""
-    from flask import current_app
-
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -599,143 +636,62 @@ def stream_submission_logs(
                 if stage and stage.end_time and utcnow() >= stage.end_time:
                     return err("ERR_SUBMISSIONS_LOCKED", 403)
 
+    # Everything the stream needs is read now: the session is released before
+    # Streaming and the generator never queries the database
+    initial_status = submission.status
+    replay = _log_replay(submission)
+
     def event_generator():
-        user_id = request.user["user_id"]
         with sse_connection_limit(user_id=user_id) as (allowed, member):
             if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
+                yield sse_data(SSE_SOCKET_LIMIT_PAYLOAD)
+                return
+            yield sse_retry_field()
+            yield sse_data({"info": "connected"})
+            for line in replay:
+                yield sse_data({"log": line})
+            if initial_status in _TERMINAL_STATUSES:
+                yield sse_data({"status": initial_status})
                 return
 
-            cache_r = get_redis_client()
-            r = get_sse_client()
-
-            yield f"data: {json.dumps({'info': 'connected'})}\n\n"
-
-            if cache_r:
-                try:
-                    log_key = submission_logs_key(submission_id)
-                    existing_logs = cache_r.lrange(log_key, 0, -1)
-                    if existing_logs:
-                        for log_bin in existing_logs:
-                            log_line = log_bin.decode("utf-8")
-                            yield f"data: {json.dumps({'log': log_line})}\n\n"
-                    else:
-                        with current_app.app_context():
-                            sub = db.session.get(Submission, submission_id)
-                            if sub and sub.logs:
-                                for line in sub.logs.splitlines():
-                                    yield f"data: {json.dumps({'log': line})}\n\n"
-                except Exception as e:
-                    logger.warning(
-                        ("Failed to retrieve existing logs for submission %s: %s"), submission_id, e
+            pubsub = subscribe_channel(submission_logs_channel(submission_id))
+            deadline = time.monotonic() + jittered_idle_timeout()
+            # Check the stored final status right away: it closes the gap between
+            # Reading the submission and subscribing
+            next_status_check = time.monotonic()
+            try:
+                while True:
+                    now = time.monotonic()
+                    if now >= deadline:
+                        yield sse_data({"event": "timeout"})
+                        return
+                    if member and not sse_heartbeat(member, user_id):
+                        yield sse_data({"event": "evicted"})
+                        return
+                    if now >= next_status_check:
+                        next_status_check = now + _LOG_STATUS_CHECK_SECONDS
+                        final_status = get_submission_final_status(submission_id)
+                        if final_status:
+                            yield sse_data({"status": final_status})
+                            return
+                    if pubsub is None:
+                        time.sleep(_LOG_MESSAGE_WAIT_SECONDS)
+                        yield ": keep-alive\n\n"
+                        continue
+                    message = pubsub.get_message(
+                        ignore_subscribe_messages=True, timeout=_LOG_MESSAGE_WAIT_SECONDS
                     )
-            else:
-                with current_app.app_context():
-                    sub = db.session.get(Submission, submission_id)
-                    if sub and sub.logs:
-                        for line in sub.logs.splitlines():
-                            yield f"data: {json.dumps({'log': line})}\n\n"
-
-            with current_app.app_context():
-                sub = db.session.get(Submission, submission_id)
-                if sub and sub.status in ("completed", "failed"):
-                    yield f"data: {json.dumps({'status': sub.status})}\n\n"
-                    return
-
-            if r:
-                try:
-                    pubsub = r.pubsub()
-                    pubsub.subscribe(submission_logs_channel(submission_id))
-                except Exception:
-                    r = None
-
-            start_time = time.time()
-
-            if r:
-                last_db_check = time.time()
-                try:
-                    while True:
-                        if member and not sse_heartbeat(member, user_id):
-                            yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                            break
-                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                            break
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                        if message:
-                            data_str = message["data"].decode("utf-8")
-                            try:
-                                parsed: Any = json.loads(data_str)
-                            except Exception:
-                                parsed = None
-                            if isinstance(parsed, dict) and isinstance(parsed.get("logs"), list):
-                                for log_line in parsed["logs"]:
-                                    yield f"data: {json.dumps({'log': log_line})}\n\n"
-                                continue
-                            yield f"data: {data_str}\n\n"
-                            if isinstance(parsed, dict) and parsed.get("status") in (
-                                "completed",
-                                "failed",
-                            ):
-                                break
-                        else:
-                            yield ": keep-alive\n\n"
-
-                        now = time.time()
-                        if now - last_db_check >= 10.0:
-                            last_db_check = now
-                            with current_app.app_context():
-                                db.session.expire_all()
-                                sub = db.session.get(Submission, submission_id)
-                                if sub and sub.status in ("completed", "failed"):
-                                    yield f"data: {json.dumps({'status': sub.status})}\n\n"
-                                    break
-                except GeneratorExit:
-                    pass
-                except Exception as e:
-                    logger.error("SSE logs streaming error: %s", e)
-                finally:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-            else:
-                last_yielded_len = 0
-                with current_app.app_context():
-                    sub = db.session.get(Submission, submission_id)
-                    if sub and sub.logs:
-                        last_yielded_len = len(sub.logs.splitlines())
-
-                try:
-                    while True:
-                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                            break
-                        with current_app.app_context():
-                            db.session.expire_all()
-                            sub = db.session.get(Submission, submission_id)
-                            if not sub:
-                                break
-
-                            logs_str = sub.logs or ""
-                            lines = logs_str.splitlines()
-                            if len(lines) > last_yielded_len:
-                                for line in lines[last_yielded_len:]:
-                                    yield f"data: {json.dumps({'log': line})}\n\n"
-                                last_yielded_len = len(lines)
-
-                            if sub.status in ("completed", "failed"):
-                                yield f"data: {json.dumps({'status': sub.status})}\n\n"
-                                break
-
-                        time.sleep(2.0)
-                except GeneratorExit:
-                    pass
-                except Exception as e:
-                    logger.error("Polling logs fallback error: %s", e)
+                    if not message:
+                        yield ": keep-alive\n\n"
+                        continue
+                    events, finished = _relay_log_message(message["data"])
+                    yield from events
+                    if finished:
+                        return
+            except Exception as e:
+                logger.warning("SSE log stream for submission %s ended: %s", submission_id, e)
+            finally:
+                close_pubsub(pubsub)
 
     return sse_response(event_generator)
 

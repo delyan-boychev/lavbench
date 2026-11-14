@@ -208,6 +208,71 @@ class TestWatchdogStuckSubmissions:
         assert db.session.get(Submission, sub.id).status == "running"
         assert r.get(fallback_key) is None
 
+    def _fallback(self, sub, worker_id):
+        return json.dumps(
+            {
+                "status": "completed",
+                "detailed_status": "done",
+                "attempt_id": sub.celery_task_id,
+                "worker_id": worker_id,
+                "public_score": 0.7,
+            }
+        )
+
+    def test_fallback_recovered_after_lease_expired(self):
+        from utils.cache_utils import get_coordination_client
+
+        r = get_coordination_client()
+        if not r:
+            pytest.skip("Redis unavailable")
+
+        sub = self._create_submission("running")
+        # The worker lost contact longer than WORKER_ATTEMPT_LEASE_TTL: no binding left
+        r.delete(f"worker:attempt:{sub.celery_task_id}")
+        r.set(f"submission:{sub.id}:fallback", self._fallback(sub, "worker-a"))
+
+        result = watchdog_stuck_submissions()
+
+        assert result["recovered"] == 1
+        db.session.expire_all()
+        updated = db.session.get(Submission, sub.id)
+        assert updated.status == "completed"
+        assert updated.public_score == 0.7
+
+    def test_fallback_rejected_while_another_worker_holds_the_lease(self):
+        from utils.cache_utils import get_coordination_client
+
+        r = get_coordination_client()
+        if not r:
+            pytest.skip("Redis unavailable")
+
+        sub = self._create_submission("running")
+        r.set(f"worker:attempt:{sub.celery_task_id}", "worker-b", ex=3600)
+        r.set(f"submission:{sub.id}:fallback", self._fallback(sub, "worker-a"))
+
+        result = watchdog_stuck_submissions()
+
+        assert result["recovered"] == 0
+        db.session.expire_all()
+        assert db.session.get(Submission, sub.id).status == "running"
+        assert r.get(f"submission:{sub.id}:fallback") is None
+
+    def test_fallback_without_worker_id_is_rejected(self):
+        from utils.cache_utils import get_coordination_client
+
+        r = get_coordination_client()
+        if not r:
+            pytest.skip("Redis unavailable")
+
+        sub = self._create_submission("running")
+        r.set(f"submission:{sub.id}:fallback", self._fallback(sub, ""))
+
+        result = watchdog_stuck_submissions()
+
+        assert result["recovered"] == 0
+        db.session.expire_all()
+        assert db.session.get(Submission, sub.id).status == "running"
+
     def test_times_out_building_env_status(self):
         self._create_submission(
             "building_env",

@@ -55,6 +55,7 @@ from utils.error_utils import err
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
+from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.streaming import stream_open_handle_response
 
@@ -240,14 +241,9 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
         if not challenge or challenge.is_archived:
             return paginated_response(items=[], total=0, page=1, pages=0)
 
-        cache_key = f"challenge:{challenge_id}:competitor"
-        items = [
-            cached_or_compute(
-                cache_key,
-                lambda: filter_challenge_for_competitor(challenge.to_dict()),
-                timeout=600,
-            )
-        ]
+        # Never cached: the filter depends on the current time, so a cached copy
+        # Would hide tasks after a challenge or stage starts
+        items = [filter_challenge_for_competitor(challenge.to_dict())]
         return paginated_response(items=items, total=len(items), page=1, pages=1)
 
     if user_role == "jury":
@@ -330,11 +326,8 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
         if not challenge or challenge.is_archived:
             return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
 
-    if user_role == "competitor":
-        cache_key = f"challenge:{challenge_id}:competitor"
-        challenge_dict = cached_or_compute(
-            cache_key, lambda: filter_challenge_for_competitor(challenge.to_dict()), timeout=600
-        )
+        # Never cached: the time-based filter must reveal tasks the moment they start
+        challenge_dict = filter_challenge_for_competitor(challenge.to_dict())
     else:
         cache_key = f"challenge:{challenge_id}"
         challenge_dict = cached_or_compute(
@@ -1271,6 +1264,7 @@ def export_challenge(
 @challenges_bp.route("/import", methods=["POST"])
 @role_required(["admin"])
 @rate_limit(max_requests=5, window_seconds=120)
+@release_db_before_body
 @api.validate(
     resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
     tags=["Challenges"],
