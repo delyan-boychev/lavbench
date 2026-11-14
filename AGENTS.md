@@ -511,3 +511,7 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 - **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
 - **Pre-commit hook broken** with ruff v0.15.19 (S101/S106 false positives on tests) — use `--no-verify`
 - **Docker not needed for tests** — uses `sqlite:///:memory:`
+- **No Celery `inspect` in web code** — worker and queue status come from worker heartbeats (`worker_spec:*`, refreshed every `WORKER_HEARTBEAT_SECONDS`) through `GET /api/status` and `GET /api/admin/system-status`
+- **SSE events are signal-only** — streams send `{"event": "update"}` and the client refetches the REST endpoint; release the DB session before streaming and never query the DB inside a generator (log lines are the only data stream)
+- **End the transaction before reading a large request body** — the web engine sets `idle_in_transaction_session_timeout`, so commit or remove the session after the auth checks in upload routes
+- **`cache_lock` returns whether the lock was acquired** — always write `with cache_lock(key) as got:` and act on `got`
