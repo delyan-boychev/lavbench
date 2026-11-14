@@ -112,8 +112,7 @@ class TestInvalidateLeaderboardCache:
         co = _coordination()
         co.sadd(DIRTY_CHALLENGES_SET, "123")
         co.hset(DIRTY_LEADERBOARD_VERSIONS, "123", 2)
-        set_cached("leaderboard:raw:123:frozen", {"x": 1})
-        set_cached("leaderboard:raw:123:unfrozen", {"x": 1})
+        set_cached("leaderboard:raw:123", {"x": 1})
         set_cached("leaderboard:pending:123", {"x": 1})
 
         invalidate_leaderboard_cache(123, delete_only=True)
@@ -126,8 +125,7 @@ class TestInvalidateLeaderboardCache:
         r = get_redis_client()
         if not r:
             pytest.skip("Redis unavailable")
-        assert r.get("leaderboard:raw:123:frozen") is None
-        assert r.get("leaderboard:raw:123:unfrozen") is None
+        assert r.get("leaderboard:raw:123") is None
         assert r.get("leaderboard:pending:123") is None
 
 

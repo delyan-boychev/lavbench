@@ -915,3 +915,78 @@ class TestValidateBeforeMutate:
         refreshed = db_session.get(Challenge, self.challenge.id)
         assert refreshed.title == "Mutate Challenge"
         assert refreshed.end_time == self.end
+
+
+class TestCompetitorViewIsNeverCached:
+    """Tasks must appear the moment a challenge or stage starts (2.15 item 4)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session, redis_flush):
+        from models import Task
+
+        now = utcnow()
+        self.db_session = db_session
+        self.challenge = Challenge(
+            title="Start time",
+            description="Visibility",
+            max_eval_requests=5,
+            start_time=now - timedelta(hours=1),
+            end_time=now + timedelta(hours=5),
+        )
+        db_session.add(self.challenge)
+        db_session.flush()
+        self.stage = Stage(
+            challenge_id=self.challenge.id,
+            title="Stage 2",
+            start_time=now + timedelta(minutes=5),
+            end_time=now + timedelta(hours=4),
+        )
+        db_session.add(self.stage)
+        db_session.flush()
+        self.task = Task(title="Stage task", challenge_id=self.challenge.id, stage_id=self.stage.id)
+        db_session.add(self.task)
+        self.competitor = User(
+            username="start_comp",
+            password_hash="pbkdf2:sha256:...",
+            role="competitor",
+            alias_id="Start-Comp-001",
+            challenge_id=self.challenge.id,
+        )
+        db_session.add(self.competitor)
+        db_session.commit()
+        self.headers = {
+            "Authorization": f"Bearer {generate_token(self.competitor.id, 'competitor')}"
+        }
+
+    def _start_stage_now(self):
+        self.stage.start_time = utcnow() - timedelta(seconds=1)
+        self.db_session.commit()
+
+    def _task_ids(self, challenge_dict):
+        return [t["id"] for t in challenge_dict["tasks"]]
+
+    def test_list_view_shows_tasks_right_after_the_stage_starts(self, client):
+        before = client.get("/api/challenges", headers=self.headers).get_json()
+        assert self._task_ids(before["items"][0]) == []
+
+        self._start_stage_now()
+
+        after = client.get("/api/challenges", headers=self.headers).get_json()
+        assert self._task_ids(after["items"][0]) == [str(self.task.id)]
+
+    def test_detail_view_shows_tasks_right_after_the_stage_starts(self, client):
+        path = f"/api/challenges/{self.challenge.id}"
+        assert self._task_ids(client.get(path, headers=self.headers).get_json()) == []
+
+        self._start_stage_now()
+
+        assert self._task_ids(client.get(path, headers=self.headers).get_json()) == [
+            str(self.task.id)
+        ]
+
+    def test_competitor_view_is_not_written_to_the_cache(self, client):
+        from utils.cache_utils import get_cached
+
+        client.get(f"/api/challenges/{self.challenge.id}", headers=self.headers)
+        client.get("/api/challenges", headers=self.headers)
+        assert get_cached(f"challenge:{self.challenge.id}:competitor") is None

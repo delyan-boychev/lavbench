@@ -1,0 +1,238 @@
+"""Service status computed from worker heartbeats, broker queue depths and the database.
+
+One snapshot feeds both ``GET /api/status`` (coarse, public) and
+``GET /api/admin/system-status`` (detail). It never calls Celery ``inspect``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from datetime import UTC, datetime, timedelta
+from typing import Any, get_args
+
+from sqlalchemy import func
+
+from config import Config
+from models import Submission, db
+from schemas.responses.status import StatusWord
+from utils.cache_helpers import cached_or_compute
+from utils.cache_utils import get_coordination_client, get_queue_depth
+from utils.dates import utcnow
+
+logger = logging.getLogger(__name__)
+
+CPU_QUEUE = "cpu_queue"
+# Always listed, even without consumers; every CPU submission goes to cpu_queue
+EVALUATION_QUEUES = (CPU_QUEUE, "gpu_queue")
+STATUS_ORDER: tuple[str, ...] = get_args(StatusWord)
+STATUS_CACHE_KEY = "status:system"
+
+_WORKER_SPEC_PATTERN = "worker_spec:*"
+_RUNNING_STATUSES = ("running", "building_env", "running_inference", "evaluating")
+_FINISHED_STATUSES = ("completed", "failed")
+_RECENT_WINDOW = timedelta(minutes=15)
+
+
+def _rfc3339(moment: datetime) -> str:
+    """Format a naive UTC datetime as RFC 3339 with a ``Z`` suffix."""
+    return moment.replace(microsecond=0).isoformat() + "Z"
+
+
+def _epoch_rfc3339(epoch_seconds: float) -> str:
+    return _rfc3339(datetime.fromtimestamp(epoch_seconds, UTC).replace(tzinfo=None))
+
+
+def worst_status(*statuses: str) -> str:
+    """Return the worst status word, ordered as in ``StatusWord``."""
+    return max(statuses, key=STATUS_ORDER.index)
+
+
+def _number(value: Any, cast: type[int] | type[float]) -> Any:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return cast(value)
+
+
+def _database_ok() -> bool:
+    try:
+        db.session.execute(db.text("SELECT 1"))
+        return True
+    except Exception as e:
+        logger.warning("Status check: database unreachable: %s", e)
+        db.session.rollback()
+        return False
+
+
+def _broker_client() -> Any | None:
+    """Return the broker client when it answers PING, otherwise None."""
+    client = get_coordination_client()
+    if client is None:
+        return None
+    try:
+        client.ping()
+    except Exception as e:
+        logger.warning("Status check: broker Redis unreachable: %s", e)
+        return None
+    return client
+
+
+def _read_worker_specs(client: Any) -> list[tuple[str, dict[str, Any]]]:
+    specs: list[tuple[str, dict[str, Any]]] = []
+    try:
+        for key in client.scan_iter(match=_WORKER_SPEC_PATTERN, count=200):
+            raw = client.get(key)
+            if not raw:
+                continue
+            try:
+                spec = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(spec, dict):
+                key_name = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                specs.append((key_name.removeprefix("worker_spec:"), spec))
+    except Exception as e:
+        logger.warning("Status check: reading worker heartbeats failed: %s", e)
+    return specs
+
+
+def _worker_entry(key_name: str, spec: dict[str, Any], now_epoch: float) -> dict[str, Any]:
+    last_seen = _number(spec.get("last_seen"), float)
+    online = last_seen is not None and now_epoch - last_seen < Config.WORKER_HEARTBEAT_STALE_SECONDS
+    gpu_type = spec.get("gpu_type")
+    return {
+        "name": str(spec.get("name") or key_name),
+        "type": "gpu" if str(spec.get("type", "")).upper() == "GPU" else "cpu",
+        "queues": sorted(q for q in spec.get("queues") or [] if isinstance(q, str)),
+        "online": online,
+        "last_seen": _epoch_rfc3339(last_seen) if last_seen is not None else None,
+        "concurrency": _number(spec.get("concurrency"), int),
+        "cpu_cores": _number(spec.get("cpu_cores"), int),
+        "ram_gb": _number(spec.get("ram_gb"), float),
+        "gpu_type": gpu_type if isinstance(gpu_type, str) and gpu_type != "N/A" else None,
+        "vram_gb": _number(spec.get("vram_gb"), float),
+    }
+
+
+def _queue_entries(client: Any | None, workers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """List the evaluation queues plus any queue a live worker reports."""
+    live_queues = {q for w in workers if w["online"] for q in w["queues"]}
+    names = list(EVALUATION_QUEUES) + sorted(live_queues - set(EVALUATION_QUEUES))
+    return [
+        {
+            "name": name,
+            "consumers": sum(1 for w in workers if w["online"] and name in w["queues"]),
+            "queued": get_queue_depth(name) if client is not None else 0,
+        }
+        for name in names
+    ]
+
+
+def _submission_counts(now: datetime) -> dict[str, Any]:
+    active = dict(
+        db.session.query(Submission.status, func.count())
+        .filter(Submission.status.in_(("queued", *_RUNNING_STATUSES)))
+        .group_by(Submission.status)
+        .all()
+    )
+    oldest_queued = (
+        db.session.query(func.min(Submission.created_at))
+        .filter(Submission.status == "queued")
+        .scalar()
+    )
+    # There is no completion timestamp; a finished submission counts as recent
+    # When it started (or, if it never ran, was created) within the window
+    finished_since = func.coalesce(Submission.executed_at, Submission.created_at)
+    recent = dict(
+        db.session.query(Submission.status, func.count())
+        .filter(
+            Submission.status.in_(_FINISHED_STATUSES),
+            finished_since >= now - _RECENT_WINDOW,
+        )
+        .group_by(Submission.status)
+        .all()
+    )
+    return {
+        "queued": int(active.get("queued", 0)),
+        "running": int(sum(active.get(status, 0) for status in _RUNNING_STATUSES)),
+        "oldest_queued_seconds": (
+            max(0, int((now - oldest_queued).total_seconds())) if oldest_queued else None
+        ),
+        "completed_last_15m": int(recent.get("completed", 0)),
+        "failed_last_15m": int(recent.get("failed", 0)),
+    }
+
+
+def _empty_submission_counts() -> dict[str, Any]:
+    return {
+        "queued": 0,
+        "running": 0,
+        "oldest_queued_seconds": None,
+        "completed_last_15m": 0,
+        "failed_last_15m": 0,
+    }
+
+
+def scoring_status(queues: list[dict[str, Any]], oldest_queued_seconds: int | None) -> str:
+    """Apply the scoring component rules to the queue and submission figures."""
+    by_name = {q["name"]: q for q in queues}
+    if by_name.get(CPU_QUEUE, {}).get("consumers", 0) == 0:
+        return "major_outage"
+    for name in EVALUATION_QUEUES:
+        queue = by_name.get(name)
+        if name != CPU_QUEUE and queue and queue["queued"] > 0 and queue["consumers"] == 0:
+            return "partial_outage"
+    if (
+        oldest_queued_seconds is not None
+        and oldest_queued_seconds > Config.STATUS_QUEUE_DEGRADED_SECONDS
+    ):
+        return "degraded_performance"
+    return "operational"
+
+
+def compute_system_status() -> dict[str, Any]:
+    """Compute a fresh snapshot shaped like ``SystemStatusResponse``."""
+    now = utcnow()
+    now_epoch = time.time()
+    database_ok = _database_ok()
+    client = _broker_client()
+
+    specs = _read_worker_specs(client) if client is not None else []
+    workers = sorted(
+        (_worker_entry(name, spec, now_epoch) for name, spec in specs),
+        key=lambda w: w["name"],
+    )
+    queues = _queue_entries(client, workers)
+    submissions = _submission_counts(now) if database_ok else _empty_submission_counts()
+
+    components = {
+        "api": "operational" if database_ok and client is not None else "major_outage",
+        "scoring": scoring_status(queues, submissions["oldest_queued_seconds"]),
+    }
+    return {
+        "status": worst_status(*components.values()),
+        "components": components,
+        "queues": queues,
+        "workers": workers,
+        "submissions": submissions,
+        "updated_at": _rfc3339(now),
+    }
+
+
+def system_status() -> dict[str, Any]:
+    """Return the snapshot, cached for STATUS_CACHE_SECONDS."""
+    snapshot: dict[str, Any] = cached_or_compute(
+        STATUS_CACHE_KEY, compute_system_status, timeout=Config.STATUS_CACHE_SECONDS
+    )
+    return snapshot
+
+
+def public_status() -> dict[str, Any]:
+    """Return the public projection: overall word, components and time only."""
+    snapshot = system_status()
+    return {
+        "status": snapshot["status"],
+        "components": snapshot["components"],
+        "updated_at": snapshot["updated_at"],
+    }

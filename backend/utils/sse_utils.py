@@ -17,30 +17,29 @@ from typing import Any
 
 from config import Config
 from models.base import uuid7
-from utils.cache_utils import get_coordination_client, get_redis_client, submission_logs_key
+from utils.cache_utils import (
+    get_coordination_client,
+    get_redis_client,
+    submission_logs_key,
+    submission_status_key,
+)
 
 logger = logging.getLogger(__name__)
 
 SSE_MAX_PER_USER = Config.SSE_MAX_PER_USER
 SSE_MAX_GLOBAL = Config.SSE_MAX_GLOBAL
-SSE_IDLE_TIMEOUT = Config.SSE_IDLE_TIMEOUT
 
 _CONNECTIONS_KEY = "sse:connections"
 _STALE_TTL = 120
+_TERMINAL_STATUSES = ("completed", "failed")
 
 CHANNEL_TASK_REBUILD = "task_rebuild"
 CHANNEL_BACKUPS = "backup_status"
-CHANNEL_WORKER_STATS = "worker_stats_update"
 CHANNEL_QUEUE = "queue_updates"
-CHANNEL_WORKER_STATUS = "worker_status_live"
 
 
 def leaderboard_channel(challenge_id: Any) -> str:
     return f"leaderboard_{challenge_id}"
-
-
-def submissions_channel(task_id: Any, challenge_id: Any) -> str:
-    return f"task_{task_id}_challenge_{challenge_id}_submissions"
 
 
 def submission_logs_channel(submission_id: Any) -> str:
@@ -144,7 +143,7 @@ def sse_heartbeat(member: str, user_id: Any = None) -> bool:
 
 
 def publish_leaderboard_update(challenge_id: Any) -> None:
-    """Publish a leaderboard-changed event to the challenge-level Redis channel for SSE."""
+    """Signal leaderboard SSE clients; only the leaderboard rebuild beat task calls this."""
     if not challenge_id:
         return
     try:
@@ -158,23 +157,18 @@ def publish_leaderboard_update(challenge_id: Any) -> None:
         logger.exception("Redis publish leaderboard update error for challenge %s", challenge_id)
 
 
-def publish_submissions_update(task_id: Any, challenge_id: Any) -> None:
-    """Publish a submission-list-changed event to the challenge-level Redis channel."""
-    if not task_id or not challenge_id:
-        return
-    try:
-        r = _redis()
-        if r:
-            r.publish(
-                submissions_channel(task_id, challenge_id),
-                json.dumps({"event": "update"}),
-            )
-    except Exception:
-        logger.exception(
-            "Redis publish submissions update error for task %s challenge %s",
-            task_id,
-            challenge_id,
-        )
+_TRUNCATION_MARKER = " [line truncated]"
+
+
+def cap_log_line(line: str) -> str:
+    """Cut a log line to SSE_LOG_MAX_LINE_BYTES of UTF-8, ending with a truncation marker."""
+    limit = Config.SSE_LOG_MAX_LINE_BYTES
+    encoded = line.encode("utf-8")
+    if len(encoded) <= limit:
+        return line
+    marker = _TRUNCATION_MARKER.encode("utf-8")
+    kept = encoded[: max(0, limit - len(marker))].decode("utf-8", errors="ignore")
+    return kept + _TRUNCATION_MARKER
 
 
 def publish_submission_log(submission_id: Any, log_line: str) -> None:
@@ -186,6 +180,7 @@ def publish_submission_log(submission_id: Any, log_line: str) -> None:
     """
     if not submission_id:
         return
+    log_line = cap_log_line(log_line)
     try:
         cache_r = get_redis_client()
         if cache_r:
@@ -206,10 +201,12 @@ def publish_submission_log_batch(submission_id: Any, log_lines: list[str]) -> No
     Storage ops are pipelined on the redis-cache instance and the SSE publish
     carries the whole batch as ``{"logs": [...]}`` (~1 op per 50 lines
     instead of 4 ops per line). Subscribers split the batch into per-line
-    events, so the frontend contract is unchanged.
+    events, so the frontend contract is unchanged. Each line is capped at
+    SSE_LOG_MAX_LINE_BYTES.
     """
     if not submission_id or not log_lines:
         return
+    log_lines = [cap_log_line(line) for line in log_lines]
     try:
         cache_r = get_redis_client()
         if cache_r:
@@ -242,15 +239,41 @@ def clear_submission_logs(submission_id: Any) -> None:
 
 
 def publish_submission_status(submission_id: Any, status: str) -> None:
-    """Publish the final status of a submission to its SSE channel."""
+    """Publish the final status of a submission to its SSE channel.
+
+    The status is also stored on the cache instance, so a log stream that missed
+    the publish (or subscribed just after it) can still end without a DB query.
+    """
     if not submission_id or not status:
         return
+    if status in _TERMINAL_STATUSES:
+        try:
+            cache_r = get_redis_client()
+            if cache_r:
+                cache_r.set(submission_status_key(submission_id), status, ex=Config.SSE_LOG_TTL)
+        except Exception:
+            logger.warning("Redis store of final status failed for submission %s", submission_id)
     try:
         r = _redis()
         if r:
             r.publish(submission_logs_channel(submission_id), json.dumps({"status": status}))
     except Exception:
         logger.exception("Redis publish submission status error for submission %s", submission_id)
+
+
+def get_submission_final_status(submission_id: Any) -> str | None:
+    """Return the stored terminal status of a submission, or None when unknown."""
+    try:
+        cache_r = get_redis_client()
+        if not cache_r:
+            return None
+        value = cache_r.get(submission_status_key(submission_id))
+    except Exception:
+        logger.warning("Redis read of submission status failed for %s", submission_id)
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    return value if value in _TERMINAL_STATUSES else None
 
 
 def publish_queue_update() -> None:

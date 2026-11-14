@@ -12,6 +12,7 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from config import Config
 from models import Challenge, Submission, Task, User, db
 from services.submission_service import calculate_submission_priority
 from utils.auth_utils import generate_token
@@ -214,6 +215,10 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 202
         assert "queued for execution" in res.get_json()["message"]
+        # No ETA (countdown): ETA tasks bypass the prefetch limit and hide from the queue cap
+        enqueue = mock_celery.call_args.kwargs
+        assert "countdown" not in enqueue
+        assert enqueue["expires"] == Config.CELERY_MESSAGE_EXPIRES
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_submit_task_with_database_custom_eval(self, mock_celery):
@@ -531,46 +536,30 @@ class TestRouteLevelLogic:
         assert res.status_code == 200
         assert res.mimetype == "application/zip"
 
-    @patch("redis.Redis.from_url")
-    def test_sse_live_leaderboard_route(self, mock_redis_cls):
-        mock_redis = mock_redis_cls.return_value
-        mock_redis.exists.return_value = 0
-        mock_pubsub = mock_redis.pubsub.return_value
-        mock_pubsub.get_message.return_value = None
-
+    def test_sse_live_leaderboard_route_is_signal_only(self):
         self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
         res = self.client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard/live",
-        )
-        assert res.status_code == 200
-        assert res.mimetype == "text/event-stream"
-        response_iter = iter(res.response)
-        first_chunk = next(response_iter)  # "connected" message
-        assert b"connected" in first_chunk
-        second_chunk = next(response_iter)  # Leaderboard data
-        assert b"data: " in second_chunk
-        assert b"challenge_title" in second_chunk
-        # Close to prevent generator from lingering
-        res.close()
-
-    @patch("redis.Redis.from_url")
-    def test_sse_live_submissions_route(self, mock_redis_cls):
-        mock_redis = mock_redis_cls.return_value
-        mock_redis.exists.return_value = 0
-        mock_pubsub = mock_redis.pubsub.return_value
-        mock_pubsub.get_message.return_value = None
-
-        self.client.set_cookie("auth_token", self.competitor_token, domain="localhost")
-        res = self.client.get(
-            f"/api/tasks/{self.task.id}/submissions/live",
             buffered=False,
         )
-        assert res.status_code == 200
-        assert res.mimetype == "text/event-stream"
-        response_iter = iter(res.response)
-        first_chunk = next(response_iter)
-        assert b"data: " in first_chunk
-        res.close()
+        try:
+            assert res.status_code == 200
+            assert res.mimetype == "text/event-stream"
+            response_iter = iter(res.response)
+            assert next(response_iter).startswith(b"retry: ")
+            connected = next(response_iter)
+            assert b"connected" in connected
+            # No leaderboard payload is ever built for the stream
+            assert b"challenge_title" not in connected
+        finally:
+            res.close()
+
+    def test_task_submissions_live_route_removed(self):
+        res = self.client.get(
+            f"/api/tasks/{self.task.id}/submissions/live",
+            headers=self.get_auth_header(self.competitor_token),
+        )
+        assert res.status_code == 404
 
     def test_blind_review_during_ongoing_competition(self):
         self.challenge.start_time = utcnow() - timedelta(hours=1)
@@ -658,88 +647,15 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 200
 
-    @patch("tasks.celery.control.inspect")
-    def test_worker_status_endpoint(self, mock_inspect_cls):
-        mock_inspect = mock_inspect_cls.return_value
-
-        mock_inspect.ping.return_value = {"celery@gpu-worker": {"ok": "pong"}}
-        mock_inspect.registered.return_value = {"celery@gpu-worker": ["tasks.evaluate_submission"]}
-
-        # Competitors see general availability only, never cluster topology
-        res = self.client.get(
-            "/api/worker-status", headers=self.get_auth_header(self.competitor_token)
-        )
-        assert res.status_code == 200
-        body = res.get_json()
-        assert body["status"] == "online"
-        assert body["online_workers"] == 1
-        assert body["clusters"] == []
-
-        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.admin_token))
-        assert res.status_code == 200
-        assert res.get_json()["status"] == "online"
-        assert len(res.get_json()["clusters"]) == 1
-
-        mock_inspect.ping.return_value = None
-        res = self.client.get("/api/worker-status", headers=self.get_auth_header(self.jury_token))
-        assert res.status_code == 200
-        assert res.get_json()["status"] == "offline"
-
-    @patch("tasks.celery.control.inspect")
-    def test_detailed_worker_stats_endpoint(self, mock_inspect_cls):
-        mock_inspect = mock_inspect_cls.return_value
-
-        mock_inspect.ping.return_value = {"celery@gpu-worker-0": {"ok": "pong"}}
-        mock_inspect.stats.return_value = {
-            "celery@gpu-worker-0": {
-                "pid": 12345,
-                "uptime": 3600,
-                "pool": {"max-concurrency": 4},
-                "total": {"evaluate_submission": 12},
-                "broker": {"transport": "redis", "hostname": "localhost", "port": 6379},
-            }
-        }
-        mock_inspect.active.return_value = {
-            "celery@gpu-worker-0": [{"id": "task-uuid-1", "name": "tasks.evaluate_submission"}]
-        }
-        mock_inspect.reserved.return_value = {"celery@gpu-worker-0": []}
-        mock_inspect.registered.return_value = {
-            "celery@gpu-worker-0": ["tasks.evaluate_submission"]
-        }
-
-        res = self.client.get(
+    def test_inspect_based_status_routes_removed(self):
+        for path in (
+            "/api/worker-status",
+            "/api/worker-status/live",
             "/api/admin/workers/stats",
-            headers=self.get_auth_header(self.competitor_token),
-        )
-        assert res.status_code == 403
-
-        res = self.client.get(
-            "/api/admin/workers/stats", headers=self.get_auth_header(self.admin_token)
-        )
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data["connected_workers_count"] == 1
-        assert data["workers"][0]["name"] == "celery@gpu-worker-0"
-        assert data["workers"][0]["pool_size"] == 4
-        assert data["workers"][0]["active_tasks_count"] == 1
-
-    @patch("tasks.celery.control.inspect")
-    def test_detailed_worker_stats_surfaces_partial_failures(self, mock_inspect_cls):
-        mock_inspect = mock_inspect_cls.return_value
-
-        mock_inspect.ping.return_value = {"celery@gpu-worker-0": {"ok": "pong"}}
-        mock_inspect.stats.side_effect = RuntimeError("broker unreachable")
-        mock_inspect.active.return_value = {}
-        mock_inspect.reserved.return_value = {}
-        mock_inspect.registered.return_value = {}
-
-        res = self.client.get(
-            "/api/admin/workers/stats", headers=self.get_auth_header(self.admin_token)
-        )
-        assert res.status_code == 200
-        data = res.get_json()
-        assert data["connected_workers_count"] == 1
-        assert any("celery.stats failed" in msg for msg in data["partial_failures"])
+            "/api/admin/workers/stats/live",
+        ):
+            res = self.client.get(path, headers=self.get_auth_header(self.admin_token))
+            assert res.status_code == 404, path
 
     def test_leaderboard_final_selection_wins_when_another_submission_finishes_late(self):
         self.challenge.end_time = utcnow() - timedelta(minutes=15)
@@ -906,15 +822,16 @@ class TestRouteLevelLogic:
         res = self.client.get(f"/api/challenges/{self.challenge.id}", headers=competitor_header)
         assert res.status_code == 200
 
-        mock_set.assert_any_call(
-            f"challenge:{self.challenge.id}:competitor", res.get_json(), timeout=600
+        # The time-filtered competitor view is never cached
+        assert not any(
+            call.args and str(call.args[0]).endswith(":competitor")
+            for call in mock_set.call_args_list
         )
 
         from utils.cache_utils import invalidate_leaderboard_cache
 
         invalidate_leaderboard_cache(self.challenge.id, delete_only=True)
-        mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:frozen")
-        mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}:unfrozen")
+        mock_delete.assert_any_call(f"leaderboard:raw:{self.challenge.id}")
 
         mock_delete.reset_mock()
 

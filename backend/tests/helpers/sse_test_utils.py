@@ -11,6 +11,9 @@ class _FakeRedis:
         self._sorted_sets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[Any]] = {}
         self.published_messages: list[tuple[str, str]] = []
+        # Messages handed out, in order, by get_message() on any pubsub of this client
+        self.pending_messages: list[dict[str, Any]] = []
+        self.subscriptions: list[str] = []
 
     # ── Generic key-value ─────────────────────────────────────────────
 
@@ -20,8 +23,11 @@ class _FakeRedis:
             return val
         return None
 
-    def set(self, key: str, value: str) -> None:
+    def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self._data:
+            return False
         self._data[key] = value
+        return True
 
     def delete(self, *keys: str) -> int:
         n = 0
@@ -139,7 +145,7 @@ class _FakeRedis:
         return 1
 
     def pubsub(self) -> _FakePubSub:
-        return _FakePubSub()
+        return _FakePubSub(self)
 
     # ── Pipeline ──────────────────────────────────────────────────────
 
@@ -148,15 +154,20 @@ class _FakeRedis:
 
 
 class _FakePubSub:
-    def __init__(self) -> None:
+    def __init__(self, redis: _FakeRedis | None = None) -> None:
         self._channels: list[str] = []
+        self._redis = redis
 
     def subscribe(self, *channels: str) -> None:
         self._channels.extend(channels)
+        if self._redis is not None:
+            self._redis.subscriptions.extend(channels)
 
     def get_message(
         self, ignore_subscribe_messages: bool = True, timeout: float | None = None
-    ) -> None:
+    ) -> dict[str, Any] | None:
+        if self._redis is not None and self._redis.pending_messages:
+            return self._redis.pending_messages.pop(0)
         return None
 
     def unsubscribe(self) -> None:

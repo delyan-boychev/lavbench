@@ -70,6 +70,31 @@ def _warn_insecure_redis(url: str, what: str) -> None:
         pass
 
 
+def _postgres_engine_options(
+    database_uri: str,
+    *,
+    pool_size: int,
+    max_overflow: int,
+    statement_timeout_ms: int,
+    idle_in_transaction_timeout_ms: int | None = None,
+) -> dict[str, Any]:
+    """Build the SQLAlchemy engine options for PostgreSQL; empty for other databases."""
+    if not database_uri.startswith("postgresql"):
+        return {}
+    # Abort runaway statements (leaderboard rebuilds, unindexed scans)
+    options = f"-c statement_timeout={statement_timeout_ms}"
+    if idle_in_transaction_timeout_ms is not None:
+        options += f" -c idle_in_transaction_session_timeout={idle_in_transaction_timeout_ms}"
+    return {
+        "pool_size": pool_size,
+        "pool_timeout": 30,
+        "max_overflow": max_overflow,
+        "pool_pre_ping": True,
+        "pool_recycle": 600,
+        "connect_args": {"options": options},
+    }
+
+
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
@@ -113,8 +138,10 @@ class Config:
 
     # Max queued+accepted evaluations before submissions are rejected (per queue)
     MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
-    # Broker message expiry for evaluation tasks (seconds)
-    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 1800))
+    # Broker message expiry for evaluation tasks (seconds). Kept at least as long
+    # As the watchdog's 1h "never picked up" cutoff so the broker never drops a
+    # Queued submission before the watchdog can fail it visibly
+    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 3600))
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
@@ -134,8 +161,12 @@ class Config:
     SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
     SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 2000))
     SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", 1800))
+    # Reconnect delay sent in the SSE retry field; every stream jitters it by +/-30%
+    SSE_RETRY_MS = int(os.environ.get("SSE_RETRY_MS", 5000))
     SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 3600))
     SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 500))
+    # Longer pushed log lines are cut (with a marker): 500 lines stay under ~4 MiB
+    SSE_LOG_MAX_LINE_BYTES = int(os.environ.get("SSE_LOG_MAX_LINE_BYTES", 8192))
 
     # Worker heartbeat and status reporting (GET /api/status, /api/admin/system-status)
     WORKER_HEARTBEAT_SECONDS = int(os.environ.get("WORKER_HEARTBEAT_SECONDS", 30))
@@ -184,19 +215,27 @@ class Config:
     )
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
-    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = {}
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
-        SQLALCHEMY_ENGINE_OPTIONS = {
-            "pool_size": 50,
-            "pool_timeout": 30,
-            "max_overflow": 50,
-            "pool_pre_ping": True,
-            "pool_recycle": 600,
-            # Abort runaway statements (leaderboard rebuilds, unindexed scans)
-            "connect_args": {
-                "options": f"-c statement_timeout={PG_STATEMENT_TIMEOUT_MS}",
-            },
-        }
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = _postgres_engine_options(
+        SQLALCHEMY_DATABASE_URI,
+        pool_size=DB_POOL_SIZE,
+        max_overflow=DB_MAX_OVERFLOW,
+        statement_timeout_ms=PG_STATEMENT_TIMEOUT_MS,
+    )
+
+    @classmethod
+    def use_web_process_engine_options(cls) -> None:
+        """Add the web-only idle transaction timeout; call before ``create_app``.
+
+        Celery processes never call this: their tasks may legitimately keep a
+        transaction open across slow non-SQL work.
+        """
+        cls.SQLALCHEMY_ENGINE_OPTIONS = _postgres_engine_options(
+            cls.SQLALCHEMY_DATABASE_URI,
+            pool_size=cls.DB_POOL_SIZE,
+            max_overflow=cls.DB_MAX_OVERFLOW,
+            statement_timeout_ms=cls.PG_STATEMENT_TIMEOUT_MS,
+            idle_in_transaction_timeout_ms=cls.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+        )
 
     # Pagination defaults
     DEFAULT_PER_PAGE = int(os.environ.get("DEFAULT_PER_PAGE", 10))

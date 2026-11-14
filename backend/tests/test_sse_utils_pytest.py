@@ -7,25 +7,25 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import utils.sse_utils as sse_utils_module
+from config import Config
 from tests.helpers.sse_test_utils import _FakeRedis, fake_redis
 from utils.sse_utils import (
     CHANNEL_BACKUPS,
     CHANNEL_QUEUE,
     CHANNEL_TASK_REBUILD,
-    CHANNEL_WORKER_STATS,
-    CHANNEL_WORKER_STATUS,
+    cap_log_line,
     clear_submission_logs,
+    get_submission_final_status,
     leaderboard_channel,
     publish_leaderboard_update,
     publish_queue_update,
     publish_submission_log,
     publish_submission_log_batch,
     publish_submission_status,
-    publish_submissions_update,
     sse_connection_limit,
     sse_heartbeat,
     submission_logs_channel,
-    submissions_channel,
 )
 
 # ── Fixtures ──
@@ -44,9 +44,6 @@ class TestChannelHelpers:
         assert leaderboard_channel(42) == "leaderboard_42"
         assert leaderboard_channel("abc") == "leaderboard_abc"
 
-    def test_submissions_channel(self):
-        assert submissions_channel(7, 3) == "task_7_challenge_3_submissions"
-
     def test_submission_logs_channel(self):
         assert submission_logs_channel(99) == "submission_99_logs"
 
@@ -55,9 +52,13 @@ class TestChannelConstants:
     def test_documented_constants(self):
         assert CHANNEL_TASK_REBUILD == "task_rebuild"
         assert CHANNEL_BACKUPS == "backup_status"
-        assert CHANNEL_WORKER_STATS == "worker_stats_update"
         assert CHANNEL_QUEUE == "queue_updates"
-        assert CHANNEL_WORKER_STATUS == "worker_status_live"
+
+    def test_never_published_channels_removed(self):
+        for name in ("CHANNEL_WORKER_STATS", "CHANNEL_WORKER_STATUS"):
+            assert not hasattr(sse_utils_module, name)
+        assert not hasattr(sse_utils_module, "publish_submissions_update")
+        assert not hasattr(sse_utils_module, "submissions_channel")
 
 
 # ── publish_leaderboard_update ──
@@ -110,42 +111,6 @@ class TestPublishLeaderboardUpdate:
         assert fredis.published_messages == [("leaderboard_42", '{"event": "update"}')]
 
 
-# ── publish_submissions_update ──
-
-
-class TestPublishSubmissionsUpdate:
-    @patch("utils.sse_utils.get_coordination_client")
-    def test_publishes_to_correct_channel(self, mock_get_redis):
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        publish_submissions_update(task_id=7, challenge_id=3)
-        mock_redis.publish.assert_called_once()
-        args = mock_redis.publish.call_args[0]
-        assert args[0] == "task_7_challenge_3_submissions"
-
-    @patch("utils.sse_utils.get_coordination_client")
-    def test_none_task_id_does_nothing(self, mock_get_redis):
-        publish_submissions_update(task_id=None, challenge_id=1)
-        mock_get_redis.return_value.publish.assert_not_called()
-
-    @patch("utils.sse_utils.get_coordination_client")
-    def test_none_challenge_id_does_nothing(self, mock_get_redis):
-        publish_submissions_update(task_id=1, challenge_id=None)
-        mock_get_redis.return_value.publish.assert_not_called()
-
-    @patch("utils.sse_utils.get_coordination_client")
-    def test_redis_none_no_error(self, mock_get_redis):
-        mock_get_redis.return_value = None
-        publish_submissions_update(task_id=1, challenge_id=1)
-
-    def test_publishes_to_fakeredis_channel(self, fredis):
-        with patch("utils.sse_utils.get_coordination_client", return_value=fredis):
-            publish_submissions_update(task_id=7, challenge_id=3)
-        assert fredis.published_messages == [
-            ("task_7_challenge_3_submissions", '{"event": "update"}')
-        ]
-
-
 # ── publish_submission_log ──
 
 
@@ -161,7 +126,7 @@ class TestPublishSubmissionLog:
 
         cache_redis.rpush.assert_called_once()
         cache_redis.ltrim.assert_called_once()
-        cache_redis.expire.assert_called_once_with("submission:99:logs", 86400)
+        cache_redis.expire.assert_called_once_with("submission:99:logs", Config.SSE_LOG_TTL)
         cache_redis.publish.assert_not_called()
 
         rpush_args = cache_redis.rpush.call_args[0]
@@ -205,7 +170,7 @@ class TestPublishSubmissionLogBatch:
         publish_submission_log_batch(submission_id=99, log_lines=["a", "b", "c"])
 
         assert pipeline.rpush.call_count == 3
-        pipeline.ltrim.assert_called_once_with("submission:99:logs", -10000, -1)
+        pipeline.ltrim.assert_called_once_with("submission:99:logs", -Config.SSE_LOG_MAX_LINES, -1)
         dispatch = mock_cache.return_value.pipeline.call_args[1]["transaction"]
         assert dispatch is False
         coord_redis.publish.assert_called_once()
@@ -227,6 +192,39 @@ class TestPublishSubmissionLogBatch:
             publish_submission_log_batch(submission_id=99, log_lines=["a", "b"])
         assert fredis.published_messages == [("submission_99_logs", '{"logs": ["a", "b"]}')]
         assert fredis.lrange("submission:99:logs", 0, -1) == ["a", "b"]
+
+    def test_caps_long_lines_before_storing_and_publishing(self, fredis):
+        long_line = "x" * (Config.SSE_LOG_MAX_LINE_BYTES * 3)
+        with (
+            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
+            patch("utils.sse_utils.get_redis_client", return_value=fredis),
+        ):
+            publish_submission_log_batch(submission_id=7, log_lines=[long_line, "short"])
+        stored = fredis.lrange("submission:7:logs", 0, -1)
+        assert len(stored[0].encode("utf-8")) <= Config.SSE_LOG_MAX_LINE_BYTES
+        assert stored[0].endswith("[line truncated]")
+        assert stored[1] == "short"
+        published = json.loads(fredis.published_messages[0][1])["logs"]
+        assert published == stored
+
+
+class TestCapLogLine:
+    def test_short_line_unchanged(self):
+        assert cap_log_line("hello") == "hello"
+
+    def test_multibyte_line_is_cut_on_a_character_boundary(self):
+        line = "\u0436" * Config.SSE_LOG_MAX_LINE_BYTES
+        capped = cap_log_line(line)
+        assert len(capped.encode("utf-8")) <= Config.SSE_LOG_MAX_LINE_BYTES
+        assert capped.endswith("[line truncated]")
+        assert capped.startswith("\u0436")
+
+
+class TestSseLogDefaults:
+    def test_log_cap_defaults(self):
+        assert Config.SSE_LOG_MAX_LINES == 500
+        assert Config.SSE_LOG_TTL == 3600
+        assert Config.SSE_LOG_MAX_LINE_BYTES == 8192
 
 
 # ── clear_submission_logs ──
@@ -286,6 +284,33 @@ class TestPublishSubmissionStatus:
         mock_redis.publish.side_effect = Exception("Redis down")
         mock_get_redis.return_value = mock_redis
         publish_submission_status(submission_id=1, status="completed")
+
+    def test_final_status_is_stored_for_streams_that_missed_the_publish(self, fredis):
+        with (
+            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
+            patch("utils.sse_utils.get_redis_client", return_value=fredis),
+        ):
+            publish_submission_status(submission_id=5, status="failed")
+            assert get_submission_final_status(5) == "failed"
+            assert get_submission_final_status(6) is None
+
+    def test_store_failure_still_publishes(self, fredis):
+        broken_cache = MagicMock()
+        broken_cache.set.side_effect = Exception("cache down")
+        with (
+            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
+            patch("utils.sse_utils.get_redis_client", return_value=broken_cache),
+        ):
+            publish_submission_status(submission_id=5, status="completed")
+        assert fredis.published_messages == [("submission_5_logs", '{"status": "completed"}')]
+
+    def test_non_terminal_status_is_not_stored(self, fredis):
+        with (
+            patch("utils.sse_utils.get_coordination_client", return_value=fredis),
+            patch("utils.sse_utils.get_redis_client", return_value=fredis),
+        ):
+            publish_submission_status(submission_id=5, status="running")
+            assert get_submission_final_status(5) is None
 
 
 # ── publish_queue_update ──

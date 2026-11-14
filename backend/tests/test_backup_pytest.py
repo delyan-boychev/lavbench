@@ -316,3 +316,189 @@ def test_resolve_backup_path_accepts_contained_backup(tmp_path):
 
     with patch("routes.admin.BACKUPS_DIR", str(backup_dir)):
         assert _resolve_backup_path(backup.name) == backup.resolve()
+
+
+class TestBackupPolicy:
+    """Retention per kind, the free-space rule, rotated-log exclusion and the schedule."""
+
+    @staticmethod
+    def _make_backups(directory, prefix, count, size=1024):
+        import time as _time
+
+        paths = []
+        for i in range(count):
+            p = directory / f"{prefix}_2026111{i}_000000.tar.gz"
+            p.write_bytes(b"x" * size)
+            paths.append(p)
+            _time.sleep(0.01)
+        return paths
+
+    def test_db_only_and_full_backups_rotate_separately(self, app, db_session, tmp_path):
+        full = self._make_backups(tmp_path, "auto", 5)
+        db_only = self._make_backups(tmp_path, "auto_db", 5)
+        with (
+            patch("tasks.task_modules.system.Config.BACKUPS_DIR", str(tmp_path)),
+            patch("tasks.task_modules.system.Config.BACKUP_RETENTION_COUNT", 3),
+            patch("tasks.task_modules.system.Config.MIN_BACKUP_DISK_GB", 0),
+            patch("tasks.task_modules.system.subprocess.run") as run,
+            app.app_context(),
+        ):
+            # Commands are mocked; tar still has to leave the file it would have written
+            def fake_run(args, **kwargs):
+                if "tar" in args:
+                    target = args[args.index("-czf") + 1]
+                    with open(target, "wb") as f:
+                        f.write(b"new")
+                result = MagicMock()
+                result.returncode = 0
+                return result
+
+            run.side_effect = fake_run
+            filename = run_backup(app, auto=True, db_only=True)
+
+        assert filename.startswith("auto_db_")
+        remaining_db = sorted(p.name for p in tmp_path.glob("auto_db_*.tar.gz"))
+        remaining_full = sorted(
+            p.name for p in tmp_path.glob("auto_*.tar.gz") if not p.name.startswith("auto_db_")
+        )
+        assert len(remaining_db) == 3
+        assert filename in remaining_db
+        assert {p.name for p in db_only[-2:]} <= set(remaining_db)
+        assert remaining_full == sorted(p.name for p in full)
+
+    def test_free_space_must_be_twice_the_last_backup(self, tmp_path):
+        from tasks.task_modules import system
+
+        self._make_backups(tmp_path, "auto", 1, size=4096)
+        with patch.object(system.Config, "MIN_BACKUP_DISK_GB", 0):
+            assert system._required_free_bytes(str(tmp_path), db_only=False) == 8192
+            with patch.object(system.shutil, "disk_usage") as usage:
+                usage.return_value.free = 8191
+                with pytest.raises(RuntimeError, match="Insufficient disk space"):
+                    system._check_free_space(str(tmp_path), db_only=False)
+                usage.return_value.free = 8192
+                system._check_free_space(str(tmp_path), db_only=False)
+
+    def test_free_space_floor_applies_without_previous_backup(self, tmp_path):
+        from tasks.task_modules import system
+
+        with patch.object(system.Config, "MIN_BACKUP_DISK_GB", 2):
+            assert system._required_free_bytes(str(tmp_path), db_only=True) == 2 * 1024**3
+
+    def test_free_space_uses_the_last_backup_of_the_same_kind(self, tmp_path):
+        from tasks.task_modules import system
+
+        self._make_backups(tmp_path, "auto", 1, size=10_000)
+        self._make_backups(tmp_path, "auto_db", 1, size=100)
+        with patch.object(system.Config, "MIN_BACKUP_DISK_GB", 0):
+            assert system._required_free_bytes(str(tmp_path), db_only=True) == 200
+            assert system._required_free_bytes(str(tmp_path), db_only=False) == 20_000
+
+    def test_rotated_log_files_are_excluded(self, app, db_session, tmp_path):
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        with (
+            patch("tasks.task_modules.system.Config.BACKUPS_DIR", str(tmp_path / "b")),
+            patch("tasks.task_modules.system.Config.LOG_DIR", str(log_dir)),
+            patch("tasks.task_modules.system.Config.MIN_BACKUP_DISK_GB", 0),
+            patch("tasks.task_modules.system.subprocess.run") as run,
+            patch("tasks.task_modules.system.shutil.copytree") as copytree,
+            patch("tasks.task_modules.system.os.path.getsize", return_value=1),
+            app.app_context(),
+        ):
+            run.return_value.returncode = 0
+            run_backup(app, auto=True, db_only=True)
+        ignore = copytree.call_args.kwargs["ignore"]
+        names = ["backend.log", "backend.log.1", "celery.log.12", "old.gz", "worker_remote.log"]
+        assert ignore(str(log_dir), names) == {"backend.log.1", "celery.log.12", "old.gz"}
+
+
+class TestBackupSchedule:
+    @pytest.fixture(autouse=True)
+    def setup(self, app, db_session, redis_flush):
+        import tasks
+
+        tasks.app = app
+        self.challenge = Challenge(
+            title="Backup Schedule",
+            description="Test",
+            max_eval_requests=5,
+            start_time=utcnow() - timedelta(hours=1),
+            end_time=utcnow() + timedelta(hours=2),
+            is_frozen=False,
+        )
+        db.session.add(self.challenge)
+        db.session.commit()
+
+    @staticmethod
+    def _set_markers(last=None, last_full=None):
+        from utils.cache_utils import get_coordination_client
+
+        r = get_coordination_client()
+        if r is None:
+            pytest.skip("Redis unavailable")
+        for key, value in (("backup:last_auto", last), ("backup:last_auto_full", last_full)):
+            if value is None:
+                r.delete(key)
+            else:
+                r.set(key, value.isoformat(), ex=3600)
+
+    def test_markers_live_on_the_broker_redis(self, monkeypatch):
+        broker, cache = MagicMock(), MagicMock()
+        broker.get.return_value = None
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
+        monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
+        with patch("tasks.run_backup.delay"):
+            check_and_backup()
+        written = {call.args[0] for call in broker.set.call_args_list}
+        assert written == {"backup:last_auto", "backup:last_auto_full"}
+        cache.set.assert_not_called()
+
+    def test_first_run_takes_a_full_backup(self):
+        self._set_markers()
+        with patch("tasks.run_backup.delay") as delay:
+            result = check_and_backup()
+        delay.assert_called_once_with(auto=True, db_only=False)
+        assert result["backup"] == "full"
+
+    def test_active_contest_backs_up_db_only_every_20_minutes(self):
+        now = utcnow()
+        self._set_markers(last=now - timedelta(minutes=20), last_full=now - timedelta(hours=1))
+        with patch("tasks.run_backup.delay") as delay:
+            result = check_and_backup()
+        delay.assert_called_once_with(auto=True, db_only=True)
+        assert result["backup"] == "db_only"
+
+    def test_uploads_are_included_once_their_interval_passed(self):
+        from config import Config
+
+        now = utcnow()
+        self._set_markers(
+            last=now - timedelta(minutes=21),
+            last_full=now - timedelta(seconds=Config.BACKUP_UPLOADS_INTERVAL_SECONDS + 60),
+        )
+        with patch("tasks.run_backup.delay") as delay:
+            check_and_backup()
+        delay.assert_called_once_with(auto=True, db_only=False)
+
+    def test_nothing_runs_before_the_interval(self):
+        now = utcnow()
+        self._set_markers(last=now - timedelta(minutes=5), last_full=now - timedelta(minutes=5))
+        with patch("tasks.run_backup.delay") as delay:
+            result = check_and_backup()
+        delay.assert_not_called()
+        assert "backup" not in result
+
+    def test_idle_backups_run_every_6_hours(self):
+        self.challenge.end_time = utcnow() - timedelta(hours=1)
+        db.session.commit()
+        now = utcnow()
+        self._set_markers(last=now - timedelta(hours=1), last_full=now - timedelta(hours=1))
+        with patch("tasks.run_backup.delay") as delay:
+            check_and_backup()
+        delay.assert_not_called()
+
+        self._set_markers(last=now - timedelta(hours=6), last_full=now - timedelta(hours=7))
+        with patch("tasks.run_backup.delay") as delay:
+            check_and_backup()
+        delay.assert_called_once_with(auto=True, db_only=False)

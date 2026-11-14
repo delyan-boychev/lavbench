@@ -58,6 +58,14 @@ def submission_logs_key(submission_id: Any) -> str:
     return f"submission:{submission_id}:logs"
 
 
+def submission_status_key(submission_id: Any) -> str:
+    return f"submission:{submission_id}:status"
+
+
+def leaderboard_cache_key(challenge_id: Any) -> str:
+    return f"leaderboard:raw:{challenge_id}"
+
+
 def _build_ssl_kwargs(url: str) -> dict[str, Any]:
     ssl_kwargs: dict[str, Any] = {}
     if url.startswith("rediss://"):
@@ -194,8 +202,13 @@ def get_sse_client() -> redis_lib.Redis[Any] | None:
 @contextmanager
 def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     """Context manager: acquires a Redis lock (SET NX), releases on exit.
-    Uses a UUID value so only the owner can release (prevents TTL cross-deletion)."""
-    r = get_redis_client()
+    Uses a UUID value so only the owner can release (prevents TTL cross-deletion).
+
+    Callers must use ``as got`` and act on it: the lock is not held when it is
+    False (contended, or Redis unavailable). Locks live on the broker instance,
+    which never evicts, so an evicted key can never let two holders in.
+    """
+    r = get_coordination_client()
     owner = uuid.uuid4().hex
     got = False
     if r:
@@ -348,7 +361,6 @@ def invalidate_challenge_cache(challenge_id: Any = None) -> None:
     if challenge_id:
         challenge_id = str(challenge_id)
         delete_cached(f"challenge:{challenge_id}")
-        delete_cached(f"challenge:{challenge_id}:competitor")
 
 
 def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -> None:
@@ -358,8 +370,7 @@ def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -
     challenge_id = str(challenge_id)
 
     if delete_only:
-        delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
-        delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
+        delete_cached(leaderboard_cache_key(challenge_id))
         delete_cached(f"leaderboard:pending:{challenge_id}")
         r = get_coordination_client()
         if r:
@@ -379,5 +390,4 @@ def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -
             logger.warning("Failed to mark challenge %s as dirty in Redis: %s", challenge_id, e)
 
     # Fallback if Redis is down/unavailable: delete cache to avoid serving stale indefinitely
-    delete_cached(f"leaderboard:raw:{challenge_id}:frozen")
-    delete_cached(f"leaderboard:raw:{challenge_id}:unfrozen")
+    delete_cached(leaderboard_cache_key(challenge_id))
