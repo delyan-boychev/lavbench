@@ -3,7 +3,7 @@
 import os
 import sys
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -318,6 +318,17 @@ def test_resolve_backup_path_accepts_contained_backup(tmp_path):
         assert _resolve_backup_path(backup.name) == backup.resolve()
 
 
+def _fake_backup_commands(args, **kwargs):
+    """Stand in for pg_dump and tar; tar still leaves the archive it would have written."""
+    if "tar" in args:
+        target = args[args.index("-czf") + 1]
+        with open(target, "wb") as f:
+            f.write(b"new")
+    result = MagicMock()
+    result.returncode = 0
+    return result
+
+
 class TestBackupPolicy:
     """Retention per kind, the free-space rule, rotated-log exclusion and the schedule."""
 
@@ -333,38 +344,56 @@ class TestBackupPolicy:
             _time.sleep(0.01)
         return paths
 
-    def test_db_only_and_full_backups_rotate_separately(self, app, db_session, tmp_path):
-        full = self._make_backups(tmp_path, "auto", 5)
-        db_only = self._make_backups(tmp_path, "auto_db", 5)
+    @staticmethod
+    def _remaining(directory):
+        db_only = sorted(p.name for p in directory.glob("auto_db_*.tar.gz"))
+        full = sorted(
+            p.name for p in directory.glob("auto_*.tar.gz") if not p.name.startswith("auto_db_")
+        )
+        return db_only, full
+
+    @staticmethod
+    def _backup(app, tmp_path, db_only):
         with (
             patch("tasks.task_modules.system.Config.BACKUPS_DIR", str(tmp_path)),
-            patch("tasks.task_modules.system.Config.BACKUP_RETENTION_COUNT", 3),
+            patch("tasks.task_modules.system.Config.BACKUP_RETENTION_COUNT", 2),
+            patch("tasks.task_modules.system.Config.BACKUP_DB_RETENTION_COUNT", 4),
             patch("tasks.task_modules.system.Config.MIN_BACKUP_DISK_GB", 0),
-            patch("tasks.task_modules.system.subprocess.run") as run,
+            patch("tasks.task_modules.system.subprocess.run", side_effect=_fake_backup_commands),
             app.app_context(),
         ):
-            # Commands are mocked; tar still has to leave the file it would have written
-            def fake_run(args, **kwargs):
-                if "tar" in args:
-                    target = args[args.index("-czf") + 1]
-                    with open(target, "wb") as f:
-                        f.write(b"new")
-                result = MagicMock()
-                result.returncode = 0
-                return result
+            return run_backup(app, auto=True, db_only=db_only)
 
-            run.side_effect = fake_run
-            filename = run_backup(app, auto=True, db_only=True)
+    def test_db_only_backups_keep_their_own_retention_count(self, app, db_session, tmp_path):
+        full = self._make_backups(tmp_path, "auto", 5)
+        db_only = self._make_backups(tmp_path, "auto_db", 5)
+        filename = self._backup(app, tmp_path, db_only=True)
 
         assert filename.startswith("auto_db_")
-        remaining_db = sorted(p.name for p in tmp_path.glob("auto_db_*.tar.gz"))
-        remaining_full = sorted(
-            p.name for p in tmp_path.glob("auto_*.tar.gz") if not p.name.startswith("auto_db_")
-        )
-        assert len(remaining_db) == 3
+        remaining_db, remaining_full = self._remaining(tmp_path)
+        assert len(remaining_db) == 4
         assert filename in remaining_db
-        assert {p.name for p in db_only[-2:]} <= set(remaining_db)
+        assert {p.name for p in db_only[-3:]} <= set(remaining_db)
         assert remaining_full == sorted(p.name for p in full)
+
+    def test_full_backups_keep_backup_retention_count(self, app, db_session, tmp_path):
+        full = self._make_backups(tmp_path, "auto", 5)
+        db_only = self._make_backups(tmp_path, "auto_db", 5)
+        filename = self._backup(app, tmp_path, db_only=False)
+
+        assert filename.startswith("auto_")
+        assert not filename.startswith("auto_db_")
+        remaining_db, remaining_full = self._remaining(tmp_path)
+        assert remaining_full == sorted([full[-1].name, filename])
+        assert remaining_db == sorted(p.name for p in db_only)
+
+    def test_db_only_history_spans_the_gap_between_full_backups(self):
+        import tasks
+        from config import Config
+
+        assert Config.BACKUP_DB_RETENTION_COUNT == 18
+        history = Config.BACKUP_DB_RETENTION_COUNT * tasks._ACTIVE_BACKUP_INTERVAL
+        assert history >= timedelta(seconds=Config.BACKUP_UPLOADS_INTERVAL_SECONDS)
 
     def test_free_space_must_be_twice_the_last_backup(self, tmp_path):
         from tasks.task_modules import system
@@ -437,28 +466,153 @@ class TestBackupSchedule:
         r = get_coordination_client()
         if r is None:
             pytest.skip("Redis unavailable")
+        r.delete("backup:auto_dispatched")
         for key, value in (("backup:last_auto", last), ("backup:last_auto_full", last_full)):
             if value is None:
                 r.delete(key)
             else:
                 r.set(key, value.isoformat(), ex=3600)
 
-    def test_markers_live_on_the_broker_redis(self, monkeypatch):
+    @staticmethod
+    def _broker():
+        from utils.cache_utils import get_coordination_client
+
+        r = get_coordination_client()
+        if r is None:
+            pytest.skip("Redis unavailable")
+        return r
+
+    @staticmethod
+    def _value(r, key):
+        raw = r.get(key)
+        return raw.decode() if isinstance(raw, bytes) else raw
+
+    @staticmethod
+    def _dispatch():
+        """Run the check with the Celery send mocked; return the queued kwargs (or None)."""
+        with patch("tasks.run_backup.delay") as delay:
+            result = check_and_backup()
+        return (delay.call_args.kwargs if delay.called else None), result
+
+    @staticmethod
+    def _run_task(tmp_path, kwargs, fail=False):
+        """Run the queued backup task in-process, as the internal worker would."""
+        import tasks
+
+        with (
+            patch.object(tasks, "RUNS_INTERNAL", True),
+            patch("tasks.task_modules.system.Config.BACKUPS_DIR", str(tmp_path)),
+            patch("tasks.task_modules.system.Config.MIN_BACKUP_DISK_GB", 0),
+            patch("tasks.task_modules.system.subprocess.run", side_effect=_fake_backup_commands),
+        ):
+            if not fail:
+                return tasks.run_backup(**kwargs)
+            with (
+                patch(
+                    "tasks.task_modules.system._check_free_space",
+                    side_effect=RuntimeError("Insufficient disk space for backup"),
+                ),
+                pytest.raises(RuntimeError, match="Insufficient disk space"),
+            ):
+                tasks.run_backup(**kwargs)
+            return None
+
+    def test_claim_and_markers_live_on_the_broker_redis(self, monkeypatch):
+        from tasks.task_modules import system
+
         broker, cache = MagicMock(), MagicMock()
         broker.get.return_value = None
+        broker.set.return_value = True
         monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
         monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
         with patch("tasks.run_backup.delay"):
             check_and_backup()
+        # The check only claims the dispatch; the markers wait for a written archive
+        assert {call.args[0] for call in broker.set.call_args_list} == {"backup:auto_dispatched"}
+
+        broker.set.reset_mock()
+        system._record_auto_backup(db_only=False, started_at="2026-11-14T10:00:00")
         written = {call.args[0] for call in broker.set.call_args_list}
         assert written == {"backup:last_auto", "backup:last_auto_full"}
         cache.set.assert_not_called()
+
+    def test_failed_backup_leaves_no_marker_and_is_retried_at_the_next_check(self, tmp_path):
+        self._set_markers()
+        r = self._broker()
+        queued, _ = self._dispatch()
+        assert queued is not None
+        assert queued["scheduled_at"]
+
+        self._run_task(tmp_path, queued, fail=True)
+        assert r.get("backup:last_auto") is None
+        assert r.get("backup:last_auto_full") is None
+        assert r.get("backup:auto_dispatched") is None
+
+        retried, result = self._dispatch()
+        assert retried is not None
+        assert retried["db_only"] is False
+        assert result["backup"] == "full"
+
+    def test_successful_backup_records_its_scheduled_time(self, tmp_path):
+        now = utcnow()
+        last_full = now - timedelta(hours=1)
+        self._set_markers(last=now - timedelta(minutes=20), last_full=last_full)
+        r = self._broker()
+        queued, _ = self._dispatch()
+        assert queued is not None
+        assert queued["db_only"] is True
+
+        filename = self._run_task(tmp_path, queued)
+        assert filename.startswith("auto_db_")
+        assert self._value(r, "backup:last_auto") == queued["scheduled_at"]
+        # A database-only backup leaves the full-backup marker alone
+        assert self._value(r, "backup:last_auto_full") == last_full.isoformat()
+        assert r.get("backup:auto_dispatched") is None
+
+        again, result = self._dispatch()
+        assert again is None
+        assert "backup" not in result
+
+    def test_successful_full_backup_sets_both_markers(self, tmp_path):
+        self._set_markers()
+        r = self._broker()
+        queued, _ = self._dispatch()
+        assert queued is not None
+        assert queued["db_only"] is False
+
+        self._run_task(tmp_path, queued)
+        assert self._value(r, "backup:last_auto") == queued["scheduled_at"]
+        assert self._value(r, "backup:last_auto_full") == queued["scheduled_at"]
+
+    def test_no_duplicate_is_queued_while_a_backup_runs(self):
+        from tasks.task_modules.system import backup_dispatch_ttl
+
+        self._set_markers()
+        r = self._broker()
+        first, _ = self._dispatch()
+        assert first is not None
+
+        second, result = self._dispatch()
+        assert second is None
+        assert result["backup"] == "in_progress"
+        # The claim expires on its own, so a backup that never finishes cannot block forever
+        assert 0 < r.ttl("backup:auto_dispatched") <= backup_dispatch_ttl()
+
+    def test_a_late_release_never_frees_a_newer_claim(self):
+        from tasks.task_modules.system import release_backup_dispatch
+
+        r = self._broker()
+        r.set("backup:auto_dispatched", "2026-11-14T10:20:00", ex=60)
+        release_backup_dispatch("2026-11-14T10:00:00")
+        assert self._value(r, "backup:auto_dispatched") == "2026-11-14T10:20:00"
+        release_backup_dispatch("2026-11-14T10:20:00")
+        assert r.get("backup:auto_dispatched") is None
 
     def test_first_run_takes_a_full_backup(self):
         self._set_markers()
         with patch("tasks.run_backup.delay") as delay:
             result = check_and_backup()
-        delay.assert_called_once_with(auto=True, db_only=False)
+        delay.assert_called_once_with(auto=True, db_only=False, scheduled_at=ANY)
         assert result["backup"] == "full"
 
     def test_active_contest_backs_up_db_only_every_20_minutes(self):
@@ -466,7 +620,7 @@ class TestBackupSchedule:
         self._set_markers(last=now - timedelta(minutes=20), last_full=now - timedelta(hours=1))
         with patch("tasks.run_backup.delay") as delay:
             result = check_and_backup()
-        delay.assert_called_once_with(auto=True, db_only=True)
+        delay.assert_called_once_with(auto=True, db_only=True, scheduled_at=ANY)
         assert result["backup"] == "db_only"
 
     def test_uploads_are_included_once_their_interval_passed(self):
@@ -479,7 +633,7 @@ class TestBackupSchedule:
         )
         with patch("tasks.run_backup.delay") as delay:
             check_and_backup()
-        delay.assert_called_once_with(auto=True, db_only=False)
+        delay.assert_called_once_with(auto=True, db_only=False, scheduled_at=ANY)
 
     def test_nothing_runs_before_the_interval(self):
         now = utcnow()
@@ -501,4 +655,4 @@ class TestBackupSchedule:
         self._set_markers(last=now - timedelta(hours=6), last_full=now - timedelta(hours=7))
         with patch("tasks.run_backup.delay") as delay:
             check_and_backup()
-        delay.assert_called_once_with(auto=True, db_only=False)
+        delay.assert_called_once_with(auto=True, db_only=False, scheduled_at=ANY)

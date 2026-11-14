@@ -7,10 +7,11 @@ import json
 import logging
 import random
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
 from typing import Any
 
 from flask import Response, stream_with_context
+from werkzeug.wsgi import ClosingIterator
 
 from config import Config
 from models import db
@@ -25,6 +26,8 @@ SSE_KEEPALIVE_SECONDS = 10.0
 _JITTER_FRACTION = 0.3
 # Upper bound on queued messages folded into one update signal
 _MAX_DRAINED_MESSAGES = 100
+# Wait for the broker to confirm a subscription before relying on it
+_SUBSCRIBE_CONFIRM_SECONDS = 1.0
 
 SSE_UPDATE_PAYLOAD: dict[str, str] = {"event": "update"}
 SSE_SOCKET_LIMIT_PAYLOAD: dict[str, str] = {
@@ -56,12 +59,17 @@ def jittered_idle_timeout() -> float:
 
 def sse_response(
     event_generator: Callable[[], Generator[str, None, None]],
+    on_close: Callable[[], None] | None = None,
 ) -> tuple[Response, int, dict[str, str]]:
     """Release the request's DB session, then stream the generator.
 
     A stream lives for up to the idle timeout; keeping the session would pin a
     pooled connection, and its open transaction, for that whole time. Generators
     must therefore never query the database.
+
+    ``on_close`` releases what the view acquired for the stream. The WSGI server
+    closes every response body, also when the client leaves before the generator
+    ever starts and its own cleanup could not run.
     """
     db.session.remove()
     headers: dict[str, str] = {
@@ -70,17 +78,26 @@ def sse_response(
         "Connection": "keep-alive",
         "Content-Type": "text/event-stream",
     }
-    return stream_with_context(event_generator()), 200, headers  # type: ignore[return-value]
+    body: Iterator[Any] = stream_with_context(event_generator())
+    if on_close is not None:
+        body = ClosingIterator(body, on_close)
+    return body, 200, headers  # type: ignore[return-value]
 
 
 def subscribe_channel(channel: str) -> Any | None:
-    """Subscribe to a broker pub/sub channel; None when the broker is unreachable."""
+    """Subscribe to a broker pub/sub channel; None when the broker is unreachable.
+
+    Returns once the broker confirmed the subscription (or after a short wait), so
+    every message published afterwards reaches the returned pub/sub.
+    """
     client = get_sse_client()
     if client is None:
         return None
     pubsub = client.pubsub()
     try:
         pubsub.subscribe(channel)
+        # SUBSCRIBE is only sent; its confirmation is the first reply on this connection
+        pubsub.get_message(ignore_subscribe_messages=False, timeout=_SUBSCRIBE_CONFIRM_SECONDS)
     except Exception as e:
         logger.warning("SSE subscribe to %s failed: %s", channel, e)
         close_pubsub(pubsub)
@@ -89,11 +106,13 @@ def subscribe_channel(channel: str) -> Any | None:
 
 
 def close_pubsub(pubsub: Any | None) -> None:
-    """Unsubscribe and release a pub/sub connection, ignoring broker errors."""
+    """Release a pub/sub connection, ignoring broker errors; safe to call twice.
+
+    Closing disconnects the connection, which ends its subscriptions on the server
+    without an UNSUBSCRIBE round trip.
+    """
     if pubsub is None:
         return
-    with contextlib.suppress(Exception):
-        pubsub.unsubscribe()
     with contextlib.suppress(Exception):
         pubsub.close()
 

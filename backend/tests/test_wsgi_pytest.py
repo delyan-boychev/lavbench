@@ -39,10 +39,10 @@ class TestEngineOptions:
             pool_size=1,
             max_overflow=1,
             statement_timeout_ms=100,
-            idle_in_transaction_timeout_ms=60000,
+            idle_in_transaction_timeout_ms=300000,
         )
         assert options["connect_args"]["options"] == (
-            "-c statement_timeout=100 -c idle_in_transaction_session_timeout=60000"
+            "-c statement_timeout=100 -c idle_in_transaction_session_timeout=300000"
         )
 
     def test_non_postgres_databases_get_no_options(self):
@@ -73,6 +73,14 @@ class TestEngineOptions:
 
 @pytest.mark.timeout(120)
 class TestWebProcessImports:
+    def test_idle_in_transaction_timeout_defaults_to_five_minutes(self):
+        # Long multipart uploads touch ORM objects first, so 60 s would abort them
+        out = _run_python(
+            "import os; os.environ.pop('PG_IDLE_IN_TRANSACTION_TIMEOUT_MS', None); "
+            "from config import Config; print(Config.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS)"
+        )
+        assert out.splitlines()[-1] == "300000"
+
     def test_wsgi_patches_psycopg_for_gevent(self):
         out = _run_python(
             "import utils.wsgi, psycopg2.extensions as e; "

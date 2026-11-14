@@ -17,8 +17,13 @@ from sqlalchemy import func
 from config import Config
 from models import Submission, db
 from schemas.responses.status import StatusWord
-from utils.cache_helpers import cached_or_compute
-from utils.cache_utils import get_coordination_client, get_queue_depth
+from utils.cache_utils import (
+    cache_lock,
+    get_cached,
+    get_coordination_client,
+    get_queue_depths,
+    set_cached,
+)
 from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
@@ -28,6 +33,12 @@ CPU_QUEUE = "cpu_queue"
 EVALUATION_QUEUES = (CPU_QUEUE, "gpu_queue")
 STATUS_ORDER: tuple[str, ...] = get_args(StatusWord)
 STATUS_CACHE_KEY = "status:system"
+# The previous snapshot, kept for _STATUS_LAST_PERIODS cache periods, answers requests
+# That miss the cache while another process holds the compute lock
+STATUS_LAST_KEY = "status:system:last"
+_STATUS_LAST_PERIODS = 10
+_STATUS_LOCK_KEY = "lock:status:system"
+_STATUS_LOCK_SECONDS = 30
 
 _WORKER_SPEC_PATTERN = "worker_spec:*"
 _RUNNING_STATUSES = ("running", "building_env", "running_inference", "evaluating")
@@ -119,11 +130,12 @@ def _queue_entries(client: Any | None, workers: list[dict[str, Any]]) -> list[di
     """List the evaluation queues plus any queue a live worker reports."""
     live_queues = {q for w in workers if w["online"] for q in w["queues"]}
     names = list(EVALUATION_QUEUES) + sorted(live_queues - set(EVALUATION_QUEUES))
+    depths = get_queue_depths(names) if client is not None else {}
     return [
         {
             "name": name,
             "consumers": sum(1 for w in workers if w["online"] and name in w["queues"]),
-            "queued": get_queue_depth(name) if client is not None else 0,
+            "queued": depths.get(name, 0),
         }
         for name in names
     ]
@@ -221,11 +233,28 @@ def compute_system_status() -> dict[str, Any]:
 
 
 def system_status() -> dict[str, Any]:
-    """Return the snapshot, cached for STATUS_CACHE_SECONDS."""
-    snapshot: dict[str, Any] = cached_or_compute(
-        STATUS_CACHE_KEY, compute_system_status, timeout=Config.STATUS_CACHE_SECONDS
-    )
-    return snapshot
+    """Return the snapshot, cached for STATUS_CACHE_SECONDS and computed by one process at a time.
+
+    ``GET /api/status`` needs no login, so a cache miss must not let every request run
+    the database aggregates and broker reads at once. A request that misses while
+    another process computes gets the previous snapshot; only when there is none does
+    it compute as well, so the endpoint always answers.
+    """
+    cached: dict[str, Any] | None = get_cached(STATUS_CACHE_KEY)
+    if cached is not None:
+        return cached
+    with cache_lock(_STATUS_LOCK_KEY, ttl=_STATUS_LOCK_SECONDS) as got:
+        # The lock holder re-checks, as another process may have stored a snapshot since
+        # The miss; a request without the lock falls back to the previous snapshot
+        cached = get_cached(STATUS_CACHE_KEY if got else STATUS_LAST_KEY)
+        if cached is not None:
+            return cached
+        snapshot = compute_system_status()
+        set_cached(STATUS_CACHE_KEY, snapshot, timeout=Config.STATUS_CACHE_SECONDS)
+        set_cached(
+            STATUS_LAST_KEY, snapshot, timeout=_STATUS_LAST_PERIODS * Config.STATUS_CACHE_SECONDS
+        )
+        return snapshot
 
 
 def public_status() -> dict[str, Any]:

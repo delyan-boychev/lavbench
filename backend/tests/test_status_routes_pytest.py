@@ -12,9 +12,14 @@ import pytest
 from config import Config
 from models import Submission
 from services import status_service
-from services.status_service import STATUS_CACHE_KEY, scoring_status, worst_status
+from services.status_service import (
+    STATUS_CACHE_KEY,
+    STATUS_LAST_KEY,
+    scoring_status,
+    worst_status,
+)
 from utils.auth_utils import generate_token
-from utils.cache_utils import delete_cached
+from utils.cache_utils import delete_cached, get_coordination_client, get_redis_client
 from utils.dates import utcnow
 
 
@@ -60,16 +65,36 @@ def status_env(db_session, redis_flush):
     def _broker():
         return env["broker"]
 
-    def _depth(name: str) -> int:
-        return env["depths"].get(name, 0)
+    def _depths(names) -> dict[str, int]:
+        return {name: env["depths"].get(name, 0) for name in names}
 
     delete_cached(STATUS_CACHE_KEY)
+    delete_cached(STATUS_LAST_KEY)
     with (
         patch.object(status_service, "get_coordination_client", _broker),
-        patch.object(status_service, "get_queue_depth", _depth),
+        patch.object(status_service, "get_queue_depths", _depths),
     ):
         yield env
     delete_cached(STATUS_CACHE_KEY)
+    delete_cached(STATUS_LAST_KEY)
+    broker = get_coordination_client()
+    if broker is not None:
+        broker.delete("lock:status:system")
+
+
+def _cache_redis():
+    r = get_redis_client()
+    if r is None:
+        pytest.skip("Redis unavailable")
+    return r
+
+
+def _hold_status_lock() -> None:
+    """Hold the compute lock as another process would."""
+    r = get_coordination_client()
+    if r is None:
+        pytest.skip("Redis unavailable")
+    r.set("lock:status:system", "another-process", ex=30)
 
 
 def _queued_submission(db_session, sample_challenge, sample_task, sample_competitor, age):
@@ -182,10 +207,60 @@ class TestPublicStatus:
         assert client.get("/api/status").get_json()["status"] == "major_outage"
 
     def test_cache_uses_status_cache_seconds(self, status_env):
-        with patch.object(status_service, "cached_or_compute") as cached:
-            cached.return_value = {"status": "operational"}
-            status_service.system_status()
-        assert cached.call_args.kwargs["timeout"] == Config.STATUS_CACHE_SECONDS
+        r = _cache_redis()
+        status_service.system_status()
+        assert 0 < r.ttl(STATUS_CACHE_KEY) <= Config.STATUS_CACHE_SECONDS
+        # The previous snapshot outlives the fresh one, so lock losers can still answer
+        assert r.ttl(STATUS_LAST_KEY) > Config.STATUS_CACHE_SECONDS
+
+
+class TestStatusSingleFlight:
+    """Only one process computes a snapshot; the others never stampede the database."""
+
+    def test_lock_miss_serves_the_previous_snapshot(self, client, status_env):
+        status_env["broker"] = FakeBroker({"cpu@w1": _spec(["cpu_queue"])})
+        previous = client.get("/api/status").get_json()
+        assert previous["status"] == "operational"
+
+        # The fresh snapshot expired and another process is computing the next one
+        delete_cached(STATUS_CACHE_KEY)
+        _hold_status_lock()
+        status_env["broker"] = FakeBroker({})
+        with patch.object(
+            status_service, "compute_system_status", side_effect=AssertionError("computed")
+        ):
+            assert client.get("/api/status").get_json() == previous
+
+    def test_lock_miss_without_a_previous_snapshot_computes_anyway(self, client, status_env):
+        status_env["broker"] = FakeBroker({"cpu@w1": _spec(["cpu_queue"])})
+        _hold_status_lock()
+        res = client.get("/api/status")
+        assert res.status_code == 200
+        assert res.get_json()["status"] == "operational"
+
+    def test_lock_holder_uses_a_snapshot_stored_after_its_miss(self, status_env):
+        stored = {"status": "operational", "stored": True}
+        reads = iter([None, stored])
+        with (
+            patch.object(status_service, "get_cached", side_effect=lambda _key: next(reads)),
+            patch.object(
+                status_service, "compute_system_status", side_effect=AssertionError("computed")
+            ),
+        ):
+            assert status_service.system_status() == stored
+
+    def test_admin_system_status_shares_the_single_flight(
+        self, client, status_env, tokens, auth_headers
+    ):
+        status_env["broker"] = FakeBroker({"cpu@w1": _spec(["cpu_queue"])})
+        first = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
+        delete_cached(STATUS_CACHE_KEY)
+        _hold_status_lock()
+        with patch.object(
+            status_service, "compute_system_status", side_effect=AssertionError("computed")
+        ):
+            again = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
+        assert again.get_json() == first.get_json()
 
 
 class TestSystemStatus:

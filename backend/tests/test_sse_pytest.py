@@ -63,6 +63,19 @@ class TestSseResponse:
         assert headers["X-Accel-Buffering"] == "no"
         assert not started, "the generator must not run before the response is returned"
 
+    def test_on_close_runs_even_when_the_generator_never_started(self, app):
+        started, closed = [], []
+
+        def generator():
+            started.append(True)
+            yield "data: {}\n\n"
+
+        with app.test_request_context():
+            body, _status, _headers = sse.sse_response(generator, on_close=lambda: closed.append(1))
+        body.close()
+        assert not started
+        assert closed == [1]
+
 
 class TestSignalStream:
     def test_forwards_only_update_signals_and_folds_bursts(self, fredis, app_ctx):
@@ -215,3 +228,114 @@ class TestSubmissionLogStream:
         finally:
             res.close()
         assert _events(chunks)[-1] == {"status": "failed"}
+
+
+class TestSubmissionLogReplayGap:
+    """The stream subscribes before reading the replay and always closes its pub/sub."""
+
+    @pytest.fixture
+    def running(self, db_session, sample_challenge, sample_task, sample_competitor):
+        sub = Submission(
+            user_id=sample_competitor.id,
+            challenge_id=sample_challenge.id,
+            task_id=sample_task.id,
+            status="running",
+        )
+        db_session.add(sub)
+        db_session.commit()
+        return sub
+
+    @staticmethod
+    def _open(client, fredis, sub, headers):
+        """Run the view; the test client has pulled only the first chunk (the retry field)."""
+        with patch("routes.submissions.get_redis_client", return_value=fredis):
+            return client.get(
+                f"/api/submissions/{sub.id}/logs/live", headers=headers, buffered=False
+            )
+
+    @staticmethod
+    def _read(res):
+        try:
+            return [c.decode() for c in res.response]
+        finally:
+            res.close()
+
+    def test_line_published_before_the_replay_is_streamed_is_delivered(
+        self, client, fredis, tokens, auth_headers, running
+    ):
+        from utils.sse_utils import publish_submission_log_batch, publish_submission_status
+
+        fredis.rpush(f"submission:{running.id}:logs", "replayed line")
+        res = self._open(client, fredis, running, auth_headers(tokens.competitor))
+        assert res.status_code == 200
+        # The view returned (subscribed, replay read); the worker publishes before the
+        # Client consumes the replay, which used to subscribe only after it
+        publish_submission_log_batch(running.id, ["late line"])
+        publish_submission_status(running.id, "completed")
+        events = _events(self._read(res))
+
+        assert [e["log"] for e in events if "log" in e] == ["replayed line", "late line"]
+        assert events[-1] == {"status": "completed"}
+        assert len(fredis.pubsubs) == 1
+        assert fredis.pubsubs[0].closed
+
+    def test_pubsub_is_closed_when_the_client_stops_reading(
+        self, client, fredis, tokens, auth_headers, running
+    ):
+        res = self._open(client, fredis, running, auth_headers(tokens.competitor))
+        assert len(fredis.pubsubs) == 1
+        assert not fredis.pubsubs[0].closed
+        res.close()
+        assert fredis.pubsubs[0].closed
+
+    def test_finished_submission_never_subscribes(
+        self, client, fredis, tokens, auth_headers, running, db_session
+    ):
+        running.status = "completed"
+        db_session.commit()
+        events = _events(
+            self._read(self._open(client, fredis, running, auth_headers(tokens.admin)))
+        )
+        assert events[-1] == {"status": "completed"}
+        assert fredis.pubsubs == []
+
+    @pytest.mark.parametrize("ending", ["denied", "timeout", "evicted", "error"])
+    def test_pubsub_is_closed_on_every_exit_path(
+        self, client, fredis, tokens, auth_headers, running, ending
+    ):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def denied(**_kwargs):
+            yield False, ""
+
+        patches = {
+            "denied": patch("routes.submissions.sse_connection_limit", denied),
+            "timeout": patch("routes.submissions.jittered_idle_timeout", return_value=0),
+            "evicted": patch("routes.submissions.sse_heartbeat", return_value=False),
+            "error": patch(
+                "tests.helpers.sse_test_utils._FakePubSub.get_message",
+                side_effect=ConnectionError("broker gone"),
+            ),
+        }
+        # The test client pulls the first chunk inside the request, which already
+        # Enters the connection limit; the other exits happen after the replay
+        if ending == "denied":
+            with patches[ending]:
+                events = _events(
+                    self._read(self._open(client, fredis, running, auth_headers(tokens.competitor)))
+                )
+        else:
+            res = self._open(client, fredis, running, auth_headers(tokens.competitor))
+            with patches[ending]:
+                events = _events(self._read(res))
+
+        expected_last = {
+            "denied": {"error": "too many connections", "code": "ERR_SSE_SOCKET_LIMIT"},
+            "timeout": {"event": "timeout"},
+            "evicted": {"event": "evicted"},
+        }
+        if ending in expected_last:
+            assert events[-1] == expected_last[ending]
+        assert len(fredis.pubsubs) == 1
+        assert fredis.pubsubs[0].closed

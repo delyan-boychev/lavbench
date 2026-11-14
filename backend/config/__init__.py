@@ -138,10 +138,10 @@ class Config:
 
     # Max queued+accepted evaluations before submissions are rejected (per queue)
     MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
-    # Broker message expiry for evaluation tasks (seconds). Kept at least as long
-    # As the watchdog's 1h "never picked up" cutoff so the broker never drops a
-    # Queued submission before the watchdog can fail it visibly
-    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 3600))
+    # Broker message expiry for evaluation tasks (seconds). Must stay at least 15 min
+    # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
+    # Just before it expires still needs time to build the image and start the container
+    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
@@ -150,9 +150,10 @@ class Config:
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
-    # Web process only: abort transactions left idle (e.g. a request blocked on a slow body)
+    # Web process only: abort transactions left idle (a backstop for leaked ones); generous
+    # Because multipart task routes do long file I/O after touching ORM objects
     PG_IDLE_IN_TRANSACTION_TIMEOUT_MS = int(
-        os.environ.get("PG_IDLE_IN_TRANSACTION_TIMEOUT_MS", 60000)
+        os.environ.get("PG_IDLE_IN_TRANSACTION_TIMEOUT_MS", 300000)
     )
     DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", 10))
     DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", 10))
@@ -181,7 +182,10 @@ class Config:
     # Backup (Postgres + audit log dump) settings
     MIN_BACKUP_DISK_GB = int(os.environ.get("MIN_BACKUP_DISK_GB", 1))
     BACKUP_TIMEOUT = int(os.environ.get("BACKUP_TIMEOUT", 600))
+    # Automatic backups kept per kind: full backups, and database-only backups
+    # (18 x 20 min covers the 6 h between two full backups)
     BACKUP_RETENTION_COUNT = int(os.environ.get("BACKUP_RETENTION_COUNT", 3))
+    BACKUP_DB_RETENTION_COUNT = int(os.environ.get("BACKUP_DB_RETENTION_COUNT", 18))
     # During a contest the database is backed up every 20 min, uploads only this often
     BACKUP_UPLOADS_INTERVAL_SECONDS = int(os.environ.get("BACKUP_UPLOADS_INTERVAL_SECONDS", 21600))
 
