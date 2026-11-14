@@ -17,8 +17,8 @@ server {
 
     # Access log to stdout only, where Docker's json-file driver rotates it
     access_log /dev/stdout;
+    # Error log to stderr only, rotated by Docker like the access log
     error_log /dev/stderr;
-    error_log /app/logs/nginx_error.log;
 
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'" always;
     add_header X-Frame-Options "DENY" always;

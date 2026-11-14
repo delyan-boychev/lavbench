@@ -1,8 +1,9 @@
-# Application settings from .env reach the services built from ./backend that
-# read them (backend, beat, internal worker) through env_file. The long syntax
-# needs Compose 2.24+; `required: false` lets CI and fresh checkouts run without
-# a .env. Each service's `environment:` entries win over env_file, which keeps
-# the localhost URLs in .env out of the compose network.
+# Application settings from .env reach the backend through env_file. The long
+# syntax needs Compose 2.24+; `required: false` lets CI and fresh checkouts run
+# without a .env. The backend's `environment:` entries win over env_file, which
+# keeps the localhost URLs in .env out of the compose network. Beat and the
+# internal worker get no env_file on purpose: they receive an explicit allowlist
+# of settings, so no server secret added to .env can ever reach them.
 x-app-env-file: &app-env-file
   - path: .env
     required: false
@@ -221,7 +222,6 @@ services:
     container_name: lavbench_beat
     restart: always
     command: celery -A tasks.celery beat --loglevel=info -s /app/run/celerybeat-schedule.db
-    env_file: *app-env-file
     environment:
       # In-network URLs only — .env's localhost URLs are for `make dev` and
       # must never be interpolated into the compose network. The scheduler role
@@ -236,15 +236,6 @@ services:
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
       - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
-      # Blank the database URL and server secrets that env_file passes in.
-      # A new server-only secret in .env must be blanked here too.
-      - DATABASE_URL=
-      - POSTGRES_PASSWORD=
-      - SECRET_KEY=
-      - ENCRYPTION_KEY=
-      - WORKER_ENCRYPTION_KEY=
-      - EVALUATION_SPLIT_SECRET=
-      - WORKER_CAPABILITY_SECRET=
     depends_on:
       redis:
         condition: service_healthy
@@ -292,7 +283,6 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-1g}
     cpus: ${WORKER_CPU_LIMIT:-2}
     command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q celery,internal -c $${CELERY_WORKER_CONCURRENCY:-2}'
-    env_file: *app-env-file
     environment:
       # In-network URLs only — .env's localhost URLs are for `make dev` and
       # must never be interpolated into the compose network.
@@ -313,13 +303,14 @@ services:
       - WORKER_ROLE=internal
       - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
-      # Blank the server secrets that env_file passes in: the internal role
-      # needs only the database. A new server-only secret in .env must be
-      # blanked here too.
-      - SECRET_KEY=
-      - ENCRYPTION_KEY=
-      - EVALUATION_SPLIT_SECRET=
-      - WORKER_CAPABILITY_SECRET=
+      # Allowlisted settings for the system tasks this worker runs (backups,
+      # leaderboard recalculation, watchdog); everything else keeps its default
+      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-3}
+      - BACKUP_UPLOADS_INTERVAL_SECONDS=${BACKUP_UPLOADS_INTERVAL_SECONDS:-21600}
+      - MIN_BACKUP_DISK_GB=${MIN_BACKUP_DISK_GB:-1}
+      - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
     depends_on:
       redis:
         condition: service_healthy
