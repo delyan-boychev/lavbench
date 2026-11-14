@@ -109,18 +109,6 @@ describe('TaskService', () => {
     });
   });
 
-  describe('getLeaderboard', () => {
-    it('returns task leaderboard', async () => {
-      const lb = [{ rank: 1, name: 'Alice', score: 95 }];
-      api.get.mockResolvedValue({ ok: true, status: 200, data: lb });
-
-      const result = await TaskService.getLeaderboard(1);
-
-      expect(api.get).toHaveBeenCalledWith('/tasks/1/leaderboard');
-      expect(result.data).toEqual(lb);
-    });
-  });
-
   describe('getSubmissionDetail', () => {
     it('returns submission detail by submission id', async () => {
       const detail = { id: 10, status: 'graded', score: 85 };

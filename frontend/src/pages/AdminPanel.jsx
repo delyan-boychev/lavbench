@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import useDebounce from '../hooks/useDebounce';
-import useSSE from '../hooks/useSSE';
 import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
 import { useUsersQuery } from '../hooks/useUsersQuery';
 import { useCompetitorsQuery } from '../hooks/useCompetitorsQuery';
@@ -72,21 +71,6 @@ export default function AdminPanel() {
     const challenge = challenges.find((c) => c.id.toString() === challengeId.toString());
     if (!challenge || !challenge.start_time) return false;
     return new Date() >= new Date(challenge.start_time);
-  };
-
-  const formatUptime = (seconds) => {
-    if (seconds === undefined || seconds === null) return 'N/A';
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-
-    const parts = [];
-    if (d > 0) parts.push(`${d}d`);
-    if (h > 0) parts.push(`${h}h`);
-    if (m > 0) parts.push(`${m}m`);
-    parts.push(`${s}s`);
-    return parts.join(' ');
   };
 
   // Competition Creation (ChallengeConfig tab)
@@ -197,58 +181,10 @@ export default function AdminPanel() {
   const competitorsTotal = competitorsData?.total || 0;
   const competitorsPages = competitorsData?.pages || 1;
 
-  // Workers & Resources State
-  const [workerStats, setWorkerStats] = useState(null);
-  const [workerStatsLoading, setWorkerStatsLoading] = useState(false);
-  const [workerStatsError, setWorkerStatsError] = useState(null);
-
   const { data: availableMetricsData } = useAdminMetricsQuery({
     enabled: isAdminOrJury && adminSubTab === 'competition-mgmt',
   });
   const availableMetrics = availableMetricsData || {};
-
-  // Worker stats via SSE
-  const { reconnect: reconnectWorkerStats } = useSSE(
-    adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '',
-    {
-      storeData: false,
-      onMessage: (data) => {
-        if (data && !data.error) {
-          setWorkerStats(data);
-          setWorkerStatsError(null);
-        } else if (data?.error) {
-          setWorkerStatsError(data.error);
-        }
-        setWorkerStatsLoading(false);
-      },
-      onError: () => {
-        setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
-        setWorkerStatsLoading(false);
-      },
-    },
-  );
-
-  // A manual refresh reopens the stream; the first snapshot (or error) clears the
-  // spinner, and the timeout guarantees it never spins forever on a silent stream
-  const workerStatsRefreshTimerRef = useRef(
-    /** @type {ReturnType<typeof setTimeout> | null} */ (null),
-  );
-  const fetchWorkerStats = useCallback(() => {
-    setWorkerStatsLoading(true);
-    reconnectWorkerStats();
-    if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
-    workerStatsRefreshTimerRef.current = setTimeout(() => {
-      workerStatsRefreshTimerRef.current = null;
-      setWorkerStatsLoading(false);
-    }, 10000);
-  }, [reconnectWorkerStats]);
-
-  useEffect(
-    () => () => {
-      if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     setUsersPage(1);
@@ -710,15 +646,7 @@ export default function AdminPanel() {
 
           {/* 7. WORKERS MONITORING MODULE */}
           {adminSubTab === 'workers-stats' &&
-            (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-              <WorkersStats
-                workerStats={workerStats}
-                workerStatsLoading={workerStatsLoading}
-                workerStatsError={workerStatsError}
-                fetchWorkerStats={fetchWorkerStats}
-                formatUptime={formatUptime}
-              />
-            )}
+            (currentUser.role === 'admin' || currentUser.role === 'jury') && <WorkersStats />}
 
           {/* 8. SUBMISSION QUEUE */}
           {adminSubTab === 'submission-queue' &&
