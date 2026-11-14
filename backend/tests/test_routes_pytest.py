@@ -221,6 +221,29 @@ class TestRouteLevelLogic:
         assert enqueue["expires"] == Config.CELERY_MESSAGE_EXPIRES
 
     @patch("tasks.evaluate_submission.apply_async")
+    def test_submit_signals_the_queue_but_leaves_the_leaderboard_clean(self, mock_celery):
+        """The leaderboard counts completed submissions only; a queued one cannot move it."""
+        from utils.cache_utils import DIRTY_LEADERBOARD_VERSIONS, get_coordination_client
+
+        r = get_coordination_client()
+        if r is not None:
+            r.hdel(DIRTY_LEADERBOARD_VERSIONS, str(self.challenge.id))
+        with (
+            patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate,
+            patch("routes.tasks.publish_queue_update") as queue_update,
+        ):
+            res = self.client.post(
+                f"/api/tasks/{self.task.id}/submit",
+                headers=self.get_auth_header(self.competitor_token),
+                json={"selected_cells": [{"source": "# SUBMIT\nprint(1)"}]},
+            )
+        assert res.status_code == 202
+        queue_update.assert_called_once_with()
+        invalidate.assert_not_called()
+        if r is not None:
+            assert r.hget(DIRTY_LEADERBOARD_VERSIONS, str(self.challenge.id)) is None
+
+    @patch("tasks.evaluate_submission.apply_async")
     def test_submit_task_with_database_custom_eval(self, mock_celery):
         self.task.custom_eval_code = "print('custom evaluation code')"
         db.session.commit()
@@ -1755,5 +1778,9 @@ class TestRouteLevelLogic:
             f"/api/submissions/{sub.id}/logs/live",
             headers=self.get_auth_header(self.competitor_token),
         )
-        assert res.status_code == 200
-        assert res.mimetype == "text/event-stream"
+        # An unclosed stream is collected during a later test and pops its contexts there
+        try:
+            assert res.status_code == 200
+            assert res.mimetype == "text/event-stream"
+        finally:
+            res.close()

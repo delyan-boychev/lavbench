@@ -59,7 +59,6 @@ from utils.cache_utils import (
     cache_lock,
     get_coordination_client,
     get_queue_depth,
-    invalidate_leaderboard_cache,
 )
 from utils.dates import utcnow
 from utils.error_utils import err
@@ -1386,9 +1385,8 @@ def submit_task(
         db.session.add(submission)
         db.session.commit()
 
-    # The leaderboard beat task rebuilds and signals live viewers
-    invalidate_leaderboard_cache(submission.challenge_id)
-
+    # A queued submission cannot change the leaderboard, which counts completed
+    # Submissions only; the results path invalidates it when the score arrives
     publish_queue_update()
     from tasks import evaluate_submission
 

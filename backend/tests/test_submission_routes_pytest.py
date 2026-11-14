@@ -1086,8 +1086,11 @@ class TestStreamSubmissionLogs:
             f"/api/submissions/{self.submission.id}/logs/live",
             headers=self._auth(self.owner_token),
         )
-        assert resp.status_code == 200
-        assert resp.mimetype == "text/event-stream"
+        try:
+            assert resp.status_code == 200
+            assert resp.mimetype == "text/event-stream"
+        finally:
+            resp.close()
 
     def test_admin_can_stream_logs(self):
         self.submission.status = "completed"
@@ -1096,8 +1099,11 @@ class TestStreamSubmissionLogs:
             f"/api/submissions/{self.submission.id}/logs/live",
             headers=self._auth(self.admin_token),
         )
-        assert resp.status_code == 200
-        assert resp.mimetype == "text/event-stream"
+        try:
+            assert resp.status_code == 200
+            assert resp.mimetype == "text/event-stream"
+        finally:
+            resp.close()
 
     def test_sse_response_contains_initial_event(self):
         self.submission.status = "completed"
