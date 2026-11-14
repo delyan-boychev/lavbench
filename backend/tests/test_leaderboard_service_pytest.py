@@ -348,3 +348,77 @@ class TestGetTaskLeaderboardData:
         entries = result["leaderboard"]
         baseline_entries = [e for e in entries if e.get("is_baseline_entry")]
         assert len(baseline_entries) == 1
+
+
+class TestLeaderboardStampedeProtection:
+    """Readers never recompute while a cached value exists; one TTL for the cache."""
+
+    @staticmethod
+    def _lock(got):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_lock(_key, ttl=120):
+            yield got
+
+        return fake_lock
+
+    def test_cached_value_is_served_without_computing(self, mocker):
+        import services.leaderboard_service as lbs
+
+        mocker.patch.object(lbs, "get_cached", return_value=[{"rank": 1}])
+        compute = mocker.patch.object(lbs, "_compute_leaderboard_entries")
+        assert lbs.build_and_cache_leaderboard("c1") == [{"rank": 1}]
+        compute.assert_not_called()
+
+    def test_lock_miss_serves_the_value_the_lock_holder_builds(self, mocker):
+        import services.leaderboard_service as lbs
+
+        mocker.patch.object(lbs, "get_cached", side_effect=[None, None, [{"rank": 1}]])
+        mocker.patch.object(lbs, "cache_lock", self._lock(False))
+        mocker.patch.object(lbs.time, "sleep")
+        compute = mocker.patch.object(lbs, "_compute_leaderboard_entries")
+        assert lbs.build_and_cache_leaderboard("c1") == [{"rank": 1}]
+        compute.assert_not_called()
+
+    def test_lock_miss_computes_only_when_no_cached_value_exists(self, mocker):
+        import services.leaderboard_service as lbs
+
+        mocker.patch.object(lbs, "get_cached", return_value=None)
+        mocker.patch.object(lbs, "cache_lock", self._lock(False))
+        mocker.patch.object(lbs.time, "sleep")
+        compute = mocker.patch.object(
+            lbs, "_compute_leaderboard_entries", return_value=[{"rank": 2}]
+        )
+        set_cached = mocker.patch.object(lbs, "set_cached")
+        assert lbs.build_and_cache_leaderboard("c1") == [{"rank": 2}]
+        compute.assert_called_once_with("c1")
+        set_cached.assert_called_once_with(
+            "leaderboard:raw:c1", [{"rank": 2}], timeout=lbs.LEADERBOARD_CACHE_SECONDS
+        )
+
+    def test_rebuild_skips_when_another_rebuild_holds_the_lock(self, mocker):
+        import services.leaderboard_service as lbs
+
+        mocker.patch.object(lbs, "cache_lock", self._lock(False))
+        compute = mocker.patch.object(lbs, "_compute_leaderboard_entries")
+        assert lbs.rebuild_leaderboard("c1") is False
+        compute.assert_not_called()
+
+    def test_rebuild_overwrites_the_cache_with_the_single_ttl(self, mocker):
+        import services.leaderboard_service as lbs
+
+        mocker.patch.object(lbs, "cache_lock", self._lock(True))
+        mocker.patch.object(lbs, "_compute_leaderboard_entries", return_value=[{"rank": 3}])
+        set_cached = mocker.patch.object(lbs, "set_cached")
+        assert lbs.rebuild_leaderboard("c1") is True
+        set_cached.assert_called_once_with(
+            "leaderboard:raw:c1", [{"rank": 3}], timeout=lbs.LEADERBOARD_CACHE_SECONDS
+        )
+
+    def test_frozen_variant_is_gone(self):
+        import inspect
+
+        import services.leaderboard_service as lbs
+
+        assert "is_frozen_view" not in inspect.signature(lbs.build_and_cache_leaderboard).parameters

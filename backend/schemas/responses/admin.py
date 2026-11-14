@@ -180,15 +180,6 @@ class AvailableMetricsResponse(RootModel[dict[str, dict[str, list[str] | str]]])
     model_config = RESPONSE_CONFIG
 
 
-# ── Worker stats ───────────────────────────────────────────────────────
-
-
-class WorkerStatsResponse(BaseModel):
-    """Free-form worker stats dict."""
-
-    model_config = RESPONSE_CONFIG
-
-
 # ── Dead letters ──────────────────────────────────────────────────────
 
 

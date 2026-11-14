@@ -22,15 +22,120 @@ from utils.dates import utcnow
 logger = logging.getLogger(__name__)
 
 
-def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
+_GIB = 1024**3
+# Rotated application logs (``backend.log.1`` ... ``backend.log.6``) stay out of backups
+_ROTATED_LOG_PATTERN = "*.log.[0-9]*"
+
+# Start time of the last successful automatic backup (any kind) and of the last full one;
+# They live on the broker Redis, which never evicts (the cache instance runs volatile-lru)
+LAST_AUTO_BACKUP_KEY = "backup:last_auto"
+LAST_FULL_BACKUP_KEY = "backup:last_auto_full"
+# Held from dispatch until the automatic backup ends, so the scheduler never queues a
+# Duplicate; its value is the backup's scheduled time, which the backup releases it with
+BACKUP_DISPATCH_KEY = "backup:auto_dispatched"
+
+
+def backup_dispatch_ttl() -> int:
+    """Lifetime of the dispatch claim: frees the schedule when a backup never finishes.
+
+    pg_dump and tar are each bounded by BACKUP_TIMEOUT; the rest covers the queue
+    wait and the audit log dump.
+    """
+    return 2 * Config.BACKUP_TIMEOUT + 600
+
+
+def release_backup_dispatch(scheduled_at: str) -> None:
+    """Release the dispatch claim, unless a later dispatch already holds it."""
+    from utils.cache_utils import delete_if_value, get_coordination_client
+
+    r = get_coordination_client()
+    if not r:
+        return
+    try:
+        delete_if_value(r, BACKUP_DISPATCH_KEY, scheduled_at)
+    except Exception as e:
+        logger.warning("Failed to release the backup dispatch claim: %s", e)
+
+
+def _record_auto_backup(db_only: bool, started_at: str) -> None:
+    """Mark an automatic backup as done; only a written archive gets here.
+
+    The marker holds the scheduled start, not the finish time, so the 20 min cadence
+    does not drift by the backup's duration.
+    """
+    from utils.cache_utils import get_coordination_client
+
+    r = get_coordination_client()
+    if not r:
+        return
+    marker_ttl = max(86400, 2 * Config.BACKUP_UPLOADS_INTERVAL_SECONDS)
+    try:
+        r.set(LAST_AUTO_BACKUP_KEY, started_at, ex=marker_ttl)
+        if not db_only:
+            r.set(LAST_FULL_BACKUP_KEY, started_at, ex=marker_ttl)
+    except Exception as e:
+        logger.warning("Failed to record the automatic backup marker: %s", e)
+
+
+def _auto_backup_pattern(backup_dir: str, db_only: bool) -> str:
+    return os.path.join(backup_dir, "auto_db_*.tar.gz" if db_only else "auto_*.tar.gz")
+
+
+def _auto_backups(backup_dir: str, db_only: bool) -> list[str]:
+    """Return the automatic backups of one kind, oldest first.
+
+    Database-only and full backups rotate separately, so the frequent database
+    backups never push the last copy of the uploads out of retention.
+    """
+    paths = glob.glob(_auto_backup_pattern(backup_dir, db_only))
+    if not db_only:
+        paths = [p for p in paths if not os.path.basename(p).startswith("auto_db_")]
+    return sorted(paths, key=os.path.getctime)
+
+
+def _required_free_bytes(backup_dir: str, db_only: bool) -> int:
+    """Free space a new backup needs: twice the last backup of its kind, at least the floor."""
+    floor = Config.MIN_BACKUP_DISK_GB * _GIB
+    previous = _auto_backups(backup_dir, db_only)
+    last_size = 0
+    if previous:
+        with contextlib.suppress(OSError):
+            last_size = os.path.getsize(previous[-1])
+    return max(floor, 2 * last_size)
+
+
+def _check_free_space(backup_dir: str, db_only: bool) -> None:
+    try:
+        free = shutil.disk_usage(backup_dir).free
+    except FileNotFoundError:
+        os.makedirs(backup_dir, exist_ok=True)
+        return
+    required = _required_free_bytes(backup_dir, db_only)
+    if free < required:
+        raise RuntimeError(
+            f"Insufficient disk space for backup: {free / _GIB:.1f}GB free in {backup_dir} "
+            f"({required / _GIB:.1f}GB required: twice the last backup, at least "
+            f"{Config.MIN_BACKUP_DISK_GB}GB)"
+        )
+
+
+def run_backup(
+    app: Flask, auto: bool = True, db_only: bool = False, scheduled_at: str | None = None
+) -> str:
     """
     Unified backup: pg_dump via .pgpass + tar.gz of DB dump + uploads.
-    - auto=True  → saves to /backups/auto_*.tar.gz, rotates dynamically
+    - auto=True  → saves to /backups/auto_*.tar.gz (auto_db_*.tar.gz when db_only),
+      keeps the newest BACKUP_RETENTION_COUNT full and BACKUP_DB_RETENTION_COUNT
+      database-only backups, and records the schedule marker once the archive exists
     - auto=False → saves to /backups/manual_*.tar.gz, never auto-deleted
     - db_only → if True, only backs up the database (no uploads folder)
+    - scheduled_at → the scheduler's dispatch time, stored as the marker
     """
-    prefix = "auto" if auto else "manual"
-    ts = utcnow().strftime("%Y%m%d_%H%M%S")
+    prefix = "manual"
+    if auto:
+        prefix = "auto_db" if db_only else "auto"
+    started_at = utcnow()
+    ts = started_at.strftime("%Y%m%d_%H%M%S")
 
     backup_dir = Config.BACKUPS_DIR
     os.makedirs(backup_dir, exist_ok=True)
@@ -38,18 +143,7 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
     filename = f"{prefix}_{ts}.tar.gz"
     target = os.path.join(backup_dir, filename)
 
-    # Pre-flight disk space check
-    min_free_gb = Config.MIN_BACKUP_DISK_GB
-    try:
-        disk_usage = shutil.disk_usage(backup_dir)
-        free_gb = disk_usage.free / (1024**3)
-        if free_gb < min_free_gb:
-            raise RuntimeError(
-                f"Insufficient disk space for backup: {free_gb:.1f}GB free "
-                f"in {backup_dir} (min {min_free_gb}GB required)"
-            )
-    except FileNotFoundError:
-        os.makedirs(backup_dir, exist_ok=True)
+    _check_free_space(backup_dir, db_only)
 
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
     parsed = urllib.parse.urlparse(db_uri)
@@ -138,7 +232,7 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
             shutil.copytree(
                 log_dir,
                 logs_dest,
-                ignore=shutil.ignore_patterns("*.gz"),
+                ignore=shutil.ignore_patterns("*.gz", _ROTATED_LOG_PATTERN),
                 dirs_exist_ok=True,
             )
 
@@ -172,29 +266,12 @@ def run_backup(app: Flask, auto: bool = True, db_only: bool = False) -> str:
 
     file_size = os.path.getsize(target)
 
-    # Rotation: keep last N auto backups in root directory only
     if auto:
-        pattern = os.path.join(backup_dir, "auto_*.tar.gz")
-        auto_files = sorted(glob.glob(pattern), key=os.path.getctime)
-
-        # Cap kept auto-backups based on active competition status
-        keep_count = 3
-        try:
-            from models import Challenge
-
-            now = utcnow()
-            active_comp = Challenge.query.filter(
-                Challenge.is_active,
-                ~Challenge.is_archived,
-                Challenge.start_time <= now,
-                (Challenge.end_time.is_(None)) | (Challenge.end_time >= now),
-            ).first()
-            if active_comp is not None:
-                keep_count = 6
-        except Exception as e:
-            logger.warning("Failed to publish backup event: %s", e)
-
-        for old in auto_files[:-keep_count]:
+        _record_auto_backup(db_only, scheduled_at or started_at.isoformat())
+        # Rotation: database-only and full backups each keep their own count
+        retention = Config.BACKUP_DB_RETENTION_COUNT if db_only else Config.BACKUP_RETENTION_COUNT
+        keep_count = max(1, retention)
+        for old in _auto_backups(backup_dir, db_only)[:-keep_count]:
             with contextlib.suppress(OSError):
                 os.remove(old)
 

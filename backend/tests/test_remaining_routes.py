@@ -221,9 +221,9 @@ class TestLoginRateLimiting:
     def clear_login_failures(self):
         """Flush login_failure keys between tests (safe under xdist_group)."""
         try:
-            from utils.cache_utils import get_redis_client
+            from utils.cache_utils import get_coordination_client
 
-            r = get_redis_client()
+            r = get_coordination_client()
             if r:
                 for key in r.scan_iter("login_failures:*"):
                     r.delete(key)
@@ -232,20 +232,20 @@ class TestLoginRateLimiting:
 
     def test_no_failures_not_exceeded(self, redis_flush):
         from routes.auth import _login_rate_limit_exceeded
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             r.delete("login_failures:user:nonexistent_user", "login_failures:ip:1.2.3.4")
         assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
 
     def test_five_failures_exceeds_user_limit(self, redis_flush):
         from routes.auth import _login_rate_limit_exceeded, _record_login_failure
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
         username = "rate_test_user"
         ip = "10.0.0.1"
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
         for _ in range(5):
@@ -258,11 +258,11 @@ class TestLoginRateLimiting:
             _login_rate_limit_exceeded,
             _record_login_failure,
         )
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
         username = "clear_test_user"
         ip = "10.0.0.2"
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
         for _ in range(5):
@@ -271,17 +271,41 @@ class TestLoginRateLimiting:
         _clear_login_failures(username, ip)
         assert _login_rate_limit_exceeded(username, ip) is False
 
-    def test_thirty_ip_failures_exceeds_ip_limit(self, redis_flush):
-        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
-        from utils.cache_utils import get_redis_client
+    def test_shared_school_ip_allows_up_to_300_failures(self, redis_flush):
+        from routes.auth import (
+            LOGIN_IP_MAX_FAILURES,
+            _login_rate_limit_exceeded,
+            _record_login_failure,
+        )
+        from utils.cache_utils import get_coordination_client
 
+        assert LOGIN_IP_MAX_FAILURES == 300
         ip = "10.0.0.100"
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             r.delete(f"login_failures:ip:{ip}")
-        for i in range(30):
+        for i in range(LOGIN_IP_MAX_FAILURES - 1):
             _record_login_failure(f"user_{i}", ip)
+        assert _login_rate_limit_exceeded("some_other_user", ip) is False
+        _record_login_failure("one_more_user", ip)
         assert _login_rate_limit_exceeded("some_other_user", ip) is True
+
+    def test_failures_are_tracked_on_the_broker_redis(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
+
+        broker = MagicMock()
+        broker.zcard.return_value = 0
+        cache = MagicMock()
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
+        monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
+        _record_login_failure("broker_user", "10.0.0.7")
+        assert _login_rate_limit_exceeded("broker_user", "10.0.0.7") is False
+        assert broker.zadd.called
+        assert broker.zcard.called
+        cache.zadd.assert_not_called()
+        cache.zcard.assert_not_called()
 
     def test_local_fallback_throttles_when_redis_down(self, redis_flush, monkeypatch):
         from routes.auth import (
@@ -291,7 +315,7 @@ class TestLoginRateLimiting:
             _record_login_failure,
         )
 
-        monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: None)
+        monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: None)
         _LOCAL_LOGIN_FAILURES.clear()
         try:
             username = "fallback_user"
@@ -305,12 +329,12 @@ class TestLoginRateLimiting:
             _LOCAL_LOGIN_FAILURES.clear()
 
     def test_login_endpoint_returns_429(self, client, db_session, app_ctx, redis_flush):
-        from utils.cache_utils import get_redis_client
+        from utils.cache_utils import get_coordination_client
 
         target_ip = "198.51.100.99"
         target_user = "ratelimitme"
 
-        r = get_redis_client()
+        r = get_coordination_client()
         if r:
             r.delete(f"login_failures:user:{target_user}", f"login_failures:ip:{target_ip}")
 
@@ -337,6 +361,7 @@ class TestLoginRateLimiting:
             headers=headers,
         )
         assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "60"
         data = resp.get_json()
         assert data.get("code") == "ERR_RATE_LIMIT_EXCEEDED"
 

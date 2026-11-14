@@ -11,9 +11,8 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
 }));
 
-vi.mock('../../../hooks/useSSE', () => ({
-  default: () => ({ data: null, error: null, connected: true, reconnect: vi.fn() }),
-  isLifecycleMessage: () => false,
+vi.mock('../../../hooks/useSSEInvalidation', () => ({
+  default: vi.fn(() => ({ connected: true, refetchInterval: false })),
 }));
 
 vi.mock('../../../hooks/useQueueQuery', () => ({
@@ -48,6 +47,7 @@ vi.mock('../../ui/Button', () => ({
 }));
 
 import { useQueueQuery } from '../../../hooks/useQueueQuery';
+import useSSEInvalidation from '../../../hooks/useSSEInvalidation';
 import TaskService from '../../../services/TaskService';
 import SubmissionQueue from '../SubmissionQueue';
 
@@ -80,9 +80,19 @@ const defaultQueryResult = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useSSEInvalidation.mockReturnValue({ connected: true, refetchInterval: false });
   useQueueQuery.mockReturnValue(defaultQueryResult);
   useAuth.mockReturnValue({ currentUser: { role: 'admin' } });
   useApp.mockReturnValue({ showToast: mockShowToast, confirm: mockConfirm });
+});
+
+describe('SubmissionQueue — live updates', () => {
+  it('invalidates the queue from its signal-only stream and passes the fallback poll', () => {
+    useSSEInvalidation.mockReturnValue({ connected: false, refetchInterval: 15000 });
+    renderWithProviders(<SubmissionQueue />);
+    expect(useSSEInvalidation).toHaveBeenCalledWith('/api/admin/submissions/queue/live', ['queue']);
+    expect(useQueueQuery).toHaveBeenLastCalledWith(1, 20, { refetchInterval: 15000 });
+  });
 });
 
 describe('SubmissionQueue — empty state', () => {

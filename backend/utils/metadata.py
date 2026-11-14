@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from config import Config
-from services.evaluation import derive_task_split_key
+from utils.split_key import derive_task_split_key
 
 
 def _hf_value(value: Any) -> str | None:

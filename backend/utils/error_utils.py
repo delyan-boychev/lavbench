@@ -179,3 +179,10 @@ def err(
     response: dict[str, Any] = {"error": message, "code": code}
     response.update(extra)
     return jsonify(response), status
+
+
+def with_retry_after(result: tuple[Response, int], seconds: int) -> tuple[Response, int]:
+    """Add a ``Retry-After`` header in seconds to an ``err()`` result (RFC 6585 section 4)."""
+    response, _status = result
+    response.headers["Retry-After"] = str(max(1, int(seconds)))
+    return result

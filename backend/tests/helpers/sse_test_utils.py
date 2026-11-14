@@ -10,7 +10,11 @@ class _FakeRedis:
         self._data: dict[str, Any] = {}
         self._sorted_sets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[Any]] = {}
-        self.published_messages: list[tuple[str, str]] = []
+        self.published_messages: list[tuple[str, str | bytes]] = []
+        # Messages handed out, in order, by get_message() on any pubsub of this client
+        self.pending_messages: list[dict[str, Any]] = []
+        self.subscriptions: list[str] = []
+        self.pubsubs: list[_FakePubSub] = []
 
     # ── Generic key-value ─────────────────────────────────────────────
 
@@ -20,8 +24,11 @@ class _FakeRedis:
             return val
         return None
 
-    def set(self, key: str, value: str) -> None:
+    def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self._data:
+            return False
         self._data[key] = value
+        return True
 
     def delete(self, *keys: str) -> int:
         n = 0
@@ -134,12 +141,19 @@ class _FakeRedis:
 
     # ── Pub/Sub ───────────────────────────────────────────────────────
 
-    def publish(self, channel: str, message: str) -> int:
+    def publish(self, channel: str, message: str | bytes) -> int:
+        """Record the message and deliver it to the pub/subs subscribed right now."""
         self.published_messages.append((channel, message))
-        return 1
+        data = message.encode() if isinstance(message, str) else message
+        receivers = [p for p in self.pubsubs if channel in p.channels]
+        for p in receivers:
+            p.inbox.append({"type": "message", "channel": channel.encode(), "data": data})
+        return len(receivers)
 
     def pubsub(self) -> _FakePubSub:
-        return _FakePubSub()
+        pubsub = _FakePubSub(self)
+        self.pubsubs.append(pubsub)
+        return pubsub
 
     # ── Pipeline ──────────────────────────────────────────────────────
 
@@ -148,22 +162,39 @@ class _FakeRedis:
 
 
 class _FakePubSub:
-    def __init__(self) -> None:
-        self._channels: list[str] = []
+    """Receives only what is published while subscribed, after one confirmation per channel."""
+
+    def __init__(self, redis: _FakeRedis | None = None) -> None:
+        self.channels: list[str] = []
+        self.inbox: list[dict[str, Any]] = []
+        self.closed = False
+        self._redis = redis
 
     def subscribe(self, *channels: str) -> None:
-        self._channels.extend(channels)
+        self.channels.extend(channels)
+        for channel in channels:
+            self.inbox.append({"type": "subscribe", "channel": channel.encode(), "data": 1})
+        if self._redis is not None:
+            self._redis.subscriptions.extend(channels)
 
     def get_message(
         self, ignore_subscribe_messages: bool = True, timeout: float | None = None
-    ) -> None:
+    ) -> dict[str, Any] | None:
+        while self.inbox:
+            message = self.inbox.pop(0)
+            if message["type"] == "subscribe" and ignore_subscribe_messages:
+                continue
+            return message
+        if self._redis is not None and self._redis.pending_messages:
+            return self._redis.pending_messages.pop(0)
         return None
 
     def unsubscribe(self) -> None:
-        self._channels = []
+        self.channels = []
 
     def close(self) -> None:
-        self._channels = []
+        self.channels = []
+        self.closed = True
 
 
 class _FakePipeline:

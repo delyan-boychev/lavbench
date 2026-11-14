@@ -29,7 +29,7 @@ Created by the Bulgarian AI Olympiad Committee for IOAI selection and national c
 - **Multi-Stage Competitions:** Support for stage lifecycles with independent start/end times, grace periods, and visibility controls.
 - **Custom Evaluators:** Jury members can upload Python evaluation scripts (`evaluator.py`) with per-metric weighting, schema validation, and custom option schemas.
 - **Intelligent Worker Routing:** Celery queue routing dispatches evaluation workloads to external evaluation workers on `cpu_queue`, while system tasks stay on the internal `celery` queue consumed only by the in-compose worker.
-- **Automated Backups:** Database dumps (`pg_dump`) and uploaded assets are backed up every 20 minutes during active competitions (every 6 hours when idle), retaining the 6 most recent auto-backups.
+- **Automated Backups:** During active competitions the database is dumped (`pg_dump`) every 20 minutes and a full backup with the uploaded assets runs every 6 hours (also every 6 hours when idle); the newest 18 database dumps (about 6 hours) and the newest 3 full backups are kept.
 - **Audit Logs:** Complete logging of administrative actions (creating/deleting challenges, resetting passwords, editing finalized scores) with mandatory justification prompts logged to `AuditLog`.
 - **i18n Support:** Full internationalization in English and Bulgarian across the web app and user guides.
 - **Strict Security:** Includes httpOnly cookie authentication, JWT token revocation with a Redis blacklist, atomic rate limiting, encrypted PII, and ProxyFix middleware.
@@ -55,6 +55,8 @@ Press `Ctrl+C` to stop all services.
 
 See the [Admin Guide](guides/en/admin_guide.md) for prerequisites, TLS/HTTPS setup, Docker Compose deployment, remote worker nodes, and configuration editing (`make edit`).
 
+The Docker Compose deployment needs Docker Compose 2.24 or later; `scripts/deploy-server.sh` checks the version before it starts.
+
 ---
 
 ## Architecture Overview
@@ -69,8 +71,8 @@ flowchart TD
     subgraph Core [Backend Infrastructure — Docker Compose]
         direction TB
         API -->|Read/Write| DB[(PostgreSQL<br>Primary DB)]
-        API <-->|Queue / PubSub / Coordination| Redis[(Redis<br>Broker + Coordination)]
-        API <-->|Cache / Locks / Rate Limits / JWT Blacklist| Cache[(Redis Cache<br>DB 1, noeviction, server-only)]
+        API <-->|Queue / PubSub / Locks / Rate Limits / Revocations| Redis[(Redis<br>Broker + Coordination)]
+        API <-->|Caches / Log Replay| Cache[(Redis Cache<br>DB 1, volatile-lru, server-only)]
         Beat([Celery Beat<br>Scheduler]) -->|Triggers| Redis
         Internal([Internal Celery Worker<br>System tasks only<br>-Q celery,internal]) -->|Pulls Tasks| Redis
     end
@@ -97,8 +99,8 @@ flowchart TD
 | Service | Technology | Default Port | Role |
 | :--- | :--- | :--- | :--- |
 | **PostgreSQL** | PostgreSQL 15 | `5432` | Primary database for users, challenges, tasks, submissions, and audit logs. |
-| **Redis** | Redis 7 | `6379` | Celery message broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker spec registry, dead-letter queue, build/GPU locks. |
-| **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `noeviction`, no persistence) for leaderboard caches, locks, rate-limit counters, and JWT revocation (`CACHE_REDIS_URL`). Server-only — external workers never receive this URL; no host port. |
+| **Redis** | Redis 7 | `6379` | Celery message broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker heartbeats, dead-letter queue, build/GPU locks, plus the state that must never be evicted: submit and leaderboard locks, rate-limit counters, login failures and JWT revocations. |
+| **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `volatile-lru`, no persistence) for recomputable data: leaderboard and status caches, SSE log replay and submission status (`CACHE_REDIS_URL`). Server-only — external workers never receive this URL. |
 | **Flask API** | Flask 3.1 + Spectree | `5001` | REST API endpoints and Server-Sent Event (SSE) streaming server. |
 | **Celery Beat** | Celery Beat 5.4 | — | Periodic task scheduler (submission watchdog, automated backup schedule). |
 | **Celery Worker (Int)** | Celery 5.4 | — | System task worker (backups, watchdog, leaderboard recalculation) running inside Docker Compose (`-Q celery,internal`). |
@@ -140,17 +142,19 @@ cp .env.example .env
 | `CELERY_RESULT_BACKEND` | Redis URL for Celery task result backend. | `redis://:...@localhost:6379/0` |
 | `CACHE_REDIS_URL` | Redis URL for the dedicated cache instance (DB 1). | `redis://:...@localhost:6379/1` |
 | `REDIS_BIND` | Host bind address for the Redis broker port. | `127.0.0.1` (set `0.0.0.0` for remote workers) |
-| `REDIS_BROKER_MAXMEMORY` | Redis broker data limit; `noeviction` preserves queue integrity. | `256mb` |
+| `REDIS_BROKER_MAXMEMORY` | Redis broker data limit; `noeviction` preserves queue integrity, locks, rate limits and revocations. | `256mb` |
 | `REDIS_BROKER_CONTAINER_MEMORY` | Broker container limit, including Redis process overhead. | `384m` |
-| `REDIS_CACHE_MAXMEMORY` | Cache Redis data limit; `noeviction` preserves locks and revocations. | `128mb` |
+| `REDIS_CACHE_MAXMEMORY` | Cache Redis data limit; `volatile-lru` evicts the least recently used cached keys when full. | `128mb` |
 | `REDIS_CACHE_CONTAINER_MEMORY` | Cache container limit, including Redis process overhead. | `256m` |
-| `REDIS_HEALTH_MIN_FREE_PERCENT` | Minimum Redis maxmemory headroom before health reports degraded. | `10` |
+| `REDIS_HEALTH_MIN_FREE_PERCENT` | Minimum broker Redis maxmemory headroom before health reports degraded (the cache Redis only needs to answer). | `10` |
 | `SECURE_COOKIES` | `true` when serving over HTTPS (Secure-flag auth cookie). | `true` (set `false` for plain HTTP) |
 | `NGINX_PORT` | Host port mapped to the frontend/nginx container. | `80` |
 | `HTTPS_PORT` | Host port mapped to the optional nginx TLS listener (auto-enabled when `certs/web/lavbench.crt` and `certs/web/lavbench.key` exist). | `443` |
 | `CORS_ORIGINS` | Allowed browser origins (comma-separated). | `http://localhost:80` |
 | `WORKER_MEM_LIMIT` | Memory limit for the compose internal-worker container. | `1g` |
 | `WORKER_CPU_LIMIT` | CPU limit for the compose internal-worker container. | `2` |
+| `BACKEND_CPUS` | CPU limit for the backend container, as a whole number; may exceed the host's CPU count. | `4` |
+| `BACKEND_MEMORY` | Memory limit for the backend container. | `3g` |
 | `WORKER_GPU_IDS` | Comma-separated GPU device IDs available for round-robin pinning on eval workers (e.g. `0,1,3`). Unset → `count=-1` fallback. | unset |
 | `WORKER_ROLE` | Unified worker role. `server` = full API (default; requires `SECRET_KEY`/`DATABASE_URL`/`ENCRYPTION_KEY`); `scheduler` = Celery beat only (no app, no secrets); `internal` = app booted for system tasks (DB only, never evaluates); `eval` = remote evaluation worker (no DB, Ed25519 nonce auth, runs eval/image tasks only). | `server` |
 | `WORKER_SANDBOX_STORAGE_OPT` | Mandatory `--storage-opt size` cap for a sandbox container's root writable layer. Workers fail closed if the Docker storage driver cannot enforce it. The disposable anonymous volume mounted at `/app` is separate and is not covered by this quota. | `8g` |

@@ -188,9 +188,10 @@ Track your submission progress on the **Submissions** tab:
 
 ### Live Streaming Logs
 
-Click on any active (`Running` / `Evaluating`) or finished submission to open the log viewer:
-- Real-time stdout and stderr execution output streams directly from the Docker container.
-- Use live logs to monitor batch iteration progress, memory allocation warnings, and debugging prints.
+Click any submission to open the log viewer:
+- While the submission is running, stdout and stderr stream live from the Docker container. Use them to monitor iteration progress, memory warnings and debugging prints.
+- A finished submission shows its stored log.
+- The Submissions list refreshes by itself every 5 seconds while one of your submissions is queued or running, and the open submission's status updates with it.
 
 ---
 
