@@ -228,12 +228,12 @@ deploy_local() {
     echo "  → GPU worker: concurrency=${GPU_COUNT} (queue: gpu_queue)"
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export WORKER_ROLE="eval"
-    celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" &
-    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY"
+    celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" --hostname="gpu@%h" &
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY" --hostname="cpu@%h"
   else
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export WORKER_ROLE="eval"
-    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY"
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY" --hostname="cpu@%h"
   fi
 }
 
