@@ -199,8 +199,10 @@ def run_command_streaming(
                 # Put_archive ignores metadata on the '.' root entry, so
                 # /app would keep the daemon's root-owned 0o755 mount point
                 # And the non-root sandbox user could not write outputs
-                # A leading '/' entry makes the daemon chown/chmod the
-                # Volume root (/app) itself before the seed contents
+                # A leading '/' entry makes older daemons chown/chmod the
+                # Volume root (/app) itself before the seed contents. Newer
+                # Daemons ignore it; task images own /app (image_builder),
+                # Which the empty volume inherits
                 root_entry = tarfile.TarInfo("/")
                 root_entry.type = tarfile.DIRTYPE
                 root_entry.mode = 0o777

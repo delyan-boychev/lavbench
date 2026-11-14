@@ -233,6 +233,7 @@ def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, so
         "POST", f"/api/challenges/{cid}/submit",
         {"task_id": tid, "selected_cells": [{"id": 0, "type": "code", "source": source}]})
     if code != 202 or not isinstance(data, dict) or not data.get("submission_id"):
+        print(f"    submit not accepted: HTTP {code} {str(data)[:300]}")
         return False, {"submit_status": code, **(data if isinstance(data, dict) else {})}
     sid = data["submission_id"]
     deadline = time.time() + poll_timeout

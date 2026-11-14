@@ -26,6 +26,7 @@ from typing import Any
 from config import Config
 from utils.cache_utils import get_coordination_client
 from utils.worker_auth import worker_request_headers
+from utils.worker_utils import SANDBOX_GID, SANDBOX_UID
 
 from .docker_utils import _get_client
 from .docker_utils import image_exists as _image_exists
@@ -87,7 +88,8 @@ def _config_hash(
     participate — changing them must not trigger a rebuild.
     """
     h = hashlib.sha256()
-    h.update(b"v3")
+    # Bump when the generated Dockerfile changes, so cached images are rebuilt
+    h.update(b"v4")
     h.update(base_image.encode())
     h.update(pip_packages.encode())
     h.update(apt_packages.encode())
@@ -556,6 +558,12 @@ def _do_build(
     dockerfile_lines.append("COPY hf_cache /hf_cache")
     if task_files_list:
         dockerfile_lines.append("COPY data/ /app/data/")
+    # The sandbox mounts a fresh volume at /app, and Docker gives an empty volume
+    # The ownership of the image directory it covers. Owning /app here keeps it
+    # Writable by the sandbox user on Docker versions that ignore tar root metadata
+    dockerfile_lines.append(
+        f"RUN mkdir -p /app && chown {SANDBOX_UID}:{SANDBOX_GID} /app && chmod 0755 /app"
+    )
     dockerfile_path = os.path.join(task_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
         f.write("\n".join(dockerfile_lines) + "\n")
