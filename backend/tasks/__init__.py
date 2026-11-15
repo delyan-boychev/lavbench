@@ -498,11 +498,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
 
 def _settle_ended_submissions(ended: list[tuple[Any, str, bool]]) -> None:
-    """Signal each final status once it is committed, then settle ended baseline runs.
-
-    Runs after the watchdog's commit: a baseline rerun creates and dispatches a new
-    run, which must not happen inside the streamed (``yield_per``) queries above.
-    """
+    """Signal final statuses, then settle ended baselines; called after the watchdog commits."""
     from services.baseline_service import apply_baseline_outcome
     from utils.sse_utils import publish_submission_status
 

@@ -116,8 +116,7 @@ export default function LeaderboardTable({
     }
   };
 
-  // Every rank shown comes from the API: `rank` for the general tab, `stage_ranks` and
-  // `task_ranks` for the others. The Baseline row never holds a rank.
+  // Ranks come from the API; the Baseline row never holds one
   const displayData = useMemo(() => {
     const rows = data || [];
     const competitors = rows.filter((e) => !e.is_baseline_entry);
@@ -135,8 +134,7 @@ export default function LeaderboardTable({
       });
     if (isStageTab) return ranked;
 
-    // A task tab shows its Baseline row as a reference line, after the number of rows
-    // the API places before it; without that number the tab has no Baseline row
+    // The API sends how many rows precede the Baseline row; without it the row is hidden
     rows
       .filter((e) => e.is_baseline_entry)
       .forEach((baseline) => {

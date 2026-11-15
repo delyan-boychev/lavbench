@@ -32,8 +32,7 @@ from utils.sse_utils import leaderboard_channel
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
-# The only user fields a competitor receives about any listed user, themselves included
-# (No email, username, school, city, grade, birth date or middle name)
+# The only user fields a competitor receives; never email, school, city or grade
 _COMPETITOR_USER_FIELDS = ("id", "alias_id", "is_anonymous")
 # Added only where the challenge shows this competitor the user's name
 _COMPETITOR_NAME_FIELDS = ("name", "surname")
@@ -68,13 +67,7 @@ def _compute_task_ranks(
     challenge_finalized: bool,
     reveal_results: bool,
 ) -> None:
-    """Rank the rows of each task tab and place the task's Baseline row among them.
-
-    The runner stores every score normalized to higher-is-better
-    (``metric_direction_from_config``), so a higher public score is better on every task,
-    whatever its metric. Once the challenge is finalized and revealed, a task tab ranks
-    by manual points instead and shows no Baseline row.
-    """
+    """Rank each task tab and place its Baseline row; stored scores are higher-is-better."""
     by_points = challenge_finalized and reveal_results
     baselines = [e for e in entries if e.get("is_baseline_entry")]
     for baseline in baselines:

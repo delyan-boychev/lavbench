@@ -388,20 +388,12 @@ def _entry_sort_name(entry: dict[str, Any]) -> str:
 
 
 def holds_rank(entry: dict[str, Any], has_score: bool, points: float = 0) -> bool:
-    """Return whether a leaderboard row takes a rank on a tab.
-
-    The Baseline row never does. A competitor does with a scored submission, or, where
-    the tab ranks by manual points, with points awarded even when every run failed.
-    """
+    """Return whether a row takes a rank: a scored run, or points on a tab ranked by points."""
     return not entry.get("is_baseline_entry") and (has_score or points > 0)
 
 
 def assign_overall_ranks(entries: list[dict[str, Any]], by_points: bool) -> None:
-    """Rank entries already sorted by total points or public score, sharing equal values.
-
-    Rows that hold no rank (``holds_rank``) get none and take no position, so the ranks
-    the API sends are the ones every client shows.
-    """
+    """Rank entries already sorted by points or score; equal values share a rank."""
     key = "total_points" if by_points else "public_score"
     position = 0
     rank: int | None = None

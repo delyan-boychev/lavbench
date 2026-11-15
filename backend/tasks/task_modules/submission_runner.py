@@ -652,8 +652,7 @@ def run_eval_submission(
                     " The submission was blocked."
                 )
                 logs.append(err_msg)
-                # The server takes the problem code only while the run is active, and a
-                # Baseline's outcome is settled from the task's codes, so it goes first
+                # Report the problem code first: the server accepts it only while the run is active
                 if task is not None:
                     _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
                 update_status("failed", INFRA_FAILURE, logs_list=logs)
