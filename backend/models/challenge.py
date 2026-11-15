@@ -27,7 +27,15 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
     reveal_results = db.Column(db.Boolean, default=True, nullable=False)
     timezone = db.Column(db.String(50), nullable=False, default="UTC")
 
-    tasks = db.relationship("Task", backref="challenge", lazy=True, cascade="all, delete-orphan")
+    # Creation order (Task ids are UUIDv7), the order the leaderboard uses, so every view
+    # numbers the tasks the same way
+    tasks = db.relationship(
+        "Task",
+        backref="challenge",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="Task.id",
+    )
     submissions = db.relationship(
         "Submission", backref="challenge", lazy=True, cascade="all, delete-orphan"
     )

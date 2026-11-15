@@ -990,3 +990,36 @@ class TestCompetitorViewIsNeverCached:
         client.get(f"/api/challenges/{self.challenge.id}", headers=self.headers)
         client.get("/api/challenges", headers=self.headers)
         assert get_cached(f"challenge:{self.challenge.id}:competitor") is None
+
+
+class TestTaskOrder:
+    """Every view lists a challenge's tasks in creation order, as the leaderboard does."""
+
+    def test_detail_lists_tasks_by_id_not_by_insertion(
+        self, client, db_session, tokens, auth_headers, sample_challenge
+    ):
+        from models import Task
+        from models.base import uuid7
+
+        older_id, newer_id = uuid7(), uuid7()
+        # Insert the newer task first, so insertion order and creation order differ
+        for task_id, title in ((newer_id, "Created second"), (older_id, "Created first")):
+            db_session.add(
+                Task(
+                    id=task_id,
+                    title=title,
+                    challenge_id=sample_challenge.id,
+                    base_docker_image="python:3.10-slim",
+                    time_limit_sec=300,
+                    ram_limit_mb=512,
+                    max_submissions_per_period=10,
+                )
+            )
+        db_session.commit()
+
+        res = client.get(
+            f"/api/challenges/{sample_challenge.id}", headers=auth_headers(tokens.admin)
+        )
+        assert res.status_code == 200
+        titles = [t["title"] for t in res.get_json()["tasks"]]
+        assert titles == ["Created first", "Created second"]
