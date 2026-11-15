@@ -321,17 +321,19 @@ def rate_limit(
                 if current == 1 then
                     redis.call('expire', KEYS[1], ARGV[1])
                 end
-                return {current, redis.call('ttl', KEYS[1])}
+                return {current, redis.call('pttl', KEYS[1])}
                 """
                 result = r.eval(lua_script, 1, key, window_seconds)
-                current, remaining = (
+                current, remaining_ms = (
                     (int(result[0]), int(result[1]))
                     if isinstance(result, (list, tuple))
-                    else (int(result), window_seconds)
+                    else (int(result), -1)
                 )
                 if current > max_requests:
-                    # Remaining window; a key without a TTL falls back to the full window
-                    retry_after = remaining if remaining > 0 else window_seconds
+                    # Seconds until the window ends, rounded up: Retry-After is a minimum wait
+                    # TTL rounded to the nearest second and sent clients back into another 429
+                    # A key without a TTL falls back to the full window
+                    retry_after = -(-remaining_ms // 1000) if remaining_ms > 0 else window_seconds
                     return with_retry_after(err("ERR_RATE_LIMITED", 429), retry_after)
             except Exception as e:
                 logger.warning("Rate limit Redis error (allowing request): %s", e)
