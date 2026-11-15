@@ -41,6 +41,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
 
     status = db.Column(db.String(50), default="queued", index=True)
     is_baseline = db.Column(db.Boolean, default=False)
+    # How many failed_infra baseline runs this run retries (MAX_BASELINE_INFRA_RETRIES caps it)
+    infra_retry_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     detailed_status = db.Column(db.String(100), default="queued")
     # How the artifact arrived for file-mode tasks: "upload" or "workspace" (R16).
     # NULL for cell submissions and baselines

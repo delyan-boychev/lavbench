@@ -170,8 +170,8 @@ Before any submission is queued for execution, the server executes static applic
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
    Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
    not be enqueued, no worker took it within an hour, its worker was lost, or the worker could
-   not sync task files, get a GPU, reach Docker or build the image) never count either. The daily
-   limit resets at midnight in the challenge's timezone.
+   not sync task files, get a GPU, reach Docker, build the image or finish within the Celery time
+   limit) never count either. The daily limit resets at midnight in the challenge's timezone.
 
 ### Dynamic Metrics Schema
 
@@ -268,9 +268,12 @@ def evaluate(df_sub, df_labels, options=None):
 
 Each task's baseline notebook is evaluated automatically to verify the task:
 - A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle.
+- Baseline runs are queued at priority 0, like admin and jury test runs, ahead of every competitor submission.
 - Baseline runs never count toward any quota.
-- A failed baseline records `ERR_BASELINE_FAILED` on the task, which blocks competitor submissions until a later baseline run completes.
-- Successfully evaluated baseline solutions generate benchmark entries on the leaderboard and populate the downloadable **starter baseline notebook** for competitors.
+- Every way a baseline run ends settles the task the same way: the worker report, a run no worker picked up, a lost worker, the Celery time limit, **Kill**, or **Clear Queue** while it waits. A completed baseline removes `ERR_BASELINE_FAILED` from the task. A failed, killed or cleared baseline sets it, which blocks competitor submissions; saving the task queues a new baseline run.
+- A baseline that ends with a platform failure (`detailed_status` `failed_infra`: never picked up, lost worker, GPU, Docker or the Celery time limit) is retried automatically as a new baseline run, at most 2 times (3 attempts in total). Each attempt stays in the submission list with its own logs. After the last retry fails, the task gets `ERR_BASELINE_FAILED`.
+- There is no retry when the task already has another problem code, such as an image build or file sync failure, because every run would fail the same way: fix the task and save it to queue a new baseline. There is no retry either when the queue refused the run (the broker was unavailable): save the task again once the queue is back.
+- Successfully evaluated baseline solutions populate the downloadable **starter baseline notebook** for competitors and appear as a **Baseline** row on that task's leaderboard tab only, never on the general or stage tabs. The row shows the fixed label "Baseline" and its scores, never the staff account that ran it. It is an unranked reference line placed where its score falls in the task's metric direction (lower-is-better tasks too), so the best competitor is #1 on every tab. It is hidden once the challenge is finalized and results are revealed, because tabs are then ordered by manual points.
 
 ---
 

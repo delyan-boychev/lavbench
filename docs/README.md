@@ -14,7 +14,7 @@ Welcome to the LavBench platform technical documentation directory. This folder 
 | **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Admins & Organizers | Challenge lifecycle, Docker build troubleshooting, worker setup, and backup rules. |
 | **Jury Portal Guide** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Competition Jury | Submission monitoring, build diagnostics, double-blind privacy, and manual scoring. |
 | **Competitor Guide** | [`../guides/en/competitor_guide.md`](../guides/en/competitor_guide.md) | Participants | Notebook submission, AST pre-validation, status pipeline, and troubleshooting. |
-| **nanoColab Integration Contract** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | nanoColab team & DevOps | Hub sign-in through LavBench (OIDC), service tokens, stage sync, stage bags, status, and the workspace file picker. |
+| **nanoColab Integration Note** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | nanoColab team & DevOps | How LavBench drives nanoColab's `/v1` API: reconcile loop, T-24 h publish and freeze, launch, workspace export, stage package, error mapping, fallback and requests to nanoColab. |
 
 ---
 

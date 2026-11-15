@@ -36,10 +36,10 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
+from services.baseline_service import apply_baseline_outcome, queue_baseline
 from services.submission_service import (
     create_submission,
     extract_code_from_cells,
-    extract_code_from_notebook,
 )
 from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
@@ -296,18 +296,7 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
             with contextlib.suppress(OSError):
                 os.remove(log_path)
 
-    # Parse and submit new baseline if notebook exists
-    baseline_cells = []
-    if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
-        baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
-
-    if baseline_cells:
-        cells = [{"source": source} for source in baseline_cells]
-        result = create_submission(
-            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=8
-        )
-        if isinstance(result, tuple):
-            logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
+    queue_baseline(task, challenge, admin_id)
 
 
 # ── TASK CRUD ──
@@ -1514,20 +1503,10 @@ def report_worker_progress(
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
         submission.final_weighted_score_private = val
 
-    # Baseline lifecycle: a failed baseline makes the task not-ready; a
-    # Completed baseline clears the problem (submissions are gated on
-    # task.problem_codes).
-    if submission.is_baseline and submission.task_id and "status" in data:
-        baseline_task = db.session.get(Task, submission.task_id)
-        if baseline_task:
-            baseline_codes = set(baseline_task.problem_codes or [])
-            if data["status"] == "failed":
-                baseline_codes.add("ERR_BASELINE_FAILED")
-            elif data["status"] == "completed":
-                baseline_codes.discard("ERR_BASELINE_FAILED")
-            baseline_task.problem_codes = sorted(baseline_codes) or None
-
     db.session.commit()
+
+    # An ended baseline run settles its task's readiness
+    apply_baseline_outcome(submission)
 
     publish_queue_update()
 
@@ -1647,8 +1626,8 @@ def report_build_error(
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
         task.problem_codes = sorted(merged) or None
     else:
-        # Successful build clears all build-related problems (baseline state
-        # Is managed separately by report_worker_progress)
+        # Successful build clears all build-related problems; ERR_BASELINE_FAILED
+        # Stays until a baseline run completes (services.baseline_service)
         build_codes = {
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",

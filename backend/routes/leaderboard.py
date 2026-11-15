@@ -13,7 +13,11 @@ from spectree import Response
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
-from services.leaderboard_service import build_and_cache_leaderboard
+from services.leaderboard_service import (
+    assign_overall_ranks,
+    build_and_cache_leaderboard,
+    holds_rank,
+)
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import invalidate_leaderboard_cache
@@ -28,6 +32,35 @@ from utils.sse_utils import leaderboard_channel
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
+# The only user fields a competitor receives about any listed user, themselves included
+# (No email, username, school, city, grade, birth date or middle name)
+_COMPETITOR_USER_FIELDS = ("id", "alias_id", "is_anonymous")
+# Added only where the challenge shows this competitor the user's name
+_COMPETITOR_NAME_FIELDS = ("name", "surname")
+
+
+def _competitor_user_view(
+    user: dict[str, Any], show_name: bool, manual_points: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the whitelisted part of a user record that a competitor may see."""
+    fields = _COMPETITOR_USER_FIELDS + (_COMPETITOR_NAME_FIELDS if show_name else ())
+    view = {field: user.get(field) for field in fields}
+    view["is_anonymous"] = bool(view["is_anonymous"])
+    view["manual_points"] = manual_points
+    return view
+
+
+def _task_score(entry: dict[str, Any], tid: str) -> float | None:
+    """Return a row's public score on one task; None without a scored run."""
+    score = entry.get("task_scores", {}).get(tid, {}).get("public_score")
+    return None if score is None else float(score)
+
+
+def _task_points(entry: dict[str, Any], tid: str) -> float:
+    """Return the manual points a row's user holds on one task."""
+    manual_points = (entry.get("user") or {}).get("manual_points") or {}
+    return float(manual_points.get(tid) or 0)
+
 
 def _compute_task_ranks(
     entries: list[dict[str, Any]],
@@ -35,61 +68,47 @@ def _compute_task_ranks(
     challenge_finalized: bool,
     reveal_results: bool,
 ) -> None:
-    task_lower_better: dict[int, bool] = {}
-    for task in tasks:
-        lower = False
-        if task.metrics_config:
-            try:
-                cfg = (
-                    json.loads(task.metrics_config)
-                    if isinstance(task.metrics_config, str)
-                    else task.metrics_config
-                )
-                for m_name in cfg:
-                    if m_name.startswith("_"):
-                        continue
-                    if is_metric_lower_better(m_name):
-                        lower = True
-                        break
-            except Exception:
-                logger.warning("Failed to parse metrics_config for task %s", task.id)
-        task_lower_better[task.id] = lower
+    """Rank the rows of each task tab and place the task's Baseline row among them.
+
+    The runner stores every score normalized to higher-is-better
+    (``metric_direction_from_config``), so a higher public score is better on every task,
+    whatever its metric. Once the challenge is finalized and revealed, a task tab ranks
+    by manual points instead and shows no Baseline row.
+    """
+    by_points = challenge_finalized and reveal_results
+    baselines = [e for e in entries if e.get("is_baseline_entry")]
+    for baseline in baselines:
+        baseline.setdefault("task_rows_before", {})
 
     for task in tasks:
         tid = str(task.id)
-        scorable = []
+        ranked: list[tuple[dict[str, Any], float]] = []
         for e in entries:
-            ts = e.get("task_scores", {}).get(tid, {})
-            if ts.get("public_score") is not None:
-                scorable.append(e)
-
-        if challenge_finalized and reveal_results:
-            scorable.sort(
-                key=lambda e: e.get("user", {}).get("manual_points", {}).get(tid, 0),
-                reverse=True,
-            )
-        else:
-            scorable.sort(
-                key=lambda e: e["task_scores"][tid]["public_score"],
-                reverse=True,
-            )
+            score = _task_score(e, tid)
+            points = _task_points(e, tid) if by_points else 0.0
+            value = points if by_points else score
+            if value is not None and holds_rank(e, score is not None, points):
+                ranked.append((e, value))
+        ranked.sort(key=lambda item: item[1], reverse=True)
 
         rank = 0
-        prev_key = None
-        for idx, e in enumerate(scorable):
-            if challenge_finalized and reveal_results:
-                key = e.get("user", {}).get("manual_points", {}).get(tid, 0)
-            else:
-                key = e["task_scores"][tid]["public_score"]
-            if idx == 0 or key != prev_key:
+        for idx, (e, value) in enumerate(ranked):
+            if idx == 0 or value != ranked[idx - 1][1]:
                 rank = idx + 1
             e.setdefault("task_ranks", {})[tid] = rank
-            prev_key = key
-
         for e in entries:
-            e.setdefault("task_ranks", {})
-            if tid not in e["task_ranks"]:
-                e["task_ranks"][tid] = None
+            e.setdefault("task_ranks", {}).setdefault(tid, None)
+
+        # Points and scores do not compare, so a tab ranked by points has no Baseline row
+        if by_points:
+            continue
+        for baseline in baselines:
+            baseline_score = _task_score(baseline, tid)
+            if baseline_score is not None:
+                # A competitor tied with the baseline is listed before it
+                baseline["task_rows_before"][tid] = sum(
+                    1 for _, row_score in ranked if row_score >= baseline_score
+                )
 
 
 def _compute_stage_ranks(
@@ -113,9 +132,10 @@ def _compute_stage_ranks(
                 if score is not None:
                     total += score
                     has_any = True
-            if has_any:
+            if holds_rank(e, has_any):
                 scorable.append((e, total))
 
+        # Normalized scores are higher-is-better on every task, so their sum is too
         scorable.sort(key=lambda x: x[1], reverse=True)
 
         rank = 0
@@ -191,9 +211,13 @@ def _get_leaderboard_payload(
         post_processed_leaderboard = []
         for entry in cached_entries:
             entry_copy = dict(entry)
-            comp_user = entry_copy["user"]
-            comp_user_id = comp_user["id"]
-            is_self = current_user_id is not None and current_user_id == comp_user_id
+            is_baseline = bool(entry.get("is_baseline_entry"))
+            comp_user = entry.get("user") or {}
+            is_self = (
+                not is_baseline
+                and current_user_id is not None
+                and current_user_id == comp_user.get("id")
+            )
 
             # Recalculate sums based only on visible task scores for competitors
             filtered_task_scores = {}
@@ -254,27 +278,20 @@ def _get_leaderboard_payload(
             entry_copy["total_points"] = round(tot_pts, 2)
             entry_copy["has_submitted"] = has_pub_sum
 
-            show_details = challenge.scores_finalized or is_self if challenge.double_blind else True
-
-            is_anonymous = comp_user.get("is_anonymous", False)
-            if is_anonymous and not is_self:
-                show_details = False
-
-            if not show_details:
-                entry_copy["user"] = {
-                    "id": comp_user_id,
-                    "alias_id": comp_user.get("alias_id"),
-                    "role": comp_user.get("role"),
-                    "challenge_id": comp_user.get("challenge_id"),
-                    "is_anonymous": is_anonymous,
-                    "manual_points": revealed_manual_points,
-                }
+            if is_baseline:
+                # A baseline for a task this competitor cannot see yet has nothing to show
+                if not has_pub_sum:
+                    continue
+                entry_copy["user"] = None
             else:
-                user_copy = dict(comp_user)
-                user_copy.pop("middle_name", None)
-                user_copy.pop("birth_date", None)
-                user_copy["manual_points"] = revealed_manual_points
-                entry_copy["user"] = user_copy
+                show_name = (
+                    challenge.scores_finalized or is_self if challenge.double_blind else True
+                )
+                if comp_user.get("is_anonymous", False) and not is_self:
+                    show_name = False
+                entry_copy["user"] = _competitor_user_view(
+                    comp_user, show_name, revealed_manual_points
+                )
 
             post_processed_leaderboard.append(entry_copy)
 
@@ -286,6 +303,9 @@ def _get_leaderboard_payload(
                 pb = b["total_points"]
                 if pa != pb:
                     return -1 if pa > pb else 1
+                # Within equal points a scored entry holds a rank, so it is listed first
+                if a["has_submitted"] != b["has_submitted"]:
+                    return -1 if a["has_submitted"] else 1
             else:
                 if a["has_submitted"] != b["has_submitted"]:
                     return -1 if a["has_submitted"] else 1
@@ -299,8 +319,8 @@ def _get_leaderboard_payload(
                     return -1
                 elif score_a != score_b:
                     return -1 if score_a > score_b else 1
-            name_a = (a["user"].get("alias_id") or "").lower()
-            name_b = (b["user"].get("alias_id") or "").lower()
+            name_a = ((a["user"] or {}).get("alias_id") or a.get("label") or "").lower()
+            name_b = ((b["user"] or {}).get("alias_id") or b.get("label") or "").lower()
             if name_a != name_b:
                 return -1 if name_a < name_b else 1
             return 0
@@ -309,24 +329,10 @@ def _get_leaderboard_payload(
             post_processed_leaderboard, key=cmp_to_key(compare_competitor_entries)
         )
 
-        if challenge.scores_finalized and challenge.reveal_results:
-            current_rank = 1
-            for idx, entry_dict in enumerate(sorted_competitor):
-                if (
-                    idx > 0
-                    and entry_dict["total_points"] != sorted_competitor[idx - 1]["total_points"]
-                ):
-                    current_rank = idx + 1
-                entry_dict["rank"] = current_rank
-        else:
-            current_rank = 1
-            for idx, entry_dict in enumerate(sorted_competitor):
-                if (
-                    idx > 0
-                    and entry_dict["public_score"] != sorted_competitor[idx - 1]["public_score"]
-                ):
-                    current_rank = idx + 1
-                entry_dict["rank"] = current_rank
+        assign_overall_ranks(
+            sorted_competitor,
+            by_points=bool(challenge.scores_finalized and challenge.reveal_results),
+        )
 
         post_processed_leaderboard = sorted_competitor
         _compute_task_ranks(
@@ -345,32 +351,30 @@ def _get_leaderboard_payload(
         for entry in cached_entries:
             entry_copy = dict(entry)
 
-            comp_user = entry_copy["user"]
-            comp_user_id = comp_user["id"]
-            is_self = current_user_id is not None and current_user_id == comp_user_id
+            # The Baseline row carries no user record to filter
+            comp_user = entry_copy.get("user")
+            if comp_user is not None:
+                comp_user_id = comp_user["id"]
+                is_self = current_user_id is not None and current_user_id == comp_user_id
 
-            if challenge.double_blind:
-                show_details = (
-                    (user_role == "admin")
-                    or (user_role == "jury" and (not has_started or challenge_finalized))
-                    or is_self
-                )
-            else:
-                show_details = True
+                if challenge.double_blind:
+                    show_details = (
+                        (user_role == "admin")
+                        or (user_role == "jury" and (not has_started or challenge_finalized))
+                        or is_self
+                    )
+                else:
+                    show_details = True
 
-            is_anonymous = comp_user.get("is_anonymous", False)
-            if is_anonymous and user_role == "competitor" and not is_self:
-                show_details = False
-
-            if not show_details:
-                entry_copy["user"] = {
-                    "id": comp_user_id,
-                    "alias_id": comp_user.get("alias_id"),
-                    "role": comp_user.get("role"),
-                    "challenge_id": comp_user.get("challenge_id"),
-                    "is_anonymous": is_anonymous,
-                    "manual_points": comp_user.get("manual_points", {}),
-                }
+                if not show_details:
+                    entry_copy["user"] = {
+                        "id": comp_user_id,
+                        "alias_id": comp_user.get("alias_id"),
+                        "role": comp_user.get("role"),
+                        "challenge_id": comp_user.get("challenge_id"),
+                        "is_anonymous": comp_user.get("is_anonymous", False),
+                        "manual_points": comp_user.get("manual_points", {}),
+                    }
             if user_role != "admin":
                 _hide_private_scores(entry_copy, tasks, stages, challenge, user_role)
             post_processed_leaderboard.append(entry_copy)

@@ -27,6 +27,7 @@ from schemas.responses import (
     SubmissionResponse,
     SubmissionsListResponse,
 )
+from services.baseline_service import apply_baseline_outcome
 from services.file_validation import validate_extension, validate_notebook_content
 from services.submission_service import (
     get_best_submission,
@@ -378,6 +379,8 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     submission.logs = f"{existing_logs}\n{log_line}".strip()
 
     db.session.commit()
+    # A killed baseline blocks its task until a new baseline completes
+    apply_baseline_outcome(submission)
 
     publish_queue_update()
     publish_submission_status(submission.id, "failed")

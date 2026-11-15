@@ -63,6 +63,7 @@ from schemas.responses import (
     UpdateUserResponse,
     UserResponse,
 )
+from services.baseline_service import apply_baseline_outcome
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
 from utils.audit import log_audit
@@ -1492,6 +1493,10 @@ def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
         count += 1
 
     db.session.commit()
+
+    # A killed baseline blocks its task like any other ended baseline run
+    for sub in subs:
+        apply_baseline_outcome(sub)
 
     # Signal only after the commit so refetching clients see the new state
     for sub in subs:

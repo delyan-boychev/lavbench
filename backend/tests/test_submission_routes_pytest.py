@@ -826,6 +826,8 @@ class TestSubmitCode:
         sub = db.session.get(Submission, uuid.UUID(str(body["submission_id"])))
         assert sub.status == "failed"
         assert sub.detailed_status == "failed_infra"
+        # No message was sent, so no attempt id is kept
+        assert sub.celery_task_id is None
 
     def test_submit_blocked_by_problem_codes(self):
         self.task.problem_codes = ["ERR_HF_DOWNLOAD_FAILED", "ERR_BASELINE_FAILED"]

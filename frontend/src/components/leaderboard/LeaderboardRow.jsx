@@ -43,11 +43,14 @@ export default function Row({
   const showIdentity = isAdmin || isCurrentUser || !doubleBlind || isFinalized;
   const showDemographics =
     !!entry.user && showIdentity && (!entry.user.is_anonymous || isAdmin || isCurrentUser);
+  // Only the fields the API sends for this viewer are shown (competitors never get these)
+  const sentField = (field) => !!entry.user && field in entry.user;
   // The name this row shows, also passed to the grading modal so both always agree
   const identityName = entry.user?.name
     ? `${entry.user.name} ${entry.user.surname}`
     : entry.user?.username;
-  const displayName = (showIdentity ? identityName : entry.user?.alias_id) || '—';
+  const displayName =
+    (showIdentity ? identityName || entry.user?.alias_id : entry.user?.alias_id) || '—';
   const isBaseline = entry.is_baseline_entry;
   const medalStyle = !isBaseline && rank >= 1 && rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
 
@@ -285,10 +288,10 @@ export default function Row({
         </td>
 
         <td className="px-4 py-3 text-left min-w-[150px]">
-          {entry.is_baseline_entry ? (
+          {isBaseline ? (
             <div className="flex items-center gap-2">
               <span className="text-sm font-extrabold px-3 py-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 text-indigo-400">
-                {t('leaderboard.baseline_label')}
+                {t('leaderboard.baseline_label', { defaultValue: entry.label })}
               </span>
             </div>
           ) : showIdentity ? (
@@ -384,26 +387,32 @@ export default function Row({
                       )}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-slate-500 font-medium">{t('leaderboard.school')} </span>
-                    <span className="text-slate-200">
-                      {showDemographics && entry.user.school ? entry.user.school : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-medium">{t('leaderboard.grade')} </span>
-                    <span className="text-slate-200">
-                      {showDemographics && entry.user.grade
-                        ? t('leaderboard.grade_value', { grade: entry.user.grade })
-                        : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-medium">{t('leaderboard.city')} </span>
-                    <span className="text-slate-200">
-                      {showDemographics && entry.user.city ? entry.user.city : '—'}
-                    </span>
-                  </div>
+                  {sentField('school') && (
+                    <div>
+                      <span className="text-slate-500 font-medium">{t('leaderboard.school')} </span>
+                      <span className="text-slate-200">
+                        {showDemographics && entry.user.school ? entry.user.school : '—'}
+                      </span>
+                    </div>
+                  )}
+                  {sentField('grade') && (
+                    <div>
+                      <span className="text-slate-500 font-medium">{t('leaderboard.grade')} </span>
+                      <span className="text-slate-200">
+                        {showDemographics && entry.user.grade
+                          ? t('leaderboard.grade_value', { grade: entry.user.grade })
+                          : '—'}
+                      </span>
+                    </div>
+                  )}
+                  {sentField('city') && (
+                    <div>
+                      <span className="text-slate-500 font-medium">{t('leaderboard.city')} </span>
+                      <span className="text-slate-200">
+                        {showDemographics && entry.user.city ? entry.user.city : '—'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

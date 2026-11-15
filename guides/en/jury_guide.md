@@ -111,6 +111,8 @@ The platform enforces double-blind privacy controls during active competition:
 Jury members can review organizer baseline submissions:
 - Baseline entries are flagged with `is_baseline=True`.
 - Reviewing baseline runs enables the jury to verify that dataset paths, evaluation metric scripts, and starter baseline notebooks execute without error prior to competition launch.
+- Baseline runs are queued ahead of every competitor submission, like admin and jury test runs.
+- A baseline that ends with a **Platform error** (`failed_infra`) is retried automatically as a new baseline run, at most 2 times; each attempt stays in the submission list with its own logs. A baseline that fails, is killed or is cleared from the queue (or whose last retry fails) sets `ERR_BASELINE_FAILED` on the task, which blocks competitor submissions until a later baseline run completes.
 
 ---
 
@@ -136,7 +138,7 @@ When troubleshooting a failed submission or blocked task queue:
 
 1. **Check Task Environment Status**:
    - Open **Task Overview** or **Submissions** tab.
-   - Look for the environment warning indicator. If the problem registry lists codes such as **`ERR_TASK_BUILD_FAILED`** or **`ERR_BASELINE_FAILED`**, the task image failed to compile on the worker.
+   - Look for the environment warning indicator. If the problem registry lists **`ERR_TASK_BUILD_FAILED`**, the task image failed to compile on the worker; **`ERR_BASELINE_FAILED`** means the baseline run failed, was killed or was cleared from the queue.
 2. **Inspect Submission Logs**:
    - Click the failed submission row to open the submission detail modal.
    - Select **Execution Logs** to examine stdout/stderr output produced during container execution.
@@ -175,7 +177,7 @@ Custom evaluators run dynamic Python functions (`evaluate(predictions_df, labels
 ### Verifying Baseline Solutions (`is_baseline=True`)
 
 Jury members should verify custom evaluator scoring using organizer baseline runs:
-- Ensure the baseline entry displays non-zero, plausible metric values on the leaderboard.
+- Ensure the **Baseline** row on the task's leaderboard tab displays non-zero, plausible metric values. The row has no rank, never appears on the general or stage tabs, and is hidden once the results are finalized and revealed.
 - Validate that secondary metric keys align with competition rules before competition launch.
 
 ---

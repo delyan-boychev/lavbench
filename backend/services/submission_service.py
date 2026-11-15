@@ -138,6 +138,7 @@ def _add_queued_submission(
     cells: list[dict[str, Any]],
     *,
     is_baseline: bool = False,
+    infra_retry_count: int = 0,
 ) -> Submission:
     submission = Submission(
         user_id=user_id,
@@ -146,6 +147,7 @@ def _add_queued_submission(
         status="queued",
         detailed_status="queued",
         is_baseline=is_baseline,
+        infra_retry_count=infra_retry_count,
         code_cells=json.dumps(cells),
     )
     db.session.add(submission)
@@ -162,6 +164,7 @@ def create_submission(
     *,
     is_baseline: bool = False,
     priority: int | None = None,
+    infra_retry_count: int = 0,
 ) -> Submission | tuple[Response, int]:
     """Create and dispatch a submission; the single creation path for every route.
 
@@ -170,9 +173,9 @@ def create_submission(
     ``failed_infra`` and returns 503 with its ``submission_id``. Competitor submissions pass
     registration, the window and readiness gates, the AST rules and the quotas; a
     rejection creates no row and uses no quota (Q21). Baselines skip those checks and
-    the queue cap: they are the system's own run that clears the task's problem codes,
-    and the old baseline is already deleted, so dropping the new one would leave the
-    task blocked with no signal.
+    the queue cap: they are the system's own run that settles the task's readiness, so
+    dropping one would leave the task blocked with no signal. ``infra_retry_count``
+    numbers a baseline rerun after a platform failure.
     """
     from utils.cache_utils import cache_lock, get_queue_depth
     from utils.json_utils import safe_json_loads
@@ -192,7 +195,9 @@ def create_submission(
     gpu_required = resolve_gpu_required(task, challenge)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
     if is_baseline:
-        submission = _add_queued_submission(task, challenge, user_id, cells, is_baseline=True)
+        submission = _add_queued_submission(
+            task, challenge, user_id, cells, is_baseline=True, infra_retry_count=infra_retry_count
+        )
     else:
         with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
             if not got:
@@ -240,7 +245,9 @@ def create_submission(
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = INFRA_FAILURE
-        submission.logs = f"Submission queue unavailable: {e}"
+        # No message was sent, so the row keeps no attempt id
+        submission.celery_task_id = None
+        submission.logs = f"{submission.logs or ''}\nSubmission queue unavailable: {e}".strip()
         db.session.commit()
         publish_queue_update()
         return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)

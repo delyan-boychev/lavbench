@@ -230,8 +230,10 @@ def evaluate_submission(
                     sub.detailed_status = INFRA_FAILURE
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
                     db.session.commit()
+                    from services.baseline_service import apply_baseline_outcome
                     from utils.sse_utils import publish_submission_status
 
+                    apply_baseline_outcome(sub)
                     publish_submission_status(submission_id, "failed")
         elif IS_EVAL_WORKER and metadata:
             from utils.worker_utils import report_status_to_server
@@ -368,6 +370,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         recovered = 0
         affected_challenge_ids: set[Any] = set()
         stuck: list[Any] = []
+        # (id, status, is_baseline) of each submission this run ended; settled after the commit
+        ended: list[tuple[Any, str, bool]] = []
         try:
             from utils.cache_utils import get_coordination_client, submission_fallback_key
 
@@ -422,16 +426,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         recovered += 1
                         if sub.challenge_id:
                             affected_challenge_ids.add(sub.challenge_id)
-                        try:
-                            from utils.sse_utils import publish_submission_status
-
-                            publish_submission_status(sub.id, sub.status)
-                        except Exception as e:
-                            logger.warning(
-                                ("Failed to publish status for recovered submission %s: %s"),
-                                sub.id,
-                                e,
-                            )
+                        ended.append((sub.id, sub.status, bool(sub.is_baseline)))
                     except Exception as e:
                         logger.error(
                             "Watchdog: failed to recover fallback for submission %s: %s",
@@ -490,14 +485,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
             timeout_count += 1
             if sub.challenge_id:
                 affected_challenge_ids.add(sub.challenge_id)
-            try:
-                from utils.sse_utils import publish_submission_status
-
-                publish_submission_status(sub.id, sub.status)
-            except Exception as e:
-                logger.warning(
-                    ("Failed to publish status for timed-out submission %s: %s"), sub.id, e
-                )
+            ended.append((sub.id, sub.status, bool(sub.is_baseline)))
 
         if recovered > 0 or timeout_count > 0:
             db.session.commit()
@@ -505,7 +493,30 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
             for cid in affected_challenge_ids:
                 invalidate_leaderboard_cache(cid)
+            _settle_ended_submissions(ended)
         return {"recovered": recovered, "timed_out": timeout_count}
+
+
+def _settle_ended_submissions(ended: list[tuple[Any, str, bool]]) -> None:
+    """Signal each final status once it is committed, then settle ended baseline runs.
+
+    Runs after the watchdog's commit: a baseline rerun creates and dispatches a new
+    run, which must not happen inside the streamed (``yield_per``) queries above.
+    """
+    from services.baseline_service import apply_baseline_outcome
+    from utils.sse_utils import publish_submission_status
+
+    for submission_id, status, is_baseline in ended:
+        publish_submission_status(submission_id, status)
+        if not is_baseline:
+            continue
+        try:
+            sub = db.session.get(Submission, submission_id)
+            if sub is not None:
+                apply_baseline_outcome(sub)
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("Watchdog: failed to settle submission %s: %s", submission_id, e)
 
 
 @celery.task

@@ -1005,11 +1005,19 @@ class TestReportRuntimeSyncFailure:
             "tasks.task_modules.submission_runner.sync_task_files_to_assets_cache",
             return_value=False,
         )
+        order: list[str] = []
+
+        def _status_report(*args, **kwargs):
+            order.append(kwargs.get("status") or args[1])
+            return True
+
         mock_report_status = mocker.patch(
-            "tasks.task_modules.submission_runner.report_status_to_server", return_value=True
+            "tasks.task_modules.submission_runner.report_status_to_server",
+            side_effect=_status_report,
         )
         mock_runtime_report = mocker.patch(
-            "tasks.task_modules.submission_runner._report_runtime_sync_failure"
+            "tasks.task_modules.submission_runner._report_runtime_sync_failure",
+            side_effect=lambda *args: order.append("code"),
         )
         mocker.patch(
             "tasks.task_modules.submission_runner.get_coordination_client",
@@ -1051,3 +1059,5 @@ class TestReportRuntimeSyncFailure:
         ]
         assert failed_reports
         mock_runtime_report.assert_called_once_with(1, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
+        # The server refuses the problem code once the run has a final status
+        assert order.index("code") < order.index("failed")
