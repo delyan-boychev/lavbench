@@ -4707,11 +4707,11 @@
         "title": "MessageResponse",
         "type": "object"
       },
-      "PaginatedResponse[ChallengeResponse].c6e31f5": {
+      "PaginatedResponse[ChallengeResponse].3f28e93": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].3f28e93.ChallengeResponse"
             },
             "title": "Items",
             "type": "array"
@@ -4738,7 +4738,7 @@
         "title": "PaginatedResponse[ChallengeResponse]",
         "type": "object"
       },
-      "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
+      "PaginatedResponse[ChallengeResponse].3f28e93.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
             "default": 180,
@@ -4890,7 +4890,7 @@
           "stages": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].3f28e93.StageResponse"
             },
             "title": "Stages",
             "type": "array"
@@ -4922,7 +4922,7 @@
           "tasks": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].3f28e93.TaskResponse"
             },
             "title": "Tasks",
             "type": "array"
@@ -4956,7 +4956,7 @@
         "title": "ChallengeResponse",
         "type": "object"
       },
-      "PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo": {
+      "PaginatedResponse[ChallengeResponse].3f28e93.FileInfo": {
         "properties": {
           "filename": {
             "title": "Filename",
@@ -5005,7 +5005,7 @@
         "title": "FileInfo",
         "type": "object"
       },
-      "PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse": {
+      "PaginatedResponse[ChallengeResponse].3f28e93.StageResponse": {
         "properties": {
           "challenge_id": {
             "format": "uuid",
@@ -5095,7 +5095,7 @@
         "title": "StageResponse",
         "type": "object"
       },
-      "PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse": {
+      "PaginatedResponse[ChallengeResponse].3f28e93.TaskResponse": {
         "description": "Fields visible to competitors.",
         "properties": {
           "apt_packages": {
@@ -5214,7 +5214,7 @@
           "files": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo"
+              "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].3f28e93.FileInfo"
             },
             "title": "Files",
             "type": "array"
@@ -5387,11 +5387,11 @@
         "title": "TaskResponse",
         "type": "object"
       },
-      "PaginatedResponse[QueueItemResponse].c6e31f5": {
+      "PaginatedResponse[QueueItemResponse].1e7847f": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].1e7847f.QueueItemResponse"
             },
             "title": "Items",
             "type": "array"
@@ -5418,7 +5418,7 @@
         "title": "PaginatedResponse[QueueItemResponse]",
         "type": "object"
       },
-      "PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse": {
+      "PaginatedResponse[QueueItemResponse].1e7847f.QueueItemResponse": {
         "properties": {
           "celery_task_id": {
             "anyOf": [
@@ -5522,11 +5522,11 @@
         "title": "QueueItemResponse",
         "type": "object"
       },
-      "PaginatedResponse[SubmissionLightResponse].c6e31f5": {
+      "PaginatedResponse[SubmissionLightResponse].5fad753": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse"
             },
             "title": "Items",
             "type": "array"
@@ -5553,7 +5553,7 @@
         "title": "PaginatedResponse[SubmissionLightResponse]",
         "type": "object"
       },
-      "PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse": {
+      "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
         "properties": {
           "celery_task_id": {
             "anyOf": [
@@ -5789,10 +5789,10 @@
           "user": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse"
+                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse"
               },
               {
-                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse"
+                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse"
               },
               {
                 "type": "null"
@@ -5810,7 +5810,7 @@
         "title": "SubmissionLightResponse",
         "type": "object"
       },
-      "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse": {
+      "PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse": {
         "properties": {
           "alias_id": {
             "anyOf": [
@@ -5881,7 +5881,7 @@
         "title": "UserMinimalResponse",
         "type": "object"
       },
-      "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse": {
+      "PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse": {
         "properties": {
           "alias_id": {
             "anyOf": [
@@ -6073,11 +6073,11 @@
         "title": "UserResponse",
         "type": "object"
       },
-      "PaginatedResponse[UserResponse].c6e31f5": {
+      "PaginatedResponse[UserResponse].1e7847f": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[UserResponse].c6e31f5.UserResponse"
+              "$ref": "#/components/schemas/PaginatedResponse[UserResponse].1e7847f.UserResponse"
             },
             "title": "Items",
             "type": "array"
@@ -6104,7 +6104,7 @@
         "title": "PaginatedResponse[UserResponse]",
         "type": "object"
       },
-      "PaginatedResponse[UserResponse].c6e31f5.UserResponse": {
+      "PaginatedResponse[UserResponse].1e7847f.UserResponse": {
         "properties": {
           "alias_id": {
             "anyOf": [
@@ -11462,7 +11462,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].c6e31f5"
+                  "$ref": "#/components/schemas/PaginatedResponse[QueueItemResponse].1e7847f"
                 }
               }
             },
@@ -11657,7 +11657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse[UserResponse].c6e31f5"
+                  "$ref": "#/components/schemas/PaginatedResponse[UserResponse].1e7847f"
                 }
               }
             },
@@ -12017,7 +12017,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].c6e31f5"
+                  "$ref": "#/components/schemas/PaginatedResponse[ChallengeResponse].3f28e93"
                 }
               }
             },
@@ -14193,7 +14193,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].c6e31f5"
+                  "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753"
                 }
               }
             },

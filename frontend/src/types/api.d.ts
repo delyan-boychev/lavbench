@@ -3298,9 +3298,9 @@ export interface components {
             message: string;
         };
         /** PaginatedResponse[ChallengeResponse] */
-        "PaginatedResponse[ChallengeResponse].c6e31f5": {
+        "PaginatedResponse[ChallengeResponse].3f28e93": {
             /** Items */
-            items: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse"][];
+            items: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.ChallengeResponse"][];
             /** Page */
             page: number;
             /** Pages */
@@ -3309,7 +3309,7 @@ export interface components {
             total: number;
         };
         /** ChallengeResponse */
-        "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
+        "PaginatedResponse[ChallengeResponse].3f28e93.ChallengeResponse": {
             /**
              * Deadline Grace Period Seconds
              * @default 180
@@ -3384,7 +3384,7 @@ export interface components {
              * Stages
              * @default []
              */
-            stages: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse"][];
+            stages: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.StageResponse"][];
             /**
              * Start Time
              * @default null
@@ -3399,7 +3399,7 @@ export interface components {
              * Tasks
              * @default []
              */
-            tasks: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse"][];
+            tasks: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.TaskResponse"][];
             /**
              * Time Limit Sec
              * @default null
@@ -3414,7 +3414,7 @@ export interface components {
             title: string;
         };
         /** FileInfo */
-        "PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo": {
+        "PaginatedResponse[ChallengeResponse].3f28e93.FileInfo": {
             /** Filename */
             filename: string;
             /**
@@ -3434,7 +3434,7 @@ export interface components {
             type: string | null;
         };
         /** StageResponse */
-        "PaginatedResponse[ChallengeResponse].c6e31f5.StageResponse": {
+        "PaginatedResponse[ChallengeResponse].3f28e93.StageResponse": {
             /**
              * Challenge Id
              * Format: uuid
@@ -3479,7 +3479,7 @@ export interface components {
          * TaskResponse
          * @description Fields visible to competitors.
          */
-        "PaginatedResponse[ChallengeResponse].c6e31f5.TaskResponse": {
+        "PaginatedResponse[ChallengeResponse].3f28e93.TaskResponse": {
             /**
              * Apt Packages
              * @default null
@@ -3534,7 +3534,7 @@ export interface components {
              * Files
              * @default []
              */
-            files: components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5.FileInfo"][];
+            files: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.FileInfo"][];
             /**
              * Gpu Required
              * @default null
@@ -3611,9 +3611,9 @@ export interface components {
             whitelisted_imports: string | null;
         };
         /** PaginatedResponse[QueueItemResponse] */
-        "PaginatedResponse[QueueItemResponse].c6e31f5": {
+        "PaginatedResponse[QueueItemResponse].1e7847f": {
             /** Items */
-            items: components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse"][];
+            items: components["schemas"]["PaginatedResponse[QueueItemResponse].1e7847f.QueueItemResponse"][];
             /** Page */
             page: number;
             /** Pages */
@@ -3622,7 +3622,7 @@ export interface components {
             total: number;
         };
         /** QueueItemResponse */
-        "PaginatedResponse[QueueItemResponse].c6e31f5.QueueItemResponse": {
+        "PaginatedResponse[QueueItemResponse].1e7847f.QueueItemResponse": {
             /**
              * Celery Task Id
              * @default null
@@ -3672,9 +3672,9 @@ export interface components {
             user_id: string;
         };
         /** PaginatedResponse[SubmissionLightResponse] */
-        "PaginatedResponse[SubmissionLightResponse].c6e31f5": {
+        "PaginatedResponse[SubmissionLightResponse].5fad753": {
             /** Items */
-            items: components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse"][];
+            items: components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse"][];
             /** Page */
             page: number;
             /** Pages */
@@ -3683,7 +3683,7 @@ export interface components {
             total: number;
         };
         /** SubmissionLightResponse */
-        "PaginatedResponse[SubmissionLightResponse].c6e31f5.SubmissionLightResponse": {
+        "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
             /**
              * Celery Task Id
              * @default null
@@ -3799,10 +3799,10 @@ export interface components {
              * User
              * @default null
              */
-            user: components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse"] | components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse"] | null;
+            user: components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse"] | components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse"] | null;
         };
         /** UserMinimalResponse */
-        "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserMinimalResponse": {
+        "PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse": {
             /**
              * Alias Id
              * @default null
@@ -3832,7 +3832,7 @@ export interface components {
             role: string;
         };
         /** UserResponse */
-        "PaginatedResponse[SubmissionLightResponse].c6e31f5.UserResponse": {
+        "PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse": {
             /**
              * Alias Id
              * @default null
@@ -3914,9 +3914,9 @@ export interface components {
             username: string | null;
         };
         /** PaginatedResponse[UserResponse] */
-        "PaginatedResponse[UserResponse].c6e31f5": {
+        "PaginatedResponse[UserResponse].1e7847f": {
             /** Items */
-            items: components["schemas"]["PaginatedResponse[UserResponse].c6e31f5.UserResponse"][];
+            items: components["schemas"]["PaginatedResponse[UserResponse].1e7847f.UserResponse"][];
             /** Page */
             page: number;
             /** Pages */
@@ -3925,7 +3925,7 @@ export interface components {
             total: number;
         };
         /** UserResponse */
-        "PaginatedResponse[UserResponse].c6e31f5.UserResponse": {
+        "PaginatedResponse[UserResponse].1e7847f.UserResponse": {
             /**
              * Alias Id
              * @default null
@@ -6447,7 +6447,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse[QueueItemResponse].c6e31f5"];
+                    "application/json": components["schemas"]["PaginatedResponse[QueueItemResponse].1e7847f"];
                 };
             };
             /** @description Forbidden */
@@ -6606,7 +6606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse[UserResponse].c6e31f5"];
+                    "application/json": components["schemas"]["PaginatedResponse[UserResponse].1e7847f"];
                 };
             };
             /** @description Unprocessable Content */
@@ -6870,7 +6870,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse[ChallengeResponse].c6e31f5"];
+                    "application/json": components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93"];
                 };
             };
             /** @description Unprocessable Content */
@@ -8331,7 +8331,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse[SubmissionLightResponse].c6e31f5"];
+                    "application/json": components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753"];
                 };
             };
             /** @description Forbidden */
