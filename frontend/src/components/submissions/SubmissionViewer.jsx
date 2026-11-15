@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 import { appendCappedLog } from '../../utils/logBuffer';
 import { formatScore } from '../../utils/formatScore';
+import Notice from '../ui/Notice';
 
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
@@ -175,9 +176,9 @@ function SubmissionViewer({
             </div>
 
             {submission.detailed_status === 'failed_infra' && (
-              <p className="text-[11px] text-orange-400 mb-1">
+              <Notice tone="warning" className="mb-2">
                 {t('submissions.failed_infra_note')}
-              </p>
+              </Notice>
             )}
 
             {submission.user?.alias_id && (

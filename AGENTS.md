@@ -400,6 +400,13 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - Formatting: line length 100, double quotes, 4-space indent (ruff format enforces)
 - Logging: `logger.info("... %s", value)` — never f-strings in log format strings
 
+### Frontend components (reuse first)
+- **Use the shared primitives in `frontend/src/components/ui/`** before writing markup: `Button`, `Badge` (every status label), `Modal`, `InputField`, `SelectField`, `ToggleField`, `Pagination`, `Notice` (every inline info, warning or error box), `EmptyState`, `QueryErrorState`, `LoadingIndicator`, `Skeleton`, `FileDropZone` / `FileUploader` (every file pick or drop), `MarkdownComponents`.
+- **Extract on the second copy:** when the same markup or logic appears a second time, move it into `components/ui/` (markup), `hooks/` (stateful logic, e.g. `useApiError`) or `utils/` (pure helpers, e.g. `credentialsCsv`, `download`), and switch the first copy to it in the same change.
+- **One rule, one place:** a business rule the backend enforces (score visibility, quotas, deadlines) is not re-implemented in components; render what the API returns, and keep any unavoidable client-side check in one helper.
+- **Styling:** reuse the existing Tailwind classes and `index.css` component classes, which the light theme overrides; never hard-code new colours that have no light-theme override.
+- **Every new component** comes with a test in its `__tests__/` folder, and every new string with keys in both locales.
+
 ---
 
 ## Translation System (i18n)

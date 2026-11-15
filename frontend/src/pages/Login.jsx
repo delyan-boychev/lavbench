@@ -8,6 +8,7 @@ import Button from '../components/ui/Button';
 import Logo from '../components/ui/Logo';
 import { Sun, Moon } from 'lucide-react';
 import { resolveLoginRedirect } from '../utils/loginRedirect';
+import Notice from '../components/ui/Notice';
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -119,7 +120,7 @@ export default function Login() {
         </div>
 
         {authError && (
-          <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-lg text-xs mb-6">
+          <Notice tone="error" role="alert" className="mb-6">
             {
               /** @type {React.ReactNode} */ (
                 typeof authError === 'object'
@@ -127,7 +128,7 @@ export default function Login() {
                   : t(authError)
               )
             }
-          </div>
+          </Notice>
         )}
 
         <form onSubmit={handleAuth} className="flex flex-col gap-4">

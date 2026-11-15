@@ -13,6 +13,7 @@ import { parsePoints } from '../../utils/points';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
+import Notice from '../ui/Notice';
 
 export default function LeaderboardTable({
   data,
@@ -212,15 +213,9 @@ export default function LeaderboardTable({
   // Any revealed stage makes private/points columns relevant in the general tab too
   const anyStageRevealed = visibleStages.some((st) => st.is_finalized && st.reveal_results);
 
-  // The jury sees private scores only once they are final (challenge or stage finalised)
-  const showPrivateCols =
-    (isAdmin ||
-      (isJury && (isFinalized || !isStageTab || !!activeStage?.is_finalized)) ||
-      (isFinalized && revealResults) ||
-      (!isJuryOrAdmin &&
-        !isFinalized &&
-        (stageRevealed || (activeTab === 'general' && anyStageRevealed)))) &&
-    hasPrivateData;
+  // The API nulls every private score this viewer may not see (one rule, on the
+  // server), so the private columns simply follow the data
+  const showPrivateCols = hasPrivateData;
   const showPointsCols =
     (isJuryOrAdmin ||
       (isFinalized && revealResults) ||
@@ -238,10 +233,8 @@ export default function LeaderboardTable({
   const taskStageRevealed = taskStage?.is_finalized && taskStage?.reveal_results;
 
   const perTaskShowPrivateCols =
-    isAdmin ||
-    (isJury && (isFinalized || !!taskStage?.is_finalized)) ||
-    (isFinalized && revealResults) ||
-    (!isJuryOrAdmin && !isFinalized && taskStageRevealed);
+    !!activeTaskForPerTab &&
+    data.some((e) => e.task_scores?.[activeTaskForPerTab.id.toString()]?.private_score != null);
 
   const perTaskShowPointsCols =
     isJuryOrAdmin ||
@@ -417,19 +410,17 @@ export default function LeaderboardTable({
       {isJury &&
         !isFinalized &&
         !(isStageTab ? activeStage?.is_finalized : taskStage?.is_finalized) && (
-          <div className="px-4 py-3 bg-slate-500/10 border border-slate-500/20 rounded-lg text-xs text-slate-300 mb-3">
-            {t('leaderboard.private_hidden_until_final')}
-          </div>
+          <Notice className="mb-3">{t('leaderboard.private_hidden_until_final')}</Notice>
         )}
 
       {/* Finalized Internal Notice */}
       {isStageTab && activeStage?.is_finalized && !activeStage?.reveal_results && (
-        <div className="px-4 py-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 mb-3">
+        <Notice tone="warning" className="mb-3">
           {t(
             'leaderboard.stage_finalized_internal_notice',
             'This stage is finalized internally. Results are not public.',
           )}
-        </div>
+        </Notice>
       )}
 
       {/* Table */}
