@@ -125,8 +125,8 @@ Procedure:
    # Preview without writing:
    python3 scripts/translate_gemini.py --dry-run
    ```
-   Options: `--model` (default `gemini-3.6-flash`), `--key-file`, `--docs`, `--dry-run`.
-3. The system prompt embeds LavBench context + a fixed EN→BG glossary (e.g. challenge→състезание, stage→етап, sandbox→пясъчна среда) and a role-specific context per guide, so translations stay consistent across files. Markdown anchors are re-linked to the translated headings automatically; guides symlinked into `docs/source` are mirrored into `docs/source/bg` instead of being retranslated.
+   Options: `--model` (default `gemini-4-carbon`), `--key-file`, `--docs`, `--dry-run`, `--force`, `--check`.
+3. `SYSTEM_PROMPT` in the script is the single source of Bulgarian terminology for the UI strings and every document (e.g. challenge→състезание, worker→работен възел, backup→резервно копие, sandbox→изолирана среда), with a role-specific context per document; documents also receive the real Bulgarian UI labels they mention, so translations stay consistent across files. The run ends with a consistency gate that fails on banned variants (run it alone with `--check`). Markdown anchors are re-linked to the translated headings automatically; guides symlinked into `docs/source` are mirrored into `docs/source/bg` instead of being retranslated.
 4. Verify:
    ```bash
    python3 frontend/scripts/check_translations.py   # 0 symmetry/missing issues
