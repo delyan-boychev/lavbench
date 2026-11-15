@@ -27,7 +27,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | :--- | :--- | :--- |
 | View assigned competition submissions, code cells & execution logs | **Yes** | **Yes** |
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
-| Receive the bulk-reset credentials file (jury: usernames and passwords, no real names) | **Yes** | **Yes** |
+| Bulk password reset and its credentials file | **No** | **Yes** |
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
 | Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
@@ -76,12 +76,11 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 ### Generating Printable Credential Slips
 
-For on-site live competitions, credential slips are generated after a bulk password reset:
-
-1. Open **Admin Panel** → **Competitor Registrations**.
-2. Click **Reset All Passwords in Challenge** and enter the challenge ID (jury may do this on assigned, not-yet-started challenges; 3 resets per 300 s).
-3. The browser saves a CSV file with each competitor's username and new password. For the jury the name columns stay empty (double-blind); an admin's reset includes them.
-4. The passwords exist only in that file: the server keeps no copy, and it cannot be downloaded again. If it is lost, reset again.
+For on-site live competitions, an administrator generates the credential slips with a bulk
+password reset (**Admin Panel** → **Competitor Registrations** → **Reset All Passwords in
+Challenge**). The browser saves a CSV with each competitor's name, username and new password, and
+the server keeps no copy. Only administrators can run it, so jury members never hold working
+credentials for competitors; ask an administrator when slips are needed.
 
 ---
 

@@ -304,7 +304,7 @@ To distribute credentials securely during on-site competitions:
 3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
 4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
-Print a slip per competitor from the CSV. A reset started by a jury member saves the same file without the names (double-blind), so the admin's copy is the one for named slips.
+Print a slip per competitor from the CSV. Only administrators can run a bulk reset, so the jury never receives competitors' passwords.
 
 ---
 
