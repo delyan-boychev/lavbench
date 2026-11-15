@@ -242,6 +242,21 @@ def submit_cells(client: Api, tid: str, payload: dict) -> tuple[int, dict | str 
     return code, data
 
 
+def poll_baseline(client: Api, tid: str, poll_timeout: float = 900.0) -> tuple[bool, dict]:
+    """Wait for the baseline run that creating a task queues, until a terminal state."""
+    deadline = time.time() + 60
+    sid = ""
+    while not sid and time.time() < deadline:
+        code, data = client.send("GET", f"/api/tasks/{tid}/submissions?baseline=true&page=1&per_page=1")
+        items = data.get("items", []) if code == 200 and isinstance(data, dict) else []
+        sid = items[0].get("id", "") if items and isinstance(items[0], dict) else ""
+        if not sid:
+            time.sleep(1)
+    if not sid:
+        return False, {}
+    return poll_submission(client, sid, poll_timeout=poll_timeout)
+
+
 def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
                     interval: float = 1.0) -> tuple[bool, dict]:
     """Poll an EXISTING submission id until a terminal state (completed/failed)."""
@@ -1455,9 +1470,11 @@ def main() -> int:
                 check("15g: bad SUBMISSION_COLUMNS shape rejected at upload",
                       code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
 
-                # Runtime fail-closed edge cases: task is accepted, but the
-                # sandboxed evaluator cannot produce a trustworthy score. The
-                # submission fails without publishing a fabricated score.
+                # Runtime fail-closed edge cases: the task is accepted, but the
+                # sandboxed evaluator cannot produce a trustworthy score. The task's
+                # own baseline run exercises the broken evaluator: it must fail without
+                # a fabricated score, and the readiness gate must then block competitors.
+                # (Submitting as a competitor would race the baseline.)
                 ce_fail_cases = [
                     ("smoke-ce-noeval", ce_meta,
                      "15g: missing 'evaluate' fails evaluation"),
@@ -1479,16 +1496,25 @@ def main() -> int:
                     ce_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                     check(f"{ce_label} — task 201", code == 201 and bool(ce_tid), f"got {code}")
                     if ce_tid:
-                        reached, sub = ce_run(ce_tid, ce_pred_source)
+                        reached, sub = poll_baseline(api, ce_tid)
                         score = sub.get("public_score") if isinstance(sub, dict) else None
                         mpub = sub.get("metrics_payload_public") if isinstance(sub, dict) else {}
                         cev = mpub.get("custom_score", None) if isinstance(mpub, dict) else None
-                        check(f"{ce_label}: submission failed without a score",
+                        check(f"{ce_label}: baseline run failed without a score",
                               reached and sub.get("status") == "failed" and score is None,
                               f"status={sub.get('status')} score={score}")
                         check(f"{ce_label}: metrics payload has no fabricated score",
                               cev is None,
                               f"custom_score={cev}")
+                        code, data = submit_cells(
+                            pipe, ce_tid,
+                            {"selected_cells": [{"id": 0, "type": "code", "source": ce_pred_source}]})
+                        problems = [p.get("code") for p in (data.get("problems") or [])] \
+                            if isinstance(data, dict) else []
+                        check(f"{ce_label}: readiness gate blocks competitors (ERR_BASELINE_FAILED)",
+                              code == 403 and expect_error(data, "ERR_TASK_NOT_READY")
+                              and "ERR_BASELINE_FAILED" in problems,
+                              f"got {code} problems={problems}")
                         api.send("DELETE", f"/api/tasks/{ce_tid}")
 
                 # Success path: the evaluator merges predictions vs labels.
