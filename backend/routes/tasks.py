@@ -41,7 +41,7 @@ from services.submission_service import (
     extract_code_from_cells,
     extract_code_from_notebook,
 )
-from utils.access import ensure_registered
+from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
 from utils.auth_utils import (
     jury_access_required,
@@ -1236,9 +1236,8 @@ def _get_task_submissions_data(
     if user_role == "competitor":
         if not check_task_started(task, user_role, user_id):
             return {"error": "Access denied or task not available yet."}
-        challenge = task.challenge
-        if challenge and challenge.scores_finalized:
-            return {"error": "Access denied. Submissions are hidden for finalized competitions."}
+        if competitor_submissions_locked(task.challenge):
+            return {"locked": True}
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
         if baseline:
@@ -1290,6 +1289,8 @@ def get_task_submissions(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
     data = _get_task_submissions_data(
         task_id, user_role, user_id, page, per_page, filter_user_id, baseline=baseline
     )
+    if isinstance(data, dict) and data.get("locked"):
+        return err("ERR_SUBMISSIONS_LOCKED", 403)
     if isinstance(data, dict) and "error" in data:
         return err("ERR_ACCESS_DENIED", 403, message=data["error"])
     return data

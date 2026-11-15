@@ -15,3 +15,15 @@ export function requireOk(result) {
   if (!result?.ok) throw new ApiRequestError(result);
   return result;
 }
+
+/**
+ * React Query retry rule: a 4xx answer (locked, forbidden, not found) is the same on every
+ * attempt, so only network and server failures get the one retry the app default allows
+ * @param {number} failureCount
+ * @param {unknown} error
+ */
+export function retryUnlessClientError(failureCount, error) {
+  const status = /** @type {{ status?: number } | null} */ (error)?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500) return false;
+  return failureCount < 1;
+}

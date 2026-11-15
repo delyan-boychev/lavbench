@@ -6,6 +6,7 @@ import TaskService from '../../services/TaskService';
 import {
   ACTIVE_SUBMISSION_POLL_MS,
   isActiveSubmission,
+  isSubmissionsLocked,
   useSubmissionsQuery,
 } from '../useSubmissionsQuery';
 
@@ -66,6 +67,36 @@ describe('useSubmissionsQuery', () => {
     expect(TaskService.getSubmissions).not.toHaveBeenCalled();
   });
 
+  it('keeps the API error code and message and does not retry a 4xx answer', async () => {
+    const message = 'Submissions are locked because the competition has been finalized.';
+    TaskService.getSubmissions.mockResolvedValue({
+      ok: false,
+      status: 403,
+      data: { code: 'ERR_SUBMISSIONS_LOCKED', error: message },
+    });
+
+    const { result } = renderHook(() => useSubmissionsQuery('task-1', 1, 10), { wrapper });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(1);
+    expect(result.current.isError).toBe(true);
+    expect(result.current.error.code).toBe('ERR_SUBMISSIONS_LOCKED');
+    expect(result.current.error.error).toBe(message);
+    expect(result.current.error.status).toBe(403);
+    expect(isSubmissionsLocked(result.current.error)).toBe(true);
+  });
+
+  it('retries a server error once', async () => {
+    TaskService.getSubmissions.mockResolvedValue({ ok: false, status: 502, data: null });
+
+    const { result } = renderHook(() => useSubmissionsQuery('task-1', 1, 10), { wrapper });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(2);
+    expect(result.current.isError).toBe(true);
+    expect(isSubmissionsLocked(result.current.error)).toBe(false);
+  });
+
   it.each([
     ['queued', true],
     ['running', true],
@@ -73,5 +104,14 @@ describe('useSubmissionsQuery', () => {
     ['failed', false],
   ])('treats %s as active: %s', (status, active) => {
     expect(isActiveSubmission({ status })).toBe(active);
+  });
+
+  it.each([
+    [{ code: 'ERR_SUBMISSIONS_LOCKED' }, true],
+    [{ code: 'ERR_ACCESS_DENIED' }, false],
+    [new Error('network'), false],
+    [null, false],
+  ])('isSubmissionsLocked(%o) is %s', (error, locked) => {
+    expect(isSubmissionsLocked(error)).toBe(locked);
   });
 });

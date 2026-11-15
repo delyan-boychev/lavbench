@@ -736,6 +736,8 @@ class TestGetTaskSubmissions:
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
+        # The same code as the challenge list, detail and live logs, so the page explains it
+        assert resp.get_json()["code"] == "ERR_SUBMISSIONS_LOCKED"
 
     def test_admin_can_access_when_scores_finalized(self):
         self.challenge.scores_finalized = True

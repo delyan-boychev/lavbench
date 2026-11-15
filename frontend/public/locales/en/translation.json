@@ -191,7 +191,7 @@
     "ERR_STAGE_NOT_STARTED": "The stage has not started yet.",
     "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS": "Stage timeline must be within competition bounds.",
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
-    "ERR_SUBMISSIONS_LOCKED": "Access denied. Submissions are locked.",
+    "ERR_SUBMISSIONS_LOCKED": "Submissions are locked because the competition has been finalized.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",
     "ERR_SUBMIT_LOCKED": "Another submission is being processed. Please wait.",
     "ERR_TASK_LIMIT_REACHED": "Task limit reached.",

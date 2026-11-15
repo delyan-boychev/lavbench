@@ -11,12 +11,13 @@ import {
   useSubmissionsQuery,
   ACTIVE_SUBMISSION_POLL_MS,
   isActiveSubmission,
+  isSubmissionsLocked,
 } from '../hooks/useSubmissionsQuery';
 import { useSubmissionDetailQuery } from '../hooks/useSubmissionDetailQuery';
 import { useCompetitorSearchQuery } from '../hooks/useCompetitorSearchQuery';
 import { useSelectFinal, useKillSubmission } from '../hooks/useSubmissionMutations';
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
-import Badge from '../components/ui/Badge';
+import SubmissionStatusBadges from '../components/ui/SubmissionStatusBadges';
 import Pagination from '../components/ui/Pagination';
 import EmptyState from '../components/ui/EmptyState';
 import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
@@ -24,7 +25,7 @@ import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import BestSubmissionCard from '../components/submissions/BestSubmissionCard';
 import StageGroup from '../components/submissions/StageGroup';
 import { formatLocalizedDate } from '../utils/formatDate';
-import { Star, Download, ChevronRight, Search, X } from 'lucide-react';
+import { Star, Download, ChevronRight, Search, X, Lock } from 'lucide-react';
 import { requireOk } from '../services/apiResult';
 import LoadingIndicator from '../components/ui/LoadingIndicator';
 import QueryErrorState from '../components/ui/QueryErrorState';
@@ -126,6 +127,7 @@ export default function SubmissionsView() {
     data: subsData,
     isLoading: loading,
     isError: submissionsError,
+    error: submissionsQueryError,
     refetch: refetchSubmissions,
   } = useSubmissionsQuery(selectedTask?.id, submissionsPage, 10, { enabled: isCompetitor });
   const submissions = useMemo(() => subsData?.items || [], [subsData]);
@@ -385,13 +387,19 @@ export default function SubmissionsView() {
         ...Object.values(bestSubs),
       ].find((s) => s?.id === selectedSubmissionId) ?? null)
     : null;
-  const { data: submissionDetail } = useSubmissionDetailQuery(selectedSubmissionId, {
-    // Admin and jury lists do not poll, so an active submission polls its own detail.
-    // The log stream can end without a final status (eviction, broker outage)
-    refetchInterval: (query) =>
-      isAdminOrJury && isActiveSubmission(query.state.data) ? ACTIVE_SUBMISSION_POLL_MS : false,
-  });
+  const { data: submissionDetail, error: submissionDetailError } = useSubmissionDetailQuery(
+    selectedSubmissionId,
+    {
+      // Admin and jury lists do not poll, so an active submission polls its own detail.
+      // The log stream can end without a final status (eviction, broker outage)
+      refetchInterval: (query) =>
+        isAdminOrJury && isActiveSubmission(query.state.data) ? ACTIVE_SUBMISSION_POLL_MS : false,
+    },
+  );
   const selectedSubmission = submissionDetail ?? listedSubmission;
+  // A finalised competition locks the competitor's list and detail alike; a retry cannot help
+  const submissionsLocked =
+    isSubmissionsLocked(submissionsQueryError) || isSubmissionsLocked(submissionDetailError);
 
   // A list poll saw a newer status than the detail shows: refetch the detail
   const listedStatus = listedSubmission?.status;
@@ -486,7 +494,13 @@ export default function SubmissionsView() {
           </div>
         )}
 
-        {selectedTask ? (
+        {submissionsLocked ? (
+          <EmptyState
+            minHeight={200}
+            message={t('api.ERR_SUBMISSIONS_LOCKED')}
+            icon={<Lock size={28} className="text-slate-500" />}
+          />
+        ) : selectedTask ? (
           <div key={selectedTask.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {stage && (
               <SelectionTimer
@@ -541,16 +555,16 @@ export default function SubmissionsView() {
                           }`}
                         >
                           <div className="flex justify-between items-center gap-2 w-full">
-                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
-                              #{sub.id}
+                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1 min-w-0">
+                              <span className="truncate">#{sub.id}</span>
                               {sub.is_final_selection && (
-                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold flex-shrink-0">
                                   <Star className="w-3 h-3" />
                                   {t('submissions.final_selection_label')}
                                 </span>
                               )}
                             </span>
-                            <Badge status={sub.status} />
+                            <SubmissionStatusBadges submission={sub} />
                           </div>
                           <div className="flex justify-between items-center gap-2 w-full">
                             <span className="text-xs text-slate-400">
@@ -666,7 +680,7 @@ export default function SubmissionsView() {
                             <span className="text-sm font-semibold text-slate-200 truncate">
                               {task.title}
                             </span>
-                            <Badge status={sub.status} />
+                            <SubmissionStatusBadges submission={sub} />
                           </div>
                           <div className="flex justify-between items-center gap-2 w-full">
                             <span className="font-mono text-xs text-slate-500">
@@ -893,18 +907,16 @@ export default function SubmissionsView() {
                           className="flex flex-col gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
                         >
                           <div className="flex justify-between items-center gap-2 w-full">
-                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
-                              #{sub.id}
+                            <span className="font-mono text-xs text-slate-500 flex items-center gap-1 min-w-0">
+                              <span className="truncate">#{sub.id}</span>
                               {sub.is_final_selection && (
-                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                                <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold flex-shrink-0">
                                   <Star className="w-3 h-3" />
                                   {t('submissions.final_selection_label')}
                                 </span>
                               )}
                             </span>
-                            <div className="flex items-center gap-2">
-                              <Badge status={sub.status} />
-                            </div>
+                            <SubmissionStatusBadges submission={sub} />
                           </div>
 
                           <div className="flex justify-between items-center gap-2 w-full">

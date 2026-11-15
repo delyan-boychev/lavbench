@@ -10,6 +10,7 @@ import { FileText } from 'lucide-react';
 import { appendCappedLog } from '../../utils/logBuffer';
 import { formatScore } from '../../utils/formatScore';
 import Notice from '../ui/Notice';
+import { isPlatformFailure } from '../../utils/submissionStatus';
 
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
@@ -175,7 +176,7 @@ function SubmissionViewer({
                 )}
             </div>
 
-            {submission.detailed_status === 'failed_infra' && (
+            {isPlatformFailure(submission) && (
               <Notice tone="warning" className="mb-2">
                 {t('submissions.failed_infra_note')}
               </Notice>

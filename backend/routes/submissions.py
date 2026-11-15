@@ -33,6 +33,7 @@ from services.submission_service import (
     is_submission_eligible,
     submission_deadline,
 )
+from utils.access import competitor_submissions_locked
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
     get_redis_client,
@@ -123,16 +124,6 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
         cells.append({"id": idx, "type": cell_type, "source": source})
 
     return ParseNotebookResponse(filename=file.filename, cells=cells)
-
-
-def competitor_submissions_locked(challenge: Challenge | None) -> bool:
-    """Whether a competitor may no longer view their own submissions.
-
-    One rule for the lists, the detail and the live logs: they stay viewable until
-    the challenge is finalised, so a submission made in the grace period after the
-    deadline can still be followed to its result (M8).
-    """
-    return bool(challenge and challenge.scores_finalized)
 
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
