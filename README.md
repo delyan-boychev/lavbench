@@ -212,7 +212,7 @@ make html        # Generates HTML documentation at docs/build/index.html
 | [Admin Guide](guides/en/admin_guide.md) | Administrators | Full setup, TLS/HTTPS, worker nodes, task image builds, backups, audit trails. |
 | [Custom Evaluators Guide](docs/custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
 | [System Architecture](docs/source/architecture.md) | Developers & DevOps | Architectural overview, sandbox security, worker budgeting, SSE telemetry. |
-| [nanoColab Integration Note](docs/source/ops/nanocolab-integration.md) | nanoColab team & DevOps | How LavBench drives nanoColab's `/v1` API: reconcile loop, T-24 h publish and freeze, launch, workspace export, stage package, error mapping, fallback and requests to nanoColab. |
+| [nanoColab Integration Note](docs/source/ops/nanocolab-integration.md) | nanoColab team & DevOps | How LavBench drives nanoColab's `/v1` API: sync loop, one event per stage or competition, publish, folder-per-task package, workspaces and submissions from them, error mapping, fallback and requests to nanoColab. |
 | [API Swagger Documentation](http://localhost:5001/apidoc/swagger/) | Developers | Interactive OpenAPI 3.0 documentation for all backend endpoints. |
 
 ---

@@ -2,137 +2,153 @@
 
 This note covers how LavBench drives nanoColab through nanoColab's own `/v1` API, and what LavBench asks of nanoColab for the April 2027 selection round.
 
-**The contract is nanoColab's OpenAPI file,** generated from code: [`docs/api/nanocolab-v1.openapi.json`](https://github.com/Aleksis99/nano-colab/blob/b13c73cff415d213b681098933d65d9b1fe9759d/docs/api/nanocolab-v1.openapi.json) in the nano-colab repository. LavBench pins commit `b13c73c` (branch `feat/v1-compute-api`) until a tag exists, vendors that file and runs its contract tests against it.
+**The contract is nanoColab's OpenAPI file,** generated from code: [`docs/api/nanocolab-v1.openapi.json`](https://github.com/Aleksis99/nano-colab/blob/b13c73cff415d213b681098933d65d9b1fe9759d/docs/api/nanocolab-v1.openapi.json) in the nano-colab repository. LavBench pins commit `b13c73c` of Ivan's branch `feat/v1-compute-api` until he tags one, vendors that file and runs its contract tests against it.
 
-This note only records what the OpenAPI file cannot say: who calls whom, the timing, the package format, the error mapping and the fallback. It replaces the earlier contract ([#175](https://github.com/delyan-boychev/lavbench/pull/175)), whose OIDC provider, service JWTs, stage-spec pull and BagIt mirror are no longer planned.
+This note only records what the OpenAPI file cannot say: who calls whom, the environment owner, the package, workspaces, submissions, the error mapping, the fallback and the requests. Since its previous version, an event belongs to a stage or to a competition, the package has one folder per task at the workspace root, publishing is manual with an optional automatic switch, and file tasks are submitted straight from the workspace.
 
 ## Who calls whom
 
-- **One direction.** LavBench calls nanoColab. nanoColab never calls LavBench: LavBench serves no JWKS and verifies no nanoColab tokens.
-- **Authentication:** `Authorization: Bearer ncak_<key_id>_<secret>`. LavBench reads the key from a secret file and never logs it. It uses the scopes `events:read`, `events:write`, `workspaces:launch`, `workspaces:export` and `assets:write`.
-  - b13c73c allows one key per client and no expiry. So a key rotation is a planned window outside any contest: nanoColab replaces the key and LavBench swaps its key file. Calls in between get 401 and are retried on the next tick.
-  - The client's `hub_username_prefix` is `lb-`. b13c73c requires every asset version to start with it, and Hub usernames become `lb-<LavBench user uuid>`.
-- **A reconcile loop** is the only writer: a 60-second timer in LavBench, also run on an admin save and on "Sync now". For every exported stage it ensures the stage package, PUTs the full event, creates the workspaces at the window start and caches readiness.
-  - Every PUT is the complete desired state, because `EventUpsert` resets omitted fields. A failed call is retried on the next tick.
-  - No LavBench GET request writes to nanoColab.
-- **Students** reach nanoColab only through three calls LavBench makes for them: launch, file check and export.
-- **Readiness** is read once per stage per tick, never for a student request. LavBench uses only `status`, `message` and `capacity`, because b13c73c returns no conditions, and shows a 404 before the first event PUT as "not created yet". Readiness gates nothing: "Open workspace" stays enabled inside the window, and the launch call decides.
+- **One direction.** LavBench calls nanoColab. nanoColab never calls LavBench, and LavBench verifies no nanoColab tokens.
+- **Authentication:** `Authorization: Bearer ncak_<key_id>_<secret>`, read from the secret file named by `NANOCOLAB_API_KEY_FILE` and never logged. The scopes are `events:read`, `events:write`, `workspaces:launch`, `workspaces:export` and `assets:write`.
+  - b13c73c allows one key per client and no expiry, so a key rotation is a planned window outside any contest. Calls in between get 401 and are retried on the next run (request 9).
+  - The client's `hub_username_prefix` is `lb-`: every asset version starts with it, and Hub usernames are `lb-<LavBench user uuid>`.
+- **Transport:** HTTPS only, no redirects, and a timeout on every call (`NANOCOLAB_TIMEOUT_SECONDS`, 10 s; `NANOCOLAB_EXPORT_TIMEOUT_SECONDS`, 30 s for exports). Plain http goes only to a local host in development (`NANOCOLAB_ALLOW_INSECURE_HTTP`). With `NANOCOLAB_API_URL` unset, the integration is off.
+- **A sync loop is the only writer.** It runs every 60 s (`NANOCOLAB_SYNC_INTERVAL_SECONDS`) and on every admin save, one run at a time. For every enabled environment it ensures the package, PUTs the full event, publishes when the automatic switch says so, and reads readiness. A failed call is retried on the next run.
+- **GETs never write.** No LavBench GET request makes a writing call to nanoColab.
+- **Students** reach nanoColab only through calls LavBench makes for them: workspace creation, launch and export.
+- **Readiness** is read once per environment per run, never for a student request. LavBench uses `status`, `message` and `capacity`, and shows a 404 before the first event PUT as "not created yet". Admins see "Ready", "Preparing for N min" or "Problem: <nanoColab's message>". Until nanoColab reports a failed preparation (request 19), the age of "Preparing" is the only signal, and LavBench alerts the admins after 10 minutes (`NANOCOLAB_PREPARING_ALERT_MINUTES`). A cached readiness older than 180 s (`NANOCOLAB_STATUS_STALE_SECONDS`) shows as "Unknown".
 
-## A stage, from draft to archive
+## Environments and events
 
-1. **Package upload.** An admin marks a stage as exported. LavBench builds the stage package (below), uploads it, and waits until nanoColab reports the asset READY: every event PUT, draft included, needs a READY asset.
-2. **Event draft.** LavBench PUTs the event with `published: false`. Admins can still change the stage, and every tick re-PUTs it.
-3. **Publish and freeze at T-24 h.** LavBench publishes automatically 24 hours before the start, then the stage is frozen.
-   - Publishing is blocked, and the admin alerted, if the asset is not READY, readiness is BLOCKED, or the image's pyarrow is newer than the grader's or missing from the catalog's package list.
-   - An audited fix to hidden files, such as the labels, is still allowed in LavBench. Hidden files never reach nanoColab, so the asset does not change.
-4. **After publish,** only a later end is sent: an extension, with the admin's reason and the actor. LavBench sends it before the current `ends_at`, because b13c73c refuses one afterwards. Extensions are global; there is no per-student extra time.
-   - Before the start an admin can cancel an export, in LavBench only: b13c73c cannot cancel a published event (request 14). Deleting an exported stage is refused.
-5. **Window start.** LavBench creates the workspace of every registered, active student who has not finished (`PUT /v1/events/{external_id}/workspaces/{external_user_id}`), in rate-limited batches that spread the writes on the event's seat document. b13c73c refuses creation before the window (request 13). A student who clicks first creates their own.
-6. **Launch.** "Open workspace" calls `POST /v1/workspaces/{workspace_id}/launch`. The browser form-POSTs the 60-second, single-use token to the returned `launch_url` (`/hub/launch`) in a new tab.
-   - The form must not use `rel="noreferrer"`: the Hub denies a `null` Origin. `LAUNCH_ORIGINS` must be `https://bench.noai-bg.com`.
-   - A student who lost the Hub cookie starts again from "Open workspace"; request 8 asks the Hub to send them there instead of showing a 403 page.
-   - Each student has one Hub server across all of LavBench's events (`allow_named_servers: false`), and the Hub answers 409 while another workspace runs. So LavBench never lets exported stages overlap, across all challenges, counting grace and the stop and archive time.
-7. **Submitting.** The student writes `/workspace/<slug>/submission.parquet` with the starter's `save_submission(df)`.
-   - LavBench fetches that file and the task's notebook through the export endpoint, one path per call, up to nanoColab's export cap (20 MiB by default). It re-hashes them, stores its own copy and scores it.
-   - The Check step fetches the file too, until a metadata-only mode exists (request 6).
-8. **The end.** `ends_at` is the stage end plus LavBench's 180-second grace period. After the stage, exports read the archive (`source: ARCHIVE`), which needs `internal_app` deployed (request 2).
-9. **Retention.**
-   - LavBench keeps its own copy of the evidence for its configured period.
-   - nanoColab keeps workspace archives until the selection is final plus the appeal window. LavBench sends that date as `retention_days`, counted from the end of the event. It can grow but never shrink.
-   - The jury reads archives only through LavBench, under aliases.
-
-## The event LavBench sends
-
-`PUT /v1/events/stage-<LavBench stage uuid>` carries:
+- **The environment owner** is the stage, or the competition when it has no stages. There is one event per owner, with the external id `stage-<uuid>` or `challenge-<uuid>` (LavBench's id of that stage or competition).
+- **Every PUT carries the full desired state,** because `EventUpsert` resets omitted fields:
 
 | Field | Value |
 |---|---|
-| `name` | a display name for the stage (3-200 chars) |
-| `starts_at`, `ends_at` | stage start; stage end + 180 s grace (RFC 3339, UTC) |
-| `max_attendance` | registered students + 5% (rounded up, at least +2); it grows with the roster, which after publish needs request 5 |
-| `image_id` | the one pinned CPU image for April, from `GET /v1/images` |
-| `profile` | the one CPU profile: 2 vCPU, 8 or 12 GiB memory, 10-100 GiB disk, as nanoColab's capacity automation requires |
-| `asset_version` | `lb-<first 12 hex of the bundle digest>-v<N>` |
-| `export_paths` | per task, relative to `/workspace`: `<slug>/submission.parquet` and the notebook (at most 16 paths, so at most 8 tasks per stage) |
-| `retention_days` | days from the end of the event to the archive date above; growing it after publish needs request 5 |
-| `published` | `false` until T-24 h, then `true` on every PUT |
-| `actor`, `extension_reason` | the LavBench user id (no `@`); the admin's typed reason (at least 8 chars) |
+| `name` | the stage or competition name (3-200 chars) |
+| `starts_at`, `ends_at` | the owner's start; the owner's end + 180 s grace (`DEADLINE_GRACE_PERIOD_SECONDS`), RFC 3339 in UTC |
+| `max_attendance` | automatic: registered students + 5% (`NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT`, rounded up), at least +2. It grows with the roster, which after publish needs request 5 |
+| `image_id` | chosen from `GET /v1/images`; for April, the one pinned CPU image (request 10) |
+| `profile` | CPU, 2 vCPU, 8 GiB memory, 10 GiB disk by default (nanoColab's capacity automation accepts 2 vCPU, 8 or 12 GiB, 10-100 GiB) |
+| `asset_version` | `lb-<first 12 hex of the content digest>-v<N>` (see the package) |
+| `export_paths` | per task, relative to `/workspace`: `<folder>/submission.parquet` and `<folder>/solution.ipynb` for a file task, `<folder>/solution.ipynb` for a notebook task. nanoColab allows 16 per event, and LavBench refuses more (`ERR_ENVIRONMENT_FULL`) |
+| `retention_days` | days from the event end to the admin's archive date (1-365). The date may move later, never earlier; growing it after publish needs request 5 |
+| `published` | LavBench's state: `false` until publish, then `true` on every PUT |
+| `actor`, `extension_reason` | the LavBench user id (no `@`); on an extension, the admin's typed reason (at least 8 chars) |
 
-## The stage package
+- **Draft.** Every event PUT, draft included, needs a READY asset, so LavBench uploads the package first and PUTs `published: false` until publish.
+- **Publish** is the admin's "Publish to nanoColab" button, with a confirmation. An optional switch, "Publish automatically 24 h before the start" (`NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`), lets the sync loop publish at that time if the package is READY, and alert the admins otherwise.
+- **After publish,** only a later end is sent: an extension with the admin's reason, sent before the current `ends_at`, because b13c73c refuses one afterwards. Extensions are global; there is no per-student extra time.
+  - LavBench locks the other event fields, the public files and the folder names.
+  - Hidden files such as the labels may still be fixed in LavBench, with a reason and audited. They never reach nanoColab, so the asset does not change.
 
-- **Contents.** One ZIP per stage version, built from the published task versions using public files only:
-  - per task: `<slug>/README.md`, `<slug>/sample_submission.parquet`, `<slug>/data/**`, `<slug>/models/**`, and any `<slug>/LICENSE*`, `<slug>/NOTICE*` and `<slug>/sources.txt`;
-  - `starter/<slug>/baseline.ipynb`, when the task has one (it is optional in file mode);
-  - `manifest-sha256.txt`.
+## The package
 
-  Labels, solutions, evaluators and file-mode baseline submissions never leave LavBench, and no public file may share a sha256 with one of them.
-- **Format.** `ZIP_STORED`, entries sorted, fixed 1980 timestamps, mode 0644. No ZIP64, at most 2 GiB and at most 2,000 entries, directories included; LavBench refuses a larger stage instead of sending it. Every path passes nanoColab's `asset_zip.safe_path` rules, and notebooks are nbformat 4 within 16 MiB.
-- **Identity.**
-  - `manifest-sha256.txt` has one `<sha256>  <path>` line per other file, sorted by the NFC UTF-8 bytes of the path. The bundle digest is the sha256 of that file.
-  - The ZIP's own hash is transport only.
-  - nanoColab binds a version name to one ZIP hash, so any change to the builder bumps `-v<N>`.
-- **Upload,** as a background job in LavBench:
-  1. Skip if `GET /v1/assets/<version>` is already READY.
-  2. `POST /v1/assets/<version>/uploads` with `size_bytes` and `sha256`.
-  3. PUT the ZIP to `upload.url` with `upload.headers` unchanged: a GCS resumable session in 8 MiB chunks with CRC32C, or an S3 presigned URL (its headers carry `x-amz-checksum-sha256` and `If-None-Match: *`). LavBench tells them apart by the URL host.
-  4. `POST /v1/assets/<version>/complete`, then poll every tick until READY or FAILED.
-- **In the workspace.** LavBench asks for `<slug>/` mounted read-only at `/competition/<slug>/`, with only the starter notebook seeded into `/workspace/<slug>/` (request 7). At b13c73c the whole package is copied into every home disk, so the baseline is at `/workspace/starter/<slug>/baseline.ipynb`, and LavBench's notebook export path follows it until request 7 lands.
+One deterministic ZIP per environment version, built in LavBench from the tasks' public files:
+
+```text
+<folder>/                one per task, named from the task title
+    <public files>
+    solution.ipynb       the file-mode starter, if any, or the notebook-mode baseline
+models/<org>/<name>/     from the tasks' Hugging Face ZIPs
+datasets/<org>/<name>/
+```
+
+- **Folder names** are generated from the task title: transliterated from Bulgarian to Latin, lower-case, special symbols removed (only `a-z`, `0-9` and `-` kept), spaces and runs of separators turned into one `-`, at most 40 characters. They are unique within the environment, never `models` or `datasets`, and frozen after publish: a later title edit does not rename the folder.
+- **Hugging Face folders** are the plain folders that `hf download --local-dir` writes. A folder used by two tasks goes in once if it is identical; if it differs, LavBench refuses to publish.
+- **Hidden files never go in:** labels and baseline submissions stay in LavBench, and so do evaluators.
+- **Format:** `ZIP_STORED`, entries sorted, fixed 1980 timestamps, mode 0644. At most 2 GiB (`NANOCOLAB_PACKAGE_MAX_BYTES`) and 2,000 entries, directories included, with no ZIP64. LavBench refuses a larger environment instead of sending it.
+- **Paths:** LavBench checks both the public file names and the Hugging Face folders against nanoColab's `asset_zip.safe_path` rules when they are uploaded to LavBench, so nanoColab never rejects a package for its paths.
+- **Version:** `lb-<first 12 hex of the content digest>-v<N>`. The digest is the sha256 of the sorted `<sha256>  <path>` lines of the package's files; the ZIP's own hash is transport only. nanoColab binds a version name to one ZIP hash, so any change to LavBench's builder bumps `-v<N>`.
+- **Upload,** as a background job, so the admin's save returns at once and shows progress: skip if `GET /v1/assets/<version>` is already READY; otherwise `POST /v1/assets/<version>/uploads` with `size_bytes` and `sha256`, PUT the ZIP to `upload.url` with `upload.headers` unchanged, `POST /v1/assets/<version>/complete`, and poll on every run until READY or FAILED (nanoColab's message goes to the admins).
+- **In the workspace,** nanoColab copies the package into the workspace root, as b13c73c already does, without overwriting the student's files on a restart (`cp -Rn`). Each task's folder, `models/` and `datasets/` therefore land at the JupyterLab root, which is the layout LavBench wants: the old request 7 is done as is.
+
+## Workspaces
+
+- **Created on the first click.** A student's first "Open workspace" creates the workspace (`PUT /v1/events/{external_id}/workspaces/{external_user_id}`); later clicks reuse it. LavBench creates none in advance, and b13c73c refuses creation before the window anyway (request 13).
+- **Launch.** "Open workspace" calls `POST /v1/workspaces/{workspace_id}/launch`. The browser form-POSTs the 60-second, single-use token to the returned `launch_url` (`/hub/launch`) in a new tab.
+  - The form must not use `rel="noreferrer"`: the Hub denies a `null` Origin. `LAUNCH_ORIGINS` must be `https://bench.noai-bg.com` (request 2).
+  - JupyterLab opens on the root folder until the launch accepts a start path (request 22), then on `<folder>/solution.ipynb`. The Hub's own progress page shows the first start.
+  - A student who closed the tab or lost the Hub cookie starts again from "Open workspace", which took about 1 s in the run. Direct visits to the Hub should send them back to LavBench (request 21).
+- **One Hub server per student.** Each student has one Hub server across all of LavBench's events (`allow_named_servers: false`), and the Hub answers 409 while another workspace runs. So LavBench refuses environment windows, from the start to the end plus grace, that overlap for the same student across all competitions.
+- **After the round,** nanoColab stops and archives the workspaces at `ends_at`. Stopping one earlier, for example after a student's "Finish round", needs request 5.
+
+## Submissions from the workspace
+
+| Task mode | What LavBench exports, and when | Then |
+|---|---|---|
+| File submission | `<folder>/submission.parquet` and `<folder>/solution.ipynb`, both required, when the student clicks Submit | LavBench checks the Parquet and scores it on its own CPU evaluation workers; no student code runs |
+| Notebook evaluation | `<folder>/solution.ipynb`, when the student clicks "Load from workspace" | the student picks cells in LavBench, which runs them in its own sandbox and scores the output; uploading a notebook still works |
+
+- **Export:** `POST /v1/workspaces/{workspace_id}/export`, one path per call, base64 in JSON as b13c73c returns it, at most 20 MiB per file (`NANOCOLAB_EXPORT_MAX_BYTES`, nanoColab's default cap). LavBench re-hashes each file against nanoColab's sha256 and scores its own stored copy.
+- **The right workspace.** The file must come from the requested workspace, which b13c73c does not check (request 17). LavBench's overlap rule avoids the case, but the export must check it too.
+- **After the round,** reads come from the archive (`source: ARCHIVE`), which needs `internal_app` deployed (request 2). LavBench keeps its own copy of every submitted file, and the jury reads only those, under aliases, never the archives. nanoColab keeps the archives until the admin's date.
 
 ## How nanoColab responses map to LavBench
 
 | nanoColab | LavBench code | What the person sees |
 |---|---|---|
-| no `NANOCOLAB_API_URL` configured | `ERR_NANOCOLAB_DISABLED` | workspace features hidden |
-| timeout, connection error, other 5xx | `ERR_NANOCOLAB_UNAVAILABLE` | nanoColab is unavailable, try again shortly |
-| 503 with Retry-After on launch or workspace PUT | `ERR_WORKSPACE_PREPARING` | "Preparing, retry in N s" |
-| 409 outside the event window | `ERR_WORKSPACE_NOT_OPEN` | the stage is not open |
-| 409 with Retry-After on export (server not running) | `ERR_WORKSPACE_STOPPED` | "Start your workspace", then try again |
-| export file `status: MISSING` | `ERR_WORKSPACE_FILE_MISSING` | no `submission.parquet` saved yet |
-| export file `status: TOO_LARGE` | `ERR_WORKSPACE_FILE_TOO_LARGE` | the limit |
-| size, mtime or hash differ before and after the read (once request 6 lands) | `ERR_WORKSPACE_FILE_CHANGED` | the file changed while it was read |
-| readiness BLOCKED at publish | `ERR_NANOCOLAB_CAPACITY_BLOCKED` | admins: the BLOCKED reason |
-| asset FAILED | `ERR_NANOCOLAB_ASSET_FAILED` (a task problem) | admins: nanoColab's message |
-| other 4xx (validation, frozen field) | `ERR_NANOCOLAB_REJECTED` | admins: nanoColab's message; students: a generic error |
+| no `NANOCOLAB_API_URL` configured | `ERR_NANOCOLAB_DISABLED` (404) | workspace features hidden |
+| timeout, connection error, other 5xx | `ERR_NANOCOLAB_UNAVAILABLE` (503) | nanoColab is unavailable, try again shortly |
+| 409 outside the event window, on workspace PUT or launch | `ERR_ENVIRONMENT_NOT_OPEN` (409) | the environment is not open |
+| 503 with `Retry-After` on workspace PUT or launch | `ERR_ENVIRONMENT_PREPARING` (503) | "Preparing", retry in N s |
+| export 409 with `Retry-After`: server stopped, or archive not ready | `ERR_WORKSPACE_EXPORT_UNAVAILABLE` (409 or 503) | open the workspace, or try again shortly |
+| export 410: archive purged | `ERR_WORKSPACE_ARCHIVE_PURGED` (410) | the file is no longer available |
+| export file `status: MISSING` | `ERR_WORKSPACE_FILE_MISSING`, or `ERR_WORKSPACE_NOTEBOOK_MISSING` for `solution.ipynb` (404) | the missing file and its folder |
+| export file `status: TOO_LARGE` | `ERR_WORKSPACE_FILE_TOO_LARGE` (413) | the limit |
+| exported bytes do not match nanoColab's sha256 | `ERR_WORKSPACE_EXPORT_INTEGRITY` (502) | a generic error; try again |
+| asset FAILED | `ERR_ENVIRONMENT_PACKAGE_FAILED` | admins: nanoColab's message |
+| other 4xx on an admin sync (validation, frozen field, capacity) | `ERR_ENVIRONMENT_SYNC_FAILED` (502) | admins: nanoColab's message |
+| other 4xx on a student launch or export | `ERR_NANOCOLAB_UNAVAILABLE` (503) | a generic message; the detail is logged |
+| readiness BLOCKED, or a failed preparation (request 19) | none; shown as the status | admins and jury: "Problem: <nanoColab's message>" |
 
-nanoColab's errors come in three shapes: `detail` as a string, a dict with `message` and `fields`, or a list on 422. LavBench's client reads all three and honours `Retry-After` on 409 and 503; `/v1` has no 429.
+nanoColab's errors come in three shapes: `detail` as a string, a dict with `message` and `fields`, or a list on 422. LavBench's client reads all three in one place and honours `Retry-After` on 409 and 503; `/v1` has no 429.
 
-LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 8 tasks in an exported stage (`ERR_STAGE_TOO_MANY_TASKS`), a package over 2 GiB (`ERR_STAGE_PACKAGE_TOO_LARGE`), an image whose pyarrow is newer than the grader's or unlisted (`ERR_GRADER_PYARROW_TOO_OLD`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
+LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 16 export paths in an environment (`ERR_ENVIRONMENT_FULL`), an empty package (`ERR_ENVIRONMENT_PACKAGE_EMPTY`), a package over 2 GiB or 2,000 entries (`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE`, whose `limit` names the one exceeded), a public file name that breaks nanoColab's path rules (`ERR_INVALID_FILENAME`), a Hugging Face folder that differs between two tasks (`ERR_HF_FOLDER_CONFLICT`), an image missing from `GET /v1/images` (`ERR_INVALID_WORKSPACE_IMAGE`), overlapping windows (`ERR_ENVIRONMENT_OVERLAP`), a change after publish other than a later end (`ERR_ENVIRONMENT_LOCKED`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
 
 ## If nanoColab fails on the day
 
 The fallback does not depend on nanoColab:
-- students submit by uploading `submission.parquet` in LavBench;
-- they download the stage data as a ZIP from LavBench;
-- admins extend the stage by the length of the outage, before `ends_at`.
+- Admins extend the environment by the length of the outage, before `ends_at`.
+- For a file task, an admin can turn on the emergency upload switch. It is off by default, needs a reason and is audited. Students then upload `submission.parquet` and `solution.ipynb` in LavBench, with the same checks and the same 20 MiB cap.
+- Notebook tasks keep LavBench's notebook upload, and the public files stay downloadable from LavBench.
 
-No legacy nanoColab accounts are kept on standby.
+No nanoColab accounts are kept on standby.
 
 ## Requests to nanoColab
 
-"For April" means the round on the production cluster needs it. "Optional" means LavBench already works around it. None blocks LavBench's development: LavBench builds against the pinned OpenAPI file and a fake, and its local end-to-end run uses b13c73c as it is.
+"For April" says whether the round on the production cluster needs it: "optional" means LavBench works around it, and "later" means after April. "Owner: us" means a PR from LavBench's side to Ivan's `feat/v1-compute-api`; "nanoColab" means the nanoColab team. None blocks LavBench's development: LavBench builds against the pinned OpenAPI file and a fake.
 
-| # | Request | For April | At b13c73c |
-|---|---|---|---|
-| 1 | **Auto-start `/v1` events.** Startup selection skips events without `competition_assignments` (`startup_policy.py:44-45`, counted in `event_startup_routes.py:100-104`); `/v1` events use `event_seats` | needed | not done |
-| 2 | **Production wiring:** `NANOCOLAB_API_CLIENTS`, the image catalog, the export service token, `LAUNCH_ORIGINS` = `https://bench.noai-bg.com`, and `internal_app` deployed (without it there is no data volume and no archive, so every after-stage export gets 409) | needed | not done (`deploy/local/api.sh:93` only) |
-| 3 | **Sync API:** `GET /v1/events`; generation, observedGeneration and conditions in the event response; ETag; `asset_version`, `profile` and `retention_days` echoed back | optional | not done |
-| 4 | **Readiness semantics:** READY means asset staged + startup run finished + placeholders ready, not only `/hub/health` | needed | partly (placeholders not checked) |
-| 5 | **Lifecycle:** `retention_days` and `max_attendance` may grow after publish; `POST /v1/workspaces/{id}/stop` (archive, never delete) | needed | not done |
-| 6 | **Export:** one raw streamed file per request from `/files/`, with size, mtime and hash before and after, no base64; a metadata-only mode for the Check step; narrow the export role (`tokens` limited to students; test dropping `access:servers`) | optional (LavBench adapts: base64, one path per call) | partly (a 60 s per-user export token, `hub_export.py:39-46`) |
-| 7 | **Data:** seed only `starter/<slug>/*.ipynb` into `/workspace/<slug>/` (no copy-all `preserve`); mount `<slug>/` read-only at `/competition/<slug>/` with a file-browser symlink; verify files against `manifest-sha256.txt` | needed | partly (read-only `/competition`, ROX, uploads lifecycle rule) |
-| 8 | **Launch:** GET `/hub/launch` and the Hub login URL redirect to LavBench's "Open workspace"; raise the spawn limit; placeholder pods and an image puller that work with nanoColab's own controller (the z2jh settings do not apply); Hub cookie lifetime about the event length | needed | not done |
-| 9 | **Auth:** two active `ncak_` keys per client, each with an expiry (overlap rotation) | optional (planned rotation windows) | not done |
-| 10 | **Image:** one pinned CPU image for April with its package list (including pyarrow) in `GET /v1/images`; pandas and pyarrow at or below the grader's | needed | partly (catalog API only) |
-| 11 | **Network:** cluster-only DNS for student pods (no recursion; `hub_connect_url` at the Hub's internal address); `HF_HUB_OFFLINE=1`; no AI extensions in images | needed | partly (`PIP_NO_INDEX=1`, egress limited) |
-| 12 | **Contract:** Schemathesis in nanoColab CI; `/v1` additive-only; tag the commit LavBench pins | needed | partly (generated OpenAPI with a drift test) |
-| 13 | **Window-free workspace creation:** allow `PUT /v1/events/{id}/workspaces/{user}` after publish, before the window, so workspaces exist before the start (today `require_window`, `v1_firestore.py:355-365`) | needed (a calm start) | new |
-| 14 | **Cancel event:** an endpoint to cancel an unstarted published event | optional | new |
-| 15 | **Image pull access:** Artifact Registry read access for the LavBench workers, which run the grader on the pinned digest | needed | new |
-| 16 | **Large stage data:** ZIP64 and a configurable cap up to 8 GiB (S3 multipart or GCS resumable above 5 GB) | optional (only if a task needs over 2 GiB) | new |
+Rows 17-24 are new: they come from the end-to-end run of 2026-11-15, which ran Ivan's LavBench branch against b13c73c on a local stack. The first "us" PR (the local stack on Linux, export from the right workspace, pyarrow in the local image and the Hub texts) is being prepared now.
+
+| # | Request | For April | Owner | At b13c73c |
+|---|---|---|---|---|
+| 1 | **Auto-start `/v1` events.** Startup selection skips events without `competition_assignments` (`startup_policy.py:44-45`); `/v1` events use `event_seats` | needed | nanoColab | not done |
+| 2 | **Production wiring:** `NANOCOLAB_API_CLIENTS`, the image catalog, the export token, `LAUNCH_ORIGINS` = `https://bench.noai-bg.com`, and `internal_app` deployed (without it there is no data volume and no archive) | needed | nanoColab | not done |
+| 3 | **Sync API:** `GET /v1/events`; generation and conditions; `asset_version`, `profile` and `retention_days` echoed back; machine-readable error codes (409 reasons differ only by text) | optional | nanoColab | not done |
+| 4 | **Readiness:** READY means the asset staged, the startup run finished and the placeholders ready | needed | nanoColab | partly |
+| 5 | **Lifecycle:** `retention_days` and `max_attendance` may grow after publish (attendance follows the roster); `POST /v1/workspaces/{id}/stop` (archive, never delete) | needed | nanoColab | not done |
+| 6 | **Export:** one raw streamed file per request, plus a metadata-only mode, so the task card can show the file's size and save time before Submit; narrow the export role (`tokens` limited to students; test dropping `access:servers`) | optional | nanoColab | partly |
+| 7 | **Data layout:** copying the package into the workspace root is what LavBench wants, and `cp -Rn` (`manifests.py:103`) already keeps the student's files on a restart | done as is | none | done |
+| 8 | **Launch:** a higher spawn limit, placeholder pods and an image puller that work with nanoColab's controller, and a Hub cookie lifetime of about the event length (direct visits moved to 21) | needed | nanoColab | not done |
+| 9 | **Auth:** two overlapping `ncak_` keys per client, each with an expiry | optional | nanoColab | not done |
+| 10 | **Image:** one pinned CPU image for April, with its package list (including pyarrow) in `GET /v1/images` | needed | nanoColab (production); us (local) | partly |
+| 11 | **Network:** cluster-only DNS for student pods; `HF_HUB_OFFLINE=1`; no AI extensions in images | needed | nanoColab | partly |
+| 12 | **Contract:** Schemathesis in nanoColab CI; `/v1` additive-only; a tag for the commit LavBench pins | needed | nanoColab | partly |
+| 13 | **Window-free workspace creation:** allow the workspace PUT after publish, before the window (`require_window`, `v1_firestore.py:355-365`); LavBench creates workspaces on the first click | optional | nanoColab | not done |
+| 14 | **Cancel** an unstarted published event | optional | nanoColab | not done |
+| 15 | **Image pull access** for LavBench's workers, only if its grader ever uses nanoColab's workspace image (today it uses LavBench's own task images) | optional | nanoColab | not done |
+| 16 | **Large packages:** ZIP64 and up to 8 GiB per asset | optional | nanoColab | not done |
+| 17 | **Export only from the requested workspace:** `live_files` (`v1_firestore.py:512-517`) reads the student's running Hub server whatever its event, so in the run a Submit for one stage returned another stage's file; answer 409 when the server is not the workspace's | needed | us | broken |
+| 18 | **Workspace image:** pyarrow (LavBench takes Parquet only), scikit-learn and scipy aligned (the run printed a red `OptimizeWarning`), and the JupyterLab news prompt off | needed | us (local); nanoColab (production) | missing |
+| 19 | **Readiness reports a failed preparation** (FAILED with a message), and event and workspace states move (LIVE, RUNNING, STOPPED, ENDED); the run saw SCHEDULED and REQUESTED throughout | needed | nanoColab | missing |
+| 20 | **Local stack works on Linux:** pods reach the API without `host.docker.internal` (`deploy/local/up.sh`, `api.sh`), and the preparer retries a failed seed job (`deploy/local/preparer.py:142`) | needed for dev and CI | us | broken |
+| 21 | **Hub for LavBench students:** a direct visit and GET `/hub/launch` redirect to LavBench; no login form; no Token page (`/hub/token`); the student's alias as the display name; messages that point to LavBench | needed | us (texts); nanoColab (redirect, config) | missing |
+| 22 | **Start path on launch:** the launch accepts the path to open, the task's `<folder>/solution.ipynb` | optional | nanoColab | not done |
+| 23 | **Shared Hugging Face folders:** one read-only copy on `/competition`, with links in the workspace root; the archive and the export skip the links | later | nanoColab | not done |
+| 24 | **JupyterLab language:** a Bulgarian language pack, if one exists (unverified), chosen per event or from the LavBench language | later | nanoColab | not done |
 
 ## Venues (for the organisers)
 
-- **Machines:** venue machines run Windows or macOS, with Safe Exam Browser and the venue's `.seb` config.
-- **Network:** the firewall allows only `bench.noai-bg.com` and `lab.noai-bg.com`.
-- **Leaving early:** a student clicks "Finish round" before leaving, which ends their round in LavBench: launch, check, submit and the data download are refused from then on. The supervisor checks the banner, then unlocks Safe Exam Browser's quit.
-- **Running workspaces:** the workspace of a finished or deactivated student keeps running. Once request 5 lands, LavBench stops it after "Finish round", and admins can stop any workspace (archive, never delete).
+- **Machines and network:** Windows or macOS with Safe Exam Browser and the venue's `.seb` config; the firewall allows only `bench.noai-bg.com` and `lab.noai-bg.com`.
+- **Leaving early:** the student clicks "Finish round", which refuses launch and submit from then on; the supervisor checks the banner, then unlocks Safe Exam Browser's quit. The workspace keeps running until `ends_at`, or until LavBench stops it once request 5 lands (archive, never delete).
