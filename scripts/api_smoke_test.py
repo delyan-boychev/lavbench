@@ -1176,15 +1176,21 @@ def main() -> int:
                                                             "source": mid_code}]})
                 mid_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
                 check("15b: midrun submission 202 queued", code == 202 and bool(mid_sid))
+                # Wait for running_inference: "running" starts earlier, while the worker
+                # builds the image and syncs the task files, so a PUT landing then feeds
+                # the run the new data.txt. By running_inference the files are copied
+                # into the sandbox and a re-upload can no longer reach this run.
                 running = False
                 for _ in range(120):
                     time.sleep(1)
                     c2, d2 = api.send("GET", f"/api/submissions/{mid_sid}")
-                    if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
+                    if (c2 == 200 and isinstance(d2, dict)
+                            and d2.get("detailed_status") == "running_inference"):
                         running = True
                         break
-                check("15b: submission reaches running (container executing)",
-                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2}")
+                check("15b: submission reaches running_inference (files synced, container started)",
+                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2} "
+                               f"detail={d2.get('detailed_status') if isinstance(d2, dict) else ''}")
                 code, data = api.multipart(
                     "PUT", f"/api/tasks/{mid_tid}",
                     {"title": "smoke-midrun-task"},
