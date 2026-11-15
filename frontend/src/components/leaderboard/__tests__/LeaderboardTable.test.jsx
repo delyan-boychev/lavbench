@@ -102,7 +102,7 @@ describe('LeaderboardTable Component', () => {
     expect(screen.getAllByText('0.8523').length).toBeGreaterThan(0);
   });
 
-  it('reveals true identities, school, grade, and private scores when challenge is finalized and row is expanded', () => {
+  it('reveals true identities and points to a competitor once the challenge is finalized', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
     const challenge = {
       id: 12,
@@ -112,6 +112,7 @@ describe('LeaderboardTable Component', () => {
       reveal_results: true,
     };
     const tasks = [{ id: 1, title: 'Task 1' }];
+    // The whitelisted user record a competitor receives: no school, grade or city
     const data = [
       {
         rank: 1,
@@ -121,12 +122,11 @@ describe('LeaderboardTable Component', () => {
         has_submitted: true,
         user: {
           id: 2,
-          username: 'user_two',
           alias_id: 'Alias-002',
           name: 'John',
           surname: 'Doe',
-          school: 'Math High School',
-          grade: '10',
+          is_anonymous: false,
+          manual_points: {},
         },
         task_scores: { 1: { public_score: 0.9876, private_score: 0.9912 } },
       },
@@ -136,20 +136,68 @@ describe('LeaderboardTable Component', () => {
       <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
     );
 
-    const expandBtn = screen.getByTitle('Toggle details');
-    fireEvent.click(expandBtn);
+    fireEvent.click(screen.getByTitle('Toggle details'));
 
     expect(screen.getAllByText('John Doe').length).toBe(2);
-
-    expect(screen.getByText('School:')).toBeInTheDocument();
-    expect(screen.getByText('Math High School')).toBeInTheDocument();
-    expect(screen.getByText('Grade:')).toBeInTheDocument();
-    expect(screen.getByText('10 grade')).toBeInTheDocument();
-
+    expect(screen.queryByText('School:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Grade:')).not.toBeInTheDocument();
+    expect(screen.queryByText('City:')).not.toBeInTheDocument();
     expect(screen.getByText('95 pts')).toBeInTheDocument();
   });
 
-  it('shows baseline badge and hides expand button for baseline entries', () => {
+  it('shows school, grade and city to staff when the API sends them', () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
+    const challenge = { id: 12, scores_finalized: false, double_blind: false };
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        has_submitted: true,
+        user: {
+          id: 2,
+          username: 'user_two',
+          alias_id: 'Alias-002',
+          name: 'John',
+          surname: 'Doe',
+          school: 'Math High School',
+          grade: '10',
+          city: 'Sofia',
+        },
+        task_scores: {},
+      },
+    ];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />,
+    );
+    fireEvent.click(screen.getByTitle('Toggle details'));
+
+    expect(screen.getByText('Math High School')).toBeInTheDocument();
+    expect(screen.getByText('10 grade')).toBeInTheDocument();
+    expect(screen.getByText('Sofia')).toBeInTheDocument();
+  });
+
+  it('shows the alias when the API sends no name for a listed user', () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
+    const challenge = { id: 12, scores_finalized: false, double_blind: false };
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        has_submitted: true,
+        user: { id: 2, alias_id: 'Alias-002', is_anonymous: true, manual_points: {} },
+        task_scores: {},
+      },
+    ];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />,
+    );
+
+    expect(screen.getByText('Alias-002')).toBeInTheDocument();
+  });
+
+  it('renders the Baseline row from its label, without user data or a rank', () => {
     useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
     const challenge = {
       id: 12,
@@ -161,12 +209,15 @@ describe('LeaderboardTable Component', () => {
     const tasks = [{ id: 10, title: 'Task 1' }];
     const data = [
       {
-        rank: 1,
+        rank: null,
         public_score: 0.9999,
+        has_submitted: true,
         is_baseline_entry: true,
-        user: { id: 99, username: 'baseline', alias_id: 'BL-001' },
+        label: 'Baseline',
+        user: null,
+        task_ranks: { 10: null },
         task_scores: {
-          10: { submission_id: 999, public_score: 0.9999, private_score: 0.95 },
+          10: { submission_id: 999, public_score: 0.9999, private_score: null },
         },
       },
     ];
@@ -178,9 +229,94 @@ describe('LeaderboardTable Component', () => {
     // Baseline hidden from general tab
     expect(screen.queryByText('Baseline')).not.toBeInTheDocument();
 
-    // Switch to per-task tab — baselines visible pre-finalized
+    // A task tab shows it, with no expand button and no rank badge
     fireEvent.click(screen.getByText('Task 1'));
     expect(screen.getByText('Baseline')).toBeInTheDocument();
+    expect(screen.queryByTitle('Toggle details')).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/^Rank /)).not.toBeInTheDocument();
+    expect(screen.getByText('0.9999')).toBeInTheDocument();
+  });
+
+  it('shows the ranks the API sends on the general, task and stage tabs', () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
+    const challenge = {
+      id: 12,
+      scores_finalized: false,
+      double_blind: true,
+      stages: [{ id: 's1', stage_number: 1, title: 'Round', start_time: '2020-01-01T00:00:00Z' }],
+    };
+    const tasks = [{ id: 10, title: 'Task 1', stage_id: 's1' }];
+    const competitor = (id, alias, rank, taskRank, stageRank, score) => ({
+      rank,
+      public_score: score,
+      has_submitted: score != null,
+      user: { id, alias_id: alias, is_anonymous: false, manual_points: {} },
+      task_ranks: { 10: taskRank },
+      stage_ranks: { s1: stageRank },
+      task_scores: { 10: { public_score: score, submission_id: score != null ? id : null } },
+    });
+    // The baseline outscores both competitors but holds no rank
+    const data = [
+      {
+        rank: null,
+        public_score: 0.95,
+        has_submitted: true,
+        is_baseline_entry: true,
+        label: 'Baseline',
+        user: null,
+        task_ranks: { 10: null },
+        stage_ranks: { s1: null },
+        task_scores: { 10: { public_score: 0.95, submission_id: 900 } },
+      },
+      competitor(2, 'Alias-2', 1, 1, 1, 0.9),
+      competitor(3, 'Alias-3', 2, 2, 2, 0.8),
+      competitor(4, 'Alias-4', null, null, null, null),
+    ];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
+
+    const rankTitles = () => screen.queryAllByTitle(/^Rank /).map((el) => el.getAttribute('title'));
+    const rowNames = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.querySelectorAll('td')[2].textContent);
+
+    expect(rankTitles()).toEqual(['Rank 1', 'Rank 2']);
+    expect(rowNames()).toEqual(['Alias-2', 'Alias-3', 'Alias-4']);
+
+    fireEvent.click(screen.getByText('Task 1'));
+    expect(rankTitles()).toEqual(['Rank 1', 'Rank 2']);
+    expect(rowNames()).toEqual(['Baseline', 'Alias-2', 'Alias-3', 'Alias-4']);
+
+    fireEvent.click(screen.getByText('Stage 1: Round'));
+    expect(rankTitles()).toEqual(['Rank 1', 'Rank 2']);
+    expect(rowNames()).toEqual(['Alias-2', 'Alias-3', 'Alias-4']);
+  });
+
+  it('does not renumber ranks the API sends with gaps or ties', () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
+    const challenge = { id: 12, scores_finalized: false, double_blind: true };
+    const row = (id, rank, score) => ({
+      rank,
+      public_score: score,
+      has_submitted: true,
+      user: { id, alias_id: `Alias-${id}`, is_anonymous: false, manual_points: {} },
+      task_scores: {},
+    });
+    const data = [row(2, 1, 0.9), row(3, 1, 0.9), row(4, 4, 0.5)];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={[]} challenge={challenge} loading={false} />,
+    );
+
+    expect(screen.queryAllByTitle(/^Rank /).map((el) => el.getAttribute('title'))).toEqual([
+      'Rank 1',
+      'Rank 1',
+      'Rank 4',
+    ]);
   });
 
   it('shows true name for other users when jury/admin view during blind mode', () => {

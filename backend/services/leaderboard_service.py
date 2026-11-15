@@ -29,6 +29,8 @@ LEADERBOARD_CACHE_SECONDS = 300
 _REBUILD_LOCK_SECONDS = 30
 _LOCK_WAIT_SECONDS = 3.0
 _LOCK_POLL_SECONDS = 0.3
+# The fixed name of the Baseline row; it carries no user record for any viewer
+BASELINE_LABEL = "Baseline"
 
 
 def build_and_cache_leaderboard(challenge_id: uuid.UUID | str) -> list[dict[str, Any]] | None:
@@ -114,14 +116,19 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         .filter(Stage.challenge_id == challenge_id, Stage.is_test)
         .all()
     ]
+    is_baseline = Submission.is_baseline.is_(True)
     eligible_clauses = []
     for task in tasks:
         deadline = submission_deadline(task, challenge)
         if deadline is None:
             eligible_clauses.append(Submission.task_id == task.id)
         else:
+            # A baseline is a reference run, not an entry, so a re-run after the deadline counts
             eligible_clauses.append(
-                and_(Submission.task_id == task.id, Submission.created_at <= deadline)
+                and_(
+                    Submission.task_id == task.id,
+                    or_(is_baseline, Submission.created_at <= deadline),
+                )
             )
 
     subq = (
@@ -129,7 +136,8 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
             Submission.id.label("sub_id"),
             func.row_number()
             .over(
-                partition_by=(Submission.user_id, Submission.task_id),
+                # Its own partition keeps a baseline from hiding behind its runner's test runs
+                partition_by=(Submission.user_id, Submission.task_id, Submission.is_baseline),
                 order_by=(
                     Submission.is_final_selection.desc(),
                     selection_score.desc(),
@@ -152,15 +160,22 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         .filter(subq.c.rn == 1)
         .options(
             joinedload(Submission.challenge),
-            joinedload(Submission.user),
             joinedload(Submission.task),
         )
         .all()
     )
 
-    # Pre-group by (user_id, task_id)
+    # Group competitor runs by (user_id, task_id); a re-run replaces a task's baseline
     sub_by_key: dict[tuple[uuid.UUID, uuid.UUID], list[Submission]] = {}
+    baseline_by_task: dict[uuid.UUID, Submission] = {}
     for s in all_completed:
+        if s.is_baseline:
+            existing = baseline_by_task.get(s.task_id)
+            if existing is None or (s.created_at or datetime.min) > (
+                existing.created_at or datetime.min
+            ):
+                baseline_by_task[s.task_id] = s
+            continue
         key = (s.user_id, s.task_id)
         sub_by_key.setdefault(key, []).append(s)
 
@@ -266,26 +281,8 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         }
         leaderboard_entries.append(entry_dict)
 
-    # Add baseline entries (one per task that has a baseline submission)
-    baseline_by_task: dict[uuid.UUID, Submission] = {}
-    for s in all_completed:
-        if s.is_baseline:
-            existing = baseline_by_task.get(s.task_id)
-            if existing is None:
-                baseline_by_task[s.task_id] = s
-            else:
-                chosen = get_best_submission(s.task, [existing, s], challenge)
-                if chosen is not None:
-                    baseline_by_task[s.task_id] = chosen
-
-    competitor_ids = {c.id for c in competitors}
+    # One Baseline row per task, with no user record: every viewer sees the label and scores
     for task_id, baseline_sub in baseline_by_task.items():
-        task = next((t for t in tasks if t.id == task_id), None)
-        if not task or baseline_sub.user is None:
-            continue
-        # Skip if the baseline submitter is already a competitor entry
-        if baseline_sub.user_id in competitor_ids:
-            continue
         bt_scores = {}
         for t in tasks:
             if t.id == task_id:
@@ -305,12 +302,8 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
                     "created_at": None,
                 }
         baseline_entry = {
-            "user": baseline_sub.user.to_dict(
-                view_role="admin",
-                scores_finalized=False,
-                current_user_id=None,
-                challenge_cache=challenge_cache,
-            ),
+            "user": None,
+            "label": BASELINE_LABEL,
             "task_scores": bt_scores,
             "public_score": baseline_sub.public_score,
             "private_score": baseline_sub.private_score,
@@ -333,12 +326,8 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
                 return -1 if a["has_submitted"] else 1
 
             if not a["has_submitted"]:
-                name_a = (
-                    f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}"
-                ).strip().lower() or a["user"].get("username", "").lower()
-                name_b = (
-                    f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}"
-                ).strip().lower() or b["user"].get("username", "").lower()
+                name_a = _entry_sort_name(a)
+                name_b = _entry_sort_name(b)
                 if name_a != name_b:
                     return -1 if name_a < name_b else 1
                 return 0
@@ -364,35 +353,14 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         if cda != cdb:
             return -1 if cda < cdb else 1
 
-        name_a = (
-            f"{a['user'].get('name') or ''} {a['user'].get('surname') or ''}".strip().lower()
-            or a["user"].get("username", "").lower()
-        )
-        name_b = (
-            f"{b['user'].get('name') or ''} {b['user'].get('surname') or ''}".strip().lower()
-            or b["user"].get("username", "").lower()
-        )
+        name_a = _entry_sort_name(a)
+        name_b = _entry_sort_name(b)
         if name_a != name_b:
             return -1 if name_a < name_b else 1
         return 0
 
-    sorted_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
-
-    cached_entries = []
-    if challenge_finalized:
-        current_rank = 1
-        for i, entry_dict in enumerate(sorted_entries):
-            if i > 0 and entry_dict["total_points"] != sorted_entries[i - 1]["total_points"]:
-                current_rank = i + 1
-            entry_dict["rank"] = current_rank
-            cached_entries.append(entry_dict)
-    else:
-        current_rank = 1
-        for i, entry_dict in enumerate(sorted_entries):
-            if i > 0 and entry_dict["public_score"] != sorted_entries[i - 1]["public_score"]:
-                current_rank = i + 1
-            entry_dict["rank"] = current_rank
-            cached_entries.append(entry_dict)
+    cached_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
+    assign_overall_ranks(cached_entries, "total_points" if challenge_finalized else "public_score")
 
     # Convert datetime objects to string for JSON serialization
     for entry in cached_entries:
@@ -407,3 +375,31 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
                 ts_score["created_at"] = ts_score["created_at"].isoformat() + "Z"
 
     return cached_entries
+
+
+def _entry_sort_name(entry: dict[str, Any]) -> str:
+    """Return the name that breaks ties between entries; the label for the Baseline row."""
+    user = entry.get("user") or {}
+    full_name = f"{user.get('name') or ''} {user.get('surname') or ''}".strip()
+    return str(full_name or user.get("username") or entry.get("label") or "").lower()
+
+
+def assign_overall_ranks(entries: list[dict[str, Any]], key: str) -> None:
+    """Rank entries already sorted by ``key``, sharing a rank on equal values.
+
+    The Baseline row and entries without a scored submission get no rank and take no
+    position, so the ranks the API sends are the ones every client shows.
+    """
+    position = 0
+    rank: int | None = None
+    previous: Any = None
+    for entry in entries:
+        if entry.get("is_baseline_entry") or not entry.get("has_submitted"):
+            entry["rank"] = None
+            continue
+        position += 1
+        value = entry.get(key)
+        if position == 1 or value != previous:
+            rank = position
+        entry["rank"] = rank
+        previous = value

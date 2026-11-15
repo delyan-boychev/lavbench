@@ -177,9 +177,33 @@ export const handlers = [
 
   // ── Leaderboard ─────────────────────────────────────────────────────
   http.get(`${BASE}/challenges/:id/leaderboard`, async () => {
+    // A competitor's view: whitelisted user fields, and a Baseline row with no user
     return HttpResponse.json({
       leaderboard: [
-        { rank: 1, user_id: 1, alias_id: 'Comp-001', total_score: 95, total_time_ms: 120000 },
+        {
+          rank: 1,
+          user: { id: 1, alias_id: 'Comp-001', is_anonymous: false, manual_points: {} },
+          task_scores: { 1: { public_score: 0.95, private_score: null, submission_id: 11 } },
+          public_score: 0.95,
+          private_score: null,
+          total_points: 0,
+          has_submitted: true,
+          task_ranks: { 1: 1 },
+          stage_ranks: {},
+        },
+        {
+          rank: null,
+          user: null,
+          label: 'Baseline',
+          is_baseline_entry: true,
+          task_scores: { 1: { public_score: 0.9, private_score: null, submission_id: 10 } },
+          public_score: 0.9,
+          private_score: null,
+          total_points: 0,
+          has_submitted: true,
+          task_ranks: { 1: null },
+          stage_ranks: {},
+        },
       ],
       tasks: [DEFAULT_TASK],
       metric_name: 'accuracy',

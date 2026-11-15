@@ -8,7 +8,6 @@ import EmptyState from '../ui/EmptyState';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, BarChart3, Layers, CheckSquare } from 'lucide-react';
 import Badge from '../ui/Badge';
-import { compactRanks } from '../../utils/ranking';
 import { parsePoints } from '../../utils/points';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
@@ -117,37 +116,41 @@ export default function LeaderboardTable({
     }
   };
 
-  // 1. Sort and rank display data dynamically based on active tab
+  // Every rank shown comes from the API: `rank` for the general tab, `stage_ranks` and
+  // `task_ranks` for the others. The Baseline row never holds a rank.
   const displayData = useMemo(() => {
-    let rows = [...(data || [])];
+    const rows = data || [];
+    const competitors = rows.filter((e) => !e.is_baseline_entry);
+    if (activeTab === 'general') return competitors;
 
-    // Baseline entries never appear in general or stage tabs (only per-task)
-    if (activeTab === 'general' || isStageTab) {
-      rows = rows.filter((e) => !e.is_baseline_entry);
-    } else {
-      rows = rows.filter((e) => {
-        if (!e.is_baseline_entry) return true;
-        return e.task_scores?.[activeTab.toString()]?.submission_id != null;
-      });
-    }
-
-    rows = compactRanks(rows);
-
-    if (activeTab !== 'general') {
-      const rankMap = isStageTab ? 'stage_ranks' : 'task_ranks';
-      const rankKey = isStageTab ? activeTab : activeTab.toString();
-      rows = rows.map((entry) => ({ ...entry, rank: entry[rankMap]?.[rankKey] ?? null }));
-      rows.sort((a, b) => {
+    const rankKey = activeTab.toString();
+    const rankMap = isStageTab ? 'stage_ranks' : 'task_ranks';
+    const ranked = competitors
+      .map((entry) => ({ ...entry, rank: entry[rankMap]?.[rankKey] ?? null }))
+      .sort((a, b) => {
         if (a.rank != null && b.rank != null) return a.rank - b.rank;
         if (a.rank != null) return -1;
         if (b.rank != null) return 1;
         return 0;
       });
-    }
-    return rows;
+    if (isStageTab) return ranked;
+
+    // A task tab shows its Baseline row as a reference line, placed by its score
+    const taskScore = (entry) => entry.task_scores?.[rankKey]?.public_score;
+    rows
+      .filter((e) => e.is_baseline_entry && e.task_scores?.[rankKey]?.submission_id != null)
+      .forEach((baseline) => {
+        const above = ranked.filter(
+          (e) => e.rank != null && taskScore(e) != null && taskScore(e) >= taskScore(baseline),
+        ).length;
+        ranked.splice(above, 0, { ...baseline, rank: null });
+      });
+    return ranked;
   }, [data, activeTab, isStageTab]);
 
-  const rowOrderSignature = `${activeTab}|${displayData.map((e) => e.user?.id ?? e.id).join(',')}`;
+  const rowKey = (entry) =>
+    entry.is_baseline_entry ? 'baseline' : (entry.user?.id ?? `row-${entry.rank}`);
+  const rowOrderSignature = `${activeTab}|${displayData.map(rowKey).join(',')}`;
 
   const rowElementsRef = useRef({});
   const rowPositionsRef = useRef({});
@@ -481,7 +484,7 @@ export default function LeaderboardTable({
               </thead>
               <tbody>
                 {displayData.map((entry) => {
-                  const key = entry.user?.id ?? `row-${entry.rank}`;
+                  const key = rowKey(entry);
                   return (
                     <Row
                       key={key}

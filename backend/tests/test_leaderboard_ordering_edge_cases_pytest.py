@@ -296,7 +296,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         # 1. Low score competitor: 95 points
         # 2. High score competitor: 5 points
         # 3. Failed sub competitor: 0 points
-        # 4. No sub competitor: 0 points (rank 3 or 4)
+        # 4. No sub competitor: 0 points (no rank, like the failed one)
         res = self.client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self._auth(self.jury_token),
@@ -314,9 +314,8 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         assert leaderboard[1]["total_points"] == 5
         assert leaderboard[1]["rank"] == 2
 
-        # The third and fourth place are both 0 points
-        # Ranks should share/be tied or determined appropriately
+        # The last two have 0 points and no scored submission, so they take no rank
         assert leaderboard[2]["total_points"] == 0
         assert leaderboard[3]["total_points"] == 0
-        assert leaderboard[2]["rank"] == 3
-        assert leaderboard[3]["rank"] == 3
+        assert leaderboard[2]["rank"] is None
+        assert leaderboard[3]["rank"] is None
