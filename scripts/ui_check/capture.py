@@ -11,14 +11,21 @@ Every screenshot records console and page errors, horizontal overflow and whethe
 scripted step worked; axe-core runs per scenario on desktop in English, in both themes.
 Writes /out/shots, /out/sheets (one contact sheet per scenario), /out/report.json and
 /out/index.html. Scenario tuples are (role, name, path, steps, options); see README.md.
+
+Screenshots run in UI_CHECK_WORKERS parallel browsers (default 6). Scenarios that change
+data run once, one at a time and in order, after the others of their phase.
 """
 
 from __future__ import annotations
 
 import html
 import json
+import os
+import queue
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -48,6 +55,9 @@ ALL = [f"{v}-{lang}-{theme}" for v in VIEWPORTS for lang in LANGS for theme in T
 # Scenarios that change data run once; the time-boxed grace window gets four variants
 ONE = ["desktop-en-dark"]
 QUICK = ["desktop-en-dark", "desktop-bg-light", "phone-en-light", "phone-bg-dark"]
+WORKERS = max(1, int(os.environ.get("UI_CHECK_WORKERS", "6")))
+# After the network goes quiet, give transitions and late renders this long to finish
+SETTLE_MS = 400
 
 ADMIN_TABS = [
     ("competition-mgmt", "admin.manage_competitions"),
@@ -404,15 +414,55 @@ def creds(role: str) -> dict | None:
     return SEED[role]
 
 
-def login(context, role: str) -> None:
-    c = creds(role)
-    if c is None:
-        return
-    r = context.request.post(
-        f"{BASE}/api/auth/login", data={"username": c["user"], "password": c["password"]}
-    )
-    if not r.ok:
-        raise RuntimeError(f"login {role}: HTTP {r.status}")
+def log_in(p, roles: set[str]) -> dict[str, dict]:
+    """Log each role in once; every browser context of the phase reuses its cookies."""
+    sessions: dict[str, dict] = {}
+    for role in sorted(roles):
+        c = creds(role)
+        if c is None:
+            continue
+        request = p.request.new_context()
+        r = request.post(
+            f"{BASE}/api/auth/login", data={"username": c["user"], "password": c["password"]}
+        )
+        if not r.ok:
+            raise RuntimeError(f"login {role}: HTTP {r.status}")
+        sessions[role] = request.storage_state()
+        request.dispose()
+    return sessions
+
+
+class Network:
+    """Track the page's open requests, so a step waits for its data instead of a fixed time."""
+
+    def __init__(self, page) -> None:
+        self.page = page
+        self.pending: set = set()
+        page.on("request", self._start)
+        page.on("requestfinished", self._end)
+        page.on("requestfailed", self._end)
+
+    def _start(self, request) -> None:
+        # Event streams stay open for the page's lifetime
+        if request.resource_type not in ("eventsource", "websocket"):
+            self.pending.add(request)
+
+    def _end(self, request) -> None:
+        self.pending.discard(request)
+
+    def settle(self, quiet_ms: int = 400, timeout_ms: int = 8000) -> None:
+        """Wait until no request has been open for quiet_ms, then SETTLE_MS for rendering."""
+        start = time.monotonic()
+        idle_since: float | None = None
+        while (time.monotonic() - start) * 1000 < timeout_ms:
+            self.page.wait_for_timeout(100)
+            if self.pending:
+                idle_since = None
+            elif idle_since is None:
+                idle_since = time.monotonic()
+            elif (time.monotonic() - idle_since) * 1000 >= quiet_ms:
+                break
+        self.page.wait_for_timeout(SETTLE_MS)
 
 
 def fixture(name: str) -> str:
@@ -432,7 +482,7 @@ def visible_button(page, lang: str, name: str):
     return btn.filter(visible=True)
 
 
-def run_steps(page, context, steps: list, lang: str) -> str:
+def run_steps(page, context, net: Network, steps: list, lang: str, variant: str) -> str:
     for step in steps:
         kind = step[0]
         if kind in ("button", "button_last", "button_key_prefix"):
@@ -475,7 +525,8 @@ def run_steps(page, context, steps: list, lang: str) -> str:
             for _ in range(step[2]):
                 page.keyboard.press(step[1])
         elif kind == "login_fail":
-            page.locator("input").nth(0).fill("no_such_user")
+            # One username per variant: five failures for one name within a minute return 429
+            page.locator("input").nth(0).fill(f"no_such_user_{variant.replace('-', '_')}")
             page.locator("input[type=password]").fill("wrong-password")
             page.locator("button[type=submit]").click()
         elif kind == "login_as":
@@ -499,7 +550,7 @@ def run_steps(page, context, steps: list, lang: str) -> str:
         elif kind == "wait":
             page.wait_for_timeout(step[1])
             continue
-        page.wait_for_timeout(1300)
+        net.settle()
     return ""
 
 
@@ -522,75 +573,155 @@ def scenarios_safe(phase: str) -> list[tuple]:
         return []
 
 
-def main(phase: str) -> None:
+def capture_one(browser, axe, sessions: dict, job: tuple) -> dict:
+    """Screenshot one scenario in one variant and return its findings."""
+    key, role, path, steps, variant = job
+    vp_name, lang, theme = variant.split("-")
+    context = browser.new_context(
+        viewport=VIEWPORTS[vp_name],
+        locale=lang,
+        accept_downloads=True,
+        storage_state=sessions.get(role),
+    )
+    context.add_init_script(
+        f"localStorage.setItem('theme', '{theme}');localStorage.setItem('i18nextLng', '{lang}');"
+    )
+    page = context.new_page()
+    net = Network(page)
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text[:300]) if m.type == "error" else None)
+    page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"[:300]))
+    result: dict = {"key": key, "variant": variant, "axe": None}
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        net.settle()
+        try:
+            problem = run_steps(page, context, net, steps, lang, variant)
+        except Exception as exc:
+            problem = f"{type(exc).__name__}: {str(exc)[:200]}"
+        page.screenshot(path=str(SHOTS / f"{key}--{variant}.png"), full_page=True)
+        overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
+        if vp_name == "desktop" and lang == "en":
+            result["axe"] = (
+                theme,
+                [
+                    {
+                        "id": v["id"],
+                        "impact": v["impact"],
+                        "nodes": len(v["nodes"]),
+                        "help": v["help"],
+                        "targets": [n["target"] for n in v["nodes"][:3]],
+                    }
+                    for v in axe.run(page).response["violations"]
+                ],
+            )
+    finally:
+        context.close()
+    result["findings"] = {
+        "console_errors": errors,
+        "horizontal_overflow": overflow,
+        "step_problem": problem,
+    }
+    return result
+
+
+def worker(jobs: queue.Queue, results: queue.Queue, sessions: dict) -> None:
+    """Run jobs in a browser of this thread's own (Playwright objects are per thread)."""
     from axe_playwright_python.sync_playwright import Axe
 
-    SHOTS.mkdir(parents=True, exist_ok=True)
-    SHEETS.mkdir(parents=True, exist_ok=True)
     axe = Axe()
-    report_path = OUT / "report.json"
-    report: dict = json.loads(report_path.read_text()) if report_path.exists() else {}
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for role, name, path, steps, opts in selected(phase):
-            key = f"{role}--{name}"
-            entry = {
-                "phase": phase,
-                "path": path,
-                "steps": [list(x) for x in steps],
-                "variants": {},
-                "axe": {},
-            }
-            report[key] = entry
-            for variant in opts.get("variants", ALL):
-                vp_name, lang, theme = variant.split("-")
-                context = browser.new_context(
-                    viewport=VIEWPORTS[vp_name], locale=lang, accept_downloads=True
+        while True:
+            try:
+                job = jobs.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                results.put(capture_one(browser, axe, sessions, job))
+            except Exception as exc:
+                # A crash still reports the variant, so the scenario completes
+                results.put(
+                    {
+                        "key": job[0],
+                        "variant": job[4],
+                        "axe": None,
+                        "findings": {
+                            "console_errors": [],
+                            "horizontal_overflow": False,
+                            "step_problem": f"capture failed: {type(exc).__name__}: {exc}"[:300],
+                        },
+                    }
                 )
-                context.add_init_script(
-                    f"localStorage.setItem('theme', '{theme}');"
-                    f"localStorage.setItem('i18nextLng', '{lang}');"
-                )
-                login(context, role)
-                page = context.new_page()
-                errors: list[str] = []
-                page.on(
-                    "console",
-                    lambda m, e=errors: e.append(m.text[:300]) if m.type == "error" else None,
-                )
-                page.on("pageerror", lambda exc, e=errors: e.append(f"pageerror: {exc}"[:300]))
-                page.goto(f"{BASE}{path}", wait_until="networkidle")
-                page.wait_for_timeout(1200)
-                try:
-                    problem = run_steps(page, context, steps, lang)
-                except Exception as exc:
-                    problem = f"{type(exc).__name__}: {str(exc)[:200]}"
-                page.screenshot(path=str(SHOTS / f"{key}--{variant}.png"), full_page=True)
-                overflow = page.evaluate(
-                    "document.documentElement.scrollWidth > window.innerWidth + 1"
-                )
-                entry["variants"][variant] = {
-                    "console_errors": errors,
-                    "horizontal_overflow": overflow,
-                    "step_problem": problem,
-                }
-                if vp_name == "desktop" and lang == "en":
-                    res = axe.run(page)
-                    entry["axe"][theme] = [
-                        {
-                            "id": v["id"],
-                            "impact": v["impact"],
-                            "nodes": len(v["nodes"]),
-                            "help": v["help"],
-                            "targets": [n["target"] for n in v["nodes"][:3]],
-                        }
-                        for v in res.response["violations"]
-                    ]
-                context.close()
+        browser.close()
+
+
+def run_jobs(jobs: list[tuple], workers: int, sessions: dict, on_result) -> None:
+    """Run jobs on `workers` browsers; with one worker they run in the listed order."""
+    if not jobs:
+        return
+    todo: queue.Queue = queue.Queue()
+    for job in jobs:
+        todo.put(job)
+    results: queue.Queue = queue.Queue()
+    threads = [
+        threading.Thread(target=worker, args=(todo, results, sessions), daemon=True)
+        for _ in range(min(workers, len(jobs)))
+    ]
+    for t in threads:
+        t.start()
+    for _ in jobs:
+        # No job takes 10 minutes; a silent wait means every browser thread died
+        on_result(results.get(timeout=600))
+    for t in threads:
+        t.join()
+
+
+def main(phase: str) -> None:
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    SHEETS.mkdir(parents=True, exist_ok=True)
+    report_path = OUT / "report.json"
+    report: dict = json.loads(report_path.read_text()) if report_path.exists() else {}
+    chosen = selected(phase)
+    with sync_playwright() as p:
+        sessions = log_in(p, {sc[0] for sc in chosen})
+
+    remaining: dict[str, int] = {}
+    parallel_jobs: list[tuple] = []
+    serial_jobs: list[tuple] = []
+    for role, name, path, steps, opts in chosen:
+        key = f"{role}--{name}"
+        variants = opts.get("variants", ALL)
+        report[key] = {
+            # A re-capture keeps the phase the scenario belongs to
+            "phase": report.get(key, {}).get("phase", phase),
+            "path": path,
+            "steps": [list(x) for x in steps],
+            "variants": {},
+            "axe": {},
+        }
+        remaining[key] = len(variants)
+        target = serial_jobs if variants == ONE else parallel_jobs
+        target += [(key, role, path, steps, v) for v in variants]
+
+    def on_result(res: dict) -> None:
+        key = res["key"]
+        entry = report[key]
+        entry["variants"][res["variant"]] = res["findings"]
+        if res["axe"]:
+            entry["axe"][res["axe"][0]] = res["axe"][1]
+        remaining[key] -= 1
+        if remaining[key] == 0:
+            # Keep the variants in the contact sheet's order
+            entry["variants"] = {v: entry["variants"][v] for v in ALL if v in entry["variants"]}
             sheet(key, list(entry["variants"]))
             report_path.write_text(json.dumps(report, indent=2))
             print("done", key, flush=True)  # noqa: T201
-        browser.close()
+
+    start = time.monotonic()
+    run_jobs(parallel_jobs, WORKERS, sessions, on_result)
+    run_jobs(serial_jobs, 1, sessions, on_result)
+    print(f"phase {phase}: {len(chosen)} scenarios in {time.monotonic() - start:.0f} s")  # noqa: T201
     write_index(report)
 
 
@@ -599,7 +730,10 @@ def sheet(key: str, variants: list[str]) -> None:
     rows: dict[str, list] = {}
     for variant in variants:
         vp_name = variant.split("-")[0]
-        img = Image.open(SHOTS / f"{key}--{variant}.png")
+        shot = SHOTS / f"{key}--{variant}.png"
+        if not shot.exists():  # The capture failed before its screenshot
+            continue
+        img = Image.open(shot)
         img = img.crop(
             (
                 0,
@@ -612,6 +746,8 @@ def sheet(key: str, variants: list[str]) -> None:
         rows.setdefault(vp_name, []).append(
             (variant, img.resize((int(img.width * scale), int(img.height * scale))))
         )
+    if not rows:
+        return
     width = max(sum(i.width for _, i in r) + 12 * (len(r) + 1) for r in rows.values())
     height = sum(max(i.height for _, i in r) for r in rows.values()) + 34 * len(rows) + 12
     canvas = Image.new("RGB", (width, height), (120, 120, 120))

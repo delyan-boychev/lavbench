@@ -15,8 +15,9 @@ before asking for review.
 
 ## Requirements
 
-- Docker. The capture runs in the official `mcr.microsoft.com/playwright/python:v1.63.0-noble`
-  image (browsers included); `requirements.txt` pins what is installed in it.
+- Docker. The capture runs in an image built from `Dockerfile`: the official
+  `mcr.microsoft.com/playwright/python:v1.63.0-noble` image (browsers included) plus the
+  packages pinned in `requirements.txt`. `run.sh` builds it; later builds come from the cache.
 - A Python on the host with `pandas` and `pyarrow` for the seed and state scripts, for example
   `PYTHON="micromamba run -n lavbench_backend python"`.
 - A **throwaway** stack with an evaluation worker. `stack.sh` starts one the way the CI
@@ -27,7 +28,7 @@ before asking for review.
 
 ```bash
 scripts/ui_check/stack.sh up            # build and start; HTTPS_PORT=8443 if 443 is taken
-PYTHON=python3 make ui-check            # the full check, about 90 minutes
+PYTHON=python3 make ui-check            # the full check, about 20 minutes
 scripts/ui_check/stack.sh down          # remove the stack and its volumes
 ```
 
@@ -37,6 +38,11 @@ must still exist; rebuild changed images first with `stack.sh up`):
 ```bash
 scripts/ui_check/run.sh --only competitor--submission-platform-error,admin--panel-backups
 ```
+
+Screenshots run in parallel browsers, 6 by default; set `UI_CHECK_WORKERS` to change that
+(1 runs them one at a time). Each role logs in once per phase and its windows share the
+session. After each step the check waits until the page has had no open request for 400 ms,
+plus 400 ms for transitions; event streams are ignored.
 
 Output goes to `ui-check-output/` (git-ignored, override with `UI_CHECK_OUT`):
 
@@ -60,7 +66,7 @@ capture phases (`capture.py`):
 | `frozen` | emergency freeze on | frozen challenge, submit blocked |
 | `grace` | stage deadline just passed, a submission made in grace | the grace timer and the grace submission in the list |
 | `after-grace` | grace window over | the grace submission still viewable, submit rejected after the deadline |
-| `archived` | empty challenge archived | login refused for its competitor |
+| `archived` | empty challenge archived (runs while the grace window closes) | login refused for its competitor |
 | `final` | stage and challenge finalised, results revealed | final leaderboards (private scores visible to the jury), locked submissions, manual points with a reason |
 
 ## Reviewing
@@ -68,8 +74,8 @@ capture phases (`capture.py`):
 Open `index.html`. For each scenario check, in this order:
 
 1. **Steps:** "all worked". A failed step means the screenshot does not show the intended state.
-2. **Console errors:** none, except the expected `401` from the session probe on the login page
-   and `429` on repeated failed logins.
+2. **Console errors:** none, except the expected `401` responses on the login page (the
+   session probe and the failed login) and the `413` of the oversized notebook.
 3. **Horizontal overflow:** none.
 4. **The contact sheet:** text fits in both languages, both themes are readable, nothing overlaps
    or is cut off, and the state matches the scenario name.
@@ -83,7 +89,8 @@ Scenarios live in `capture.py` `scenarios()`, per phase, as
 - `role`: `anonymous`, `competitor` (or `competitor2`, `competitor3`), `empty_competitor`,
   `jury` or `admin`;
 - `path`: where the browser starts;
-- `options`: `{"variants": ONE}` for steps that change data, so they run once.
+- `options`: `{"variants": ONE}` for steps that change data, so they run once. These run
+  one at a time, in the listed order, after the phase's other scenarios.
 
 Steps:
 
@@ -99,7 +106,7 @@ Steps:
 | `("press", key, times)` | Press a key, for example `Tab` for focus states |
 | `("login_fail",)` / `("login_as", seed_key)` | Use the login form |
 | `("api_submit", task_id)` | Submit a correct solution through the API as the scenario's user |
-| `("wait", ms)` | Wait |
+| `("wait", ms)` | Wait a fixed time, for example for a log to stream (other steps wait for the network) |
 
 Labels come from the locale files, so a scenario works in both languages. A new seeded object
 goes in `seed.py`; a new state change goes in `states.py` and `run.sh`.
