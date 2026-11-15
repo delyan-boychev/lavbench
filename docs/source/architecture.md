@@ -57,7 +57,7 @@ The API independently checks the PostgreSQL revision at startup and fails closed
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/tasks/<id>/submit
-3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code proceeds through rate/quota checks → creates Submission → dispatches Celery evaluation job
+3. Server: every route creates submissions through one function, `services.submission_service.create_submission`: registration, window and readiness gates, then pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code passes the quota checks (the daily limit resets at midnight in the challenge timezone; baselines and `failed_infra` platform failures never count) → creates the Submission → dispatches the Celery evaluation job (an enqueue failure marks it `failed_infra`)
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
 6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)

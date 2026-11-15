@@ -45,10 +45,10 @@ The countdown timer in the navbar displays remaining competition or stage time:
 | **Yellow** | 15 to 30 minutes | Closing phase approaching; finish model training and test inference scripts. |
 | **Red** | ≤ 15 minutes | Final submission window; submit candidate notebooks. |
 | **Flashing Red** | ≤ 5 minutes | Deadline imminent; upload final notebooks immediately. |
-| **Orange** | **Grace Period Active** | Official deadline passed. Last-second pending submissions accepted during buffer. |
+| **Orange** | **Grace Period Active** | The official deadline has passed. For 3 more minutes (the grace period) new submissions are still accepted. |
 
 > [!WARNING]
-> Once the Grace Period buffer expires, the submission pipeline closes completely and incoming notebook uploads will be rejected.
+> Once the 3-minute grace period ends, new submissions are rejected. A submission accepted during the grace period still runs to the end, and you can follow it and see its result like any other.
 
 ---
 
@@ -66,7 +66,7 @@ Clicking a task displays full details:
 - **Problem Description & Rules**: Target objectives, input formats, evaluation metric weighting.
 - **Resource Allocations**: Container memory cap (RAM), wall-clock time limit, GPU hardware accelerator requirement, CPU core allocation.
 - **Security & Import Rules**: Banned modules (e.g., `os, sys, subprocess, requests`) or strict whitelisted libraries.
-- **Submission Limits**: Maximum daily submissions per user and hourly task rate limits.
+- **Submission Limits**: a maximum number of submissions per day for the competition, and optionally a per-task limit over a period of hours. The daily count resets at midnight in the competition's timezone.
 - **Downloadable Assets**: Training/test datasets and starter baseline notebooks.
 
 > [!NOTE]
@@ -157,7 +157,9 @@ Before your code is dispatched to execution workers, it undergoes server-side St
 > [!IMPORTANT]
 > **Quota Preservation**: If code fails AST pre-validation (for example, a syntax error or
 > forbidden import), the request is rejected immediately with diagnostics. **No submission entry
-> is created and your daily/hourly submission quota is not consumed.**
+> is created and your submission limits are not consumed.** A submission that fails because of
+> the platform (shown as **Platform error**) does not count either. The daily count resets at
+> midnight in the competition's timezone.
 
 ---
 
@@ -185,6 +187,7 @@ Track your submission progress on the **Submissions** tab:
 | **Evaluating** | `submission.parquet` generated; server evaluating public & private metrics against ground-truth labels. |
 | **Completed** | Pipeline finished successfully; public score calculated and displayed. |
 | **Failed** | Execution error or missing output; click entry to inspect full log traceback. |
+| **Platform error** | The platform could not run the submission (for example, no worker took it or the environment could not be prepared). It is shown as failed but does not count toward your submission limits; submit again. |
 
 ### Live Streaming Logs
 
@@ -192,6 +195,7 @@ Click any submission to open the log viewer:
 - While the submission is running, stdout and stderr stream live from the Docker container. Use them to monitor iteration progress, memory warnings and debugging prints.
 - A finished submission shows its stored log.
 - The Submissions list refreshes by itself every 5 seconds while one of your submissions is queued or running, and the open submission's status updates with it.
+- Your submissions, their logs and their results stay viewable until the competition is finalised, including submissions sent during the grace period.
 
 ---
 
@@ -206,7 +210,7 @@ Click any submission to open the log viewer:
 ### Public vs Private Scores
 
 - **Public Score**: Calculated on a subset split of test labels (`public_eval_percentage`). Visible on the live leaderboard during the competition.
-- **Private Score**: Calculated on the remaining hidden test split. Kept hidden until competition finalization and determines final official rankings.
+- **Private Score**: Calculated on the remaining hidden test split. It stays hidden until the results are finalised and revealed. After finalisation, the leaderboard ranks competitors by the points the jury awards for each task.
 
 ### Star Icon Final Submission Selection (☆ ➔ ★)
 
@@ -225,22 +229,26 @@ You can submit multiple solutions during a competition stage. To designate which
 
 ### Tie-Breaking Rules
 
-When two competitors achieve identical score values, they share the same rank number on the
-leaderboard (e.g. 1, 1, 3). The rules below only decide which of them is listed first:
-1. **Inference Wall-Clock Runtime**: The submission with the shorter execution runtime in the sandbox is listed first.
-2. **Submission Timestamp**: If execution times are identical, the earlier submission timestamp wins.
+When two competitors achieve identical score values (or, after finalisation, identical points),
+they share the same rank number on the leaderboard (e.g. 1, 1, 3) and are listed alphabetically by
+pseudonym. Execution runtime matters only when the platform picks which of your own submissions
+counts (see **Automatic Selection** above).
 
 ---
 
 ## 7. Troubleshooting and Error Matrix
 
-| Error Message / Failure State | Root Cause | Solution & Troubleshooting |
+| Error Message / Code | Root Cause | Solution & Troubleshooting |
 | :--- | :--- | :--- |
 | `submission.parquet not found` | Notebook executed without error, but failed to create `submission.parquet` in root. | Ensure `submission.to_parquet("submission.parquet", index=False)` executes at the end of your selected cells. |
 | `Submission schema validation failed` | Output file exists but has incorrect columns, missing `id` column, or bad dtypes. | Compare your output DataFrame schema against task description specifications and baseline starter code. |
 | `TIMEOUT EXPIRED` | Wall-clock execution exceeded task time limit. | Optimize inference code, reduce batch overhead, or switch to lighter pre-trained backbone models. |
 | `Out of Memory (OOM)` | Memory footprint exceeded container RAM cap. | Free intermediate tensors, invoke `gc.collect()`, or process test data in smaller batches. |
-| `Banned import detected: module` | Code imported a restricted library (e.g., `os`, `subprocess`). | Remove forbidden module calls. Use standard scientific Python libraries (numpy, pandas, torch, scikit-learn). |
+| `ERR_AST_RULE_FAILED`: banned import | Code imported a restricted library (e.g., `os`, `subprocess`). No submission is created. | Remove forbidden module calls. Use standard scientific Python libraries (numpy, pandas, torch, scikit-learn). |
 | `ImportError: No module named 'X'` | Library requested is not pre-installed in container image. | Check task description for available image libraries. Package installation inside container is disabled (`--network none`). |
-| `AST Syntax Error / Parsing Error` | Selected notebook cells contain invalid Python syntax. | Verify notebook executes cleanly locally before uploading. |
-| `Submission quota exceeded` | Reached daily limit or hourly rate limit for task. | Wait for quota window reset before submitting additional notebooks. |
+| `ERR_AST_RULE_FAILED`: syntax error | Selected notebook cells contain invalid Python syntax. No submission is created. | Verify notebook executes cleanly locally before uploading. |
+| `ERR_DAILY_LIMIT_REACHED` / `ERR_TASK_LIMIT_REACHED` | Reached the daily limit, or the task's limit for its period of hours. | Wait for the reset: midnight in the competition's timezone for the daily limit. |
+| `ERR_TASK_NOT_READY` | The organisers' setup for this task has a recorded problem (for example, its reference solution failed). | Wait; the organisers fix the task and submissions open again. |
+| `ERR_QUEUE_FULL` | Too many evaluations are waiting. | Try again in a few minutes. |
+| `ERR_STAGE_DEADLINE_PASSED` / `ERR_COMPETITION_ENDED` | The deadline and its 3-minute grace period are over. | Submissions are closed for this stage or competition. |
+| **Platform error** (failed) | The platform could not run the submission. | Submit again; it did not count toward your limits. |

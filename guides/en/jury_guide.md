@@ -98,6 +98,9 @@ The platform enforces double-blind privacy controls during active competition:
 
 1. Navigate to the **Submissions** tab.
 2. View real-time state changes (`Queued` → `Running` → `Evaluating` → `Completed` / `Failed`).
+   A failure caused by the platform rather than the competitor's code (the submission could not be
+   enqueued, no worker took it, its worker was lost, or the environment could not be prepared) also
+   shows a **Platform error** badge (`failed_infra`); it never counts toward the competitor's limits.
 3. Click any submission entry to expand details:
    - Concatenated Python code cells executed in the container.
    - Real-time stdout and stderr execution logs streaming from the worker sandbox.
@@ -123,7 +126,7 @@ During competition monitoring, jury members must quickly identify whether submis
 | **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
 | **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
 | **Log Locations** | **Submission Execution Logs** tab (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
-| **Quota Impact** | Competitor submission quota is decremented (unless AST syntax validation caught it pre-execution). | Competitor submission quota **is NOT decremented** or should be manually restored if affected. |
+| **Quota Impact** | The submission counts toward the competitor's limits. A notebook rejected by AST validation creates no submission and does not count. | Submissions are blocked before they are created, so nothing counts. A run that failed on the platform's side (**Platform error**, `failed_infra`) never counts either. |
 
 ---
 
@@ -140,7 +143,7 @@ When troubleshooting a failed submission or blocked task queue:
    - If the log indicates `Docker image lavbench_task_<id> not found` or `Environment setup failed`, the issue is a task environment failure.
 3. **Escalation Protocol to System Administrators**:
    - When a task environment build failure occurs, copy the build error snippet from the submission log or task overview.
-   - Request an administrator to inspect **Task Settings** → **Environment Logs**, clear stuck build locks, or trigger **"Rebuild Task Environment"**.
+   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run, and its success clears the task's build and baseline problem codes.
 
 ---
 
