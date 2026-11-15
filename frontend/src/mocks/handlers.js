@@ -344,9 +344,11 @@ export const handlers = [
 
   http.post(`${BASE}/admin/challenges/:challengeId/reset-all-passwords`, async () => {
     return HttpResponse.json({
-      message:
-        'Reset passwords for 2 competitors. Credentials saved to competitor_passwords_challengeId.json in the uploads/credentials directory (included in backups).',
-      reset_accounts: [],
+      message: 'Reset passwords for 2 competitors.',
+      reset_accounts: [
+        { id: 'u1', username: 'comp_one', password: 'pass-one-1234', alias_id: 'Alias-1' },
+        { id: 'u2', username: 'comp_two', password: 'pass-two-5678', alias_id: 'Alias-2' },
+      ],
     });
   }),
 

@@ -349,12 +349,9 @@ class Config:
     GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
     GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
-    GUNICORN_ACCESS_LOGFILE = os.environ.get(
-        "GUNICORN_ACCESS_LOGFILE", "/app/logs/gunicorn_access.log"
-    )
-    GUNICORN_ERROR_LOGFILE = os.environ.get(
-        "GUNICORN_ERROR_LOGFILE", "/app/logs/gunicorn_error.log"
-    )
+    # "-" is stdout, which Docker captures and rotates; gunicorn never rotates its own files
+    GUNICORN_ACCESS_LOGFILE = os.environ.get("GUNICORN_ACCESS_LOGFILE", "-")
+    GUNICORN_ERROR_LOGFILE = os.environ.get("GUNICORN_ERROR_LOGFILE", "-")
 
     # Logging directory
     LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")

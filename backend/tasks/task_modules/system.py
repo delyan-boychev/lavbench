@@ -241,8 +241,6 @@ def run_backup(
             "tar",
             "--exclude=backups",
             "--exclude=*.tar.gz",
-            # Never include plaintext-adjacent credential exports in backups
-            "--exclude=*/credentials",
             "-czf",
             target,
             "-C",

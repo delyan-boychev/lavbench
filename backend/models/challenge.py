@@ -16,7 +16,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
     max_eval_requests = db.Column(db.Integer, default=10)
     ram_limit_mb = db.Column(db.Integer, default=8192)
     time_limit_sec = db.Column(db.Integer, default=300)
-    gpu_required = db.Column(db.Boolean, default=True)
+    gpu_required = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True, index=True)
     is_archived = db.Column(db.Boolean, default=False, index=True)
     scores_finalized = db.Column(db.Boolean, default=False)

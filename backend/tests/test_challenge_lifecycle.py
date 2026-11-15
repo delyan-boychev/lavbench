@@ -292,6 +292,17 @@ class TestArchiveChallengePytest:
         db_session.refresh(sample_challenge)
         assert sample_challenge.is_archived is False
 
+        from models import AuditLog
+
+        logged = [
+            (log.action_type, log.target_type)
+            for log in AuditLog.query.filter_by(target_id=str(sample_challenge.id))
+            .order_by(AuditLog.timestamp)
+            .all()
+        ]
+        # Restoring is its own action on the same target, not "archive" on a "restore" target
+        assert logged[-2:] == [("archive", "challenge"), ("unarchive", "challenge")]
+
     def test_archive_sets_computed_status(self, client, db_session, sample_challenge, tokens):
         headers = {"Authorization": f"Bearer {tokens.admin}"}
         res = client.post(

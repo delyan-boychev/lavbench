@@ -54,7 +54,7 @@ from utils.cache_utils import (
     get_coordination_client,
 )
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.request_helpers import release_db_before_body
@@ -563,7 +563,7 @@ def create_task(
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
                     "ERR_TOTAL_SIZE_EXCEEDED",
-                    400,
+                    413,
                     message="Total file size exceeds the 2 GB limit for a single task.",
                 )
 
@@ -575,8 +575,10 @@ def create_task(
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
                     "ERR_TASK_FILE_TOO_LARGE",
-                    400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
+                    413,
+                    message=f"File '{uploaded_file.filename}' exceeds the "
+                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
+                    limit=format_size(MAX_FILE_SIZE_BYTES),
                 )
 
             safe_name = _unique_saved_name(uploaded_file.filename)
@@ -921,7 +923,7 @@ def update_task(
                 discard_uploads()
                 return err(
                     "ERR_TOTAL_SIZE_EXCEEDED",
-                    400,
+                    413,
                     message="Total file size exceeds the 2 GB limit for a single task.",
                 )
 
@@ -929,8 +931,10 @@ def update_task(
                 discard_uploads()
                 return err(
                     "ERR_TASK_FILE_TOO_LARGE",
-                    400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
+                    413,
+                    message=f"File '{uploaded_file.filename}' exceeds the "
+                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
+                    limit=format_size(MAX_FILE_SIZE_BYTES),
                 )
 
             safe_name = _unique_saved_name(uploaded_file.filename)

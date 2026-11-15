@@ -305,6 +305,23 @@ class TestImportChallenge:
         assert data["max_eval_requests"] == 20
         assert data["ram_limit_mb"] == 4096
 
+    def test_import_challenge_over_the_size_limit_is_413_with_the_limit(
+        self, client, tokens, monkeypatch
+    ):
+        from config import Config
+
+        monkeypatch.setattr(Config, "CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES", 2 * 1024 * 1024)
+        res = client.post(
+            "/api/challenges/import",
+            data={"file": (io.BytesIO(b"x" * (3 * 1024 * 1024)), "big.zip")},
+            headers={"Authorization": f"Bearer {tokens.admin}"},
+        )
+        assert res.status_code == 413
+        body = res.get_json()
+        assert body["code"] == "ERR_FILE_TOO_LARGE"
+        assert body["limit"] == "2 MB"
+        assert "2 MB" in body["error"]
+
     def test_import_challenge_success_file_upload(self, client, tokens):
         headers = {
             "Authorization": f"Bearer {tokens.admin}",
@@ -659,6 +676,16 @@ class TestImportCompetitorsCsv:
         )
         assert res.status_code == 400
         assert "extension" in res.get_json()["error"].lower()
+
+    def test_import_competitors_csv_over_the_limit_is_413(
+        self, client, tokens, sample_challenge, monkeypatch
+    ):
+        monkeypatch.setattr("routes.admin.MAX_COMPETITOR_CSV_BYTES", 1024 * 1024)
+        res = self._upload_csv(client, sample_challenge.id, tokens.admin, "a,b\n" * 300_000)
+        assert res.status_code == 413
+        body = res.get_json()
+        assert body["code"] == "ERR_FILE_TOO_LARGE"
+        assert body["limit"] == "1 MB"
 
     def test_import_competitors_invalid_csv(self, client, tokens, sample_challenge):
         res = client.post(

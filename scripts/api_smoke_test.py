@@ -815,8 +815,6 @@ def main() -> int:
          {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET submissions zip", "GET", f"/api/admin/challenges/{cid}/download-submissions-zip", None,
          {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("GET challenge credentials", "GET", f"/api/admin/challenges/{cid}/credentials", None,
-         {"a": ((200, 404), None), "j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/export", "GET", f"/api/challenges/{cid}/export", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/tasks/<id>", "GET", f"/api/tasks/{tid}", None,
@@ -1788,6 +1786,23 @@ def main() -> int:
 
     # ── 16. Cleanup ────────────────────────────────────────────────────
     section("16. Cleanup")
+    # Bulk reset returns the new passwords once, in the response (nothing stored on disk)
+    if cid and comp_user:
+        code, data = api.send("POST", f"/api/admin/challenges/{cid}/reset-all-passwords")
+        accounts = data.get("reset_accounts", []) if code == 200 and isinstance(data, dict) else []
+        mine = next((a for a in accounts if isinstance(a, dict) and a.get("username") == comp_user), {})
+        check("bulk reset returns each competitor's new password once",
+              code == 200 and bool(mine.get("password")), f"got {code}, {len(accounts)} accounts")
+        if mine.get("password"):
+            fresh = Api(args.base)
+            code, data = fresh.send("GET", "/api/auth/csrf-token")
+            fresh.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+            code, _ = fresh.send("POST", "/api/auth/login",
+                                 {"username": comp_user, "password": mine["password"]})
+            check("competitor logs in with the bulk-reset password", code == 200, f"got {code}")
+            code, _ = fresh.send("POST", "/api/auth/login",
+                                 {"username": comp_user, "password": comp_pass})
+            check("the old password no longer works after bulk reset", code == 401, f"got {code}")
     if wc_cid:
         code, data = api.send("DELETE", f"/api/challenges/{wc_cid}")
         check("worker-contract: DELETE contract challenge 200", code == 200)

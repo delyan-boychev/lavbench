@@ -20,7 +20,6 @@ DEFAULT_ERROR_MESSAGES = {
     # auth.py
     "ERR_RATE_LIMIT_EXCEEDED": "Too many failed login attempts. Please try again later.",
     "ERR_INVALID_CREDENTIALS": "Invalid credentials.",
-    "ERR_CREDENTIALS_NOT_AVAILABLE": "Credentials file not available or already downloaded.",
     "ERR_COMPETITION_ARCHIVED": "This competition has been archived. Registered competitors are not allowed to log in.",
     "ERR_USER_NOT_FOUND": "User not found.",
     # admin.py — competitor registration
@@ -85,7 +84,7 @@ DEFAULT_ERROR_MESSAGES = {
     # submissions.py
     "ERR_NO_FILE_UPLOADED": "No file uploaded.",
     "ERR_INVALID_FILE_TYPE": "Invalid file type.",
-    "ERR_FILE_TOO_LARGE": "File size exceeds the 5MB limit.",
+    "ERR_FILE_TOO_LARGE": "The file exceeds the maximum allowed size.",
     "ERR_PARSING_FAILED": "Invalid notebook file.",
     "ERR_CHALLENGE_INACTIVE": "This challenge is currently inactive.",
     "ERR_CHALLENGE_ARCHIVED": "This competition has been archived and no longer accepts submissions.",
@@ -120,7 +119,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_STAGE_ID": "Invalid stage_id for this challenge.",
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_TOO_MANY_FILES": "You can upload a maximum of 5 files per task.",
-    "ERR_TASK_FILE_TOO_LARGE": "File exceeds the maximum allowed size of 500MB.",
+    "ERR_TASK_FILE_TOO_LARGE": "A task file exceeds the maximum allowed size.",
     "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
     "ERR_LABELS_NOT_AVAILABLE": "Labels are not available yet for this challenge.",
@@ -173,6 +172,16 @@ def err(
     response: dict[str, Any] = {"error": message, "code": code}
     response.update(extra)
     return jsonify(response), status
+
+
+def format_size(num_bytes: int) -> str:
+    """Render a byte limit for messages, in binary units ("50 MB", "2 GB").
+
+    Too-large errors return it as ``limit`` so the client can show the size translated.
+    """
+    if num_bytes >= 1024**3 and num_bytes % 1024**3 == 0:
+        return f"{num_bytes // 1024**3} GB"
+    return f"{round(num_bytes / 1024**2)} MB"
 
 
 def with_retry_after(result: tuple[Response, int], seconds: int) -> tuple[Response, int]:

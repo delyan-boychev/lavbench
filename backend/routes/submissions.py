@@ -39,7 +39,7 @@ from utils.cache_utils import (
     submission_logs_key,
 )
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination
 from utils.request_helpers import end_db_transaction
@@ -102,7 +102,12 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
     limit = 5 * 1024 * 1024
     content = file.read(limit + 1)
     if len(content) > limit:
-        return err("ERR_FILE_TOO_LARGE", 413)
+        return err(
+            "ERR_FILE_TOO_LARGE",
+            413,
+            message=f"The notebook exceeds the {format_size(limit)} limit.",
+            limit=format_size(limit),
+        )
 
     valid_content, content_err, notebook = validate_notebook_content(content)
     if not valid_content:

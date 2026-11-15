@@ -98,8 +98,16 @@ class ResetPasswordResponse(BaseModel):
 
 
 class ResetAccountItem(BaseModel):
+    """One competitor's new login; the identity fields are filled for admins only."""
+
+    id: UUID | None = None
     username: str
     password: str
+    alias_id: str | None = None
+    name: str | None = None
+    middle_name: str | None = None
+    surname: str | None = None
+    birth_date: str | None = None
 
     model_config = RESPONSE_CONFIG
 

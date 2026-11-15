@@ -704,6 +704,43 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
     expect(screen.getByText('Manual Competitor Registration')).toBeInTheDocument();
   });
 
+  it('saves the bulk-reset credentials as a file and shows a translated banner', async () => {
+    mockConfirm.mockResolvedValueOnce(String(mockChallenge.id)).mockResolvedValueOnce(true);
+    api.post.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        message: 'Reset passwords for 1 competitors.',
+        reset_accounts: [{ id: '10', username: 'alice', password: 'n3w-pass', name: 'Alice' }],
+      },
+    });
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    window.URL.createObjectURL = createObjectURL;
+    const clickSpy = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    renderWithProviders(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    fireEvent.click(screen.getByText('Competitor Registrations'));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    fireEvent.click(screen.getByText('Reset All Passwords in Challenge'));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/admin/challenges/1/reset-all-passwords'),
+    );
+    await waitFor(() => expect(clickSpy).toHaveBeenCalledTimes(1));
+    const csv = await createObjectURL.mock.calls[0][0].text();
+    expect(csv).toContain('"alice","n3w-pass"');
+    expect(screen.getByText('Passwords were reset for 1 competitor.')).toBeInTheDocument();
+    // The server's English message is never shown
+    expect(screen.queryByText('Reset passwords for 1 competitors.')).not.toBeInTheDocument();
+    clickSpy.mockRestore();
+  });
+
   it('switches to Database Backup tab and renders BackupManager', async () => {
     renderWithProviders(<AdminPanel />);
     await act(async () => {
