@@ -66,12 +66,9 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
         return "active"
 
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
-        try:
-            from flask import current_app
+        from config import Config
 
-            grace_period = current_app.config.get("DEADLINE_GRACE_PERIOD_SECONDS", 60)
-        except Exception:
-            grace_period = 60
+        grace_period = Config.DEADLINE_GRACE_PERIOD_SECONDS
 
         return {
             "id": self.id,

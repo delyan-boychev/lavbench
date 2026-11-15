@@ -140,6 +140,12 @@ class Config:
     # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
     # Just before it expires still needs time to build the image and start the container
     CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
+    # Celery limits for one evaluation (image build plus sandbox run). A task's time
+    # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
+    # Always ends a run before Celery does (R65)
+    CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
+    CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
+    MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
@@ -279,7 +285,7 @@ class Config:
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline
-    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
+    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 180))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)

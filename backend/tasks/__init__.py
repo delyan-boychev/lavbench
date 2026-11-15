@@ -208,8 +208,8 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
 
 @celery.task(
     bind=True,
-    soft_time_limit=1200,
-    time_limit=1500,
+    soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT,
+    time_limit=Config.CELERY_TASK_TIME_LIMIT,
     acks_late=True,
     reject_on_worker_lost=True,
 )

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from config import Config
 from schemas.common import _parse_datetime_strict
 from schemas.exceptions import SchemaError
 from utils.dates import is_valid_timezone
@@ -16,7 +17,7 @@ from utils.dates import is_valid_timezone
 class _ChallengeLimits(BaseModel):
     max_eval_requests: int | None = Field(default=None, ge=1)
     ram_limit_mb: int | None = Field(default=None, ge=128)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
 
 
 def _validate_timezone_name(value: str) -> str:
@@ -69,7 +70,7 @@ class UpdateChallengeSchema(BaseModel):
     description: str | None = Field(default=None)
     max_eval_requests: int | None = Field(default=None, ge=1)
     ram_limit_mb: int | None = Field(default=None, ge=128)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
     gpu_required: bool | None = Field(default=None)
     double_blind: bool | None = Field(default=None)
     start_time: datetime | None = Field(default=None)
