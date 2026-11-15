@@ -40,7 +40,10 @@ admin setup script to generate master credentials:
 python scripts/setup-admin.py
 ```
 
-This creates the initial administrator account and writes credentials to `admin_credentials.txt` in the repository root.
+This creates the initial administrator account, prints its credentials, and writes them to
+`/app/admin_credentials.txt` (mode 600). In Docker that path is inside the backend container, and
+`make setup-admin` copies the file to `./admin_credentials.txt` in the repository root. Outside
+Docker, where `/app` usually does not exist, the credentials are only printed, so copy them then.
 
 ### Running Backend Services
 

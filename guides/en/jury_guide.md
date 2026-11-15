@@ -27,7 +27,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | :--- | :--- | :--- |
 | View assigned competition submissions, code cells & execution logs | **Yes** | **Yes** |
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
-| Download one-time credentials archive (`/api/admin/challenges/<id>/credentials`) | **No** | **Yes** |
+| Receive the bulk-reset credentials file (jury: usernames and passwords, no real names) | **Yes** | **Yes** |
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
 | Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
@@ -78,10 +78,10 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 For on-site live competitions, credential slips are generated after a bulk password reset:
 
-1. Open **Admin Panel** → **Challenges** and select the target challenge.
-2. Click **Reset All Passwords** (jury may trigger this on assigned, not-yet-started challenges; 3 requests per 300 s rate limit).
-3. The server creates an encrypted credentials file; the **admin** then downloads it once via `GET /api/admin/challenges/<id>/credentials` (admin-only, 5 requests per 60 s).
-4. The file is **deleted on successful download** — a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`. Each slip includes the competitor's real name, assigned alias, username, auto-generated password, login URL, and QR code.
+1. Open **Admin Panel** → **Competitor Registrations**.
+2. Click **Reset All Passwords in Challenge** and enter the challenge ID (jury may do this on assigned, not-yet-started challenges; 3 resets per 300 s).
+3. The browser saves a CSV file with each competitor's username and new password. For the jury the name columns stay empty (double-blind); an admin's reset includes them.
+4. The passwords exist only in that file: the server keeps no copy, and it cannot be downloaded again. If it is lost, reset again.
 
 ---
 

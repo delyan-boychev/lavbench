@@ -299,17 +299,12 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 To distribute credentials securely during on-site competitions:
 
-1. Navigate to **Admin Panel** → **Challenges**.
-2. Select the target challenge and click **Reset Passwords** (bulk reset for all competitors).
-3. The server generates an encrypted credentials file and responds with a one-time download URL: `GET /api/admin/challenges/<id>/credentials`.
-4. Download the credentials archive once — the server **deletes the file on successful download**, so the plaintext never sits on disk and cannot be retrieved again (a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`).
-5. The archive contains JSON credential slips featuring:
-   - Competitor Name & Alias
-   - Auto-generated Username & Password
-   - Platform Login URL & Scannable QR Code
-   - Challenge Name & Stage Details
+1. Open **Admin Panel** → **Competitor Registrations**.
+2. Click **Reset All Passwords in Challenge**, enter the challenge ID when prompted, and confirm (3 resets per 300 s).
+3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
+4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
-The file is encrypted at rest with Fernet and never included in backups; a 404 means the file was already downloaded or was never generated.
+Print a slip per competitor from the CSV. A reset started by a jury member saves the same file without the names (double-blind), so the admin's copy is the one for named slips.
 
 ---
 

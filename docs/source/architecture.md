@@ -10,7 +10,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             │     ├── Redis Cache (Private, server-only: leaderboard caches, locks, rate-limit counters, JWT blacklist — CACHE_REDIS_URL never given to external workers)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
                             │     └── Internal Celery Worker (System tasks only, inside Docker Compose, -Q celery,internal)
-                            └── Remote Execution Workers (Celery evaluation-only workers: Docker container or host, consume cpu_queue)
+                            └── Remote Execution Workers (Celery evaluation-only workers: Docker container or host, consume cpu_queue, plus gpu_queue on GPU hosts)
                                   └── Sibling Sandbox Containers (--network none, --read-only, --cap-drop ALL)
 ```
 
@@ -27,7 +27,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **Dedicated Cache** | Redis (DB 1, `volatile-lru`, no persistence) | Private, server-only cache for recomputable data: leaderboard and status caches, SSE log replay lists and submission status (`CACHE_REDIS_URL`). When full it evicts the least recently used keys that have a TTL, so nothing stored here may be needed for correctness. Internal container — no host port; external workers never receive this URL. |
 | **Task Queue** | Celery 5.4 | Asynchronous job execution (submission evaluation, image compilation, database backups). |
 | **Scheduler** | Celery Beat | Periodic tasks (watchdog for stuck submissions, automated backup schedule). |
-| **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
+| **Worker Nodes** | Celery Evaluation Worker | **Evaluation-only** workers consuming `cpu_queue`, and also `gpu_queue` on hosts with a GPU; run competitor code in sibling Docker sandbox containers (`deploy-worker.sh` / `worker.env`). |
 
 ### Database Migration Lifecycle
 
@@ -43,7 +43,7 @@ The API independently checks the PostgreSQL revision at startup and fails closed
 ## 3. Authentication & Authorization Flow
 
 ```text
-1. User → POST /api/auth/login (username + SHA256(password))
+1. User → POST /api/auth/login (username + password over TLS; the server checks it against the salted hash with Werkzeug check_password_hash)
 2. API Server → verifies credentials → generates JWT with unique jti → sets httpOnly 'auth_token' cookie
 3. Browser → subsequent API requests automatically transmit httpOnly cookie
 4. Server → verify_token() middleware → checks Redis jti revocation blacklist → DB role lookup → authorizes

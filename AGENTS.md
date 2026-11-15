@@ -61,7 +61,7 @@ lavbench/
 │   │   ├── components/, pages/, services/, context/, hooks/
 │   │   └── types/api.d.ts             # Auto-generated from OpenAPI
 │   ├── scripts/check_translations.py  # i18n key parity checker
-│   └── public/locales/{en,bg}/translation.json  # ~1030 keys, always symmetrical
+│   └── public/locales/{en,bg}/translation.json  # always symmetrical
 ├── guides/                            # User docs (admin, competitor, jury — en/bg)
 ├── docs/                              # Sphinx documentation
 ├── .github/workflows/ci.yml
@@ -172,20 +172,22 @@ python scripts/check_translations.py
 ### CI Pipeline
 | Job | What it runs |
 |---|---|
-| `backend-tests` | `pytest -n auto --timeout=120 --cov` (≥70%) |
+| `backend-tests` | `pytest -n auto --timeout=120 --cov`, run from `backend/` so `fail_under = 70` in `backend/pyproject.toml` applies |
 | `backend-lint` | `ruff check`, `ruff format --check`, `check_error_codes.py` |
 | `comment-style` | `check_comments.py` (advisory — never a required check) |
 | `frontend-comment-style` | `npm run lint:comments` (advisory — never a required check) |
 | `backend-types` | `mypy backend/ --no-incremental` |
+| `dependency-security` | `pip-audit` on the backend requirements, `npm run audit:security`, and a Trivy repository scan |
 | `frontend-lint` | `npm run lint` |
 | `frontend-format` | `npm run format:check` |
 | `frontend-tests` | `npm run test:coverage` |
 | `translations-check` | `json.tool` + `check_translations.py` |
 | `frontend-types` | `npm run check-types` (tsc --noEmit) |
-| `docker-build` | `docker build` + `docker compose up` |
+| `docker-build` | Image builds with Trivy scans, `docker compose up`, an evaluation worker, `scripts/api_smoke_test.py` with evaluation, then the `api.d.ts` and `docs/source/api` drift gates |
+| `docs-build` | Sphinx `make html` |
 
-### Pre-commit Hook Issue
-The pre-commit hook (`ruff check --fix --config backend/pyproject.toml`) fails on test files with S101/S106 despite correct per-file-ignores in ruff v0.15.19. Use `git commit --no-verify` to bypass.
+### Pre-commit hooks
+`.pre-commit-config.yaml` runs `ruff check`, `ruff format --check` and `mypy` from `backend/` through the `lavbench_backend` micromamba env, and `prettier --write` on staged frontend files. The hooks need that env; CI runs the same checks.
 
 ---
 
@@ -326,7 +328,7 @@ micromamba run -n lavbench_backend pytest tests/test_auth_routes_pytest.py -v
 micromamba run -n lavbench_backend pytest tests/test_exceptions_pytest.py::TestClass::test_method -x --tb=long
 ```
 
-**Key fixtures** from `conftest.py`: `client`, `app`, `db_session`, `admin_token`, `jury_token`, `competitor_token`, `challenge_a`, `task_a`, `stage_a`
+**Key fixtures** from `config/conftest.py`: `app`, `client`, `db_session`, `redis_flush`, `auth_headers`, `csrf_headers`, `create_user`, `tokens` (admin, jury and competitor tokens), `sample_challenge`, `sample_future_challenge`, `archived_challenge`, `sample_task`, `sample_stage`, `sample_competitor`, `sample_other_competitor`, `sample_admin`, `sample_submission`
 
 **Conventions:**
 - One test file per route module (`test_X_routes_pytest.py`)
@@ -349,7 +351,7 @@ npm run check-types         # tsc --noEmit
 ```
 line-length: 100
 Rules: E, F, I, N, W, UP, B, SIM, S, A, T, C4, RUF, PERF, LOG
-Per-file: tests/* → S101, T201, PERF; admin.py → RUF001 (intentional Cyrillic→Latin transliteration)
+Per-file: tests/** and conftest.py → S101, S105-S108, T201, PERF; check scripts → T201; routes/admin.py → RUF001 (intentional Cyrillic→Latin transliteration)
 ```
 
 ### Frontend
@@ -391,7 +393,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 
 ### General
 - `from __future__ import annotations` at the top of every file **except** `backend/models/*` (PEP 563 breaks Annotated Declarative Table)
-- Full type annotations — `mypy --strict` must pass with 0 errors (91 source files)
+- Full type annotations — `mypy --strict` must pass with 0 errors
 - No bare `except:`; no `print()` in source (use `logger`; tests/scripts add `# noqa: T201`)
 - f-strings over `%`; timestamps via `utils.dates.utcnow()`
 - Errors only via `err()` or `SchemaError` (see Error Handling); import sorting per ruff `I` rules
@@ -407,7 +409,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - Backend `ERR_*` codes under `api.ERR_*` namespace
 - Frontend: `t('key')` or `t('key', 'fallback')`; dynamic: `t('api.' + errorCode)`
 - Plurals use i18next suffixes: define `key_one` / `key_other` (both locales) and call `t('key', { count })`; `check_translations.py` treats a plural variant as used when its base key is used
-- ~141 orphaned keys exist (safe to keep for future use)
+- `check_translations.py` lists orphaned keys as a warning; they are safe to keep
 
 ### Bulgarian Translations (`scripts/translate_gemini.py`)
 - Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon`; the key lives in the git-ignored `.gemini-api-key` and is sent in a header
@@ -433,7 +435,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 4. Add `err()` code to `DEFAULT_ERROR_MESSAGES` in `utils/error_utils.py` (or raise `SchemaError` in validators)
 5. Add `api.ERR_*` translation keys to both locale files
 6. Write tests in `backend/tests/`
-7. Update API types: `cd frontend && npm run generate-api-types`
+7. Regenerate the API types and the docs snapshot from a running backend: `cd frontend && npm run generate-api-types` and `make -C docs fetch-spec` (CI fails when `api.d.ts` or `docs/source/api/spec.json` drift)
 
 ### Add a New Schema Validator
 ```python
@@ -517,7 +519,6 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 - **NEVER `jsonify({"error": ...})`** — use `err()` or raise `SchemaError`
 - **Removing error codes** requires cleanup in 3 places: `utils/error_utils.py`, `en/translation.json`, `bg/translation.json`
 - **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
-- **Pre-commit hook broken** with ruff v0.15.19 (S101/S106 false positives on tests) — use `--no-verify`
 - **Docker not needed for tests** — uses `sqlite:///:memory:`
 - **No Celery `inspect` in web code** — worker and queue status come from worker heartbeats (`worker_spec:*`, refreshed every `WORKER_HEARTBEAT_SECONDS`) through `GET /api/status` and `GET /api/admin/system-status`
 - **SSE events are signal-only** — streams send `{"event": "update"}` and the client refetches the REST endpoint; release the DB session before streaming and never query the DB inside a generator (log lines are the only data stream)

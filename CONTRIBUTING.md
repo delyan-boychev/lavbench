@@ -44,17 +44,20 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    ```bash
    cd frontend && npm run check-types
    ```
-6. **Regenerate API types** if backend endpoints are modified:
+6. **Regenerate the API types and the docs spec snapshot** if backend endpoints or schemas change (CI fails when either drifts):
    ```bash
-   # Start the backend on port 5001, then run:
-   cd frontend && npm run generate-api-types
+   # Start the backend on port 5001 (or use the compose stack with
+   # API_SPEC_URL=http://localhost:80/apidoc/openapi.json), then run:
+   cd frontend && npm run generate-api-types   # frontend/src/types/api.d.ts
+   make -C docs fetch-spec                      # docs/source/api/spec.json
    ```
 7. **Check translation parity** — Every `ERR_*` code in the backend must have a matching `api.ERR_*` key in both locales. Run the error code linter (already covered in step 3/4):
    ```bash
    python backend/scripts/check_error_codes.py
    ```
 8. **Adhere to project patterns** — Use the `err()` helper or `SchemaError` for error responses (never `jsonify({"error": ...})`), add `api.ERR_*` translation keys for new codes, and rely on `tsc --noEmit` for frontend validation.
-9. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations (schema only, no data migrations), run `python scripts/migrate.py` against a fresh database, and run `pytest tests/test_migrations_pytest.py`, whose drift test fails when the models and the revisions disagree.
+9. **Update the docs in English and Bulgarian.** Edit the English guide or doc, then produce the Bulgarian copy with `python3 scripts/translate_gemini.py` (see below), review the Bulgarian diff, and run `python3 scripts/translate_gemini.py --check`.
+10. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations (schema only, no data migrations), run `python scripts/migrate.py` against a fresh database, and run `pytest tests/test_migrations_pytest.py`, whose drift test fails when the models and the revisions disagree.
 
 ## Code Conventions
 
@@ -144,12 +147,9 @@ pip install pre-commit
 pre-commit install
 ```
 
-After that, `git commit` will run **Ruff format** and **Ruff check** (with safe fixes) for Python, and **Prettier** for JS/CSS/JSON automatically. If formatting or linting fails, the commit is blocked — run the format and fix commands (see step 3 above), stage the changes, and commit again.
+After that, `git commit` runs `ruff check`, `ruff format --check` and `mypy` from `backend/` (through the `lavbench_backend` micromamba env from Setup), and `prettier --write` on staged frontend files. The hooks check and do not fix Python code: if one fails, run `ruff check --fix` / `ruff format` (see step 3 above), stage the changes, and commit again.
 
-> [!NOTE]
-> With ruff v0.15.19 the pre-commit hook currently false-positives on test files (S101/S106 despite per-file-ignores). CI does not have this problem — you can bypass the local hook with `git commit --no-verify`; the checks below still run on push.
-
-The same checks run in CI (`backend-lint`, `backend-format`, `frontend-format` jobs) on every push and PR. The error code linter (`check_error_codes.py`) runs as part of `backend-lint`.
+The same checks run in CI on every push and PR: `backend-lint` (`ruff check`, `ruff format --check` and the error code linter `check_error_codes.py`), `backend-types` (mypy) and `frontend-format` (Prettier).
 
 ## Frontend Type System
 
