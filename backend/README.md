@@ -33,9 +33,8 @@ starting the API, workers, or admin setup:
 python scripts/migrate.py
 ```
 
-The runner upgrades a fresh database and adopts a pre-Alembic database only when its reflected
-schema exactly matches the baseline. It fails closed on schema drift. Then run the admin setup
-script to generate master credentials:
+The runner upgrades the database to the latest revision (`alembic upgrade head`). Then run the
+admin setup script to generate master credentials:
 
 ```bash
 python scripts/setup-admin.py

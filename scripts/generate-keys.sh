@@ -249,7 +249,6 @@ POSTGRES_USER=$(grep "^POSTGRES_USER=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
 POSTGRES_DB=$(grep "^POSTGRES_DB=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
 set_env "DATABASE_URL" "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
 set_env "CELERY_BROKER_URL" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
-set_env "CELERY_RESULT_BACKEND" "${REDIS_PROTO}://:${REDIS_PASSWORD}@localhost:6379/0"
 
 # ── Generate worker.env ────────────────────────────────────────────
 CERTS_SECTION=""
@@ -278,7 +277,6 @@ cat > "$WORKER_ENV" <<WORKEREOF
 
 # Redis broker URL — used by Celery to receive tasks
 CELERY_BROKER_URL=${REDIS_PROTO}://:${REDIS_PASSWORD}@${SERVER_ADDR}:6379/0
-CELERY_RESULT_BACKEND=\${CELERY_BROKER_URL}
 
 # Server callback URL — used by worker to report results
 MAIN_SERVER_URL=${SERVER_URL}

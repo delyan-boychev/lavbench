@@ -189,81 +189,6 @@ class TestBackendExceptionAndErrorCases:
         assert res.status_code == 400
         assert "Invalid notebook file" in res.json["error"]
 
-    def test_submit_code_denied_access_competitor(self):
-        headers = self._auth(self.competitor)
-        res = self.client.post(
-            f"/api/challenges/{self.challenge_b.id}/submit", json={}, headers=headers
-        )
-        assert res.status_code == 422
-        assert res.json["code"] == "ERR_VALIDATION"
-
-    def test_submit_code_challenge_inactive_or_archived(self):
-        headers = self._auth(self.competitor)
-
-        inactive_challenge = Challenge(
-            title="Inactive",
-            is_active=False,
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=1),
-            end_time=utcnow() + timedelta(hours=1),
-        )
-        db.session.add(inactive_challenge)
-        db.session.commit()
-
-        self.competitor.challenge_id = inactive_challenge.id
-        db.session.commit()
-
-        res = self.client.post(
-            f"/api/challenges/{inactive_challenge.id}/submit", json={}, headers=headers
-        )
-        assert res.status_code == 422
-        assert res.json["code"] == "ERR_VALIDATION"
-
-        archived_challenge = Challenge(
-            title="Archived",
-            is_active=True,
-            is_archived=True,
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=1),
-            end_time=utcnow() + timedelta(hours=1),
-        )
-        db.session.add(archived_challenge)
-        db.session.commit()
-
-        self.competitor.challenge_id = archived_challenge.id
-        db.session.commit()
-
-        res = self.client.post(
-            f"/api/challenges/{archived_challenge.id}/submit", json={}, headers=headers
-        )
-        assert res.status_code == 422
-        assert res.json["code"] == "ERR_VALIDATION"
-
-    def test_submit_code_timeline_violations(self):
-        headers = self._auth(self.competitor)
-        self.competitor.challenge_id = self.challenge_a.id
-        db.session.commit()
-
-        self.challenge_a.start_time = utcnow() + timedelta(hours=1)
-        self.challenge_a.end_time = utcnow() + timedelta(hours=2)
-        db.session.commit()
-
-        res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
-        )
-        assert res.status_code == 422
-        assert res.json["code"] == "ERR_VALIDATION"
-
-        self.challenge_a.start_time = utcnow() - timedelta(hours=2)
-        self.challenge_a.end_time = utcnow() - timedelta(hours=1)
-        db.session.commit()
-
-        res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
-        )
-        assert res.status_code == 422
-        assert res.json["code"] == "ERR_VALIDATION"
-
     @patch("tasks.evaluate_submission.delay")
     def test_submit_code_missing_cells_and_rate_limits(self, mock_celery):
         headers = self._auth(self.competitor)
@@ -272,9 +197,7 @@ class TestBackendExceptionAndErrorCases:
         self.challenge_a.end_time = utcnow() + timedelta(hours=1)
         db.session.commit()
 
-        res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/submit", json={}, headers=headers
-        )
+        res = self.client.post(f"/api/tasks/{self.task_a.id}/submit", json={}, headers=headers)
         assert res.status_code == 422
         assert res.json["code"] == "ERR_VALIDATION"
 
@@ -291,8 +214,8 @@ class TestBackendExceptionAndErrorCases:
         db.session.commit()
 
         res = self.client.post(
-            f"/api/challenges/{self.challenge_a.id}/submit",
-            json={"selected_cells": [{"source": "cell_content"}], "task_id": self.task_a.id},
+            f"/api/tasks/{self.task_a.id}/submit",
+            json={"selected_cells": [{"source": "cell_content"}]},
             headers=headers,
         )
         assert res.status_code == 429

@@ -561,23 +561,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/challenges/{challenge_id}/export-results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export comprehensive competition results as CSV with ranks, scores, and audit log. */
-        get: operations["get__api_challenges_{challenge_id}_export-results"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/challenges/{challenge_id}/finalize": {
         parameters: {
             query?: never;
@@ -769,23 +752,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/challenges/{challenge_id}/submit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Submit parsed code cells for a task. */
-        post: operations["post__api_challenges_{challenge_id}_submit"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/challenges/{challenge_id}/tasks": {
         parameters: {
             query?: never;
@@ -814,23 +780,6 @@ export interface paths {
         get: operations["get__api_challenges_{challenge_id}_tasks_{task_id}_users_{user_id}_download"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/challenges/{challenge_id}/test-stage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a test stage before the competition starts for testing purposes. */
-        post: operations["post__api_challenges_{challenge_id}_test-stage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1038,23 +987,6 @@ export interface paths {
         };
         /** Download a resource file attached to a task. */
         get: operations["get__api_tasks_{task_id}_download_{filename}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{task_id}/leaderboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get cached leaderboard data for a specific task. */
-        get: operations["get__api_tasks_{task_id}_leaderboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2430,19 +2362,6 @@ export interface components {
              * @default null
              */
             whitelisted_imports: string | null;
-        };
-        /** CreateTestStageSchema */
-        "CreateTestStageSchema.6aa1402": {
-            /**
-             * End Time
-             * Format: date-time
-             */
-            end_time: string;
-            /**
-             * Start Time
-             * Format: date-time
-             */
-            start_time: string;
         };
         /** CreateUserSchema */
         "CreateUserSchema.e1ac751": {
@@ -5329,15 +5248,6 @@ export interface components {
              */
             username: string | null;
         };
-        /** SubmitCodeSchema */
-        "SubmitCodeSchema.59fcbab": {
-            /** Selected Cells */
-            selected_cells: {
-                [key: string]: unknown;
-            }[];
-            /** Task Id */
-            task_id: string;
-        };
         /** SubmitResponse */
         "SubmitResponse.7ed3705": {
             /** Message */
@@ -5623,38 +5533,6 @@ export interface components {
              * @default null
              */
             type: string | null;
-        };
-        /** TaskLeaderboardResponse */
-        "TaskLeaderboardResponse.cc8acb7": {
-            /**
-             * Challenge Title
-             * @default null
-             */
-            challenge_title: string | null;
-            /**
-             * Is Finalized
-             * @default false
-             */
-            is_finalized: boolean;
-            /**
-             * Is Normalized
-             * @default false
-             */
-            is_normalized: boolean;
-            /** Leaderboard */
-            leaderboard: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * Metric Name
-             * @default Score
-             */
-            metric_name: string;
-            /**
-             * Task Title
-             * @default null
-             */
-            task_title: string | null;
         };
         /** UpdateChallengeSchema */
         "UpdateChallengeSchema.8145bef": {
@@ -7333,35 +7211,6 @@ export interface operations {
             };
         };
     };
-    "get__api_challenges_{challenge_id}_export-results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
     "post__api_challenges_{challenge_id}_finalize": {
         parameters: {
             query?: never;
@@ -7854,41 +7703,6 @@ export interface operations {
             };
         };
     };
-    "post__api_challenges_{challenge_id}_submit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubmitCodeSchema.59fcbab"];
-            };
-        };
-        responses: {
-            /** @description Accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubmitResponse.7ed3705"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
     "post__api_challenges_{challenge_id}_tasks": {
         parameters: {
             query?: never;
@@ -7964,50 +7778,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "post__api_challenges_{challenge_id}_test-stage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTestStageSchema.6aa1402"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StageResponse.7ed3705"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8551,46 +8321,6 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "get__api_tasks_{task_id}_leaderboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskLeaderboardResponse.cc8acb7"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

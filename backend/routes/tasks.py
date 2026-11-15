@@ -28,7 +28,6 @@ from schemas.responses import (
     SubmissionLightResponse,
     SubmitResponse,
     TaskAdminResponse,
-    TaskLeaderboardResponse,
     WorkerActiveDatasetsResponse,
     WorkerActiveTasksResponse,
     WorkerHfKeyResponse,
@@ -38,7 +37,6 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
-from services.leaderboard_service import get_task_leaderboard_data
 from services.submission_service import (
     calculate_submission_priority,
     check_execution_rules,
@@ -67,7 +65,7 @@ from utils.json_utils import safe_json_loads
 from utils.metadata import build_submission_metadata
 from utils.request_helpers import release_db_before_body
 from utils.spec import api
-from utils.sse_utils import CHANNEL_TASK_REBUILD, publish_queue_update
+from utils.sse_utils import publish_queue_update
 from utils.streaming import stream_file_response
 from utils.worker_auth import (
     build_submission_capabilities,
@@ -697,15 +695,6 @@ def create_task(
 
     invalidate_entity_cache(challenge_id)
 
-    # Notify workers to rebuild Docker image for this task
-    try:
-        if not current_app.config.get("TESTING"):
-            r = get_coordination_client()
-            if r:
-                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
-    except Exception as e:
-        logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
-
     return task.to_dict(view_role=request.user["role"]), 201
 
 
@@ -1119,18 +1108,6 @@ def update_task(
     if semantic_changed or (fields & scoring_fields):
         _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
 
-    # Notify workers to rebuild Docker image for this task (semantic changes only)
-    if semantic_changed:
-        try:
-            if not current_app.config.get("TESTING"):
-                r = get_coordination_client()
-                if r:
-                    r.publish(CHANNEL_TASK_REBUILD, str(task.id))
-        except Exception as e:
-            logger.warning(
-                "Failed to publish task_rebuild notification for task %s: %s", task.id, e
-            )
-
     return task.to_dict(view_role=request.user["role"])
 
 
@@ -1500,40 +1477,6 @@ def get_task_submissions(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
     if isinstance(data, dict) and "error" in data:
         return err("ERR_ACCESS_DENIED", 403, message=data["error"])
     return data
-
-
-def _get_task_leaderboard_data(
-    task_id: Any, user_role: str, current_user_id: Any
-) -> dict[str, Any]:
-    return get_task_leaderboard_data(task_id, user_role, current_user_id)
-
-
-@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=TaskLeaderboardResponse, HTTP_403=ErrorResponse),
-    tags=["Tasks"],
-    security=[{"cookieAuth": []}],
-)
-def get_task_leaderboard(
-    task_id: Any,
-) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Get cached leaderboard data for a specific task."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-    if "error" in data:
-        return err("ERR_ACCESS_DENIED", 403, message=data["error"])
-    return (
-        data,
-        200,
-        {
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
 
 
 @tasks_bp.route("/worker/capabilities/<uuid:submission_id>", methods=["POST"])

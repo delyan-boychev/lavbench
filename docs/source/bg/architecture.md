@@ -35,9 +35,8 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 изпълнява `python scripts/migrate.py`. API сървърът и вътрешният работен възел се стартират само след успешното
 приключване на тази услуга; неуспешна миграция предотвратява стартирането им. При самостоятелно
 внедряване трябва да се изпълни `cd backend && python scripts/migrate.py` преди API сървъра или работните възли.
-Скриптът обновява познатите ревизии, приема наследена база без Alembic версия само когато отразената ѝ схема
-съвпада точно с базовата, отхвърля разминавания или непознати ревизии и проверява дали е достигната
-очакваната крайна ревизия (head). API сървърът проверява независимо ревизията в PostgreSQL при стартиране и
+Скриптът обновява базата до последната ревизия и проверява дали е достигната очакваната крайна
+ревизия (head). API сървърът проверява независимо ревизията в PostgreSQL при стартиране и
 спира работа при несъответствие.
 
 ---
@@ -58,7 +57,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
-2. User selects code cells → POST /api/challenges/<id>/submit
+2. User selects code cells → POST /api/tasks/<id>/submit
 3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code proceeds through rate/quota checks → creates Submission → dispatches Celery evaluation job
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
@@ -144,7 +143,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 - Неуспешните изграждания на образи или проблеми със средата се записват като **регистър на проблеми** — списък с машинно четими кодове в `task.problem_codes` (напр. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Всеки непразен регистър блокира новите решения с `ERR_TASK_NOT_READY` (403), а всяка първопричина се превежда от страната на клиента.
 - Регистърът се управлява според жизнения цикъл: докладваните от работен възел грешки при изграждане на образ добавят кодове, успешното изграждане изчиства кодовете, свързани с изграждането, успешното изпълнение на базовия бележник премахва `ERR_BASELINE_FAILED`, а промените в конфигурацията на средата (базов образ, настройки за apt/pip/Hugging Face) изчистват остарелите проблеми при изграждане.
 - Ако заключване за изграждане на образ остане блокирано поради прекъсване на работен възел, администратор може да го изчисти на хоста на работния възел с помощната функция `clear_build_lock(task_id)` (`tasks/task_modules/image_builder.py`) — напр. от обвивката на работния възел. За това няма бутон в интерфейса или администраторски HTTP маршрут.
-- Запазването на съществени промени по задачата (базов образ, настройки за apt/pip/Hugging Face, файлове на задачата, код на оценителя) публикува известие `task_rebuild` в Redis; слушателят за преизграждане на работния възел (`_rebuild_listener`) изтегля наново конфигурацията на задачата и извършва изграждане на образ с `force_rebuild=True`, заобикаляйки бързия път чрез хеш на конфигурацията. Ресурсите от Hugging Face се сверяват с най-новата ревизия в хранилището (повторна валидация чрез etag, изтеглят се само променените байтове) и образът се изгражда отново със свежите данни.
+- Запазването на съществени промени по задачата (базов образ, настройки за apt/pip/Hugging Face, файлове на задачата, код на оценителя) променя хеша на конфигурацията на образа (`_config_hash`), така че следващото изграждане (оценяването на базовото решение, което запазването поставя в опашката, или следващото решение) създава нов образ, вместо да използва кеширания.
 
 ### Подмяна на файлове и етикети на задачата (уникално `saved_name`)
 Качените ресурсни файлове на задачата (включително `labels.parquet`) се съхраняват под име `saved_name` с префикс UUID

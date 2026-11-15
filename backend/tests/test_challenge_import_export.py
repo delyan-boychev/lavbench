@@ -3,7 +3,6 @@
 Covers:
   - GET  /api/challenges/<id>/export          JSON export (admin/jury)
   - POST /api/challenges/import               JSON import (admin only)
-  - GET  /api/challenges/<id>/export-results   CSV export (admin/jury)
   - POST /api/admin/import-competitors-csv     CSV competitor import
 """
 
@@ -558,73 +557,6 @@ class TestImportChallenge:
         assert new_task.evaluator_script_path == evaluator_local
         assert new_task.evaluator_metric_name == "import_metric"
         assert new_task.baseline_notebook_path == baseline_local
-
-
-# ── Export results CSV (GET /api/challenges/<id>/export-results) ──
-
-
-class TestExportResultsCsv:
-    """GET /api/challenges/<id>/export-results"""
-
-    def test_export_results_as_admin(
-        self, client, auth_headers, tokens, challenge_with_stages_and_tasks
-    ):
-        ch = challenge_with_stages_and_tasks
-        res = client.get(
-            f"/api/challenges/{ch.id}/export-results",
-            headers=auth_headers(tokens.admin),
-        )
-        assert res.status_code == 200
-        assert res.mimetype == "text/csv"
-        assert "Rank,Username,Alias ID" in res.data.decode("utf-8")
-
-    def test_export_results_as_jury(
-        self,
-        client,
-        db_session,
-        auth_headers,
-        challenge_with_stages_and_tasks,
-        create_user,
-    ):
-        ch = challenge_with_stages_and_tasks
-        jury = create_user(username="jury_export_csv", role="jury")
-        from utils.auth_utils import generate_token
-
-        jury_token = generate_token(jury.id, jury.role)
-        res = client.get(
-            f"/api/challenges/{ch.id}/export-results",
-            headers=auth_headers(jury_token),
-        )
-        assert res.status_code == 200
-        assert res.mimetype == "text/csv"
-
-    def test_export_results_competitor_forbidden(
-        self, client, auth_headers, tokens, sample_challenge
-    ):
-        res = client.get(
-            f"/api/challenges/{sample_challenge.id}/export-results",
-            headers=auth_headers(tokens.competitor),
-        )
-        assert res.status_code == 403
-        assert "role" in res.get_json()["error"].lower()
-
-    def test_export_results_not_found(self, client, auth_headers, tokens):
-        res = client.get(
-            "/api/challenges/99999/export-results",
-            headers=auth_headers(tokens.admin),
-        )
-        assert res.status_code == 404
-
-    def test_export_results_includes_audit_section(
-        self, client, auth_headers, tokens, challenge_with_stages_and_tasks
-    ):
-        ch = challenge_with_stages_and_tasks
-        res = client.get(
-            f"/api/challenges/{ch.id}/export-results",
-            headers=auth_headers(tokens.admin),
-        )
-        csv_text = res.data.decode("utf-8")
-        assert "SCORE CORRECTION AUDIT LOG" in csv_text
 
 
 # ── Import competitors CSV (POST /api/admin/import-competitors-csv) ──

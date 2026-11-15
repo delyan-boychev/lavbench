@@ -5,116 +5,15 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-import redis
 
 from tasks.task_modules import submission_runner as sr
 from tasks.task_modules.submission_runner import (
     _preload_dataset,
     _preload_model,
-    _recreate_spec_on_reconnect,
     _refresh_worker_spec,
     preload_submission_datasets,
     register_worker_specs,
 )
-
-
-class TestRecreateSpecOnReconnect:
-    def test_no_cached_spec_is_noop(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", None)
-        mocker.patch.object(sr, "_cached_worker_name", None)
-        mock_r = mocker.MagicMock()
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-        mock_r.set.assert_not_called()
-
-    def test_no_client_is_noop(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mocker.patch.object(sr, "get_coordination_client", return_value=None)
-        _recreate_spec_on_reconnect()
-        assert sr._spec_reconnect_needed is False
-
-    def test_rewrites_spec_key_with_cached_fields(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1", "type": "CPU"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mock_r = mocker.MagicMock()
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-        mock_r.set.assert_called_once()
-        key = mock_r.set.call_args.args[0]
-        payload = mock_r.set.call_args.args[1]
-        assert key == "worker_spec:w1"
-        assert json.loads(payload)["name"] == "w1"
-        assert "last_seen" in json.loads(payload)
-        assert mock_r.set.call_args.kwargs["ex"] == sr.WORKER_SPEC_TTL_SECONDS == 86400
-
-    def test_redis_exception_is_swallowed(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mock_r = mocker.MagicMock()
-        mock_r.set.side_effect = Exception("redis down")
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-
-
-class TestInstallReconnectGuard:
-    def _install(self, fake_execute):
-        original = redis.client.Redis.execute_command
-        redis.client.Redis.execute_command = fake_execute
-        sr._install_reconnect_guard()
-        return original
-
-    def test_connection_error_sets_flag_then_next_success_registers(self, mocker):
-        fail_next = {"value": True}
-
-        def fake_execute(self_, *args, **options):
-            if fail_next["value"]:
-                fail_next["value"] = False
-                raise redis.exceptions.ConnectionError("connection refused")
-            return "OK"
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            mock_recreate = mocker.patch.object(sr, "_recreate_spec_on_reconnect")
-            with pytest.raises(redis.exceptions.ConnectionError):
-                redis.client.Redis.execute_command(None, "PING")
-            assert sr._spec_reconnect_needed is True
-            mock_recreate.assert_not_called()
-            redis.client.Redis.execute_command(None, "SET", "k", "v")
-            mock_recreate.assert_called_once()
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
-
-    def test_successful_calls_do_not_re_register(self, mocker):
-        def fake_execute(self_, *args, **options):
-            return "OK"
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            mock_recreate = mocker.patch.object(sr, "_recreate_spec_on_reconnect")
-            redis.client.Redis.execute_command(None, "GET", "k")
-            redis.client.Redis.execute_command(None, "SET", "k", "v")
-            mock_recreate.assert_not_called()
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
-
-    def test_unrelated_errors_are_propagated(self, mocker):
-        def fake_execute(self_, *args, **options):
-            raise redis.exceptions.ResponseError("wrong type")
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            with pytest.raises(redis.exceptions.ResponseError):
-                redis.client.Redis.execute_command(None, "GET", "k")
-            assert sr._spec_reconnect_needed is False
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
 
 
 class TestRegisterWorkerSpecs:
@@ -171,6 +70,17 @@ class TestRegisterWorkerSpecs:
     def test_no_client_returns_early(self, mocker):
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
         register_worker_specs(MagicMock(hostname="worker-3"))
+
+    def test_failed_first_write_still_starts_the_heartbeat(self, mocker):
+        mock_r, sender = self._setup(mocker, hostname="worker-4")
+        mocker.patch.object(sr, "_cached_worker_spec", None)
+        mocker.patch.object(sr, "_cached_worker_name", None)
+        mock_r.set.side_effect = Exception("redis restarting")
+        register_worker_specs(sender)
+        # The heartbeat retries the write from the cached spec on its next beat
+        self.start_heartbeat.assert_called_once_with(sender)
+        assert sr._cached_worker_name == "worker-4"
+        assert sr._cached_worker_spec["name"] == "worker-4"
 
 
 class TestRefreshWorkerSpec:

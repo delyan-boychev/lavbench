@@ -48,7 +48,6 @@ from schemas.responses.docs import DocContentResponse
 from schemas.responses.leaderboard import (
     LeaderboardResponse,
     ManualPointsResponse,
-    TaskLeaderboardResponse,
 )
 from schemas.responses.status import (
     PublicStatusResponse,
@@ -122,7 +121,6 @@ __all__ = [
     "SubmitResponse",
     "SystemStatusResponse",
     "TaskAdminResponse",
-    "TaskLeaderboardResponse",
     "TaskResponse",
     "TokenResponse",
     "UpdateUserResponse",

@@ -13,18 +13,18 @@ from flask import Response
 from config import Config
 from models import Challenge, Stage, Submission, Task, db
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
 
 
 def validate_submission_allowed(
     user_id: str, user_role: str, task: Task, challenge: Challenge
 ) -> tuple[Response, int] | None:
-    """Shared gate for both submit endpoints (challenge-scoped and task-scoped).
+    """Gate every submission before registration-independent work starts.
 
     Enforces, in order: active, not archived, not frozen, not finalized
-    (competitors), and stage/challenge deadlines with grace period. Returns an
-    ``err()`` response when blocked, otherwise ``None``. Registration and quota
-    checks stay in the endpoints (they differ in locking and ordering).
+    (competitors), stage/challenge deadlines with grace period, and task
+    readiness (no recorded problem codes). Returns an ``err()`` response when
+    blocked, otherwise ``None``. Registration and quota checks stay in the endpoint.
     """
     if not challenge.is_active:
         return err("ERR_CHALLENGE_INACTIVE", 400)
@@ -59,6 +59,16 @@ def validate_submission_allowed(
                 return err("ERR_COMPETITION_NOT_STARTED", 400)
             if challenge.end_time and now > (challenge.end_time + grace):
                 return err("ERR_COMPETITION_ENDED", 400)
+
+    if task and task.problem_codes:
+        # Strict readiness gate: any build, labels, data or baseline problem blocks
+        # Submissions and reports every root cause (translated client-side)
+        codes = {c for c in task.problem_codes if isinstance(c, str)}
+        problems = [
+            {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}
+            for code in sorted(codes)
+        ]
+        return err("ERR_TASK_NOT_READY", 403, problems=problems)
 
     return None
 

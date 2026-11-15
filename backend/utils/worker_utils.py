@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import itertools
 import json
 import logging
 import os
@@ -13,7 +12,6 @@ import tempfile
 import threading
 import time
 from collections import deque
-from collections.abc import Iterator
 from typing import Any
 
 import requests
@@ -93,17 +91,6 @@ def _write_response_stream(res: Any, fileobj: Any) -> None:
             fileobj.write(chunk)
 
 
-_GPU_ID_CYCLE: Iterator[str] | None = None
-
-
-def _next_gpu_id() -> str:
-    """Round-robin pick the next configured GPU device id."""
-    global _GPU_ID_CYCLE
-    if _GPU_ID_CYCLE is None:
-        _GPU_ID_CYCLE = itertools.cycle(Config.WORKER_GPU_IDS)
-    return next(_GPU_ID_CYCLE)
-
-
 def run_command_streaming(
     docker_client: DockerClient,
     image_tag: str,
@@ -149,13 +136,9 @@ def run_command_streaming(
     if gpu_required:
         if gpu_id is not None:
             device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
-        elif Config.WORKER_GPU_IDS:
-            # Pin a device from the configured pool instead of grabbing
-            # Every GPU with count=-1
-            device_requests = [DeviceRequest(device_ids=[_next_gpu_id()], capabilities=[["gpu"]])]
         else:
             logger.warning(
-                "gpu_required but neither gpu_id nor WORKER_GPU_IDS set — "
+                "gpu_required but no gpu_id (WORKER_GPU_ID unset) — "
                 "falling back to count=-1 (requests ALL GPUs)"
             )
             device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]

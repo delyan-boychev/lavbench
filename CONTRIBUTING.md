@@ -54,7 +54,7 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
    python backend/scripts/check_error_codes.py
    ```
 8. **Adhere to project patterns** — Use the `err()` helper or `SchemaError` for error responses (never `jsonify({"error": ...})`), add `api.ERR_*` translation keys for new codes, and rely on `tsc --noEmit` for frontend validation.
-9. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations, and verify `python scripts/migrate.py` against a fresh and upgraded database.
+9. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations (schema only, no data migrations), run `python scripts/migrate.py` against a fresh database, and run `pytest tests/test_migrations_pytest.py`, whose drift test fails when the models and the revisions disagree.
 
 ## Code Conventions
 

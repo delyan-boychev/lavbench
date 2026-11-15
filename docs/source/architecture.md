@@ -34,9 +34,8 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 In Docker Compose, the one-shot `migrate` service waits for healthy PostgreSQL and runs
 `python scripts/migrate.py`. The API and internal worker start only after that service exits
 successfully; a migration failure prevents them from starting. Standalone deployments must run
-`cd backend && python scripts/migrate.py` before the API or workers. The runner upgrades known
-revisions, adopts an unversioned legacy database only when its reflected schema exactly matches
-the baseline, rejects drift or unknown revisions, and verifies that the expected head was reached.
+`cd backend && python scripts/migrate.py` before the API or workers. The runner upgrades the
+database to the latest revision and verifies that the expected head was reached.
 The API independently checks the PostgreSQL revision at startup and fails closed on a mismatch.
 
 ---
@@ -57,7 +56,7 @@ The API independently checks the PostgreSQL revision at startup and fails closed
 
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
-2. User selects code cells → POST /api/challenges/<id>/submit
+2. User selects code cells → POST /api/tasks/<id>/submit
 3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code proceeds through rate/quota checks → creates Submission → dispatches Celery evaluation job
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
@@ -142,7 +141,7 @@ Each task maintains a persistent build directory at `TASK_IMAGES_DIR/task_{id}/`
 - Build/environment failures are recorded as a **problem registry** — a list of machine-readable codes on `task.problem_codes` (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Any non-empty registry blocks new submissions with `ERR_TASK_NOT_READY` (403) and every root cause is translated client-side.
 - The registry is lifecycle-managed: worker-reported build failures add codes, a successful build clears the build-family codes, baseline completion removes `ERR_BASELINE_FAILED`, and environment config changes (base image, apt/pip/HF settings) clear stale build-family problems.
 - If a build lock is stuck due to worker interruption, an admin can clear it on the worker host with the worker-side `clear_build_lock(task_id)` helper (`tasks/task_modules/image_builder.py`) — e.g. from a worker shell. There is no UI button or admin HTTP route for this.
-- Saving semantic task edits (base image, apt/pip/HF settings, task files, evaluator code) publishes a Redis `task_rebuild` notification; the worker's rebuild listener (`_rebuild_listener`) re-fetches the task config and rebuilds with `force_rebuild=True`, bypassing the config-hash fast path. HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only) and the image is rebuilt from the fresh data.
+- Saving semantic task edits (base image, apt/pip/HF settings, task files, evaluator code) changes the image configuration hash (`_config_hash`), so the next build (the baseline run that the save queues, or the next submission) builds a new image instead of reusing the cached one.
 
 ### Task File & Label Replacement (unique `saved_name`)
 Uploaded task resource files (including `labels.parquet`) are stored under a UUID-prefixed

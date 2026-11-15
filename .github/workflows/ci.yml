@@ -307,7 +307,6 @@ jobs:
             --network "$NETWORK" \
             --group-add "$(stat -c %g /var/run/docker.sock)" \
             -e CELERY_BROKER_URL="redis://:${REDIS_PASSWORD}@redis:6379/0" \
-            -e CELERY_RESULT_BACKEND="redis://:${REDIS_PASSWORD}@redis:6379/0" \
             -e CACHE_REDIS_URL="redis://:${REDIS_PASSWORD}@redis-cache:6379/1" \
             -e SECRET_KEY="${SECRET_KEY}" \
             -e ENCRYPTION_KEY="${ENCRYPTION_KEY}" \

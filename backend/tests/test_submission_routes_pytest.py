@@ -4,6 +4,7 @@ import io
 import json
 import os
 import sys
+import uuid
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -459,8 +460,8 @@ class TestSubmitCode:
     def test_successful_submit(self, mock_apply):
         mock_apply.return_value = None
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 202
@@ -468,11 +469,11 @@ class TestSubmitCode:
         assert "submission_id" in body
         assert body["status"] == "queued"
 
-    @patch("routes.submissions.get_queue_depth", return_value=999)
+    @patch("routes.tasks.get_queue_depth", return_value=999)
     def test_submit_rejected_when_queue_full(self, mock_depth):
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 429
@@ -490,8 +491,8 @@ class TestSubmitCode:
         db.session.commit()
         other_token = generate_token(other.id, role="competitor")
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(other_token),
         )
         assert resp.status_code == 403
@@ -501,8 +502,8 @@ class TestSubmitCode:
         self.challenge.is_active = False
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -512,8 +513,8 @@ class TestSubmitCode:
         self.challenge.is_archived = True
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -523,8 +524,8 @@ class TestSubmitCode:
         self.challenge.is_frozen = True
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
@@ -534,8 +535,8 @@ class TestSubmitCode:
         self.challenge.scores_finalized = True
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
@@ -554,8 +555,8 @@ class TestSubmitCode:
         self.task.stage_id = stage.id
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -574,8 +575,8 @@ class TestSubmitCode:
         self.task.stage_id = stage.id
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -585,8 +586,8 @@ class TestSubmitCode:
         self.challenge.start_time = utcnow() + timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -596,8 +597,8 @@ class TestSubmitCode:
         self.challenge.end_time = utcnow() - timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -605,30 +606,20 @@ class TestSubmitCode:
 
     def test_missing_selected_cells(self):
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id},
+            f"/api/tasks/{self.task.id}/submit",
+            json={},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 422
         assert resp.get_json()["code"] == "ERR_VALIDATION"
 
-    def test_missing_task_id(self):
+    def test_unknown_task_returns_404(self):
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
+            f"/api/tasks/{uuid.uuid4()}/submit",
             json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 422
-        assert resp.get_json()["code"] == "ERR_VALIDATION"
-
-    def test_invalid_task_id(self):
-        resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": "99999", "selected_cells": self.valid_cells},
-            headers=self._auth(self.comp_token),
-        )
-        assert resp.status_code == 400
-        assert resp.get_json()["code"] == "ERR_INVALID_TASK_ID"
+        assert resp.status_code == 404
 
     def test_task_from_different_challenge(self):
         other_challenge = Challenge(
@@ -645,22 +636,23 @@ class TestSubmitCode:
         db.session.commit()
         self.task.challenge_id = other_challenge.id
         db.session.commit()
+        # The competitor is registered only in the original challenge
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 400
-        assert resp.get_json()["code"] == "ERR_INVALID_TASK_ID"
+        assert resp.status_code == 403
+        assert resp.get_json()["code"] == "ERR_NOT_REGISTERED"
 
     @patch(
-        "routes.submissions.check_execution_rules",
+        "routes.tasks.check_execution_rules",
         return_value=(False, "Custom rule failed"),
     )
     def test_ast_rule_failed(self, mock_check):
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 400
@@ -670,8 +662,8 @@ class TestSubmitCode:
         self.challenge.max_eval_requests = 0
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 429
@@ -683,8 +675,8 @@ class TestSubmitCode:
         self.challenge.start_time = utcnow() + timedelta(hours=24)
         db.session.commit()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 202
@@ -692,8 +684,8 @@ class TestSubmitCode:
     @patch("tasks.evaluate_submission.apply_async", side_effect=Exception("Queue down"))
     def test_submission_queue_unavailable(self, mock_apply):
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 503
@@ -704,8 +696,8 @@ class TestSubmitCode:
         self.task.problem_codes = ["ERR_HF_DOWNLOAD_FAILED", "ERR_BASELINE_FAILED"]
         db.session.flush()
         resp = self.client.post(
-            f"/api/challenges/{self.challenge.id}/submit",
-            json={"task_id": self.task.id, "selected_cells": self.valid_cells},
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403

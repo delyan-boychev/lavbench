@@ -8,6 +8,7 @@ from spectree import SpecTree
 from spectree.models import InType, SecureType, SecurityScheme, SecuritySchemeData
 
 from schemas.responses.common import ErrorResponse
+from utils.version import __version__
 
 
 def _validation_before_handler(
@@ -24,7 +25,7 @@ api = SpecTree(
     "flask",
     before=_validation_before_handler,
     title="LavBench API",
-    version="1.0",
+    version=__version__,
     description="Machine Learning Competition Platform — REST + SSE Endpoints",
     openapi_version="3.0.3",
     # Most route handlers declare HTTP_422=ErrorResponse explicitly, but every

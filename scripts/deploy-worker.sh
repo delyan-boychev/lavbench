@@ -70,7 +70,6 @@ CPU_CONCURRENCY=$(( CONCURRENCY - GPU_COUNT ))
 
 # ── Common env vars ────────────────────────────────────────────────
 export CELERY_BROKER_URL="$REDIS_URL"
-export CELERY_RESULT_BACKEND="$REDIS_URL"
 export WORKER_ROLE="eval"
 export PYTHONPATH=".:backend:${PYTHONPATH:-}"
 export HF_CACHE_DIR="${HF_CACHE_DIR:-$(pwd)/hf_cache}"
@@ -140,14 +139,12 @@ deploy_docker() {
     --restart unless-stopped \
     --network host \
     -e CELERY_BROKER_URL \
-    -e CELERY_RESULT_BACKEND \
     -e WORKER_ENCRYPTION_KEY \
     -e WORKER_PRIVATE_KEY \
     -e WORKER_ID \
     -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_GPU_ID \
-    -e WORKER_GPU_IDS \
     -e WORKER_SANDBOX_STORAGE_OPT \
     -e MAX_WORKER_LOG_BYTES \
     -e MAX_COLLECT_BUFFER_BYTES \

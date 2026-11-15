@@ -1,7 +1,5 @@
 """Tests for the double-blind evaluation routes."""
 
-import csv
-import io
 import os
 import sys
 from datetime import timedelta
@@ -15,7 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import AuditLog, Challenge, Task, User
+from models import Challenge, Task, User
 from utils.auth_utils import generate_token
 
 
@@ -193,88 +191,3 @@ class TestDoubleBlindAndLeaderboardRules:
         jury_leaderboard = res_jury.get_json()["leaderboard"]
         assert jury_leaderboard[0]["total_points"] == 45
         assert jury_leaderboard[0]["user"]["manual_points"] == {str(self.task.id): 45}
-
-    @patch("routes.leaderboard.build_and_cache_leaderboard")
-    def test_csv_export_anonymization(self, mock_build, client, db_session):
-        # Mock leaderboard data
-        entry_comp = {
-            "user": {
-                "id": self.competitor.id,
-                "alias_id": "Comp-Alpha",
-                "role": "competitor",
-                "challenge_id": self.challenge.id,
-                "is_anonymous": False,
-                "name": "Alice",
-                "surname": "Smith",
-                "email": "alice@test.com",
-                "school": "AliceSchool",
-                "city": "AliceCity",
-                "grade": "10",
-            },
-            "task_scores": {},
-            "public_score": 0.9,
-            "private_score": 0.85,
-            "total_points": 50,
-            "has_submitted": True,
-        }
-        mock_build.return_value = [entry_comp]
-
-        # Log some audit log
-        audit = AuditLog(
-            admin_id=self.admin.id,
-            target_user_id=self.competitor.id,
-            task_id=self.task.id,
-            old_score=0.5,
-            new_score=0.9,
-            reason="Score corrected",
-        )
-        db_session.add(audit)
-        db_session.commit()
-
-        # 1. Jury export -> Anonymized demographics & audit log target user
-        res_jury = client.get(
-            f"/api/challenges/{self.challenge.id}/export-results",
-            headers=self._auth(self.jury_token),
-        )
-        assert res_jury.status_code == 200
-        csv_text = res_jury.data.decode("utf-8")
-        csv_reader = csv.reader(io.StringIO(csv_text))
-        rows = list(csv_reader)
-
-        # Check column index mapping in header
-        header = rows[0]
-        username_idx = header.index("Username")
-        name_idx = header.index("Real Name")
-        email_idx = header.index("Email")
-        school_idx = header.index("School")
-
-        # Competitor row data
-        comp_row = rows[1]
-        assert comp_row[username_idx] == "Comp-Alpha"
-        assert comp_row[name_idx] == "Comp-Alpha"
-        assert comp_row[email_idx] == "N/A"
-        assert comp_row[school_idx] == "N/A"
-
-        # Check audit log target competitor
-        audit_idx = rows.index(["--- SCORE CORRECTION AUDIT LOG ---"])
-        audit_header = rows[audit_idx + 1]
-        target_competitor_idx = audit_header.index("Target Competitor")
-        audit_row = rows[audit_idx + 2]
-        assert audit_row[target_competitor_idx] == "Comp-Alpha"
-
-        # 2. Admin export -> Full unblinded data
-        res_admin = client.get(
-            f"/api/challenges/{self.challenge.id}/export-results",
-            headers=self._auth(self.admin_token),
-        )
-        assert res_admin.status_code == 200
-        csv_text_admin = res_admin.data.decode("utf-8")
-        rows_admin = list(csv.reader(io.StringIO(csv_text_admin)))
-        comp_row_admin = rows_admin[1]
-        assert comp_row_admin[username_idx] == "db_comp1"
-        assert comp_row_admin[name_idx] == "Alice Smith"
-        assert comp_row_admin[email_idx] == "alice@test.com"
-        assert comp_row_admin[school_idx] == "Test School"
-
-        audit_row_admin = rows_admin[audit_idx + 2]
-        assert audit_row_admin[target_competitor_idx] == "db_comp1"

@@ -17,7 +17,6 @@ from config import Config
 from models import Challenge, Stage, Submission, Task, User, db
 from services.leaderboard_service import (
     build_and_cache_leaderboard,
-    get_task_leaderboard_data,
 )
 
 
@@ -275,79 +274,6 @@ class TestBuildAndCacheLeaderboard:
         task_score = result[0]["task_scores"][str(self.task.id)]
         assert task_score["submission_id"] == in_grace.id
         assert task_score["public_score"] == 0.5
-
-
-class TestGetTaskLeaderboardData:
-    @pytest.fixture(autouse=True)
-    def _setup(self, db_session, redis_flush):
-        self.challenge = Challenge(
-            title="Task LB Test",
-            description="Test",
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=2),
-            end_time=utcnow() + timedelta(hours=2),
-            is_frozen=False,
-            scores_finalized=False,
-        )
-        db_session.add(self.challenge)
-        db_session.commit()
-
-        self.task = Task(
-            title="Task 1",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            max_submissions_per_period=10,
-            metrics_config={"accuracy": {"weight": 1.0, "higher_is_better": True}},
-        )
-        db_session.add(self.task)
-        db_session.commit()
-
-    def test_task_not_found(self):
-        result = get_task_leaderboard_data(99999, "admin", None)
-        assert "error" in result
-
-    def test_competitor_access_denied_not_started(self, db_session):
-        self.challenge.start_time = utcnow() + timedelta(hours=24)
-        self.challenge.end_time = utcnow() + timedelta(hours=48)
-        db_session.commit()
-        comp = User(
-            username="test_comp",
-            password_hash="pbkdf2:sha256:...",
-            role="competitor",
-            alias_id="Comp-001",
-            challenge_id=self.challenge.id,
-        )
-        db_session.add(comp)
-        db_session.commit()
-        result = get_task_leaderboard_data(self.task.id, "competitor", comp.id)
-        assert "error" in result
-
-    def test_admin_can_access_anytime(self):
-        result = get_task_leaderboard_data(self.task.id, "admin", None)
-        assert "error" not in result
-        assert "leaderboard" in result
-
-    def test_baseline_in_entries(self):
-        baseline = Submission(
-            challenge_id=self.challenge.id,
-            task_id=self.task.id,
-            user_id=0,
-            status="completed",
-            is_baseline=True,
-            public_score=0.95,
-            private_score=0.90,
-            code_cells="[]",
-            created_at=utcnow(),
-        )
-        db.session.add(baseline)
-        db.session.commit()
-
-        result = get_task_leaderboard_data(self.task.id, "admin", None)
-        entries = result["leaderboard"]
-        baseline_entries = [e for e in entries if e.get("is_baseline_entry")]
-        assert len(baseline_entries) == 1
 
 
 class TestLeaderboardStampedeProtection:

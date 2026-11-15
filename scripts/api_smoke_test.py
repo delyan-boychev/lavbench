@@ -77,6 +77,7 @@ class Api:
                 body = payload
         try:
             with self.opener.open(self._req(method, path, body, ctype, headers, csrf), timeout=timeout) as r:
+                self.last_headers = dict(r.headers)
                 raw = r.read()
                 ct = r.headers.get("Content-Type", "")
                 data: dict | str | None
@@ -86,6 +87,7 @@ class Api:
                     data = raw.decode(errors="replace")
                 return r.status, data
         except urllib.error.HTTPError as e:
+            self.last_headers = dict(e.headers)
             raw = e.read()
             ct = e.headers.get("Content-Type", "")
             data = None
@@ -202,12 +204,46 @@ def warn(name: str, detail: str = "") -> None:
     print(f"  [WARN] {name}{' — ' + detail if detail else ''}")
 
 
+# Wall-clock profile: each section prints how long the previous one took
+_RUN_START = time.monotonic()
+_SECTION: list = [None, _RUN_START]
+SECTION_TIMES: list[tuple[str, float]] = []
+
+
+def _close_section() -> None:
+    title, started = _SECTION
+    if title is not None:
+        SECTION_TIMES.append((title, time.monotonic() - started))
+
+
+def section(title: str) -> None:
+    _close_section()
+    _SECTION[0], _SECTION[1] = title, time.monotonic()
+    print(f"\n== {title} == (t+{time.monotonic() - _RUN_START:.0f}s)")
+
+
 def expect_error(data, code: str) -> bool:
     return isinstance(data, dict) and data.get("code") == code
 
 
+def submit_cells(client: Api, tid: str, payload: dict) -> tuple[int, dict | str | None]:
+    """POST /api/tasks/<id>/submit, waiting out one 429 ERR_RATE_LIMITED as Retry-After asks.
+
+    The route allows 10 submissions per minute per user; sections that submit many
+    evaluations as one competitor would otherwise depend on how fast the runner is.
+    """
+    code, data = client.send("POST", f"/api/tasks/{tid}/submit", payload)
+    if code == 429 and expect_error(data, "ERR_RATE_LIMITED"):
+        headers = getattr(client, "last_headers", {}) or {}
+        wait = min(65, max(1, int(headers.get("Retry-After", "60"))))
+        print(f"    (submit rate limit reached; waiting {wait}s as Retry-After asks)")
+        time.sleep(wait)
+        code, data = client.send("POST", f"/api/tasks/{tid}/submit", payload)
+    return code, data
+
+
 def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
-                    interval: float = 5.0) -> tuple[bool, dict]:
+                    interval: float = 1.0) -> tuple[bool, dict]:
     """Poll an EXISTING submission id until a terminal state (completed/failed)."""
     deadline = time.time() + poll_timeout
     last: dict = {}
@@ -222,16 +258,15 @@ def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
 
 
 def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, source: str,
-                    poll_timeout: float = 600.0, interval: float = 5.0) -> tuple[bool, dict]:
+                    poll_timeout: float = 600.0, interval: float = 1.0) -> tuple[bool, dict]:
     """Submit a single code cell and poll GET /api/submissions/<id> until a
     terminal state (completed/failed). Returns (reached_terminal, payload).
 
     The generous poll timeout covers the one-time per-task Docker image build
     (pip_requirements pandas/pyarrow) the worker performs on first execution.
     """
-    code, data = submit_client.send(
-        "POST", f"/api/challenges/{cid}/submit",
-        {"task_id": tid, "selected_cells": [{"id": 0, "type": "code", "source": source}]})
+    code, data = submit_cells(
+        submit_client, tid, {"selected_cells": [{"id": 0, "type": "code", "source": source}]})
     if code != 202 or not isinstance(data, dict) or not data.get("submission_id"):
         print(f"    submit not accepted: HTTP {code} {str(data)[:300]}")
         return False, {"submit_status": code, **(data if isinstance(data, dict) else {})}
@@ -404,7 +439,7 @@ def main() -> int:
     pipe_cid = pipe_uid = ""
 
     # ── 1. Health, docs, swagger (no auth) ──────────────────────────────
-    print("\n== 1. Health / docs ==")
+    section("1. Health / docs")
     code, data = api.send("GET", "/api/health")
     check("GET /api/health 200 ok", code == 200 and isinstance(data, dict)
           and data.get("status") == "ok", json.dumps(data) if isinstance(data, dict) else "")
@@ -420,7 +455,7 @@ def main() -> int:
     check("GET /apidoc/openapi.json 200 JSON", code == 200 and isinstance(data, dict) and "openapi" in data)
 
     # ── 2. Auth: bad login, CSRF, good login, me ───────────────────────
-    print("\n== 2. Auth + CSRF ==")
+    section("2. Auth + CSRF")
     code, data = api.send("POST", "/api/auth/login", {"username": "definitely_missing_user", "password": "x"})
     check("bad login 401 ERR_INVALID_CREDENTIALS", code == 401 and expect_error(data, "ERR_INVALID_CREDENTIALS"))
     code, data = api.send("GET", "/api/auth/csrf-token")
@@ -432,7 +467,7 @@ def main() -> int:
     check("GET /api/auth/me admin", code == 200 and isinstance(data, dict) and data.get("user", {}).get("role") == "admin")
 
     # ── 3. Challenge CRUD + validation + CSRF enforcement ──────────────
-    print("\n== 3. Challenges ==")
+    section("3. Challenges")
     code, data = api.send("POST", "/api/challenges", {"title": "smoke", "start_time": now, "end_time": now},
                           csrf=False)
     check("no-CSRF POST → 403 ERR_CSRF_FAILED", code == 403 and expect_error(data, "ERR_CSRF_FAILED"))
@@ -452,7 +487,7 @@ def main() -> int:
     check("GET /api/challenges/<id> 200", code == 200 and isinstance(data, dict) and data.get("id") == cid)
 
     # ── 4. Stages ──────────────────────────────────────────────────────
-    print("\n== 4. Stages ==")
+    section("4. Stages")
     code, data = api.send("POST", f"/api/challenges/{cid}/stages",
                           {"title": "Main stage", "start_time": now, "end_time": future})
     if code == 201 and isinstance(data, dict) and data.get("id"):
@@ -462,7 +497,7 @@ def main() -> int:
     check("PUT stage 200", code == 200 and isinstance(data, dict) and data.get("title") == "Main stage v2")
 
     # ── 5. Tasks: multipart create, get, download, parse-notebook ─────
-    print("\n== 5. Tasks ==")
+    section("5. Tasks")
     ipynb = json.dumps(MIN_IPYNB).encode()
     code, data = api.multipart("POST", f"/api/challenges/{cid}/tasks",
                                {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false",
@@ -485,7 +520,7 @@ def main() -> int:
     check("POST parse-notebook 200", code == 200 and isinstance(data, dict) and "cells" in data)
 
     # ── 6. Competitor lifecycle ────────────────────────────────────────
-    print("\n== 6. Competitor ==")
+    section("6. Competitor")
     code, data = api.send("POST", "/api/admin/register-competitor",
                           {"name": "Smoke", "surname": "Tester", "middle_name": "M", "birth_date": "2005-01-01",
                            "grade": "10", "school": "Test HS", "city": "Sofia", "challenge_id": cid})
@@ -504,22 +539,20 @@ def main() -> int:
     check("competitor sees only own challenge", code == 200 and len(own) == 1)
 
     # ── 7. Submissions ─────────────────────────────────────────────────
-    print("\n== 7. Submissions ==")
+    section("7. Submissions")
     cells = [{"id": 0, "type": "code", "source": "print(1)"}]
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit",
-                           {"task_id": tid, "selected_cells": [{}]})
+    code, data = submit_cells(comp, tid,
+                           {"selected_cells": [{}]})
     check("invalid selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
           code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit",
-                           {"task_id": tid, "selected_cells": ["print(1)"]})
+    code, data = submit_cells(comp, tid,
+                           {"selected_cells": ["print(1)"]})
     check("non-dict selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
           code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit",
-                           {"task_id": "00000000-0000-0000-0000-000000000000",
-                            "selected_cells": cells})
-    check("unknown task_id → 400 ERR_INVALID_TASK_ID",
-          code == 400 and expect_error(data, "ERR_INVALID_TASK_ID"))
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": cells})
+    code, data = comp.send("POST", "/api/tasks/00000000-0000-0000-0000-000000000000/submit",
+                           {"selected_cells": cells})
+    check("unknown task → 404", code == 404)
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     if code == 202 and isinstance(data, dict) and data.get("submission_id"):
         sid = data["submission_id"]
     check("competitor submit 202 queued", code == 202 and bool(sid) and data.get("status") == "queued")
@@ -528,9 +561,9 @@ def main() -> int:
     check("GET submission status valid", code == 200 and st in ("queued", "running", "completed", "failed"), st)
     code, data = api.send("POST", f"/api/submissions/{sid}/select-final")
     check("admin select-final 200", code == 200)
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": cells})
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     sid2 = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": cells})
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     check("3rd submit → 429 ERR_DAILY_LIMIT_REACHED (max_eval_requests=2, failed excluded)",
           code == 429 and expect_error(data, "ERR_DAILY_LIMIT_REACHED"))
     code, data = api.send("POST", f"/api/submissions/{sid2}/kill")
@@ -540,7 +573,7 @@ def main() -> int:
     check("competitor on admin endpoint → 403", code == 403 and expect_error(data, "ERR_ROLE_REQUIRED"))
 
     # ── 8. Leaderboard + jury manual points ────────────────────────────
-    print("\n== 8. Leaderboard ==")
+    section("8. Leaderboard")
     code, data = api.send("GET", f"/api/challenges/{cid}/leaderboard")
     check("GET leaderboard 200", code == 200 and isinstance(data, dict) and "leaderboard" in data)
     code, data = _post_register(api,
@@ -560,7 +593,7 @@ def main() -> int:
     check("jury manual-points 200", code == 200 and isinstance(data, dict) and data.get("user_id") == comp_id)
 
     # ── 9. Admin surface ───────────────────────────────────────────────
-    print("\n== 9. Admin ==")
+    section("9. Admin")
     code, data = api.send("GET", "/api/admin/users")
     check("GET /api/admin/users 200", code == 200 and isinstance(data, dict) and isinstance(data.get("items"), list))
     code, data = api.send("GET", "/api/admin/metrics")
@@ -599,17 +632,17 @@ def main() -> int:
     check("GET /api/admin/backups 200", code == 200 and isinstance(known_backups, list))
 
     # ── 10. Backups: trigger + poll ────────────────────────────────────
-    print("\n== 10. Backups ==")
+    section("10. Backups")
     code, data = api.send("POST", "/api/admin/backups/force")
     check("POST backups/force 202", code == 202 and isinstance(data, dict) and data.get("status") == "started")
     # The backup runs as a Celery task on the internal worker (queue: celery),
     # which also handles 20s leaderboard recalculations and may restart mid-run.
-    # Poll every 5s and give it up to 240s so queue backlog/restarts don't flake.
+    # Poll every second and give it up to 240s so queue backlog/restarts don't flake.
     deadline = time.time() + 240
     created = False
     if code == 202:
         while time.time() < deadline:
-            time.sleep(5)
+            time.sleep(1)
             code, data = api.send("GET", "/api/admin/backups")
             backups = data.get("backups", []) if isinstance(data, dict) else []
             if len(backups) > len(known_backups):
@@ -618,7 +651,7 @@ def main() -> int:
     check("backup appears within 240s", created, "see celery_worker logs if failing")
 
     # ── 11. SSE streams through nginx ──────────────────────────────────
-    print("\n== 11. SSE ==")
+    section("11. SSE")
     # Streams are signal-only: they open with {"info": "connected"} and later send
     # Only {"event": "update"}; clients refetch over REST
     sse = [
@@ -640,7 +673,7 @@ def main() -> int:
             check(f"SSE {name}", payload == {"info": "connected"}, f"first={payload}")
 
     # ── 11b. SSE round-trips (coordination pub/sub over the broker Redis) ──
-    print("\n== 11b. SSE round-trips ==")
+    section("11b. SSE round-trips")
     # queue_updates channel: connection only — no deterministic trigger exists
     # (kill/clear only publish when submissions are still queued, which is
     # worker-timing dependent)
@@ -667,7 +700,7 @@ def main() -> int:
         warn("SSE leaderboard/live round-trip", "no submission id (prior submission checks failed)")
 
     # ── 12. Edge cases ─────────────────────────────────────────────────
-    print("\n== 12. Edge cases ==")
+    section("12. Edge cases")
     anon = Api(args.base)
     code, data = anon.send("GET", "/api/challenges")
     check("anonymous GET challenges → 401 ERR_TOKEN_INVALID",
@@ -679,6 +712,15 @@ def main() -> int:
     check("empty title → 422 ERR_VALIDATION", code == 422 and expect_error(data, "ERR_VALIDATION"))
     code, data = api.send("GET", "/api/challenges/00000000-0000-0000-0000-000000000000")
     check("nonexistent challenge → 404", code == 404)
+    # Routes removed as dead code must stay gone (the UI submits via /api/tasks/<id>/submit)
+    for method, path, label in (
+        ("POST", f"/api/challenges/{cid}/test-stage", "challenges/<id>/test-stage"),
+        ("GET", f"/api/challenges/{cid}/export-results", "challenges/<id>/export-results"),
+        ("GET", f"/api/tasks/{tid}/leaderboard", "tasks/<id>/leaderboard"),
+        ("POST", f"/api/challenges/{cid}/submit", "challenges/<id>/submit"),
+    ):
+        code, _ = api.send(method, path, {} if method == "POST" else None)
+        check(f"removed route {method} {label} → 404/405", code in (404, 405), f"got {code}")
     code, data = api.send("GET", f"/api/tasks/{tid}/download/does-not-exist.ipynb")
     check("missing task file → 404 ERR_FILE_NOT_FOUND", code == 404 and expect_error(data, "ERR_FILE_NOT_FOUND"))
     code, data = api.send("GET", "/api/admin/backups/%2E%2E%2F%2E%2E%2Fetc%2Fpasswd/download")
@@ -696,7 +738,7 @@ def main() -> int:
                            {"user_id": comp_id, "points": {tid: 12.345}, "reason": "smoke"})
     check("manual points with 3 decimals → 422 ERR_POINTS_INVALID",
           code == 422 and expect_error(data, "ERR_POINTS_INVALID"))
-    code, data = comp.send("POST", f"/api/challenges/{cid}/submit", {"task_id": tid, "selected_cells": []})
+    code, data = submit_cells(comp, tid, {"selected_cells": []})
     check("empty selected_cells → 422 ERR_VALIDATION", code == 422 and expect_error(data, "ERR_VALIDATION"))
     if fname:
         code, data = comp.send("GET", f"/api/tasks/{tid}/download/{fname}")
@@ -730,7 +772,7 @@ def main() -> int:
     payload = anon.sse_first_data(f"/api/challenges/{cid}/leaderboard/live", timeout=10)
     check("anonymous SSE → 401", "__error__" in payload and "401" in str(payload.get("__error__")))
     # ── 13. Role matrix ────────────────────────────────────────────────
-    print("\n== 13. Role matrix ==")
+    section("13. Role matrix")
     clients = {"a": api, "j": jury, "c": comp, "n": Api(args.base)}
     matrix = [
         ("POST /api/challenges (create)", "POST", "/api/challenges",
@@ -762,13 +804,9 @@ def main() -> int:
          {"a": ((200, 404), None), "j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/export", "GET", f"/api/challenges/{cid}/export", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("GET /api/challenges/<id>/export-results", "GET", f"/api/challenges/{cid}/export-results", None,
-         {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/tasks/<id>", "GET", f"/api/tasks/{tid}", None,
          {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/tasks/<id>/submissions", "GET", f"/api/tasks/{tid}/submissions", None,
-         {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("GET /api/tasks/<id>/leaderboard", "GET", f"/api/tasks/{tid}/leaderboard", None,
          {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/leaderboard", "GET", f"/api/challenges/{cid}/leaderboard", None,
          {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
@@ -777,8 +815,8 @@ def main() -> int:
         ("POST manual-points", "POST", f"/api/challenges/{cid}/manual-points",
          {"user_id": comp_id, "points": {tid: 1}, "reason": "role-matrix"},
          {"a": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("POST submit (jury)", "POST", f"/api/challenges/{cid}/submit",
-         {"task_id": tid, "selected_cells": [{"id": 0, "type": "code", "source": "print(1)"}]},
+        ("POST submit (jury)", "POST", f"/api/tasks/{tid}/submit",
+         {"selected_cells": [{"id": 0, "type": "code", "source": "print(1)"}]},
          {"j": (202, None), "n": (401, "ERR_TOKEN_INVALID")}),
         ("POST parse-notebook (multipart)", "POST", f"/api/challenges/{cid}/parse-notebook",
          {}, {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")},
@@ -861,7 +899,7 @@ def main() -> int:
     check("rate-limit test users cleaned up", True)
 
     # ── 14. Docs endpoints ─────────────────────────────────────────────
-    print("\n== 14. Docs ==")
+    section("14. Docs")
     code, data = api.send("GET", "/api/docs/competitor?lang=en")
     check("GET /api/docs/competitor 200", code == 200 and isinstance(data, dict) and data.get("title"))
     code, data = api.send("GET", "/api/docs/jury?lang=en")
@@ -869,7 +907,7 @@ def main() -> int:
 
     # ── 15. Evaluation worker E2E (SMOKE_EVALUATE=1) ──────────────────
     if os.environ.get("SMOKE_EVALUATE") == "1":
-        print("\n== 15. Evaluation (worker) ==")
+        section("15. Evaluation (worker)")
         try:
             import pandas as pd
             import pyarrow  # noqa: F401
@@ -985,7 +1023,7 @@ def main() -> int:
                 # recalculate-dirty-leaderboards beat task (every 20 s), so poll
                 # briefly for the fresh entry instead of asserting immediately.
                 ts_score = ts = None
-                for _ in range(12):
+                for _ in range(60):
                     code, data = api.send("GET", f"/api/challenges/{cid}/leaderboard")
                     lb = data.get("leaderboard", []) if code == 200 and isinstance(data, dict) else []
                     entry = {}
@@ -998,7 +1036,7 @@ def main() -> int:
                     ts_score = ts.get("public_score") if isinstance(ts, dict) else None
                     if isinstance(ts_score, (int, float)) and abs(float(ts_score) - 1.0) < 1e-6:
                         break
-                    time.sleep(5)
+                    time.sleep(1)
                 check("eval: leaderboard task_score 1.0 (fresh competitor)",
                       isinstance(ts_score, (int, float)) and abs(float(ts_score) - 1.0) < 1e-6,
                       f"task_scores={ts}")
@@ -1006,7 +1044,7 @@ def main() -> int:
                 check("eval: delete task 200", code == 200 and isinstance(data, dict))
 
                 # ── 15b. Asset pipeline (cache, problem registry, rebuild) ──
-                print("\n== 15b. Asset pipeline (worker-backed) ==")
+                section("15b. Asset pipeline (worker-backed)")
                 code, data = api.send("POST", "/api/challenges",
                                       {"title": "smoke-asset-pipeline",
                                        "description": "asset pipeline smoke",
@@ -1120,15 +1158,14 @@ def main() -> int:
                             "time.sleep(12)\n"
                             "pd.DataFrame({'id': [1], 'value': [_v]})"
                             ".to_parquet('submission.parquet')\n")
-                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
-                                       {"task_id": mid_tid,
-                                        "selected_cells": [{"id": 0, "type": "code",
+                code, data = submit_cells(pipe, mid_tid,
+                                       {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": mid_code}]})
                 mid_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
                 check("15b: midrun submission 202 queued", code == 202 and bool(mid_sid))
                 running = False
-                for _ in range(60):
-                    time.sleep(2)
+                for _ in range(120):
+                    time.sleep(1)
                     c2, d2 = api.send("GET", f"/api/submissions/{mid_sid}")
                     if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
                         running = True
@@ -1158,9 +1195,8 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 hf_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15b: create bogus-HF task 201", code == 201 and bool(hf_tid))
-                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
-                                       {"task_id": hf_tid,
-                                        "selected_cells": [{"id": 0, "type": "code",
+                code, data = submit_cells(pipe, hf_tid,
+                                       {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "print(1)"}]})
                 if code == 403 and expect_error(data, "ERR_TASK_NOT_READY"):
                     check("15b: bogus-HF task already gated (auto-baseline failed first)",
@@ -1179,8 +1215,8 @@ def main() -> int:
                               "definitely-not-a-real-hf-repo-xyz" in logs_l
                               or "download" in logs_l, logs_l[:160])
                 problems = None
-                for _ in range(30):
-                    time.sleep(5)
+                for _ in range(150):
+                    time.sleep(1)
                     code, data = api.send("GET", f"/api/tasks/{hf_tid}")
                     problems = data.get("problem_codes") if code == 200 and isinstance(data, dict) else None
                     if problems:
@@ -1188,9 +1224,8 @@ def main() -> int:
                 check("15b: problem registry populated after failed build",
                       isinstance(problems, list) and len(problems) > 0,
                       f"problem_codes={problems}")
-                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
-                                       {"task_id": hf_tid,
-                                        "selected_cells": [{"id": 0, "type": "code",
+                code, data = submit_cells(pipe, hf_tid,
+                                       {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "print(1)"}]})
                 prob_list = data.get("problems", []) if isinstance(data, dict) else []
                 prob_codes = [p.get("code") for p in prob_list] if isinstance(prob_list, list) else []
@@ -1207,8 +1242,8 @@ def main() -> int:
                     ".to_parquet('submission.parquet')\n"
                 )
                 cleared = False
-                for _ in range(120):
-                    time.sleep(5)
+                for _ in range(600):
+                    time.sleep(1)
                     code, data = api.send("GET", f"/api/tasks/{hf_tid}")
                     problems = data.get("problem_codes") if code == 200 and isinstance(data, dict) else None
                     if not problems:
@@ -1246,9 +1281,8 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 to_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15b: create tiny-time-limit task 201", code == 201 and bool(to_tid))
-                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
-                                       {"task_id": to_tid,
-                                        "selected_cells": [{"id": 0, "type": "code",
+                code, data = submit_cells(pipe, to_tid,
+                                       {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "import time\n"
                                                                       "time.sleep(120)\n"}]})
                 to_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
@@ -1271,7 +1305,7 @@ def main() -> int:
                         api.send("DELETE", f"/api/tasks/{tdel}")
 
                 # ── 15c. Kill semantics (worker-backed) ─────────────────
-                print("\n== 15c. Kill semantics (worker-backed) ==")
+                section("15c. Kill semantics (worker-backed)")
                 code, data = api.multipart(
                     "POST", f"/api/challenges/{pipe_cid}/tasks",
                     {"title": "smoke-kill-task", **pipe_fields, "time_limit_sec": "120"},
@@ -1279,15 +1313,14 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 kill_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15c: create kill task 201", code == 201 and bool(kill_tid))
-                code, data = pipe.send("POST", f"/api/challenges/{pipe_cid}/submit",
-                                       {"task_id": kill_tid,
-                                        "selected_cells": [{"id": 0, "type": "code",
+                code, data = submit_cells(pipe, kill_tid,
+                                       {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "import time\ntime.sleep(120)\n"}]})
                 kill_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
                 check("15c: killable submission 202 queued", code == 202 and bool(kill_sid))
                 running = False
-                for _ in range(60):
-                    time.sleep(2)
+                for _ in range(120):
+                    time.sleep(1)
                     c2, d2 = api.send("GET", f"/api/submissions/{kill_sid}")
                     if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
                         running = True
@@ -1313,7 +1346,7 @@ def main() -> int:
 
                 # ── 15d. Pixel-mask metric E2E (SMOKE_PIXEL_ACCURACY=1) ─
                 if os.environ.get("SMOKE_PIXEL_ACCURACY") == "1":
-                    print("\n== 15d. Pixel-mask metric (worker-backed) ==")
+                    section("15d. Pixel-mask metric (worker-backed)")
                     mask_true = bytes([0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0])
                     mask_repr = repr(mask_true)
                     labels_df = pd.DataFrame({"id": [1], "label": [mask_true]})
@@ -1366,7 +1399,7 @@ def main() -> int:
                         api.send("DELETE", f"/api/tasks/{mask_tid}")
 
                 # ── 15g. Custom evaluator E2E (worker-backed) ───────────
-                print("\n== 15g. Custom evaluator (worker-backed) ==")
+                section("15g. Custom evaluator (worker-backed)")
                 ce_labels = pd.DataFrame({"id": [1, 2, 3, 4, 5], "label": [0, 1, 0, 1, 0]})
                 ce_labels_buf = io.BytesIO()
                 ce_labels.to_parquet(ce_labels_buf, index=False)
@@ -1499,7 +1532,7 @@ def main() -> int:
                     api.send("DELETE", f"/api/tasks/{ce_ok_tid}")
 
     # ── 15e. Worker API contract (opt-in SMOKE_WORKER_KEY) ─────────────
-    print("\n== 15e. Worker API contract ==")
+    section("15e. Worker API contract")
     wpriv = _load_worker_private_key()
     worker_id = _load_worker_id()
     wc_cid = ""
@@ -1533,9 +1566,8 @@ def main() -> int:
                 {"baseline_notebook": ("baseline.ipynb", json.dumps(MIN_IPYNB).encode())})
             wc_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
             check("worker-contract: create task 201", code == 201 and bool(wc_tid))
-            code, data = wcomp.send("POST", f"/api/challenges/{wc_cid}/submit",
-                                    {"task_id": wc_tid,
-                                     "selected_cells": [{"id": 0, "type": "code",
+            code, data = submit_cells(wcomp, wc_tid,
+                                    {"selected_cells": [{"id": 0, "type": "code",
                                                          "source": "import time\ntime.sleep(300)\n"}]})
             ksid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
             check("worker-contract: contract submission 202", code == 202 and bool(ksid))
@@ -1645,7 +1677,7 @@ def main() -> int:
 
     # ── 15f. Oversized-archive resilience (opt-in SMOKE_GUARD_CAPS=1) ──
     if os.environ.get("SMOKE_GUARD_CAPS") == "1":
-        print("\n== 15f. Oversized-archive resilience ==")
+        section("15f. Oversized-archive resilience")
         try:
             import pandas as pd  # noqa: F401
             import pyarrow  # noqa: F401
@@ -1709,9 +1741,8 @@ def main() -> int:
                 os_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15f: create oversized task 201", code == 201 and bool(os_tid))
                 if os_tid:
-                    code, data = ocomp.send("POST", f"/api/challenges/{oc_cid}/submit",
-                                            {"task_id": os_tid,
-                                             "selected_cells": [{"id": 0, "type": "code",
+                    code, data = submit_cells(ocomp, os_tid,
+                                            {"selected_cells": [{"id": 0, "type": "code",
                                                                  "source": "open('submission.parquet','wb').write(b'A' * (2 * 1024 * 1024))\n"}]})
                     os_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
                     check("15f: oversized submission 202", code == 202 and bool(os_sid))
@@ -1730,7 +1761,7 @@ def main() -> int:
                 api.send("DELETE", f"/api/challenges/{oc_cid}")
 
     # ── 16. Cleanup ────────────────────────────────────────────────────
-    print("\n== 16. Cleanup ==")
+    section("16. Cleanup")
     if wc_cid:
         code, data = api.send("DELETE", f"/api/challenges/{wc_cid}")
         check("worker-contract: DELETE contract challenge 200", code == 200)
@@ -1754,6 +1785,10 @@ def main() -> int:
     check("logout 200", code == 200)
 
     # ── Summary ────────────────────────────────────────────────────────
+    _close_section()
+    print(f"\n{'=' * 60}\nSection times (slowest first), total {time.monotonic() - _RUN_START:.0f}s:")
+    for title, seconds in sorted(SECTION_TIMES, key=lambda item: -item[1])[:8]:
+        print(f"  {seconds:6.1f}s  {title}")
     print(f"\n{'=' * 60}\nPASS {len(PASS)}  FAIL {len(FAIL)}  WARN {len(WARN)}")
     for f in FAIL:
         print(f"  FAILED: {f}")

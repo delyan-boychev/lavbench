@@ -1,4 +1,4 @@
-"""Adopt and upgrade the LavBench database schema."""
+"""Upgrade the LavBench database schema to head."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from utils.migrations import migrate_database
 
 
 def main() -> None:
-    """Upgrade the configured database and fail on incompatible legacy schemas."""
+    """Upgrade the configured database to head."""
     if not Config.SQLALCHEMY_DATABASE_URI:
         msg = "DATABASE_URL must be configured before running migrations"
         raise RuntimeError(msg)

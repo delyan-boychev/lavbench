@@ -2592,26 +2592,6 @@
         "title": "CreateTaskMetaSchema",
         "type": "object"
       },
-      "CreateTestStageSchema.6aa1402": {
-        "properties": {
-          "end_time": {
-            "format": "date-time",
-            "title": "End Time",
-            "type": "string"
-          },
-          "start_time": {
-            "format": "date-time",
-            "title": "Start Time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "start_time",
-          "end_time"
-        ],
-        "title": "CreateTestStageSchema",
-        "type": "object"
-      },
       "CreateUserSchema.e1ac751": {
         "properties": {
           "birth_date": {
@@ -9043,31 +9023,6 @@
         "title": "UserResponse",
         "type": "object"
       },
-      "SubmitCodeSchema.59fcbab": {
-        "properties": {
-          "selected_cells": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 500,
-            "minItems": 1,
-            "title": "Selected Cells",
-            "type": "array"
-          },
-          "task_id": {
-            "minLength": 1,
-            "title": "Task Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "selected_cells",
-          "task_id"
-        ],
-        "title": "SubmitCodeSchema",
-        "type": "object"
-      },
       "SubmitResponse.7ed3705": {
         "properties": {
           "message": {
@@ -9701,62 +9656,6 @@
           "filename"
         ],
         "title": "FileInfo",
-        "type": "object"
-      },
-      "TaskLeaderboardResponse.cc8acb7": {
-        "properties": {
-          "challenge_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Challenge Title"
-          },
-          "is_finalized": {
-            "default": false,
-            "title": "Is Finalized",
-            "type": "boolean"
-          },
-          "is_normalized": {
-            "default": false,
-            "title": "Is Normalized",
-            "type": "boolean"
-          },
-          "leaderboard": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Leaderboard",
-            "type": "array"
-          },
-          "metric_name": {
-            "default": "Score",
-            "title": "Metric Name",
-            "type": "string"
-          },
-          "task_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Task Title"
-          }
-        },
-        "required": [
-          "leaderboard"
-        ],
-        "title": "TaskLeaderboardResponse",
         "type": "object"
       },
       "UpdateChallengeSchema.8145bef": {
@@ -10805,7 +10704,7 @@
   "info": {
     "description": "Machine Learning Competition Platform \u2014 REST + SSE Endpoints",
     "title": "LavBench API",
-    "version": "1.0"
+    "version": "1.1.1"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -12513,48 +12412,6 @@
         ]
       }
     },
-    "/api/challenges/{challenge_id}/export-results": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_challenges_{challenge_id}_export-results",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Export comprehensive competition results as CSV with ranks, scores, and audit log.",
-        "tags": [
-          "Challenges"
-        ]
-      }
-    },
     "/api/challenges/{challenge_id}/finalize": {
       "post": {
         "description": "",
@@ -13339,65 +13196,6 @@
         ]
       }
     },
-    "/api/challenges/{challenge_id}/submit": {
-      "post": {
-        "description": "",
-        "operationId": "post__api_challenges_{challenge_id}_submit",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitCodeSchema.59fcbab"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmitResponse.7ed3705"
-                }
-              }
-            },
-            "description": "Accepted"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Submit parsed code cells for a task.",
-        "tags": [
-          "Submissions"
-        ]
-      }
-    },
     "/api/challenges/{challenge_id}/tasks": {
       "post": {
         "description": "",
@@ -13546,75 +13344,6 @@
         "summary": "Download a competitor's final selection or highest-scoring submission.",
         "tags": [
           "Submissions"
-        ]
-      }
-    },
-    "/api/challenges/{challenge_id}/test-stage": {
-      "post": {
-        "description": "",
-        "operationId": "post__api_challenges_{challenge_id}_test-stage",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTestStageSchema.6aa1402"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StageResponse.7ed3705"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Create a test stage before the competition starts for testing purposes.",
-        "tags": [
-          "Challenges"
         ]
       }
     },
@@ -14375,65 +14104,6 @@
           }
         ],
         "summary": "Download a resource file attached to a task.",
-        "tags": [
-          "Tasks"
-        ]
-      }
-    },
-    "/api/tasks/{task_id}/leaderboard": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_tasks_{task_id}_leaderboard",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskLeaderboardResponse.cc8acb7"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Get cached leaderboard data for a specific task.",
         "tags": [
           "Tasks"
         ]

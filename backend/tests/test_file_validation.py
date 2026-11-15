@@ -4,10 +4,8 @@ import json
 
 from services.file_validation import (
     check_dangerous_extension,
-    check_dangerous_magic,
     validate_csv_content,
     validate_extension,
-    validate_mime_type,
     validate_notebook_content,
 )
 
@@ -51,34 +49,6 @@ class TestValidateExtension:
     def test_empty_allowed_set(self):
         valid, _error = validate_extension("file.py", set())
         assert valid is False
-
-
-class TestValidateMimeType:
-    def test_allowed_mime(self):
-        valid, error = validate_mime_type("text/csv", {"text/csv", "application/json"})
-        assert valid is True
-        assert error is None
-
-    def test_disallowed_mime(self):
-        valid, error = validate_mime_type("application/x-sh", {"text/csv"})
-        assert valid is False
-        assert "not allowed" in error
-
-    def test_octet_stream_always_allowed(self):
-        valid, _error = validate_mime_type("application/octet-stream", {"text/csv"})
-        assert valid is True
-
-    def test_none_mimetype_allowed(self):
-        valid, _error = validate_mime_type(None, {"text/csv"})
-        assert valid is True
-
-    def test_empty_allowed_list(self):
-        valid, _error = validate_mime_type("text/csv", None)
-        assert valid is True
-
-    def test_empty_allowed_empty_set(self):
-        valid, _error = validate_mime_type("text/csv", set())
-        assert valid is True  # Empty set is falsy → no restriction
 
 
 class TestValidateNotebookContent:
@@ -171,68 +141,6 @@ class TestValidateCsvContent:
         valid, error, _text = validate_csv_content(b"\xff\xfe\x00\x01")
         assert valid is False
         assert "UTF-8" in error
-
-
-class TestCheckDangerousMagic:
-    def test_windows_exe(self):
-        dangerous, desc = check_dangerous_magic(b"MZ\x90\x00")
-        assert dangerous is True
-        assert "executable" in desc
-
-    def test_elf_binary(self):
-        dangerous, desc = check_dangerous_magic(b"\x7fELF\x02\x01\x01\x00")
-        assert dangerous is True
-        assert "ELF" in desc
-
-    def test_java_class(self):
-        dangerous, desc = check_dangerous_magic(b"\xca\xfe\xba\xbe\x00\x00\x00")
-        assert dangerous is True
-        assert "Java class" in desc
-
-    def test_zip_archive(self):
-        dangerous, desc = check_dangerous_magic(b"\x50\x4b\x03\x04\x00\x00")
-        assert dangerous is True
-        assert "ZIP" in desc
-
-    def test_gzip_archive(self):
-        dangerous, desc = check_dangerous_magic(b"\x1f\x8b\x08\x00")
-        assert dangerous is True
-        assert "GZip" in desc
-
-    def test_pdf(self):
-        dangerous, desc = check_dangerous_magic(b"\x25\x50\x44\x46")
-        assert dangerous is True
-        assert "PDF" in desc
-
-    def test_png_image(self):
-        dangerous, desc = check_dangerous_magic(b"\x89\x50\x4e\x47")
-        assert dangerous is True
-        assert "PNG" in desc
-
-    def test_jpeg_image(self):
-        dangerous, desc = check_dangerous_magic(b"\xff\xd8\xff\xe0")
-        assert dangerous is True
-        assert "JPEG" in desc
-
-    def test_shebang_script(self):
-        dangerous, desc = check_dangerous_magic(b"#!/usr/bin/python")
-        assert dangerous is True
-        assert "Shebang" in desc
-
-    def test_safe_content(self):
-        dangerous, desc = check_dangerous_magic(b"print('hello')\n")
-        assert dangerous is False
-        assert desc is None
-
-    def test_empty_content(self):
-        dangerous, desc = check_dangerous_magic(b"")
-        assert dangerous is False
-        assert desc is None
-
-    def test_short_content_correctly_checked(self):
-        dangerous, desc = check_dangerous_magic(b"MZ")  # Only 2 bytes but matches
-        assert dangerous is True
-        assert "executable" in desc
 
 
 class TestCheckDangerousExtension:

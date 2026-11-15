@@ -803,12 +803,6 @@ def _list_backup_files(directory: str) -> list[dict[str, Any]]:
         ftype = "manual"
         if f.startswith("auto_"):
             ftype = "auto"
-        elif (
-            f.startswith("submission_ended")
-            or f.startswith("grace_ended")
-            or f.startswith("finalized")
-        ):
-            ftype = "competition"
         files.append(
             {
                 "filename": f,

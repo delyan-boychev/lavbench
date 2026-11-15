@@ -6,9 +6,7 @@ import sys
 
 INTERNAL_TASKS = {
     "tasks.check_and_backup",
-    "tasks.recalculate_all_leaderboards",
     "tasks.recalculate_dirty_leaderboards",
-    "tasks.recalculate_leaderboard",
     "tasks.run_backup",
     "tasks.watchdog_stuck_submissions",
 }
@@ -153,3 +151,37 @@ def test_prefork_child_drops_inherited_db_connections(app, monkeypatch):
     monkeypatch.setattr(type(tasks.db), "engine", property(lambda _self: engine))
     tasks._dispose_inherited_db_connections()
     engine.dispose.assert_called_once_with(close=False)
+
+
+def test_web_process_import_reuses_the_request_app():
+    # Route handlers import tasks lazily; that must not build a second app and engine
+    env = os.environ.copy()
+    env["WORKER_ROLE"] = "server"
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            "import app as app_module\n"
+            "calls = []\n"
+            "original = app_module.create_app\n"
+            "web = original()\n"
+            "app_module.create_app = lambda *a, **k: calls.append(1) or original(*a, **k)\n"
+            "with web.app_context():\n"
+            "    import tasks\n"
+            "print(tasks.app is web, len(calls), tasks.DISPATCH_ONLY)\n",
+        ],
+        env=env,
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+    ).decode()
+    assert out.strip().splitlines()[-1] == "True 0 True"
+
+
+def test_worker_import_builds_its_own_app():
+    env = os.environ.copy()
+    env["WORKER_ROLE"] = "internal"
+    out = subprocess.check_output(
+        [sys.executable, "-c", "import tasks; print(tasks.app is not None, tasks.DISPATCH_ONLY)"],
+        env=env,
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+    ).decode()
+    assert out.strip().splitlines()[-1] == "True False"
