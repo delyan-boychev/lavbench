@@ -10704,7 +10704,7 @@
   "info": {
     "description": "Machine Learning Competition Platform \u2014 REST + SSE Endpoints",
     "title": "LavBench API",
-    "version": "1.0"
+    "version": "1.1.1"
   },
   "openapi": "3.0.3",
   "paths": {

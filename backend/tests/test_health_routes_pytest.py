@@ -37,6 +37,19 @@ class TestHealthEndpoint:
         assert body["checks"]["redis_broker"] == "ok"
         assert body["checks"]["disk"] == "ok"
 
+    def test_health_and_openapi_report_the_pyproject_version(self, client, db_session):
+        import tomllib
+
+        from utils.version import PYPROJECT_PATH
+
+        with PYPROJECT_PATH.open("rb") as f:
+            expected = tomllib.load(f)["project"]["version"]
+        assert expected != "0.0.0"
+        health = client.get("/api/health").get_json()
+        assert health["version"] == expected
+        spec = client.get("/apidoc/openapi.json").get_json()
+        assert spec["info"]["version"] == expected
+
     def test_health_degraded_when_cache_redis_down(self, client, db_session):
         with (
             patch("utils.cache_utils.get_redis_client", return_value=None),

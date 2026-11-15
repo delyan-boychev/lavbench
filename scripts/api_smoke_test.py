@@ -77,6 +77,7 @@ class Api:
                 body = payload
         try:
             with self.opener.open(self._req(method, path, body, ctype, headers, csrf), timeout=timeout) as r:
+                self.last_headers = dict(r.headers)
                 raw = r.read()
                 ct = r.headers.get("Content-Type", "")
                 data: dict | str | None
@@ -86,6 +87,7 @@ class Api:
                     data = raw.decode(errors="replace")
                 return r.status, data
         except urllib.error.HTTPError as e:
+            self.last_headers = dict(e.headers)
             raw = e.read()
             ct = e.headers.get("Content-Type", "")
             data = None
@@ -224,6 +226,22 @@ def expect_error(data, code: str) -> bool:
     return isinstance(data, dict) and data.get("code") == code
 
 
+def submit_cells(client: Api, tid: str, payload: dict) -> tuple[int, dict | str | None]:
+    """POST /api/tasks/<id>/submit, waiting out one 429 ERR_RATE_LIMITED as Retry-After asks.
+
+    The route allows 10 submissions per minute per user; sections that submit many
+    evaluations as one competitor would otherwise depend on how fast the runner is.
+    """
+    code, data = client.send("POST", f"/api/tasks/{tid}/submit", payload)
+    if code == 429 and expect_error(data, "ERR_RATE_LIMITED"):
+        headers = getattr(client, "last_headers", {}) or {}
+        wait = min(65, max(1, int(headers.get("Retry-After", "60"))))
+        print(f"    (submit rate limit reached; waiting {wait}s as Retry-After asks)")
+        time.sleep(wait)
+        code, data = client.send("POST", f"/api/tasks/{tid}/submit", payload)
+    return code, data
+
+
 def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
                     interval: float = 1.0) -> tuple[bool, dict]:
     """Poll an EXISTING submission id until a terminal state (completed/failed)."""
@@ -247,9 +265,8 @@ def submit_and_poll(submit_client: Api, poll_client: Api, cid: str, tid: str, so
     The generous poll timeout covers the one-time per-task Docker image build
     (pip_requirements pandas/pyarrow) the worker performs on first execution.
     """
-    code, data = submit_client.send(
-        "POST", f"/api/tasks/{tid}/submit",
-        {"selected_cells": [{"id": 0, "type": "code", "source": source}]})
+    code, data = submit_cells(
+        submit_client, tid, {"selected_cells": [{"id": 0, "type": "code", "source": source}]})
     if code != 202 or not isinstance(data, dict) or not data.get("submission_id"):
         print(f"    submit not accepted: HTTP {code} {str(data)[:300]}")
         return False, {"submit_status": code, **(data if isinstance(data, dict) else {})}
@@ -524,18 +541,18 @@ def main() -> int:
     # ── 7. Submissions ─────────────────────────────────────────────────
     section("7. Submissions")
     cells = [{"id": 0, "type": "code", "source": "print(1)"}]
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit",
+    code, data = submit_cells(comp, tid,
                            {"selected_cells": [{}]})
     check("invalid selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
           code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit",
+    code, data = submit_cells(comp, tid,
                            {"selected_cells": ["print(1)"]})
     check("non-dict selected_cells → 422 ERR_INVALID_SELECTED_CELLS",
           code == 422 and expect_error(data, "ERR_INVALID_SELECTED_CELLS"))
     code, data = comp.send("POST", "/api/tasks/00000000-0000-0000-0000-000000000000/submit",
                            {"selected_cells": cells})
     check("unknown task → 404", code == 404)
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit", {"selected_cells": cells})
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     if code == 202 and isinstance(data, dict) and data.get("submission_id"):
         sid = data["submission_id"]
     check("competitor submit 202 queued", code == 202 and bool(sid) and data.get("status") == "queued")
@@ -544,9 +561,9 @@ def main() -> int:
     check("GET submission status valid", code == 200 and st in ("queued", "running", "completed", "failed"), st)
     code, data = api.send("POST", f"/api/submissions/{sid}/select-final")
     check("admin select-final 200", code == 200)
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit", {"selected_cells": cells})
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     sid2 = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit", {"selected_cells": cells})
+    code, data = submit_cells(comp, tid, {"selected_cells": cells})
     check("3rd submit → 429 ERR_DAILY_LIMIT_REACHED (max_eval_requests=2, failed excluded)",
           code == 429 and expect_error(data, "ERR_DAILY_LIMIT_REACHED"))
     code, data = api.send("POST", f"/api/submissions/{sid2}/kill")
@@ -721,7 +738,7 @@ def main() -> int:
                            {"user_id": comp_id, "points": {tid: 12.345}, "reason": "smoke"})
     check("manual points with 3 decimals → 422 ERR_POINTS_INVALID",
           code == 422 and expect_error(data, "ERR_POINTS_INVALID"))
-    code, data = comp.send("POST", f"/api/tasks/{tid}/submit", {"selected_cells": []})
+    code, data = submit_cells(comp, tid, {"selected_cells": []})
     check("empty selected_cells → 422 ERR_VALIDATION", code == 422 and expect_error(data, "ERR_VALIDATION"))
     if fname:
         code, data = comp.send("GET", f"/api/tasks/{tid}/download/{fname}")
@@ -1141,7 +1158,7 @@ def main() -> int:
                             "time.sleep(12)\n"
                             "pd.DataFrame({'id': [1], 'value': [_v]})"
                             ".to_parquet('submission.parquet')\n")
-                code, data = pipe.send("POST", f"/api/tasks/{mid_tid}/submit",
+                code, data = submit_cells(pipe, mid_tid,
                                        {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": mid_code}]})
                 mid_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
@@ -1178,7 +1195,7 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 hf_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15b: create bogus-HF task 201", code == 201 and bool(hf_tid))
-                code, data = pipe.send("POST", f"/api/tasks/{hf_tid}/submit",
+                code, data = submit_cells(pipe, hf_tid,
                                        {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "print(1)"}]})
                 if code == 403 and expect_error(data, "ERR_TASK_NOT_READY"):
@@ -1207,7 +1224,7 @@ def main() -> int:
                 check("15b: problem registry populated after failed build",
                       isinstance(problems, list) and len(problems) > 0,
                       f"problem_codes={problems}")
-                code, data = pipe.send("POST", f"/api/tasks/{hf_tid}/submit",
+                code, data = submit_cells(pipe, hf_tid,
                                        {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "print(1)"}]})
                 prob_list = data.get("problems", []) if isinstance(data, dict) else []
@@ -1264,7 +1281,7 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 to_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15b: create tiny-time-limit task 201", code == 201 and bool(to_tid))
-                code, data = pipe.send("POST", f"/api/tasks/{to_tid}/submit",
+                code, data = submit_cells(pipe, to_tid,
                                        {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "import time\n"
                                                                       "time.sleep(120)\n"}]})
@@ -1296,7 +1313,7 @@ def main() -> int:
                      "file0": ("labels.parquet", labels_buf.getvalue())})
                 kill_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15c: create kill task 201", code == 201 and bool(kill_tid))
-                code, data = pipe.send("POST", f"/api/tasks/{kill_tid}/submit",
+                code, data = submit_cells(pipe, kill_tid,
                                        {"selected_cells": [{"id": 0, "type": "code",
                                                             "source": "import time\ntime.sleep(120)\n"}]})
                 kill_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
@@ -1549,7 +1566,7 @@ def main() -> int:
                 {"baseline_notebook": ("baseline.ipynb", json.dumps(MIN_IPYNB).encode())})
             wc_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
             check("worker-contract: create task 201", code == 201 and bool(wc_tid))
-            code, data = wcomp.send("POST", f"/api/tasks/{wc_tid}/submit",
+            code, data = submit_cells(wcomp, wc_tid,
                                     {"selected_cells": [{"id": 0, "type": "code",
                                                          "source": "import time\ntime.sleep(300)\n"}]})
             ksid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
@@ -1724,7 +1741,7 @@ def main() -> int:
                 os_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                 check("15f: create oversized task 201", code == 201 and bool(os_tid))
                 if os_tid:
-                    code, data = ocomp.send("POST", f"/api/tasks/{os_tid}/submit",
+                    code, data = submit_cells(ocomp, os_tid,
                                             {"selected_cells": [{"id": 0, "type": "code",
                                                                  "source": "open('submission.parquet','wb').write(b'A' * (2 * 1024 * 1024))\n"}]})
                     os_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""

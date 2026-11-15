@@ -1,21 +1,17 @@
-"""Package version constants."""
+"""Application version, read once from backend/pyproject.toml."""
 
 from __future__ import annotations
 
-import os
 import tomllib
-from typing import Any
+from pathlib import Path
+
+# The single source of the version: /api/health and the OpenAPI document both report it
+PYPROJECT_PATH = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
 def _get_version() -> str:
-    base = os.path.dirname(os.path.abspath(__file__))
-    pyproject_path = os.path.join(base, "pyproject.toml")
-    try:
-        with open(pyproject_path, "rb") as f:
-            data: dict[str, Any] = tomllib.load(f)
-        return str(data["project"]["version"])
-    except Exception:
-        return "0.0.0"
+    with PYPROJECT_PATH.open("rb") as f:
+        return str(tomllib.load(f)["project"]["version"])
 
 
 __version__ = _get_version()
