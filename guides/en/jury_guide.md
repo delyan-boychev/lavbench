@@ -34,6 +34,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | Assign manual score points (0–100) per task | **Yes** | **Yes** |
 | View private scores before the results are finalised | **No** | **Yes** |
 | Edit finalized scores with mandatory audit justifications | **Yes** | **Yes** |
+| Finalize a stage or the whole competition (locks the ranking) | **Yes** | **No** |
 | Download Scores CSV and Submissions ZIP archives | **Yes** | **Yes** |
 | Create, edit, or delete challenges, stages, tasks, or Docker images | **No** | **Yes** |
 | Manage admin or jury user accounts | **No** | **Yes** |
