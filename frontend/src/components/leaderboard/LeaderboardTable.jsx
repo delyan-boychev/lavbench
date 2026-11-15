@@ -28,7 +28,9 @@ export default function LeaderboardTable({
   const { t } = useTranslation();
   const isFinalized = challenge?.scores_finalized;
   const metric = metricName || challenge?.metric_name || 'Score';
-  const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
+  const isAdmin = currentUser?.role === 'admin';
+  const isJury = currentUser?.role === 'jury';
+  const isJuryOrAdmin = isAdmin || isJury;
 
   const isCompetitor = currentUser?.role === 'competitor';
 
@@ -210,8 +212,10 @@ export default function LeaderboardTable({
   // Any revealed stage makes private/points columns relevant in the general tab too
   const anyStageRevealed = visibleStages.some((st) => st.is_finalized && st.reveal_results);
 
+  // The jury sees private scores only once they are final (challenge or stage finalised)
   const showPrivateCols =
-    (isJuryOrAdmin ||
+    (isAdmin ||
+      (isJury && (isFinalized || !isStageTab || !!activeStage?.is_finalized)) ||
       (isFinalized && revealResults) ||
       (!isJuryOrAdmin &&
         !isFinalized &&
@@ -234,7 +238,8 @@ export default function LeaderboardTable({
   const taskStageRevealed = taskStage?.is_finalized && taskStage?.reveal_results;
 
   const perTaskShowPrivateCols =
-    isJuryOrAdmin ||
+    isAdmin ||
+    (isJury && (isFinalized || !!taskStage?.is_finalized)) ||
     (isFinalized && revealResults) ||
     (!isJuryOrAdmin && !isFinalized && taskStageRevealed);
 
@@ -407,6 +412,15 @@ export default function LeaderboardTable({
           </div>
         )}
       </div>
+
+      {/* The jury sees private scores only for final results */}
+      {isJury &&
+        !isFinalized &&
+        !(isStageTab ? activeStage?.is_finalized : taskStage?.is_finalized) && (
+          <div className="px-4 py-3 bg-slate-500/10 border border-slate-500/20 rounded-lg text-xs text-slate-300 mb-3">
+            {t('leaderboard.private_hidden_until_final')}
+          </div>
+        )}
 
       {/* Finalized Internal Notice */}
       {isStageTab && activeStage?.is_finalized && !activeStage?.reveal_results && (
@@ -607,7 +621,7 @@ export default function LeaderboardTable({
               value={scoringPoints}
               onChange={(e) => setScoringPoints(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300"
-              placeholder="Enter score"
+              placeholder={t('leaderboard.points_input_placeholder')}
             />
           </div>
 

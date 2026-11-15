@@ -493,7 +493,9 @@
     "reason_required_placeholder": "Describe why you are modifying points...",
     "score_competitor_title": "Grading Competitor: {{name}}",
     "task_details": "Task Details",
-    "username": "Username"
+    "username": "Username",
+    "points_input_placeholder": "Enter points",
+    "private_hidden_until_final": "Private scores stay hidden from the jury until the results are finalised."
   },
   "markdown": {
     "note": "Note",

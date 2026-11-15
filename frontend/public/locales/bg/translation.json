@@ -493,7 +493,9 @@
     "reason_required_placeholder": "Опишете защо променяте точките...",
     "score_competitor_title": "Оценяване на състезател: {{name}}",
     "task_details": "Детайли за задачата",
-    "username": "Потребителско име"
+    "username": "Потребителско име",
+    "points_input_placeholder": "Въведете точки",
+    "private_hidden_until_final": "Частните резултати остават скрити за журито до финализирането на резултатите."
   },
   "markdown": {
     "note": "Забележка",

@@ -33,7 +33,6 @@ class SubmissionResponse(BaseModel):
     final_weighted_score_private: float | None = None
     is_final_selection: bool = False
     is_baseline: bool = False
-    is_disqualified: bool = False
     celery_task_id: str | None = None
 
     model_config = RESPONSE_CONFIG

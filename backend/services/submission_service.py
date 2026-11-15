@@ -16,6 +16,7 @@ from models import Challenge, Stage, Submission, Task, db
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
 from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
+from utils.score_visibility import private_scores_revealed
 from utils.submission_status import INFRA_FAILURE
 
 
@@ -456,12 +457,12 @@ def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
 
 
 def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:
-    """Return whether automatic selection may use a task's private score."""
-    if challenge.scores_finalized:
-        return bool(challenge.reveal_results)
+    """Return whether automatic selection may use a task's private score.
 
+    Only once competitors may see it, so the visible selection never leaks private results.
+    """
     stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
-    return bool(stage and stage.is_finalized and stage.reveal_results)
+    return private_scores_revealed(challenge, stage)
 
 
 def submission_deadline(task: Task, challenge: Challenge) -> datetime | None:

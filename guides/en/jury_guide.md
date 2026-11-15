@@ -13,7 +13,7 @@ Welcome to the LavBench Platform Jury Portal. As a member of the competition jur
 5. [Task Environment Build Error Diagnostics](#5-task-environment-build-error-diagnostics)
 6. [Custom Evaluator Scoring and Leaderboard Inspection](#6-custom-evaluator-scoring-and-leaderboard-inspection)
 7. [Manual Scoring and Score Justification Audit Trail](#7-manual-scoring-and-score-justification-audit-trail)
-8. [Competitor Disqualification and Data Exports](#8-competitor-disqualification-and-data-exports)
+8. [Data Exports](#8-data-exports)
 
 ---
 
@@ -31,8 +31,8 @@ Jury members possess specialized operational privileges to manage competitors, r
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
 | Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
-| Disqualify submissions or competitors (`is_disqualified`) | **Yes** | **Yes** |
 | Assign manual score points (0–100) per task | **Yes** | **Yes** |
+| View private scores before the results are finalised | **No** | **Yes** |
 | Edit finalized scores with mandatory audit justifications | **Yes** | **Yes** |
 | Download Scores CSV and Submissions ZIP archives | **Yes** | **Yes** |
 | Create, edit, or delete challenges, stages, tasks, or Docker images | **No** | **Yes** |
@@ -91,7 +91,7 @@ For on-site live competitions, credential slips are generated after a bulk passw
 
 The platform enforces double-blind privacy controls during active competition:
 
-- **Private Score Access**: Jury members **CAN view `private_score`** values and private metric breakdowns on both the Leaderboard and Submission detail views at all times. (Only competitors are shielded from private scores until competition finalization).
+- **Private Score Access**: Jury members see `private_score` values and private metric breakdowns only once a task's scores are final: when its stage or the whole competition is **Finalized**. Until then the Leaderboard, the submission lists and the submission detail show public scores only, so private results cannot steer manual points. Admins see private scores at all times; competitors see them once the results are finalised and revealed.
 - **Competitor Anonymity (`double_blind=True`)**: When double-blind mode is enabled for a competition, Jury members see competitor **pseudonyms/aliases** (`alias_id`) during active competition. Real competitor names (`name`, `surname`, `email`) remain hidden from Jury until the competition is officially **Finalized** (`scores_finalized=True`). (Admins can view real names at all times).
 
 ### Live Submission Log Streaming
@@ -194,12 +194,14 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 
 ### Post-Finalization Score Modifications & Audit Justifications
 
+Jury members and admins can both assign and change manual points; every change is recorded in the audit log.
+
 Once a competition transitions to the **Finalized** state (`scores_finalized=True`), leaderboard rankings lock. If a score correction is required (e.g., post-competition appeal review):
 
 1. Clicking a score cell opens the **Audit Justification Modal**.
-2. The jury member must enter a textual justification reason.
+2. The jury member or admin must enter a textual justification reason.
 3. Upon confirmation, the backend records an immutable log entry in the **`AuditLog`** table containing:
-   - Jury User ID & Role
+   - The acting jury member's or admin's user ID
    - Target Competitor & Submission ID
    - Original Score vs Updated Score
    - ISO Timestamp
@@ -207,18 +209,9 @@ Once a competition transitions to the **Finalized** state (`scores_finalized=Tru
 
 ---
 
-## 8. Competitor Disqualification and Data Exports
+## 8. Data Exports
 
-### Competitor & Submission Disqualification (`is_disqualified`)
+Exports are available only once the results allow it:
 
-If a competitor violates rules (e.g., unauthorized collaboration, attempted container escape, system abuse):
-
-1. Jury members or admins can flag individual submissions or competitor accounts as disqualified (`is_disqualified=True`).
-2. Disqualified entries are immediately excluded from official standings and highlighted on the jury dashboard.
-
-### Data Exports
-
-Jury members can export competition artifacts at any time:
-
-- **Scores CSV**: Click **Download Scores CSV** in Challenge Management to obtain a CSV containing final ranks, real names, pseudonyms, task scores, manual points, and total scores.
-- **Submissions ZIP**: Click **Download Submissions ZIP** to download a compressed archive containing all successfully evaluated competitor Jupyter notebooks (`.ipynb`).
+- **Scores CSV**: Click **Download Scores CSV** in Challenge Management once the competition is **Finalized**; before that the download is refused (`ERR_SCORES_NOT_FINALIZED`). The CSV lists ranks, pseudonyms, real names, usernames, emails, schools, cities, grades, the score per task (the private score where one exists) and the total.
+- **Submissions ZIP**: Click **Download Submissions ZIP** once the competition (or, for a single stage, that stage) has ended or been finalised. Until the competition is finalised the notebooks are anonymised.

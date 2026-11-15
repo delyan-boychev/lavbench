@@ -214,7 +214,6 @@ def get_user_best_submissions(
             user_id=competitor.id,
             status="completed",
             is_baseline=False,
-            is_disqualified=False,
         )
         .options(
             joinedload(Submission.challenge),

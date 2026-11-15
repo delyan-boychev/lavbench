@@ -829,7 +829,7 @@ def main() -> int:
          {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
         ("POST manual-points", "POST", f"/api/challenges/{cid}/manual-points",
          {"user_id": comp_id, "points": {tid: 1}, "reason": "role-matrix"},
-         {"a": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
+         {"a": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("POST submit (jury)", "POST", f"/api/tasks/{tid}/submit",
          {"selected_cells": [{"id": 0, "type": "code", "source": "print(1)"}]},
          {"j": (202, None), "n": (401, "ERR_TOKEN_INVALID")}),

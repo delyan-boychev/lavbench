@@ -404,8 +404,7 @@ Every sensitive administrative and jury operation is permanently recorded in the
   - Challenge, stage, and task creation, modification, or deletion.
   - Lifecycle state transitions (`finalize`, `archive`, `freeze`).
   - Account creation, CSV user imports, and password resets.
-  - Competitor disqualifications (`is_disqualified`) and baseline flags (`is_baseline`).
-  - Manual score modifications.
+  - Manual score modifications, by jury members or admins.
 
 ### Post-Finalization Score Modification Justifications
 

@@ -191,7 +191,7 @@ export default function Row({
   const renderManualPointsBadge = (task, pts) => {
     if (isBaseline) return '—';
     const blocked = isTaskEditingBlocked(task);
-    const canEdit = isJury && !blocked;
+    const canEdit = isJuryOrAdmin && !blocked;
 
     if (canEdit) {
       return (

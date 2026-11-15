@@ -9,6 +9,7 @@ from typing import Any
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
+from utils.score_visibility import can_view_private_scores
 
 logger = logging.getLogger(__name__)
 
@@ -202,14 +203,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
                 "role": owner_info.get("role"),
             }
 
-        if view_role == "admin":
-            show_private_score = True
-        elif view_role == "jury":
-            show_private_score = finalized
-        else:
-            show_private_score = finalized and (
-                self.challenge.reveal_results if self.challenge else False
-            )
+        stage = self.task.stage if self.task is not None and self.task.stage_id else None
+        show_private_score = can_view_private_scores(view_role, self.challenge, stage)
 
         try:
             m_public = (
@@ -259,7 +254,6 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             ),
             "is_final_selection": self.is_final_selection,
             "is_baseline": self.is_baseline,
-            "is_disqualified": self.is_disqualified,
             "celery_task_id": self.celery_task_id,
         }
 

@@ -346,7 +346,7 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByTitle('Toggle details'));
     fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
 
-    const pointsInput = screen.getByPlaceholderText('Enter score');
+    const pointsInput = screen.getByPlaceholderText('Enter points');
     fireEvent.change(pointsInput, { target: { value: '87.5' } });
 
     fireEvent.click(screen.getByRole('button', { name: /Save/i }));
@@ -359,6 +359,82 @@ describe('LeaderboardTable Component', () => {
       });
     });
     expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it('lets an admin edit manual points like the jury', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
+    ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      double_blind: false,
+    };
+    const tasks = [{ id: 10, title: 'Task 1' }];
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        total_points: 1,
+        user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
+        task_scores: { 10: { public_score: 0.9 } },
+      },
+    ];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
+
+    fireEvent.click(screen.getByTitle('Toggle details'));
+    fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
+    fireEvent.change(screen.getByPlaceholderText('Enter points'), { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => {
+      expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
+        user_id: 5,
+        points: { 10: 12 },
+        reason: undefined,
+      });
+    });
+  });
+
+  it('tells the jury that private scores stay hidden until the results are final', () => {
+    const challenge = {
+      id: 12,
+      title: 'Challenge A',
+      scores_finalized: false,
+      double_blind: false,
+    };
+    const tasks = [{ id: 10, title: 'Task 1' }];
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        private_score: null,
+        total_points: 0,
+        user: { id: 5, username: 'player1', name: 'Player', surname: 'One' },
+        task_scores: { 10: { public_score: 0.9, private_score: null } },
+      },
+    ];
+    const notice = 'Private scores stay hidden from the jury until the results are finalised.';
+
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
+    const { unmount } = renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
+    expect(screen.getByText(notice)).toBeInTheDocument();
+    // A task whose scores are not final shows no private column to the jury
+    fireEvent.click(screen.getByText('Task 1'));
+    expect(screen.queryByText('Private Score')).not.toBeInTheDocument();
+    expect(screen.queryByText('NaN')).not.toBeInTheDocument();
+    unmount();
+
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
+    expect(screen.queryByText(notice)).not.toBeInTheDocument();
   });
 
   it('shows error toast when save manual points returns invalid input', async () => {
@@ -388,7 +464,7 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByTitle('Toggle details'));
     fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
 
-    const pointsInput = screen.getByPlaceholderText('Enter score');
+    const pointsInput = screen.getByPlaceholderText('Enter points');
     fireEvent.change(pointsInput, { target: { value: '200' } });
 
     fireEvent.click(screen.getByRole('button', { name: /Save/i }));
