@@ -1082,27 +1082,16 @@ class TestRouteLevelLogic:
         assert login.status_code == 200
         assert not os.path.exists(credentials_dir)
 
-        self.challenge.start_time = utcnow() + timedelta(hours=1)
-        db.session.commit()
-        res = self.client.post(
-            f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
-            headers=self.get_auth_header(jury_token),
-        )
-        assert res.status_code == 200
-        jury_account = json.loads(res.data)["reset_accounts"][0]
-        assert jury_account["username"] == self.competitor.username
-        assert jury_account["password"]
-        # Double-blind: the jury never sees the decrypted identities
-        for field in ("name", "middle_name", "surname", "birth_date"):
-            assert jury_account[field] is None
-
-        self.challenge.start_time = utcnow() - timedelta(hours=1)
-        db.session.commit()
-        res = self.client.post(
-            f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
-            headers=self.get_auth_header(jury_token),
-        )
-        assert res.status_code == 403
+        # The jury never receives competitors' credentials, before or after the start
+        for start in (utcnow() + timedelta(hours=1), utcnow() - timedelta(hours=1)):
+            self.challenge.start_time = start
+            db.session.commit()
+            res = self.client.post(
+                f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
+                headers=self.get_auth_header(jury_token),
+            )
+            assert res.status_code == 403
+            assert res.get_json()["code"] == "ERR_ROLE_REQUIRED"
 
     def test_search_competitors_privacy_constraints(self):
         jury_user = User(

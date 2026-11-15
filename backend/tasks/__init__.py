@@ -220,12 +220,14 @@ def evaluate_submission(
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except SoftTimeLimitExceeded:
+        # The sandbox enforces the task's own time limit, so hitting Celery's limit means
+        # the time went to waiting for a GPU or building the image: a platform failure
         if HAS_APP and app:
             with app.app_context():
                 sub = db.session.get(Submission, submission_id)
                 if sub and sub.status not in TERMINAL_STATUSES:
                     sub.status = "failed"
-                    sub.detailed_status = "failed"
+                    sub.detailed_status = INFRA_FAILURE
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
                     db.session.commit()
                     from utils.sse_utils import publish_submission_status
@@ -237,7 +239,7 @@ def evaluate_submission(
             report_status_to_server(
                 metadata=metadata,
                 status="failed",
-                detailed_status="failed",
+                detailed_status=INFRA_FAILURE,
                 logs="[TIMEOUT] Celery soft time limit exceeded.",
             )
         return

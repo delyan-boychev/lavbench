@@ -26,8 +26,9 @@ def private_scores_revealed(challenge: Any, stage: Any = None) -> bool:
 def can_view_private_scores(view_role: str, challenge: Any, stage: Any = None) -> bool:
     """Return whether a viewer may see private scores for a task in this challenge.
 
-    Admins always may. The jury may once the scores are final, so private results
-    cannot steer manual points before then. Competitors may once final and revealed.
+    Admins always may. The jury may once the scores are final (decision Q25: the jury
+    reviews blind to the private split until then). Competitors may once final and
+    revealed.
     """
     if view_role == "admin":
         return True

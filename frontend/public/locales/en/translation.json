@@ -95,7 +95,6 @@
     "ERR_CANNOT_MOVE_ENDED": "Cannot move task -- source stage has ended",
     "ERR_CANNOT_MOVE_FINALIZED": "Cannot move task -- source stage is finalized",
     "ERR_CANNOT_MOVE_HAS_MANUAL_POINTS": "Cannot move task -- submissions have manual points assigned",
-    "ERR_CANNOT_RESET_BULK_STARTED": "Cannot reset passwords: The competition has already started.",
     "ERR_CANNOT_RESET_STARTED": "Cannot reset password: The assigned competition has already started.",
     "ERR_CHALLENGE_ARCHIVED": "This challenge has been archived and no longer accepts submissions.",
     "ERR_CHALLENGE_ID_REQUIRED": "challenge_id is required for competitor registration.",

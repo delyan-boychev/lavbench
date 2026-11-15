@@ -1170,8 +1170,9 @@ def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResp
 
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/reset-all-passwords", methods=["POST"])
-@role_required(["admin", "jury"])
-@jury_access_required
+# Admin only: the response carries every competitor's new password, and the jury must
+# never hold working credentials for competitors
+@role_required(["admin"])
 @rate_limit(max_requests=3, window_seconds=300)
 @api.validate(
     tags=["Admin"],
@@ -1181,14 +1182,8 @@ def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResp
 def reset_all_challenge_passwords(
     challenge_id: Any,
 ) -> BulkResetPasswordResponse | tuple[FlaskResponse, int]:
-    challenge = db.get_or_404(Challenge, challenge_id)
-    # Check if competition has started and requester is jury
-    if request.user["role"] == "jury" and challenge.is_started:
-        return err("ERR_CANNOT_RESET_BULK_STARTED", 403)
-
+    db.get_or_404(Challenge, challenge_id)
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
-    # Double-blind: the jury gets the login details but never the decrypted identities
-    include_identity = request.user["role"] == "admin"
 
     accounts: list[ResetAccountItem] = []
     for user in competitors:
@@ -1200,11 +1195,11 @@ def reset_all_challenge_passwords(
             password=new_password,
             alias_id=user.alias_id,
         )
-        if include_identity:
-            item.name = decrypt_field(user.name) or ""
-            item.middle_name = decrypt_field(user.middle_name) if user.middle_name else ""
-            item.surname = decrypt_field(user.surname) or ""
-            item.birth_date = decrypt_field(user.birth_date) if user.birth_date else ""
+        # The admin prints named login slips from these
+        item.name = decrypt_field(user.name) or ""
+        item.middle_name = decrypt_field(user.middle_name) if user.middle_name else ""
+        item.surname = decrypt_field(user.surname) or ""
+        item.birth_date = decrypt_field(user.birth_date) if user.birth_date else ""
         accounts.append(item)
 
     db.session.commit()

@@ -34,6 +34,7 @@ import SubmissionQueue from '../components/admin/SubmissionQueue';
 import Modal from '../components/ui/Modal';
 import { TIMEZONES } from '../utils/timezones';
 import { downloadCredentialsCsv } from '../utils/credentialsCsv';
+import { useApiError } from '../hooks/useApiError';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
 
@@ -56,13 +57,7 @@ export default function AdminPanel() {
 
   const { challenges, selectedChallenge, setSelectedChallengeById, showToast, confirm } = useApp();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');

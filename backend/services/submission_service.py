@@ -131,6 +131,28 @@ def _check_quotas(user_id: Any, task: Task, challenge: Challenge) -> tuple[Respo
     return None
 
 
+def _add_queued_submission(
+    task: Task,
+    challenge: Challenge,
+    user_id: Any,
+    cells: list[dict[str, Any]],
+    *,
+    is_baseline: bool = False,
+) -> Submission:
+    submission = Submission(
+        user_id=user_id,
+        challenge_id=challenge.id,
+        task_id=task.id,
+        status="queued",
+        detailed_status="queued",
+        is_baseline=is_baseline,
+        code_cells=json.dumps(cells),
+    )
+    db.session.add(submission)
+    db.session.commit()
+    return submission
+
+
 def create_submission(
     task: Task,
     challenge: Challenge,
@@ -147,8 +169,10 @@ def create_submission(
     before any row exists; an enqueue failure keeps the row, marks it
     ``failed_infra`` and returns 503 with its ``submission_id``. Competitor submissions pass
     registration, the window and readiness gates, the AST rules and the quotas; a
-    rejection creates no row and uses no quota (Q21). Baselines skip those checks,
-    because they are the system's own run that clears the task's problem codes.
+    rejection creates no row and uses no quota (Q21). Baselines skip those checks and
+    the queue cap: they are the system's own run that clears the task's problem codes,
+    and the old baseline is already deleted, so dropping the new one would leave the
+    task blocked with no signal.
     """
     from utils.cache_utils import cache_lock, get_queue_depth
     from utils.json_utils import safe_json_loads
@@ -167,38 +191,25 @@ def create_submission(
 
     gpu_required = resolve_gpu_required(task, challenge)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-    lock_key = (
-        f"submit_lock:baseline:task_{task.id}"
-        if is_baseline
-        else f"submit_lock:user_{user_id}:challenge_{challenge.id}"
-    )
-    with cache_lock(lock_key, ttl=10) as acquired:
-        if not acquired:
-            return err("ERR_SUBMIT_LOCKED", 429)
-        if not is_baseline:
+    if is_baseline:
+        submission = _add_queued_submission(task, challenge, user_id, cells, is_baseline=True)
+    else:
+        with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
+            if not got:
+                return err("ERR_SUBMIT_LOCKED", 429)
             limited = _check_quotas(user_id, task, challenge)
             if limited:
                 return limited
-        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-            return err(
-                "ERR_QUEUE_FULL",
-                429,
-                message=(
-                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                    "Please try again later."
-                ),
-            )
-        submission = Submission(
-            user_id=user_id,
-            challenge_id=challenge.id,
-            task_id=task.id,
-            status="queued",
-            detailed_status="queued",
-            is_baseline=is_baseline,
-            code_cells=json.dumps(cells),
-        )
-        db.session.add(submission)
-        db.session.commit()
+            if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+                return err(
+                    "ERR_QUEUE_FULL",
+                    429,
+                    message=(
+                        f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                        "Please try again later."
+                    ),
+                )
+            submission = _add_queued_submission(task, challenge, user_id, cells)
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives

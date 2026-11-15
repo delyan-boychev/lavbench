@@ -9,6 +9,7 @@ import CodePreview from '../ui/CodePreview';
 import FileDropZone from '../ui/FileDropZone';
 import { Book, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useApiError } from '../../hooks/useApiError';
 
 // Large notebooks start collapsed so uploading does not syntax-highlight every cell at once
 const COLLAPSE_THRESHOLD = 20;
@@ -18,6 +19,7 @@ export default function NotebookSubmit({ task, challenge }) {
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
+  const { showApiError } = useApiError();
 
   const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState(() => EMPTY_SET);
@@ -147,11 +149,7 @@ export default function NotebookSubmit({ task, challenge }) {
           );
         }
       } else {
-        const errCode = res.data?.code;
-        const errMsg = errCode
-          ? t(`api.${errCode}`, res.data?.error || t('challenge.failed_parse'))
-          : res.data?.error || t('challenge.failed_parse');
-        showToast(errMsg, 'error');
+        showApiError(res.data, 'challenge.failed_parse');
       }
     } catch {
       showToast(t('challenge.network_error_parse'), 'error');

@@ -31,6 +31,7 @@ import { Plus, AlertTriangle } from 'lucide-react';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
+import { useApiError } from '../../hooks/useApiError';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
   const { t } = useTranslation();
@@ -51,13 +52,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const { mutateAsync: toggleRevealStageAct, isPending: isRevealingStage } = useToggleRevealStage();
   const { mutateAsync: deleteTaskAct, isPending: isDeletingTask } = useDeleteTask();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   const API_BASE = '/api';
 

@@ -285,6 +285,23 @@ class TestCreateBaselineSubmission:
         metadata = mock_apply.call_args[1]["args"][1]
         assert "custom_eval_code" not in metadata
 
+    @patch("utils.cache_utils.get_queue_depth", return_value=10_000)
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_baseline_is_queued_even_when_the_queue_is_full(self, mock_apply, mock_depth):
+        # The old baseline is already gone, so dropping the new one would block the task
+        result = create_submission(
+            self.task,
+            self.challenge,
+            self.admin.id,
+            "admin",
+            [{"source": "x=1"}],
+            is_baseline=True,
+            priority=8,
+        )
+        assert not isinstance(result, tuple)
+        assert result.is_baseline is True
+        mock_apply.assert_called_once()
+
     @patch("tasks.evaluate_submission.apply_async")
     def test_priority_passed_to_celery(self, mock_apply):
         create_submission(

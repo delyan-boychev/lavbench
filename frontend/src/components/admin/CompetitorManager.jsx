@@ -270,8 +270,7 @@ export default function CompetitorManager({
             <p className="text-slate-400 text-xs">{t('admin.competitor_reg.unmasking_desc')}</p>
           </div>
           <div className="flex items-center gap-3.5 flex-wrap">
-            {(currentUser.role === 'admin' ||
-              challenges.some((c) => !isChallengeStarted(c.id))) && (
+            {currentUser.role === 'admin' && (
               <Button
                 variant="secondary"
                 size="sm"

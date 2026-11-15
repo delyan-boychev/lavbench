@@ -7,6 +7,12 @@ import { useApp } from '../../context/AppContext';
 import AdminPanel from '../AdminPanel';
 
 // Mock AuthContext
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
+}));
+
 vi.mock('../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -17,7 +23,6 @@ vi.mock('../../context/AppContext', () => ({
 }));
 
 describe('AdminPanel - Stages and Finalization Actions', () => {
-  const mockShowToast = vi.fn();
   const mockSetSelectedChallengeById = vi.fn();
   const mockFetchChallenges = vi.fn();
   const mockConfirm = vi.fn();

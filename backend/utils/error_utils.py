@@ -48,7 +48,6 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_CANNOT_CHANGE_ROLE_ADMIN": "Cannot change user role to Administrator.",
     "ERR_CANNOT_ASSIGN_STARTED": "Cannot assign user to a competition that has already started.",
     "ERR_CANNOT_RESET_STARTED": "Cannot reset password: The assigned competition has already started.",
-    "ERR_CANNOT_RESET_BULK_STARTED": "Cannot reset passwords: The competition has already started.",
     # admin.py — ZIP download
     "ERR_SCORES_NOT_FINALIZED": "Scores must be finalized before downloading.",
     "ERR_STAGE_MISMATCH": "Stage does not belong to this challenge.",
