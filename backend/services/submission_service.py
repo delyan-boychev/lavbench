@@ -138,6 +138,7 @@ def _add_queued_submission(
     cells: list[dict[str, Any]],
     *,
     is_baseline: bool = False,
+    infra_retry_count: int = 0,
 ) -> Submission:
     submission = Submission(
         user_id=user_id,
@@ -146,6 +147,7 @@ def _add_queued_submission(
         status="queued",
         detailed_status="queued",
         is_baseline=is_baseline,
+        infra_retry_count=infra_retry_count,
         code_cells=json.dumps(cells),
     )
     db.session.add(submission)
@@ -162,6 +164,7 @@ def create_submission(
     *,
     is_baseline: bool = False,
     priority: int | None = None,
+    infra_retry_count: int = 0,
 ) -> Submission | tuple[Response, int]:
     """Create and dispatch a submission; the single creation path for every route.
 
@@ -170,11 +173,13 @@ def create_submission(
     ``failed_infra`` and returns 503 with its ``submission_id``. Competitor submissions pass
     registration, the window and readiness gates, the AST rules and the quotas; a
     rejection creates no row and uses no quota (Q21). Baselines skip those checks and
-    the queue cap: they are the system's own run that clears the task's problem codes,
-    and the old baseline is already deleted, so dropping the new one would leave the
-    task blocked with no signal.
+    the queue cap: they are the system's own run that settles the task's readiness, so
+    dropping one would leave the task blocked with no signal. ``infra_retry_count``
+    numbers a baseline rerun after a platform failure.
     """
     from utils.cache_utils import cache_lock, get_queue_depth
+    from utils.json_utils import safe_json_loads
+    from utils.metadata import build_submission_metadata
     from utils.sse_utils import publish_queue_update
 
     if not is_baseline:
@@ -190,7 +195,9 @@ def create_submission(
     gpu_required = resolve_gpu_required(task, challenge)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
     if is_baseline:
-        submission = _add_queued_submission(task, challenge, user_id, cells, is_baseline=True)
+        submission = _add_queued_submission(
+            task, challenge, user_id, cells, is_baseline=True, infra_retry_count=infra_retry_count
+        )
     else:
         with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
             if not got:
@@ -213,29 +220,6 @@ def create_submission(
     # Submissions only; the results path invalidates it when the score arrives
     publish_queue_update()
 
-    resolved_priority = (
-        priority if priority is not None else calculate_submission_priority(user_id, user_role)
-    )
-    if not dispatch_submission(submission, task, challenge, priority=resolved_priority):
-        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
-    return submission
-
-
-def dispatch_submission(
-    submission: Submission, task: Task, challenge: Challenge, *, priority: int
-) -> bool:
-    """Send a queued submission row to its worker queue as a new attempt.
-
-    Each call gets a fresh attempt id, so reports from an earlier attempt of the same
-    row are rejected as stale. Returns False when the broker refused the message; the
-    row is then marked ``failed_infra``, which costs no quota.
-    """
-    from utils.json_utils import safe_json_loads
-    from utils.metadata import build_submission_metadata
-    from utils.sse_utils import publish_queue_update
-
-    gpu_required = resolve_gpu_required(task, challenge)
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
     attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
     submission.celery_task_id = attempt_id
     db.session.commit()
@@ -251,7 +235,9 @@ def dispatch_submission(
     try:
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
-            priority=priority,
+            priority=priority
+            if priority is not None
+            else calculate_submission_priority(user_id, user_role),
             queue=queue_name,
             expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=attempt_id,
@@ -259,11 +245,13 @@ def dispatch_submission(
     except Exception as e:
         submission.status = "failed"
         submission.detailed_status = INFRA_FAILURE
-        submission.logs = f"Submission queue unavailable: {e}"
+        # No message was sent, so the row keeps no attempt id
+        submission.celery_task_id = None
+        submission.logs = f"{submission.logs or ''}\nSubmission queue unavailable: {e}".strip()
         db.session.commit()
         publish_queue_update()
-        return False
-    return True
+        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
+    return submission
 
 
 def extract_code_from_cells(cells_list: list[Any]) -> list[str]:

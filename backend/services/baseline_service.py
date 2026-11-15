@@ -1,27 +1,31 @@
-"""Baseline lifecycle: turn a finished baseline run into its task's readiness."""
+"""Baseline lifecycle: queue a task's baseline run and turn its outcome into readiness."""
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from models import Challenge, Submission, Task, db
-from services.submission_service import dispatch_submission
-from utils.dates import utcnow
+from services.submission_service import create_submission, extract_code_from_notebook
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
-# A platform failure (GPU, Docker, image build, file sync, lost worker, expiry) says
-# Nothing about the baseline notebook, so it is retried before the task is blocked
+# A platform failure (GPU, Docker, lost worker, expiry) says nothing about the baseline
+# Notebook, so it is rerun as a new baseline before the task is blocked
 MAX_BASELINE_INFRA_RETRIES = 2
-# Baselines decide whether competitors may submit at all, so they run first
+# Baselines decide whether competitors may submit at all, so they share the staff
+# Priority (0) and run ahead of every competitor job (1)
 BASELINE_PRIORITY = 0
 
 
 def current_baseline(task_id: Any) -> Submission | None:
-    """Return the task's newest baseline row, the only one that may change readiness."""
-    # Ids are UUIDv7 and sort in creation order; created_at moves on a retry
+    """Return the task's newest baseline run, the only one that may change readiness.
+
+    A rerun is a new row, so an update to a superseded run is never the current one.
+    """
+    # Ids are UUIDv7 and sort in creation order, also within one millisecond
     newest: Submission | None = (
         Submission.query.filter(
             Submission.task_id == task_id,
@@ -33,16 +37,50 @@ def current_baseline(task_id: Any) -> Submission | None:
     return newest
 
 
+def queue_baseline(
+    task: Task, challenge: Challenge, user_id: Any, *, infra_retry_count: int = 0
+) -> Submission | None:
+    """Queue the task's baseline notebook as a new baseline run.
+
+    Returns the new run, or None when the task has no baseline code or the broker
+    refused the run. A refused run stays ``failed_infra`` with no attempt id, so
+    settling it here sets ``ERR_BASELINE_FAILED`` instead of queueing again.
+    """
+    path = task.baseline_notebook_path
+    sources = extract_code_from_notebook(path) if path and os.path.exists(path) else []
+    if not sources:
+        return None
+    cells = [{"source": source} for source in sources]
+    result = create_submission(
+        task,
+        challenge,
+        user_id,
+        "admin",
+        cells,
+        is_baseline=True,
+        priority=BASELINE_PRIORITY,
+        infra_retry_count=infra_retry_count,
+    )
+    if isinstance(result, tuple):
+        logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
+        refused = current_baseline(task.id)
+        if refused is not None:
+            apply_baseline_outcome(refused)
+        return None
+    return result
+
+
 def apply_baseline_outcome(submission: Submission) -> None:
-    """Apply a terminal baseline run to its task's problem codes.
+    """Apply an ended baseline run to its task's problem codes.
 
     The single place every way a run ends (worker report, watchdog, Redis fallback
-    recovery, Celery soft time limit, kill) settles task readiness. A completed run
-    clears ``ERR_BASELINE_FAILED``; a failed run sets it; a platform failure
-    (``failed_infra``) is requeued as a fresh attempt up to
-    ``MAX_BASELINE_INFRA_RETRIES`` times before it sets the code. Callers commit the
-    terminal status first and signal the submission's status after this returns,
-    because a requeued run is no longer terminal.
+    recovery, Celery soft time limit, kill, a refused enqueue) settles task readiness,
+    and only for the task's current baseline. A completed run clears
+    ``ERR_BASELINE_FAILED``. A platform failure (``failed_infra``) that reached the
+    queue, on a task with no other problem code, is rerun as a new baseline row, up to
+    ``MAX_BASELINE_INFRA_RETRIES`` times; every other ended run sets the code, and so
+    does a refused rerun. The ended row is never changed, so callers signal its status
+    as usual.
     """
     if not submission.is_baseline or submission.task_id is None:
         return
@@ -59,63 +97,32 @@ def apply_baseline_outcome(submission: Submission) -> None:
     if submission.status == "completed":
         _set_baseline_failed(task, failed=False)
         return
-    # Each pass raises infra_retry_count, and a refused requeue leaves the row
-    # Failed_infra again, so the loop ends after at most MAX_BASELINE_INFRA_RETRIES
-    while (
-        submission.detailed_status == INFRA_FAILURE
-        and (submission.infra_retry_count or 0) < MAX_BASELINE_INFRA_RETRIES
-    ):
-        if _requeue(submission, task, challenge):
+    if _needs_rerun(submission, task):
+        retries = submission.infra_retry_count + 1
+        rerun = queue_baseline(task, challenge, submission.user_id, infra_retry_count=retries)
+        if rerun is not None:
+            logger.info(
+                "Baseline %s for task %s failed on the platform; rerun as %s (retry %s of %s)",
+                submission.id,
+                task.id,
+                rerun.id,
+                retries,
+                MAX_BASELINE_INFRA_RETRIES,
+            )
             return
     _set_baseline_failed(task, failed=True)
 
 
-def _requeue(submission: Submission, task: Task, challenge: Challenge) -> bool:
-    """Queue the same row again as a fresh attempt; False when the broker refused it."""
-    from utils.sse_utils import clear_submission_logs, publish_queue_update
-
-    submission.infra_retry_count = (submission.infra_retry_count or 0) + 1
-    attempt = submission.infra_retry_count + 1
-    total = MAX_BASELINE_INFRA_RETRIES + 1
-    submission.logs = (
-        f"{submission.logs or ''}\n[RETRY] Platform failure; baseline requeued "
-        f"(attempt {attempt} of {total})."
-    ).strip()
-    submission.status = "queued"
-    submission.detailed_status = "queued"
-    # The watchdog's never-picked-up clock runs from created_at
-    submission.created_at = utcnow()
-    submission.executed_at = None
-    submission.gpu_node = None
-    submission.execution_time_ms = None
-    submission.public_score = None
-    submission.private_score = None
-    submission.final_weighted_score_public = None
-    submission.final_weighted_score_private = None
-    submission.metrics_payload_public = None
-    submission.metrics_payload_private = None
-    db.session.commit()
-    clear_submission_logs(submission.id)
-    publish_queue_update()
-
-    if not dispatch_submission(submission, task, challenge, priority=BASELINE_PRIORITY):
-        logger.warning(
-            "Baseline %s for task %s could not be requeued (attempt %s)",
-            submission.id,
-            task.id,
-            attempt,
-        )
-        return False
-    # Persists the dispatch-time limit snapshot the metadata builder recorded
-    db.session.commit()
-    logger.info(
-        "Baseline %s for task %s requeued after a platform failure (attempt %s of %s)",
-        submission.id,
-        task.id,
-        attempt,
-        total,
+def _needs_rerun(submission: Submission, task: Task) -> bool:
+    """Whether a failed baseline run was a platform failure that a new run may avoid."""
+    return (
+        submission.detailed_status == INFRA_FAILURE
+        and submission.infra_retry_count < MAX_BASELINE_INFRA_RETRIES
+        # A refused enqueue sent nothing: the broker is down; saving the task queues it again
+        and submission.celery_task_id is not None
+        # A build or sync problem fails every run the same way until the task is fixed
+        and set(task.problem_codes or []) <= {"ERR_BASELINE_FAILED"}
     )
-    return True
 
 
 def _set_baseline_failed(task: Task, *, failed: bool) -> None:

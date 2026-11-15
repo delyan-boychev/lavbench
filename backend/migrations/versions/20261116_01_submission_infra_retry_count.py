@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Count how often a submission was requeued after a platform failure."""
+    """Number each baseline rerun after a platform failure."""
     with op.batch_alter_table("submissions") as batch_op:
         batch_op.add_column(
             sa.Column("infra_retry_count", sa.Integer(), nullable=False, server_default="0")

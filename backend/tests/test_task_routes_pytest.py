@@ -361,9 +361,9 @@ class TestMaybeQueueBaseline:
         db.session.add(self.admin)
         db.session.commit()
 
-    @patch("routes.tasks.create_submission")
-    @patch("routes.tasks.os.path.exists")
-    @patch("routes.tasks.extract_code_from_notebook")
+    @patch("services.baseline_service.create_submission")
+    @patch("services.baseline_service.os.path.exists")
+    @patch("services.baseline_service.extract_code_from_notebook")
     def test_queues_baseline_when_notebook_exists(self, mock_extract, mock_exists, mock_queue):
         mock_exists.return_value = True
         mock_extract.return_value = [{"cell_type": "code", "source": ["x=1"]}]
@@ -374,14 +374,14 @@ class TestMaybeQueueBaseline:
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_called_once()
 
-    @patch("routes.tasks.create_submission")
+    @patch("services.baseline_service.create_submission")
     def test_no_notebook_does_nothing(self, mock_queue):
         from routes.tasks import _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_not_called()
 
-    @patch("routes.tasks.create_submission")
+    @patch("services.baseline_service.create_submission")
     @patch("routes.tasks.os.path.exists")
     def test_deletes_old_baselines(self, mock_exists, mock_queue):
         mock_exists.return_value = False
@@ -403,16 +403,16 @@ class TestMaybeQueueBaseline:
         remaining = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).all()
         assert len(remaining) == 0
 
-    @patch("routes.tasks.create_submission")
-    @patch("routes.tasks.os.path.exists")
+    @patch("services.baseline_service.create_submission")
+    @patch("services.baseline_service.os.path.exists")
     def test_empty_notebook_does_not_queue(self, mock_exists, mock_queue):
         mock_exists.return_value = True
         self.task.baseline_notebook_path = "/tmp/empty.ipynb"
         db.session.commit()
-        import routes.tasks
+        import services.baseline_service
         from routes.tasks import _maybe_queue_baseline
 
-        with patch.object(routes.tasks, "extract_code_from_notebook", return_value=[]):
+        with patch.object(services.baseline_service, "extract_code_from_notebook", return_value=[]):
             _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_not_called()
 
@@ -424,7 +424,7 @@ class TestMaybeQueueBaseline:
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_dispatches_at_priority_zero(self, mock_apply, tmp_path):
-        # Baselines decide readiness, so they run ahead of staff (0) and competitor (1) jobs
+        # Baselines decide readiness: they tie with staff (0) and run ahead of competitor (1) jobs
         self._write_baseline_notebook(tmp_path)
         from routes.tasks import _maybe_queue_baseline
 
@@ -436,19 +436,45 @@ class TestMaybeQueueBaseline:
         assert sub.status == "queued"
 
     @patch("tasks.evaluate_submission.apply_async", side_effect=RuntimeError("broker down"))
-    def test_refused_enqueue_retries_then_blocks_the_task(self, mock_apply, tmp_path):
+    def test_refused_enqueue_blocks_the_task_without_a_retry(self, mock_apply, tmp_path):
+        # The broker is down, so an immediate retry cannot help; saving the task queues it again
         self._write_baseline_notebook(tmp_path)
         from routes.tasks import _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
 
-        assert mock_apply.call_count == 3
-        assert all(call.kwargs["priority"] == 0 for call in mock_apply.call_args_list)
+        mock_apply.assert_called_once()
         db.session.expire_all()
         sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).one()
         assert sub.detailed_status == "failed_infra"
-        assert sub.infra_retry_count == 2
+        assert sub.celery_task_id is None
+        assert sub.infra_retry_count == 0
         assert db.session.get(Task, self.task.id).problem_codes == ["ERR_BASELINE_FAILED"]
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_saving_the_task_replaces_failed_baseline_runs(self, mock_apply, tmp_path):
+        self._write_baseline_notebook(tmp_path)
+        for retries in (0, 1):
+            db.session.add(
+                Submission(
+                    user_id=self.admin.id,
+                    challenge_id=self.challenge.id,
+                    task_id=self.task.id,
+                    status="failed",
+                    detailed_status="failed_infra",
+                    is_baseline=True,
+                    infra_retry_count=retries,
+                    code_cells="[]",
+                )
+            )
+        db.session.commit()
+        from routes.tasks import _maybe_queue_baseline
+
+        _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
+
+        sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).one()
+        assert sub.status == "queued"
+        assert sub.infra_retry_count == 0
 
 
 class TestGetTask:

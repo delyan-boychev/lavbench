@@ -233,10 +233,8 @@ def evaluate_submission(
                     from services.baseline_service import apply_baseline_outcome
                     from utils.sse_utils import publish_submission_status
 
-                    # A baseline may be requeued, and then it is no longer terminal
                     apply_baseline_outcome(sub)
-                    if sub.status in TERMINAL_STATUSES:
-                        publish_submission_status(submission_id, sub.status)
+                    publish_submission_status(submission_id, "failed")
         elif IS_EVAL_WORKER and metadata:
             from utils.worker_utils import report_status_to_server
 
@@ -500,25 +498,22 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
 
 
 def _settle_ended_submissions(ended: list[tuple[Any, str, bool]]) -> None:
-    """Apply baseline outcomes, then signal each final status once it is committed.
+    """Signal each final status once it is committed, then settle ended baseline runs.
 
-    Runs after the watchdog's commit: a baseline requeue commits and dispatches, which
-    must not happen inside the streamed (``yield_per``) queries above.
+    Runs after the watchdog's commit: a baseline rerun creates and dispatches a new
+    run, which must not happen inside the streamed (``yield_per``) queries above.
     """
     from services.baseline_service import apply_baseline_outcome
     from utils.sse_utils import publish_submission_status
 
     for submission_id, status, is_baseline in ended:
-        final_status: str | None = status
+        publish_submission_status(submission_id, status)
+        if not is_baseline:
+            continue
         try:
-            if is_baseline:
-                sub = db.session.get(Submission, submission_id)
-                if sub is None:
-                    continue
+            sub = db.session.get(Submission, submission_id)
+            if sub is not None:
                 apply_baseline_outcome(sub)
-                final_status = sub.status
-            if final_status in TERMINAL_STATUSES:
-                publish_submission_status(submission_id, final_status)
         except Exception as e:
             db.session.rollback()
             logger.warning("Watchdog: failed to settle submission %s: %s", submission_id, e)

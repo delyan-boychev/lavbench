@@ -36,15 +36,10 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
-from services.baseline_service import (
-    BASELINE_PRIORITY,
-    apply_baseline_outcome,
-    current_baseline,
-)
+from services.baseline_service import apply_baseline_outcome, queue_baseline
 from services.submission_service import (
     create_submission,
     extract_code_from_cells,
-    extract_code_from_notebook,
 )
 from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
@@ -301,22 +296,7 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
             with contextlib.suppress(OSError):
                 os.remove(log_path)
 
-    # Parse and submit new baseline if notebook exists
-    baseline_cells = []
-    if task.baseline_notebook_path and os.path.exists(task.baseline_notebook_path):
-        baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
-
-    if baseline_cells:
-        cells = [{"source": source} for source in baseline_cells]
-        result = create_submission(
-            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=BASELINE_PRIORITY
-        )
-        if isinstance(result, tuple):
-            logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
-            # A refused enqueue keeps the row as failed_infra, one more way a run ends
-            refused = current_baseline(task.id)
-            if refused is not None:
-                apply_baseline_outcome(refused)
+    queue_baseline(task, challenge, admin_id)
 
 
 # ── TASK CRUD ──
@@ -1525,8 +1505,7 @@ def report_worker_progress(
 
     db.session.commit()
 
-    # Settles task readiness; a platform failure may requeue the baseline, so the
-    # Final status below is signalled only if the run is still terminal
+    # An ended baseline run settles its task's readiness
     apply_baseline_outcome(submission)
 
     publish_queue_update()
@@ -1647,8 +1626,8 @@ def report_build_error(
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
         task.problem_codes = sorted(merged) or None
     else:
-        # Successful build clears all build-related problems (baseline state
-        # Is managed separately by report_worker_progress)
+        # Successful build clears all build-related problems; ERR_BASELINE_FAILED
+        # Stays until a baseline run completes (services.baseline_service)
         build_codes = {
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",
