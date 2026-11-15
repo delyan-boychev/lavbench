@@ -205,7 +205,7 @@ Click any submission to open the log viewer:
 
 - During active competitions, competitors appear on leaderboards under auto-generated pseudonyms (e.g., `Quantum-Falcon-402`).
 - Real competitor names and institutional affiliations remain hidden from peer competitors to maintain double-blind fairness.
-- Real identities are revealed on public leaderboards only after official competition **Finalization**.
+- Real identities are revealed on public leaderboards only after official competition **Finalization**, and only as name and surname. The leaderboard never shares other competitors' email, username, school, city, grade or other profile details.
 
 ### Public vs Private Scores
 
@@ -233,6 +233,12 @@ When two competitors achieve identical score values (or, after finalisation, ide
 they share the same rank number on the leaderboard (e.g. 1, 1, 3) and are listed alphabetically by
 pseudonym. Execution runtime matters only when the platform picks which of your own submissions
 counts (see **Automatic Selection** above).
+
+Competitors without a scored submission have no rank; after finalisation, a competitor with jury
+points is ranked. Each task's tab also shows a **Baseline** row with the score of the organisers'
+baseline notebook. It has no rank and sits where its score falls, so the best competitor is always
+#1. It does not appear on the general or stage tabs and is hidden once the results are finalised
+and revealed.
 
 ---
 
