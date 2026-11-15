@@ -416,6 +416,40 @@ class TestMaybeQueueBaseline:
             _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_not_called()
 
+    def _write_baseline_notebook(self, tmp_path):
+        notebook = tmp_path / "baseline.ipynb"
+        notebook.write_text(json.dumps({"cells": [{"cell_type": "code", "source": ["x = 1"]}]}))
+        self.task.baseline_notebook_path = str(notebook)
+        db.session.commit()
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_dispatches_at_priority_zero(self, mock_apply, tmp_path):
+        # Baselines decide readiness, so they run ahead of staff (0) and competitor (1) jobs
+        self._write_baseline_notebook(tmp_path)
+        from routes.tasks import _maybe_queue_baseline
+
+        _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
+
+        mock_apply.assert_called_once()
+        assert mock_apply.call_args.kwargs["priority"] == 0
+        sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).one()
+        assert sub.status == "queued"
+
+    @patch("tasks.evaluate_submission.apply_async", side_effect=RuntimeError("broker down"))
+    def test_refused_enqueue_retries_then_blocks_the_task(self, mock_apply, tmp_path):
+        self._write_baseline_notebook(tmp_path)
+        from routes.tasks import _maybe_queue_baseline
+
+        _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
+
+        assert mock_apply.call_count == 3
+        assert all(call.kwargs["priority"] == 0 for call in mock_apply.call_args_list)
+        db.session.expire_all()
+        sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).one()
+        assert sub.detailed_status == "failed_infra"
+        assert sub.infra_retry_count == 2
+        assert db.session.get(Task, self.task.id).problem_codes == ["ERR_BASELINE_FAILED"]
+
 
 class TestGetTask:
     @pytest.fixture(autouse=True)

@@ -175,8 +175,6 @@ def create_submission(
     task blocked with no signal.
     """
     from utils.cache_utils import cache_lock, get_queue_depth
-    from utils.json_utils import safe_json_loads
-    from utils.metadata import build_submission_metadata
     from utils.sse_utils import publish_queue_update
 
     if not is_baseline:
@@ -215,6 +213,29 @@ def create_submission(
     # Submissions only; the results path invalidates it when the score arrives
     publish_queue_update()
 
+    resolved_priority = (
+        priority if priority is not None else calculate_submission_priority(user_id, user_role)
+    )
+    if not dispatch_submission(submission, task, challenge, priority=resolved_priority):
+        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
+    return submission
+
+
+def dispatch_submission(
+    submission: Submission, task: Task, challenge: Challenge, *, priority: int
+) -> bool:
+    """Send a queued submission row to its worker queue as a new attempt.
+
+    Each call gets a fresh attempt id, so reports from an earlier attempt of the same
+    row are rejected as stale. Returns False when the broker refused the message; the
+    row is then marked ``failed_infra``, which costs no quota.
+    """
+    from utils.json_utils import safe_json_loads
+    from utils.metadata import build_submission_metadata
+    from utils.sse_utils import publish_queue_update
+
+    gpu_required = resolve_gpu_required(task, challenge)
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
     attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
     submission.celery_task_id = attempt_id
     db.session.commit()
@@ -230,9 +251,7 @@ def create_submission(
     try:
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
-            priority=priority
-            if priority is not None
-            else calculate_submission_priority(user_id, user_role),
+            priority=priority,
             queue=queue_name,
             expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=attempt_id,
@@ -243,8 +262,8 @@ def create_submission(
         submission.logs = f"Submission queue unavailable: {e}"
         db.session.commit()
         publish_queue_update()
-        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
-    return submission
+        return False
+    return True
 
 
 def extract_code_from_cells(cells_list: list[Any]) -> list[str]:

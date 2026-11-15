@@ -36,6 +36,11 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
+from services.baseline_service import (
+    BASELINE_PRIORITY,
+    apply_baseline_outcome,
+    current_baseline,
+)
 from services.submission_service import (
     create_submission,
     extract_code_from_cells,
@@ -304,10 +309,14 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
     if baseline_cells:
         cells = [{"source": source} for source in baseline_cells]
         result = create_submission(
-            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=8
+            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=BASELINE_PRIORITY
         )
         if isinstance(result, tuple):
             logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
+            # A refused enqueue keeps the row as failed_infra, one more way a run ends
+            refused = current_baseline(task.id)
+            if refused is not None:
+                apply_baseline_outcome(refused)
 
 
 # ── TASK CRUD ──
@@ -1514,20 +1523,11 @@ def report_worker_progress(
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
         submission.final_weighted_score_private = val
 
-    # Baseline lifecycle: a failed baseline makes the task not-ready; a
-    # Completed baseline clears the problem (submissions are gated on
-    # task.problem_codes).
-    if submission.is_baseline and submission.task_id and "status" in data:
-        baseline_task = db.session.get(Task, submission.task_id)
-        if baseline_task:
-            baseline_codes = set(baseline_task.problem_codes or [])
-            if data["status"] == "failed":
-                baseline_codes.add("ERR_BASELINE_FAILED")
-            elif data["status"] == "completed":
-                baseline_codes.discard("ERR_BASELINE_FAILED")
-            baseline_task.problem_codes = sorted(baseline_codes) or None
-
     db.session.commit()
+
+    # Settles task readiness; a platform failure may requeue the baseline, so the
+    # Final status below is signalled only if the run is still terminal
+    apply_baseline_outcome(submission)
 
     publish_queue_update()
 
